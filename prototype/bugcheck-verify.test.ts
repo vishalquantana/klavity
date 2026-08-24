@@ -366,3 +366,91 @@ test("BUG 3: the checked-summary reports how many pages were read", () => {
   expect(checkedSummary(inv, 9, 5)).toContain("5 pages")
   expect(checkedSummary(inv, 9, 1)).not.toContain("pages,")
 })
+
+// ── KLA-545: prospect-safety — confidence tiers + severity capping ─────────────────────────────
+// A pre-sales scan must never present a hedged guess as our loudest alarm about someone's site.
+// The grounding gate (KLAVITYKLA-342) proves a finding QUOTES the page; it does not prove the
+// finding is CONFIDENT. These tests pin the two classification signals (hedged language, weak
+// generic evidence quotes) and the shaping rule (low-confidence findings lose HIGH severity).
+
+import {
+  classifyModelFinding,
+  applyProspectSafety,
+  type ConfidenceFinding,
+} from "./lib/bugcheck"
+
+const grounded = (pageText: string) => pageText // readability helper in fixtures below
+
+test("KLA-545: hedged language ('may/might/could') classifies a finding low-confidence", () => {
+  expect(classifyModelFinding({
+    what: "Checkout may not submit",
+    where: ".checkout",
+    why: "Users might be unable to pay.",
+    severity: "high",
+    evidence: "Proceed to checkout",
+  })).toBe("low")
+
+  expect(classifyModelFinding({
+    what: "Pricing link could be broken",
+    where: "nav",
+    why: "It appears that the link leads nowhere.",
+    severity: "high",
+    evidence: "See pricing",
+  })).toBe("low")
+})
+
+test("KLA-545: assertive, specific findings classify normal", () => {
+  expect(classifyModelFinding({
+    what: "Sync status shows literal undefined",
+    where: 'text near "last sync"',
+    why: "Looks broken to a visiting user.",
+    severity: "medium",
+    evidence: "last sync was undefined",
+  })).toBe("normal")
+})
+
+test("KLA-545: weak/generic evidence quotes cannot back a confident finding", () => {
+  for (const quote of ["Click here", "Submit", "Sign up", "Learn more", "Home"]) {
+    expect(classifyModelFinding({
+      what: "CTA does not work", where: ".cta", why: "Visitors cannot continue.", severity: "high", evidence: quote,
+    })).toBe("low")
+  }
+})
+
+test("KLA-545: a specific verbatim quote keeps normal confidence even when shortish", () => {
+  expect(classifyModelFinding({
+    what: "Cart total renders as $NaN",
+    where: ".cart-total",
+    why: "Shoppers see a broken price.",
+    severity: "high",
+    evidence: "$NaN at checkout",
+  })).toBe("normal")
+})
+
+test("KLA-545: applyProspectSafety caps low-confidence HIGH severity down to medium", () => {
+  const shaped = applyProspectSafety([
+    { what: "Form might fail", where: ".form", why: "Submissions could be blocked.", severity: "high", evidence: "Submit" },
+    { what: "Sync shows undefined", where: ".sync", why: "Looks unfinished.", severity: "high", evidence: "last sync was undefined" },
+    { what: "Broken link \"Docs\"", where: "https://x.invalid/docs", why: "Domain doesn't resolve.", severity: "high", confidence: "verified" },
+  ])
+  const [hedged, solid, verified] = shaped as ConfidenceFinding[]
+  // Hedged guess: demoted + explicitly labelled low.
+  expect(hedged.severity).toBe("medium")
+  expect(hedged.confidence).toBe("low")
+  // Assertive grounded finding: untouched apart from its explicit tier.
+  expect(solid.severity).toBe("high")
+  expect(solid.confidence).toBe("normal")
+  // Mechanical HTTP fact: passes through untouched as verified.
+  expect(verified.severity).toBe("high")
+  expect(verified.confidence).toBe("verified")
+})
+
+test("KLA-545: brokenLinkFindings are stamped confidence=verified (they ARE the proof)", async () => {
+  const checks = await verifyLinks(
+    [{ href: "https://definitely-gone.example/x", text: "Docs" }],
+    async () => new Response("", { status: 404 }),
+  )
+  const findings = brokenLinkFindings(checks)
+  expect(findings.length).toBe(1)
+  expect((findings[0] as ConfidenceFinding).confidence).toBe("verified")
+})

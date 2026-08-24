@@ -136,3 +136,59 @@ test('a non-enum severity value cannot break out of the severity-chip attribute 
   expect(list.querySelectorAll('[onerror],[onload],[onclick]').length).toBe(0)
   expect(list.querySelector('.severity-chip')).toBeTruthy()
 })
+
+// ── KLA-545: prospect-safe rendering of confidence tiers ────────────────────────────────────────
+// The server stamps each finding with confidence: "verified" | "normal" | "low" (and caps
+// low-confidence findings out of HIGH). The page must render that honestly: a chip per tier plus a
+// hedge note on non-verified rows, all through escHtml so hostile page text can't exploit the new
+// markup either. Drives the REAL shipped inline script, same as the tests above.
+
+test('KLA-545: a low-confidence finding renders a softening chip and hedge note', async () => {
+  await renderWithFindings([
+    { what: 'Form may not submit', where: '.form', why: 'Submissions could be blocked.', severity: 'medium', confidence: 'low' },
+  ])
+  const list = document.getElementById('finding-list')
+  expect(list.querySelector('.conf-low')).toBeTruthy()
+  expect(list.textContent).toContain('Possible issue')
+  expect(list.querySelector('.finding-conf-note')).toBeTruthy()
+  expect(list.textContent).toContain('may be fine')
+})
+
+test('KLA-545: a verified finding renders the Verified chip with NO hedge note', async () => {
+  await renderWithFindings([
+    { what: 'Broken link "Docs"', where: 'https://x.example/docs', why: 'Returns HTTP 404.', severity: 'high', confidence: 'verified' },
+  ])
+  const list = document.getElementById('finding-list')
+  expect(list.querySelector('.conf-verified')).toBeTruthy()
+  expect(list.textContent).toContain('Verified')
+  expect(list.querySelector('.finding-conf-note')).toBeNull()
+})
+
+test('KLA-545: normal-confidence findings get the AI-reviewed chip and double-check note', async () => {
+  await renderWithFindings([
+    { what: 'Sync shows undefined', where: '.sync', why: 'Looks unfinished.', severity: 'medium', confidence: 'normal' },
+  ])
+  const list = document.getElementById('finding-list')
+  expect(list.querySelector('.conf-normal')).toBeTruthy()
+  expect(list.textContent).toContain('AI-reviewed')
+})
+
+test('KLA-545: legacy responses without a confidence field still render (no chips)', async () => {
+  await renderWithFindings([
+    { what: 'Sync shows undefined', where: '.sync', why: 'Looks unfinished.', severity: 'medium' },
+  ])
+  const list = document.getElementById('finding-list')
+  expect(list.querySelectorAll('.conf-chip').length).toBe(0)
+  expect(list.querySelector('.finding-conf-note')).toBeNull()
+  expect(list.querySelector('.severity-chip')).toBeTruthy()
+})
+
+test('KLA-545: hostile text in what/why is escaped even in confidence-bearing rows', async () => {
+  const payload = '<img src=x onerror=alert(1)>might be broken'
+  await renderWithFindings([
+    { what: payload, where: '.hero', why: payload, severity: 'medium', confidence: 'low' },
+  ])
+  const list = document.getElementById('finding-list')
+  expect(list.querySelectorAll('img').length).toBe(0)
+  expect(list.innerHTML).toContain('&lt;img')
+})

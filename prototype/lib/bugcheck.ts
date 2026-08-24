@@ -312,6 +312,9 @@ export function brokenLinkFindings(checks: LinkCheck[]): BugFinding[] {
         ? "The link's domain doesn't resolve, so a visitor clicking it hits a dead end."
         : `The link returns HTTP ${c.status}, so a visitor clicking it hits an error page.`,
       severity: c.external ? "medium" : "high",
+      // KLA-545: mechanical HTTP verification IS the evidence — these are the only findings we'd
+      // stake the demo on, so they ship as verified.
+      confidence: "verified" as const,
     }))
 }
 
@@ -376,6 +379,75 @@ export function filterModelFindings(findings: BugFinding[], already: BugFinding[
     out.push(f)
   }
   return out
+}
+
+// ── KLA-545 prospect-safety: confidence tiers + hedging gate ────────────────────────────────
+// The grounding gate (KLAVITYKLA-342) proves a finding QUOTES the page; it does not prove the
+// finding is CONFIDENT. A quote can anchor pure speculation ("the checkout button may not submit"
+// quoting a button label) or trivially generic text, and a HIGH severity on such a finding is the
+// exact embarrassment this tool must never cause on a pre-sales scan. Two mechanisms:
+//
+//   1. HEDGED_LANGUAGE — speculative phrasing in what/why marks the finding low-confidence no
+//      matter what severity the model claimed.
+//   2. WEAK_EVIDENCE_QUOTES — short/generic quotes that would "ground" against almost any page
+//      ("Click here", "Submit", "Home") carry almost no evidentiary weight; a finding whose ONLY
+//      anchor is one of them cannot be high-confidence either.
+//
+// Callers decide what to DO with the tiers: server.ts drops low-confidence HIGHs entirely and caps
+// the rest at medium; the page renders a softer chip + hedge note for non-verified findings.
+
+/** Speculative phrasing that marks a finding as unproven (KLA-545). Matched against what+why. */
+const HEDGED_LANGUAGE =
+  /\b(?:may|might|could)(?:\s+\w+){0,3}\s+(?:be|not|fail|break|block|prevent|cause|confuse|stop)\b|\bpossibly\b|\bperhaps\b|\bit (?:appears|seems|looks)(?:\s+\w+){0,2}\s+(?:that\b|like\b)|\blikely\b|\bprobably\b|\bspeculative\b|\bpotentially\b/i
+
+/** Quotes so short/generic they ground against nearly any page — near-zero evidentiary weight. */
+const WEAK_QUOTE_RE =
+  /^(?:click(?:\s+here)?|submit|send|home|search|log ?in|sign ?up|sign ?in|register|continue|next|back|menu|contact(?:\s+us)?|learn more|read more|get started|subscribe|buy now|shop|ok(?:ay)?|yes|no|email|name|username|password|search\.\.\.|loading|404|error|null|undefined|nan|true|false)$/i
+
+/** Confidence tiers a finding can carry. `verified` = mechanically proven (HTTP-resolved links). */
+export type FindingConfidence = "verified" | "normal" | "low"
+
+export interface ConfidenceFinding extends BugFinding {
+  /** KLA-545 prospect-safety tier. Present on every finding the qa route ships. */
+  confidence?: FindingConfidence
+}
+
+/**
+ * Classify a SURVIVING model finding (already link-filtered + grounded) into a confidence tier:
+ *   - "low" when its language hedges (may/might/could/appears to…) OR its only evidence is a
+ *     weak/generic quote that would ground on almost any page;
+ *   - "normal" otherwise.
+ * Pure — exported for tests AND used by the qa route before shipping findings to the client.
+ */
+export function classifyModelFinding(f: BugFinding): FindingConfidence {
+  const blob = `${f.what ?? ""} ${f.why ?? ""}`
+  if (HEDGED_LANGUAGE.test(blob)) return "low"
+  if (WEAK_QUOTE_RE.test(String(f.evidence ?? "").trim())) return "low"
+  return "normal"
+}
+
+/** Longest weak quote accepted — anything longer stops being "generic" and earns normal. */
+export const MAX_WEAK_QUOTE_LEN = 24
+
+/**
+ * Prospect-safe shaping for a full finding list BEFORE it reaches a prospect (server-side):
+ *   - model findings keep their tier from classifyModelFinding;
+ *   - LOW-confidence findings lose any claimed HIGH severity — a hedged guess is never shown as
+ *     our loudest alarm about someone's site; they are capped at medium;
+ *   - everything carries an explicit `confidence` so the renderer can soften honestly.
+ * Mechanical (HTTP-verified) link findings pass through untouched with confidence "verified".
+ */
+export function applyProspectSafety(
+  findings: Array<ConfidenceFinding>,
+): Array<ConfidenceFinding> {
+  return findings.map((f) => {
+    if (f.confidence === "verified") return f
+    const confidence = f.confidence ?? classifyModelFinding(f)
+    if (confidence === "low" && String(f.severity).toLowerCase() === "high") {
+      return { ...f, severity: "medium", confidence }
+    }
+    return { ...f, confidence }
+  })
 }
 
 /** Human-readable "here's what we checked" line for the empty/success state. */

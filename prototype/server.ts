@@ -160,7 +160,7 @@ import { updateFeedbackEvidenceDropped } from "./lib/db"
 import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
-import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, sameOriginCrawlTargets, MAX_LINKS_CHECKED } from "./lib/bugcheck"
+import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, sameOriginCrawlTargets, MAX_LINKS_CHECKED, applyProspectSafety } from "./lib/bugcheck"
 import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
 import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, markOidcDomainVerified, getAccountSamlConfig, upsertAccountSamlConfig, deleteAccountSamlConfig, findAccountBySamlDomain, markSamlDomainVerified, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
 import { fetchIdpMetadata, parseIdpMetadata, validateIdpMetadata, buildAuthnRequestUrl, validateSamlResponse, type SamlIdpMetadata, type SamlIdentity } from "./lib/saml"
@@ -6575,7 +6575,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // filter AND the evidence-grounding gate. Every broken-link claim we ship has been resolved
         // over HTTP; every model finding we ship quotes text that provably exists on the page
         // (KLAVITYKLA-342 false positives). `siteText` is exactly what the model was shown.
-        const findings = [...verifiedBroken, ...filterModelFindings(modelFindings, verifiedBroken, siteText)].slice(0, 12)
+        // KLA-545 prospect-safety: before anything reaches a prospect, classify each model finding's
+        // confidence — hedged language or a weak/generic evidence quote demotes it — and cap any
+        // low-confidence finding that claimed HIGH severity down to medium. A hedged guess must
+        // never be the loudest alarm we raise about someone's site on a pre-sales scan.
+        const findings = applyProspectSafety([
+          ...verifiedBroken,
+          ...filterModelFindings(modelFindings, verifiedBroken, siteText),
+        ]).slice(0, 12)
         // Zero findings is a RESULT, not an empty page — tell the user what was actually checked.
         const checked = {
           links: linkChecks.length,

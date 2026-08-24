@@ -84,6 +84,12 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 .finding-item.high{border-left-color:#ef4444}
 .finding-item.medium{border-left-color:#f59e0b}
 .finding-item.low{border-left-color:#10b981}
+/* KLA-545: confidence chips + hedge note — honest labelling of how sure we are. */
+.conf-chip{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:.14rem .5rem;border-radius:999px;border:1px solid transparent;vertical-align:middle}
+.conf-verified{background:#dcfce7;color:#15803d;border-color:#86efac}
+.conf-normal{background:#e0e7ff;color:#4338ca;border-color:#c7d2fe}
+.conf-low{background:#f1f5f9;color:#64748b;border-color:#cbd5e1}
+.finding-conf-note{font-size:.78rem;color:#6b7280;margin-top:.35rem;font-style:italic}
 .finding-title{font-weight:700;font-size:.95rem;margin-bottom:.25rem;display:flex;align-items:center;gap:.5rem;color:#111827}
 .severity-chip{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.15rem .5rem;border-radius:999px}
 .severity-chip.high{background:#fee2e2;color:#dc2626}
@@ -723,6 +729,29 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
     return { high: "High", medium: "Medium", low: "Low" }[s] || s
   }
 
+  // KLA-545 prospect-safety: the server stamps every finding with a confidence tier.
+  //   verified — the claim was mechanically proven over HTTP (a link that really returns 404);
+  //   normal   — grounded model observation;
+  //   low      — hedged language or a weak/generic evidence quote (severity already capped
+  //              server-side so a hedged guess can never show as High).
+  // Non-verified rows render an honest chip and a one-line hedge note, so we never present
+  // speculation with the same authority as a mechanical fact. Absent tier (legacy cached
+  // responses) renders exactly as before.
+  function confidenceChip(confidence) {
+    if (confidence === "verified") return '<span class="conf-chip conf-verified">Verified</span>'
+    if (confidence === "low") return '<span class="conf-chip conf-low">Possible issue</span>'
+    if (confidence === "normal") return '<span class="conf-chip conf-normal">AI-reviewed</span>'
+    return ""
+  }
+
+  function confidenceNote(confidence) {
+    if (confidence === "low")
+      return '<div class="finding-conf-note">We could not fully verify this one — worth a quick look, but it may be fine.</div>'
+    if (confidence === "normal")
+      return '<div class="finding-conf-note">Spotted by our AI review of your page text — double-check before acting on it.</div>'
+    return ""
+  }
+
   // --- free-tool URL normalisation (shared verbatim with site/cro.html) ---
   // The input used to be type="url", so the BROWSER rejected a bare domain
   // ("klavity.in") with a native "Please enter a URL." tooltip before any JS
@@ -784,14 +813,18 @@ body{font-family:var(--font-sans,'Inter',system-ui,sans-serif);background:#f9faf
 
   // One finding row. Locked findings are withheld SERVER-SIDE now (not blurred), so every row here
   // is a finding the server chose to reveal. escHtml guards against hostile fetched-site text.
+  // KLA-545: confidence chip + hedge note render the finding's actual epistemic status.
   function findingRow(f) {
     const li = document.createElement("li")
     li.className = "finding-item " + (f.severity || "medium")
     li.innerHTML =
       '<div class="finding-title">' + escHtml(f.what) +
-      ' <span class="severity-chip ' + escHtml(f.severity) + '">' + escHtml(severityLabel(f.severity)) + "</span></div>" +
+      ' <span class="severity-chip ' + escHtml(f.severity) + '">' + escHtml(severityLabel(f.severity)) + "</span>" +
+      confidenceChip(f.confidence) +
+      "</div>" +
       '<div class="finding-where">' + escHtml(f.where) + "</div>" +
-      '<div class="finding-why">' + escHtml(f.why) + "</div>"
+      '<div class="finding-why">' + escHtml(f.why) + "</div>" +
+      confidenceNote(f.confidence)
     return li
   }
 

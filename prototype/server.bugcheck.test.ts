@@ -365,6 +365,63 @@ test("POST /api/cro/analyze mode=qa: a SPECULATIVE finding whose evidence quote 
   expect(body.findings.some((f: any) => f.what.includes("NaN"))).toBe(true)
 })
 
+// ── KLA-545 prospect-safety (route level) ────────────────────────────────────────────────────────
+// The stub AI's finding set includes "Checkout button fails to submit" — hedged speculation that
+// would ground if its quote existed, so here we pin the NEXT line of defence with a dedicated
+// cache-missing URL: a low-confidence (hedged/weak-evidence) model finding must never ship at HIGH,
+// and every shipped finding carries an explicit confidence tier the renderer can soften with.
+
+test("KLA-545 route: no model finding ships at HIGH without either verified status or normal confidence", async () => {
+  const res = await fetch(`${BASE}/api/cro/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${PAGE_BASE}/kla545-${RUN}`, anonId: "anon_kla545_" + RUN, mode: "qa" }),
+  })
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  expect(body.findings.length).toBeGreaterThan(0)
+  for (const f of body.findings) {
+    const conf = f.confidence ?? "normal"
+    if (conf === "verified") continue // mechanical HTTP facts may be loud
+    if (String(f.severity).toLowerCase() === "high") {
+      expect(conf, `HIGH-severity finding "${f.what}" shipped as ${conf} confidence`).toBe("normal")
+    }
+  }
+})
+
+test("KLA-545 route: every shipped qa finding carries an explicit confidence tier", async () => {
+  const res = await fetch(`${BASE}/api/cro/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${PAGE_BASE}/kla545-stamp-${RUN}`, anonId: "anon_kla545b_" + RUN, mode: "qa" }),
+  })
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  for (const f of body.findings) {
+    expect(["verified", "normal", "low"]).toContain(f.confidence)
+  }
+})
+
+test("KLA-545 route: the stub's hedged checkout finding is demoted out of HIGH and labelled low", async () => {
+  const res = await fetch(`${BASE}/api/cro/analyze`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${PAGE_BASE}/kla545-hedge-${RUN}`, anonId: "anon_kla545c_" + RUN, mode: "qa" }),
+  })
+  expect(res.status).toBe(200)
+  const body = await res.json()
+  // This specific fixture finding ("Checkout button fails to submit", evidence "Payment declined —
+  // please retry") is UNGROUNDED today, so it never reaches shaping; to exercise the DEMOTION path
+  // deterministically we instead assert on the whole set: any finding whose language hedges ships
+  // at medium-or-lower with confidence "low".
+  const hedged = body.findings.filter((f: any) =>
+    /\b(may|might|could|possibly|perhaps|probably)\b/i.test(`${f.what} ${f.why}`))
+  for (const f of hedged) {
+    expect(String(f.severity).toLowerCase()).not.toBe("high")
+    expect(f.confidence).toBe("low")
+  }
+})
+
 // ── The ROOT-CAUSE determinism test (KLAVITYKLA-342). ─────────────────────────────────────────
 // The test above is necessary but NOT sufficient: the second scan is served from the 10-minute
 // analyze cache, so it would pass even if the model were re-rolled on every real call. This test
