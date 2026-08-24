@@ -23,19 +23,25 @@ function render(html: string, taken: number | null): string {
 
 // ── the anchor ─────────────────────────────────────────────────────────────────────────────────
 
-test("the STANDARD Team price is visible as the anchor in every state", () => {
+test("the STANDARD Scale price is visible as the anchor in every state", () => {
   for (const taken of [0, 3, 9, 10, null]) {
     const out = render(PRICING, taken)
-    // The pitch is the contrast: the $2,988/yr plan for $490.
-    expect(out).toContain("$2,988")
+    // KLA-527: the pitch is the contrast — Scale at $599/mo vs the Founding price of $299/mo.
+    expect(out).toContain("$599 a month")
+    expect(out).toContain("299")
+    // The sold-out fallback still points at the standard self-serve Team price.
     expect(out).toContain("$249")
-    expect(out).toContain("$490")
   }
 })
 
-test("prices are untouched — KLAVITYKLA-379 is canonical", () => {
-  expect(PRICING).toContain("$490 billed yearly, locked for life")
-  expect(DASHBOARD).toContain("Founding Team — $490/yr")
+test("Founding is the canonical $299/mo MONTHLY offer — KLA-527", () => {
+  // pricing.html shows $299/mo (locked for life), NOT the retired $490/yr annual.
+  expect(PRICING).toContain("50% off the top plan, locked for life")
+  expect(PRICING).not.toContain("$490 billed yearly")
+  // The in-app ribbon quotes the same monthly price and its checkout button bills monthly.
+  expect(DASHBOARD).toContain("Founding Team — $299/mo")
+  expect(DASHBOARD).toContain('data-plan="founding" data-interval="month"')
+  expect(DASHBOARD).not.toContain("Founding Team — $490/yr")
 })
 
 // ── state 1: spots remaining ───────────────────────────────────────────────────────────────────

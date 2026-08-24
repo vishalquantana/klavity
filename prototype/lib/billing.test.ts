@@ -20,6 +20,7 @@ import {
   resolveBillingGrace,
   STRIPE_PRICE_CATALOG,
   STRIPE_PRICE_IDS,
+  SUPERSEDED_LOOKUP_KEYS,
   verifyStripeWebhook,
   entitledPlanForStatus,
   isEntitledSubscriptionStatus,
@@ -234,7 +235,8 @@ test("buildProjectUsage tolerates empty inputs", () => {
 
 test("every live Stripe price ID resolves to the right {plan, interval}", () => {
   const expectations: Array<[string, "founding" | "pro" | "team", "month" | "year"]> = [
-    ["price_1TuhSqDWQd30h1DiyqjXQ3NC", "founding", "year"],
+    ["price_1TuhSqDWQd30h1DiyqjXQ3NC", "founding", "year"],  // retired annual — grandfathered only
+    ["price_1U5NYTDWQd30h1DirsaHia4K", "founding", "month"], // KLA-527: live $299/mo Founding price
     ["price_1TuhSrDWQd30h1DivfC0EMKT", "pro", "month"],
     ["price_1TuhSrDWQd30h1DiTy9eSe5p", "pro", "year"],
     ["price_1TuhSsDWQd30h1DiU5g7VDZo", "team", "month"],
@@ -314,9 +316,15 @@ test("founding grants unlimited (fair-use) quota with a DAILY AutoSim cadence �
   expect(team.autosimCadence).toBe("on-deploy/hourly")
 })
 
-test("Founding is now monthly $299 (2026-08-17 refresh) with the $490/yr annual key grandfathered", () => {
+test("Founding is monthly-only $299 (KLA-527) with the $490/yr annual key retired but still resolving", () => {
+  // Canonical, selectable price: $299/mo monthly.
   expect(STRIPE_PRICE_CATALOG.founding.month?.unitAmount).toBe(29900)
-  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.founding.month?.lookupKey).toBe("klavity_founding_monthly_299")
+  // The annual $490/yr entry is NO LONGER in the selectable catalog…
+  expect(STRIPE_PRICE_CATALOG.founding.year).toBeUndefined()
+  // …but a grandfathered $490/yr founder still resolves via the superseded lookup-key map.
+  expect(planFromLookupKey("klavity_founding_annual_490")).toBe("founding")
+  expect(intervalFromLookupKey("klavity_founding_annual_490")).toBe("year")
 })
 
 test("Free has no AutoSim at all — zero configured flows AND zero monthly runs", () => {
@@ -337,9 +345,11 @@ test("every PAID tier still includes AutoSim (Free is the only zero)", () => {
   }
 })
 
-test("founding carries both a monthly $299 and the grandfathered $490/yr price", () => {
+test("founding is a monthly-only $299 offer; the annual $490/yr is retired to the superseded map", () => {
   expect(STRIPE_PRICE_CATALOG.founding.month?.unitAmount).toBe(29900)
-  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.founding.year).toBeUndefined()
+  // The retired annual key is not sellable but still maps for legacy subscribers.
+  expect(SUPERSEDED_LOOKUP_KEYS.klavity_founding_annual_490).toEqual({ plan: "founding", interval: "year" })
 })
 
 test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at runtime too)", () => {
@@ -350,7 +360,7 @@ test("PLAN_QUOTAS covers every BillingPlan value (type exhaustiveness holds at r
 })
 
 test("Founding/Solo/Team catalog amounts stay correct", () => {
-  expect(STRIPE_PRICE_CATALOG.founding.year?.unitAmount).toBe(49000)
+  expect(STRIPE_PRICE_CATALOG.founding.month?.unitAmount).toBe(29900)
   expect(STRIPE_PRICE_CATALOG.pro.month?.unitAmount).toBe(4900)
   expect(STRIPE_PRICE_CATALOG.pro.year?.unitAmount).toBe(49000)
   expect(STRIPE_PRICE_CATALOG.team.month?.unitAmount).toBe(24900)
@@ -359,11 +369,11 @@ test("Founding/Solo/Team catalog amounts stay correct", () => {
 
 // ── KLAVITYKLA-379: the upmarket ladder ────────────────────────────────────────────────────────
 
-test("the published ladder is Free $0 / Solo $49 / Team $249 / Scale $599 / Founding $490per year", () => {
-  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(4900)      // Solo
-  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(24900)    // Team
-  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)   // Scale — now PUBLISHED
-  expect(STRIPE_PRICE_CATALOG.founding.year!.unitAmount).toBe(49000) // Founding Ten
+test("the published ladder is Free $0 / Solo $49 / Team $249 / Scale $599 / Founding $299per month", () => {
+  expect(STRIPE_PRICE_CATALOG.pro.month!.unitAmount).toBe(4900)       // Solo
+  expect(STRIPE_PRICE_CATALOG.team.month!.unitAmount).toBe(24900)     // Team
+  expect(STRIPE_PRICE_CATALOG.scale.month!.unitAmount).toBe(59900)    // Scale — now PUBLISHED
+  expect(STRIPE_PRICE_CATALOG.founding.month!.unitAmount).toBe(29900) // Founding Ten — $299/mo (KLA-527)
 })
 
 test("annual is two months free (10x monthly) on every tier that sells both intervals", () => {
@@ -373,18 +383,24 @@ test("annual is two months free (10x monthly) on every tier that sells both inte
   }
 })
 
-test("the Founding lookup key is the _490 one; the _290 key is superseded but still resolves", () => {
-  expect(STRIPE_PRICE_CATALOG.founding.year!.lookupKey).toBe("klavity_founding_annual_490")
-  // An EXISTING $290/yr founding subscriber must keep resolving — Stripe prices are immutable, so
-  // their webhooks still carry the retired key. Dropping them here would silently demote them.
-  expect(planFromLookupKey("klavity_founding_annual_290")).toBe("founding")
-  expect(intervalFromLookupKey("klavity_founding_annual_290")).toBe("year")
-  expect(planFromPrice({ id: "price_unrecognized", lookup_key: "klavity_founding_annual_290" })).toBe("founding")
+test("the Founding SELLABLE key is the monthly _299 one; both retired annual keys still resolve", () => {
+  // Canonical selectable key is monthly $299; the annual _490 key is no longer in the catalog.
+  expect(STRIPE_PRICE_CATALOG.founding.month!.lookupKey).toBe("klavity_founding_monthly_299")
+  expect(STRIPE_PRICE_CATALOG.founding.year).toBeUndefined()
+  // Both the _290 (KLA-379 era) and the _490 (KLA-527 retirement) annual keys must keep resolving —
+  // Stripe prices are immutable, so grandfathered founders' webhooks still carry them.
+  for (const key of ["klavity_founding_annual_290", "klavity_founding_annual_490"]) {
+    expect(planFromLookupKey(key)).toBe("founding")
+    expect(intervalFromLookupKey(key)).toBe("year")
+    expect(planFromPrice({ id: "price_unrecognized", lookup_key: key })).toBe("founding")
+  }
 })
 
 test("every superseded lookup key still resolves to its original plan and interval", () => {
   const retired: Array<[string, string, "month" | "year"]> = [
     ["klavity_founding_annual_290", "founding", "year"],
+    // KLA-527: Founding annual $490/yr retired in favour of $299/mo monthly; grandfathered only.
+    ["klavity_founding_annual_490", "founding", "year"],
     // Retired "Pro" $29 / Team $99 ladder — plus the brief 2026-08-21 window when these lived in the
     // catalog. Superseded by the canonical Solo $49 / Team $249 (KLAVITYKLA-379) keys, but any
     // subscriber on them must keep resolving.

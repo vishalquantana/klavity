@@ -3,8 +3,9 @@ export type BillingInterval = "month" | "year"
 
 // ── KLAVITYKLA-379: the upmarket ladder (founder decision 2026-07-20) ───────────────────────────
 // "founding" (Founding Ten) is the founder deal — repriced 2026-08-21 (KLA-527) to $299/mo MONTHLY,
-// locked for life (= 50% off the $599/mo Scale plan). It now HAS a "month" entry (the primary
-// self-serve price); the annual $490/yr key is retained solely so grandfathered founders resolve.
+// locked for life (= 50% off the $599/mo Scale plan). It is MONTHLY-ONLY: the catalog carries just a
+// "month" entry, and the retired annual $490/yr key now lives in SUPERSEDED_LOOKUP_KEYS (not the
+// catalog) so it can never be OFFERED to a new buyer while grandfathered $490/yr founders still resolve.
 //
 // Free $0 · Solo $49/mo · Team $249/mo · Scale $599/mo (PUBLISHED) · Founding Ten $299/mo (locked for life).
 // Annual = two months free (10× monthly) on every self-serve tier, unchanged.
@@ -15,11 +16,13 @@ export type BillingInterval = "month" | "year"
 // below). Do NOT rename the slug; there is no migration and none is wanted.
 export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner">, Partial<Record<BillingInterval, { lookupKey: string; unitAmount: number; label: string }>>> = {
   founding: {
-    // Founder deal repriced to 50% off Scale ($599/mo) → $299/mo, billed MONTHLY (was annual-only
-    // $490/yr). Live Stripe price price_1U5NYTDWQd30h1DirsaHia4K carries this lookup_key. The old
-    // annual key stays below so grandfathered $490/yr founders keep resolving.
+    // KLA-527 (2026-08-21): the Founding Ten is now a MONTHLY-ONLY offer at $299/mo (= 50% off the
+    // $599/mo Scale plan), locked for life. Live Stripe price price_1U5NYTDWQd30h1DirsaHia4K carries
+    // this lookup_key. This is the ONLY selectable Founding price — checkout forces interval "month"
+    // (see /api/billing/checkout) so a stray interval:"year" can never resolve an annual price.
+    // The retired annual $490/yr key is NOT in the catalog anymore (it must not be offered to a new
+    // buyer); it lives in SUPERSEDED_LOOKUP_KEYS below so grandfathered $490/yr founders keep resolving.
     month: { lookupKey: "klavity_founding_monthly_299", unitAmount: 29900, label: "Klavity Founding Team" },
-    year: { lookupKey: "klavity_founding_annual_490", unitAmount: 49000, label: "Klavity Founding Team" },
   },
   pro: {
     month: { lookupKey: "klavity_solo_monthly_49", unitAmount: 4900, label: "Klavity Solo" },
@@ -60,6 +63,11 @@ export const STRIPE_PRICE_CATALOG: Record<Exclude<BillingPlan, "free" | "partner
 export const SUPERSEDED_LOOKUP_KEYS: Record<string, { plan: BillingPlan; interval: BillingInterval }> = {
   // Founding Ten at $290/yr — superseded by klavity_founding_annual_490 on 2026-07-20.
   klavity_founding_annual_290: { plan: "founding", interval: "year" },
+  // Founding Ten annual at $490/yr — RETIRED 2026-08-21 (KLA-527) in favour of the $299/mo MONTHLY
+  // price. Pulled out of STRIPE_PRICE_CATALOG so no new checkout can select it, but kept here so the
+  // webhook for a grandfathered $490/yr founder still maps to {founding, year} instead of dropping
+  // them to `free`. (The live price ID price_1TuhSq… below covers Payment-Link buyers by ID too.)
+  klavity_founding_annual_490: { plan: "founding", interval: "year" },
   // "Pro" at $29/mo · $290/yr — superseded by the Solo $49/mo · $490/yr keys. These briefly lived in
   // the catalog during the 2026-08-21 drift, so anyone who checked out at $29/$99 in that window is
   // billed against these immutable price objects and their webhooks still carry these keys; they MUST
@@ -490,8 +498,14 @@ export function intervalFromLookupKey(lookupKey: string | null | undefined): Bil
 // catalog — PUBLIC identifiers, not secrets — safe to hardcode. Keep in lockstep with the Stripe
 // Dashboard if a price is ever repriced (Stripe prices are immutable; a repriced plan gets a new ID).
 export const STRIPE_PRICE_IDS: Record<string, { plan: Exclude<BillingPlan, "free" | "scale" | "partner">; interval: BillingInterval }> = {
-  // Founding Team — annual only, $490/yr (KLAVITYKLA-379). This is the live Payment Link price.
+  // Founding Team — the RETIRED annual $490/yr live Payment Link price (KLAVITYKLA-379). Kept so
+  // grandfathered annual founders' webhooks still resolve by price ID. Not offered to new buyers.
+  // NOTE: keep this entry FIRST among "founding" rows — tests pick the first founding price ID here.
   price_1TuhSqDWQd30h1DiyqjXQ3NC: { plan: "founding", interval: "year" },
+  // Founding Team — the CURRENT $299/mo MONTHLY price (KLA-527, 2026-08-21). Self-serve checkouts
+  // create a price carrying klavity_founding_monthly_299 (resolves via lookup_key), but a hosted
+  // Payment Link built on this live price ID sends only the ID — map it so those webhooks resolve too.
+  price_1U5NYTDWQd30h1DirsaHia4K: { plan: "founding", interval: "month" },
   // ── SUPERSEDED price IDs (KLAVITYKLA-379 reprice) ──
   // These are the OLD "Pro" $29/mo·$290/yr and Team $99/mo·$990/yr price objects. Stripe prices are
   // immutable, so anyone who subscribed before the reprice is still billed against these IDs and
@@ -563,8 +577,9 @@ async function stripeRequest(path: string, params: URLSearchParams, method = "PO
 }
 
 export async function ensureStripePrice(plan: "pro" | "team" | "agency" | "founding", interval: BillingInterval): Promise<string> {
-  // pro/team define both month + year; "founding" is annual-only (the checkout route forces its
-  // interval to "year"), so guard instead of asserting.
+  // pro/team/agency define both month + year; "founding" is MONTHLY-ONLY (the checkout route forces
+  // its interval to "month" — KLA-527), so guard instead of asserting. Asking for founding/"year"
+  // here throws by design: the retired $490/yr price is no longer sold.
   const entry = STRIPE_PRICE_CATALOG[plan][interval]
   if (!entry) throw new Error(`No ${plan} price for interval "${interval}"`)
   const lookup = new URLSearchParams()

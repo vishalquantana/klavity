@@ -2493,22 +2493,23 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
            with reports found, guarded-flow pass rate and regressions caught. Populated by _wirePlan
            from GET /api/account/agency-report; hidden for non-Agency accounts. -->
       <div id="billingAgency" style="margin:0 0 14px"></div>
-      <!-- GTM round 2: Founding Team offer — annual-only, at the locked founding price. The server
-           forces interval to "year" for plan:"founding" (see /api/billing/checkout).
-           KLAVITYKLA-379: $490/yr. Entitlements mirror PLAN_QUOTAS.founding = Team LIMITS but a
-           DAILY AutoSim cadence (hourly is loss-making at a lifetime-locked price) — keep this copy
-           in lockstep with prototype/lib/billing.ts and site/pricing.html. -->
+      <!-- GTM round 2: Founding Team offer — MONTHLY at the locked founding price. The server forces
+           interval to "month" for plan:"founding" (KLA-527, see /api/billing/checkout); the annual
+           $490/yr option is retired (grandfathered only). $299/mo. Entitlements mirror
+           PLAN_QUOTAS.founding = Team LIMITS but a DAILY AutoSim cadence (hourly is loss-making at a
+           lifetime-locked price) — keep this copy in lockstep with prototype/lib/billing.ts and
+           site/pricing.html. -->
       <!-- KLAVITYKLA-366: data-founding-state is SERVER-substituted (see substituteFoundingPlaceholders
            in server.ts). When it resolves to "soldout" the whole ribbon is hidden by CSS — the app
            must not promote an offer the website has closed, and there must be no dead "Join as a
            founder" button. The spots line is empty when the count is unavailable, and collapses. -->
       <div id="foundingRibbon" data-founding-state="__FOUNDING_STATE__" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid rgba(139,92,246,.35);background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.08));border-radius:8px;padding:10px 14px;margin-bottom:12px">
         <div style="flex:1;min-width:220px">
-          <div style="font-weight:700;font-size:13.5px">Founding Team — $490/yr <span class="muted" style="font-weight:400">vs Team at $249/mo</span></div>
-          <div class="muted" style="font-size:12px;margin-top:2px">Team limits with daily flow runs, price locked forever, direct line to the founder.</div>
+          <div style="font-weight:700;font-size:13.5px">Founding Team — $299/mo <span class="muted" style="font-weight:400">vs Scale at $599/mo</span></div>
+          <div class="muted" style="font-size:12px;margin-top:2px">50% off the top plan, locked for life — Team limits with daily flow runs, direct line to the founder.</div>
           <div id="foundingSpots" style="font-size:12px;font-weight:700;margin-top:4px">__FOUNDING_SPOTS_LINE__</div>
         </div>
-        <button class="btn btn-indigo btn-sm billingCheckout" data-plan="founding" data-interval="year">Join as a founder</button>
+        <button class="btn btn-indigo btn-sm billingCheckout" data-plan="founding" data-interval="month">Join as a founder</button>
       </div>
       <div id="billingPlans" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px">
         <div style="border:1px solid rgba(243,236,225,.14);border-radius:8px;padding:12px">

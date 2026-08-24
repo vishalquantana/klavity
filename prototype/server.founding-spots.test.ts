@@ -184,6 +184,6 @@ test("/pricing server-renders the sold-out state with no founding CTA", async ()
   const html = await (await fetch(`${BASE}/pricing`)).text()
   // The placeholder is always substituted, whatever the state.
   expect(html).not.toContain("__FOUNDING_")
-  // The standard price anchor survives in every state.
-  expect(html).toContain("$2,988")
+  // The standard price anchor survives in every state (KLA-527: Scale $599/mo is the anchor).
+  expect(html).toContain("$599 a month")
 })
