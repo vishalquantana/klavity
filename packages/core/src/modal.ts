@@ -231,7 +231,11 @@ export interface ModalCallbacks {
   allowRecording?: boolean
   // Host-supplied recorder entry point. Returns the captured recording (or null if the reporter cancelled).
   // Kept as a callback so the heavy MediaRecorder/getDisplayMedia machinery lives in the sdk, not core.
-  onRecord?: () => Promise<ReportRecording | null>
+  // KLA-555 (walkthrough mode): receives an optional `onPhase` the recorder fires on each overlay phase
+  // ('consent'|'recording'|'preview'). The composer hides itself while phase==='recording' (so the docked
+  // Stop bar sits over the live app, not behind a dimmed composer) and restores on any other phase — plus a
+  // belt-and-suspenders restore in the click handler's finally when onRecord resolves/rejects.
+  onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
   // Optional image pre-processor called immediately when a screenshot is added (e.g. PNG→JPEG
   // compression). By submit time the promise is already resolved, so the upload starts with zero
   // compression delay. The host passes compressScreenshot here; the extension omits it (its SW
@@ -2108,11 +2112,19 @@ export function buildModal(
       if (recordings.length >= MAX_RECORDINGS) { showError(`You can attach up to ${MAX_RECORDINGS} recordings.`); return }
       lockComposer(true)
       recordBtn.classList.add('kl-loading')
+      // KLA-555 (walkthrough mode): minimize the composer while a recording is ACTIVE so the recorder's
+      // docked Stop bar sits over the LIVE app (not behind a dimmed composer). Reuses the SAME host-hide
+      // seam the region/sharp captures already use (host.style.display) — no second minimize path. The
+      // recorder fires onPhase('recording') when capture starts and onPhase('consent'|'preview') for the
+      // centered panels; we mirror that onto host visibility, then always restore in finally.
+      const onPhase = (phase: 'consent' | 'recording' | 'preview') => {
+        host.style.display = phase === 'recording' ? 'none' : ''
+      }
       try {
-        const rec = await callbacks.onRecord!()
+        const rec = await callbacks.onRecord!(onPhase)
         if (rec) { recordings.push(rec); renderRecordings(); setActiveCapture(recordBtn) }
       } catch { /* user cancelled or recorder failed — leave the composer untouched */ }
-      finally { recordBtn.classList.remove('kl-loading'); lockComposer(false) }
+      finally { host.style.display = ''; recordBtn.classList.remove('kl-loading'); lockComposer(false) }
     })
   }
 

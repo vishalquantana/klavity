@@ -376,6 +376,12 @@ export async function recordingResultToAttachment(r: RecordingResult): Promise<R
 export interface RecordMeOptions {
   caps?: Partial<RecordingCaps>
   deps?: RecorderDeps
+  // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore
+  // the composer around a live recording. 'consent' and 'preview' render the centered card+backdrop; the
+  // ACTIVE 'recording' phase docks a compact bar and lets clicks pass through to the page, so the host
+  // should hide the composer while phase==='recording' and restore it on 'preview' (or when recordMe's
+  // promise resolves/rejects). Best-effort — listener errors never break capture.
+  onPhase?: (phase: 'consent' | 'recording' | 'preview') => void
 }
 
 export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAttachment | null> {
@@ -385,10 +391,26 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
   return new Promise<RecordingAttachment | null>((resolve) => {
     const host = document.createElement('div')
     host.setAttribute('data-klavity-ui', 'recorder')
-    host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.55);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#19140f'
     const card = document.createElement('div')
-    card.style.cssText = 'width:360px;max-width:92vw;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:12px;box-shadow:0 20px 60px rgba(28,22,40,.28);overflow:hidden'
     host.appendChild(card); document.body.appendChild(host)
+
+    const FONT = 'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#19140f'
+    // KLA-555 (walkthrough mode): the overlay chrome is per-phase, not static.
+    //   'modal' → full-screen dim backdrop centering a 360px card (consent + preview panels). Blocks the page.
+    //   'bar'   → transparent, pointer-events:none host (clicks pass THROUGH to the live app) with a compact
+    //             control docked bottom-center (pointer-events:auto). Used only for the ACTIVE recording phase
+    //             so the reporter can navigate + narrate over the running app, Loom/CleanShot style.
+    const setChrome = (mode: 'modal' | 'bar') => {
+      if (mode === 'bar') {
+        host.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;${FONT}`
+        card.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);pointer-events:auto;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:14px;box-shadow:0 12px 40px rgba(28,22,40,.32);overflow:hidden;max-width:92vw'
+      } else {
+        host.style.cssText = `position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.55);${FONT}`
+        card.style.cssText = 'width:360px;max-width:92vw;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:12px;box-shadow:0 20px 60px rgba(28,22,40,.28);overflow:hidden'
+      }
+    }
+    const emitPhase = (phase: 'consent' | 'recording' | 'preview') => { try { opts.onPhase?.(phase) } catch { /* listener errors never break capture */ } }
+    setChrome('modal')
 
     let settled = false
     let controller: RecordingController | null = null
@@ -422,6 +444,7 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
 
     // Panel 1 — consent-first start.
     const renderConsent = () => {
+      setChrome('modal'); emitPhase('consent')
       card.innerHTML =
         '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Record a walkthrough</div>' +
         '<div style="padding:14px">' +
@@ -460,28 +483,33 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       controller.done.then(async (r) => { renderPreview(await recordingResultToAttachment(r)) })
     }
 
-    // Panel 2 — recording (REC timer + size/time-left + pause/stop + fallback hint).
+    // Panel 2 — ACTIVE recording. KLA-555: a NON-BLOCKING compact bar docked bottom-center (Loom/CleanShot
+    // style) instead of a page-dimming modal, so the reporter can navigate + narrate over the LIVE app while
+    // recording. The host chrome goes transparent + pointer-events:none (clicks pass through to the page) and
+    // only this bar captures pointer events. The pointless 120px "screen preview" box is dropped — the user is
+    // watching the real app. Element ids #klr-timer / #klr-meta are unchanged so the onStats handler keeps
+    // updating them, and #klr-pause / #klr-stop keep their wiring.
     const renderRecording = (fallbackReason: string | null) => {
       // #477: 'camera-blocked' means the audio-only retry KEPT the mic (screen + narration); any other reason
       // means neither camera nor mic is available (screen only).
       const micKept = fallbackReason === 'camera-blocked'
       const screenOnlyFallback = !!fallbackReason && !micKept
       const hint = micKept
-        ? '<p style="font-size:11px;color:#574f45;margin-top:9px">Camera blocked by this site — recording <b>screen + mic narration</b>.</p>'
+        ? '<div style="padding:0 14px 10px;font-size:11px;color:#574f45">Camera blocked by this site — recording <b>screen + mic narration</b>.</div>'
         : screenOnlyFallback
-          ? '<p style="font-size:11px;color:#574f45;margin-top:9px">Camera/mic blocked by this site — recording <b>screen only</b>. You can still narrate by typing, or use the browser extension.</p>'
+          ? '<div style="padding:0 14px 10px;font-size:11px;color:#574f45">Camera/mic blocked — recording <b>screen only</b>. Narrate by typing, or use the extension.</div>'
           : ''
+      setChrome('bar'); emitPhase('recording')
       card.innerHTML =
-        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Recording…</div>' +
-        '<div style="padding:14px">' +
-        '<div style="position:relative;border-radius:10px;background:linear-gradient(135deg,#ece7dd,#f7f4ec);height:120px;display:grid;place-items:center;color:#574f45;font-size:12px">screen preview' +
-        '<div style="position:absolute;left:8px;top:8px;background:rgba(0,0,0,.6);color:#fff;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600" id="klr-timer">REC 0:00</div></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
-        '<button id="klr-pause" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
-        '<button id="klr-stop" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Stop</button>' +
-        '<span id="klr-meta" style="margin-left:auto;font-size:11px;color:#574f45;text-align:right"></span></div>' +
-        hint +
-        '</div>'
+        '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px">' +
+        '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap">' +
+        '<span aria-hidden="true" style="width:9px;height:9px;border-radius:50%;background:#e11;flex:none"></span>' +
+        '<span id="klr-timer">REC 0:00</span></span>' +
+        '<button id="klr-pause" style="padding:7px 12px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
+        '<button id="klr-stop" style="padding:7px 12px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Stop</button>' +
+        '<span id="klr-meta" style="font-size:11px;color:#574f45;text-align:right;white-space:nowrap"></span>' +
+        '</div>' +
+        hint
       const pauseBtn = card.querySelector('#klr-pause') as HTMLButtonElement
       pauseBtn.onclick = () => {
         if (!controller) return
@@ -493,6 +521,7 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
 
     // Panel 3 — preview → attach.
     const renderPreview = (att: RecordingAttachment) => {
+      setChrome('modal'); emitPhase('preview')
       card.innerHTML =
         '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Preview</div>' +
         '<div style="padding:14px">' +
