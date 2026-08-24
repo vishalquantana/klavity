@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -2297,18 +2297,66 @@ async function runManualExport(
 // the ticket_export row + heartbeat exactly like the primary paths; on failure it bumps the row with
 // backoff (dead after max attempts, but still VISIBLE). Idempotent: skips a finding already exported to
 // the connector. STRICTLY best-effort — never throws into the interval.
+//
+// KLA-577 correctness hardening:
+//  (1) NEVER double-file on a partial success. Before createIssue we write a durable 'in_flight' marker
+//      (markExportOutboxInFlight); a crash between the tracker call and the ticket_exports write leaves
+//      an in_flight row (NOT a still-pending one the next sweep re-files blindly). reconcileStaleInFlight
+//      below inspects such rows: if a prior successful export exists the DB write clearly landed (mark
+//      done); otherwise it is ambiguous (the tracker MAY hold an untracked issue) so we park it for a
+//      human (needs_review) instead of re-filing. We also skip any row whose (feedback,connector) a
+//      manual export currently holds (exportInFlight) so a sweep can't race a manual export of the same
+//      finding.
+//  (2) A merely DISABLED (not deleted) connector no longer marks its rows 'done' — they are 'paused' and
+//      resume automatically when the connector is re-enabled (see the connectors PATCH handler).
+const OUTBOX_INFLIGHT_GRACE_MS = 120_000
+
+async function reconcileStaleInFlightExportOutbox(): Promise<void> {
+  const stale = await listStaleInFlightExportOutbox(OUTBOX_INFLIGHT_GRACE_MS)
+    .catch(() => [] as Awaited<ReturnType<typeof listStaleInFlightExportOutbox>>)
+  for (const row of stale) {
+    try {
+      // Don't touch a row a manual export is actively working right now — it may be legitimately in
+      // flight rather than crashed. Let the next sweep re-evaluate once the lock clears.
+      if (exportInFlight.has(`${row.feedbackId}:${row.connectorId}`)) continue
+      const prior = await findPriorSuccessfulExport(row.feedbackId, row.connectorId).catch(() => null)
+      if (prior) { await markExportOutboxDone(row.id); continue }
+      // Ambiguous: createIssue may or may not have created a tracker issue before the crash, and we
+      // have no reliable idempotency key to look it up. Refuse to blindly re-file (would risk a
+      // duplicate external ticket) — surface it for manual review instead. It stays VISIBLE.
+      await markExportOutboxNeedsReview(row.id, `stale in_flight >${Math.round(OUTBOX_INFLIGHT_GRACE_MS / 1000)}s — needs manual reconciliation (may already exist in tracker)`)
+    } catch (e: any) {
+      console.warn("outbox reconcile (non-fatal):", e?.message || e)
+    }
+  }
+}
+
 async function runExportOutboxSweep(): Promise<void> {
   if (!db) return
+  await reconcileStaleInFlightExportOutbox()
   const due = await listDueExportOutbox(25).catch(() => [] as Awaited<ReturnType<typeof listDueExportOutbox>>)
   for (const row of due) {
+    let claimed = false
     try {
       const connector = await getConnectorById(row.projectId, row.connectorId)
       const adapter = connector ? getConnector(connector.type) : null
-      const fb = connector ? await feedbackById(row.projectId, row.feedbackId) : null
-      // Destination or finding is gone/disabled, or we already filed it — stop retrying (mark done).
-      if (!connector || !connector.enabled || !adapter || !fb) { await markExportOutboxDone(row.id); continue }
+      // Destination GONE (connector deleted, or its type no longer registered) — nothing to retry to,
+      // so retire the row. NOTE: a merely disabled connector is handled separately below (paused, not
+      // done) so it resumes when re-enabled.
+      if (!connector || !adapter) { await markExportOutboxDone(row.id); continue }
+      if (!connector.enabled) { await pauseExportOutbox(row.id, "connector disabled — paused (will retry when re-enabled)"); continue }
+      const fb = await feedbackById(row.projectId, row.feedbackId)
+      // Finding deleted — retire (nothing to export).
+      if (!fb) { await markExportOutboxDone(row.id); continue }
       const prior = await findPriorSuccessfulExport(row.feedbackId, row.connectorId).catch(() => null)
       if (prior) { await markExportOutboxDone(row.id); continue }
+      // A manual export currently holds this (feedback,connector) — let it own the create; skip so we
+      // don't race a second tracker issue. The row stays pending and is re-tried next sweep.
+      if (exportInFlight.has(`${row.feedbackId}:${row.connectorId}`)) continue
+
+      // Durable "creating" marker BEFORE the tracker call. If the claim loses to another writer, skip.
+      claimed = await markExportOutboxInFlight(row.id)
+      if (!claimed) continue
 
       const cfg: Record<string, string> = { ...connector.config }
       for (const f of adapter.fields) {
@@ -2333,6 +2381,10 @@ async function runExportOutboxSweep(): Promise<void> {
       }
       await markExportOutboxDone(row.id)
     } catch (e: any) {
+      // createIssue (or a wrapping step) threw. The row is 'in_flight' if we claimed it; bump resets it
+      // to 'pending' with backoff so it retries — a THROW means createIssue did not return a key, i.e.
+      // no external issue to duplicate. (A partial success that crashes AFTER createIssue returns but
+      // before the DB write does NOT reach here — it is caught by reconcileStaleInFlight next sweep.)
       await bumpExportOutboxAttempt(row.id, e?.message || "retry failed")
         .catch((err: any) => console.warn("outbox bump failed (non-fatal):", err?.message || err))
       touchConnectorHeartbeat(row.connectorId, { kind: "outbound", success: false, error: e?.message || "retry failed" })
@@ -10439,7 +10491,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -10486,6 +10538,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ error: "Method not allowed" }, 405)
         }
         // ── End share-token management ────────────────────────────────────────────────────────────
+
+        // KLA-577: GET /api/projects/:pid/export-outbox — admin-visible export retry queue. Surfaces
+        // every non-'done' row (pending / in_flight / paused / needs_review / dead) so an admin can see
+        // findings that failed to reach a tracker, why, and whether one needs manual reconciliation.
+        if (sub === "/export-outbox") {
+          if (access !== "admin") return json({ error: "Only project admins can view the export outbox." }, 403)
+          if (req.method !== "GET") return json({ error: "Method not allowed" }, 405)
+          const rows = await listExportOutboxForProject(pid).catch(() => [] as Awaited<ReturnType<typeof listExportOutboxForProject>>)
+          const outbox = rows.map((r) => ({
+            id: r.id, feedbackId: r.feedbackId, connectorId: r.connectorId, type: r.type,
+            status: r.status, attempts: r.attempts, lastError: r.lastError,
+            nextAttemptAt: r.nextAttemptAt, createdAt: r.createdAt, updatedAt: r.updatedAt,
+          }))
+          const counts = outbox.reduce((m: Record<string, number>, r) => { m[r.status] = (m[r.status] || 0) + 1; return m }, {})
+          return json({ outbox, counts, total: outbox.length })
+        }
 
         // Monitored URLs (R5 allowlist) — admin-only manage; project-scoped via projectAccess.
         if (sub.startsWith("/monitored-urls")) {
@@ -10871,8 +10939,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
 
             await updateConnector(pid, cid, patch)
-            logAudit({ action: "connector_update", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { connectorId: cid, fields: Object.keys(patch) } })
-            return json({ ok: true })
+            // KLA-577: re-enabling a connector re-arms any exports that were paused while it was
+            // disabled, so queued findings resume filing immediately instead of being lost.
+            let resumedExports = 0
+            if (patch.enabled === true && existing.enabled === false) {
+              resumedExports = await resumePausedExportOutbox(cid).catch(() => 0)
+            }
+            logAudit({ action: "connector_update", actorEmail: me, projectId: pid, ip: clientIp(req, server), meta: { connectorId: cid, fields: Object.keys(patch), resumedExports } })
+            return json({ ok: true, resumedExports })
           }
 
           // DELETE /api/projects/:id/connectors/:cid — remove (admin only)

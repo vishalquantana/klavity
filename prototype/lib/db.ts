@@ -5327,7 +5327,11 @@ export type ExportOutboxRow = {
   projectId: string
   connectorId: string
   type: string
-  status: "pending" | "done" | "dead"
+  // KLA-577: 'in_flight' = a marker written BEFORE createIssue so a crash between the tracker call and
+  // the ticket_exports write is detectable (a stale in_flight row is reconciled, never blindly re-filed).
+  // 'paused' = the connector is merely DISABLED (not deleted) — kept out of the due-scan but retryable
+  // once re-enabled. 'needs_review' = an ambiguous in_flight we could not reconcile automatically.
+  status: "pending" | "in_flight" | "paused" | "done" | "dead" | "needs_review"
   attempts: number
   lastError: string | null
   nextAttemptAt: number
@@ -5423,6 +5427,69 @@ export async function bumpExportOutboxAttempt(
   })
   const updated = await db!.execute({ sql: "SELECT * FROM export_outbox WHERE id=?", args: [id] })
   return updated.rows.length ? rowToExportOutbox(updated.rows[0]) : null
+}
+
+// ── KLA-577: correctness helpers (never double-file; don't drop retries on a disabled connector) ──
+
+// Claim a pending row for an in-flight createIssue. Writes a DURABLE 'in_flight' marker (stamping
+// updated_at) BEFORE the tracker call, so a crash between createIssue and addTicketExport leaves a
+// detectable row rather than a still-'pending' one that the next sweep re-files blindly. Guarded on
+// status='pending' so it can't clobber a row another writer already claimed. Returns true if claimed.
+export async function markExportOutboxInFlight(id: string, now = Date.now()): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE export_outbox SET status='in_flight', updated_at=? WHERE id=? AND status='pending'",
+    args: [now, id],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// Stale in_flight rows: claimed for an export that never resolved (process crashed mid-flight, or a
+// still-running export that is well past any reasonable duration). Older-than-grace by updated_at.
+export async function listStaleInFlightExportOutbox(graceMs = 120_000, now = Date.now()): Promise<ExportOutboxRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM export_outbox WHERE status='in_flight' AND updated_at<=? ORDER BY updated_at ASC LIMIT 25",
+    args: [now - graceMs],
+  })
+  return r.rows.map(rowToExportOutbox)
+}
+
+// Park an ambiguous in_flight row for a human: we cannot prove whether the tracker issue was created,
+// so we refuse to auto-re-file. Stays VISIBLE (status!='done') on the project outbox surface.
+export async function markExportOutboxNeedsReview(id: string, error: string | null, now = Date.now()): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE export_outbox SET status='needs_review', last_error=?, updated_at=? WHERE id=?",
+    args: [error, now, id],
+  })
+}
+
+// Reset an in_flight row back to pending so the next sweep retries it (used when reconciliation shows
+// nothing was filed — e.g. a prior successful export is absent AND the row was re-armed by a caller).
+export async function requeueExportOutbox(id: string, now = Date.now()): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE export_outbox SET status='pending', next_attempt_at=?, updated_at=? WHERE id=?",
+    args: [now, now, id],
+  })
+}
+
+// Connector merely DISABLED (not deleted): park the row as 'paused' instead of marking it done. It
+// stays visible and is excluded from the due-scan, so it stops hot-looping until the connector is
+// re-enabled (resumePausedExportOutbox re-arms it). Never touches attempts — a pause is not a failure.
+export async function pauseExportOutbox(id: string, error: string | null = null, now = Date.now()): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE export_outbox SET status='paused', last_error=COALESCE(?, last_error), updated_at=? WHERE id=? AND status IN ('pending','in_flight')",
+    args: [error, now, id],
+  })
+}
+
+// Re-arm every paused row for a connector back to pending + immediately due. Called when a connector is
+// re-enabled so its queued exports resume without waiting for anything else. Returns how many resumed.
+export async function resumePausedExportOutbox(connectorId: string, now = Date.now()): Promise<number> {
+  if (!connectorId) return 0
+  const r = await db!.execute({
+    sql: "UPDATE export_outbox SET status='pending', next_attempt_at=?, updated_at=? WHERE connector_id=? AND status='paused'",
+    args: [now, now, connectorId],
+  })
+  return r.rowsAffected ?? 0
 }
 
 // Update feedback management columns. Always sets updated_at. Returns true if a row was updated

@@ -15,6 +15,9 @@ const {
   recordConnectorPendingMappings, clearConnectorPendingMapping,
   enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject,
   markExportOutboxDone, bumpExportOutboxAttempt,
+  markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview,
+  pauseExportOutbox, resumePausedExportOutbox,
+  addTicketExport, findPriorSuccessfulExport,
 } = await import("./db")
 
 let db: any
@@ -93,4 +96,69 @@ test("export outbox: due listing, markDone, and bump→backoff→dead", async ()
   await markExportOutboxDone(doneId)
   const visible2 = await listExportOutboxForProject("proj_ob2")
   expect(visible2.some((r) => r.id === doneId)).toBe(false)
+})
+
+// ── KLA-577: never double-file on partial success + don't drop retries on a disabled connector ──
+
+// (a) createIssue SUCCEEDS but the ticket_exports write / process dies before markDone. The row is
+// left 'in_flight' (NOT still-pending) so the next sweep can't blindly re-file it. Reconciliation then
+// resolves it WITHOUT creating a second external ticket.
+test("in_flight marker: a claimed row is invisible to the due-scan (no blind re-file)", async () => {
+  const id = await enqueueExportOutbox({ feedbackId: "fbIF1", projectId: "proj_if", connectorId: "connIF", type: "jira", nextAttemptAt: 1 })
+  // Sweep claims it right before calling createIssue.
+  expect(await markExportOutboxInFlight(id, 1000)).toBe(true)
+  // Simulate crash between createIssue-success and the DB write: nothing else happens.
+  const due = await listDueExportOutbox(50, Date.now())
+  expect(due.some((r) => r.id === id)).toBe(false) // would-be second sweep does NOT pick it up
+  // The claim is single-use: a concurrent claimer cannot re-claim an already in_flight row.
+  expect(await markExportOutboxInFlight(id, 2000)).toBe(false)
+})
+
+test("reconcile: stale in_flight with a prior successful export is retired (write landed late)", async () => {
+  const id = await enqueueExportOutbox({ feedbackId: "fbIF2", projectId: "proj_if", connectorId: "connIF2", type: "plane", nextAttemptAt: 1 })
+  await markExportOutboxInFlight(id, 1000)
+  // The ticket_exports write DID land (crash happened after it, before markDone).
+  await addTicketExport({ feedbackId: "fbIF2", projectId: "proj_if", connectorId: "connIF2", type: "plane", externalKey: "PLANE-9", externalUrl: "http://x/9", status: "ok", error: null, createdBy: null })
+  const stale = await listStaleInFlightExportOutbox(60_000, 1000 + 120_000)
+  expect(stale.some((r) => r.id === id)).toBe(true)
+  // Reconcile: prior export exists → retire, DO NOT re-file.
+  const prior = await findPriorSuccessfulExport("fbIF2", "connIF2")
+  expect(prior?.externalKey).toBe("PLANE-9")
+  await markExportOutboxDone(id)
+  const visible = await listExportOutboxForProject("proj_if")
+  expect(visible.some((r) => r.id === id)).toBe(false)
+})
+
+test("reconcile: ambiguous stale in_flight (no prior export) is parked needs_review, never re-filed", async () => {
+  const id = await enqueueExportOutbox({ feedbackId: "fbIF3", projectId: "proj_if2", connectorId: "connIF3", type: "github", nextAttemptAt: 1 })
+  await markExportOutboxInFlight(id, 1000)
+  const stale = await listStaleInFlightExportOutbox(60_000, 1000 + 120_000)
+  expect(stale.some((r) => r.id === id)).toBe(true)
+  // No prior successful export → we can't prove the tracker didn't get an issue → surface, don't re-file.
+  expect(await findPriorSuccessfulExport("fbIF3", "connIF3")).toBeNull()
+  await markExportOutboxNeedsReview(id, "stale in_flight — manual review")
+  // Parked: visible to the admin, but NOT re-armed to pending (so no sweep ever re-creates it).
+  const due = await listDueExportOutbox(50, Date.now())
+  expect(due.some((r) => r.id === id)).toBe(false)
+  const visible = await listExportOutboxForProject("proj_if2")
+  expect(visible.find((r) => r.id === id)?.status).toBe("needs_review")
+})
+
+// (b) A merely DISABLED connector must NOT mark its pending exports done — they pause and resume.
+test("disabled connector: rows pause (stay visible, off the due-scan) and resume on re-enable", async () => {
+  const id = await enqueueExportOutbox({ feedbackId: "fbP1", projectId: "proj_pause", connectorId: "connPause", type: "jira", nextAttemptAt: 1 })
+  // Sweep sees connector.enabled === false → pause (NOT markDone).
+  await pauseExportOutbox(id, "connector disabled")
+  // Off the due-scan while disabled...
+  const dueWhilePaused = await listDueExportOutbox(50, Date.now())
+  expect(dueWhilePaused.some((r) => r.id === id)).toBe(false)
+  // ...but still VISIBLE to the admin (not silently dropped as 'done').
+  const visible = await listExportOutboxForProject("proj_pause")
+  expect(visible.find((r) => r.id === id)?.status).toBe("paused")
+
+  // Re-enabling the connector re-arms every paused row → retryable again.
+  const resumed = await resumePausedExportOutbox("connPause")
+  expect(resumed).toBe(1)
+  const dueAfter = await listDueExportOutbox(50, Date.now())
+  expect(dueAfter.some((r) => r.id === id)).toBe(true)
 })
