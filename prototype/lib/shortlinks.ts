@@ -1,6 +1,6 @@
 // Pure helpers for the superadmin URL shortener + campaign tracker (Phase 1).
 // No DB, no server deps — safe to unit-test in isolation.
-import { createHmac, createHash } from "crypto"
+import { createHmac } from "node:crypto"
 
 // Slugs share the /s/:code namespace, so a vanity slug may never collide with a real
 // top-level route (or with the Phase-2 /r/ referral prefix). Keep this list in sync with
