@@ -116,4 +116,32 @@ describe("launcher display fields", () => {
     expect(ALLOWED_LAUNCHER_MODES).toContain("hidden")
     expect(ALLOWED_LAUNCHER_MODES).toContain("custom")
   })
+
+  // KLAVITYKLA-497 (server half): the pre-submit nudge is per-project configurable — an explicit boolean
+  // survives validateModalConfigInput (so the admin config POST can persist it); anything else is ignored
+  // (absent stays absent = composer default "shown as a non-blocking warning").
+  it("KLAVITYKLA-497: persists an explicit preSubmitNudge boolean and drops non-booleans", () => {
+    const on = validateModalConfigInput({ theme: "light", preSubmitNudge: true }, { isPro: false })
+    expect(on.ok).toBe(true)
+    if (on.ok) expect(on.config.preSubmitNudge).toBe(true)
+
+    const off = validateModalConfigInput({ theme: "light", preSubmitNudge: false }, { isPro: false })
+    expect(off.ok).toBe(true)
+    if (off.ok) expect(off.config.preSubmitNudge).toBe(false)
+
+    const junk = validateModalConfigInput({ theme: "light", preSubmitNudge: "yes" }, { isPro: false })
+    expect(junk.ok).toBe(true)
+    if (junk.ok) expect(junk.config.preSubmitNudge).toBeUndefined()
+
+    const absent = validateModalConfigInput({ theme: "light" }, { isPro: false })
+    expect(absent.ok).toBe(true)
+    if (absent.ok) expect(absent.config.preSubmitNudge).toBeUndefined()
+  })
+
+  it("KLAVITYKLA-497: resolveModalConfig preserves the flag verbatim so absent stays absent", () => {
+    expect(resolveModalConfig({ theme: "light", preSubmitNudge: false }).preSubmitNudge).toBe(false)
+    expect(resolveModalConfig({ theme: "light", preSubmitNudge: true }).preSubmitNudge).toBe(true)
+    expect(resolveModalConfig({ theme: "light" }).preSubmitNudge).toBeUndefined()
+    expect(resolveModalConfig(undefined).preSubmitNudge).toBeUndefined()
+  })
 })
