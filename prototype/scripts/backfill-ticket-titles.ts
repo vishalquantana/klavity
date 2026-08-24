@@ -325,7 +325,7 @@ function printHelp() {
   --db <url>          override TURSO_DATABASE_URL (e.g. file:./local.db)`)
 }
 
-if (import.meta.main) {
+if ((import.meta as any).main) {
   const args = parseArgs(process.argv.slice(2))
   if (args.dbUrl) reconnectDb(args.dbUrl, process.env.TURSO_AUTH_TOKEN)
   if (!db) { console.error("No database — set TURSO_DATABASE_URL (or pass --db file:./local.db)"); process.exit(1) }
