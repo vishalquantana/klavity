@@ -34,13 +34,10 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-/** JTBD 1.8: inner markup for the attached-proof replay chip, given the current state.
- *  'attached' → play-icon "Replay · 60s" with a check; 'unavailable' → muted "Replay · not available". */
-function replayChipInner(state: 'attached' | 'unavailable'): string {
-  return state === 'attached'
-    ? `${icon('play', { size: 12 })}<span>Replay &middot; 60s</span>${icon('check', { size: 12, label: 'attached' })}`
-    : `${icon('play', { size: 12 })}<span>Replay &middot; not available</span>`
-}
+// KLAVITYKLA-493: the reporter-facing "Replay · 60s" chip is intentionally NOT rendered (it read like an
+// action and confused users). Session-replay CAPTURE is unchanged — the widget keeps feeding replayEvents
+// into the submit payload and the server still stores them; replayState/setReplayState() are kept purely
+// for evidence gating so a replay-only report can Submit. The old chip markup helper was removed.
 
 /** Human-quotable ticket reference. Klavity feedback ids are "fb_<uuid>" — far too long to read
  *  aloud or quote to support, so shorten to the first uuid block ("fb_1a2b3c4d"). Tracker keys
@@ -1044,11 +1041,8 @@ export function buildModal(
     // JTBD 1.10: a resolved replay buffer is evidence — re-evaluate Submit so a replay-only report enables.
     replayAttached = state === 'attached'
     refreshSubmit()
-    const chip = shadowRoot.getElementById('klavity-replay-chip') as HTMLElement | null
-    if (!chip) return
-    chip.classList.toggle('kl-chip-on', state === 'attached')
-    chip.classList.toggle('kl-chip-off', state !== 'attached')
-    chip.innerHTML = replayChipInner(state)
+    // KLAVITYKLA-493: no chip is rendered anymore — the state only drives evidence gating (above), so
+    // there is nothing left to repaint in the DOM.
   }
 
   // KLA-412: the CURRENT page's tag — used to label an interactive capture in session mode when the
