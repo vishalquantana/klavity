@@ -87,12 +87,32 @@ export async function deleteObject(key: string): Promise<void> {
   await getClient().delete(key)
 }
 
-// Read one PRIVATE object's bytes (used by the /img permalink handler to stream a screenshot, and to
-// pass bytes to connectors that natively attach the image). Throws if S3 isn't configured / not found.
+// Read one PRIVATE object's bytes (used by the connector export path to pass bytes to trackers that
+// natively attach the image). Throws if S3 isn't configured / not found. NOTE: this BUFFERS the whole
+// object — do not use it for high-fanout HTTP serving; use getObjectStream instead (KLA-519).
 export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string }> {
   const f = getClient().file(key)
   const buf = await f.arrayBuffer()
   return { bytes: new Uint8Array(buf), contentType: f.type || "image/png" }
+}
+
+// KLA-519: stream one PRIVATE object WITHOUT buffering it in RAM. Returns the object body as a lazy
+// Web ReadableStream plus its stat'd content-type and size, so the /img embed route can pipe the S3
+// bytes straight to the HTTP response — a multi-MB screenshot never sits fully in the 1GB box's heap.
+// Bun's S3File.type/size are NOT populated until a read ("" / NaN on a fresh handle), so we issue a
+// cheap HEAD-style `stat()` (metadata only — never fetches the body) for accurate type + size. The
+// S3File itself can't be used as the Response body (Bun rejects `new Response(s3File, {headers})`),
+// so we hand over `file.stream()`; Bun.serve consumes it lazily as the client reads. Without a
+// known-length body Bun serves chunked transfer-encoding (no content-length) — fine for <img> embeds.
+// Throws if S3 isn't configured; a missing object throws from stat() and the caller maps to 404.
+export async function getObjectStream(key: string): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string; size: number | null }> {
+  const f = getClient().file(key)
+  let contentType = "application/octet-stream"
+  let size: number | null = null
+  const st = await f.stat() // throws on not-found → caller 404s, same contract as getObjectBytes
+  if (st?.type) contentType = st.type
+  if (st && Number.isFinite(st.size) && st.size >= 0) size = st.size
+  return { stream: f.stream() as unknown as ReadableStream<Uint8Array>, contentType, size }
 }
 
 // Upload one screenshot and return its public path-style URL.

@@ -44,7 +44,7 @@ import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
@@ -2821,10 +2821,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const shot = await screenshotById(id)
       if (!shot) return new Response("Not found", { status: 404 })
       try {
-        const { bytes, contentType } = await getObjectBytes(shot.s3Key)
-        // KLAVITYKLA-486: S3 egress COGS — we stream the private object through our box here.
-        void recordS3Egress({ projectId: shot.projectId, bytes: (bytes as any)?.byteLength ?? (bytes as any)?.length ?? 0, meta: { via: "img-permalink" } })
-        return new Response(bytes, { headers: { "content-type": contentType, "cache-control": "public, max-age=86400" } })
+        // KLA-519: STREAM the S3 body straight to the HTTP response instead of buffering the whole
+        // object in RAM (the old getObjectBytes path read every byte into the box's heap first —
+        // multi-MB screenshots spiked memory on the 1GB prod box). Bun.serve consumes the lazy
+        // ReadableStream as the client reads; nothing is buffered here.
+        const { stream, contentType, size } = await getObjectStream(shot.s3Key)
+        // KLAVITYKLA-486: S3 egress COGS — we stream the private object through our box here. The
+        // ledger row needs a byte count up front: prefer the DB row's recorded size, else the stat'd
+        // size (both metadata — no body buffering).
+        void recordS3Egress({ projectId: shot.projectId, bytes: shot.bytes ?? size ?? 0, meta: { via: "img-permalink" } })
+        return new Response(stream, { headers: { "content-type": contentType, "cache-control": "public, max-age=86400" } })
       } catch (e: any) { console.error("img stream failed:", e?.message || e); return new Response("Not found", { status: 404 }) }
     }
     if (req.method === "GET" && path === "/sitemap.xml") {
