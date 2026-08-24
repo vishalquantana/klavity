@@ -9,7 +9,8 @@ process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 process.env.KLAV_SECRET = Buffer.from("autosims-resume-test-32bytesecret!").toString("base64")
 
-const { reconnectDb, applySchema, migrateV2 } = await import("./db")
+const DB = await import("./db")
+const { reconnectDb, applySchema, migrateV2 } = DB
 beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
 
 import type { AuthorModel } from "./trails-author-model"
@@ -403,4 +404,30 @@ describe("KLA-270 listStalledAuthorSessions — resumable partial drafts", () =>
     const list = await listStalledAuthorSessions(proj)
     expect(list.map(x => x.id)).toEqual([newer, older])
   })
+})
+
+// KLA-557 — engine-level Snap plan gate. runAuthorNow must refuse a Snap-locked project BEFORE it
+// creates the author session / acquires the slot / launches the browser — the single enforcement
+// point that keeps a snap-locked project from bypassing the 402 Snap gate via any non-HTTP caller
+// (MCP start_authored_run, and any future engine caller). Mirrors runWalkNow's snap-lock check.
+test("runAuthorNow refuses to launch an authoring drive for a Snap-locked project (bypass guard)", async () => {
+  const lockedProjId = `proj_snaplock_author_${Date.now()}`
+  await DB.db!.execute({
+    sql: `INSERT OR IGNORE INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at)
+          VALUES (?, 'acct_author_test', ?, 'active', 'auto', 200, 'named', ?, ?)`,
+    args: [lockedProjId, `Project ${lockedProjId}`, Date.now(), Date.now()],
+  })
+  await DB.setProjectPlanOverride(lockedProjId, "snap")
+
+  // Spy author fn proves the drive is NEVER launched — the guard short-circuits before authorTrail.
+  let authorCalled = false
+  const spyAuthor: any = async () => { authorCalled = true; return { status: "crystallized" } }
+
+  await expect(
+    runAuthorNow(lockedProjId, { name: "obj", objective: "do a thing on the page", baseUrl: FIXTURE_URL } as any,
+      { author: spyAuthor }),
+  ).rejects.toThrow("snap-locked")
+  expect(authorCalled).toBe(false)
+  // No author session row was ever created — the guard fires before createAuthorSession.
+  expect(await listStalledAuthorSessions(lockedProjId)).toHaveLength(0)
 })

@@ -14,6 +14,7 @@ import { withWalkSlot, withAuthorSlot, CHROMIUM_PROD_ARGS, setCurrentAuthorSessi
 import { startLiveWatchRun, publishLiveWatchFrame, endLiveWatchRun } from "./trails-live-watch"
 import { acquireBrowser, type BrowserHandle } from "./trails-browser-page"
 import { db, projectById, touchAuthorHeartbeat } from "./db"
+import { projectEntitlement } from "./entitlement"
 import { uploadScreenshotMeta } from "./s3"
 import type { AuthorModel, AuthorAction, ObjectiveVerifier, ObjectiveVerificationResult } from "./trails-author-model"
 import { ModelCallError, openRouterObjectiveVerifier } from "./trails-author-model"
@@ -1018,6 +1019,14 @@ export async function runAuthorNow(
   req: AuthorRequest,
   deps?: { model?: AuthorModel; author?: typeof authorTrail; resumeSessionId?: string },
 ): Promise<{ sessionId: string }> {
+  // Snap-only project gating: a locked project must never launch an authoring drive — covers the
+  // MCP start_authored_run tool, the REST authored-runs route, and any future non-HTTP caller. This
+  // is the single engine-level enforcement point (mirrors runWalkNow's snap-lock check) so the Snap
+  // plan gate can't be bypassed by calling the engine directly and burning AI spend. Throw BEFORE
+  // creating the author session / acquiring the slot / launching the browser.
+  const authorProj = await projectById(projectId)
+  if (projectEntitlement(authorProj?.planOverride).snapOnly) throw new Error("trail is snap-locked")
+
   const { openRouterAuthorModel } = await import("./trails-author-model")
   const model = deps?.model ?? openRouterAuthorModel
   const author = deps?.author ?? authorTrail
