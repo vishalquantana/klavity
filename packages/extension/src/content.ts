@@ -175,7 +175,9 @@ let modalCtrl: ModalController | null = null
 // (PX4 #411/#425: Title field / issue-type chips / file attachments) parsed from the
 // SAME raw modalConfig.composer the widget reads — so the composer is at parity across
 // the widget + extension for any project that opted in.
-const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: false }
+// video-upload: file attachments DEFAULT-ON (opt-out) even when config is missing/unreachable — mirrors
+// parseComposerOpts + the widget so the "Attach file" button shows on every project by default.
+const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
 async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts }> {
   try {
     const proj = klavMatchProject(location.href)

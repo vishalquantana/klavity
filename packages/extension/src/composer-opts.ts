@@ -19,11 +19,13 @@ const KNOWN_KINDS: IssueKind[] = ['bug', 'feature', 'task', 'query']
 // labels are length-capped, and an empty/invalid list falls back to the classic Bug/Feature toggle. Kept
 // as a pure function (no chrome/DOM refs) so it is unit-testable and identical to the widget's logic.
 export function parseComposerOpts(modalConfig: any): ExtComposerOpts {
-  const out: ExtComposerOpts = { showTitleField: false, allowFileAttachments: false }
+  // video-upload: file attachments (incl. video) are DEFAULT-ON for every project (opt-out, not opt-in),
+  // matching the widget. Only an EXPLICIT composer.fileAttach:false / allowFileAttachments:false disables it.
+  const out: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
   const composer = (modalConfig && typeof modalConfig === 'object' && typeof modalConfig.composer === 'object' && modalConfig.composer) || null
   if (!composer) return out
   out.showTitleField = composer.title === true || composer.showTitleField === true
-  out.allowFileAttachments = composer.fileAttach === true || composer.allowFileAttachments === true
+  out.allowFileAttachments = !(composer.fileAttach === false || composer.allowFileAttachments === false)
   if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
     const cleaned = composer.issueTypes
       .filter((t: any) => t && typeof t.value === 'string' && (KNOWN_KINDS as string[]).includes(t.value))

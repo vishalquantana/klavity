@@ -4,9 +4,11 @@ import { parseComposerOpts } from './composer-opts'
 // PX4 #411/#425: the extension parses modalConfig.composer identically to the widget
 // (packages/sdk/src/widget.ts) so the enhanced composer is at parity across both surfaces.
 describe('parseComposerOpts (ext↔widget composer parity)', () => {
-  it('defaults everything off for empty / missing / malformed config', () => {
+  it('defaults Title off, but file attachments ON, for empty / missing / malformed config', () => {
+    // video-upload: allowFileAttachments is DEFAULT-ON now (opt-out), so the "Attach file" button (incl.
+    // video) shows on every project unless it explicitly opts out.
     for (const c of [undefined, null, {}, { composer: null }, { composer: 'nope' }, { composer: 42 }]) {
-      expect(parseComposerOpts(c as any)).toEqual({ showTitleField: false, allowFileAttachments: false })
+      expect(parseComposerOpts(c as any)).toEqual({ showTitleField: false, allowFileAttachments: true })
     }
   })
 
@@ -16,10 +18,14 @@ describe('parseComposerOpts (ext↔widget composer parity)', () => {
     expect(parseComposerOpts({ composer: { title: false } }).showTitleField).toBe(false)
   })
 
-  it('enables file attachments via either alias (fileAttach / allowFileAttachments)', () => {
+  it('keeps file attachments ON by default and only an EXPLICIT false disables them', () => {
+    // Default-on: no key, or a truthy alias, both leave attachments enabled.
+    expect(parseComposerOpts({ composer: {} }).allowFileAttachments).toBe(true)
     expect(parseComposerOpts({ composer: { fileAttach: true } }).allowFileAttachments).toBe(true)
     expect(parseComposerOpts({ composer: { allowFileAttachments: true } }).allowFileAttachments).toBe(true)
-    expect(parseComposerOpts({ composer: {} }).allowFileAttachments).toBe(false)
+    // Explicit opt-out via either alias.
+    expect(parseComposerOpts({ composer: { fileAttach: false } }).allowFileAttachments).toBe(false)
+    expect(parseComposerOpts({ composer: { allowFileAttachments: false } }).allowFileAttachments).toBe(false)
   })
 
   it('passes through the four valid issue types with labels', () => {

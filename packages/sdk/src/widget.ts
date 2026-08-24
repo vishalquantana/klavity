@@ -534,7 +534,10 @@ async function mount() {
   // PX4 #411/#425: enhanced-composer opts (per-project, from modalConfig.composer). All default OFF, so a
   // project that hasn't opted in renders the classic Bug/Feature composer with no Title field / file uploads.
   let composerShowTitle = false
-  let composerFileAttach = false
+  // video-upload: file attachments (incl. video) are DEFAULT-ON for every project now (opt-out, not opt-in).
+  // A project turns it off only by explicitly setting composer.fileAttach:false / allowFileAttachments:false.
+  // No config / a failed config fetch → the "Attach file" button shows.
+  let composerFileAttach = true
   // KLAVITYKLA-438 "Record me": DEFAULT-ON for every project (opt-out, not opt-in). Only takes effect where
   // the browser can screen-record (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the
   // Sharp-capture support envelope. A project turns it OFF only by explicitly setting composer.record:false
@@ -594,7 +597,8 @@ async function mount() {
       const composer = (modalConfig && typeof modalConfig.composer === 'object' && modalConfig.composer) || null
       if (composer) {
         composerShowTitle = composer.title === true || composer.showTitleField === true
-        composerFileAttach = composer.fileAttach === true || composer.allowFileAttachments === true
+        // DEFAULT-ON (opt-out): only an EXPLICIT false disables the "Attach file" affordance.
+        composerFileAttach = !(composer.fileAttach === false || composer.allowFileAttachments === false)
         // "Record me" (KLAVITYKLA-438): DEFAULT-ON — only an EXPLICIT record:false / allowRecording:false
         // turns it off. Still gated on browser screen-capture support (recordingSupported()).
         composerRecord = resolveComposerRecord(composer, recordingSupported())

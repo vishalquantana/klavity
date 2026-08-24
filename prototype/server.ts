@@ -4142,13 +4142,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // (fired after the insert below) can transcribe spoken notes inside them and store the transcript
         // in-place by key. Non-video attachments (PDF/log/audio/...) never get the field and are untouched.
         const attachmentDescs: Array<{ key: string; filename: string; contentType: string; size: number; transcript_status?: string }> = []
+        // KLAVITYKLA-480 / video-upload: videos are large, so they get a higher per-file cap than the 8MB
+        // screenshot/doc cap. Mirrors the client (packages/core/src/modal.ts): video/* → ATTACH_VIDEO_MAX_BYTES
+        // (100MB), non-video → SCREENSHOTS.maxBytes (8MB), total → ATTACH_TOTAL_MAX_BYTES (120MB, holds one video).
+        const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+        const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
         let attachTotalBytes = 0
         for (const af of attachFiles) {
           if (af.size <= 0) continue
           if (af.type && af.type.startsWith(SCREENSHOTS.allowedTypePrefix)) continue // images go through the screenshots path
-          if (af.size > SCREENSHOTS.maxBytes) return wjson({ error: `File ${af.name} exceeds ${mbLabel(SCREENSHOTS.maxBytes)}.` }, 400)
+          const isVideo = /^video\//i.test(af.type || "")
+          const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
+          if (af.size > perFileCap) return wjson({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
           attachTotalBytes += af.size
-          if (attachTotalBytes > 25 * 1024 * 1024) return wjson({ error: "Attachments exceed the 25 MB total limit." }, 400)
+          if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return wjson({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
           try {
             const abuf = new Uint8Array(await af.arrayBuffer())
             const up = await uploadAttachment(abuf, af.name || "attachment", af.type || "application/octet-stream")

@@ -313,6 +313,19 @@ export interface ModalController {
   setReplayState: (state: 'attached' | 'unavailable') => void
 }
 
+// video-upload: pure, unit-testable predicates for the "Attach file" ingest path. A video is matched by
+// MIME (video/*) first, then by extension as a fallback for browsers that report an empty file.type.
+export function isVideoFile(file: { type?: string; name?: string }): boolean {
+  return (file.type || '').toLowerCase().startsWith('video/') ||
+    /\.(mp4|m4v|mov|webm|avi|mkv|ogv|3gp)$/i.test(file.name || '')
+}
+
+// The per-file byte cap for a given attachment: videos get the higher `video` cap, everything else the
+// standard `file` cap. Kept pure so ingestAttachments and the tests share one source of truth.
+export function attachmentSizeCap(file: { type?: string; name?: string }, caps: { file: number; video: number }): number {
+  return isVideoFile(file) ? caps.video : caps.file
+}
+
 export function buildModal(
   initialType: ReportType,
   callbacks: ModalCallbacks,
@@ -368,7 +381,12 @@ export function buildModal(
   // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
   const fileAttachEnabled = !!callbacks.allowFileAttachments
   const MAX_FILES = 5
-  const MAX_FILES_TOTAL_BYTES = 25 * 1024 * 1024 // 25 MB across all attached files
+  // KLAVITYKLA-480 / video-upload: videos are large, so they get their own (higher) per-file cap. The
+  // backend attach path (prototype/server.ts) mirrors this: video/* → ATTACH_VIDEO_MAX_BYTES (100MB),
+  // non-video → SCREENSHOT_MAX_BYTES (8MB), total → ATTACH_TOTAL_MAX_BYTES (120MB). Keep these consistent
+  // with the server so nothing that passes here gets 413'd there.
+  const MAX_VIDEO_BYTES = 100 * 1024 * 1024 // 100 MB per video file
+  const MAX_FILES_TOTAL_BYTES = 120 * 1024 * 1024 // 120 MB across all attached files (holds one video)
   let attachedFiles: ReportFileAttachment[] = []
   // KLAVITYKLA-438: "Record me" recordings. Enabled only when the host opted in AND provided onRecord.
   const recordingEnabled = !!(callbacks.allowRecording && callbacks.onRecord)
@@ -891,7 +909,7 @@ export function buildModal(
         ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
         <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
-        ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a non-image file (PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
+        ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a video or file (MP4, PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
         ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
@@ -900,7 +918,7 @@ export function buildModal(
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
-      ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" multiple style="display:none">' : ''}
+      ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" accept="video/*,image/*,.pdf,.log,.har,.txt,.json,.csv,.zip" multiple style="display:none">' : ''}
       <div class="klavity-counter" id="klavity-counter">0/${MAX_IMAGES} images</div>
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
       ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
@@ -1309,7 +1327,9 @@ export function buildModal(
     for (const file of files) {
       if (isImageFile(file)) { await ingestFiles([file]); continue } // route images to the screenshot path
       if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); break }
-      if (file.size > MAX_FILE_BYTES) { showError(`"${file.name}" is too large — files must be under ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`); continue }
+      // Videos are large — give them the higher MAX_VIDEO_BYTES cap; everything else keeps MAX_FILE_BYTES.
+      const perFileCap = attachmentSizeCap(file, { file: MAX_FILE_BYTES, video: MAX_VIDEO_BYTES })
+      if (file.size > perFileCap) { showError(`"${file.name}" is too large — ${isVideoFile(file) ? 'videos' : 'files'} must be under ${Math.round(perFileCap / 1024 / 1024)} MB.`); continue }
       const total = attachedFiles.reduce((n, f) => n + f.size, 0)
       if (total + file.size > MAX_FILES_TOTAL_BYTES) { showError(`Attachments exceed the ${Math.round(MAX_FILES_TOTAL_BYTES / 1024 / 1024)} MB total limit.`); break }
       try {
