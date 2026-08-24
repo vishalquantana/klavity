@@ -1041,7 +1041,9 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
-      onRecord: composerRecord ? (() => recordMe()) : undefined,
+      // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
+      // minimize the composer while recording is ACTIVE and restore it on consent/preview.
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,
       issueTypes: composerIssueTypes,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.

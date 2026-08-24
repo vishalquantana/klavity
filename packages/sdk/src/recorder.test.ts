@@ -259,3 +259,67 @@ describe('recordMe overlay teardown', () => {
     expect(document.querySelector('[data-klavity-ui="recorder"]')).toBeNull()
   })
 })
+
+// KLA-555 (walkthrough mode): the ACTIVE recording phase must NOT block the page — the host goes
+// transparent + pointer-events:none (clicks pass through to the live app) and a compact control docks at
+// bottom-center, while the consent/preview panels keep the centered dim-backdrop modal.
+describe('recordMe walkthrough mode (KLA-555)', () => {
+  const tick = async (n = 3) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)) }
+
+  it('recording phase: host is click-through (no backdrop, pointer-events:none) with a bottom-docked bar and NO screen-preview box', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const phases: string[] = []
+
+    const p = recordMe({ deps, onPhase: (ph) => phases.push(ph) })
+    const host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    // Consent panel: blocking centered modal (dim backdrop, clicks captured).
+    expect(host.style.pointerEvents).not.toBe('none')
+    expect(host.style.background).toContain('rgba(10, 8, 14')
+    expect(phases[0]).toBe('consent')
+
+    ;(host.querySelector('#klr-start') as HTMLButtonElement).click()
+    await tick()
+
+    // Recording panel: non-blocking — transparent host, clicks pass THROUGH to the page.
+    expect(host.style.pointerEvents).toBe('none')
+    expect(host.style.background).toBe('')
+    expect(phases).toContain('recording')
+    // Compact control docked bottom-center, its own pointer-events so Stop/Pause stay clickable.
+    const bar = host.firstElementChild as HTMLElement
+    expect(bar.style.position).toBe('fixed')
+    expect(bar.style.bottom).toBe('24px')
+    expect(bar.style.pointerEvents).toBe('auto')
+    // Stop/pause/timer/meta present; the pointless "screen preview" box is gone.
+    expect(host.querySelector('#klr-stop')).not.toBeNull()
+    expect(host.querySelector('#klr-pause')).not.toBeNull()
+    expect(host.querySelector('#klr-timer')).not.toBeNull()
+    expect(host.querySelector('#klr-meta')).not.toBeNull()
+    expect(host.textContent || '').not.toContain('screen preview')
+
+    // Teardown from the docked bar still stops every track and fires no attach.
+    ;(host.querySelector('#klr-stop') as HTMLButtonElement).click()
+    await tick(10)
+    // Stopping surfaces the preview panel → chrome flips back to the centered modal.
+    expect(phases).toContain('preview')
+    expect(host.style.pointerEvents).not.toBe('none')
+
+    // Dismiss so the promise resolves and the overlay is removed.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p
+    expect(document.querySelector('[data-klavity-ui="recorder"]')).toBeNull()
+  })
+
+  it('onPhase fires consent → recording in order as the panels transition', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const phases: string[] = []
+    const p = recordMe({ deps, onPhase: (ph) => phases.push(ph) })
+    const host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    ;(host.querySelector('#klr-start') as HTMLButtonElement).click()
+    await tick()
+    expect(phases.slice(0, 2)).toEqual(['consent', 'recording'])
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p
+  })
+})

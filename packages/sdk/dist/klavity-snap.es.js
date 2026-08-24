@@ -3035,19 +3035,21 @@ function Rp(e, t, r = {}) {
   }));
   const vr = l.getElementById("klavity-record");
   vr && t.onRecord && vr.addEventListener("click", async () => {
-    if (!Ze) {
-      if (L.length >= C) {
-        Ve(`You can attach up to ${C} recordings.`);
-        return;
-      }
-      ze(!0), vr.classList.add("kl-loading");
-      try {
-        const w = await t.onRecord();
-        w && (L.push(w), Ts(), dt(vr));
-      } catch {
-      } finally {
-        vr.classList.remove("kl-loading"), ze(!1);
-      }
+    if (Ze) return;
+    if (L.length >= C) {
+      Ve(`You can attach up to ${C} recordings.`);
+      return;
+    }
+    ze(!0), vr.classList.add("kl-loading");
+    const w = (E) => {
+      o.style.display = E === "recording" ? "none" : "";
+    };
+    try {
+      const E = await t.onRecord(w);
+      E && (L.push(E), Ts(), dt(vr));
+    } catch {
+    } finally {
+      o.style.display = "", vr.classList.remove("kl-loading"), ze(!1);
     }
   });
   const Pn = l.getElementById("klavity-region");
