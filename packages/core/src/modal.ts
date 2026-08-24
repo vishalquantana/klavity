@@ -2,7 +2,7 @@ import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shap
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
-import { VoiceInput } from './voice-input'
+import { VoiceInput, LiveDictation, pickDictationMode } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit } from './report-clarity'
 import { safeRemove } from './safe-remove'
@@ -236,6 +236,12 @@ export interface ModalCallbacks {
   // Stop bar sits over the live app, not behind a dimmed composer) and restores on any other phase — plus a
   // belt-and-suspenders restore in the click handler's finally when onRecord resolves/rejects.
   onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
+  // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
+  // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
+  // as an audio Blob to this callback, which POSTs it to the STT endpoint (POST /api/voice/transcribe) and
+  // resolves the recognized text. Resolve null on any failure (endpoint down / STT unconfigured / rate-limit)
+  // — the composer transparently falls back to Web Speech. Absent → Voice uses Web Speech exactly as before.
+  onDictate?: (audio: Blob) => Promise<{ text: string } | null>
   // Optional image pre-processor called immediately when a screenshot is added (e.g. PNG→JPEG
   // compression). By submit time the promise is already resolved, so the upload starts with zero
   // compression delay. The host passes compressScreenshot here; the extension omits it (its SW
@@ -413,6 +419,14 @@ export function buildModal(
   let attachedFiles: ReportFileAttachment[] = []
   // KLAVITYKLA-438: "Record me" recordings. Enabled only when the host opted in AND provided onRecord.
   const recordingEnabled = !!(callbacks.allowRecording && callbacks.onRecord)
+  // KLA-505: pick the dictation engine for the Voice button — prefer the server STT endpoint (onDictate +
+  // MediaRecorder) over the flaky Web Speech backend; fall back to Web Speech; else hide the button.
+  const voiceMode = pickDictationMode({
+    hasEndpoint: !!callbacks.onDictate,
+    mediaRecorderSupported: LiveDictation.isSupported(),
+    webSpeechSupported: VoiceInput.isSupported(),
+  })
+  const voiceSupported = voiceMode !== 'none'
   const MAX_RECORDINGS = 2
   let recordings: ReportRecording[] = []
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
@@ -936,7 +950,7 @@ export function buildModal(
         ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
-        ${VoiceInput.isSupported() ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
+        ${voiceSupported ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
       </div>
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
@@ -948,7 +962,7 @@ export function buildModal(
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
-      ${VoiceInput.isSupported() ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
+      ${voiceSupported ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
       ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
         <div class="kl-clr-bar"><i></i><i></i><i></i></div>
         <div class="kl-clr-row"><span>Report clarity</span><span class="kl-clr-st" id="klavity-clarity-status">Needs detail</span></div>
@@ -1764,11 +1778,16 @@ export function buildModal(
 
   const voiceBtn = modal.querySelector('#klavity-voice') as HTMLButtonElement | null
   if (voiceBtn) {
-    const voice = new VoiceInput()
     const CIRCUMFERENCE = 81.68
     const WARN_THRESHOLD_MS = 15000
     const ringProg = voiceBtn.querySelector('.kl-vring-prog') as SVGCircleElement | null
     let rafId = 0, startTime = 0, voiceRecording = false
+
+    // KLA-505: the Voice button drives a dictation ENGINE — either the server STT endpoint (LiveDictation,
+    // preferred) or the Web Speech backend (VoiceInput). Both expose the same callback shape; `voice` is
+    // mutable so a LiveDictation onUnavailable can transparently swap in Web Speech mid-session.
+    interface DictationEngine { start(): void | Promise<void>; stop(): void; onTranscript: (t: string) => void; onStatus: (type: 'retrying' | 'idle', m: string) => void; onError: (type: string, m: string) => void; onStop: () => void; onUnavailable?: () => void }
+    let voice: DictationEngine
 
     const startRing = () => {
       startTime = Date.now()
@@ -1778,7 +1797,7 @@ export function buildModal(
         ringProg?.setAttribute('stroke-dashoffset', String(progress * CIRCUMFERENCE))
         if (elapsed >= 180000 - WARN_THRESHOLD_MS) voiceBtn.classList.add('kl-voice-warn')
         if (elapsed >= 180000) {
-          voice.stop()  // belt-and-suspenders: VoiceInput's own timer also fires at 180s
+          voice.stop()  // belt-and-suspenders: the engine's own timer also fires at 180s
           return
         }
         rafId = requestAnimationFrame(tick)
@@ -1813,33 +1832,62 @@ export function buildModal(
       if (autoHideMs) voiceStatusHideTimer = setTimeout(clearVoiceStatus, autoHideMs)
     }
 
-    voice.onTranscript = (text) => {
-      const existing = desc.value
-      desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
-      refreshSubmit()
+    // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
+    const wire = (engine: DictationEngine) => {
+      engine.onTranscript = (text) => {
+        const existing = desc.value
+        desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+        refreshSubmit()
+      }
+      // Non-alarming reconnect status while an engine auto-retries a transient drop.
+      engine.onStatus = (type, message) => {
+        if (type === 'idle') clearVoiceStatus()
+        else setVoiceStatus('info', message)
+      }
+      engine.onError = (_, message) => {
+        if (!message) return
+        setVoiceStatus('err', message, 4000)
+      }
+      engine.onStop = () => {
+        voiceRecording = false
+        voiceBtn.classList.remove('kl-voice-rec')
+        stopRing()
+      }
     }
 
-    // Non-alarming reconnect status while VoiceInput auto-retries a transient drop.
-    voice.onStatus = (type, message) => {
-      if (type === 'idle') clearVoiceStatus()
-      else setVoiceStatus('info', message)
+    // Build the Web Speech engine (fallback / primary when no server endpoint).
+    const makeWebSpeech = (): DictationEngine => { const v = new VoiceInput(); wire(v); return v }
+
+    // Build the active engine for this session. In 'server' mode we PREFER the STT endpoint and, if it's
+    // unreachable on the first segment, transparently fall back to Web Speech WITHOUT interrupting the ring
+    // or asking the user to click again.
+    const makeEngine = (): DictationEngine => {
+      if (voiceMode === 'server' && callbacks.onDictate) {
+        const d = new LiveDictation({ transcribe: (blob: Blob) => callbacks.onDictate!(blob) })
+        wire(d)
+        d.onUnavailable = () => {
+          if (VoiceInput.isSupported()) {
+            // Endpoint down → seamlessly continue with Web Speech (keep recording + ring running).
+            voice = makeWebSpeech()
+            setVoiceStatus('info', 'Reconnecting dictation…')
+            void voice.start()
+          } else {
+            voiceRecording = false; voiceBtn.classList.remove('kl-voice-rec'); stopRing()
+            setVoiceStatus('err', 'Voice dictation is unavailable right now', 4000)
+          }
+        }
+        return d
+      }
+      return makeWebSpeech()
     }
 
-    voice.onError = (_, message) => {
-      if (!message) return
-      setVoiceStatus('err', message, 4000)
-    }
-
-    voice.onStop = () => {
-      voiceRecording = false
-      voiceBtn.classList.remove('kl-voice-rec')
-      stopRing()
-    }
+    voice = makeEngine()
 
     voiceBtn.addEventListener('click', () => {
       if (!voiceRecording) {
         clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
-        voiceRecording = true; voiceBtn.classList.add('kl-voice-rec'); voice.start(); startRing()
+        voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
+        voiceRecording = true; voiceBtn.classList.add('kl-voice-rec'); void voice.start(); startRing()
       } else {
         voice.stop()
       }

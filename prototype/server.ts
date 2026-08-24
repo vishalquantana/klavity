@@ -123,7 +123,7 @@ import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachL
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { updateFeedbackTitle } from "./lib/db"
-import { transcribeFeedbackRecordings, transcribeFeedbackAttachments } from "./lib/transcribe"
+import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { findKnownIssue } from "./lib/known-issue"
@@ -176,6 +176,13 @@ const CLARITY_MODEL = process.env.KLAV_CLARITY_MODEL || "google/gemini-3.1-flash
 // only consumed by requests that ACTUALLY spend an LLM call. Overridable for ops.
 const CLARITY_PER_PROJECT_DAY = Number(process.env.KLAV_CLARITY_PROJECT_DAILY || 500)
 const CLARITY_PROJECT_WINDOW = 24 * 60 * 60 * 1000
+// KLA-505 — live-dictation STT endpoint (POST /api/voice/transcribe) budget/abuse guards. A voice clip is
+// a few seconds of Opus (tens of KB), so 8MB is a generous hard cap that still bounds cost + memory. The
+// per-IP window and per-project daily cap mirror the clarity route's dual bound (a forged XFF can't buy a
+// fresh per-project budget). All overridable for ops.
+const VOICE_TRANSCRIBE_MAX_BYTES = Number(process.env.KLAV_VOICE_MAX_BYTES || 8 * 1024 * 1024)
+const VOICE_TRANSCRIBE_PER_IP = Number(process.env.KLAV_VOICE_PER_IP || 30)
+const VOICE_TRANSCRIBE_PER_PROJECT_DAY = Number(process.env.KLAV_VOICE_PROJECT_DAILY || 1000)
 const PORT = Number(process.env.PORT || 4317)
 const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
   .replace("klavity.quantana.top", "klavity.in")
@@ -3094,6 +3101,74 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         } catch { /* best-effort — heuristic still returns below */ }
       }
       return wjson({ score: h.score, coverage: h.coverage, level: h.level, tip })
+    }
+
+    // ── KLA-505: POST /api/voice/transcribe — server-side LIVE DICTATION for the composer Voice button.
+    // The browser Web Speech API (webkitSpeechRecognition) drops with 'network' errors on injected-widget
+    // contexts; this replaces it with a real STT pass. The composer records a short mic clip via
+    // MediaRecorder and POSTs the audio here as multipart/form-data (an `audio` file part + `projectId`);
+    // we run it through the SHARED transcribe.ts STT core (same OpenRouter model reused for uploaded-video
+    // transcription, KLA-480) and return the recognized text as JSON. The client inserts it into the
+    // description, and falls back to Web Speech if this endpoint is unavailable.
+    //
+    // Auth mirrors the composer-facing /api/report/clarity route exactly: anonymous + CORS-gated (wjson),
+    // project-scoped (a real project must exist), rate-limited per IP AND per project, and every real STT
+    // call is logged to the ai_calls cost ledger via recordAiCall. Cost guards: a hard multipart size cap
+    // (rejected BEFORE buffering the body) + the transcribe core's own 20MB byte cap ('skipped', no spend).
+    if (req.method === "POST" && path === "/api/voice/transcribe") {
+      const ip = clientIp(req, server)
+      // Per-IP abuse cap (short clips, several per minute is plenty for dictation).
+      if (!rlAllow(`voice:ip:${ip}`, VOICE_TRANSCRIBE_PER_IP, 60_000)) return wjson({ error: "rate limited" }, 429)
+      // Size guard BEFORE req.formData() buffers the whole body into memory (DoS + cost cap). Reject an
+      // over-large upload up front with 413. Voice clips are a few seconds of Opus → well under this.
+      const declaredLen = Number(req.headers.get("content-length") || 0)
+      if (declaredLen > VOICE_TRANSCRIBE_MAX_BYTES + 64 * 1024) return wjson({ error: "payload too large" }, 413)
+
+      let form: FormData
+      try { form = await req.formData() } catch { return wjson({ error: "expected multipart form" }, 400) }
+      const projectId = String(form.get("projectId") || form.get("project") || "")
+      if (!projectId) return wjson({ error: "project required" }, 400)
+      const proj = db ? await projectById(projectId) : null
+      if (!proj) return wjson({ error: "not found" }, 404)
+
+      const audio = form.get("audio")
+      if (!(audio instanceof Blob) || audio.size === 0) return wjson({ error: "audio required" }, 400)
+      if (audio.size > VOICE_TRANSCRIBE_MAX_BYTES) return wjson({ error: "payload too large" }, 413)
+
+      // No STT key configured → tell the client so it transparently falls back to Web Speech (501, not 500).
+      if (!transcribeConfigured()) return wjson({ error: "dictation unavailable", fallback: true }, 501)
+
+      // Per-project daily cap (in ADDITION to the per-IP window). Keyed on projectId so a forged/rotated
+      // X-Forwarded-For can't buy a fresh budget. Rejected WITHOUT an STT call when over budget.
+      if (!rlAllow(`voice:proj:${projectId}`, VOICE_TRANSCRIBE_PER_PROJECT_DAY, 24 * 60 * 60_000)) {
+        return wjson({ error: "daily voice limit reached" }, 429)
+      }
+
+      const contentType = (audio as any).type || form.get("mime") || "audio/webm"
+      const bytes = new Uint8Array(await audio.arrayBuffer())
+      let outcome
+      try {
+        outcome = await transcribeAudioBytes(bytes, String(contentType))
+      } catch (e: any) {
+        console.warn("[voice] transcribe failed (non-fatal):", e?.message || e)
+        outcome = { status: "failed" as const, reason: "unexpected-error" }
+      }
+
+      // Cost ledger — a 'skipped' (over-cap) clip made NO upstream call, so no row (mirrors transcribe.ts).
+      if (outcome.status !== "skipped") {
+        await recordAiCall({
+          type: "transcribe",
+          model: TRANSCRIBE_MODEL,
+          projectId,
+          feature: "voice-dictation",
+          costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
+          ok: outcome.status === "done",
+        }).catch(() => null)
+      }
+
+      if (outcome.status === "done") return wjson({ text: outcome.result.text })
+      if (outcome.status === "skipped") return wjson({ error: outcome.reason, text: "" }, 413)
+      return wjson({ error: "transcription failed", reason: outcome.reason, text: "" }, 502)
     }
 
     // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──

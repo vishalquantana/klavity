@@ -1044,6 +1044,23 @@ async function mount() {
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
       onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,
+      // KLA-505: server-side live dictation for the Voice button (replaces the flaky Web Speech backend).
+      // The composer records a short mic clip and hands each audio Blob here; we POST it to the STT endpoint
+      // (POST /api/voice/transcribe, multipart: audio + projectId) and resolve the recognized text. On ANY
+      // failure (endpoint down / STT unconfigured [501] / rate-limited [429] / network) resolve null so the
+      // composer transparently falls back to Web Speech. Best-effort — never throws into the composer.
+      onDictate: async (audio: Blob) => {
+        try {
+          const fd = new FormData()
+          fd.append('projectId', cfg.projectId)
+          fd.append('audio', audio, 'dictation.webm')
+          if (audio.type) fd.append('mime', audio.type)
+          const res = await fetchWithTimeout(cfg.backendUrl + '/api/voice/transcribe', { method: 'POST', body: fd })
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && typeof data.text === 'string') ? { text: data.text } : null
+        } catch { return null }
+      },
       issueTypes: composerIssueTypes,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.

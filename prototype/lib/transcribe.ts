@@ -17,7 +17,9 @@ import { setRecordingTranscript, setFeedbackAttachmentTranscript, recordAiCall }
 export const TRANSCRIBE_MODEL =
   process.env.KLAV_TRANSCRIBE_MODEL || "nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b"
 
-const ENDPOINT = "https://openrouter.ai/api/v1/audio/transcriptions"
+// Overridable at deploy (and pointed at a local stand-in by the route integration test) without a code
+// change. Defaults to OpenRouter's audio-transcription endpoint.
+const ENDPOINT = process.env.KLAV_TRANSCRIBE_ENDPOINT || "https://openrouter.ai/api/v1/audio/transcriptions"
 
 export type TranscriptSegment = { start: number; end: number; text: string }
 export type TranscriptJson = { text: string; segments: TranscriptSegment[] | null }
@@ -99,8 +101,7 @@ function fileMetaFor(ct: string): { mime: string; ext: string } {
 // PX4 #471: the S3 bytes stream to OpenRouter as multipart/form-data (a `file` field). We do NOT
 // base64-encode the whole file into a JSON body (that ~doubles memory and blows the request-size cap).
 export async function transcribeRecording(s3Key: string, contentType: string): Promise<TranscribeOutcome> {
-  const key = apiKey()
-  if (!key) return { status: "failed", reason: "no-api-key" }
+  if (!apiKey()) return { status: "failed", reason: "no-api-key" }
 
   let bytes: Uint8Array
   let ct = contentType
@@ -113,14 +114,33 @@ export async function transcribeRecording(s3Key: string, contentType: string): P
     return { status: "failed", reason: "fetch-bytes-failed" }
   }
 
+  return transcribeAudioBytes(bytes, ct)
+}
+
+// KLA-505: transcribe RAW audio bytes already in memory (no S3 round-trip). This is the shared STT core —
+// transcribeRecording fetches from S3 then calls here, and the live-dictation route (POST /api/voice/
+// transcribe) hands the reporter's just-recorded MediaRecorder blob straight in. Same resilience contract:
+// NEVER throws, and returns the #471 discriminated outcome ('skipped' over-cap → no POST; 'failed' on
+// missing key / non-2xx / timeout / empty; 'done' with a parsed transcript). `contentType` is the blob's
+// MIME (e.g. audio/webm, video/mp4) — mapped to the endpoint's format hint. `language` defaults to en.
+export async function transcribeAudioBytes(
+  bytes: Uint8Array,
+  contentType: string,
+  opts: { language?: string } = {},
+): Promise<TranscribeOutcome> {
+  const key = apiKey()
+  if (!key) return { status: "failed", reason: "no-api-key" }
+
   // Payload cap FIRST — before any encode/allocation. An over-cap clip is intentionally not sent.
   if (bytes.byteLength > TRANSCRIBE_MAX_BYTES) {
     const mb = (bytes.byteLength / (1024 * 1024)).toFixed(1)
     const capMb = (TRANSCRIBE_MAX_BYTES / (1024 * 1024)).toFixed(0)
-    console.warn(`[transcribe] recording ${mb}MB exceeds ${capMb}MB cap — skipping STT (no POST)`)
-    return { status: "skipped", reason: `Recording too large to transcribe (${mb}MB > ${capMb}MB limit).` }
+    console.warn(`[transcribe] audio ${mb}MB exceeds ${capMb}MB cap — skipping STT (no POST)`)
+    return { status: "skipped", reason: `Audio too large to transcribe (${mb}MB > ${capMb}MB limit).` }
   }
 
+  const ct = contentType
+  const language = opts.language || "en"
   const format = audioFormatFor(ct)
   const { mime, ext } = fileMetaFor(ct)
 
@@ -133,7 +153,7 @@ export async function transcribeRecording(s3Key: string, contentType: string): P
     // Copy into a fresh ArrayBuffer-backed Blob (Uint8Array over a shared/oversized buffer is fine here).
     form.append("file", new Blob([bytes], { type: mime }), `recording.${ext}`)
     form.append("model", TRANSCRIBE_MODEL)
-    form.append("language", "en")
+    form.append("language", language)
     // Ask for timestamped segments; models that don't support it fall back to plain `text`, which
     // parseTranscribeResponse still handles (segments simply come back null).
     form.append("response_format", "verbose_json")

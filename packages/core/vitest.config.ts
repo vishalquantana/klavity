@@ -6,6 +6,7 @@ export default defineConfig({
     environmentMatchGlobs: [
       ['tests/modal.test.ts', 'jsdom'],
       ['tests/voice-input.test.ts', 'jsdom'],
+      ['tests/voice-dictation.test.ts', 'jsdom'],
       ['../../site/kit.icon.test.mjs', 'jsdom'],
       ['../../site/attr.test.mjs', 'jsdom'],
       ['../../site/bug-check-xss.test.mjs', 'jsdom'],
