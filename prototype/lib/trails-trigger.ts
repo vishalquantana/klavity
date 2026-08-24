@@ -9,6 +9,7 @@
 // Vision (Tier-2) is OFF in realWalk; a flagged Trail (the regression demo) opts in via a custom
 // deps.walk that calls walkTrail with a vision resolver.
 import { withWalkSlot, WalkBusyError, CHROMIUM_PROD_ARGS, setCurrentWalkRunId, getCurrentWalkAbortSignal } from "./trails-browser"
+import { ToolError } from "./mcp/tool-error"
 import { getTrail, startWalk, finishWalk, getWalk } from "./trails"
 import { walkTrail } from "./trails-runner"
 import type { Verdict } from "./trails-types"
@@ -51,13 +52,13 @@ export async function runWalkNow(
   deps?: { walk?: WalkFn; trigger?: "manual" | "scheduled"; environmentName?: string | null },
 ): Promise<{ runId: string }> {
   const trail = await getTrail(projectId, trailId)
-  if (!trail) throw new Error("trail not found")
-  if (trail.status === "paused") throw new Error("trail is paused")
+  if (!trail) throw new ToolError("trail not found")
+  if (trail.status === "paused") throw new ToolError("trail is paused")
   // Snap-only project gating: a locked project's Trails must never launch a walk — covers the
   // manual-trigger HTTP route AND the scheduler loop (both call runWalkNow), so this is the single
   // enforcement point that keeps a Snap-locked project from burning AI spend via AutoSim.
   const walkProj = await projectById(projectId)
-  if (projectEntitlement(walkProj?.planOverride).snapOnly) throw new Error("trail is snap-locked")
+  if (projectEntitlement(walkProj?.planOverride).snapOnly) throw new ToolError("trail is snap-locked")
 
   const trigger = deps?.trigger ?? "manual"
   const environmentName = deps?.environmentName ?? null

@@ -6,6 +6,11 @@ import { runAuthorNow, getAuthorSession } from "../trails-author"
 import { getWalk, listRecentWalks } from "../trails"
 import { buildV1RunStatus, buildV1Report } from "../v1-runs"
 import { buildAuthoredRunStatus } from "../v1-authored"
+import { ToolError } from "./tool-error"
+
+// Re-export so existing importers of tools.ts keep working; canonical definition lives in tool-error.ts
+// (a dependency-free leaf) so the AutoSim engine can throw ToolError too without an import cycle.
+export { ToolError }
 
 export interface McpToolCtx { projectId: string }
 export interface McpTool {
@@ -19,8 +24,8 @@ export interface McpTool {
 // throws BEFORE any I/O, so a cross-project call never touches the DB or engine.
 function requireProject(args: any, ctx: McpToolCtx): string {
   const p = String(args?.project_id || "")
-  if (!p) throw new Error("project_id is required")
-  if (p !== ctx.projectId) throw new Error("project_id does not match the authenticated token's project")
+  if (!p) throw new ToolError("project_id is required")
+  if (p !== ctx.projectId) throw new ToolError("project_id does not match the authenticated token's project")
   return p
 }
 
@@ -33,7 +38,7 @@ export const MCP_TOOLS: McpTool[] = [
     async handler(args, ctx) {
       const project = requireProject(args, ctx)
       const trailId = String(args.trail_id || "")
-      if (!trailId) throw new Error("trail_id is required")
+      if (!trailId) throw new ToolError("trail_id is required")
       const { runId } = await runWalkNow(project, trailId)
       return { run_id: runId, status: "queued" }
     },
@@ -47,8 +52,8 @@ export const MCP_TOOLS: McpTool[] = [
       const project = requireProject(args, ctx)
       const objective = String(args.objective || "").trim()
       const baseUrl = String(args.target_url || "").trim()
-      if (objective.length < 10) throw new Error("objective must be at least 10 chars")
-      if (!/^https?:\/\//i.test(baseUrl)) throw new Error("target_url must be an http(s) URL")
+      if (objective.length < 10) throw new ToolError("objective must be at least 10 chars")
+      if (!/^https?:\/\//i.test(baseUrl)) throw new ToolError("target_url must be an http(s) URL")
       const { sessionId } = await runAuthorNow(project, { name: objective.slice(0, 80), objective, baseUrl } as any)
       return { authored_run_id: sessionId, status: "authoring" }
     },
@@ -61,7 +66,7 @@ export const MCP_TOOLS: McpTool[] = [
     async handler(args, ctx) {
       const project = requireProject(args, ctx)
       const walk = await getWalk(project, String(args.run_id || ""))
-      if (!walk) throw new Error("unknown run_id")
+      if (!walk) throw new ToolError("unknown run_id")
       return await buildV1RunStatus(project, walk, null)
     },
   },
@@ -73,7 +78,7 @@ export const MCP_TOOLS: McpTool[] = [
     async handler(args, ctx) {
       const project = requireProject(args, ctx)
       const walk = await getWalk(project, String(args.run_id || ""))
-      if (!walk) throw new Error("unknown run_id")
+      if (!walk) throw new ToolError("unknown run_id")
       return await buildV1Report(project, walk, { baseUrl: "", cursor: args.cursor ?? null })
     },
   },
@@ -85,7 +90,7 @@ export const MCP_TOOLS: McpTool[] = [
     async handler(args, ctx) {
       const project = requireProject(args, ctx)
       const s = await getAuthorSession(project, String(args.authored_run_id || ""))
-      if (!s) throw new Error("unknown authored_run_id")
+      if (!s) throw new ToolError("unknown authored_run_id")
       return buildAuthoredRunStatus(s)
     },
   },

@@ -2,6 +2,7 @@
 // before any DB/engine work), so nothing here launches a browser/LLM drive.
 import { test, expect } from "bun:test"
 import { handleMcpMessage } from "./rpc"
+import { MCP_TOOLS } from "./tools"
 
 const ctx = { projectId: "proj_me" }
 
@@ -36,6 +37,35 @@ test("tools/call surfaces a handler error as isError content, not a thrown excep
     params: { name: "get_qa_run", arguments: { project_id: "proj_other", run_id: "x" } } }, ctx)
   expect(r.result.isError).toBe(true)
   expect(r.result.content[0].type).toBe("text")
+})
+
+test("EXPECTED ToolError (cross-project project_id) is surfaced verbatim, not opaque-ified", async () => {
+  const r: any = await handleMcpMessage({ jsonrpc: "2.0", id: 6, method: "tools/call",
+    params: { name: "get_qa_run", arguments: { project_id: "proj_other", run_id: "x" } } }, ctx)
+  expect(r.result.isError).toBe(true)
+  const text = r.result.content[0].text
+  // The helpful IDOR-guard message reaches the caller; no opaque ref is emitted.
+  expect(text).toMatch(/project_id does not match/)
+  expect(text).not.toMatch(/internal error \(ref:/)
+})
+
+test("UNEXPECTED internal error (raw DB failure) is opaque-ified with a ref, never echoed", async () => {
+  // Inject a handler that throws a raw internal error the way a DB/driver outage would.
+  const tool = MCP_TOOLS.find(t => t.name === "get_qa_run")!
+  const original = tool.handler
+  tool.handler = async () => { throw new Error("DB connection refused at 10.0.0.5:5432") }
+  try {
+    const r: any = await handleMcpMessage({ jsonrpc: "2.0", id: 7, method: "tools/call",
+      params: { name: "get_qa_run", arguments: { project_id: "proj_me", run_id: "x" } } }, ctx)
+    expect(r.result.isError).toBe(true)
+    const text = r.result.content[0].text
+    expect(text).toMatch(/^internal error \(ref: [0-9a-f]{8}\)$/)
+    // The raw internal text must NOT leak to the external AI agent.
+    expect(text).not.toMatch(/DB connection refused/)
+    expect(text).not.toMatch(/10\.0\.0\.5/)
+  } finally {
+    tool.handler = original
+  }
 })
 
 test("unknown method → -32601", async () => {

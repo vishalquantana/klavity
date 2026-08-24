@@ -6,6 +6,7 @@
 // resolved at fill time and never logged (history/trajectory keep the placeholder).
 import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
 import { deleteTrail, setTrailStatus } from "./trails"
+import { ToolError } from "./mcp/tool-error"
 import { walkTrail } from "./trails-runner"
 import { hasCredRef, resolveCredRefs, type CredResolver } from "./trails-creds"
 import { getTestAccountByName } from "./test-accounts"
@@ -1025,7 +1026,7 @@ export async function runAuthorNow(
   // plan gate can't be bypassed by calling the engine directly and burning AI spend. Throw BEFORE
   // creating the author session / acquiring the slot / launching the browser.
   const authorProj = await projectById(projectId)
-  if (projectEntitlement(authorProj?.planOverride).snapOnly) throw new Error("trail is snap-locked")
+  if (projectEntitlement(authorProj?.planOverride).snapOnly) throw new ToolError("trail is snap-locked")
 
   const { openRouterAuthorModel } = await import("./trails-author-model")
   const model = deps?.model ?? openRouterAuthorModel
