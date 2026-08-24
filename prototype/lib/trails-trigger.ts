@@ -41,6 +41,30 @@ async function defaultPriorWalkCount(projectId: string): Promise<number> {
   }
 }
 
+/**
+ * KLA-547: emit `first_autosim` when this walk is the project's FIRST (priorWalkCount === 0).
+ *
+ * MUST be called with a count captured BEFORE startWalk inserts the current run's row — otherwise
+ * a genuine first walk counts itself (>=1) and the milestone can never fire. Exported so the gate
+ * is unit-testable without touching trails/db singletons. Never throws; an analytics failure must
+ * not reach the walk slot or the caller's response path.
+ */
+export async function maybeEmitFirstAutosim(
+  projectId: string,
+  runId: string,
+  trigger: "manual" | "scheduled",
+  priorWalkCount: number,
+): Promise<void> {
+  if (priorWalkCount !== 0) return
+  try {
+    await trackMilestone(sharedDb, {
+      milestone: "first_autosim",
+      projectId,
+      props: { trigger, sim_run_id: runId },
+    })
+  } catch { /* non-fatal by contract */ }
+}
+
 // Default real walk: drive the Trail's own baseUrl with prod-safe Chromium + replay capture, ADOPTING
 // the pre-created runId so everything lands on the caller's runId. Tier-2 vision self-heal is enabled
 // when OpenRouter is configured (and KLAV_AUTOSIM_VISION_SELFHEAL is not set to 0); the resolver itself
@@ -88,6 +112,12 @@ export async function runWalkNow(
   const trigger = deps?.trigger ?? "manual"
   const environmentName = deps?.environmentName ?? null
 
+  // KLA-547: count PRIOR trail_runs rows BEFORE startWalk inserts this run's row — after the insert
+  // a genuine first walk would already see itself (count >= 1) and the milestone could never fire.
+  // A rejected read resolves to 1, which fails closed inside maybeEmitFirstAutosim (no fire) rather
+  // than risking a false fire on a later walk.
+  const priorWalkCount = await (deps?.priorWalkCount?.(projectId) ?? defaultPriorWalkCount(projectId)).catch(() => 1)
+
   // A deferred we resolve the instant the Walk row exists, so the caller gets a real runId while the
   // background walk keeps running and HOLDING the slot until it finalizes.
   let resolveStarted!: (runId: string) => void
@@ -107,22 +137,11 @@ export async function runWalkNow(
     }
     setCurrentWalkRunId(runId)
     resolveStarted(runId)
-    // KLA-547: first-AutoSim milestone, gated the same way the server gates first_sim_run — count the
-    // project's PRIOR trail_runs rows BEFORE/while this run exists; 0 ⇒ this project's very first
-    // walk. This is THE choke point every walk passes through (dashboard button + scheduled cron),
-    // so neither trigger can be missed and a second walk can never re-fire. Fire-and-forget + fully
-    // swallowed: an analytics hiccup must not touch the walk slot or the caller's response path.
-    void (async () => {
-      try {
-        const countPrior = deps?.priorWalkCount ?? defaultPriorWalkCount
-        if ((await countPrior(projectId)) !== 0) return
-        await trackMilestone(sharedDb, {
-          milestone: "first_autosim",
-          projectId,
-          props: { trigger, sim_run_id: runId },
-        })
-      } catch { /* non-fatal by contract */ }
-    })()
+    // KLA-547: first-AutoSim milestone. This is THE choke point every walk passes through (dashboard
+    // button + scheduled cron), gated on the pre-insert prior-walk count captured above, so neither
+    // trigger can be missed and a second walk can never re-fire. Fire-and-forget + fully swallowed:
+    // an analytics hiccup must not touch the walk slot or the caller's response path.
+    void maybeEmitFirstAutosim(projectId, runId, trigger, priorWalkCount)
     const walk = deps?.walk ?? realWalk
     try {
       const { verdict, llmCalls, summary } = await walk(projectId, trailId, runId)

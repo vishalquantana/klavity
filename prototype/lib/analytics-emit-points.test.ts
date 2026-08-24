@@ -4,9 +4,10 @@
 // EMIT SITES behave: each server-side milestone fires exactly once per real occurrence, gated on
 // durable "first?" state, and never on failure paths. Where a gate is inline in server.ts, we
 // mirror its exact guard shape here (the same pattern posthog.test.ts uses for first_bug_filed);
-// where the emit lives in an injectable lib (runWalkNow), we drive it directly.
-import { describe, expect, test } from "bun:test"
-import { runWalkNow, type WalkFn } from "./trails-trigger"
+// where the emit lives in an injectable lib (maybeEmitFirstAutosim), we drive the real code.
+import { describe, expect, test, afterEach } from "bun:test"
+import { maybeEmitFirstAutosim } from "./trails-trigger"
+import type { Client } from "@libsql/client"
 
 // ── widget_installed gate (mirrors the /api/widget/ping handler's guard) ──────
 
@@ -96,62 +97,76 @@ describe("upgrade emit point", () => {
   })
 })
 
-// ── first_autosim — driven through the REAL runWalkNow choke point ────────────
-// runWalkNow is fully injectable (walk fn + slot + DB), so we can drive it hermetically. We stub
-// the trails/db modules it pulls via module mocking of the shared db client is NOT needed because
-// we pass deps.priorWalkCount; but getTrail/projectById hit the shared db singleton. To stay
-// hermetic we exercise the emit closure through a focused harness that replicates runWalkNow's
-// exact inline logic? No — better: drive runWalkNow for real and stub at the boundary modules.
+// ── first_autosim — driven through the REAL exported emit helper ───────────────
+// runWalkNow captures the prior-walk count BEFORE startWalk inserts the current run's row and hands
+// it to maybeEmitFirstAutosim. These tests drive the real helper end to end: PostHog via mocked
+// fetch, and the funnel_events leg against a REAL isolated SQLite DB via useIsolatedDb (the same
+// harness growth-scorecard.test.ts uses) — so we prove the actual INSERT lands, not just that SQL
+// was shaped correctly.
+import { useIsolatedDb } from "./test-db-isolation"
 
-// The walk slot + trail lookups live in other modules; importing them initializes the shared db
-// lazily (db is `null` until initDb runs), which is safe. startWalk/getTrail would throw without
-// a database, so instead we verify the GATE + PROPS contract directly against the exported
-// internals that runWalkNow composes:
+const { getClient } = useIsolatedDb("klav-analytics-emit")
 
-describe("first_autosim emit contract (as wired inside runWalkNow)", () => {
-  test("gate: priorWalkCount 0 ⇒ milestone props carry trigger + sim_run_id; non-zero ⇒ silent", async () => {
-    // Replicates runWalkNow's inline emit closure verbatim (see trails-trigger.ts) so the test
-    // pins BOTH the gate and the property bag.
-    let captured: { milestone?: string; props?: Record<string, unknown> } | null = null
-    const trackMilestoneStub = async (_db: unknown, params: any) => {
-      captured = { milestone: params.milestone, props: params.props }
-    }
+let lastFetchBody: Record<string, unknown> | null = null
+let fetchCallCount = 0
+const originalFetch = global.fetch
 
-    const emitClosure = async (
-      projectId: string,
-      runId: string,
-      trigger: "manual" | "scheduled",
-      priorWalkCount: (pid: string) => Promise<number>,
-    ) => {
-      try {
-        if ((await priorWalkCount(projectId)) !== 0) return
-        await trackMilestoneStub(null, { milestone: "first_autosim", projectId, props: { trigger, sim_run_id: runId } })
-      } catch { /* non-fatal by contract */ }
-    }
-
-    await emitClosure("p1", "run_1", "manual", async () => 0)
-    expect(captured!.milestone).toBe("first_autosim")
-    expect(captured!.props).toEqual({ trigger: "manual", sim_run_id: "run_1" })
-
-    captured = null
-    await emitClosure("p1", "run_2", "scheduled", async () => 3)
-    expect(captured).toBeNull()
-
-    // A throwing counter fails closed — no event, no throw out of the closure.
-    captured = null
-    await expect(
-      emitClosure("p1", "run_3", "manual", async () => { throw new Error("db down") }),
-    ).resolves.toBeUndefined()
-    expect(captured).toBeNull()
-  })
+afterEach(() => {
+  global.fetch = originalFetch
+  lastFetchBody = null
+  fetchCallCount = 0
+  delete process.env.KLAV_POSTHOG_KEY
 })
 
-// Sanity: the injectable seam still exists and accepts a stubbed walk (guards against someone
-// removing the deps.priorWalkCount / deps.walk plumbing this ticket relies on).
-describe("runWalkNow surface", () => {
-  test("accepts an injected walk fn + trigger (signature this ticket depends on)", async () => {
-    const stubWalk: WalkFn = async () => ({ verdict: "green" as const, llmCalls: 0 })
-    // Unknown trail throws BEFORE any slot/analytics work — proves our call reaches the real path.
-    await expect(runWalkNow("proj_missing", "trail_missing", { walk: stubWalk })).rejects.toThrow()
+function mockFetchCapture(): void {
+  global.fetch = (async (_u: unknown, opts?: RequestInit) => {
+    fetchCallCount++
+    try { lastFetchBody = JSON.parse(String(opts?.body ?? "{}")) } catch { lastFetchBody = null }
+    return new Response("{}", { status: 200 })
+  }) as typeof fetch
+}
+
+describe("first_autosim emit point (real maybeEmitFirstAutosim)", () => {
+  test("first walk (prior count 0) ⇒ funnel_events row + PostHog mirror with trigger + sim_run_id", async () => {
+    process.env.KLAV_POSTHOG_KEY = "phc_testkey"
+    mockFetchCapture()
+
+    await maybeEmitFirstAutosim("proj_1", "run_abc", "manual", 0)
+
+    // PostHog leg: unaliased name + the property bag the taxonomy promises.
+    expect(fetchCallCount).toBe(1)
+    expect(lastFetchBody!.event).toBe("first_autosim")
+    expect(lastFetchBody!.distinct_id).toBe("server") // no email/account/anonId for project-scoped emits
+    expect((lastFetchBody!.properties as any).project_id).toBe("proj_1")
+    expect((lastFetchBody!.properties as any).trigger).toBe("manual")
+    expect((lastFetchBody!.properties as any).sim_run_id).toBe("run_abc")
+
+    // Funnel leg: the canonical taxonomy row REALLY persisted (isolated SQLite). project_id lives
+    // in props_json — funnel_events has no dedicated project_id column.
+    const c = getClient()
+    const r = await c.execute({ sql: "SELECT event, props_json FROM funnel_events WHERE event='first_autosim'", args: [] })
+    expect(r.rows.length).toBe(1)
+    const props = JSON.parse(String((r.rows[0] as any).props_json ?? "{}"))
+    expect(props.project_id).toBe("proj_1")
+    expect(props.trigger).toBe("manual")
+    expect(props.sim_run_id).toBe("run_abc")
+  })
+
+  test("non-first walks are silent for BOTH trigger variants (no re-fire)", async () => {
+    process.env.KLAV_POSTHOG_KEY = "phc_testkey"
+    global.fetch = (async () => { fetchCallCount++; return new Response("{}", { status: 200 }) }) as typeof fetch
+    const c = getClient()
+    const before = await c.execute({ sql: "SELECT COUNT(*) AS n FROM funnel_events WHERE event='first_autosim'", args: [] })
+    await maybeEmitFirstAutosim("p", "r1", "scheduled", 1)
+    await maybeEmitFirstAutosim("p", "r2", "manual", 7)
+    expect(fetchCallCount).toBe(0)
+    const after = await c.execute({ sql: "SELECT COUNT(*) AS n FROM funnel_events WHERE event='first_autosim'", args: [] })
+    expect(Number((after.rows[0] as any).n)).toBe(Number((before.rows[0] as any).n))
+  })
+
+  test("a PostHog outage is swallowed — never reaches the walk slot or caller", async () => {
+    process.env.KLAV_POSTHOG_KEY = "phc_testkey"
+    global.fetch = (async () => { throw new Error("posthog down") }) as unknown as typeof fetch
+    await expect(maybeEmitFirstAutosim("p", "r", "manual", 0)).resolves.toBeUndefined()
   })
 })
