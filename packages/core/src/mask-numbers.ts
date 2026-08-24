@@ -1,3 +1,5 @@
+import { safeRemove } from './safe-remove'
+
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA'])
 
 interface SavedText { parent: Node; original: Text; replacements: Node[] }
@@ -37,7 +39,9 @@ export function maskNumbers(root: Element): () => void {
       }
       return document.createTextNode(part)
     })
-    parent.removeChild(textNode)
+    // KLA-560: route through safeRemove so a page that poisons Node.prototype.removeChild can't throw
+    // mid-capture (same hardening as everywhere else). Identical behavior on a clean page.
+    safeRemove(textNode)
     for (const r of replacements) parent.insertBefore(r, anchor)
     savedTexts.push({ parent, original: textNode, replacements })
   }
@@ -55,7 +59,7 @@ export function maskNumbers(root: Element): () => void {
       const first = replacements[0]
       if (first?.parentNode === parent) {
         parent.insertBefore(original, first)
-        for (const r of replacements) if (r.parentNode === parent) parent.removeChild(r)
+        for (const r of replacements) if (r.parentNode === parent) safeRemove(r)
       }
     }
     for (const { el, original } of savedInputs) {

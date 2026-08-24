@@ -93,6 +93,41 @@ describe('maskNumbers', () => {
     expect(root.querySelectorAll('span').length).toBe(0)
     restore()
   })
+
+  // KLA-560 (item 7): a hostile page can poison Node.prototype.removeChild. maskNumbers now routes its
+  // removals through safeRemove, which swallows the poisoned throw — so mask + restore complete instead
+  // of aborting the whole capture handler mid-flight (the real harm). Removal fidelity is best-effort
+  // under active poisoning; the load-bearing guarantee is: NEVER throw.
+  it('survives a poisoned Node.prototype.removeChild (mask + restore never throw)', () => {
+    const originalRemoveChild = Node.prototype.removeChild
+    try {
+      // A broken polyfill with no null guard — throws whenever it is invoked.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(Node.prototype as any).removeChild = function (this: any) { throw new TypeError('poisoned removeChild') }
+
+      const root = make('<p>Total: 999</p>')
+      cleanup.push(root)
+
+      let restore!: () => void
+      expect(() => { restore = maskNumbers(root) }).not.toThrow()   // capture path completes, no crash
+      expect(root.querySelectorAll('span').length).toBeGreaterThan(0)  // masking spans were inserted
+      expect(() => restore()).not.toThrow()                         // restore path also survives
+    } finally {
+      Node.prototype.removeChild = originalRemoveChild
+    }
+  })
+
+  // Clean-page behavior must be IDENTICAL after routing through safeRemove (regression guard for item 7).
+  it('still fully restores on a clean page (safeRemove == removeChild when unpoisoned)', () => {
+    const root = make('<p>Amount: 4242</p>')
+    cleanup.push(root)
+    const original = root.textContent
+    const restore = maskNumbers(root)
+    expect(root.querySelectorAll('span').length).toBeGreaterThan(0)
+    restore()
+    expect(root.textContent).toBe(original)
+    expect(root.querySelectorAll('span').length).toBe(0)   // replacements fully removed
+  })
 })
 
 import { resolveModalConfig } from './modal-theme'
