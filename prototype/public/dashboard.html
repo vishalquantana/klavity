@@ -3155,22 +3155,37 @@ function retickAgo() {
 })()
 
 // KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
+// P1 deep-link loop fix: this must auto-open the deep-linked ticket EXACTLY ONCE per page load.
+// It is called from load() AND from refreshAll() — and refreshAll() runs on the KLA-510 dashboard
+// liveness ~25s poll AND on every window-focus / tab-visible. With the ?ticket= param still in the
+// URL, every poll/focus re-invocation re-opened the ticket, yanking the user back from Settings/etc
+// every ~25s (and on focus) — the loop the user saw. openSingleTicket() re-writes ?ticket= into the
+// URL on each render (_renderSingleTicket), so merely stripping the param here does NOT hold; the
+// one-shot guard below is the load-bearing fix. setView() clears the param when the user leaves the
+// ticket view so a later reload can't drag them back either.
+let _deepLinkTicketConsumed = false   // set once we commit to auto-opening the deep-linked ticket this page load
 function maybeOpenDeepLinkTicket() {
   try {
+    if (_deepLinkTicketConsumed) return   // already auto-opened this page load — never re-open on poll/focus refresh
     const ticketId = new URLSearchParams(location.search).get("ticket")
     if (!ticketId) return
     // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
     const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
     if (t) {
+      _deepLinkTicketConsumed = true      // commit BEFORE opening so a concurrent poll can't double-open
       openSingleTicket(ticketId)
     } else {
       // Ticket not in state.tickets (may be loaded via separate /api/projects/:id/tickets call)
       // Fetch it and inject into state so openSingleTicket can find it
       const pid = state.active && state.active.id
       if (!pid) return
+      _deepLinkTicketConsumed = true      // commit NOW: a concurrent poll won't fire a second fetch, and a slow
+                                          // fetch resolving after the user navigated away won't re-enter here
       fetch("/api/feedback/" + encodeURIComponent(ticketId), { credentials: "include" })
         .then(r => r.ok ? r.json() : null).then(d => {
           if (!d || !d.report) return
+          // If the user has clicked away to another view while we fetched, do NOT yank them back.
+          if (window.__klavDeepLinkNavAway) return
           const report = d.report
           if (!state.tickets) state.tickets = []
           if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
@@ -10048,7 +10063,14 @@ load()
     sidebarNavs().forEach(function(b){b.classList.toggle('active',b.getAttribute('data-go')===v);});
     if(typeof applyViewHeader==='function')applyViewHeader(v);   // KLAVITYKLA-514: per-view page title
     if(typeof applyUpgradeWall==='function')applyUpgradeWall();
-    try{history.replaceState(null,'',v==='overview'?(location.pathname+location.search):('#'+v));}catch(e){}
+    // P1 deep-link loop fix: strip the ?ticket= deep-link param whenever the user leaves the tickets
+    // view. openSingleTicket() keeps re-writing ?ticket= into the URL, so without this a later reload
+    // (or the ~25s liveness poll on a fresh load) would drag the user back into that ticket.
+    try{
+      var _u=new URL(location.href);
+      if(v!=='tickets')_u.searchParams.delete('ticket');
+      history.replaceState(null,'',v==='overview'?(_u.pathname+_u.search):(_u.pathname+_u.search+'#'+v));
+    }catch(e){}
     window.scrollTo(0,0);
     if(v==='triage'){if(typeof renderTriage==='function')renderTriage();}
     if(v==='recurring'){if(typeof renderRecurringIssues==='function')renderRecurringIssues();}
@@ -10074,7 +10096,11 @@ load()
     side.addEventListener('click',function(e){
       var b=e.target&&e.target.closest?e.target.closest('.nv[data-go]'):null;
       if(!b||!side.contains(b))return;
-      setView(b.getAttribute('data-go'));
+      var _go=b.getAttribute('data-go');
+      // P1 deep-link loop fix: a user-driven nav to any non-tickets view marks the deep-link as
+      // "left" so a still-in-flight deep-link ticket fetch can't yank them back after they clicked away.
+      if(_go!=='tickets')window.__klavDeepLinkNavAway=true;
+      setView(_go);
     });
   }
   window.setView=setView;
