@@ -4,6 +4,7 @@ import {
   scoreReportClarity,
   shouldFetchClarityTip,
   shouldNudgeOnSubmit,
+  suppressesAutoCapturedAsk,
   VAGUE_PHRASES,
 } from '../src/report-clarity'
 
@@ -106,5 +107,34 @@ describe('shouldNudgeOnSubmit — soft pre-submit nudge', () => {
   })
   it('does not nudge a good/great report', () => {
     expect(shouldNudgeOnSubmit("The coupon SAVE10 doesn't apply on mobile cart - I tap Apply, nothing happens")).toBe(false)
+  })
+})
+
+// KLAVITYKLA-492: the widget ALREADY auto-captures the page URL, screenshot(s), browser/UA and screen
+// size on every report — so a coach tip ASKING for any of those must be suppressed, never rendered.
+describe('suppressesAutoCapturedAsk — tips never ask for already-captured fields (KLAVITYKLA-492)', () => {
+  it('suppresses asks for screenshots', () => {
+    expect(suppressesAutoCapturedAsk('Could you attach a screenshot of what you see?')).toBe(true)
+    expect(suppressesAutoCapturedAsk('Please take a screen grab of the error.')).toBe(true)
+  })
+  it('suppresses asks for the page URL / link', () => {
+    expect(suppressesAutoCapturedAsk('What is the URL where this happens?')).toBe(true)
+    expect(suppressesAutoCapturedAsk('Can you share a link to the page?')).toBe(true)
+    expect(suppressesAutoCapturedAsk('Which web address shows the bug?')).toBe(true)
+  })
+  it('suppresses asks for browser / user agent', () => {
+    expect(suppressesAutoCapturedAsk('Which browser and version are you using?')).toBe(true)
+    expect(suppressesAutoCapturedAsk('Please paste your user agent string.')).toBe(true)
+  })
+  it('suppresses asks for OS / screen or window size', () => {
+    expect(suppressesAutoCapturedAsk('What operating system are you on?')).toBe(true)
+    expect(suppressesAutoCapturedAsk("What's your screen size?")).toBe(true)
+    expect(suppressesAutoCapturedAsk('Tell me your window size / resolution.')).toBe(true)
+  })
+  it('lets genuinely-useful tips through', () => {
+    expect(suppressesAutoCapturedAsk('What did you expect to happen instead?')).toBe(false)
+    expect(suppressesAutoCapturedAsk('What is the exact step where it fails?')).toBe(false)
+    expect(suppressesAutoCapturedAsk("Try re-entering the coupon code SAVE10 — does the total update?")).toBe(false)
+    expect(suppressesAutoCapturedAsk('')).toBe(false)
   })
 })

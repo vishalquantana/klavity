@@ -130,3 +130,31 @@ export function shouldNudgeOnSubmit(text: string): boolean {
   if (t.length === 0) return false
   return scoreReportClarity(t).level === 'needs'
 }
+
+// ── KLAVITYKLA-492: never let a coach tip ASK the reporter for something Klavity already captures ────
+// The widget auto-captures the page URL, screenshot(s), and the reporter's browser/UA + screen size on
+// EVERY report, and (since the context-forwarding half of this ticket) the server prompt already tells
+// the coach LLM to never request them. But prompts drift — a stale model can still emit "please attach a
+// screenshot of your browser settings at https://…". This is the client-side backstop: a tip that asks
+// for an auto-captured field is suppressed instead of rendered. Pure + deterministic + unit-testable.
+
+/** Substrings (lowercase) whose presence means the tip is asking for data Klavity attaches automatically. */
+const AUTO_CAPTURED_ASKS: string[] = [
+  'screenshot', 'screen shot', 'screengrab', 'screen grab', 'snip',
+  'url', 'link to the page', 'page link', 'web address', 'address bar',
+  'browser name', 'browser version', 'which browser', 'what browser', 'your browser',
+  'user agent', 'user-agent',
+  'operating system', 'os version', 'which os', 'what os',
+  'device type', 'screen size', 'window size', 'viewport size', 'resolution',
+]
+
+/**
+ * Whether a clarity TIP is asking the reporter for anything Klavity has ALREADY captured automatically
+ * (page URL / screenshot / browser+UA / OS / screen or window size). Such a tip wastes the reporter's
+ * time — it must be suppressed, not shown. Deterministic; used by the composer before rendering a tip.
+ */
+export function suppressesAutoCapturedAsk(tip: string): boolean {
+  const t = (tip || '').toLowerCase()
+  if (!t) return false
+  return AUTO_CAPTURED_ASKS.some((ask) => t.includes(ask))
+}

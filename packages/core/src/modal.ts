@@ -4,7 +4,7 @@ import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, pickDictationMode } from './voice-input'
 import { maskNumbers } from './mask-numbers'
-import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit } from './report-clarity'
+import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
 
@@ -1676,6 +1676,10 @@ export function buildModal(
     const hideTip = () => { if (tipEl) tipEl.hidden = true }
     const renderTip = (tip: string) => {
       if (!tipEl || !tipTextEl) return
+      // KLAVITYKLA-492: the widget already captures the page URL / screenshots / browser+UA / screen size
+      // on every report — a coach tip that ASKS the reporter for any of them is wasted time. The server
+      // prompt forbids it, but this client-side backstop guarantees a drifting tip is suppressed.
+      if (suppressesAutoCapturedAsk(tip)) return
       tipTextEl.innerHTML = escHtml(tip) + '<span class="kl-clr-aitag">AI</span>'
       tipEl.hidden = false
     }
