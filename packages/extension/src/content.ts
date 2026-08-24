@@ -167,6 +167,12 @@ function buildContext(): SubmitReportPayload['context'] {
 // region/snippet capture, paste-image, and the auto-close success card for free,
 // and there is ONE composer across the widget + extension.
 let modalCtrl: ModalController | null = null
+// KLA-517 TOCTOU guard: `if (modalCtrl) return` checks a slot that is only FILLED after two awaits
+// (fetchModalConfig → buildModal), so two rapid triggers (context-menu click + keyboard shortcut, or
+// double-fire) both pass the check during that window and mount stacked composers. This boolean is the
+// synchronous half of the guard: it is flipped BEFORE any await, so a re-entrant call bails immediately.
+// Cleared exactly where modalCtrl is cleared (composer close/teardown) so a normal re-open still works.
+let _composerOpening = false
 
 // Resolve the active project's per-project appearance config (best-effort). Mirrors
 // the SDK widget's GET /api/projects/:id/config call. Falls back to the default
@@ -204,23 +210,35 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
 // dock, navigate anywhere, "+ Capture here" on each page, then Resume and file ONE report with the trail.
 // Feature requests stay single-page (parity with the widget). If chrome.storage is unavailable the bug
 // path transparently falls back to a plain single-page composer, so nothing ever breaks.
-async function openModal(type: ReportType, initialShot?: { dataUrl: string; quality?: CaptureQuality }) {
-  if (modalCtrl) return // guard against double-open
-  if (!isContextValid()) {
-    showToast('Extension reloaded. Please refresh the page.')
-    return
+// (Exported solely so content-openmodal.test.ts can drive it directly.)
+export async function openModal(type: ReportType, initialShot?: { dataUrl: string; quality?: CaptureQuality }) {
+  if (_composerOpening || modalCtrl) return // KLA-517: sync guard first — no await may run before this
+  _composerOpening = true // claim the open synchronously (BEFORE any await) to close the TOCTOU window
+  try {
+    if (!isContextValid()) {
+      showToast('Extension reloaded. Please refresh the page.')
+      return
+    }
+    // Both paths land in openComposer (below), which does NOT re-claim — the claim above already covers
+    // the whole open, including the awaits inside fetchModalConfig/buildModal.
+    if (type === 'bug') { await startBugReport(initialShot); return }
+    await openComposer(type, { initialShot })
+  } finally {
+    // Happy path: modalCtrl is set → KEEP the flag held (it now means "a composer is open/in-flight");
+    // the composer's onClose clears both. Only clear here when nothing mounted (bail/error/throw), so a
+    // failed open can't wedge the guard closed forever.
+    if (!modalCtrl) _composerOpening = false
   }
-  if (type === 'bug') { await startBugReport(initialShot); return }
-  await openComposer(type, { initialShot })
 }
 
 // Open the shared composer. In session mode (`session` set) it wires the minimize/dock + evidence hooks and
 // seeds any already-captured shots; otherwise it's the classic single-page composer.
+// KLA-517: callers MUST already hold the _composerOpening claim (openModal / openComposerClaimed do).
+// This function deliberately does NOT re-claim: it IS the tail of an already-claimed open.
 async function openComposer(
   type: ReportType,
   opts: { initialShot?: { dataUrl: string; quality?: CaptureQuality }; session?: ExtEvidenceSession } = {},
 ) {
-  if (modalCtrl) return
   const { config, composer } = await fetchModalConfig()
   const session = opts.session ?? null
   const seedShots = session ? session.shots.slice() : []
@@ -259,6 +277,7 @@ async function openComposer(
     // dock so it isn't lost — but reaps an EMPTY session so an unused open never lingers.
     onClose: (reason?: 'submitted') => {
       modalCtrl = null
+      _composerOpening = false // KLA-517: teardown clears BOTH guard halves so a fresh open works
       if (!session) return
       if (reason === 'submitted') { evMinimizing = false; return }
       if (evMinimizing) { evMinimizing = false; return } // minimizeToDock already showed the dock
@@ -280,7 +299,9 @@ async function openComposer(
   }
 }
 
-function closeModal() {
+// Programmatic teardown (widget-ready takeover, minimize-to-dock). Exported for tests.
+export function closeModal() {
+  _composerOpening = false // KLA-517: programmatic teardown clears the opening guard too
   modalCtrl?.close()
   modalCtrl = null
 }
@@ -416,7 +437,25 @@ async function resumeEvidence(): Promise<void> {
   try { evSession = await evGetActive(evStorage) } catch { /* keep in-memory copy */ }
   if (!evSession) { hideEvDock(); return }
   hideEvDock()
-  await openComposer('bug', { session: evSession })
+  // KLA-517: the dock Resume button is an independent composer entry point — go through the same
+  // synchronous claim so a Resume racing another trigger can't stack a second composer.
+  await openComposerClaimed('bug', { session: evSession })
+}
+
+// Claim-and-open wrapper for composer entry points OUTSIDE openModal (dock Resume today; any future
+// trigger tomorrow). Same synchronous claim semantics as openModal: flips _composerOpening BEFORE any
+// await, keeps it held while the mounted composer stays open, clears it if nothing mounted.
+async function openComposerClaimed(
+  type: ReportType,
+  opts: { initialShot?: { dataUrl: string; quality?: CaptureQuality }; session?: ExtEvidenceSession } = {},
+) {
+  if (_composerOpening || modalCtrl) return
+  _composerOpening = true
+  try {
+    await openComposer(type, opts)
+  } finally {
+    if (!modalCtrl) _composerOpening = false
+  }
 }
 async function discardEvidence(): Promise<void> {
   const s = evSession
