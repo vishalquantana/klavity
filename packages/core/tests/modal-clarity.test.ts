@@ -108,6 +108,39 @@ describe('report-clarity helper — debounced AI tip (cached, one call per chang
     ctrl.close()
     vi.useRealTimers()
   })
+
+  // KLAVITYKLA-492 (client-side backstop): a coach tip that ASKS for anything Klavity already captures
+  // automatically (screenshot / URL / browser / screen size) is SUPPRESSED — never rendered to the
+  // reporter. Useful tips still render.
+  it('does NOT render a tip that asks for an auto-captured field (screenshot/URL/browser)', async () => {
+    vi.useFakeTimers()
+    const onClarityTip = vi.fn(async (_t: string, _ctx?: { images?: number }) =>
+      ({ tip: 'Could you attach a screenshot and share the URL of the page?' }))
+    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
+    type(ctrl, "the coupon code doesn't apply on mobile cart")
+    await vi.advanceTimersByTimeAsync(1100)
+    // The endpoint WAS called, but its ask-for-context answer never reaches the reporter.
+    expect(onClarityTip).toHaveBeenCalledTimes(1)
+    expect((q(ctrl, '#klavity-clarity-tip') as HTMLElement).hidden).toBe(true)
+    expect((q(ctrl, '#klavity-clarity-tip-text') as HTMLElement).textContent).not.toContain('screenshot')
+    expect((q(ctrl, '#klavity-clarity-tip-text') as HTMLElement).textContent).toBe('')
+    ctrl.close()
+    vi.useRealTimers()
+  })
+
+  it('still renders a genuinely-useful tip (what was expected / repro step)', async () => {
+    vi.useFakeTimers()
+    const onClarityTip = vi.fn(async (_t: string, _ctx?: { images?: number }) =>
+      ({ tip: 'What did you expect to happen instead?' }))
+    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
+    type(ctrl, "the coupon code doesn't apply on mobile cart")
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(onClarityTip).toHaveBeenCalledTimes(1)
+    expect((q(ctrl, '#klavity-clarity-tip') as HTMLElement).hidden).toBe(false)
+    expect((q(ctrl, '#klavity-clarity-tip-text') as HTMLElement).textContent).toContain('expect to happen')
+    ctrl.close()
+    vi.useRealTimers()
+  })
 })
 
 describe('report-clarity helper — Submit is NEVER blocked by clarity (#497)', () => {
