@@ -18,7 +18,13 @@ import {
   evaluateReceivingOracle,
   buildSeededSnap,
 } from "./dogfood-receiving-oracle"
-import { planReceivingAuth, runReceivingDogfood, establishReceivingSession } from "./dogfood-receiving"
+import {
+  planReceivingAuth,
+  runReceivingDogfood,
+  establishReceivingSession,
+  isNonProdBase,
+  assertReceivingBaseAllowed,
+} from "./dogfood-receiving"
 
 // ═════════════════════════════════════════════════════════════════════════════
 // A. PURE UNIT TESTS
@@ -126,6 +132,129 @@ describe("buildSeededSnap", () => {
   })
   test("distinct markers across runs when no runId is given", () => {
     expect(buildSeededSnap().marker).not.toBe(buildSeededSnap().marker)
+  })
+})
+
+// ═════════════════════════════════════════════════════════════════════════════
+// A2. PROD-SAFETY: base guard + routing read-restore-in-finally (KLA-578)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("isNonProdBase / assertReceivingBaseAllowed (prod-base guard)", () => {
+  test("localhost/loopback/staging/test hosts are non-prod (allowed without opt-in)", () => {
+    for (const b of [
+      "http://localhost:3000",
+      "http://127.0.0.1:8080",
+      "http://[::1]:3000",
+      "http://app.local",
+      "https://staging.klavity.in",
+      "https://klavity-dev.example.com",
+      "https://preview.klavity.in",
+    ]) {
+      expect(isNonProdBase(b)).toBe(true)
+    }
+  })
+
+  test("a real/live origin is treated as prod", () => {
+    expect(isNonProdBase("https://klavity.in")).toBe(false)
+    expect(isNonProdBase("https://app.klavity.in")).toBe(false)
+    expect(isNonProdBase("not-a-url")).toBe(false) // unparseable → fail safe (refuse)
+  })
+
+  test("REFUSES a prod base without opt-in, loudly", () => {
+    expect(() => assertReceivingBaseAllowed({ base: "https://klavity.in" })).toThrow(/REFUSING to run against non-test base/)
+  })
+
+  test("allows a prod base WITH explicit opt-in", () => {
+    expect(() => assertReceivingBaseAllowed({ base: "https://klavity.in", allowProdBase: true })).not.toThrow()
+  })
+
+  test("allows a localhost base without opt-in", () => {
+    expect(() => assertReceivingBaseAllowed({ base: "http://localhost:3000" })).not.toThrow()
+  })
+
+  test("runReceivingDogfood refuses a prod base before any IO", async () => {
+    let called = false
+    const fetchImpl = (async () => {
+      called = true
+      return new Response("{}", { status: 200 })
+    }) as unknown as typeof fetch
+    await expect(
+      runReceivingDogfood({ base: "https://klavity.in", sessionCookie: "klav_session=x", projectId: "proj_1", fetchImpl }),
+    ).rejects.toThrow(/REFUSING/)
+    expect(called).toBe(false) // guard fires before touching the network
+  })
+})
+
+describe("routing read-restore-in-finally (KLA-578)", () => {
+  // Mock-fetch harness: records snap-routing GET/POST, serves an original routing, and makes the
+  // feedback submit FAIL so the run throws mid-way — exercising the finally restore path.
+  function makeFetch(opts: { original: "review" | "autofile"; failFeedback: boolean }) {
+    const routingPosts: string[] = []
+    let getCount = 0
+    const fetchImpl = (async (url: string, init?: any) => {
+      const u = String(url)
+      if (u.includes("/snap-routing")) {
+        if (!init || (init.method ?? "GET") === "GET") {
+          getCount++
+          return Response.json({ snapRouting: opts.original, modes: ["autofile", "review"] })
+        }
+        const body = JSON.parse(init.body)
+        routingPosts.push(body.snapRouting)
+        return Response.json({ ok: true, snapRouting: body.snapRouting })
+      }
+      if (u.includes("/api/feedback")) {
+        if (opts.failFeedback) return new Response("boom", { status: 500 })
+        return Response.json({ saved: true, id: "fb_mock" })
+      }
+      if (u.endsWith("/triage") || u.endsWith("/tickets")) {
+        return Response.json({ triage: [{ id: "fb_mock", priority: "high", labels: [] }], tickets: [{ id: "fb_mock" }] })
+      }
+      return Response.json({})
+    }) as unknown as typeof fetch
+    return { fetchImpl, routingPosts, get getCount() { return getCount } }
+  }
+
+  test("reads original routing, flips to review, and RESTORES original even when the run throws", async () => {
+    const m = makeFetch({ original: "autofile", failFeedback: true })
+    await expect(
+      runReceivingDogfood({
+        base: "http://localhost:3000",
+        sessionCookie: "klav_session=x",
+        projectId: "proj_1",
+        fetchImpl: m.fetchImpl,
+      }),
+    ).rejects.toThrow() // feedback submit fails → throws mid-run
+    // Original was read, flipped to 'review', then restored to 'autofile' in the finally.
+    expect(m.getCount).toBe(1)
+    expect(m.routingPosts).toEqual(["review", "autofile"])
+    expect(m.routingPosts[m.routingPosts.length - 1]).toBe("autofile")
+  })
+
+  test("restores on the happy path too (no leftover 'review')", async () => {
+    const m = makeFetch({ original: "autofile", failFeedback: false })
+    const r = await runReceivingDogfood({
+      base: "http://localhost:3000",
+      sessionCookie: "klav_session=x",
+      projectId: "proj_1",
+      fetchImpl: m.fetchImpl,
+      pollTimeoutMs: 500,
+    })
+    expect(r.verdict).toBe("pass")
+    expect(m.routingPosts).toEqual(["review", "autofile"])
+  })
+
+  test("when already 'review', restore is a no-op (nothing changed → no restore POST)", async () => {
+    const m = makeFetch({ original: "review", failFeedback: false })
+    await runReceivingDogfood({
+      base: "http://localhost:3000",
+      sessionCookie: "klav_session=x",
+      projectId: "proj_1",
+      fetchImpl: m.fetchImpl,
+      pollTimeoutMs: 500,
+    })
+    // Flipped review→review is a no-op; we never flipped away from original, so no restore POST fires.
+    // (The set itself is idempotent 'review'; there is exactly one POST and it is not a restore.)
+    expect(m.routingPosts).toEqual(["review"])
   })
 })
 
