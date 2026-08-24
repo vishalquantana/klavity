@@ -51,6 +51,13 @@ export interface ModalConfig {
    * render, Submit fires straight through). Absent/true → shown. The server/admin toggle is a separate pass.
    */
   preSubmitNudge?: boolean
+  /**
+   * KLA-496 (declutter): DEVELOPER-ONLY mode. Default off — submit failures show one friendly line to the
+   * end user (the raw host error text like "submit failed: 500" is internal/debug output). When an embedder
+   * sets debug:true, the raw error message is appended to the error line so a maintainer can see the real
+   * failure without opening the console.
+   */
+  debug?: boolean
 }
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/
@@ -131,6 +138,9 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   // explicit false suppresses it. Preserved verbatim so an absent flag stays absent (defaults to shown).
   if (r.preSubmitNudge === false) out.preSubmitNudge = false
   else if (r.preSubmitNudge === true) out.preSubmitNudge = true
+  // KLA-496: developer-only debug mode (raw error text in the error line). Default OFF; only an explicit
+  // true enables it so no embedder gets internal text by accident.
+  if (r.debug === true) out.debug = true
   // whiteLabel: read from top-level (already-resolved passthrough) or nested agency_branding (stored format).
   const ab = isObj(r.agency_branding) ? (r.agency_branding as Record<string, unknown>) : {}
   if (r.whiteLabel === true || ab.whiteLabel === true) out.whiteLabel = true

@@ -1351,7 +1351,7 @@ const Zd = {
 function Qd(e) {
   return e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function Q(e, t = {}) {
+function ee(e, t = {}) {
   const r = Zd[e];
   if (!r)
     return console.warn("[Klavity] unknown icon: " + e), "";
@@ -1617,7 +1617,7 @@ function El(e) {
   const p = Vn(t.launcherText, 60);
   p && (n.launcherText = p);
   const s = Vr(t.launcherIconColor);
-  s && (n.launcherIconColor = s), typeof t.launcherIcon == "string" && up.includes(t.launcherIcon) && (n.launcherIcon = t.launcherIcon), typeof t.rightClickMode == "string" && dp.includes(t.rightClickMode) && (n.rightClickMode = t.rightClickMode), t.maskNumbers === !0 && (n.maskNumbers = !0), t.reportClarity === !0 ? n.reportClarity = !0 : t.reportClarity === !1 && (n.reportClarity = !1), t.preSubmitNudge === !1 ? n.preSubmitNudge = !1 : t.preSubmitNudge === !0 && (n.preSubmitNudge = !0);
+  s && (n.launcherIconColor = s), typeof t.launcherIcon == "string" && up.includes(t.launcherIcon) && (n.launcherIcon = t.launcherIcon), typeof t.rightClickMode == "string" && dp.includes(t.rightClickMode) && (n.rightClickMode = t.rightClickMode), t.maskNumbers === !0 && (n.maskNumbers = !0), t.reportClarity === !0 ? n.reportClarity = !0 : t.reportClarity === !1 && (n.reportClarity = !1), t.preSubmitNudge === !1 ? n.preSubmitNudge = !1 : t.preSubmitNudge === !0 && (n.preSubmitNudge = !0), t.debug === !0 && (n.debug = !0);
   const h = mo(t.agency_branding) ? t.agency_branding : {};
   (t.whiteLabel === !0 || h.whiteLabel === !0) && (n.whiteLabel = !0);
   const d = Vn(t.projectId, 200);
@@ -2130,7 +2130,7 @@ function zp(e, t, r = {}) {
     }
     return R && (E.selector = R.selector, E.selectorText = R.text), E;
   };
-  let Me = e, Z = 0, ne = null, ve = t.replayState === "attached", he = null, be = !1;
+  let Me = e, Q = 0, ne = null, ve = t.replayState === "attached", he = null, be = !1;
   const ue = 4e3, at = 5e3, _ = {}, ke = {}, Pe = (w) => w ? JSON.parse(JSON.stringify(w)) : null, Ct = (w) => ({
     url: c[w],
     compressed: p[w],
@@ -2536,11 +2536,11 @@ function zp(e, t, r = {}) {
   const q = document.createElement("div");
   q.className = "klavity-modal", q.innerHTML = `
     ${u ? '<button class="klavity-min" id="klavity-min" type="button" aria-label="Minimize" title="Minimize (keeps your evidence)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>' : ""}
-    <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${Q("x", { size: 16 })}</button>
+    <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${ee("x", { size: 16 })}</button>
     <div class="kl-hero" id="klavity-hero">
       <div class="kl-hero-tools" id="klavity-hero-tools"></div>
       <div class="kl-hero-stage" id="klavity-hero-stage">
-        <div class="kl-hero-empty" id="klavity-hero-empty">${Q("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
+        <div class="kl-hero-empty" id="klavity-hero-empty">${ee("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
       </div>
       <div class="klavity-strip" id="klavity-strip"></div>
       ${t.onCaptureSharp ? '<div class="klavity-sharphint" id="klavity-sharphint" role="status" aria-live="polite" hidden></div>' : ""}
@@ -2548,23 +2548,23 @@ function zp(e, t, r = {}) {
     <div class="kl-side" id="klavity-side">
       ${t.showTitleField ? '<label class="klavity-title-label" for="klavity-title">Title<input type="text" class="klavity-title" id="klavity-title" maxlength="200" placeholder="One line summarising the issue"></label>' : ""}
       ${G ? `<div class="klavity-types" id="klavity-types" role="radiogroup" aria-label="Issue type">${G.map((w) => `<button type="button" class="kl-type-chip${w.value === e ? " active" : ""}" data-kind="${vt(w.value)}" role="radio" aria-checked="${w.value === e ? "true" : "false"}">${vt(w.label)}${w.mappingLabel ? `<span class="kl-type-map">${vt(w.mappingLabel)}</span>` : ""}</button>`).join("")}</div>` : `<div class="klavity-toggle">
-        <button class="bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${Q("bug")}</span>Bug</button>
-        <button class="feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${Q("lightbulb")}</span>Feature</button>
+        <button class="bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${ee("bug")}</span>Bug</button>
+        <button class="feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${ee("lightbulb")}</span>Feature</button>
       </div>`}
       
       
       <div class="klavity-actions">
-        ${t.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${Q("app-window")}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ""}
-        <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${Q("camera")}</span><span class="kl-full-label">Full Page</span></button>
-        <button id="klavity-upload"><span class="kl-cap-ic">${Q("image")}</span><span class="kl-upload-label">Upload</span></button>
-        ${x ? `<button id="klavity-attach" title="Attach a video or file (MP4, PDF, .log, .har, ...)"><span class="kl-cap-ic">${Q("paperclip")}</span><span class="kl-attach-label">Attach file</span></button>` : ""}
-        ${k ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${Q("monitor")}</span><span class="kl-record-label">Record me</span></button>` : ""}
-        ${t.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${Q("scissors")}</span><span class="kl-region-label">Region</span></button>` : ""}
-        ${t.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${Q("mouse-pointer-2")}</span><span class="kl-pick-label">Pick element</span></button>` : ""}
-        ${T ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${Q("mic")}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ""}
+        ${t.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${ee("app-window")}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ""}
+        <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${ee("camera")}</span><span class="kl-full-label">Full Page</span></button>
+        <button id="klavity-upload"><span class="kl-cap-ic">${ee("image")}</span><span class="kl-upload-label">Upload</span></button>
+        ${x ? `<button id="klavity-attach" title="Attach a video or file (MP4, PDF, .log, .har, ...)"><span class="kl-cap-ic">${ee("paperclip")}</span><span class="kl-attach-label">Attach file</span></button>` : ""}
+        ${k ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${ee("monitor")}</span><span class="kl-record-label">Record me</span></button>` : ""}
+        ${t.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${ee("scissors")}</span><span class="kl-region-label">Region</span></button>` : ""}
+        ${t.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${ee("mouse-pointer-2")}</span><span class="kl-pick-label">Pick element</span></button>` : ""}
+        ${T ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${ee("mic")}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ""}
       </div>
       ${t.onPickElement ? '<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>' : ""}
-      <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${i ? " checked" : ""}>${Q("eye-off", { size: 13 })}<span>Mask numbers</span></label>
+      <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${i ? " checked" : ""}>${ee("eye-off", { size: 13 })}<span>Mask numbers</span></label>
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
       ${x ? '<input type="file" id="klavity-attach-input" accept="video/*,image/*,.pdf,.log,.har,.txt,.json,.csv,.zip" multiple style="display:none">' : ""}
       <div class="klavity-counter" id="klavity-counter" hidden>0/${m} images</div>
@@ -2572,7 +2572,7 @@ function zp(e, t, r = {}) {
       ${k ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ""}
       <div class="klavity-error" id="klavity-err"></div>
       <textarea class="klavity-desc" id="klavity-desc" placeholder="${e === "feature" ? "Describe the feature you'd like..." : "Describe the bug..."}"></textarea>
-      <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${Q("sparkles", { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${ee("sparkles", { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
       ${T ? '<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>' : ""}
       ${n.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
         <div class="kl-clr-bar"><i></i><i></i><i></i></div>
@@ -2582,7 +2582,7 @@ function zp(e, t, r = {}) {
           <span class="kl-clr-chip" id="klavity-clarity-expected"><span class="kl-clr-mark">○</span> What you expected</span>
           <span class="kl-clr-chip" id="klavity-clarity-repro"><span class="kl-clr-mark">○</span> How to reproduce</span>
         </div>
-        <div class="kl-clr-tip" id="klavity-clarity-tip" hidden><span class="kl-clr-ai">${Q("lightbulb", { size: 14 })}</span><span id="klavity-clarity-tip-text"></span></div>
+        <div class="kl-clr-tip" id="klavity-clarity-tip" hidden><span class="kl-clr-ai">${ee("lightbulb", { size: 14 })}</span><span id="klavity-clarity-tip-text"></span></div>
       </div>` : ""}
       ${t.onCheckKnown ? '<div class="klavity-known" id="klavity-known" role="status" aria-live="polite" hidden></div>' : ""}
       ${t.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ""}
@@ -2606,10 +2606,10 @@ function zp(e, t, r = {}) {
     const E = () => {
       const M = ie.getBoundingClientRect(), I = Math.min(228, window.innerWidth - 16), O = 8, D = window.innerWidth, U = window.innerHeight, B = M.left + M.width / 2 - I / 2, F = Math.max(O, Math.min(B, D - I - O));
       w.style.left = F + "px", w.style.top = "-9999px", w.style.visibility = "hidden", w.style.display = "block";
-      const V = w.offsetHeight;
+      const Y = w.offsetHeight;
       w.style.display = "", w.style.visibility = "";
       let H = M.bottom + 8;
-      H + V + O > U && (H = M.top - V - 8), H = Math.max(O, Math.min(H, U - V - O)), w.style.top = H + "px", w.classList.add("kl-show");
+      H + Y + O > U && (H = M.top - Y - 8), H = Math.max(O, Math.min(H, U - Y - O)), w.style.top = H + "px", w.classList.add("kl-show");
     }, A = () => w.classList.remove("kl-show");
     ie.addEventListener("mouseenter", E), ie.addEventListener("mouseleave", A), ie.addEventListener("focus", E), ie.addEventListener("blur", A);
   }
@@ -2628,19 +2628,19 @@ function zp(e, t, r = {}) {
     const w = l.getElementById("klavity-strip"), E = l.getElementById("klavity-counter");
     if (w.innerHTML = "", c.forEach((A, M) => {
       const I = document.createElement("div");
-      I.className = "klavity-thumb", M === Z && I.classList.add("kl-thumb-active");
+      I.className = "klavity-thumb", M === Q && I.classList.add("kl-thumb-active");
       const O = document.createElement("img");
       O.src = A, O.title = "Click to select + mark up", O.addEventListener("load", () => {
         O.naturalHeight > O.naturalWidth * 1.4 && I.classList.add("kl-tall");
       }, { once: !0 }), O.addEventListener("click", () => {
-        Z = M, $e();
+        Q = M, $e();
       });
       const D = document.createElement("button");
-      D.className = "klavity-rm", D.innerHTML = Q("x", { size: 13 }), D.title = "Remove", D.addEventListener("click", (F) => {
-        var V;
+      D.className = "klavity-rm", D.innerHTML = ee("x", { size: 13 }), D.title = "Remove", D.addEventListener("click", (F) => {
+        var Y;
         F.stopPropagation(), c.splice(M, 1), p.splice(M, 1), s.splice(M, 1), h.splice(M, 1);
         try {
-          (V = t.onShotRemoved) == null || V.call(t, M);
+          (Y = t.onShotRemoved) == null || Y.call(t, M);
         } catch {
         }
         delete $[M];
@@ -2654,15 +2654,15 @@ function zp(e, t, r = {}) {
         c.length === 0 && pt(null), $e();
       });
       const U = document.createElement("button");
-      U.className = "klavity-mk", U.innerHTML = Q("pencil", { size: 13 }), U.title = "Mark up", U.addEventListener("click", (F) => {
+      U.className = "klavity-mk", U.innerHTML = ee("pencil", { size: 13 }), U.title = "Mark up", U.addEventListener("click", (F) => {
         F.stopPropagation(), tu(M);
       }), I.append(O, D, U);
       const B = s[M];
       if (B) {
-        const F = Pp[B], V = document.createElement("span");
-        if (V.className = "klavity-qb kl-q-" + B, V.title = B === "real-pixel" ? "Pixel-perfect capture (every image included)" : B === "wireframe" ? "Wireframe fallback — layout only, images not captured. Retake for a sharp shot." : "Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.", V.innerHTML = Q(F.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + vt(F.label) + "</span>", I.appendChild(V), F.degraded && t.onRetakeSharp) {
+        const F = Pp[B], Y = document.createElement("span");
+        if (Y.className = "klavity-qb kl-q-" + B, Y.title = B === "real-pixel" ? "Pixel-perfect capture (every image included)" : B === "wireframe" ? "Wireframe fallback — layout only, images not captured. Retake for a sharp shot." : "Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.", Y.innerHTML = ee(F.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + vt(F.label) + "</span>", I.appendChild(Y), F.degraded && t.onRetakeSharp) {
           const H = document.createElement("button");
-          H.type = "button", H.className = "klavity-retake", H.innerHTML = Q("zap", { size: 11 }) + "<span>Retake sharp</span>", H.title = "Recapture this shot at full pixel quality", H.addEventListener("click", (j) => {
+          H.type = "button", H.className = "klavity-retake", H.innerHTML = ee("zap", { size: 11 }) + "<span>Retake sharp</span>", H.title = "Recapture this shot at full pixel quality", H.addEventListener("click", (j) => {
             j.stopPropagation(), Hc(M, H);
           }), I.appendChild(H);
         }
@@ -2681,11 +2681,11 @@ function zp(e, t, r = {}) {
   function Ur() {
     const w = l.getElementById("klavity-sharphint");
     if (!w) return;
-    if (c.length > 0 && Z >= 0 && Z < c.length && !!h[Z] && !d && !!t.onCaptureSharp && !Ke) {
+    if (c.length > 0 && Q >= 0 && Q < c.length && !!h[Q] && !d && !!t.onCaptureSharp && !Ke) {
       if (!w.dataset.built) {
         w.dataset.built = "1", w.innerHTML = "";
         const M = document.createElement("span");
-        M.className = "kl-sh-ic", M.innerHTML = Q("triangle-alert", { size: 15 });
+        M.className = "kl-sh-ic", M.innerHTML = ee("triangle-alert", { size: 15 });
         const I = document.createElement("span");
         I.className = "kl-sh-txt", I.textContent = "Some areas didn't capture (cross-origin images render blank) - click Screen for a pixel-perfect shot.";
         const O = document.createElement("button");
@@ -2693,7 +2693,7 @@ function zp(e, t, r = {}) {
           d = !0, Ur(), ie == null || ie.click();
         });
         const D = document.createElement("button");
-        D.type = "button", D.className = "kl-sh-x", D.setAttribute("aria-label", "Dismiss"), D.title = "Dismiss", D.innerHTML = Q("x", { size: 12 }), D.addEventListener("click", () => {
+        D.type = "button", D.className = "kl-sh-x", D.setAttribute("aria-label", "Dismiss"), D.title = "Dismiss", D.innerHTML = ee("x", { size: 12 }), D.addEventListener("click", () => {
           d = !0, Ur();
         }), w.append(M, I, O, D);
       }
@@ -2715,7 +2715,7 @@ function zp(e, t, r = {}) {
       He(`You can attach up to ${m} images.`);
       return;
     }
-    if (_n(), c.push(w), p.push(t.compressImage ? t.compressImage(w) : Promise.resolve(w)), s.push(E), h.push(I && E !== "real-pixel"), M && (Z = c.length - 1), $e(), M)
+    if (_n(), c.push(w), p.push(t.compressImage ? t.compressImage(w) : Promise.resolve(w)), s.push(E), h.push(I && E !== "real-pixel"), M && (Q = c.length - 1), $e(), M)
       try {
         (O = t.onShotAdded) == null || O.call(t, w, E);
       } catch {
@@ -2774,13 +2774,13 @@ function zp(e, t, r = {}) {
       const M = document.createElement("div");
       M.className = "kl-file-chip";
       const I = document.createElement("span");
-      I.className = "kl-file-ic", I.innerHTML = Q("file-text", { size: 14 });
+      I.className = "kl-file-ic", I.innerHTML = ee("file-text", { size: 14 });
       const O = document.createElement("span");
       O.className = "kl-file-nm", O.textContent = E.name, O.title = E.name;
       const D = document.createElement("span");
       D.className = "kl-file-sz", D.textContent = E.size < 1024 ? `${E.size} B` : E.size < 1024 * 1024 ? `${Math.round(E.size / 1024)} KB` : `${(E.size / 1024 / 1024).toFixed(1)} MB`;
       const U = document.createElement("button");
-      U.type = "button", U.className = "kl-file-rm", U.setAttribute("aria-label", `Remove ${E.name}`), U.title = "Remove", U.innerHTML = Q("x", { size: 11 }), U.addEventListener("click", () => {
+      U.type = "button", U.className = "kl-file-rm", U.setAttribute("aria-label", `Remove ${E.name}`), U.title = "Remove", U.innerHTML = ee("x", { size: 11 }), U.addEventListener("click", () => {
         v.splice(A, 1), Ps();
       }), M.append(I, O, D, U), w.appendChild(M);
     }), Et());
@@ -2819,7 +2819,7 @@ function zp(e, t, r = {}) {
       const M = document.createElement("div");
       M.className = "kl-file-chip kl-rec-chip", M.setAttribute("data-kind", "recording");
       const I = document.createElement("span");
-      I.className = "kl-file-ic", I.innerHTML = Q("play", { size: 14 });
+      I.className = "kl-file-ic", I.innerHTML = ee("play", { size: 14 });
       const O = document.createElement("span");
       O.className = "kl-file-nm";
       const D = Math.round(E.durationMs / 1e3), U = `Recording ${Math.floor(D / 60)}:${String(D % 60).padStart(2, "0")}${E.screenOnly ? " (screen only)" : ""}`;
@@ -2827,7 +2827,7 @@ function zp(e, t, r = {}) {
       const B = document.createElement("span");
       B.className = "kl-file-sz", B.textContent = E.bytes < 1024 * 1024 ? `${Math.round(E.bytes / 1024)} KB` : `${(E.bytes / 1024 / 1024).toFixed(1)} MB`;
       const F = document.createElement("button");
-      F.type = "button", F.className = "kl-file-rm", F.setAttribute("aria-label", `Remove ${U}`), F.title = "Remove", F.innerHTML = Q("x", { size: 11 }), F.addEventListener("click", () => {
+      F.type = "button", F.className = "kl-file-rm", F.setAttribute("aria-label", `Remove ${U}`), F.title = "Remove", F.innerHTML = ee("x", { size: 11 }), F.addEventListener("click", () => {
         L.splice(A, 1), $s();
       }), M.append(I, O, B, F), w.appendChild(M);
     }), Et());
@@ -2925,10 +2925,10 @@ function zp(e, t, r = {}) {
     const O = () => {
       w && (w.hidden = !0, w.textContent = "");
     }, D = (B) => {
-      var V;
+      var Y;
       if (!w) return;
       const F = B.headline ? vt(B.headline) : "Already reported";
-      w.innerHTML = `<span class="kl-known-ic">${Q("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${F}</span> — status: <span class="kl-known-status">${vt(B.statusLabel)}</span>. We're already tracking "${vt(B.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, w.hidden = !1, (V = w.querySelector("#klavity-known-dismiss")) == null || V.addEventListener("click", () => {
+      w.innerHTML = `<span class="kl-known-ic">${ee("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${F}</span> — status: <span class="kl-known-status">${vt(B.statusLabel)}</span>. We're already tracking "${vt(B.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, w.hidden = !1, (Y = w.querySelector("#klavity-known-dismiss")) == null || Y.addEventListener("click", () => {
         I = Se.value.trim(), O();
       });
     }, U = async () => {
@@ -2939,13 +2939,13 @@ function zp(e, t, r = {}) {
       }
       const F = ++M;
       try {
-        const V = await E(B);
+        const Y = await E(B);
         if (F !== M) return;
         if (Se.value.trim() === I) {
           O();
           return;
         }
-        V ? D(V) : O();
+        Y ? D(Y) : O();
       } catch {
       }
     };
@@ -2960,34 +2960,34 @@ function zp(e, t, r = {}) {
       repro: q.querySelector("#klavity-clarity-repro")
     }, M = q.querySelector("#klavity-clarity-tip"), I = q.querySelector("#klavity-clarity-tip-text"), O = q.querySelector("#klavity-nudge"), D = t.onClarityTip, U = /* @__PURE__ */ new Map();
     let B = null, F = 0;
-    const V = (ee, Y, oe) => {
-      if (!ee) return;
-      ee.classList.toggle("done", Y);
-      const ge = ee.querySelector(".kl-clr-mark");
-      ge && (ge.innerHTML = Y ? Q("check", { size: 12 }) : "○"), ee.setAttribute("aria-label", (Y ? "covered: " : "missing: ") + oe);
+    const Y = (Z, V, oe) => {
+      if (!Z) return;
+      Z.classList.toggle("done", V);
+      const ge = Z.querySelector(".kl-clr-mark");
+      ge && (ge.innerHTML = V ? ee("check", { size: 12 }) : "○"), Z.setAttribute("aria-label", (V ? "covered: " : "missing: ") + oe);
     }, H = () => {
       M && (M.hidden = !0);
-    }, j = (ee) => {
-      !M || !I || Ip(ee) || (I.innerHTML = vt(ee) + '<span class="kl-clr-aitag">AI</span>', M.hidden = !1);
+    }, j = (Z) => {
+      !M || !I || Ip(Z) || (I.innerHTML = vt(Z) + '<span class="kl-clr-aitag">AI</span>', M.hidden = !1);
     }, K = () => {
-      const ee = Se.value, Y = Rl(ee);
-      w && (w.hidden = ee.trim().length === 0, w.classList.remove("l1", "l2", "l3"), w.classList.add(Y.level === "great" ? "l3" : Y.level === "good" ? "l2" : "l1")), E && (E.textContent = Y.label), V(A.problem, Y.coverage.problem, "What's broken"), V(A.expected, Y.coverage.expected, "What you expected"), V(A.repro, Y.coverage.repro, "How to reproduce"), O && !O.hidden && (O.hidden = !0), Y.level === "great" && H();
+      const Z = Se.value, V = Rl(Z);
+      w && (w.hidden = Z.trim().length === 0, w.classList.remove("l1", "l2", "l3"), w.classList.add(V.level === "great" ? "l3" : V.level === "good" ? "l2" : "l1")), E && (E.textContent = V.label), Y(A.problem, V.coverage.problem, "What's broken"), Y(A.expected, V.coverage.expected, "What you expected"), Y(A.repro, V.coverage.repro, "How to reproduce"), O && !O.hidden && (O.hidden = !0), V.level === "great" && H();
     }, pe = () => {
       !D || !M || (B && clearTimeout(B), B = setTimeout(async () => {
-        const ee = Se.value.trim();
-        if (!Ap(ee)) {
+        const Z = Se.value.trim();
+        if (!Ap(Z)) {
           H();
           return;
         }
-        if (U.has(ee)) {
-          j(U.get(ee));
+        if (U.has(Z)) {
+          j(U.get(Z));
           return;
         }
-        const Y = ++F;
+        const V = ++F;
         try {
-          const oe = await D(ee, { images: c.length });
-          if (Y !== F || Se.value.trim() !== ee) return;
-          oe && oe.tip && (U.set(ee, oe.tip), j(oe.tip));
+          const oe = await D(Z, { images: c.length });
+          if (V !== F || Se.value.trim() !== Z) return;
+          oe && oe.tip && (U.set(Z, oe.tip), j(oe.tip));
         } catch {
         }
       }, 1e3));
@@ -3035,48 +3035,48 @@ function zp(e, t, r = {}) {
     let M = 0, I = 0, O = !1, D;
     const U = () => {
       I = Date.now();
-      const Y = () => {
+      const V = () => {
         const oe = Date.now() - I, ge = Math.min(oe / 18e4, 1);
         if (A == null || A.setAttribute("stroke-dashoffset", String(ge * 81.68)), oe >= 165e3 && Mt.classList.add("kl-voice-warn"), oe >= 18e4) {
           D.stop();
           return;
         }
-        M = requestAnimationFrame(Y);
+        M = requestAnimationFrame(V);
       };
-      M = requestAnimationFrame(Y);
+      M = requestAnimationFrame(V);
     }, B = () => {
       cancelAnimationFrame(M), A == null || A.setAttribute("stroke-dashoffset", String(81.68)), Mt.classList.remove("kl-voice-warn");
     }, F = q.querySelector("#klavity-voice-status");
-    let V = null;
+    let Y = null;
     const H = () => {
-      V && (clearTimeout(V), V = null), F && (F.hidden = !0, F.textContent = "", F.classList.remove("kl-vs-info", "kl-vs-err"));
-    }, j = (Y, oe, ge) => {
-      !F || !oe || (V && (clearTimeout(V), V = null), F.classList.remove("kl-vs-info", "kl-vs-err"), F.classList.add(Y === "err" ? "kl-vs-err" : "kl-vs-info"), F.textContent = oe, F.hidden = !1, ge && (V = setTimeout(H, ge)));
-    }, K = (Y) => {
-      Y.onTranscript = (oe) => {
+      Y && (clearTimeout(Y), Y = null), F && (F.hidden = !0, F.textContent = "", F.classList.remove("kl-vs-info", "kl-vs-err"));
+    }, j = (V, oe, ge) => {
+      !F || !oe || (Y && (clearTimeout(Y), Y = null), F.classList.remove("kl-vs-info", "kl-vs-err"), F.classList.add(V === "err" ? "kl-vs-err" : "kl-vs-info"), F.textContent = oe, F.hidden = !1, ge && (Y = setTimeout(H, ge)));
+    }, K = (V) => {
+      V.onTranscript = (oe) => {
         const ge = Se.value;
         Se.value = ge + (ge.length > 0 && !/\s$/.test(ge) ? " " : "") + oe, Et();
-      }, Y.onStatus = (oe, ge) => {
+      }, V.onStatus = (oe, ge) => {
         oe === "idle" ? H() : j("info", ge);
-      }, Y.onError = (oe, ge) => {
+      }, V.onError = (oe, ge) => {
         ge && j("err", ge, 4e3);
-      }, Y.onStop = () => {
+      }, V.onStop = () => {
         O = !1, Mt.classList.remove("kl-voice-rec"), B();
       };
     }, pe = () => {
-      const Y = new Er();
-      return K(Y), Y;
-    }, ee = () => {
+      const V = new Er();
+      return K(V), V;
+    }, Z = () => {
       if (C === "server" && t.onDictate) {
-        const Y = new ln({ transcribe: (oe) => t.onDictate(oe) });
-        return K(Y), Y.onUnavailable = () => {
+        const V = new ln({ transcribe: (oe) => t.onDictate(oe) });
+        return K(V), V.onUnavailable = () => {
           Er.isSupported() ? (D = pe(), j("info", "Reconnecting dictation…"), D.start()) : (O = !1, Mt.classList.remove("kl-voice-rec"), B(), j("err", "Voice dictation is unavailable right now", 4e3));
-        }, Y;
+        }, V;
       }
       return pe();
     };
-    D = ee(), Mt.addEventListener("click", () => {
-      O ? D.stop() : (H(), D = ee(), O = !0, Mt.classList.add("kl-voice-rec"), D.start(), U());
+    D = Z(), Mt.addEventListener("click", () => {
+      O ? D.stop() : (H(), D = Z(), O = !0, Mt.classList.add("kl-voice-rec"), D.start(), U());
     }), Nt = () => {
       O && D.stop();
     };
@@ -3085,8 +3085,8 @@ function zp(e, t, r = {}) {
     if (Ke || $t.disabled) return;
     const w = Se.value.trim(), E = q.querySelector("#klavity-title"), A = E ? E.value.trim() : "", M = Me === "feature" ? "feature" : "bug", I = p.slice(), O = je(), D = v.slice(), U = L.slice(), B = Me, F = (dt == null ? void 0 : dt.value.trim()) || void 0;
     De(!0), $t.textContent = "Uploading…";
-    const V = l.getElementById("klavity-err");
-    V.style.display = "none";
+    const Y = l.getElementById("klavity-err");
+    Y.style.display = "none";
     const H = l.getElementById("klavity-progress"), j = l.getElementById("klavity-progress-fill");
     H && j && (H.classList.add("show"), j.style.transition = "none", j.style.width = "8%", j.offsetWidth, j.style.transition = "width 10s cubic-bezier(.05,.7,.2,1)", requestAnimationFrame(() => {
       j.style.width = "90%";
@@ -3097,26 +3097,32 @@ function zp(e, t, r = {}) {
       H && j && (H.classList.remove("show"), j.style.transition = "none", j.style.width = "0");
     };
     try {
-      const ee = await Promise.all(I), Y = {
+      const Z = await Promise.all(I), V = {
         type: M,
         ...G ? { kind: B } : {},
         ...A ? { title: A } : {},
         description: w,
-        screenshots: ee,
+        screenshots: Z,
         ...D.length ? { files: D } : {},
         ...U.length ? { recordings: U } : {},
         annotations: O,
         reporterEmail: F
       };
       if (t.backgroundUpload) {
-        t.onSubmit(Y), Jt({ immediate: !0, reason: "submitted" });
+        t.onSubmit(V), Jt({ immediate: !0, reason: "submitted" });
         return;
       }
-      const oe = await t.onSubmit(Y);
+      const oe = await t.onSubmit(V);
       if (be) return;
       K(), t.success ? nu(oe.issueKey, oe.issueUrl, t.success) : ru(oe.issueKey, oe.issueUrl);
-    } catch (ee) {
-      pe(), V.textContent = ee.message, V.style.display = "block", $t.textContent = "Submit", De(!1);
+    } catch (Z) {
+      pe();
+      const V = (Z == null ? void 0 : Z.message) || "Unknown error";
+      try {
+        console.error("[Klavity] submit failed:", Z);
+      } catch {
+      }
+      Y.textContent = n.debug ? `Couldn't submit your report — ${V}` : "Couldn't submit your report. Please check your connection and try again.", Y.style.display = "block", $t.textContent = "Submit", De(!1);
     }
   });
   function Xc(w, E) {
@@ -3295,7 +3301,7 @@ function zp(e, t, r = {}) {
     }
     er.hidden = !1;
     const { text: w } = R, E = w ? `: <span class="kl-pick-txt">${vt(w)}</span>` : "";
-    er.innerHTML = `<span class="kl-pick-ic">${Q("mouse-pointer-2", { size: 13 })}</span><span>Element pinned${E}</span><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`, (A = er.querySelector("#klavity-pick-clear")) == null || A.addEventListener("click", () => {
+    er.innerHTML = `<span class="kl-pick-ic">${ee("mouse-pointer-2", { size: 13 })}</span><span>Element pinned${E}</span><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`, (A = er.querySelector("#klavity-pick-clear")) == null || A.addEventListener("click", () => {
       R = null, js();
     });
   };
@@ -3316,24 +3322,24 @@ function zp(e, t, r = {}) {
   }
   function Zc(w) {
     const E = (M, I, O, D) => `<button type="button" class="kl-htool" data-tool="${M}" title="${I} (${D.toUpperCase()})" aria-label="${I}">${O}<span class="kl-hk">${D.toUpperCase()}</span></button>`, A = (M) => `<button type="button" class="kl-hcolor" data-color="${M}" style="background:${M}" title="${M}" aria-label="Colour ${M}"></button>`;
-    return E("pen", "Pen", Q("pencil", { size: 15 }), "p") + E("line", "Line", Rt('<line x1="5" y1="19" x2="19" y2="5"/>'), "l") + E("rect", "Rectangle", Q("square", { size: 15 }), "r") + E("circle", "Circle", Rt('<circle cx="12" cy="12" r="9"/>'), "o") + E("arrow", "Arrow", Rt('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), "a") + E("text", "Text", Rt('<path d="M5 6h14M12 6v13M9 19h6"/>'), "t") + E("count", "Numbers", Rt('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), "c") + E("crop", "Crop", Rt('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), "k") + '<span class="kl-hsep"></span>' + A("#ef4444") + A("#f97316") + A("#3b82f6") + A("#111827") + // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
+    return E("pen", "Pen", ee("pencil", { size: 15 }), "p") + E("line", "Line", Rt('<line x1="5" y1="19" x2="19" y2="5"/>'), "l") + E("rect", "Rectangle", ee("square", { size: 15 }), "r") + E("circle", "Circle", Rt('<circle cx="12" cy="12" r="9"/>'), "o") + E("arrow", "Arrow", Rt('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), "a") + E("text", "Text", Rt('<path d="M5 6h14M12 6v13M9 19h6"/>'), "t") + E("count", "Numbers", Rt('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), "c") + E("crop", "Crop", Rt('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), "k") + '<span class="kl-hsep"></span>' + A("#ef4444") + A("#f97316") + A("#3b82f6") + A("#111827") + // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
     `<span class="kl-hsep"></span><span class="kl-hlabel">Stroke</span><button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button><button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button><button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button><button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button><span class="kl-htextopts" id="kl-hero-textopts" hidden><span class="kl-hsep"></span><span class="kl-hlabel">Outline</span><button type="button" class="kl-hopt kl-on" data-outline="black" title="Black outline"><span class="kl-osq" style="background:#111"></span></button><button type="button" class="kl-hopt" data-outline="white" title="White outline"><span class="kl-osq" style="background:#fff;border:1px solid #999"></span></button><button type="button" class="kl-hopt" data-outline="none" title="No outline">None</button><span class="kl-hlabel">Size</span><button type="button" class="kl-hopt" data-size="18" title="Small">S</button><button type="button" class="kl-hopt kl-on" data-size="26" title="Medium">M</button><button type="button" class="kl-hopt" data-size="40" title="Large">L</button></span><span class="kl-hsep"></span><button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo">${Rt('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` + // #449: explicit "Revert crop" — shown only after a crop on this image (visibility driven by the
     // per-image crop stack). Reverts the most recent crop to its pre-crop image + original markup.
-    (w ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${Rt('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : "") + `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${Q("trash-2", { size: 14 })}</button><span class="kl-hgrow"></span><span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop · scroll to zoom · shift-drag to pan</span>`;
+    (w ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${Rt('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : "") + `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${ee("trash-2", { size: 14 })}</button><span class="kl-hgrow"></span><span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop · scroll to zoom · shift-drag to pan</span>`;
   }
   function Br() {
     ne && (document.removeEventListener("keydown", ne, { capture: !0 }), ne = null);
   }
   function Hs() {
     const w = l.getElementById("klavity-hero-stage"), E = l.getElementById("klavity-hero-tools");
-    E && (E.innerHTML = ""), w && (w.innerHTML = `<div class="kl-hero-empty">${Q("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`), Br();
+    E && (E.innerHTML = ""), w && (w.innerHTML = `<div class="kl-hero-empty">${ee("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`), Br();
   }
   function Vs() {
     if (c.length === 0) {
-      Z = 0, Hs();
+      Q = 0, Hs();
       return;
     }
-    Z >= c.length && (Z = c.length - 1), Z < 0 && (Z = 0), eu(Z);
+    Q >= c.length && (Q = c.length - 1), Q < 0 && (Q = 0), eu(Q);
   }
   function Qc(w, E, A, M, I) {
     const O = c[w];
@@ -3353,14 +3359,14 @@ function zp(e, t, r = {}) {
       } catch {
         return;
       }
-      const V = ((K = _[w]) == null ? void 0 : K.length) ?? 0, H = Ct(w);
+      const Y = ((K = _[w]) == null ? void 0 : K.length) ?? 0, H = Ct(w);
       c[w] = F, p[w] = t.compressImage ? t.compressImage(F) : Promise.resolve(F);
       const j = (pe = $[w]) == null ? void 0 : pe.shapes;
-      Array.isArray(j) && j.length ? $[w] = { w: U.width, h: U.height, shapes: Np(j, -E, -A) } : delete $[w], (_[w] ?? (_[w] = [])).push(H), (ke[w] ?? (ke[w] = [])).push({ snap: H, mark: V }), $e();
+      Array.isArray(j) && j.length ? $[w] = { w: U.width, h: U.height, shapes: Np(j, -E, -A) } : delete $[w], (_[w] ?? (_[w] = [])).push(H), (ke[w] ?? (ke[w] = [])).push({ snap: H, mark: Y }), $e();
     }, D.src = O;
   }
   function eu(w) {
-    var B, F, V, H, j;
+    var B, F, Y, H, j;
     const E = l.getElementById("klavity-hero-stage"), A = l.getElementById("klavity-hero-tools");
     if (!E || !A) return;
     const M = c[w];
@@ -3375,11 +3381,11 @@ function zp(e, t, r = {}) {
     Array.isArray(D) && D.forEach((K) => O.shapes.push({ ...K })), E.appendChild(I);
     const U = new Image();
     U.onload = () => {
-      !document.body.contains(o) || Z !== w || c[w] !== M || (I.width = U.naturalWidth || 1, I.height = U.naturalHeight || 1, O.redraw());
+      !document.body.contains(o) || Q !== w || c[w] !== M || (I.width = U.naturalWidth || 1, I.height = U.naturalHeight || 1, O.redraw());
     }, U.src = M, O.redraw();
     {
       A.innerHTML = Zc((((F = ke[w]) == null ? void 0 : F.length) ?? 0) > 0);
-      let K = "pen", pe = "#ef4444", ee = 26, Y = "black";
+      let K = "pen", pe = "#ef4444", Z = 26, V = "black";
       const oe = A.querySelector("#kl-hero-textopts"), ge = () => {
         O.shapes.length ? $[w] = { w: I.width, h: I.height, shapes: O.shapes.map((P) => ({ ...P })) } : delete $[w];
       }, Je = (P) => {
@@ -3388,12 +3394,12 @@ function zp(e, t, r = {}) {
         pe = P, A.querySelectorAll("[data-color]").forEach((le) => le.classList.toggle("kl-on", le === W));
       };
       A.querySelectorAll("[data-tool]").forEach((P) => P.addEventListener("click", () => Je(P.dataset.tool))), A.querySelectorAll("[data-color]").forEach((P) => P.addEventListener("click", () => ht(P.dataset.color, P))), A.querySelectorAll("[data-outline]").forEach((P) => P.addEventListener("click", () => {
-        Y = P.dataset.outline, A.querySelectorAll("[data-outline]").forEach((W) => W.classList.toggle("kl-on", W === P));
+        V = P.dataset.outline, A.querySelectorAll("[data-outline]").forEach((W) => W.classList.toggle("kl-on", W === P));
       })), A.querySelectorAll("[data-size]").forEach((P) => P.addEventListener("click", () => {
-        ee = Number(P.dataset.size), A.querySelectorAll("[data-size]").forEach((W) => W.classList.toggle("kl-on", W === P));
+        Z = Number(P.dataset.size), A.querySelectorAll("[data-size]").forEach((W) => W.classList.toggle("kl-on", W === P));
       })), A.querySelectorAll("[data-stroke]").forEach((P) => P.addEventListener("click", () => {
         O.strokeScale = Number(P.dataset.stroke) || 1, A.querySelectorAll("[data-stroke]").forEach((W) => W.classList.toggle("kl-on", W === P)), O.redraw();
-      })), (V = A.querySelector("#kl-hero-undo")) == null || V.addEventListener("click", () => {
+      })), (Y = A.querySelector("#kl-hero-undo")) == null || Y.addEventListener("click", () => {
         lt(w);
       }), (H = A.querySelector("#kl-hero-revert")) == null || H.addEventListener("click", () => {
         ct(w);
@@ -3452,7 +3458,7 @@ function zp(e, t, r = {}) {
           return;
         }
         if (K === "text") {
-          const le = document.createElement("input"), Ae = Y === "none" ? "none" : `0 0 2px ${Y}, 0 0 2px ${Y}`, Oe = qr(), _e = Math.max(6, ee * Oe), mt = ee, Fn = Y;
+          const le = document.createElement("input"), Ae = V === "none" ? "none" : `0 0 2px ${V}, 0 0 2px ${V}`, Oe = qr(), _e = Math.max(6, Z * Oe), mt = Z, Fn = V;
           le.style.cssText = `position:fixed;left:${P.clientX}px;top:${P.clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:transparent;border:0;color:${pe};font-size:${_e}px;font-family:sans-serif;font-weight:700;text-shadow:${Ae};outline:1px dashed ${pe};z-index:2147483647;min-width:80px;`, document.body.appendChild(le), le.focus(), le.addEventListener("blur", () => {
             le.value.trim() && (Re(w), O.addShape({ type: "text", color: pe, x: Ze, y: Qe, text: le.value.trim(), size: mt, outline: Fn }), ge()), Ee(le);
           }, { once: !0 }), le.addEventListener("keydown", (ro) => {
@@ -3546,8 +3552,8 @@ function zp(e, t, r = {}) {
       O.style.cssText = "position:fixed;inset:0;background:#000;z-index:2147483647;display:flex;flex-direction:column;pointer-events:all;";
       const D = document.createElement("div");
       D.className = "kl-edtb", D.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;", D.innerHTML = `
-        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${Q("pencil", { size: 14 })} Pen</button>
-        <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${Q("square", { size: 14 })} Rect</button>
+        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${ee("pencil", { size: 14 })} Pen</button>
+        <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${ee("square", { size: 14 })} Rect</button>
         <button data-tool="arrow" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">↗ Arrow</button>
         <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
         <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
@@ -3562,32 +3568,32 @@ function zp(e, t, r = {}) {
           <button id="klavity-fit-page" class="kl-zb" title="Fit the whole page" style="font-size:11.5px;">Fit&nbsp;page</button>
         </span>
         <button id="klavity-undo" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;margin-left:auto;">↩ Undo</button>
-        <button id="klavity-clear-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${Q("trash-2", { size: 14 })} Clear</button>
-        <button id="klavity-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">${Q("check", { label: "Save", size: 14 })} Save</button>
-        <button id="klavity-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${Q("x", { size: 14 })}</button>
+        <button id="klavity-clear-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${ee("trash-2", { size: 14 })} Clear</button>
+        <button id="klavity-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">${ee("check", { label: "Save", size: 14 })} Save</button>
+        <button id="klavity-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${ee("x", { size: 14 })}</button>
       `, M.style.cssText = "cursor:crosshair;display:block;margin:12px auto;touch-action:none;background:#fff;border-radius:4px;outline:1px solid rgba(255,255,255,.12);outline-offset:-1px;box-shadow:0 12px 44px rgba(0,0,0,.55);";
       const U = document.createElement("div");
       U.style.cssText = "flex:1;min-height:0;overflow:auto;display:block;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);", U.appendChild(M);
       const B = document.createElement("style");
       B.textContent = ".kl-edtb button{transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease;will-change:transform;}.kl-edtb button:hover{transform:translateY(-1px) scale(1.02);background:#45475a;}.kl-edtb button[data-color]:hover{transform:scale(1.14);background:initial;}.kl-edtb button:active{transform:scale(.96);}.kl-edtb button:focus-visible{outline:2px solid #89b4fa;outline-offset:2px;}.kl-edtb .kl-zb{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 9px;background:#313244;color:#cdd6f4;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;line-height:1;}.kl-edtb .kl-zb:hover{background:#45475a;}@media (prefers-reduced-motion:reduce){.kl-edtb button{transition:none;}.kl-edtb button:hover,.kl-edtb button:active,.kl-edtb button[data-color]:hover{transform:none;}}", O.append(B, D, U), l.appendChild(O), Br();
       let F = 1;
-      const V = (J) => Math.max(0.05, Math.min(5, J || 1));
+      const Y = (J) => Math.max(0.05, Math.min(5, J || 1));
       function H(J) {
-        F = V(J), M.style.width = Math.round(M.width * F) + "px", M.style.height = Math.round(M.height * F) + "px";
+        F = Y(J), M.style.width = Math.round(M.width * F) + "px", M.style.height = Math.round(M.height * F) + "px";
         const re = D.querySelector("#klavity-zoom-pct");
         re && (re.textContent = Math.round(F * 100) + "%");
       }
       const j = () => Math.max(1, U.clientWidth - 24) / M.width, K = () => Math.min(Math.max(1, U.clientWidth - 24) / M.width, Math.max(1, U.clientHeight - 24) / M.height), pe = M.height / M.width > Math.max(1, U.clientHeight) / Math.max(1, U.clientWidth);
       H(pe ? j() : K()), D.querySelector("#klavity-zoom-in").addEventListener("click", () => H(F * 1.25)), D.querySelector("#klavity-zoom-out").addEventListener("click", () => H(F / 1.25)), D.querySelector("#klavity-fit-width").addEventListener("click", () => H(j())), D.querySelector("#klavity-fit-page").addEventListener("click", () => H(K()));
-      let ee = "rect", Y = "#ef4444", oe = !1, ge = [], Je = 0, ht = 0;
+      let Z = "rect", V = "#ef4444", oe = !1, ge = [], Je = 0, ht = 0;
       function At(J) {
-        ee = J, D.querySelectorAll("[data-tool]").forEach((re) => {
+        Z = J, D.querySelectorAll("[data-tool]").forEach((re) => {
           const Ie = re.dataset.tool === J;
           re.style.background = Ie ? "#585b70" : "#313244", re.style.outline = Ie ? "2px solid #89b4fa" : "none";
         });
       }
       D.querySelectorAll("[data-tool]").forEach((J) => J.addEventListener("click", () => At(J.dataset.tool))), D.querySelectorAll("[data-color]").forEach((J) => J.addEventListener("click", () => {
-        Y = J.dataset.color;
+        V = J.dataset.color;
       })), D.querySelector("#klavity-undo").addEventListener("click", () => I.undo()), D.querySelector("#klavity-clear-ann").addEventListener("click", () => I.clearAll());
       const qr = { p: "pen", r: "rect", c: "circle", a: "arrow", t: "text" };
       function Wr(J) {
@@ -3608,7 +3614,7 @@ function zp(e, t, r = {}) {
       function Le() {
         document.removeEventListener("keydown", Wr, { capture: !0 }), Ee(O), Vs();
       }
-      document.addEventListener("keydown", Wr, { capture: !0 }), At(ee), D.querySelector("#klavity-save-ann").addEventListener("click", async () => {
+      document.addEventListener("keydown", Wr, { capture: !0 }), At(Z), D.querySelector("#klavity-save-ann").addEventListener("click", async () => {
         Re(w), I.shapes.length ? $[w] = { w: M.width, h: M.height, shapes: I.shapes.map((J) => ({ ...J })) } : delete $[w], Le(), $e();
       }), D.querySelector("#klavity-cancel-ann").addEventListener("click", () => Le());
       function ft(J) {
@@ -3618,22 +3624,22 @@ function zp(e, t, r = {}) {
       M.addEventListener("pointerdown", (J) => {
         oe = !0;
         const re = ft(J);
-        if ({ x: Je, y: ht } = re, ee === "pen" && (ge = [re]), ee === "text") {
+        if ({ x: Je, y: ht } = re, Z === "pen" && (ge = [re]), Z === "text") {
           oe = !1;
           const Ie = document.createElement("input");
-          Ie.style.cssText = `position:fixed;left:${J.clientX}px;top:${J.clientY}px;background:transparent;border:1px dashed ${Y};color:${Y};font-size:16px;outline:none;z-index:9999999;min-width:80px;`, document.body.appendChild(Ie), Ie.focus(), Ie.addEventListener("blur", () => {
-            Ie.value.trim() && I.addShape({ type: "text", color: Y, x: Je, y: ht, text: Ie.value.trim() }), Ee(Ie);
+          Ie.style.cssText = `position:fixed;left:${J.clientX}px;top:${J.clientY}px;background:transparent;border:1px dashed ${V};color:${V};font-size:16px;outline:none;z-index:9999999;min-width:80px;`, document.body.appendChild(Ie), Ie.focus(), Ie.addEventListener("blur", () => {
+            Ie.value.trim() && I.addShape({ type: "text", color: V, x: Je, y: ht, text: Ie.value.trim() }), Ee(Ie);
           }, { once: !0 }), Ie.addEventListener("keydown", (xr) => {
             xr.key === "Enter" && Ie.blur();
           });
         }
       }), M.addEventListener("pointermove", (J) => {
-        oe && ee === "pen" && ge.push(ft(J));
+        oe && Z === "pen" && ge.push(ft(J));
       }), M.addEventListener("pointerup", (J) => {
         if (!oe) return;
         oe = !1;
         const re = ft(J);
-        ee === "pen" && ge.length > 1 ? I.addShape({ type: "pen", color: Y, points: ge }) : ee === "rect" ? I.addShape({ type: "rect", color: Y, x: Math.min(Je, re.x), y: Math.min(ht, re.y), w: Math.abs(re.x - Je), h: Math.abs(re.y - ht) }) : ee === "circle" ? I.addShape({ type: "circle", color: Y, x: (Je + re.x) / 2, y: (ht + re.y) / 2, rx: Math.abs(re.x - Je) / 2, ry: Math.abs(re.y - ht) / 2 }) : ee === "arrow" && I.addShape({ type: "arrow", color: Y, x1: Je, y1: ht, x2: re.x, y2: re.y });
+        Z === "pen" && ge.length > 1 ? I.addShape({ type: "pen", color: V, points: ge }) : Z === "rect" ? I.addShape({ type: "rect", color: V, x: Math.min(Je, re.x), y: Math.min(ht, re.y), w: Math.abs(re.x - Je), h: Math.abs(re.y - ht) }) : Z === "circle" ? I.addShape({ type: "circle", color: V, x: (Je + re.x) / 2, y: (ht + re.y) / 2, rx: Math.abs(re.x - Je) / 2, ry: Math.abs(re.y - ht) / 2 }) : Z === "arrow" && I.addShape({ type: "arrow", color: V, x1: Je, y1: ht, x2: re.x, y2: re.y });
       });
     }, A.src = E;
   }
@@ -3643,7 +3649,7 @@ function zp(e, t, r = {}) {
     const M = document.createElement("div");
     M.className = "klavity-sent";
     const I = document.createElement("div");
-    I.className = "kl-sent-check", I.innerHTML = Q("check", { label: "Sent", size: 22 }), M.appendChild(I);
+    I.className = "kl-sent-check", I.innerHTML = ee("check", { label: "Sent", size: 22 }), M.appendChild(I);
     const O = document.createElement("h2");
     O.textContent = "Report sent", M.appendChild(O);
     const D = document.createElement("p");
@@ -3654,10 +3660,10 @@ function zp(e, t, r = {}) {
       B.textContent = "Filed as";
       const F = document.createElement("code");
       F.textContent = bo(w), U.append(B, F);
-      const V = vo(E);
-      if (V) {
+      const Y = vo(E);
+      if (Y) {
         const H = document.createElement("a");
-        H.href = V, H.target = "_blank", H.rel = "noopener", H.textContent = "Open in Klavity", U.appendChild(H);
+        H.href = Y, H.target = "_blank", H.rel = "noopener", H.textContent = "Open in Klavity", U.appendChild(H);
       }
       M.appendChild(U);
     }
@@ -3678,8 +3684,8 @@ function zp(e, t, r = {}) {
       B.className = "klavity-ref";
       const F = document.createElement("span");
       F.textContent = "Filed as";
-      const V = document.createElement("code");
-      V.textContent = bo(w), B.append(F, V);
+      const Y = document.createElement("code");
+      Y.textContent = bo(w), B.append(F, Y);
       const H = vo(E);
       if (H) {
         const j = document.createElement("a");
@@ -3693,8 +3699,8 @@ function zp(e, t, r = {}) {
       B.className = "klavity-lead";
       const F = document.createElement("input");
       F.type = "email", F.placeholder = "you@company.com";
-      const V = document.createElement("button"), H = M.emailLabel;
-      V.textContent = H;
+      const Y = document.createElement("button"), H = M.emailLabel;
+      Y.textContent = H;
       const j = document.createElement("div");
       j.className = "klavity-lead-err", j.setAttribute("role", "alert"), j.style.display = "none";
       const K = async () => {
@@ -3703,23 +3709,23 @@ function zp(e, t, r = {}) {
           j.textContent = "Please enter a valid email so we can reach you.", j.style.display = "block", F.focus();
           return;
         }
-        V.disabled = !0, V.textContent = "Saving…", j.style.display = "none";
+        Y.disabled = !0, Y.textContent = "Saving…", j.style.display = "none";
         try {
           I && await I(w, pe);
-        } catch (Y) {
+        } catch (V) {
           try {
-            console.warn("[Klavity] lead capture failed:", (Y == null ? void 0 : Y.message) || Y);
+            console.warn("[Klavity] lead capture failed:", (V == null ? void 0 : V.message) || V);
           } catch {
           }
-          j.textContent = "Couldn't save your email — please try again.", j.style.display = "block", V.disabled = !1, V.textContent = "Retry", F.focus();
+          j.textContent = "Couldn't save your email — please try again.", j.style.display = "block", Y.disabled = !1, Y.textContent = "Retry", F.focus();
           return;
         }
-        const ee = document.createElement("div");
-        ee.className = "klavity-thanks", ee.textContent = "Thanks — we'll be in touch.", Ee(j), B.replaceWith(ee), M.showCta || U();
+        const Z = document.createElement("div");
+        Z.className = "klavity-thanks", Z.textContent = "Thanks — we'll be in touch.", Ee(j), B.replaceWith(Z), M.showCta || U();
       };
-      V.addEventListener("click", K), F.addEventListener("keydown", (pe) => {
+      Y.addEventListener("click", K), F.addEventListener("keydown", (pe) => {
         pe.key === "Enter" && K();
-      }), B.append(F, V), O.appendChild(B), O.appendChild(j);
+      }), B.append(F, Y), O.appendChild(B), O.appendChild(j);
     }
     if (M.showCta && M.ctaUrl) {
       const B = document.createElement("a");
@@ -5010,12 +5016,12 @@ function ar(e, t) {
   let je = !a;
   if (R.type === Te.Element) {
     je = je && !R.needBlock, delete R.needBlock;
-    const Z = Ne.shadowRoot(e);
-    Z && Rr(Z) && (R.isShadowHost = !0);
+    const Q = Ne.shadowRoot(e);
+    Q && Rr(Q) && (R.isShadowHost = !0);
   }
   if ((R.type === Te.Document || R.type === Te.Element) && je) {
     u.headWhitespace && R.type === Te.Element && R.tagName === "head" && (L = !1);
-    const Z = {
+    const Q = {
       doc: r,
       mirror: n,
       blockClass: i,
@@ -5042,16 +5048,16 @@ function ar(e, t) {
       cssCaptured: !1
     };
     if (!(R.type === Te.Element && R.tagName === "textarea" && R.attributes.value !== void 0)) {
-      R.type === Te.Element && R.attributes._cssText !== void 0 && typeof R.attributes._cssText == "string" && (Z.cssCaptured = !0);
+      R.type === Te.Element && R.attributes._cssText !== void 0 && typeof R.attributes._cssText == "string" && (Q.cssCaptured = !0);
       for (const ve of Array.from(Ne.childNodes(e))) {
-        const he = ar(ve, Z);
+        const he = ar(ve, Q);
         he && R.childNodes.push(he);
       }
     }
     let ne = null;
     if (Ll(e) && (ne = Ne.shadowRoot(e)))
       for (const ve of Array.from(Ne.childNodes(ne))) {
-        const he = ar(ve, Z);
+        const he = ar(ve, Q);
         he && (Rr(ne) && (he.isShadow = !0), R.childNodes.push(he));
       }
   }
@@ -5059,10 +5065,10 @@ function ar(e, t) {
   return Me && Mr(Me) && Rr(Me) && (R.isShadow = !0), R.type === Te.Element && R.tagName === "iframe" && qh(
     e,
     () => {
-      const Z = e.contentDocument;
-      if (Z && b) {
-        const ne = ar(Z, {
-          doc: Z,
+      const Q = e.contentDocument;
+      if (Q && b) {
+        const ne = ar(Q, {
+          doc: Q,
           mirror: n,
           blockClass: i,
           blockSelector: o,
@@ -5097,7 +5103,7 @@ function ar(e, t) {
     e,
     () => {
       if (S) {
-        const Z = ar(e, {
+        const Q = ar(e, {
           doc: r,
           mirror: n,
           blockClass: i,
@@ -5122,9 +5128,9 @@ function ar(e, t) {
           stylesheetLoadTimeout: v,
           keepIframeSrcFn: k
         });
-        Z && S(
+        Q && S(
           e,
-          Z
+          Q
         );
       }
     },
@@ -6415,7 +6421,7 @@ function rf() {
   Vo = 1;
   const e = 39, t = 34, r = 92, n = 47, i = 10, o = 32, l = 12, c = 9, a = 13, p = 91, s = 93, h = 40, d = 41, u = 123, m = 125, f = 59, g = 42, x = 58, b = 64, y = /[\t\n\f\r "#'()/;[\\\]{}]/g, S = /[\t\n\f\r !"#'():;@[\\\]{}]|\/(?=\*)/g, v = /.[\r\n"'(/\\]/, k = /[\da-f]/i;
   return ui = function(T, N = {}) {
-    let L = T.css.valueOf(), G = N.ignoreErrors, $, R, je, Me, Z, ne, ve, he, be, ue, at = L.length, _ = 0, ke = [], Pe = [];
+    let L = T.css.valueOf(), G = N.ignoreErrors, $, R, je, Me, Q, ne, ve, he, be, ue, at = L.length, _ = 0, ke = [], Pe = [];
     function Ct() {
       return _;
     }
@@ -6492,9 +6498,9 @@ function rf() {
           break;
         }
         case r: {
-          for (R = _, Z = !0; L.charCodeAt(R + 1) === r; )
-            R += 1, Z = !Z;
-          if ($ = L.charCodeAt(R + 1), Z && $ !== n && $ !== o && $ !== i && $ !== c && $ !== a && $ !== l && (R += 1, k.test(L.charAt(R)))) {
+          for (R = _, Q = !0; L.charCodeAt(R + 1) === r; )
+            R += 1, Q = !Q;
+          if ($ = L.charCodeAt(R + 1), Q && $ !== n && $ !== o && $ !== i && $ !== c && $ !== a && $ !== l && (R += 1, k.test(L.charAt(R)))) {
             for (; k.test(L.charAt(R + 1)); )
               R += 1;
             L.charCodeAt(R + 1) === o && (R += 1);
@@ -8711,7 +8717,7 @@ function bf() {
   wa = 1;
   const e = 39, t = 34, r = 92, n = 47, i = 10, o = 32, l = 12, c = 9, a = 13, p = 91, s = 93, h = 40, d = 41, u = 123, m = 125, f = 59, g = 42, x = 58, b = 64, y = /[\t\n\f\r "#'()/;[\\\]{}]/g, S = /[\t\n\f\r !"#'():;@[\\\]{}]|\/(?=\*)/g, v = /.[\r\n"'(/\\]/, k = /[\da-f]/i;
   return Di = function(T, N = {}) {
-    let L = T.css.valueOf(), G = N.ignoreErrors, $, R, je, Me, Z, ne, ve, he, be, ue, at = L.length, _ = 0, ke = [], Pe = [];
+    let L = T.css.valueOf(), G = N.ignoreErrors, $, R, je, Me, Q, ne, ve, he, be, ue, at = L.length, _ = 0, ke = [], Pe = [];
     function Ct() {
       return _;
     }
@@ -8788,9 +8794,9 @@ function bf() {
           break;
         }
         case r: {
-          for (R = _, Z = !0; L.charCodeAt(R + 1) === r; )
-            R += 1, Z = !Z;
-          if ($ = L.charCodeAt(R + 1), Z && $ !== n && $ !== o && $ !== i && $ !== c && $ !== a && $ !== l && (R += 1, k.test(L.charAt(R)))) {
+          for (R = _, Q = !0; L.charCodeAt(R + 1) === r; )
+            R += 1, Q = !Q;
+          if ($ = L.charCodeAt(R + 1), Q && $ !== n && $ !== o && $ !== i && $ !== c && $ !== a && $ !== l && (R += 1, k.test(L.charAt(R)))) {
             for (; k.test(L.charAt(R + 1)); )
               R += 1;
             L.charCodeAt(R + 1) === o && (R += 1);
@@ -12180,17 +12186,17 @@ function _t(e = {}) {
     errorHandler: Me
   } = e;
   Yf(Me);
-  const Z = C ? window.parent === window : !0;
+  const Q = C ? window.parent === window : !0;
   let ne = !1;
-  if (!Z)
+  if (!Q)
     try {
       window.parent.document && (ne = !1);
     } catch {
       ne = !0;
     }
-  if (Z && !t)
+  if (Q && !t)
     throw new Error("emit function is required");
-  if (!Z && !ne)
+  if (!Q && !ne)
     return () => {
     };
   S !== void 0 && b.mousemove === void 0 && (b.mousemove = S), et.reset();
@@ -12223,7 +12229,7 @@ function _t(e = {}) {
   Ce = (X, fe) => {
     var q;
     const me = X;
-    if (me.timestamp = _r(), (q = jt[0]) != null && q.isFrozen() && me.type !== ce.FullSnapshot && !(me.type === ce.IncrementalSnapshot && me.data.source === se.Mutation) && jt.forEach((ie) => ie.unfreeze()), Z)
+    if (me.timestamp = _r(), (q = jt[0]) != null && q.isFrozen() && me.type !== ce.FullSnapshot && !(me.type === ce.IncrementalSnapshot && me.data.source === se.Mutation) && jt.forEach((ie) => ie.unfreeze()), Q)
       t == null || t(at(me), fe);
     else if (ne) {
       const ie = {
@@ -13140,7 +13146,7 @@ function Um(e, t = [], r = {}) {
   const p = document.createElement("div");
   p.className = "ksl-title", p.textContent = "Sims feedback";
   const s = document.createElement("button");
-  s.type = "button", s.className = "ksl-icon-btn", s.title = "Minimize", s.setAttribute("aria-label", "Minimize Sims feedback panel"), s.innerHTML = Q("x", { size: 15 }), s.addEventListener("click", () => Ja()), a.append(p, s), Vt = document.createElement("div"), Vt.className = "ksl-count", tt = document.createElement("div"), tt.className = "ksl-chips", c.append(a, Vt, tt), gt = document.createElement("div"), gt.className = "ksl-list", gt.setAttribute("role", "list"), nt.append(c, gt), o.appendChild(nt), document.addEventListener("keydown", (h) => {
+  s.type = "button", s.className = "ksl-icon-btn", s.title = "Minimize", s.setAttribute("aria-label", "Minimize Sims feedback panel"), s.innerHTML = ee("x", { size: 15 }), s.addEventListener("click", () => Ja()), a.append(p, s), Vt = document.createElement("div"), Vt.className = "ksl-count", tt = document.createElement("div"), tt.className = "ksl-chips", c.append(a, Vt, tt), gt = document.createElement("div"), gt.className = "ksl-list", gt.setAttribute("role", "list"), nt.append(c, gt), o.appendChild(nt), document.addEventListener("keydown", (h) => {
     h.key === "Escape" && bt && Ja();
   }, { signal: cr.signal }), Ec(!0), vr();
 }
@@ -13227,12 +13233,12 @@ function jm(e) {
   const s = document.createElement("div");
   s.className = "ksl-r-actions";
   const h = document.createElement("button");
-  h.type = "button", h.className = "ksl-r-act track", h.innerHTML = Q("bug", { size: 12 }) + " Track as Bug", h.setAttribute("aria-label", `Track feedback from ${t.name} as a bug`), h.addEventListener("click", () => {
+  h.type = "button", h.className = "ksl-r-act track", h.innerHTML = ee("bug", { size: 12 }) + " Track as Bug", h.setAttribute("aria-label", `Track feedback from ${t.name} as a bug`), h.addEventListener("click", () => {
     var m;
     (m = on.onTriage) == null || m.call(on, r, t.name), Za(e.id);
   });
   const d = document.createElement("button");
-  d.type = "button", d.className = "ksl-r-act jump", d.innerHTML = Q("map-pin", { size: 12 }) + " Jump to on page", d.setAttribute("aria-label", `Jump to where ${t.name} flagged this`), d.addEventListener("click", () => {
+  d.type = "button", d.className = "ksl-r-act jump", d.innerHTML = ee("map-pin", { size: 12 }) + " Jump to on page", d.setAttribute("aria-label", `Jump to where ${t.name} flagged this`), d.addEventListener("click", () => {
     Vm(e.id);
   });
   const u = document.createElement("button");
@@ -13552,8 +13558,8 @@ function og() {
     e.preventDefault();
     const t = document.createElement("div");
     t.style.cssText = `position:fixed;left:${Math.min(e.clientX, window.innerWidth - 200)}px;top:${Math.min(e.clientY, window.innerHeight - 80)}px;background:#1e1e2e;border:1px solid #45475a;border-radius:8px;padding:4px;z-index:2147483647;box-shadow:0 8px 24px rgba(0,0,0,.4);font-family:system-ui;`, t.innerHTML = `
-      <div data-action="bug" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${Q("bug")} Report a Bug</div>
-      <div data-action="feature" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${Q("lightbulb")} Request a Feature</div>
+      <div data-action="bug" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${ee("bug")} Report a Bug</div>
+      <div data-action="feature" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${ee("lightbulb")} Request a Feature</div>
     `, document.body.appendChild(t);
     const r = (n) => {
       (!n || !t.contains(n.target)) && (Ee(t), document.removeEventListener("click", r));

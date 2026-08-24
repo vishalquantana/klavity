@@ -98,8 +98,8 @@ describe('buildModal button guards (re-entrancy)', () => {
     ctrl.close()
   })
 
-  it('Submit failure re-enables the composer and shows the error (never stuck)', async () => {
-    const onSubmit = vi.fn(async () => { throw new Error('Network down') })
+  it('Submit failure re-enables the composer and shows a FRIENDLY error, not the raw internal text (KLA-496)', async () => {
+    const onSubmit = vi.fn(async () => { throw new Error('Klavity backend error 500: {"error":"db connection refused at 10.0.0.4"}') })
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit })
     const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
     desc.value = 'oops'; desc.dispatchEvent(new Event('input'))
@@ -108,10 +108,28 @@ describe('buildModal button guards (re-entrancy)', () => {
     await new Promise(r => setTimeout(r, 0))
     const err = q(ctrl, '#klavity-err') as HTMLElement
     expect(err.style.display).toBe('block')
-    expect(err.textContent).toContain('Network down')
+    // KLA-496: the reporter sees a friendly line; the raw host/internal text must NOT leak into the UI.
+    expect(err.textContent).toContain("Couldn't submit your report")
+    expect(err.textContent).not.toContain('Klavity backend error')
+    expect(err.textContent).not.toContain('db connection refused')
     expect(submit.disabled).toBe(false) // re-enabled (description still valid)
     expect(submit.textContent).toBe('Submit')
     expect((q(ctrl, '#klavity-full') as HTMLButtonElement).disabled).toBe(false)
+    ctrl.close()
+  })
+
+  it('debug:true opts the embedder into the raw error text in the error line (maintainer mode)', async () => {
+    const onSubmit = vi.fn(async () => { throw new Error('submit failed: 500') })
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit }, { debug: true })
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = 'oops'; desc.dispatchEvent(new Event('input'))
+    const submit = q(ctrl, '#klavity-submit') as HTMLButtonElement
+    submit.click()
+    await new Promise(r => setTimeout(r, 0))
+    const err = q(ctrl, '#klavity-err') as HTMLElement
+    expect(err.style.display).toBe('block')
+    expect(err.textContent).toContain('submit failed: 500') // raw message visible in debug mode
+    expect(submit.disabled).toBe(false)
     ctrl.close()
   })
 })
