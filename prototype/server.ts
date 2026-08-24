@@ -2939,7 +2939,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // ledger row needs a byte count up front: prefer the DB row's recorded size, else the stat'd
         // size (both metadata — no body buffering).
         void recordS3Egress({ projectId: shot.projectId, bytes: shot.bytes ?? size ?? 0, meta: { via: "img-permalink" } })
-        return new Response(stream, { headers: { "content-type": contentType, "cache-control": "public, max-age=86400" } })
+        // KLA-576: prefer the DB's stored content_type (NOT NULL) so an S3 object with an empty
+        // stat type still renders as its real image type instead of downloading as octet-stream
+        // (the old buffered path defaulted to image/png; the stream helper defaults to octet-stream).
+        const ct = shot.contentType || contentType || "image/png"
+        // NOTE (KLA-576): once we return the stream, headers are flushed — an S3 read error AFTER this
+        // point yields a truncated body, not a 404. That's inherent to streaming (the <img> just fails
+        // to render); restoring the buffered path's post-hoc 404 would require re-buffering the object.
+        return new Response(stream, { headers: { "content-type": ct, "cache-control": "public, max-age=86400" } })
       } catch (e: any) { console.error("img stream failed:", e?.message || e); return new Response("Not found", { status: 404 }) }
     }
     if (req.method === "GET" && path === "/sitemap.xml") {
