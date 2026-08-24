@@ -953,7 +953,7 @@ export function buildModal(
       <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
       ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" accept="video/*,image/*,.pdf,.log,.har,.txt,.json,.csv,.zip" multiple style="display:none">' : ''}
-      <div class="klavity-counter" id="klavity-counter">0/${MAX_IMAGES} images</div>
+      <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
       ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
       <div class="klavity-error" id="klavity-err"></div>
@@ -1171,7 +1171,10 @@ export function buildModal(
       skel.innerHTML = '<span class="kl-skel-spin" aria-hidden="true"></span><span>Capturing…</span>'
       strip.appendChild(skel)
     }
+    // KLAVITYKLA-496: the "0/5 images" counter was internal state, not reporter language — it now only
+    // appears once there is something to count (and stays hidden on an empty strip).
     counter.textContent = `${screenshots.length}/${MAX_IMAGES} images`
+    if (counter instanceof HTMLElement) counter.hidden = screenshots.length === 0
     // JTBD 1.10: attaching/removing a screenshot changes the evidence state → re-evaluate Submit + hint.
     refreshSubmit()
     // KLAVITYKLA-473: re-evaluate the "suggest Screen" callout for the (possibly new) active shot.
