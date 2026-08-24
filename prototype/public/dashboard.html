@@ -10058,6 +10058,13 @@ load()
     var reopenFinish=false;
     if(v==='getting-started'){ try{localStorage.removeItem('klav-finish-setup-x');}catch(e){} reopenFinish=true; v='overview'; }
     if(VIEWS.indexOf(v)<0)v='overview';
+    // KLA-560: navigating to ANY non-tickets view marks the deep-link as "left", so a still-in-flight
+    // deep-link ticket fetch can't yank the user back via _renderSingleTicket. Setting it here (rather
+    // than only in the sidebar click handler) covers EVERY caller — programmatic setView(...) too.
+    // Skipped on the very FIRST (initial-load) call, which runs BEFORE the boot deep-link open, so a
+    // legitimate ?ticket= deep link still opens on load.
+    if(window.__klavSetViewReady&&v!=='tickets')window.__klavDeepLinkNavAway=true;
+    window.__klavSetViewReady=true;
     normalizeSidebar();
     document.body.setAttribute('data-view',v);
     sidebarNavs().forEach(function(b){b.classList.toggle('active',b.getAttribute('data-go')===v);});
@@ -10097,9 +10104,8 @@ load()
       var b=e.target&&e.target.closest?e.target.closest('.nv[data-go]'):null;
       if(!b||!side.contains(b))return;
       var _go=b.getAttribute('data-go');
-      // P1 deep-link loop fix: a user-driven nav to any non-tickets view marks the deep-link as
-      // "left" so a still-in-flight deep-link ticket fetch can't yank them back after they clicked away.
-      if(_go!=='tickets')window.__klavDeepLinkNavAway=true;
+      // KLA-560: the deep-link "left" flag is now set inside setView() for every caller (including this
+      // one), so no per-call-site flag toggle is needed here anymore.
       setView(_go);
     });
   }

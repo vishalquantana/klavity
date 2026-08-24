@@ -109,6 +109,13 @@ test("setView() strips the ?ticket= param when leaving the tickets view", () => 
   expect(setView).toContain("if(v!=='tickets')")
 })
 
-test("user-driven sidebar nav to a non-tickets view marks the deep-link as left", () => {
-  expect(DASH).toContain("if(_go!=='tickets')window.__klavDeepLinkNavAway=true;")
+// KLA-560: the nav-away flag now lives INSIDE setView() so every caller — programmatic setView(...)
+// calls too, not just the sidebar handler — marks the deep-link as left. Guarded by __klavSetViewReady
+// so the very first (initial-load) setView doesn't pre-empt a legitimate boot ?ticket= deep-link open.
+test("setView() marks the deep-link as left for any non-tickets view (covers programmatic callers)", () => {
+  const setView = extractFn(DASH, "function setView(v){")
+  expect(setView).toContain("window.__klavDeepLinkNavAway=true")
+  expect(setView).toContain("v!=='tickets'")
+  // First-load guard present so the boot deep-link open (which runs after the initial setView) survives.
+  expect(setView).toContain("window.__klavSetViewReady")
 })
