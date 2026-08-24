@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isVideoFile, attachmentSizeCap } from './modal'
+import { isVideoFile, attachmentSizeCap, videoContentType } from './modal'
 
 // video-upload (KLAVITYKLA-480): the "Attach file" ingest path must ACCEPT videos (not reject them like
 // the image-only Upload path) and give them a higher per-file byte cap than plain docs. These pure
@@ -42,5 +42,36 @@ describe('attachmentSizeCap', () => {
     const video = { type: 'video/mp4', name: 'demo.mp4' }
     expect(size).toBeLessThanOrEqual(attachmentSizeCap(video, CAPS)) // accepted as a video
     expect(size).toBeGreaterThan(MAX_FILE_BYTES)                     // rejected under the old image/doc cap
+  })
+})
+
+// KLA-560 item 6: the client stamps a concrete video/* MIME onto a file it accepted as a video by
+// EXTENSION (empty browser file.type), so the type travels end-to-end and the server's content-type-based
+// 100MB cap agrees. videoContentType is the shared derivation used by ingestAttachments.
+describe('videoContentType', () => {
+  it('derives a concrete video/* type from a known extension', () => {
+    expect(videoContentType('screen.mov')).toBe('video/quicktime')
+    expect(videoContentType('clip.MP4')).toBe('video/mp4')
+    expect(videoContentType('rec.webm')).toBe('video/webm')
+    expect(videoContentType('movie.mkv')).toBe('video/x-matroska')
+  })
+
+  it('returns "" for non-video / unknown extensions so the original type is kept', () => {
+    expect(videoContentType('invoice.pdf')).toBe('')
+    expect(videoContentType('app.log')).toBe('')
+    expect(videoContentType('noext')).toBe('')
+  })
+
+  it('an empty-MIME .mov ends up classified as video by BOTH the predicate and the stamped type', () => {
+    // client accepted by extension (empty MIME) …
+    const emptyMimeMov = { type: '', name: 'screen.mov' }
+    expect(isVideoFile(emptyMimeMov)).toBe(true)
+    // … and the stamped type is a concrete video/* the SERVER also keys the 100MB cap off of.
+    const stampedType = emptyMimeMov.type || (isVideoFile(emptyMimeMov) ? videoContentType(emptyMimeMov.name) : '')
+    expect(stampedType).toBe('video/quicktime')
+    expect(/^video\//i.test(stampedType)).toBe(true)
+    // a 60MB such file gets the video cap, not the 8MB doc cap
+    const size = 60 * 1024 * 1024
+    expect(size).toBeLessThanOrEqual(attachmentSizeCap(emptyMimeMov, CAPS))
   })
 })

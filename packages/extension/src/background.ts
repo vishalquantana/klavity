@@ -65,7 +65,12 @@ async function submitToBackendWithExtras(payload: SubmitReportPayload, settings:
   // same as the screenshot path below) and append with its real filename. A malformed data URL is skipped.
   for (const f of payload.files ?? []) {
     try {
-      const blob = await (await fetch(f.dataUrl)).blob()
+      const raw = await (await fetch(f.dataUrl)).blob()
+      // KLA-560 item 6 (ext↔widget parity): when the composer stamped a concrete content-type onto a
+      // video it accepted by extension (empty file.type), the fetched blob's type is empty/generic —
+      // re-type it via slice so the multipart part carries video/* and the server's 100MB video cap agrees.
+      const isGeneric = !raw.type || raw.type === 'application/octet-stream'
+      const blob = (isGeneric && f.type) ? raw.slice(0, raw.size, f.type) : raw
       form.append('files', blob, f.name)
     } catch { /* skip a malformed / oversized attachment rather than fail the whole submit */ }
   }
