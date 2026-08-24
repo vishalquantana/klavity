@@ -8509,7 +8509,7 @@ function renderConnectors(admin) {
       <div class="conn-row-actions">
         <button class="btn btn-ghost btn-sm" data-test="${esc(c.id)}">Test</button>
         <button class="btn btn-ghost btn-sm" data-edit="${esc(c.id)}">Edit</button>
-        ${(c.pendingMappings && c.pendingMappings.length) ? `<button class="btn btn-ghost btn-sm" data-mapfix="${esc(c.id)}" style="color:var(--amber,#b7791f)">${kicon('alert-triangle')||'⚠'} Fix mappings (${c.pendingMappings.length})</button>` : ``}
+        ${(c.pendingMappings && c.pendingMappings.length) ? `<button class="btn btn-ghost btn-sm" data-mapfix="${esc(c.id)}" style="color:var(--amber,#b7791f)">${kicon('alert-triangle')||''} Fix mappings (${c.pendingMappings.length})</button>` : ``}
       </div>
       <div class="conn-mapfix hide" data-mapfix-for="${esc(c.id)}" style="margin-top:6px"></div>
       <div class="conn-result hide" data-result-for="${esc(c.id)}"></div>`
