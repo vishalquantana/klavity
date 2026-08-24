@@ -14,6 +14,7 @@ import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureCli
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
+import { klavityAttributionUrl } from "@klavity/core/attribution"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
@@ -554,6 +555,12 @@ async function mount() {
     if (r.ok) {
       const j = await r.json()
       modalConfig = j.modalConfig || {}
+      // Attribution: thread the project id + surface so the modal's "Powered by Klavity" badge carries
+      // UTM params (utm_source=host, utm_medium=widget, utm_content=<projectId>) → traceable clicks.
+      if (modalConfig && typeof modalConfig === "object") {
+        ;(modalConfig as any).projectId = cfg.projectId
+        ;(modalConfig as any).attributionMedium = "widget"
+      }
       // Report-clarity toggle rides top-level (sibling of modalConfig). Default ON: only an explicit false
       // disables it. Merge into modalConfig so it threads through resolveModalConfig → buildModal (cfg.reportClarity).
       reportClarity = j.reportClarity !== false
@@ -1448,7 +1455,12 @@ async function mount() {
       footer.className = "klm-foot"
       footer.style.animationDelay = (70 + idx * 64) + "ms"
       footer.innerHTML = "Powered by <strong style=\"background:linear-gradient(135deg,#6366f1,#8b5cf6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;font-weight:700\">Klavity</strong>"
-      footer.addEventListener("click", () => { closeMenu(); window.open("https://klavity.in", "_blank", "noopener,noreferrer") })
+      footer.addEventListener("click", () => {
+        closeMenu()
+        // Carry attribution so a click on the badge is traceable to the embedding customer site.
+        const dest = klavityAttributionUrl("https://klavity.in", { campaign: "powered_by", medium: "widget", ref: cfg.projectId })
+        window.open(dest, "_blank", "noopener,noreferrer")
+      })
       menu.appendChild(footer)
     }
     // One-pass shimmer sweep — appended LAST so it sweeps OVER the opaque cards (pointer-events:none).
@@ -1681,8 +1693,11 @@ async function mount() {
   // can gate on a real token instead of silently 401ing. Fire-and-forget callers (report login gate)
   // still work — the token is stored via setToken() the moment it arrives.
   function openConnect(): Promise<string> {
-    const u = cfg.backendUrl + "/widget-connect?project=" + encodeURIComponent(cfg.projectId)
+    // Attribution on the connect entry point too — captures where the connect handshake was launched
+    // from (utm_source=host). Existing project/origin query params are preserved by the helper.
+    const connectBase = cfg.backendUrl + "/widget-connect?project=" + encodeURIComponent(cfg.projectId)
       + "&origin=" + encodeURIComponent(location.origin)
+    const u = klavityAttributionUrl(connectBase, { campaign: "widget_connect", medium: "widget", ref: cfg.projectId })
     const w = window.open(u, "klavity-connect", "width=380,height=460")
     return new Promise<string>((resolve) => {
       let settled = false

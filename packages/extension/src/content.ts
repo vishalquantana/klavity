@@ -184,6 +184,12 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
       const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/projects/${encodeURIComponent(proj.id)}/config`)
       if (r.ok) {
         const modalConfig = (await r.json()).modalConfig || {}
+        // Attribution (ext↔widget parity): mark the surface + project id so the modal's "Powered by
+        // Klavity" badge carries UTM (utm_medium=extension, utm_content=<projectId>, utm_source=host).
+        if (modalConfig && typeof modalConfig === 'object') {
+          ;(modalConfig as any).attributionMedium = 'extension'
+          ;(modalConfig as any).projectId = proj.id
+        }
         return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig) }
       }
     }

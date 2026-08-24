@@ -32,6 +32,10 @@ export interface ModalConfig {
   maskNumbers?: boolean
   /** Pro-gated: when true, hides the "Powered by Klavity" footer on the widget menu and modal success screen. */
   whiteLabel?: boolean
+  /** Klavity project id — threaded so the "Powered by" badge can attribute a click back to WHICH project. */
+  projectId?: string
+  /** Surface for outbound-link UTM attribution: "widget" (SDK) or "extension" (content script). Defaults to "widget". */
+  attributionMedium?: 'widget' | 'extension'
   /**
    * Report-clarity helper (like password-strength, for bug reports). When true the composer renders a live
    * heuristic clarity meter + coverage chips under the description, a debounced cheap-LLM tip, and a
@@ -130,6 +134,13 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   // whiteLabel: read from top-level (already-resolved passthrough) or nested agency_branding (stored format).
   const ab = isObj(r.agency_branding) ? (r.agency_branding as Record<string, unknown>) : {}
   if (r.whiteLabel === true || ab.whiteLabel === true) out.whiteLabel = true
+  // Attribution passthrough (KLA widget-powered-by-utm): project id → utm_content on the "Powered by"
+  // badge; surface → utm_medium. Preserved verbatim so an absent value stays absent (back-compat).
+  const pid = str(r.projectId, 200)
+  if (pid) out.projectId = pid
+  if (r.attributionMedium === 'extension' || r.attributionMedium === 'widget') {
+    out.attributionMedium = r.attributionMedium
+  }
   return out
 }
 

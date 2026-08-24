@@ -6,6 +6,7 @@ import { VoiceInput } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit } from './report-clarity'
 import { safeRemove } from './safe-remove'
+import { klavityAttributionUrl } from './attribution'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
@@ -2902,7 +2903,18 @@ export function buildModal(
     if (!cfg.whiteLabel) {
       const pb = document.createElement('div')
       pb.className = 'klavity-pb'
-      pb.innerHTML = `Powered by <a href="https://klavity.in" target="_blank" rel="noopener">Klavity</a>`
+      // Dynamic href (carries the embedding host as utm_source) is assigned via .href, never innerHTML,
+      // per this file's XSS guards. Attribution so this badge's clicks are traceable to the customer site.
+      const pbLink = document.createElement('a')
+      pbLink.href = klavityAttributionUrl('https://klavity.in', {
+        campaign: 'powered_by',
+        medium: cfg.attributionMedium,
+        ref: cfg.projectId,
+      })
+      pbLink.target = '_blank'
+      pbLink.rel = 'noopener'
+      pbLink.textContent = 'Klavity'
+      pb.append('Powered by ', pbLink)
       modal.appendChild(pb)
     }
 

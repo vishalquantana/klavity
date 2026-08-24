@@ -19,6 +19,7 @@
     "./integrations/github": "./src/integrations/github.ts",
     "./integrations/plane": "./src/integrations/plane.ts",
     "./integrations/backend": "./src/integrations/backend.ts",
+    "./attribution": "./src/attribution.ts",
     "./modal": "./src/modal.ts",
     "./modal-theme": "./src/modal-theme.ts",
     "./otp-input": "./src/otp-input.ts",
