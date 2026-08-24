@@ -52,7 +52,8 @@ test("Ticket detail status control exposes the full state machine incl. New + Di
 test("Opening single-ticket detail fetches fresh state from GET /api/feedback/:id (KLA-206)", () => {
   // openSingleTicket must GET the ticket and merge onto cached state so stale in-memory
   // list data (status/priority changed elsewhere) is reflected on open.
-  expect(html).toContain('async function openSingleTicket(id)')
+  // KLA-562: signature gained an optional `mode` ("panel" default / "full" for deep links).
+  expect(html).toContain('async function openSingleTicket(id, mode)')
   expect(html).toContain('_renderSingleTicket(id)')
   expect(html).toContain('fetch("/api/feedback/" + encodeURIComponent(id))')
   expect(html).toContain('state.tickets[ix] = { ...state.tickets[ix], ...fresh }')

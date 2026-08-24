@@ -1031,6 +1031,18 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .single-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px}
 #ticketSingle .tkt-detail{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;max-width:920px}
 #ticketSingle .single-head{max-width:920px}
+/* KLA-562 Stage 2: single ticket as a Jira-style right-side sliding panel (board/list stays behind) */
+#tktPanelScrim{position:fixed;inset:0;background:rgba(25,20,15,.30);opacity:0;pointer-events:none;transition:opacity .18s;z-index:60}
+body.tkt-panel-open #tktPanelScrim{opacity:1;pointer-events:auto}
+#ticketSingle.tkt-panel{position:fixed;top:0;right:0;bottom:0;width:min(800px,94vw);z-index:61;background:var(--ink-2);border-left:1px solid var(--line);box-shadow:-18px 0 48px rgba(25,20,15,.22);overflow-y:auto;padding:0 24px 44px;transform:translateX(102%);transition:transform .22s ease}
+body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
+#ticketSingle.tkt-panel .tkt-detail,#ticketSingle.tkt-panel .single-head{max-width:none}
+.tkt-panel-head{position:sticky;top:0;z-index:2;background:var(--ink-2);display:flex;align-items:center;gap:8px;padding:15px 0 12px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tkt-panel-head .tph-sp{flex:1}
+.tkt-panel-btn{display:inline-flex;align-items:center;gap:6px;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+.tkt-panel-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
+.tkt-panel-btn:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+@media(max-width:640px){#ticketSingle.tkt-panel{width:100vw;padding:0 16px 32px}}
 /* Two-column layout: screenshot LEFT, all details RIGHT. The shot is a direct child of
    .tkt-detail; everything else is wrapped in .tkt-right-body. */
 #ticketSingle .tkt-detail.single-has-shot{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);column-gap:20px;align-items:start}
@@ -3198,7 +3210,7 @@ function maybeOpenDeepLinkTicket() {
     const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
     if (t) {
       _deepLinkTicketConsumed = true      // commit BEFORE opening so a concurrent poll can't double-open
-      openSingleTicket(ticketId)
+      openSingleTicket(ticketId, "full")  // KLA-562: a shared ?ticket= deep link opens the full-page route
     } else {
       // Ticket not in state.tickets (may be loaded via separate /api/projects/:id/tickets call)
       // Fetch it and inject into state so openSingleTicket can find it
@@ -3214,7 +3226,7 @@ function maybeOpenDeepLinkTicket() {
           const report = d.report
           if (!state.tickets) state.tickets = []
           if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
-          openSingleTicket(ticketId)
+          openSingleTicket(ticketId, "full")   // KLA-562: shared deep link → full-page route
         }).catch(() => {})
     }
   } catch (e) {}
@@ -6607,7 +6619,13 @@ const KANBAN_COLS = [
 // KLA-206: fetch fresh data from GET /api/feedback/:id on open so detail reflects the latest
 // server state even when the in-memory list is stale (e.g. status/priority changed elsewhere).
 // We render immediately from cache (instant view) and re-render once the fresh fetch merges in.
-async function openSingleTicket(id) {
+// KLA-562 Stage 2: single ticket opens as a right-side sliding PANEL over the board/list by default
+// (Jira-style — the board stays behind). A dedicated full-page route is preserved: deep links
+// (?ticket= on load) and the panel's "Full page" button render in-place ("full" mode), which is the
+// deep-linkable/shareable surface. `mode` defaults to "panel"; maybeOpenDeepLinkTicket passes "full".
+let _tktSingleMode = "panel"
+async function openSingleTicket(id, mode) {
+  if (mode === "panel" || mode === "full") _tktSingleMode = mode
   _renderSingleTicket(id)
   try {
     const r = await fetch("/api/feedback/" + encodeURIComponent(id))
@@ -6633,13 +6651,36 @@ function _renderSingleTicket(id) {
   const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
   const single = $("ticketSingle"); if (!single) return
   const board = $("ticketsKanban"); const toolbar = document.querySelector(".kb-toolbar")
+  const listView = document.getElementById("tktListView")
   const admin = state.active && state.active.role === "admin"
   const sv = ["urgent","high","medium","low"].includes(t.priority) ? t.priority : "none"
+  const panel = _tktSingleMode === "panel"
   single.innerHTML = ""
-  const back = document.createElement("button")
-  back.className = "tkt-back"; back.type = "button"; back.textContent = _tktView === "board" ? "← Back to board" : "← Back to list"
-  back.addEventListener("click", closeSingleTicket)
-  single.appendChild(back)
+  if (panel) {
+    // Panel mode: board/list/toolbar STAY visible behind a fixed right-side panel + scrim.
+    single.classList.add("tkt-panel")
+    ensurePanelScrim()
+    document.body.classList.add("tkt-panel-open")
+    if (board) board.classList.remove("hide")
+    if (listView && _tktView === "list") listView.classList.remove("hide")
+    if (toolbar) toolbar.classList.remove("hide")
+    const ph = document.createElement("div"); ph.className = "tkt-panel-head"
+    ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" title="Close (Esc)">${kicon('x',{size:13})} Close</button>`
+      + `<span class="tph-sp"></span>`
+      + `<button class="tkt-panel-btn" data-act="expand" type="button" title="Open as a full, shareable page">${kicon('app-window',{size:13})} Full page</button>`
+    ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
+    ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full"))
+    single.appendChild(ph)
+  } else {
+    // Full-page mode: the dedicated deep-linkable route — replaces the board (legacy behavior).
+    single.classList.remove("tkt-panel")
+    document.body.classList.remove("tkt-panel-open")
+    hidePanelScrim()
+    const back = document.createElement("button")
+    back.className = "tkt-back"; back.type = "button"; back.textContent = _tktView === "board" ? "← Back to board" : "← Back to list"
+    back.addEventListener("click", closeSingleTicket)
+    single.appendChild(back)
+  }
   const head = document.createElement("div"); head.className = "single-head"
   const renderHead = () => {
     head.innerHTML = `<span class="single-rail sv-${sv}"></span>
@@ -6663,10 +6704,12 @@ function _renderSingleTicket(id) {
   // KLA-171: append activity timeline + comment composer (KLAVITYKLA-516 passes `t` so the
   // timeline can synthesize its virtual first "report received" row).
   single.appendChild(buildTimelineSection(t.id, t))
-  if (board) board.classList.add("hide")
-  const listView = document.getElementById("tktListView")
-  if (listView) listView.classList.add("hide")
-  if (toolbar) toolbar.classList.add("hide")
+  if (!panel) {
+    // Full-page route hides the board/list/toolbar it replaces; panel mode leaves them visible.
+    if (board) board.classList.add("hide")
+    if (listView) listView.classList.add("hide")
+    if (toolbar) toolbar.classList.add("hide")
+  }
   single.classList.remove("hide")
   // KLA-200: push deep-link URL so this ticket can be shared / bookmarked.
   // KLA-206: openSingleTicket may render twice (cache then fresh fetch); only push a new
@@ -6678,11 +6721,33 @@ function _renderSingleTicket(id) {
     if (already) history.replaceState(null, "", u.toString())
     else history.pushState(null, "", u.toString())
   } catch (e) {}
-  try { window.scrollTo(0, 0) } catch (e) {}
+  // Panel scrolls itself to top; the full-page route scrolls the window (as before).
+  if (panel) { try { single.scrollTop = 0 } catch (e) {} }
+  else { try { window.scrollTo(0, 0) } catch (e) {} }
 }
+// KLA-562 Stage 2: lazily create the panel scrim (click-to-close) once, and a single Esc handler.
+function ensurePanelScrim() {
+  let scrim = document.getElementById("tktPanelScrim")
+  if (!scrim) {
+    scrim = document.createElement("div")
+    scrim.id = "tktPanelScrim"
+    scrim.addEventListener("click", closeSingleTicket)
+    document.body.appendChild(scrim)
+  }
+  if (!window.__klavPanelEscBound) {
+    window.__klavPanelEscBound = true
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && document.body.classList.contains("tkt-panel-open")) closeSingleTicket()
+    })
+  }
+  return scrim
+}
+function hidePanelScrim() { document.body.classList.remove("tkt-panel-open") }
 function closeSingleTicket() {
   const single = $("ticketSingle"), toolbar = document.querySelector(".kb-toolbar")
-  if (single) { single.classList.add("hide"); single.innerHTML = "" }
+  const wasPanel = single && single.classList.contains("tkt-panel")
+  document.body.classList.remove("tkt-panel-open")   // slide the panel out
+  if (single) { single.classList.add("hide"); single.classList.remove("tkt-panel"); single.innerHTML = "" }
   if (toolbar) toolbar.classList.remove("hide")
   // Remove hide from list view before restoring (renderTicketsView will manage visibility)
   const listView = document.getElementById("tktListView")
@@ -6693,8 +6758,11 @@ function closeSingleTicket() {
     u.searchParams.delete("ticket")
     history.replaceState(null, "", u.toString())
   } catch (e) {}
-  // Restore whichever view was active before drilling into the single-ticket detail
-  renderTicketsView()
+  // Reset to panel mode for the next plain open. In panel mode the board/list were never hidden and
+  // the ~25s liveness poll is suppressed while a ticket is open (dashLiveBusy checks #ticketSingle),
+  // so it was never nuked — only re-render the view when the full-page route had replaced it.
+  _tktSingleMode = "panel"
+  if (!wasPanel) renderTicketsView()
 }
 
 // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
