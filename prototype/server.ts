@@ -108,6 +108,7 @@ import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuth
 import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, walkPoolStats } from "./lib/trails-browser"
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
+import { handleMcpMessage } from "./lib/mcp/rpc"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
@@ -7175,6 +7176,28 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     //   GET  /api/v1/runs/:id?project=:id     — run status + severity summary + git
     //   GET  /api/v1/runs/:id/report?project=:id — AI-consumable findings report (cursor-paginated)
     //   POST /api/v1/runs/:id/cancel?project=:id — cooperative best-effort cancel
+    // KLA-550: MCP server — Streamable-HTTP-compatible JSON-RPC over a single POST. Tools wrap the
+    // same v1 run engine (no HTTP round-trip). Auth = kci_ bearer (OAuth 2.1 is a later enterprise
+    // phase). Stateless: we answer each POST with one application/json JSON-RPC response (no SSE
+    // needed for our surface).
+    if (path === "/mcp") {
+      const mcpErr = (status: number, message: string) =>
+        json({ jsonrpc: "2.0", id: null, error: { code: -32000, message } }, status)
+      if (req.method !== "POST") return mcpErr(405, "POST required")
+      const mcpRaw = (req.headers.get("authorization") || "").match(/^Bearer\s+(kci_\S+)$/i)?.[1] ?? ""
+      if (!mcpRaw) return mcpErr(401, "missing kci_ bearer token")
+      const mcpInfo = await getExtensionTokenInfo(mcpRaw)
+      if (!mcpInfo || !mcpInfo.projectId) return mcpErr(401, "invalid token")
+      if (!rlAllow(`mcp:${mcpInfo.projectId}`, 120, 60_000)) return mcpErr(429, "rate limited")
+      const parsed = await readJsonLimited(req, 32 * 1024)
+      if (!parsed.ok) return mcpErr(400, parsed.error)
+      const msg = parsed.data as any
+      if (!msg || msg.jsonrpc !== "2.0") return mcpErr(400, "invalid JSON-RPC 2.0 message")
+      const reply = await handleMcpMessage(msg, { projectId: mcpInfo.projectId })
+      if (reply === null) return new Response(null, { status: 202 }) // notification: no body
+      return json(reply, 200)
+    }
+
     // KLA-550: objective-driven authored run — wraps the F1 authoring engine (runAuthorNow), which
     // crystallizes a Trail AND runs a verification walk. Result composes with the existing
     // GET /api/v1/runs/:verification_run_id/report. Auth mirrors /api/v1/runs (kci_ bearer + IDOR).
