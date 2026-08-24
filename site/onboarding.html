@@ -1928,6 +1928,7 @@ async function bootstrap(){
   // Render the Goal screen + top rail IMMEDIATELY — never wait on the /api/me round-trip below.
   paint()
   // Homepage handoff (?url=<their site>): prefill the Product URL field + signup fields.
+  let _autoRunUrl = null
   try {
     const _hu = new URL(window.location.href).searchParams.get('url')
     if (_hu) {
@@ -1939,6 +1940,10 @@ async function bootstrap(){
         const _host = _parsed.hostname.replace(/^www\./i,'')
         if ($('domain') && !$('domain').value.trim()) $('domain').value = _host
         if ($('projectName') && !$('projectName').value.trim()) $('projectName').value = deriveName(_host)
+        // They already pasted this URL once (homepage demo). Asking them to pick goals and press
+        // "Connect & explore" again just re-submits the same input — jump straight to the run so the
+        // paste they already made counts. The goal survey stays for everyone else.
+        _autoRunUrl = _u
       }
     }
   } catch(e){ /* malformed ?url= — leave empty */ }
@@ -1968,6 +1973,12 @@ async function bootstrap(){
   } catch(e){}
   finally { clearTimeout(tmo) }
   paint()
+  // ?url= handoff: now that goal fork + signed-in state are resolved, start the review. Only when
+  // still on the Goal screen — an explicit user click (goalContinue/connectAndExplore) wins.
+  if (_autoRunUrl && cur === S.GOAL && typeof window.uhFetch === 'function') {
+    if (goal !== 'snap') go(S.PRODUCT)
+    window.uhFetch()
+  }
 }
 bootstrap()
 </script>

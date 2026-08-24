@@ -733,6 +733,31 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     var slot = document.getElementById('hdCtaSlot'); if (!slot) return;
     slot.innerHTML = '<div class="hd-cta-row"><a class="btn btn-indigo" href="' + esc(onboardingHref(url)) + '">Meet your full cast + save this finding — Get started free</a></div>';
   }
+  // Aha carry-through: the homepage demo already paid for a real persona/site + sim/preview round
+  // trip. Stash it in the SAME localStorage key onboarding's renderInsightLive()/signup persist step
+  // reads, so clicking "Get started" lands on their existing result instead of re-running ~40s of
+  // AI calls for an identical URL (audit 2026-08: homepage result was discarded). Onboarding still
+  // re-runs when there is no stash, or when its URL differs — freshness wins over reuse.
+  function stashAha(url, personas, d) {
+    try {
+      var st = JSON.parse(localStorage.getItem('klav-aha-preview') || '{}') || {}
+      if (String(st.url || '') !== String(url)) return; // different page than what onboarding will show
+      st.url = url
+      if (personas && personas.length && !(st.personas && st.personas.length)) st.personas = personas
+      if (d) {
+        var rx = d.reaction || {}
+        if (rx.observation) st.reactionText = String(rx.observation)
+        if (rx.title) st.reactionTitle = String(rx.title)
+        if (rx.sentiment) st.sentiment = String(rx.sentiment)
+        var p0 = (personas && personas[0]) || null
+        if (p0 && !st.personaName) { st.personaName = String(p0.name || ''); st.personaRole = String(p0.role || '') }
+        if (d.shotDataUrl) st.shotDataUrl = String(d.shotDataUrl)
+        if (d.region) st.region = d.region
+      }
+      st.ts = Date.now()
+      localStorage.setItem('klav-aha-preview', JSON.stringify(st))
+    } catch (e) {} // quota/private-mode: onboarding simply re-runs the pipeline as before
+  }
   function sentClass(s) { return (s === 'frustrated' || s === 'confused') ? 'bad' : (s === 'satisfied' || s === 'delighted') ? 'good' : 'neu'; }
 
   async function previewReact(url, personas) {
@@ -749,6 +774,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       if (!res.ok) throw 0;
       var d = await res.json(); var rx = d && d.reaction;
       if (!rx || !rx.observation) throw 0;
+      stashAha(url, personas, d);
       var sent = String(rx.sentiment || 'neutral');
       node.innerHTML = '<div class="hd-catch"><div class="hd-catch-hd">' + esc(pname) + ' caught something on ' + esc(hostOf(url)) + '</div>'
         + '<div class="hd-obs">\u201C' + esc(rx.observation) + '\u201D</div>'
@@ -788,6 +814,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       var personas = data.personas || [];
       if (!personas.length) { showErr('No customers came back for that page — try another URL.', url); return; }
       renderCast(url, personas);
+      stashAha(url, personas, null);
       previewReact(url, personas);
     } catch (e) {
       showErr('Network error — please try again.', url);
