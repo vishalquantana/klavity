@@ -14,6 +14,7 @@ import { listFindings } from "./trails"
 import { severityForKind, findingSelector } from "./trails-findings-gate"
 import { runsWithReplay } from "./trails-replay"
 import { presignGet } from "./s3"
+import { SCREENSHOTS } from "./screenshot-config"
 
 export type V1RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
 
@@ -117,7 +118,9 @@ function mapFindingToIssue(
   const evidence: V1Issue["evidence"] = {}
   const shotKey = ev.screenshotKey as string | undefined
   if (shotKey) {
-    try { evidence.screenshot_url = presignGet(String(shotKey), 3600) } catch { /* link is best-effort */ }
+    // KLA-560: honour the ops-tunable presign TTL (SCREENSHOTS.presignTtlSec, default 600) instead of a
+    // hardcoded 3600 — mirrors every other presign surface so a shortened GET lifetime applies here too.
+    try { evidence.screenshot_url = presignGet(String(shotKey), SCREENSHOTS.presignTtlSec) } catch { /* link is best-effort */ }
   }
   if (ctx.hasReplay) evidence.replay_url = `${ctx.baseUrl}/api/trails/walks/${ctx.runId}/replay`
   if (ev.console != null) evidence.console = ev.console
@@ -140,10 +143,61 @@ function mapFindingToIssue(
   return issue
 }
 
+// ── KLA-560: stable keyset pagination over a run's findings ──────────────────────────────────────
+// The report pages findings in listFindings' canonical rank order (recurrence × kind-weight DESC,
+// updated_at DESC). The old INTEGER-OFFSET cursor DRIFTED: a finding inserted between two page fetches
+// shifted every subsequent offset, so an AI consumer paging the report saw duplicate issues or skipped
+// past ones entirely. We switch to a VALUE-based keyset: the cursor encodes the last emitted finding's
+// rank tuple (rankScore, updated_at) PLUS its id as a total-order tiebreak, and the next page resumes
+// at the first finding strictly AFTER that key. An insert positioned before the cursor no longer
+// shifts the rows that come after it, so no duplicates and no skips.
+//
+// listFindings only exposes limit/offset (not a keyset WHERE), so we fetch the run's ranked findings
+// and slice in JS — the same full-run read buildV1RunStatus already performs. Findings-per-run is
+// bounded, so this stays cheap while making the page sequence deterministic across concurrent inserts.
+
+const KIND_WEIGHT: Record<string, number> = { regression: 3, amber_heal: 2 }
+
+/** Composite rank score mirroring listFindings' SQL: kind_weight × MAX(recurrence, 1). */
+function findingRankScore(f: Finding): number {
+  return (KIND_WEIGHT[f.kind] ?? 1) * Math.max(f.recurrence ?? 0, 1)
+}
+
+interface RankKey { r: number; u: number; i: string }
+
+function findingKey(f: Finding): RankKey {
+  return { r: findingRankScore(f), u: f.updatedAt, i: f.id }
+}
+
 /**
- * Build the AI-consumable report for a run. Paginates over this run's findings with an integer offset
- * cursor. `next_cursor` is null when the last page was returned. Ordering follows listFindings' rank
- * (recurrence × kind-severity, then newest-first) so the most important issues page first.
+ * Total order matching listFindings' ORDER BY (rankScore DESC, updated_at DESC) with id DESC as a
+ * deterministic final tiebreak. Returns <0 when `a` sorts BEFORE `b` (pages earlier), >0 when after.
+ */
+function compareKey(a: RankKey, b: RankKey): number {
+  if (a.r !== b.r) return b.r - a.r          // higher rankScore first
+  if (a.u !== b.u) return b.u - a.u          // newer updated_at first
+  return a.i < b.i ? 1 : a.i > b.i ? -1 : 0  // higher id first (stable tiebreak)
+}
+
+function encodeCursor(k: RankKey): string {
+  return Buffer.from(JSON.stringify(k), "utf8").toString("base64url")
+}
+
+function decodeCursor(cursor: string): RankKey | null {
+  try {
+    const o = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"))
+    if (o && typeof o.r === "number" && typeof o.u === "number" && typeof o.i === "string") {
+      return { r: o.r, u: o.u, i: o.i }
+    }
+  } catch { /* malformed / legacy integer cursor → fall through to first page */ }
+  return null
+}
+
+/**
+ * Build the AI-consumable report for a run. Paginates over this run's findings with a STABLE keyset
+ * cursor (see note above): the opaque `next_cursor` string resumes at the first finding after the last
+ * one returned, so a mid-page insert can't duplicate or skip issues. `next_cursor` is null on the last
+ * page. Ordering follows listFindings' rank (recurrence × kind-severity, then newest-first).
  */
 export async function buildV1Report(
   projectId: string,
@@ -151,19 +205,27 @@ export async function buildV1Report(
   opts: { baseUrl: string; cursor?: string | null; limit?: number },
 ): Promise<{ run_id: string; verdict: string | null; issues: V1Issue[]; next_cursor: string | null }> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200)
-  const offset = Math.max(Number.parseInt(String(opts.cursor ?? "0"), 10) || 0, 0)
 
-  // Fetch limit+1 to know whether another page exists without a separate COUNT.
-  const rows = await listFindings(projectId, { runId: walk.id, limit: limit + 1, offset })
-  const hasMore = rows.length > limit
-  const pageRows = hasMore ? rows.slice(0, limit) : rows
+  // Fetch the run's findings in canonical rank order, then keyset-slice in JS (see note above). The
+  // SQL ORDER BY has no id tiebreak, so equal-rank / equal-updated_at rows can arrive in an arbitrary
+  // order — re-sort with the total order so the keyset boundary is deterministic.
+  const rows = await listFindings(projectId, { runId: walk.id, limit: 10_000 })
+  rows.sort((a, b) => compareKey(findingKey(a), findingKey(b)))
+
+  const after = opts.cursor ? decodeCursor(String(opts.cursor)) : null
+  const start = after ? rows.findIndex((f) => compareKey(findingKey(f), after) > 0) : 0
+  const from = start < 0 ? rows.length : start   // cursor at/after the end → empty final page
+  const pageRows = rows.slice(from, from + limit)
+  const hasMore = from + limit < rows.length
 
   // One replay-existence check for the whole run (not per issue).
   let hasReplay = false
   try { hasReplay = (await runsWithReplay(projectId, [walk.id])).has(walk.id) } catch { /* best-effort */ }
 
   const issues = pageRows.map((f) => mapFindingToIssue(f, { baseUrl: opts.baseUrl, runId: walk.id, hasReplay }))
-  const next_cursor = hasMore ? String(offset + limit) : null
+  const next_cursor = hasMore && pageRows.length
+    ? encodeCursor(findingKey(pageRows[pageRows.length - 1]))
+    : null
 
   return {
     run_id: walk.id,
