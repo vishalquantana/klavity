@@ -8,7 +8,7 @@ process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
 process.env.KLAV_SECRET = Buffer.from(new Uint8Array(32).fill(3)).toString("base64")
 
-const { db, applySchema, migrateV2, createOtp, createSession, insertScreenshot } = await import("./db")
+const { db, applySchema, migrateV2, createOtp, createSession, insertScreenshot, pruneIdempotency } = await import("./db")
 const { runRetentionSweep } = await import("./retention")
 
 await applySchema(db!)
@@ -40,6 +40,30 @@ test("sweep deletes expired sessions but keeps live ones", async () => {
   const live = await db!.execute({ sql: "SELECT COUNT(*) c FROM sessions WHERE email=?", args: ["sl@test.local"] })
   expect(Number((expired.rows[0] as any).c)).toBe(0)
   expect(Number((live.rows[0] as any).c)).toBe(1)
+})
+
+// KLA-560 (item 4): api_idempotency grew unbounded — the sweep now prunes rows past the 48h retention.
+test("sweep prunes stale api_idempotency rows but keeps recent ones", async () => {
+  const now = Date.now()
+  const old = now - 49 * 60 * 60 * 1000  // older than the 48h window
+  const fresh = now - 1 * 60 * 60 * 1000 // well within the window
+  await db!.execute({ sql: "INSERT OR REPLACE INTO api_idempotency (project_id, idempotency_key, run_id, created_at) VALUES (?, ?, ?, ?)", args: ["p", "k-old", "r-old", old] })
+  await db!.execute({ sql: "INSERT OR REPLACE INTO api_idempotency (project_id, idempotency_key, run_id, created_at) VALUES (?, ?, ?, ?)", args: ["p", "k-fresh", "r-fresh", fresh] })
+
+  const res = await runRetentionSweep(now)
+  expect(res.idempotencyPruned).toBeGreaterThanOrEqual(1)
+
+  const gone = await db!.execute({ sql: "SELECT COUNT(*) c FROM api_idempotency WHERE idempotency_key=?", args: ["k-old"] })
+  const kept = await db!.execute({ sql: "SELECT COUNT(*) c FROM api_idempotency WHERE idempotency_key=?", args: ["k-fresh"] })
+  expect(Number((gone.rows[0] as any).c)).toBe(0)
+  expect(Number((kept.rows[0] as any).c)).toBe(1)
+})
+
+test("pruneIdempotency respects a custom age window", async () => {
+  const now = Date.now()
+  await db!.execute({ sql: "INSERT OR REPLACE INTO api_idempotency (project_id, idempotency_key, run_id, created_at) VALUES (?, ?, ?, ?)", args: ["p2", "k2", "r2", now - 5000] })
+  const deleted = await pruneIdempotency(1000, now) // anything older than 1s
+  expect(deleted).toBeGreaterThanOrEqual(1)
 })
 
 test("sweep leaves un-expired and NULL-expiry screenshots untouched", async () => {

@@ -1470,6 +1470,26 @@ export async function saveIdempotentRunId(projectId: string, idempotencyKey: str
   })
 }
 
+/**
+ * KLA-560: prune api_idempotency rows older than `olderThanMs` (default 48h). The ledger only needs to
+ * outlive a client's retry window, but nothing pruned it, so it grew unbounded. Wired into the periodic
+ * retention sweep (retention.ts). Returns the number of rows deleted; best-effort (never throws).
+ */
+export async function pruneIdempotency(olderThanMs = 48 * 60 * 60 * 1000, now = Date.now()): Promise<number> {
+  if (!db) return 0
+  const cutoff = now - Math.max(olderThanMs, 0)
+  try {
+    const r = await db.execute({
+      sql: "DELETE FROM api_idempotency WHERE created_at < ?",
+      args: [cutoff],
+    })
+    return Number((r as any).rowsAffected ?? 0)
+  } catch (e: any) {
+    console.warn("pruneIdempotency failed:", e?.message || e)
+    return 0
+  }
+}
+
 /** Persist git metadata (already JSON-stringified) on a walk row. Best-effort/no-op on empty. */
 export async function saveWalkGit(projectId: string, runId: string, gitJson: string | null): Promise<void> {
   if (!gitJson) return

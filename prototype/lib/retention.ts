@@ -2,15 +2,15 @@
 // retain personal data (OTP codes, sessions) or PII screenshots past their lifetime (GDPR storage
 // limitation, OWASP). Wired in server.ts to run shortly after boot and every 6h thereafter; GUARDED so
 // it never runs under tests (NODE_ENV==='test').
-import { db, deleteExpiredOtps, deleteExpiredSessions, expiredScreenshotKeys, deleteScreenshotRow } from "./db"
+import { db, deleteExpiredOtps, deleteExpiredSessions, expiredScreenshotKeys, deleteScreenshotRow, pruneIdempotency } from "./db"
 import { deleteObject } from "./s3"
 import { pruneRunHistory } from "./trails-run-retention"
 import { purgeExpiredShareTokens } from "./trails-share"
 
-export type RetentionResult = { otps: number; sessions: number; screenshots: number; s3Errors: number; runsDeleted: number; shareTokensPurged: number }
+export type RetentionResult = { otps: number; sessions: number; screenshots: number; s3Errors: number; runsDeleted: number; shareTokensPurged: number; idempotencyPruned: number }
 
 export async function runRetentionSweep(now = Date.now()): Promise<RetentionResult> {
-  const result: RetentionResult = { otps: 0, sessions: 0, screenshots: 0, s3Errors: 0, runsDeleted: 0, shareTokensPurged: 0 }
+  const result: RetentionResult = { otps: 0, sessions: 0, screenshots: 0, s3Errors: 0, runsDeleted: 0, shareTokensPurged: 0, idempotencyPruned: 0 }
   if (!db) return result // no DB configured → nothing to sweep
 
   result.otps = await deleteExpiredOtps(now)
@@ -43,8 +43,14 @@ export async function runRetentionSweep(now = Date.now()): Promise<RetentionResu
     return 0
   })
 
-  if (result.otps || result.sessions || result.screenshots || result.runsDeleted || result.shareTokensPurged) {
-    console.log(`✓ retention sweep: ${result.otps} otps, ${result.sessions} sessions, ${result.screenshots} screenshots (${result.s3Errors} s3 errors), ${result.runsDeleted} old runs, ${result.shareTokensPurged} share tokens`)
+  // KLA-560: prune the api_idempotency ledger (48h retention) so it can't grow unbounded.
+  result.idempotencyPruned = await pruneIdempotency(undefined, now).catch((e: any) => {
+    console.warn("retention: idempotency prune failed:", e?.message || e)
+    return 0
+  })
+
+  if (result.otps || result.sessions || result.screenshots || result.runsDeleted || result.shareTokensPurged || result.idempotencyPruned) {
+    console.log(`✓ retention sweep: ${result.otps} otps, ${result.sessions} sessions, ${result.screenshots} screenshots (${result.s3Errors} s3 errors), ${result.runsDeleted} old runs, ${result.shareTokensPurged} share tokens, ${result.idempotencyPruned} idempotency keys`)
   }
   return result
 }
