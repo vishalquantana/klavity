@@ -48,7 +48,7 @@ async function jiraAttachFiles(
       // Build a Web FormData so the multipart boundary is set automatically — do NOT set
       // Content-Type manually (the boundary would be missing/wrong).
       const form = new FormData()
-      form.append("file", new Blob([att.bytes], { type: att.contentType }), att.filename)
+      form.append("file", new Blob([att.bytes as BlobPart], { type: att.contentType }), att.filename)
 
       // SSRF guard (H3): host is user-supplied → validate with safeFetch before sending creds.
       const attRes = await safeFetch(

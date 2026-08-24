@@ -240,7 +240,7 @@ export const planeConnector: Connector = {
           // the multipart boundary).
           const form = new FormData()
           for (const [k, v] of Object.entries(uploadFields)) form.append(k, String(v))
-          form.append("file", new Blob([att.bytes], { type: att.contentType }), att.filename)
+          form.append("file", new Blob([att.bytes as BlobPart], { type: att.contentType }), att.filename)
 
           const putRes = await safeFetch(
             uploadUrl,

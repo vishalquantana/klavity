@@ -95,7 +95,7 @@ async function uploadAttachment(
   }
   const put = await safeFetch(
     uf.uploadUrl,
-    { method: "PUT", headers: putHeaders, body: att.bytes },
+    { method: "PUT", headers: putHeaders, body: att.bytes as unknown as BodyInit },
     { allowHosts: ["linear.app"], allowLoopbackInTest: true },
   )
   if (!put.ok) throw new Error(`presigned PUT HTTP ${put.status}`)
