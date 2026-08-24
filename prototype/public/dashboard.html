@@ -1043,6 +1043,36 @@ body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
 .tkt-panel-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
 .tkt-panel-btn:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
 @media(max-width:640px){#ticketSingle.tkt-panel{width:100vw;padding:0 16px 32px}}
+/* KLA-563: dedicated ticket page (/:project/tickets/:key → hash #tickets/<id>). The board is never
+   mounted behind it; the page renders directly from a single-ticket fetch. Centered card, max 1180px. */
+body.tkt-page-open #ticketsKanban,body.tkt-page-open #tktListView,body.tkt-page-open .kb-toolbar,
+body.tkt-page-open #tktQuickChips,body.tkt-page-open #tktFilterBar{display:none!important}
+#ticketSingle.tkt-page{max-width:1180px;margin:0 auto}
+#ticketSingle.tkt-page .tkt-detail,#ticketSingle.tkt-page .single-head{max-width:none}
+.tkt-crumb{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;color:var(--paper-faint);margin:2px 0 14px}
+.tkt-crumb-link{background:none;border:none;padding:0;font-family:inherit;font-size:inherit;color:var(--paper-dim);cursor:pointer;text-decoration:none}
+.tkt-crumb-link:hover{color:var(--indigo);text-decoration:underline}
+.tkt-crumb-sep{color:var(--paper-faint);opacity:.7}
+.tkt-crumb-cur{color:var(--paper);font-weight:600;font-family:var(--mono);font-size:12px}
+.tkt-page-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.tkt-page-type{display:inline-flex;align-items:center;color:var(--paper-dim)}
+.tkt-page-key{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--paper)}
+.tkt-page-head .tph-sp{flex:1;min-width:8px}
+/* min 28px hit target for icon-only buttons (a11y §10) */
+.tkt-icon-btn{display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:28px;width:30px;height:30px;background:var(--ink);border:1px solid var(--line);border-radius:8px;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+.tkt-icon-btn:hover:not(:disabled){border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
+.tkt-icon-btn:active:not(:disabled){transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+.tkt-icon-btn:disabled{opacity:.4;cursor:default}
+/* §6.7 screenshot block: fake-browser chrome + immediate placeholder + "Reported here" annotation */
+.tkt-browser{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--ink);margin-top:2px}
+.tkt-browser-bar{display:flex;align-items:center;gap:6px;padding:8px 11px;background:var(--ink-2);border-bottom:1px solid var(--line)}
+.tkt-tl{width:10px;height:10px;border-radius:50%;flex:none}
+.tkt-tl-r{background:#f2564f}.tkt-tl-y{background:#f4be4f}.tkt-tl-g{background:#43c463}
+.tkt-browser-url{margin-left:8px;flex:1;min-width:0;font-family:var(--mono);font-size:11px;color:var(--paper-dim);background:var(--ink);border:1px solid var(--line);border-radius:999px;padding:3px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tkt-browser .tkt-shot{margin:0;padding:0}
+.tkt-shot-sk{position:relative;width:100%;aspect-ratio:16/10;background:linear-gradient(100deg,var(--ink-2) 30%,var(--line) 50%,var(--ink-2) 70%);background-size:200% 100%;animation:tktShotSk 1.3s ease-in-out infinite}
+@keyframes tktShotSk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.tkt-shot-ann{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);border:2px solid var(--rose);border-radius:8px;background:rgba(226,68,92,.10);color:var(--rose);font-size:11px;font-weight:700;padding:6px 12px;letter-spacing:.02em;white-space:nowrap;box-shadow:0 2px 10px rgba(226,68,92,.20)}
 /* Two-column layout: screenshot LEFT, all details RIGHT. The shot is a direct child of
    .tkt-detail; everything else is wrapped in .tkt-right-body. */
 #ticketSingle .tkt-detail.single-has-shot{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);column-gap:20px;align-items:start}
@@ -3205,7 +3235,14 @@ let _deepLinkTicketConsumed = false   // set once we commit to auto-opening the 
 function maybeOpenDeepLinkTicket() {
   try {
     if (_deepLinkTicketConsumed) return   // already auto-opened this page load — never re-open on poll/focus refresh
-    const ticketId = new URLSearchParams(location.search).get("ticket")
+    // KLA-563: the dedicated ticket page is a hash route (#tickets/<id>); the legacy Slack deep link is
+    // ?ticket=<id>. Read either — inline (not a shared helper) so the brace-extracted test harness, which
+    // injects only `location.search`, stays self-contained and a missing location.hash is a no-op.
+    let ticketId = new URLSearchParams(location.search).get("ticket")
+    if (!ticketId) {
+      const _hm = (location.hash || "").match(/^#?tickets\/(.+)$/)
+      if (_hm) ticketId = decodeURIComponent(_hm[1])
+    }
     if (!ticketId) return
     // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
     const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
@@ -6627,6 +6664,12 @@ const KANBAN_COLS = [
 let _tktSingleMode = "panel"
 async function openSingleTicket(id, mode) {
   if (mode === "panel" || mode === "full") _tktSingleMode = mode
+  // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
+  // capture on the FIRST open (not on prev/next re-entry or the cache→fresh re-render for same id).
+  try {
+    const ae = document.activeElement
+    if (ae && ae !== document.body && !$("ticketSingle").contains(ae)) window.__klavTktInvoker = ae
+  } catch (e) {}
   _renderSingleTicket(id)
   try {
     const r = await fetch("/api/feedback/" + encodeURIComponent(id))
@@ -6646,41 +6689,159 @@ async function openSingleTicket(id, mode) {
     if (single && !single.classList.contains("hide")) _renderSingleTicket(id)
   } catch (e) {}
 }
+// KLA-563: the human ticket key shown in the breadcrumb / dedicated-page header. Prefers the sequence
+// number (#123), falls back to the short quotable ref, then the id prefix. Status stays color+text.
+function ticketKeyLabel(t) {
+  if (!t) return ""
+  if (t.seqNum) return "#" + t.seqNum
+  if (t.ref) return String(t.ref)
+  return String(t.id || "").slice(0, 8)
+}
+// KLA-563: the ordered list of ticket ids the board would currently show (same filter predicate +
+// column order the kanban uses), so the dedicated page's prev/next steps through the exact board
+// order with the user's filters preserved. Empty when no board set is cached (a cold deep-link load,
+// where the board was never fetched) — prev/next then disable rather than trigger an index fetch.
+function _tktOrderedVisibleIds() {
+  const src = (Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) ? _tktBoardTickets : (state.tickets || [])
+  const vis = src.filter(t => (typeof kbMatchesFilter === "function" ? kbMatchesFilter(t) : true) && tktMatchesSelectFilters(t))
+  const groups = {}; KANBAN_COLS.forEach(c => { groups[c.key] = [] })
+  vis.forEach(t => { const k = kanbanKeyForStatus(t.status); if (groups[k]) groups[k].push(t) })
+  const ids = []; KANBAN_COLS.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
+  return ids
+}
+// KLA-563: the shareable canonical URL for a ticket's dedicated page — the hash route #tickets/<id>.
+function ticketPageUrl(id) {
+  try { const u = new URL(location.href); u.searchParams.delete("ticket"); u.hash = "tickets/" + encodeURIComponent(String(id)); return u.toString() }
+  catch (e) { return location.origin + location.pathname + "#tickets/" + encodeURIComponent(String(id)) }
+}
+// KLA-563 §6.7: wrap the detail screenshot in fake-browser chrome (traffic lights + URL pill) and paint
+// an immediate placeholder (skeleton + red "Reported here" box) so it's never a bare "Loading…" state.
+// loadTktShot then streams the real image into the same .tkt-shot box, replacing the placeholder.
+function wrapScreenshotChrome(detailEl, t) {
+  const box = detailEl.querySelector(".tkt-shot")
+  if (!box || box.__chromed) return
+  box.__chromed = true
+  const shp = t.annotations && Array.isArray(t.annotations.shapes) ? t.annotations.shapes[0] : null
+  const W = t.annotations && t.annotations.w, H = t.annotations && t.annotations.h
+  let annStyle = ""
+  if (shp && W && H && shp.x != null && shp.y != null) {
+    const lx = Math.max(6, Math.min(94, (shp.x / W) * 100))
+    const ly = Math.max(8, Math.min(90, (shp.y / H) * 100))
+    annStyle = ` style="left:${lx.toFixed(1)}%;top:${ly.toFixed(1)}%"`
+  }
+  box.innerHTML = `<div class="tkt-shot-sk"><div class="tkt-shot-ann"${annStyle}>Reported here</div></div>`
+  const chrome = document.createElement("div"); chrome.className = "tkt-browser"
+  const url = ((t.urlHost || "") + (t.urlPath || "")) || "captured page"
+  const bar = document.createElement("div"); bar.className = "tkt-browser-bar"
+  bar.innerHTML = `<span class="tkt-tl tkt-tl-r"></span><span class="tkt-tl tkt-tl-y"></span><span class="tkt-tl tkt-tl-g"></span><span class="tkt-browser-url" title="${esc(url)}">${esc(url)}</span>`
+  box.parentNode.insertBefore(chrome, box)
+  chrome.appendChild(bar)
+  chrome.appendChild(box)
+}
+// KLA-563: one Esc handler for the dedicated full page (the panel has its own in ensurePanelScrim).
+function ensureTicketPageEsc() {
+  if (window.__klavTktPageEscBound) return
+  window.__klavTktPageEscBound = true
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return
+    if (!document.body.classList.contains("tkt-page-open")) return
+    const single = $("ticketSingle")
+    if (single && !single.classList.contains("hide") && single.children.length) closeSingleTicket()
+  })
+}
 function _renderSingleTicket(id) {
   const t = (state.tickets || []).find(x => String(x.id) === String(id))
   if (!t) return
-  const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
   const single = $("ticketSingle"); if (!single) return
   const board = $("ticketsKanban"); const toolbar = document.querySelector(".kb-toolbar")
   const listView = document.getElementById("tktListView")
   const admin = state.active && state.active.role === "admin"
   const sv = ["urgent","high","medium","low"].includes(t.priority) ? t.priority : "none"
   const panel = _tktSingleMode === "panel"
+  const key = ticketKeyLabel(t)
+  if (panel) {
+    // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
+    document.body.classList.remove("tkt-page-open")
+    const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+  } else {
+    // KLA-563 dedicated page: activate the Tickets view chrome but NEVER mount the board — the page
+    // renders directly from the single-ticket fetch. renderTicketsView() early-returns while this flag
+    // is set (no board fetch/DOM), and the body class hides the board/toolbar/list/chip regions.
+    window.__klavTktPageOpen = true
+    document.body.classList.add("tkt-page-open")
+    // Only switch views on the FIRST render (not the cache→fresh re-render for the same open): setView
+    // resets the hash to #tickets, which would otherwise clobber our #tickets/<id> and push a duplicate
+    // history entry each render. Once data-view is 'tickets' the chrome is already correct.
+    if (document.body.getAttribute("data-view") !== "tickets") {
+      if (typeof window.setView === "function") window.setView("tickets")
+      else document.body.setAttribute("data-view", "tickets")
+    }
+  }
   single.innerHTML = ""
   if (panel) {
     // Panel mode: board/list/toolbar STAY visible behind a fixed right-side panel + scrim.
-    single.classList.add("tkt-panel")
+    single.classList.add("tkt-panel"); single.classList.remove("tkt-page")
+    single.setAttribute("role", "dialog"); single.setAttribute("aria-modal", "true")
+    single.setAttribute("aria-label", "Ticket " + key + (t.title ? " — " + t.title : ""))
     ensurePanelScrim()
     document.body.classList.add("tkt-panel-open")
     if (board) board.classList.remove("hide")
     if (listView && _tktView === "list") listView.classList.remove("hide")
     if (toolbar) toolbar.classList.remove("hide")
     const ph = document.createElement("div"); ph.className = "tkt-panel-head"
-    ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" title="Close (Esc)">${kicon('x',{size:13})} Close</button>`
+    ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x',{size:13})} Close</button>`
       + `<span class="tph-sp"></span>`
-      + `<button class="tkt-panel-btn" data-act="expand" type="button" title="Open as a full, shareable page">${kicon('app-window',{size:13})} Full page</button>`
+      + `<button class="tkt-panel-btn" data-act="expand" type="button" aria-label="Expand to full, shareable page" title="Open as a full, shareable page">${kicon('app-window',{size:13})} Full page</button>`
     ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
+    // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
     ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full"))
     single.appendChild(ph)
+    single.__focusTarget = ph.querySelector('[data-act="close"]')
   } else {
-    // Full-page mode: the dedicated deep-linkable route — replaces the board (legacy behavior).
-    single.classList.remove("tkt-panel")
+    // KLA-563 dedicated page: breadcrumb (Project › Tickets › KEY) + header row
+    // (type · key · status pill · ← Back to board · Copy link · prev/next). Esc = back.
+    single.classList.remove("tkt-panel"); single.classList.add("tkt-page")
+    single.setAttribute("role", "region"); single.removeAttribute("aria-modal")
+    single.setAttribute("aria-label", "Ticket " + key + (t.title ? " — " + t.title : ""))
+    single.setAttribute("tabindex", "-1")
     document.body.classList.remove("tkt-panel-open")
     hidePanelScrim()
-    const back = document.createElement("button")
-    back.className = "tkt-back"; back.type = "button"; back.textContent = _tktView === "board" ? "← Back to board" : "← Back to list"
-    back.addEventListener("click", closeSingleTicket)
-    single.appendChild(back)
+    ensureTicketPageEsc()
+    const projName = (state.active && state.active.name) || "Project"
+    const crumb = document.createElement("nav"); crumb.className = "tkt-crumb"; crumb.setAttribute("aria-label", "Breadcrumb")
+    crumb.innerHTML = `<button type="button" class="tkt-crumb-link" data-crumb="1">${esc(projName)}</button>`
+      + `<span class="tkt-crumb-sep" aria-hidden="true">›</span>`
+      + `<button type="button" class="tkt-crumb-link" data-crumb="1">Tickets</button>`
+      + `<span class="tkt-crumb-sep" aria-hidden="true">›</span>`
+      + `<span class="tkt-crumb-cur" aria-current="page">${esc(key)}</span>`
+    crumb.querySelectorAll(".tkt-crumb-link").forEach(a => a.addEventListener("click", closeSingleTicket))
+    single.appendChild(crumb)
+
+    const backLbl = _tktView === "board" ? "← Back to board" : "← Back to list"
+    const ids = _tktOrderedVisibleIds()
+    const cur = ids.indexOf(String(id))
+    const hasPrev = cur > 0, hasNext = cur >= 0 && cur < ids.length - 1
+    const ph = document.createElement("div"); ph.className = "tkt-page-head"
+    ph.innerHTML = `<span class="tkt-page-type" aria-hidden="true">${kicon('bug',{size:16})}</span>`
+      + `<span class="tkt-page-key">${esc(key)}</span>`
+      + statusPillHtml(t.status)
+      + `<span class="tph-sp"></span>`
+      + `<button class="tkt-panel-btn" data-act="back" type="button" aria-label="Back to board (Esc)">${esc(backLbl)}</button>`
+      + `<button class="tkt-panel-btn" data-act="copy" type="button" aria-label="Copy link to this ticket">${kicon('link',{size:13})} Copy link</button>`
+      + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left',{size:15})}</button>`
+      + `<button class="tkt-icon-btn" data-act="next" type="button" aria-label="Next ticket"${hasNext ? "" : " disabled"}>${kicon('chevron-right',{size:15})}</button>`
+    ph.querySelector('[data-act="back"]').addEventListener("click", closeSingleTicket)
+    const copyBtn = ph.querySelector('[data-act="copy"]')
+    copyBtn.addEventListener("click", async () => {
+      const ok = await copyText(ticketPageUrl(id))
+      const orig = copyBtn.innerHTML
+      copyBtn.innerHTML = ok ? (kicon('check', { size: 13 }) + " Copied") : (kicon('x', { size: 13 }) + " Copy failed")
+      setTimeout(() => { copyBtn.innerHTML = orig }, 1800)
+    })
+    if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full"))
+    if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full"))
+    single.appendChild(ph)
+    single.__focusTarget = ph.querySelector('[data-act="back"]')
   }
   const head = document.createElement("div"); head.className = "single-head"
   const renderHead = () => {
@@ -6697,6 +6858,9 @@ function _renderSingleTicket(id) {
   detailEl.classList.add("show")
   if (t.screenshotId) detailEl.classList.add("single-has-shot")   // enables the image-left grid
   single.appendChild(detailEl)
+  // §6.7: on the dedicated page, dress the screenshot in fake-browser chrome + an immediate placeholder
+  // BEFORE loadTktShot streams the real image into the same box (panel keeps the compact shot).
+  if (!panel && t.screenshotId) wrapScreenshotChrome(detailEl, t)
   loadTktShot(detailEl, t.annotations)
   // A.8: per-ticket occurrence timeline (receipts) — self-hides for single-occurrence reports.
   single.appendChild(buildOccurrenceTimeline(t.id))
@@ -6706,23 +6870,36 @@ function _renderSingleTicket(id) {
   // timeline can synthesize its virtual first "report received" row).
   single.appendChild(buildTimelineSection(t.id, t))
   if (!panel) {
-    // Full-page route hides the board/list/toolbar it replaces; panel mode leaves them visible.
+    // KLA-563 dedicated page: the board was never mounted (renderTicketsView early-returns while
+    // __klavTktPageOpen is set), but hide the containers defensively in case a cached board is present.
     if (board) board.classList.add("hide")
     if (listView) listView.classList.add("hide")
     if (toolbar) toolbar.classList.add("hide")
   }
   single.classList.remove("hide")
-  // KLA-200: push deep-link URL so this ticket can be shared / bookmarked.
-  // KLA-206: openSingleTicket may render twice (cache then fresh fetch); only push a new
-  // history entry the first time — a re-render for the same ticket replaces in place.
+  // Reflect the URL so the ticket is shareable/bookmarkable. Panel = ?ticket=<id> overlay deep link;
+  // dedicated page = the canonical hash route #tickets/<id>. KLA-206: re-render replaces in place
+  // (only the first open pushes a new history entry).
   try {
-    const u = new URL(location.href)
-    const already = u.searchParams.get("ticket") === String(id)
-    u.searchParams.set("ticket", String(id))
-    if (already) history.replaceState(null, "", u.toString())
-    else history.pushState(null, "", u.toString())
+    if (panel) {
+      const u = new URL(location.href)
+      const already = u.searchParams.get("ticket") === String(id)
+      u.searchParams.set("ticket", String(id))
+      if (already) history.replaceState(null, "", u.toString())
+      else history.pushState(null, "", u.toString())
+    } else {
+      const u = new URL(location.href)
+      u.searchParams.delete("ticket")
+      const target = "tickets/" + encodeURIComponent(String(id))
+      const already = (u.hash || "").replace(/^#/, "") === target
+      u.hash = target
+      if (already) history.replaceState(null, "", u.toString())
+      else history.pushState(null, "", u.toString())
+    }
   } catch (e) {}
-  // Panel scrolls itself to top; the full-page route scrolls the window (as before).
+  // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
+  try { if (single.__focusTarget) single.__focusTarget.focus() } catch (e) {}
+  // Panel scrolls itself to top; the dedicated page scrolls the window.
   if (panel) { try { single.scrollTop = 0 } catch (e) {} }
   else { try { window.scrollTo(0, 0) } catch (e) {} }
 }
@@ -6747,23 +6924,33 @@ function hidePanelScrim() { document.body.classList.remove("tkt-panel-open") }
 function closeSingleTicket() {
   const single = $("ticketSingle"), toolbar = document.querySelector(".kb-toolbar")
   const wasPanel = single && single.classList.contains("tkt-panel")
+  const invoker = window.__klavTktInvoker
+  // KLA-563: leaving the dedicated page — clear the flag FIRST so renderTicketsView() re-mounts the
+  // board (with the in-memory filters preserved — exact board state), then drop the page body class.
+  window.__klavTktPageOpen = false
+  document.body.classList.remove("tkt-page-open")
   document.body.classList.remove("tkt-panel-open")   // slide the panel out
-  if (single) { single.classList.add("hide"); single.classList.remove("tkt-panel"); single.innerHTML = "" }
+  if (single) { single.classList.add("hide"); single.classList.remove("tkt-panel"); single.classList.remove("tkt-page"); single.innerHTML = ""; single.removeAttribute("role"); single.removeAttribute("aria-modal"); single.removeAttribute("aria-label") }
   if (toolbar) toolbar.classList.remove("hide")
   // Remove hide from list view before restoring (renderTicketsView will manage visibility)
   const listView = document.getElementById("tktListView")
   if (listView) listView.classList.remove("hide")
-  // KLA-200: remove deep-link param when closing
+  // KLA-200 / KLA-563: clear BOTH deep-link surfaces when closing — the ?ticket= overlay param and the
+  // #tickets/<id> dedicated-page hash — so a later reload / the ~25s poll can't drag the user back.
   try {
     const u = new URL(location.href)
     u.searchParams.delete("ticket")
+    if (/^#?tickets\//.test(u.hash || "")) u.hash = "tickets"   // back to the board hash, not a ticket
     history.replaceState(null, "", u.toString())
   } catch (e) {}
   // Reset to panel mode for the next plain open. In panel mode the board/list were never hidden and
   // the ~25s liveness poll is suppressed while a ticket is open (dashLiveBusy checks #ticketSingle),
-  // so it was never nuked — only re-render the view when the full-page route had replaced it.
+  // so it was never nuked — only re-render the view when the dedicated page had replaced it.
   _tktSingleMode = "panel"
   if (!wasPanel) renderTicketsView()
+  // a11y §10: return focus to the card / control that opened the detail.
+  try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus() } catch (e) {}
+  window.__klavTktInvoker = null
 }
 
 // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
@@ -7079,6 +7266,15 @@ function tktFilterBarBind() {
 
 function renderTicketsView() {
   tktFilterBarBind()
+  // KLA-563: while the dedicated ticket page is open, the board/list are NEVER mounted — the page
+  // renders straight from the single-ticket fetch. Bind the filter bar (so Back-to-board restores the
+  // exact filter state) but skip the board fetch/DOM entirely.
+  if (window.__klavTktPageOpen) {
+    const board = document.getElementById("ticketsKanban"); if (board) board.classList.add("hide")
+    const list = document.getElementById("tktListView"); if (list) list.classList.add("hide")
+    const tb = document.querySelector(".kb-toolbar"); if (tb) tb.classList.add("hide")
+    return
+  }
   if (_tktView === "list") {
     const board = document.getElementById("ticketsKanban")
     if (board) board.classList.add("hide")
@@ -10241,6 +10437,15 @@ load()
     // legitimate ?ticket= deep link still opens on load.
     if(window.__klavSetViewReady&&v!=='tickets')window.__klavDeepLinkNavAway=true;
     window.__klavSetViewReady=true;
+    // KLA-563: if the dedicated ticket page is open and we're leaving Tickets (via the sidebar — the page
+    // has no scrim, unlike the panel), tear it down so returning to Tickets shows the board, not a stale
+    // single-ticket page. (The panel is always dismissed via its scrim/Esc before any nav.)
+    if(v!=='tickets'&&window.__klavTktPageOpen){
+      window.__klavTktPageOpen=false;
+      document.body.classList.remove('tkt-page-open');
+      var _ts=document.getElementById('ticketSingle');
+      if(_ts){_ts.classList.add('hide');_ts.classList.remove('tkt-page');_ts.innerHTML='';_ts.removeAttribute('role');_ts.removeAttribute('aria-label');}
+    }
     normalizeSidebar();
     document.body.setAttribute('data-view',v);
     sidebarNavs().forEach(function(b){b.classList.toggle('active',b.getAttribute('data-go')===v);});
@@ -10306,7 +10511,12 @@ load()
   var init=(location.hash||'').replace('#','');
   // Deep-link form "triage/<feedbackId>" (from a Sim-run observation) opens New reports on that row.
   var deepTriage=init.match(/^triage\/(.+)$/);
+  // KLA-563 deep-link form "tickets/<id>" (the dedicated ticket page's shareable hash route): switch to
+  // the Tickets view WITHOUT mounting the board (set __klavTktPageOpen so renderTicketsView no-ops), then
+  // maybeOpenDeepLinkTicket() (run after data loads) renders the dedicated page in full mode, once.
+  var deepTkt=init.match(/^tickets\/(.+)$/);
   if(deepTriage){window._pendingTriageFocus=decodeURIComponent(deepTriage[1]);setView('triage');}
+  else if(deepTkt){window.__klavTktPageOpen=true;setView('tickets');}
   else{setView(VIEWS.indexOf(init)>=0?init:'overview');}
 })();
 </script>
