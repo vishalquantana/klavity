@@ -100,6 +100,7 @@ import { runWalkNow } from "./lib/trails-trigger"
 // KLA-550: /api/v1/runs — REST wrapper over the AutoSim/Trail engine (idempotency + git + AI report).
 import { getIdempotentRunId, saveIdempotentRunId, saveWalkGit, getWalkGit } from "./lib/db"
 import { buildV1RunStatus, buildV1Report, v1StatusForWalk } from "./lib/v1-runs"
+import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
@@ -7174,6 +7175,93 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     //   GET  /api/v1/runs/:id?project=:id     — run status + severity summary + git
     //   GET  /api/v1/runs/:id/report?project=:id — AI-consumable findings report (cursor-paginated)
     //   POST /api/v1/runs/:id/cancel?project=:id — cooperative best-effort cancel
+    // KLA-550: objective-driven authored run — wraps the F1 authoring engine (runAuthorNow), which
+    // crystallizes a Trail AND runs a verification walk. Result composes with the existing
+    // GET /api/v1/runs/:verification_run_id/report. Auth mirrors /api/v1/runs (kci_ bearer + IDOR).
+    if (path === "/api/v1/authored-runs" || path.startsWith("/api/v1/authored-runs/")) {
+      const v1err = (code: string, message: string, status: number) =>
+        json({ error: { code, message, request_id: crypto.randomUUID().slice(0, 8) } }, status)
+
+      const raw = (req.headers.get("authorization") || "").match(/^Bearer\s+(kci_\S+)$/i)?.[1] ?? ""
+      if (!raw) return v1err("unauthorized", "Missing or malformed bearer token.", 401)
+      const info = await getExtensionTokenInfo(raw)
+      if (!info || !info.projectId) return v1err("unauthorized", "Invalid or expired token.", 401)
+      const tokenProject = info.projectId
+
+      // ── POST /api/v1/authored-runs — trigger. Project comes from the JSON body (not ?project). ──
+      if (req.method === "POST" && path === "/api/v1/authored-runs") {
+        if (!rlAllow(`v1authored:create:${tokenProject}`, 10, 60_000)) return v1err("rate_limited", "Too many authored runs — slow down and retry shortly.", 429)
+        const parsed = await readJsonLimited(req, 8 * 1024)
+        if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+        const body = parsed.data as Record<string, any>
+        if (String(body.project_id || "") !== tokenProject) return v1err("forbidden", "Token is not authorized for this project.", 403)
+        const objective = String(body.objective || "").trim()
+        const targetUrl = String(body.target_url || "").trim()
+        if (objective.length < 10 || objective.length > 4000) return v1err("bad_request", "objective must be 10-4000 chars.", 400)
+        if (!/^https?:\/\//i.test(targetUrl) || targetUrl.length > 500) return v1err("bad_request", "target_url must be an http(s) URL.", 400)
+
+        // Plan gate — same as POST /api/trails/author (snapLocked → 402).
+        const authorProj = await projectById(tokenProject)
+        if (authorProj && snapLocked(authorProj)) return v1err("plan_required", "Authored runs require a paid plan on this project.", 402)
+        // TODO(KLA-550): mirror the autosimFlows quota gate (server.ts POST /api/trails/author) once
+        // billing enforcement (KLAV_BILLING_ENFORCEMENT=1) is on and the account-id resolver is wired.
+
+        // Idempotency — reuse api_idempotency (generic TEXT id column stores the author sessionId).
+        const idemKey = (req.headers.get("idempotency-key") || "").trim().slice(0, 200)
+        if (idemKey) {
+          const existing = await getIdempotentRunId(tokenProject, idemKey)
+          if (existing) {
+            const s = await getAuthorSession(tokenProject, existing)
+            if (s && s.objective !== objective) return v1err("idempotency_conflict", "Idempotency-Key was already used for a different objective.", 409)
+            if (s) return json({ ...buildAuthoredRunStatus(s), status_url: `/api/v1/authored-runs/${s.id}`, idempotent_replay: true }, 200)
+          }
+        }
+
+        let sessionId: string
+        try {
+          const r = await runAuthorNow(tokenProject, {
+            name: String(body.name || objective).slice(0, 80),
+            objective,
+            baseUrl: targetUrl,
+            viewport: body.viewport,
+            testAccountName: body.test_account ? String(body.test_account) : undefined,
+          } as any)
+          sessionId = r.sessionId
+        } catch (e: any) {
+          if (e instanceof WalkBusyError) return v1err("busy", "An AutoSim or authoring run is already in progress for this project.", 409)
+          const msg = String(e?.message || e)
+          if (/busy|already running/i.test(msg)) return v1err("busy", "An AutoSim or authoring run is already in progress for this project.", 409)
+          return v1err("internal", oops(e, "v1-authored-create").id, 500)
+        }
+        if (idemKey) await saveIdempotentRunId(tokenProject, idemKey, sessionId).catch(() => {})
+        return json({ authored_run_id: sessionId, status: "authoring", status_url: `/api/v1/authored-runs/${sessionId}` }, 202)
+      }
+
+      // ── :id-scoped routes (status poll + cancel), project-scoped via ?project (must match token). ──
+      const m = path.match(/^\/api\/v1\/authored-runs\/([^/]+)(\/cancel)?$/)
+      if (m) {
+        const sessionId = m[1]
+        const isCancel = !!m[2]
+        const qp = url.searchParams.get("project") || ""
+        if (qp !== tokenProject) return v1err("forbidden", "Token is not authorized for this project.", 403)
+
+        if (req.method === "GET" && !isCancel) {
+          const s = await getAuthorSession(tokenProject, sessionId)
+          if (!s) return v1err("not_found", "Unknown authored_run_id.", 404)
+          return json({ ...buildAuthoredRunStatus(s), status_url: `/api/v1/authored-runs/${s.id}` }, 200)
+        }
+        if (req.method === "POST" && isCancel) {
+          const s = await getAuthorSession(tokenProject, sessionId)
+          if (!s) return v1err("not_found", "Unknown authored_run_id.", 404)
+          if (s.status !== "running") return json({ ...buildAuthoredRunStatus(s), cancel_requested: false }, 200)
+          try { await cancelCurrentAuthor(sessionId) } catch { /* cooperative/best-effort */ }
+          const after = await getAuthorSession(tokenProject, sessionId)
+          return json({ ...buildAuthoredRunStatus(after || s), cancel_requested: true }, 200)
+        }
+      }
+
+      return v1err("not_found", "Unknown authored-runs route.", 404)
+    }
     if (path === "/api/v1/runs" || path.startsWith("/api/v1/runs/")) {
       // Structured-error helper — { error: { code, message, request_id } }. request_id echoes back for support.
       const v1err = (code: string, message: string, status: number) =>
