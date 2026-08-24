@@ -550,6 +550,21 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .tkt-fb-clear{font-size:12px;color:var(--indigo);background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:6px;transition:background .12s,transform var(--mi-dur) var(--mi-ease),color var(--mi-dur) var(--mi-ease);margin-left:4px}
 .tkt-fb-clear:hover{background:rgba(99,102,241,.1);transform:var(--mi-lift)}
 .tkt-fb-clear:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+/* KLA-562: quick-filter chips (All / My items / Unassigned / High priority / Auto-filed) */
+.tkt-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.tkt-chip{padding:6px 13px;border-radius:999px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper-dim);font-family:var(--body);font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease)}
+.tkt-chip:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift)}
+.tkt-chip:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+.tkt-chip.on{background:var(--paper);border-color:var(--paper);color:var(--ink)}
+.tkt-morefilters{margin-left:auto;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper-dim);font-family:var(--body);font-size:12px;font-weight:600;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+.tkt-morefilters:hover{border-color:var(--indigo);color:var(--paper)}
+.tkt-morefilters.on{border-color:var(--indigo);color:var(--indigo);background:rgba(99,102,241,.1)}
+/* KLA-562: colored source chips (matches the redesign prototype's widget/auto/jira/manual chips) */
+.src-chip{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:6px;white-space:nowrap;flex-shrink:0}
+.src-chip.src-sim{background:rgba(99,102,241,.14);color:var(--indigo)}
+.src-chip.src-human{background:rgba(217,131,36,.16);color:var(--amber)}
+.src-chip.src-manual{background:rgba(139,92,246,.16);color:#8b5cf6}
+.src-chip.src-jira{background:rgba(15,157,107,.15);color:var(--green)}
 /* KLA-169: list view */
 .tkt-view-toggle{display:flex;gap:4px;margin-left:auto}
 .tkt-vbtn{background:var(--ink-3);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12px;color:var(--paper-dim);cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .12s,border-color .12s,color .12s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
@@ -2024,8 +2039,18 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div style="margin-top:4px;text-align:right"><button class="btn btn-ghost btn-sm" id="mlCloseBtn" type="button">Close</button></div>
       </div>
     </div>
-      <!-- KLA-169: Shared filter bar (reused by board + list views) -->
-      <div class="tkt-fb" id="tktFilterBar">
+      <!-- KLA-562: quick-filter chips (primary control) — map onto the existing _tktFilters predicates.
+           The five dropdowns below move behind the "Filters" toggle (no longer always-visible). -->
+      <div class="tkt-chips" id="tktQuickChips">
+        <button class="tkt-chip on" data-q="all" type="button">All</button>
+        <button class="tkt-chip" data-q="mine" type="button">My items</button>
+        <button class="tkt-chip" data-q="unassigned" type="button">Unassigned</button>
+        <button class="tkt-chip" data-q="high" type="button">High priority</button>
+        <button class="tkt-chip" data-q="auto" type="button">Auto-filed</button>
+        <button class="tkt-morefilters" id="tktMoreFilters" type="button" aria-expanded="false" title="Status / label / more filters">&#9776; Filters</button>
+      </div>
+      <!-- KLA-169: Shared filter bar (reused by board + list views) — KLA-562: collapsed by default -->
+      <div class="tkt-fb hide" id="tktFilterBar">
         <span class="tkt-fb-label">Filter</span>
         <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option><option value="closed">Closed</option></select>
         <select id="fbPriority" title="Filter by priority"><option value="">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
@@ -6837,6 +6862,63 @@ function loadTicketFiltersFromUrl() {
   } catch (e) {}
 }
 
+// ── KLA-562: quick-filter chips ──────────────────────────────────────────────────────────────────
+// The chips are a preset controller over the EXISTING _tktFilters predicate fields, so both the
+// client-side board (tktMatchesSelectFilters) and the server-driven list (ticketQueryParams) reuse
+// the current filter path unchanged. Status/label stay behind the "Filters" (advanced) dropdowns.
+let _tktQuick = "all"
+function tktQuickToFilters(q) {
+  _tktFilters.assignee = ""; _tktFilters.priority = ""; _tktFilters.source = ""
+  if (q === "mine") _tktFilters.assignee = (state && state.email) || ""
+  else if (q === "unassigned") _tktFilters.assignee = "__unassigned__"
+  else if (q === "high") _tktFilters.priority = "urgent,high"
+  else if (q === "auto") _tktFilters.source = "sim"
+}
+function renderQuickChips() {
+  document.querySelectorAll("#tktQuickChips .tkt-chip").forEach(c => c.classList.toggle("on", c.dataset.q === _tktQuick))
+}
+// Reflect what a chip set back onto the advanced dropdowns so they stay consistent when opened.
+function syncFilterDropdownsFromState() {
+  const fbPriority = document.getElementById("fbPriority")
+  const fbAssignee = document.getElementById("fbAssignee")
+  const fbSource = document.getElementById("fbSource")
+  if (fbPriority) { fbPriority.value = (_tktFilters.priority.indexOf(",") >= 0 ? "" : _tktFilters.priority); fbPriority.classList.toggle("active", !!fbPriority.value) }
+  if (fbAssignee) { fbAssignee.value = _tktFilters.assignee; fbAssignee.classList.toggle("active", !!_tktFilters.assignee) }
+  if (fbSource) { fbSource.value = _tktFilters.source; fbSource.classList.toggle("active", !!_tktFilters.source) }
+}
+function applyQuickChip(q) {
+  _tktQuick = q
+  tktQuickToFilters(q)
+  _tktListState.page = 1
+  syncFilterDropdownsFromState()
+  syncTicketFiltersToUrl()
+  renderQuickChips()
+  renderTicketsView()
+}
+// Derive which chip (if any) matches the current filters — used on load / after Clear.
+function deriveQuickFromFilters() {
+  const f = _tktFilters
+  if (f.priority === "urgent,high") return "high"
+  if (f.source === "sim" && !f.priority && !f.assignee) return "auto"
+  if (f.assignee === "__unassigned__") return "unassigned"
+  if (f.assignee && state && f.assignee === state.email) return "mine"
+  if (!f.assignee && !f.priority && !f.source && !f.status && !f.label) return "all"
+  return "__none__"
+}
+
+// KLA-562: colored source chip (widget/auto/jira/manual in the prototype). Source values from the
+// server: sim (sim_id present → AutoSim/AI), manual (source='manual'), human (widget / person).
+function ticketSourceKind(t) {
+  if (t.source === "manual") return "manual"
+  if (t.simName || t.source === "sim" || t.simId) return "sim"
+  return "human"
+}
+function srcChipHtml(t) {
+  const k = ticketSourceKind(t)
+  const label = k === "sim" ? "AutoSim" : k === "manual" ? "Manual" : "Widget"
+  return `<span class="src-chip src-${k}">${label}</span>`
+}
+
 function refreshTicketLabelOptions() {
   const fbLabel = document.getElementById("fbLabel")
   if (!fbLabel) return
@@ -6873,6 +6955,22 @@ function tktFilterBarBind() {
   refreshAssigneeOptions()
   refreshTicketLabelOptions()
 
+  // KLA-562: wire the quick-filter chips + the "Filters" (advanced dropdowns) toggle.
+  const chipRow = document.getElementById("tktQuickChips")
+  if (chipRow) {
+    chipRow.addEventListener("click", e => {
+      const chip = e.target.closest(".tkt-chip")
+      if (chip) { applyQuickChip(chip.dataset.q); return }
+      const more = e.target.closest("#tktMoreFilters")
+      if (more) {
+        const bar = document.getElementById("tktFilterBar")
+        if (bar) { const nowHidden = bar.classList.toggle("hide"); more.classList.toggle("on", !nowHidden); more.setAttribute("aria-expanded", String(!nowHidden)) }
+      }
+    })
+  }
+  _tktQuick = deriveQuickFromFilters()
+  renderQuickChips()
+
   const onFilterChange = () => {
     _tktFilters.status = fbStatus.value
     _tktFilters.priority = fbPriority.value
@@ -6885,6 +6983,8 @@ function tktFilterBarBind() {
     const hasFilter = Object.values(_tktFilters).some(v => !!v)
     fbClear && fbClear.classList.toggle("hide", !hasFilter)
     _tktListState.page = 1
+    // KLA-562: a manual dropdown change may diverge from any quick chip — re-derive the active chip.
+    _tktQuick = deriveQuickFromFilters(); renderQuickChips()
     // JTBD 2.14: keep selection across filter changes — clear only on explicit Clear or project switch.
     syncTicketFiltersToUrl()
     renderTicketsView()
@@ -6902,6 +7002,7 @@ function tktFilterBarBind() {
     _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
     if (searchEl) searchEl.value = ""
     _tktListState.page = 1
+    _tktQuick = "all"; renderQuickChips()   // KLA-562: Clear resets to the "All" chip
     syncTicketFiltersToUrl()
     renderTicketsView()
   })
@@ -6937,7 +7038,12 @@ function tktMatchesSelectFilters(t) {
     const want = f.status === "closed" ? ["done", "dismissed"] : [f.status]
     if (!want.includes(t.status || "open")) return false
   }
-  if (f.priority && t.priority !== f.priority) return false
+  if (f.priority) {
+    // KLA-562: a quick chip can set a comma preset (e.g. "urgent,high" for the High-priority chip),
+    // which the server splits on comma too — mirror that OR-match here for the client-side board.
+    const wantP = String(f.priority).split(",").filter(Boolean)
+    if (!wantP.includes(t.priority)) return false
+  }
   if (f.assignee) {
     if (f.assignee === "__unassigned__") { if (t.assignee) return false }
     else if ((t.assignee || "") !== f.assignee) return false
@@ -7317,7 +7423,8 @@ function renderTktList(listEl, tickets, total) {
       '<div class="tl-meta">' +
         statusPillHtml(t.status) +
         dupAckHtml(t, {badge: true}) +
-        '<span class="tl-src">' + esc(srcLabel) + '</span>' +
+        srcChipHtml(t) +
+        (t.simName ? '<span class="tl-src">' + esc(t.simName) + '</span>' : '') +
         '<span>' + sub + '</span>' +
       '</div>'
     row.appendChild(rowInner)
@@ -7522,7 +7629,7 @@ function renderTicketsKanban(boardTickets) {
         const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
         const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
         const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
-        cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
+        cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
       }
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
