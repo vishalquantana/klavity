@@ -324,6 +324,25 @@ export function isVideoFile(file: { type?: string; name?: string }): boolean {
     /\.(mp4|m4v|mov|webm|avi|mkv|ogv|3gp)$/i.test(file.name || '')
 }
 
+// video-upload: derive a concrete video/* content-type from a filename extension. Used to STAMP a MIME
+// onto an attachment the client accepted as a video by EXTENSION when the browser reported an empty
+// file.type — so the type travels end-to-end (data URL → multipart part) and the SERVER, which keys the
+// 100MB video cap off the attachment's content-type, agrees the file is a video (KLA-560 item 6).
+// Returns '' for a non-video/unknown extension (caller keeps the original type).
+export function videoContentType(name?: string): string {
+  const ext = /\.([a-z0-9]+)$/i.exec(name || '')?.[1]?.toLowerCase()
+  switch (ext) {
+    case 'mp4': case 'm4v': return 'video/mp4'
+    case 'mov': return 'video/quicktime'
+    case 'webm': return 'video/webm'
+    case 'avi': return 'video/x-msvideo'
+    case 'mkv': return 'video/x-matroska'
+    case 'ogv': return 'video/ogg'
+    case '3gp': return 'video/3gpp'
+    default: return ''
+  }
+}
+
 // The per-file byte cap for a given attachment: videos get the higher `video` cap, everything else the
 // standard `file` cap. Kept pure so ingestAttachments and the tests share one source of truth.
 export function attachmentSizeCap(file: { type?: string; name?: string }, caps: { file: number; video: number }): number {
@@ -1337,7 +1356,12 @@ export function buildModal(
       const total = attachedFiles.reduce((n, f) => n + f.size, 0)
       if (total + file.size > MAX_FILES_TOTAL_BYTES) { showError(`Attachments exceed the ${Math.round(MAX_FILES_TOTAL_BYTES / 1024 / 1024)} MB total limit.`); break }
       try {
-        attachedFiles.push({ name: file.name, type: file.type || '', size: file.size, dataUrl: await fileToDataUrl(file) })
+        // Stamp a concrete video/* MIME when we accepted this file as a video by EXTENSION only (browser
+        // reported an empty file.type). This makes the type travel through the data URL → multipart part so
+        // the server's content-type-based 100MB video cap agrees with the client (KLA-560 item 6). Non-video
+        // or already-typed files keep their reported type.
+        const effectiveType = file.type || (isVideoFile(file) ? videoContentType(file.name) : '')
+        attachedFiles.push({ name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) })
         renderFiles()
       } catch {
         showError(`Couldn't add "${file.name}". Please try a different file.`)

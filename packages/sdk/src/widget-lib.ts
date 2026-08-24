@@ -122,9 +122,16 @@ export function isFirstParty(scriptOrigin: string, backendUrl: string): boolean 
   try { return new URL(scriptOrigin).origin === new URL(backendUrl).origin } catch { return false }
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
+// `preferredMime` overrides the data-URL-embedded type when that type is missing or generic
+// (application/octet-stream) — e.g. an empty-MIME .mov the composer already classified as a video by
+// extension. This keeps the multipart part's content-type a concrete video/* so the server's
+// content-type-based 100MB video cap agrees with the client (KLA-560 item 6). A concrete embedded type
+// (image/png, video/mp4, …) always wins over the fallback.
+function dataUrlToBlob(dataUrl: string, preferredMime?: string): Blob {
   const [head, b64] = dataUrl.split(",")
-  const mime = (head.match(/data:([^;]+)/)?.[1]) || "image/png"
+  const embedded = head.match(/data:([^;]+)/)?.[1] || ""
+  const isGeneric = !embedded || embedded === "application/octet-stream"
+  const mime = (isGeneric && preferredMime) ? preferredMime : (embedded || "image/png")
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
@@ -231,7 +238,7 @@ export function buildFeedbackForm(input: { type?: string; title?: string; descri
   // the real filename + content type preserved, so the server can store them and connectors attach natively.
   if (input.files) {
     for (const f of input.files) {
-      try { fd.append("files", dataUrlToBlob(f.dataUrl), f.name) } catch { /* skip a malformed data URL */ }
+      try { fd.append("files", dataUrlToBlob(f.dataUrl, f.type), f.name) } catch { /* skip a malformed data URL */ }
     }
   }
   // KLAVITYKLA-438 "Record me": video recordings. Each blob is appended under the `recording` field (the

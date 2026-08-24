@@ -48,6 +48,7 @@ import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getOb
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
+import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
@@ -4211,14 +4212,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         for (const af of attachFiles) {
           if (af.size <= 0) continue
           if (af.type && af.type.startsWith(SCREENSHOTS.allowedTypePrefix)) continue // images go through the screenshots path
-          const isVideo = /^video\//i.test(af.type || "")
+          // KLA-560 item 6: classify a video by content-type FIRST, then fall back to the filename extension
+          // ONLY when the reported type is empty/generic (some browsers report an empty file.type for a .mov).
+          // This makes the 100MB cap agree with the client's extension-based predicate. The fallback is
+          // tightened, not loosened: a non-generic (e.g. spoofed "text/plain") type never earns the video tier.
+          const typeIsGeneric = !af.type || af.type === "application/octet-stream"
+          const videoMime = videoMimeFromName(af.name || "")
+          const isVideo = isVideoAttachment(af.type, af.name)
           const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
           if (af.size > perFileCap) return wjson({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
           attachTotalBytes += af.size
           if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return wjson({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
           try {
             const abuf = new Uint8Array(await af.arrayBuffer())
-            const up = await uploadAttachment(abuf, af.name || "attachment", af.type || "application/octet-stream")
+            // Persist a concrete video/* content-type when we classified by extension (empty MIME) so the
+            // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
+            const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
+            const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
             const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
               { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
             // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
