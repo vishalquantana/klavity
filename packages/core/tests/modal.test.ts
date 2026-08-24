@@ -795,6 +795,27 @@ describe('buildModal replay chip hidden (KLAVITYKLA-493)', () => {
     expect(q(ctrl, '#klavity-replay-chip')).toBeNull()
     ctrl.close()
   })
+
+  // KLAVITYKLA-493: hiding the chip must NOT touch capture. On the widget the host's onSubmit wrapper
+  // merges the captured buffer in as replayEvents; through the shared modal boundary the payload stays
+  // exactly what it was before the chip was hidden — no replay field is dropped or reshaped here.
+  it('hiding the chip leaves SUBMIT untouched — payload shape unchanged, Submit enabled by replay evidence', async () => {
+    const onSubmit = vi.fn(async () => ({ issueKey: '1', issueUrl: '' }))
+    const ctrl = buildModal('bug', { ...base, onSubmit, replayState: 'attached' })
+    expect(q(ctrl, '#klavity-replay-chip')).toBeNull()   // hidden...
+    const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
+    desc.value = 'the export button does nothing'; desc.dispatchEvent(new Event('input'))
+    ;(q(ctrl, '.klavity-submit') as HTMLButtonElement).click()
+    await new Promise(r => setTimeout(r, 0))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    const p = onSubmit.mock.calls[0][0]
+    // The composer never removed/reshaped anything: a plain description + screenshots payload, which the
+    // widget layer decorates with replayEvents (capture unchanged) on its way to the server.
+    expect(p.description).toBe('the export button does nothing')
+    expect(Array.isArray(p.screenshots)).toBe(true)
+    expect('replayEvents' in p).toBe(false)   // capture is the HOST's job — unchanged, just invisible
+    ctrl.close()
+  })
 })
 
 // KLAVITYKLA-494: "Pick element" also adds a cropped screenshot of the picked element to the images strip.
