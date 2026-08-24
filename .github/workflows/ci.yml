@@ -43,6 +43,10 @@ jobs:
         continue-on-error: false
         run: node scripts/check-inline-js.mjs
 
+      - name: JSON-LD pricing guard (enforcing — blocks stale structured-data prices)
+        continue-on-error: false
+        run: node scripts/check-jsonld-pricing.mjs
+
       - name: Build
         run: pnpm -r build
 

@@ -9,7 +9,8 @@
     "build": "pnpm -r build",
     "check:emoji": "node scripts/check-no-emoji.mjs",
     "check:inline-js": "node scripts/check-inline-js.mjs",
-    "check:inline-defs": "node scripts/check-inline-defs.mjs"
+    "check:inline-defs": "node scripts/check-inline-defs.mjs",
+    "check:jsonld-pricing": "node scripts/check-jsonld-pricing.mjs"
   },
   "workspaces": [
     "packages/*"
