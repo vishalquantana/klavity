@@ -1,5 +1,6 @@
 import { safeToPng } from './capture'
 import { icon } from '@klavity/core/icons'
+import { safeRemove } from '@klavity/core'
 import type { KlavitySettings, ReportType, SubmitReportPayload, IntegrationConfig, ReportIdentity } from '@klavity/core'
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
@@ -104,14 +105,14 @@ function addContextMenu() {
 
     const dismiss = (ev?: Event) => {
       if (!ev || !menu.contains(ev.target as Node)) {
-        menu.remove()
+        safeRemove(menu)
         document.removeEventListener('click', dismiss)
       }
     }
 
     menu.addEventListener('click', (ev) => {
       const action = (ev.target as HTMLElement).closest('[data-action]')?.getAttribute('data-action') as ReportType | null
-      menu.remove()
+      safeRemove(menu)
       document.removeEventListener('click', dismiss)
       if (action) openModal(action)
     })

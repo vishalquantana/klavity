@@ -10,6 +10,7 @@
 // without a new menu immediately opening again.
 
 import type { Rect } from "./crop"
+import { safeRemove } from "./safe-remove"
 
 export interface RegionDragHandle {
   /** True while the right button is held OR a drag just occurred → the host must NOT show its context menu. */
@@ -63,6 +64,21 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   return false
 }
 
+// Right-clicks on links must fall through to the NATIVE browser context menu (Open in new tab, Copy
+// link address, etc.) rather than our composer menu — the same carve-out philosophy as isEditableTarget
+// (QPLANE-21). Detects an <a href> whether the event target IS the anchor or a descendant of it (the
+// target is often an inner <span>/<img>). Guards for null / non-Element targets exactly like
+// isEditableTarget, so it's safe on any EventTarget and in jsdom.
+export function isLinkTarget(target: EventTarget | null): boolean {
+  const el = target as Element | null
+  if (!el || typeof (el as Element).tagName !== "string") return false
+  if ((el as Element).tagName === "A" && (el as Element).hasAttribute?.("href")) return true
+  if (typeof (el as Element).closest === "function") {
+    if ((el as Element).closest("a[href]")) return true
+  }
+  return false
+}
+
 export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
   const threshold = opts.threshold ?? 6
   const minSize = opts.minSize ?? 8
@@ -74,7 +90,7 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
   let startY = 0
   let rectEl: HTMLDivElement | null = null
 
-  const removeRect = () => { rectEl?.remove(); rectEl = null }
+  const removeRect = () => { safeRemove(rectEl); rectEl = null }
 
   const rectFrom = (ex: number, ey: number): Rect => ({
     x: Math.min(startX, ex),
@@ -88,11 +104,17 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
     if (opts.shouldIgnore?.()) return
     if (opts.isOwnTarget?.(e)) return                        // don't hijack right-clicks on our own UI
     if (isEditableTarget(e.target)) return                   // QPLANE-21: leave native spellcheck/edit menu for fields
-    opts.onRightDown?.()  // dismiss any open menu immediately — before we know if this is a click or drag
+    if (isLinkTarget(e.target)) return                       // leave native link menu (Open in new tab / Copy link)
+    // Set press-state BEFORE calling the host's onRightDown. onRightDown dismisses the host's open menu,
+    // which on a poisoned page (clobbered Element.prototype.remove) could THROW. If it threw before
+    // `pressing` was set, suppressNextMenu() would stay false and the native browser menu would leak
+    // through. Setting press-state first — and swallowing any onRightDown throw — keeps our menu logic
+    // winning even when the page's DOM is polluted.
     pressing = true
     didDrag = false
     startX = e.clientX
     startY = e.clientY
+    try { opts.onRightDown?.() } catch { /* host menu-dismiss threw (e.g. clobbered .remove) — suppression already armed */ }
   }
 
   function onMove(e: MouseEvent) {

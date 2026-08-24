@@ -5,11 +5,12 @@ import { icon } from './icons'
 import { VoiceInput } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit } from './report-clarity'
+import { safeRemove } from './safe-remove'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
 // orchestrator's version-stamp ownership could clobber).
-export { installRegionDrag, isEditableTarget, type RegionDragHandle, type RegionDragOptions } from './region-drag'
+export { installRegionDrag, isEditableTarget, isLinkTarget, type RegionDragHandle, type RegionDragOptions } from './region-drag'
 
 /** Shift every annotation shape by (dx, dy) — used to rebase markup into a cropped image's new origin.
  *  Pure + coordinate-only so it's unit-testable without a canvas. Returns fresh shape objects. */
@@ -1378,9 +1379,9 @@ export function buildModal(
     document.removeEventListener('paste', onPaste)
     try { callbacks.onClose?.(opts?.reason) } catch { /* never let a listener error block the close */ }
     const m = shadowRoot.querySelector('.klavity-modal') as HTMLElement | null
-    if (opts?.immediate || !m) { host.remove(); return }
+    if (opts?.immediate || !m) { safeRemove(host); return }
     m.classList.add('kl-closing')
-    const done = () => host.remove()
+    const done = () => safeRemove(host)
     m.addEventListener('animationend', done, { once: true })
     setTimeout(done, 700) // safety if animationend doesn't fire
   }
@@ -2434,7 +2435,7 @@ export function buildModal(
           const sz = textSize, ol = textOutline
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:transparent;border:0;color:${activeColor};font-size:${inputFont}px;font-family:sans-serif;font-weight:700;text-shadow:${shadow};outline:1px dashed ${activeColor};z-index:2147483647;min-width:80px;`
           document.body.appendChild(input); input.focus()
-          input.addEventListener('blur', () => { if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } input.remove() }, { once: true })
+          input.addEventListener('blur', () => { if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } safeRemove(input) }, { once: true })
           input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
           return
         }
@@ -2483,7 +2484,7 @@ export function buildModal(
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
         const pt = toImg(e)
         if (activeTool === 'crop') {
-          if (cropBox) { cropBox.remove(); cropBox = null }
+          if (cropBox) { safeRemove(cropBox); cropBox = null }
           const rx = Math.max(0, Math.min(startX, pt.x)), ry = Math.max(0, Math.min(startY, pt.y))
           const rw = Math.abs(pt.x - startX), rh = Math.abs(pt.y - startY)
           if (rw > 4 && rh > 4) applyHeroCrop(index, rx, ry, rw, rh)
@@ -2503,7 +2504,7 @@ export function buildModal(
       // in-flight preview + reset state so `drawing` can never get stuck true (which would freeze all tools).
       canvas.addEventListener('pointercancel', (e) => {
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
-        if (cropBox) { cropBox.remove(); cropBox = null }
+        if (cropBox) { safeRemove(cropBox); cropBox = null }
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair' }
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
@@ -2652,7 +2653,7 @@ export function buildModal(
       }
       function close() {
         document.removeEventListener('keydown', onKeyDown, { capture: true })
-        editor.remove()
+        safeRemove(editor)
         // #466: hand the keyboard back to the hero. syncHero() remounts the hero annotator, which re-attaches
         // the (single) hero keydown handler that was detached on open — so exactly one is ever active.
         syncHero()
@@ -2699,7 +2700,7 @@ export function buildModal(
           input.focus()
           input.addEventListener('blur', () => {
             if (input.value.trim()) annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim() })
-            input.remove()
+            safeRemove(input)
           }, { once: true })
           input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur() })
         }
@@ -2772,7 +2773,7 @@ export function buildModal(
     }
     wrap.appendChild(card)
     // Keep the themed <style>; swap only the body (drop the whole composer overlay).
-    overlay.remove()
+    safeRemove(overlay)
     shadowRoot.appendChild(wrap)
     armAutodismiss(card, SUBMIT_AUTOCLOSE_MS)
   }
@@ -2873,7 +2874,7 @@ export function buildModal(
         const thanks = document.createElement('div')
         thanks.className = 'klavity-thanks'
         thanks.textContent = "Thanks — we'll be in touch."
-        err.remove()
+        safeRemove(err)
         row.replaceWith(thanks)
         if (!copy.showCta) {
           startAutodismiss()
@@ -2975,8 +2976,8 @@ function mountRegionOverlay(
 
   function cleanup() {
     document.removeEventListener('keydown', escHandler, { capture: true })
-    overlay.remove()
-    hint.remove()
+    safeRemove(overlay)
+    safeRemove(hint)
   }
 
   function escHandler(e: KeyboardEvent) {
@@ -2988,7 +2989,7 @@ function mountRegionOverlay(
     active = true
     startX = e.clientX
     startY = e.clientY
-    hint.remove()
+    safeRemove(hint)
   })
 
   overlay.addEventListener('pointermove', (e) => {

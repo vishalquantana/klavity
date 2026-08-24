@@ -15,6 +15,8 @@
  *   pinPosition(rect, pinW, pinHEst, vw, vh, margin?)
  */
 
+import { safeRemove } from '../../core/src/safe-remove'
+
 const STYLE_ID   = 'klav-ao-css'
 const OVERLAY_ID = 'klav-ao-overlay'
 
@@ -288,9 +290,9 @@ export function clearAnnotation(id: string): void {
   if (pin) {
     pin.classList.add('is-out')
     halo.style.animation = 'klav-ao-pin-out .22s ease-in forwards'
-    setTimeout(() => { pin.remove(); halo.remove() }, 240)
+    setTimeout(() => { safeRemove(pin); safeRemove(halo) }, 240)
   } else {
-    halo.remove()
+    safeRemove(halo)
   }
 }
 

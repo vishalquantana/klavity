@@ -1,7 +1,8 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport } from "./capture"
-import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
+import { safeRemove } from "@klavity/core"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
@@ -92,7 +93,7 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
       document.removeEventListener("click", onClick, true)
       document.removeEventListener("keydown", onKey, true)
       rootEl.style.cursor = prevCursor
-      box.remove(); label.remove(); banner.remove()
+      safeRemove(box); safeRemove(label); safeRemove(banner)
     }
     const cleanup = (result: PickedTarget | null) => { teardown(); resolve(result) }
     const onClick = (e: MouseEvent) => {
@@ -1202,16 +1203,16 @@ async function mount() {
     m.style.animation = "none"
     m.style.transition = "opacity .13s ease, transform .13s ease"
     requestAnimationFrame(() => { m.style.opacity = "0"; m.style.transform = "scale(.95) translateY(4px)" })
-    setTimeout(() => m.remove(), 150)
+    setTimeout(() => safeRemove(m), 150)
   }
   // Instant dismissal (no fade) — used when a region drag-select begins so the menu can't linger over the
   // selection. Removes any live OR mid-fade menu, regardless of whether closeMenu already nulled menuEl.
-  const dismissMenuNow = () => { menuEl = null; root.querySelectorAll(".klm-menu").forEach((m) => (m as HTMLElement).remove()) }
+  const dismissMenuNow = () => { menuEl = null; try { root.querySelectorAll(".klm-menu").forEach((m) => safeRemove(m)) } catch { /* never let menu teardown throw into a right-mousedown handler */ } }
   // KLA-20: Always dismiss any open context menu at the start of a new right-mousedown, even when
   // the cursor is positioned over the menu itself. In that case region-drag's isOwnTarget guard
   // returns true and skips onRightDown, so the old menu would linger behind the drag overlay.
   // This capture-phase listener fires before all bubble-phase handlers and before isOwnTarget runs.
-  document.addEventListener("mousedown", (e) => { if (e.button === 2) dismissMenuNow() }, true)
+  document.addEventListener("mousedown", (e) => { if (e.button === 2) { try { dismissMenuNow() } catch { /* keep the gesture alive even if a polluted page throws on teardown */ } } }, true)
   // Scoped keyframes for the magical context menu (entrance spring, item stagger, shimmer
   // sweep, icon hover wiggle). Injected once into the widget's shadow root.
   function ensureMenuStyle() {
@@ -1272,7 +1273,7 @@ async function mount() {
     t.style.cssText = "position:fixed;z-index:2147483647;left:" + x + "px;top:" + (y + 6) + "px;background:#1a1a1a;color:#fff;font:500 12.5px system-ui,-apple-system,sans-serif;padding:8px 13px;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.32);pointer-events:none;opacity:0;transition:opacity .2s;max-width:260px"
     root.appendChild(t)
     requestAnimationFrame(() => { t.style.opacity = "1" })
-    setTimeout(() => { t.style.opacity = "0"; setTimeout(() => t.remove(), 250) }, 2400)
+    setTimeout(() => { t.style.opacity = "0"; setTimeout(() => safeRemove(t), 250) }, 2400)
   }
   function showMenu(x: number, y: number) {
     closeMenu()
@@ -1366,7 +1367,7 @@ async function mount() {
     const showSimPicker = async () => {
       // Reveal overflow so a long Sim list scrolls rather than clips
       menu.style.overflow = "visible"
-      Array.from(menu.children).forEach((c) => { if (!(c as HTMLElement).classList.contains("klm-shine")) c.remove() })
+      Array.from(menu.children).forEach((c) => { if (!(c as HTMLElement).classList.contains("klm-shine")) safeRemove(c) })
       // Loading state
       const status = document.createElement("div")
       status.style.cssText = "display:flex;align-items:center;gap:8px;padding:14px 12px;font-size:12.5px;color:#7c7793"
@@ -1383,7 +1384,7 @@ async function mount() {
         return
       }
       if (!personas.length) { status.innerHTML = "No Sims in this project yet."; return }
-      status.remove()
+      safeRemove(status)
       // Header row: × close + title
       const hdr = document.createElement("div")
       hdr.style.cssText = "display:flex;align-items:center;gap:8px;padding:4px 4px 8px"
@@ -1540,6 +1541,7 @@ async function mount() {
       if (rightClickMode === 'off') return                               // config opted out — native menu untouched
       if (e.shiftKey || nativePending) { nativePending = false; return }  // pass through to native menu
       if (isEditableTarget(e.target)) return                              // QPLANE-21: native menu carries spellcheck for fields
+      if (isLinkTarget(e.target)) return                                  // native link menu (Open in new tab / Copy link)
       if (regionDrag.suppressNextMenu()) { e.preventDefault(); return }   // pressing or drag — suppress
       if (onOwnUi(e)) return
       // Keyboard contextmenu (no preceding mousedown) — pressing is false, show menu immediately.
@@ -1557,7 +1559,7 @@ async function mount() {
       el.style.cssText = "max-width:240px;background:#15110d;color:#f5f3ee;border:1px solid #574f45;border-radius:10px;padding:9px 11px;font-size:12.5px;margin-bottom:8px"
       dock.appendChild(el) }
     el.textContent = text
-    setTimeout(() => { if (el && el.textContent === text) el.remove() }, 6000)
+    setTimeout(() => { if (el && el.textContent === text) safeRemove(el) }, 6000)
   }
 
   // Deploy the named Sims (or "all") + boot the watch engine + fire an IMMEDIATE review.
@@ -1856,7 +1858,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
     removePillFromStack(host) // #475: free the slot + reflow remaining pills so the next one never overlaps
     pill.classList.add("out")
-    setTimeout(() => host.remove(), 260)
+    setTimeout(() => safeRemove(host), 260)
   }
   x.addEventListener("click", remove)
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest"
-import { installRegionDrag, isEditableTarget } from "./region-drag"
+import { describe, it, expect, vi, afterEach } from "vitest"
+import { installRegionDrag, isEditableTarget, isLinkTarget } from "./region-drag"
 
 const down = (x: number, y: number) => document.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: x, clientY: y, bubbles: true }))
 const move = (x: number, y: number) => document.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }))
@@ -184,5 +184,90 @@ describe("installRegionDrag — editable targets pass through to the native menu
     document.dispatchEvent(new MouseEvent("mouseup", { button: 2, clientX: 10, clientY: 10, bubbles: true }))
     expect(onPlainRightClick).not.toHaveBeenCalled()
     h.destroy(); ce.remove()
+  })
+})
+
+// ROOT-CAUSE regression: customer pages (e.g. qa1.px4app.com via priority-nav.min.js) clobber the DOM
+// with a broken, non-spec Element.prototype.remove that has NO null-guard and THROWS on a detached node.
+// Our right-mousedown → dismiss → drag path must (a) never throw and (b) still arm menu suppression, so
+// the native browser menu can't leak and our composer menu wins. See safe-remove.ts.
+describe("installRegionDrag — resilient to a clobbered/throwing Element.prototype.remove", () => {
+  const originalRemove = Element.prototype.remove
+  // Always restore so we don't leak the poisoned prototype into other tests / files.
+  afterEach(() => { Element.prototype.remove = originalRemove })
+
+  const poison = () => {
+    // Mirrors the broken polyfill: no parentNode guard → TypeError on a detached node.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Element.prototype.remove = function (this: any) { this.parentNode.removeChild(this) }
+  }
+
+  it("swallows a throwing onRightDown but STILL arms suppression (native menu can't leak)", () => {
+    poison()
+    // Prove the poison is live: a detached node's .remove() now throws.
+    expect(() => document.createElement("div").remove()).toThrow()
+
+    // onRightDown mimics the widget's dismissMenuNow, which under pollution throws while tearing down a
+    // (possibly detached) menu node.
+    const onRightDown = vi.fn(() => { document.createElement("div").remove() })
+    const h = installRegionDrag({ onRegion: vi.fn(), onRightDown })
+
+    expect(() => down(50, 50)).not.toThrow()          // the handler must not throw out
+    expect(onRightDown).toHaveBeenCalledTimes(1)
+    expect(h.suppressNextMenu()).toBe(true)           // press-state armed BEFORE the throw → menu stays suppressed
+    up(51, 51)
+    h.destroy()
+  })
+
+  it("a full drag-select tears down its selection rect without throwing under pollution", () => {
+    poison()
+    const onRegion = vi.fn()
+    const h = installRegionDrag({ onRegion })
+    expect(() => { down(100, 100); move(140, 140); up(220, 220) }).not.toThrow()
+    expect(onRegion).toHaveBeenCalledTimes(1) // region still captured
+    // The selection rect (appended to document.body) was removed via safeRemove — nothing left behind.
+    expect(document.querySelectorAll("div[style*='2147483646']").length).toBe(0)
+    h.destroy()
+  })
+})
+
+// Right-clicking a link must fall through to the NATIVE browser menu (Open in new tab / Copy link),
+// mirroring the editable-target carve-out (QPLANE-21).
+describe("isLinkTarget", () => {
+  it("is true for an <a href> and a descendant; false for a plain div, an <a> without href, and null", () => {
+    const a = document.createElement("a"); a.setAttribute("href", "/x")
+    const child = document.createElement("span"); a.appendChild(child); document.body.appendChild(a)
+    const bare = document.createElement("a") // no href attribute
+    const plain = document.createElement("div")
+    expect(isLinkTarget(a)).toBe(true)
+    expect(isLinkTarget(child)).toBe(true)
+    expect(isLinkTarget(bare)).toBe(false)
+    expect(isLinkTarget(plain)).toBe(false)
+    expect(isLinkTarget(null)).toBe(false)
+    a.remove()
+  })
+})
+
+describe("installRegionDrag — links pass through to the native menu", () => {
+  it("a right-click on an <a href> does NOT engage the gesture, so the native menu is not suppressed", () => {
+    const a = document.createElement("a"); a.setAttribute("href", "/x"); document.body.appendChild(a)
+    const onRightDown = vi.fn(); const onPlainRightClick = vi.fn()
+    const h = installRegionDrag({ onRegion: vi.fn(), onRightDown, onPlainRightClick })
+    a.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 10, clientY: 10, bubbles: true }))
+    expect(h.suppressNextMenu()).toBe(false)   // pressing never started → contextmenu not suppressed
+    expect(onRightDown).not.toHaveBeenCalled()
+    document.dispatchEvent(new MouseEvent("mouseup", { button: 2, clientX: 11, clientY: 11, bubbles: true }))
+    expect(onPlainRightClick).not.toHaveBeenCalled()
+    h.destroy(); a.remove()
+  })
+
+  it("a right-click on a plain element STILL engages our gesture", () => {
+    const div = document.createElement("div"); document.body.appendChild(div)
+    const onRightDown = vi.fn()
+    const h = installRegionDrag({ onRegion: vi.fn(), onRightDown })
+    div.dispatchEvent(new MouseEvent("mousedown", { button: 2, clientX: 10, clientY: 10, bubbles: true }))
+    expect(h.suppressNextMenu()).toBe(true)
+    expect(onRightDown).toHaveBeenCalledTimes(1)
+    up(11, 11); h.destroy(); div.remove()
   })
 })

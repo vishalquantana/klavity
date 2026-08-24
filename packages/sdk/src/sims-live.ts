@@ -38,6 +38,7 @@
 
 import { createSim, injectSimStyles, type SimProps } from '../../core/src/sim'
 import { icon } from '../../core/src/icons'
+import { safeRemove } from '../../core/src/safe-remove'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -1106,7 +1107,7 @@ function drawTransientHalo(targetEl: HTMLElement, accent: string): void {
   const cleanup = () => {
     clearTimeout(fadeTimer)
     ctrl.abort()
-    halo.remove()
+    safeRemove(halo)
   }
   jumpHaloCleanup = cleanup
 }
@@ -1222,10 +1223,10 @@ function undeploy(): void {
   announcerEl = null
 
   // 4. Remove overlay host (transient halo lives here)
-  overlayEl?.remove(); overlayEl = null
+  safeRemove(overlayEl); overlayEl = null
 
   // 5. Remove shadow host (cleans up launcher + panel + announcer)
-  hostEl?.remove(); hostEl = null; shadowRoot = null
+  safeRemove(hostEl); hostEl = null; shadowRoot = null
 
   // 6. Leave EXT_CSS in place — removing it mid-session can cause a flash; it only
   //    adds .klav-halo rules which harmlessly sit unused between sessions.

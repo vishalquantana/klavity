@@ -18,6 +18,7 @@ type FakeElement = {
   }
   appendChild: (child: FakeElement) => FakeElement
   remove: () => void
+  removeChild: (child: FakeElement) => FakeElement
   setAttribute: (name: string, value: string) => void
   getAttribute: (name: string) => string | null
   addEventListener: (name: string, fn: () => void) => void
@@ -55,6 +56,13 @@ function createFakeElement(tagName: string): FakeElement {
       if (!el.parentNode) return
       el.parentNode.children = el.parentNode.children.filter(child => child !== el)
       el.parentNode = null
+    },
+    // Real Elements expose removeChild; safeRemove() detaches via parentNode.removeChild (bypassing the
+    // possibly-poisoned Element.prototype.remove), so the mock must provide it too.
+    removeChild(child: FakeElement) {
+      el.children = el.children.filter((c: FakeElement) => c !== child)
+      child.parentNode = null
+      return child
     },
     setAttribute(name: string, value: string) {
       el.attrs[name] = value
