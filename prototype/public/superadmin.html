@@ -61,8 +61,8 @@ tbody tr:hover{background:var(--ink-3)}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
 .fld{display:flex;flex-direction:column;gap:5px}
 .fld label{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
-.fld input{background:var(--ink-3);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:13px}
-.fld input:focus{outline:none;border-color:var(--indigo)}
+.fld input,.fld select{background:var(--ink-3);border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:13px}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--indigo)}
 .preview{background:var(--ink-3);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;font-family:var(--mono);font-size:12px;word-break:break-all}
 .preview .pk{font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:4px}
 .preview .pv{color:var(--indigo);margin-bottom:10px}
@@ -109,6 +109,7 @@ tbody tr:hover{background:var(--ink-3)}
       <div class="formErr" id="lkFormErr"></div>
       <div class="form-grid">
         <div class="fld" style="grid-column:1/-1"><label for="lkDest">Destination URL (https)</label><input id="lkDest" type="url" placeholder="https://klavity.in/pricing" /></div>
+        <div class="fld"><label for="lkKind">Kind</label><select id="lkKind"><option value="campaign">campaign</option><option value="affiliate">affiliate</option><option value="referral">referral</option></select></div>
         <div class="fld"><label for="lkSource">utm_source</label><input id="lkSource" placeholder="reddit" /></div>
         <div class="fld"><label for="lkMedium">utm_medium</label><input id="lkMedium" placeholder="post" /></div>
         <div class="fld"><label for="lkCampaign">utm_campaign</label><input id="lkCampaign" placeholder="q3-launch" /></div>
@@ -129,7 +130,7 @@ tbody tr:hover{background:var(--ink-3)}
       <div style="overflow-x:auto">
         <table id="lkTbl">
           <thead><tr>
-            <th>Code</th><th>Label</th><th>Campaign</th><th>Destination</th><th class="r">Clicks</th><th>Active</th><th></th>
+            <th>Code</th><th>Label</th><th>Kind</th><th>Campaign</th><th>Destination</th><th class="r">Clicks</th><th>Active</th><th></th>
           </tr></thead>
           <tbody id="lkBody"></tbody>
         </table>
@@ -321,6 +322,7 @@ tbody tr:hover{background:var(--ink-3)}
       return "<tr data-id='" + esc(l.id) + "'>"
         + "<td class='mono'>" + esc(l.slug || l.code) + "</td>"
         + "<td>" + esc(l.label || "—") + "</td>"
+        + "<td><span class='pill'>" + esc(l.kind || "campaign") + "</span></td>"
         + "<td>" + esc(camp) + "</td>"
         + "<td class='muted' style='max-width:280px;overflow:hidden;text-overflow:ellipsis'>" + esc(l.destinationUrl) + "</td>"
         + "<td class='r'>" + (Number(l.clickCount) || 0) + "</td>"
@@ -343,7 +345,7 @@ tbody tr:hover{background:var(--ink-3)}
     fetch("/api/superadmin/links", { credentials: "include" })
       .then(function(r){ if (!r.ok) throw new Error("Failed to load links (" + r.status + ")"); return r.json(); })
       .then(function(d){ renderRows(d.links); })
-      .catch(function(e){ el("lkBody").innerHTML = "<tr><td colspan='7' class='err'>" + esc(e.message || String(e)) + "</td></tr>"; });
+      .catch(function(e){ el("lkBody").innerHTML = "<tr><td colspan='8' class='err'>" + esc(e.message || String(e)) + "</td></tr>"; });
   }
 
   function toggleLink(id, active){
@@ -375,7 +377,7 @@ tbody tr:hover{background:var(--ink-3)}
     var dest = val("lkDest");
     el("lkFormErr").textContent = "";
     if (!dest){ el("lkFormErr").textContent = "Destination URL is required."; return; }
-    var payload = { destinationUrl: dest, utm: currentUtm() };
+    var payload = { destinationUrl: dest, utm: currentUtm(), kind: val("lkKind") || "campaign" };
     var slug = val("lkSlug"); if (slug) payload.slug = slug;
     var label = val("lkLabel"); if (label) payload.label = label;
     fetch("/api/superadmin/links", {
@@ -387,6 +389,7 @@ tbody tr:hover{background:var(--ink-3)}
     }).then(function(res){
       if (!res.ok){ el("lkFormErr").textContent = (res.body && res.body.error) ? res.body.error : ("Create failed (" + res.status + ")"); return; }
       ["lkDest","lkSource","lkMedium","lkCampaign","lkTerm","lkContent","lkSlug","lkLabel"].forEach(function(id){ var e = el(id); if (e) e.value = ""; });
+      var kE = el("lkKind"); if (kE) kE.value = "campaign";
       refreshPreview();
       loadLinks();
     }).catch(function(e){ el("lkFormErr").textContent = e.message || String(e); });

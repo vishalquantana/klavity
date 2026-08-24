@@ -15,6 +15,15 @@ test("create form has destination + all five UTM fields + slug + label", () => {
   }
 })
 
+test("create form has a kind select (campaign/affiliate/referral) wired into the payload", () => {
+  expect(HTML).toContain('id="lkKind"')
+  for (const k of ["campaign", "affiliate", "referral"]) {
+    expect(HTML).toContain(`value="${k}"`)
+  }
+  // the create POST must forward the chosen kind, not silently default to campaign
+  expect(HTML).toContain('kind: val("lkKind")')
+})
+
 test("live preview surfaces both the short URL and the tagged destination", () => {
   expect(HTML).toContain('id="lkPrevShort"')
   expect(HTML).toContain('id="lkPrevDest"')

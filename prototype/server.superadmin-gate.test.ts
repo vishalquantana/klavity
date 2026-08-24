@@ -105,7 +105,9 @@ test("ops admin sees the P&L (200) with correct MRR / COGS / CAC", async () => {
   // Page renders for ops.
   const page = await fetch(BASE + "/superadmin", { headers: { cookie: ops } })
   expect(page.status).toBe(200)
-  expect(await page.text()).toContain("Per-Workspace P&amp;L")
+  const pageHtml = await page.text()
+  expect(pageHtml).toContain("Superadmin P&amp;L") // page <title> — the redesigned P&L console
+  expect(pageHtml).toContain('id="view-pl"')       // the per-workspace P&L view container
 }, 20_000)
 
 test("/api/extract attributes ai_calls to the caller's project", async () => {
