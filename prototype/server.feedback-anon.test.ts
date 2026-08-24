@@ -201,12 +201,16 @@ test("over the per-IP cap → 429", async () => {
   expect(got429).toBe(true)
 })
 
-// ── Test 4: no-Origin anonymous does NOT persist (deferred surface stays closed) ──
-test("no-Origin anonymous with a valid project_id does NOT persist (deferred surface stays closed)", async () => {
+// ── Test 4 (KLA-559): no-Origin anonymous is now subject to the SAME per-IP limiter ──
+// Previously a request with NO Origin header skipped BOTH anon limiters entirely (the DoS this fix
+// closes). Test 3 above already exhausted this IP's per-IP cap, so a subsequent no-Origin anonymous
+// request is now rate-limited (429) instead of slipping through — proving the limiter can no longer be
+// bypassed by omitting the Origin header. A 429 also never reaches the persist branch (no new row).
+test("no-Origin anonymous is rate-limited once the per-IP cap is spent (limiter is NOT Origin-skippable)", async () => {
   const before = await rawClient.execute({ sql: "SELECT COUNT(*) c FROM feedback WHERE project_id=?", args: ["p1"] })
   const fd = new FormData(); fd.set("description", "no-origin probe"); fd.set("project_id", "p1")
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd }) // NO origin header
-  expect(r.status).toBe(200) // still 200 (legacy behavior), but no new row
+  expect(r.status).toBe(429) // Origin-independent per-IP limiter now applies (cap already spent by Test 3)
   const after = await rawClient.execute({ sql: "SELECT COUNT(*) c FROM feedback WHERE project_id=?", args: ["p1"] })
   expect(Number(after.rows[0].c)).toBe(Number(before.rows[0].c))
 })

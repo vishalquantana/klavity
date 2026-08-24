@@ -2276,6 +2276,17 @@ const FEEDBACK_ANON_WINDOW = 60 * 60 * 1000
 const FEEDBACK_ANON_PER_IP = 20
 const FEEDBACK_ANON_PER_PROJECT = 200
 
+// SECURITY (KLA-559): hard ceiling on any request body. Bun buffers the whole body before our handler
+// runs, so without this an attacker could POST an arbitrarily large body (no Origin needed) and spike
+// heap on the 1GB prod box. Sized to comfortably clear the legit heavy path — the /api/feedback video
+// attachment budget (ATTACH_TOTAL_MAX_BYTES 120MB) plus multipart/form overhead — while rejecting absurd
+// bodies. Bun returns a 413 (does NOT crash) once the body exceeds this. The per-file/total attachment
+// caps inside /api/feedback (checked against File.size BEFORE arrayBuffer) remain the finer-grained bound.
+// TODO(KLA-559): the deeper fix is to stream attachments straight to S3 instead of buffering each file
+// into RAM via arrayBuffer(); this ceiling + the Origin-independent IP throttle bound the blast radius
+// until that refactor lands.
+const MAX_REQUEST_BODY_BYTES = Number(process.env.MAX_REQUEST_BODY_BYTES) || 140 * 1024 * 1024
+
 // ── Free-tool analyze cache — KLAVITYKLA-342 ─────────────────────────────────────────────────────
 // The bug-check scan MUST be reproducible: re-running the same URL cannot return a different set of
 // findings (it did — 0, then 8, then 0). Combined with a pinned model + temperature 0, a short
@@ -3924,6 +3935,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const baseOrigin = (() => { try { return new URL(BASE).origin } catch { return "" } })()
         const anonActor = !(await bearerEmail(req)) && !(await sessionEmail(req))
 
+        // SECURITY (KLA-559): the anon abuse limiter must NOT be skippable by omitting the Origin header.
+        // Previously BOTH anon limiters lived inside the `anonActor && reqOrigin` block, so a non-browser
+        // caller (curl / extension direct mode) with NO Origin bypassed rate limiting entirely — enabling
+        // unbounded whole-file uploads (100MB/file, 120MB total) against a 1GB prod box. Apply the per-IP
+        // limit to EVERY anonymous caller up-front, BEFORE req.formData() buffers the (body-capped) request,
+        // regardless of whether an Origin header is present. The per-project limit still runs inside the
+        // cross-origin widget gate below (it needs project_id from the form). Authenticated / first-party
+        // callers carry a bearer or session and are not `anonActor`, so they are never newly throttled here.
+        if (anonActor) {
+          const anonIp = clientIp(req, server)
+          if (!rlAllow(`fbanon:ip:${anonIp}`, FEEDBACK_ANON_PER_IP, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+        }
+
         const form = await req.formData()
         const description = String(form.get("description") || "").trim()
         const pageUrl = String(form.get("page_url") || "")
@@ -3986,8 +4010,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // anonWidgetAllowed unlocks the cross-origin anonymous persist branch further below.
         let anonWidgetAllowed = false
         if (anonActor && reqOrigin) {
+          // The per-IP limit already ran up-front (Origin-independent, above). `ip` is retained here for
+          // the Turnstile verification below, which binds the challenge to the caller's address.
           const ip = clientIp(req, server)
-          if (!rlAllow(`fbanon:ip:${ip}`, FEEDBACK_ANON_PER_IP, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
           // Cross-origin widget report (the customer's own site) → enforce the project's report gate so
           // an end-user can file WITHOUT a Klavity account. First-party anonymous (our own pages — e.g.
           // the leadgen marketing widget) keeps the existing low-friction path; identity is captured
@@ -12033,6 +12058,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 Bun.serve({
   port: PORT,
   idleTimeout: 180,
+  // SECURITY (KLA-559): bound the buffered request body. Without this Bun's default lets a body grow
+  // unbounded; a no-Origin `curl -F files=@big.mp4` loop would spike heap on the 1GB prod box. Bun
+  // rejects an over-cap body with a 413 before our handler runs. Kept >120MB attachment budget + overhead.
+  maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
   async fetch(req, server) {
     // Establish per-request context (for F5 token-project binding) and apply security headers to every
     // response from a single chokepoint.
