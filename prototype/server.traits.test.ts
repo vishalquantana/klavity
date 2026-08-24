@@ -442,6 +442,14 @@ test("security headers (X-Frame-Options + CSP) are on every response", async () 
   expect(res.headers.get("x-content-type-options")).toBe("nosniff")
   const csp = res.headers.get("content-security-policy") || ""
   expect(csp).toContain("frame-ancestors 'self'")
+  // KLA-546: GA4 (gtag.js) must load — googletagmanager.com whitelisted in script-src.
+  const scriptSrc = (csp.split(";").find(d => d.trim().startsWith("script-src")) || "")
+  expect(scriptSrc).toContain("https://www.googletagmanager.com")
+  // KLA-546: GA4 collect beacon must be able to reach google-analytics.com. connect-src must permit it —
+  // either explicitly or via the https: wildcard. If connect-src is ever tightened to a fixed allowlist,
+  // this asserts google-analytics.com stays reachable so events keep sending.
+  const connectSrc = (csp.split(";").find(d => d.trim().startsWith("connect-src")) || "")
+  expect(connectSrc.includes("google-analytics.com") || connectSrc.includes("https:")).toBe(true)
 })
 
 // ── LLM10 / AI-demo size cap: an oversized brief is rejected with 413 BEFORE any LLM call (hermetic). ──
