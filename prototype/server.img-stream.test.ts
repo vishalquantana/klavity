@@ -166,6 +166,20 @@ test("the streamed body arrives in multiple chunks without a single pre-read buf
   expect(received).toBe(big.length)
 })
 
+test("KLA-576: content-type falls back to the DB content_type when the S3 object has no/generic type", async () => {
+  // Store the object WITHOUT an explicit type → s3rver reports application/octet-stream at rest.
+  // The DB row says image/jpeg. The route must serve the DB type so the <img> RENDERS instead of
+  // downloading as octet-stream (the regression this fix closes).
+  const jpgKey = `${S3_KEY}.jpg`
+  const jpgBytes = crypto.getRandomValues(new Uint8Array(8 * 1024))
+  await s3c().write(jpgKey, jpgBytes) // no `type` → octet-stream at rest
+  await rawExec(`INSERT INTO screenshots (id, project_id, s3_key, bucket, content_type, acl, bytes, owner_email, expires_at, created_at) VALUES (?, ?, ?, 'kla519', 'image/jpeg', 'private', ?, NULL, NULL, ?)`, [`shot_jpg_${ts}`, PROJECT_ID, jpgKey, jpgBytes.length, NOW])
+  const jpgTok = `shot_jpg_${ts}.${hmacHex(`shot_jpg_${ts}`)}`
+  const r = await fetch(`${BASE}/img/${jpgTok}`)
+  expect(r.status).toBe(200)
+  expect((r.headers.get("content-type") || "").toLowerCase()).toBe("image/jpeg")
+})
+
 test("route uses the streaming helper, not the buffering one (source-level guard)", async () => {
   const src = await Bun.file(join(import.meta.dir, "server.ts")).text()
   const i = src.indexOf('path.startsWith("/img/")')
