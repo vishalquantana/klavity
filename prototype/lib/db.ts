@@ -6301,6 +6301,20 @@ export async function setFeedbackObservation(feedbackId: string, projectId: stri
   })
 }
 
+// KLA-554: stamp the AI-generated ticket title onto a row's dedicated `title` column, leaving the full
+// report body (`observation`) UNTOUCHED. Fire-and-forget from the intake path. Guarded WHERE the title
+// column is still empty/NULL so we NEVER clobber a human-supplied title (the widget/composer stores an
+// explicit title verbatim, and a MANUAL ticket always has one) — this only fills the gap where cards
+// otherwise fell back to the raw first line of `observation`. Project-scoped so a stray/attacker
+// feedbackId can't retitle another tenant's row. Returns true iff this call actually set the title.
+export async function updateFeedbackTitle(feedbackId: string, projectId: string, title: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE feedback SET title=? WHERE id=? AND project_id=? AND (title IS NULL OR title='')",
+    args: [title, feedbackId, projectId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
 // KLAVITYKLA-438 "Record me" (Phase 2): update ONE recording's transcript fields in-place inside the
 // row's recordings_json array, keyed by the recording's stable `id`. We extend the recording objects
 // (rather than add a sibling column) so the transcript travels with the clip it belongs to and the GET

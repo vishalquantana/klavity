@@ -120,6 +120,8 @@ import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
+import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
+import { updateFeedbackTitle } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -522,6 +524,39 @@ async function chat(messages: any[], maxTokens: number, jsonMode = false, ctx?: 
       .catch((e: any) => console.error("reconcileDailySpend failed:", e?.message || e))
   }
   return { content, usage: { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens } }
+}
+
+// KLA-554: post-intake AI titling for a report that carries typed PROSE. The composer promises to
+// auto-generate a title but nothing did, so ticket cards fell back to the raw first line of the body
+// (whole pasted URLs, paragraphs). Here we ask the CHEAP clarity model for a short, imperative bug-style
+// title and stamp it onto the dedicated `title` column — the full report `observation` is left
+// UNTOUCHED. Reuses the shared `chat()` helper, so this call is budget-gated (tryReserveDailySpend) and
+// cost-tracked (recordAiCall) exactly like every other LLM call. FIRE-AND-FORGET from the intake path:
+// it must never block or slow the (cross-origin, hot-path) submit response, and on ANY failure/timeout
+// it does nothing — the existing first-line fallback stands. The persist is guarded to only fill an
+// empty title column, so it can never clobber a human-supplied title.
+async function generateAndSaveTitle(feedbackId: string, observation: string | null | undefined, projectId: string, actorEmail?: string | null): Promise<void> {
+  try {
+    if (!KEY || !db) return
+    const title = await generateTicketTitle(String(observation ?? ""), {
+      llm: async (input: string, systemPrompt: string) => {
+        const { content } = await chat(
+          [
+            { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+            { role: "user", content: "REPORT BODY:\n" + wrapUntrusted(input) },
+          ],
+          60,
+          true,
+          { type: "auto-title", feature: "auto-title", model: CLARITY_MODEL, projectId, email: actorEmail ?? null, temperature: 0 },
+        )
+        return String(content ?? "")
+      },
+    })
+    if (!title) return // empty ⇒ leave the existing first-line fallback untouched
+    await updateFeedbackTitle(feedbackId, projectId, title)
+  } catch (e: any) {
+    console.warn("[auto-title] non-fatal:", e?.message || e)
+  }
 }
 // parseJSON is imported from ./lib/parse-json (extracted for unit-testability).
 // All callers below use the imported function; behaviour is identical.
@@ -4564,6 +4599,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 if (draftedTitle) {
                   void draftTitleForFeedback({ feedbackId, projectId, reportType, pageUrl, clientContext })
                     .catch((err: any) => console.warn("[title-draft] non-fatal:", err?.message || err))
+                } else if (shouldAutoTitle(reportTitle)) {
+                  // KLA-554: a report WITH typed prose (not screenshot-only) and NO explicit user title —
+                  // auto-generate a short bug-style title into the `title` column so the card stops showing
+                  // the raw first line of the body. Fire-and-forget; observation is left untouched.
+                  const fbForTitle = feedbackId
+                  void generateAndSaveTitle(fbForTitle, observation, projectId, actor)
+                    .catch((err: any) => console.warn("[auto-title] non-fatal:", err?.message || err))
                 }
               }
 
