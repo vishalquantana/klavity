@@ -8509,7 +8509,9 @@ function renderConnectors(admin) {
       <div class="conn-row-actions">
         <button class="btn btn-ghost btn-sm" data-test="${esc(c.id)}">Test</button>
         <button class="btn btn-ghost btn-sm" data-edit="${esc(c.id)}">Edit</button>
+        ${(c.pendingMappings && c.pendingMappings.length) ? `<button class="btn btn-ghost btn-sm" data-mapfix="${esc(c.id)}" style="color:var(--amber,#b7791f)">${kicon('alert-triangle')||'⚠'} Fix mappings (${c.pendingMappings.length})</button>` : ``}
       </div>
+      <div class="conn-mapfix hide" data-mapfix-for="${esc(c.id)}" style="margin-top:6px"></div>
       <div class="conn-result hide" data-result-for="${esc(c.id)}"></div>`
       listEl.appendChild(row)
     })
@@ -8556,6 +8558,22 @@ function renderConnectors(admin) {
         const cid = btn.getAttribute("data-edit")
         const conn = (state._connectors || []).find(x => x.id === cid)
         if (conn) openConnEdit(conn)
+      })
+    })
+    // KLA-551: Wire "Fix mappings" — GET the pending queue + live tracker options, render a resolve
+    // panel where each unresolved name maps to a real state/label, and POST the permanent fix.
+    listEl.querySelectorAll("button[data-mapfix]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const cid = btn.getAttribute("data-mapfix")
+        const panel = listEl.querySelector(`[data-mapfix-for="${cssAttr(cid)}"]`)
+        if (!panel) return
+        if (!panel.classList.contains("hide")) { panel.classList.add("hide"); return }
+        panel.classList.remove("hide")
+        panel.innerHTML = `<div class="muted" style="font-size:12px">Loading unresolved mappings…</div>`
+        const r = await fetch(projPath("/connectors/" + encodeURIComponent(cid) + "/mappings")).catch(() => null)
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (!r || !r.ok) { panel.innerHTML = `<div style="color:var(--rose);font-size:12px">${esc((d && d.error) || "Couldn't load mappings.")}</div>`; return }
+        renderMapFixPanel(panel, cid, d)
       })
     })
     // Wire deletes
@@ -8697,6 +8715,58 @@ function renderConnectors(admin) {
 
 // Escape a value for use inside a CSS attribute selector ([attr="..."]).
 function cssAttr(s) { return String(s == null ? "" : s).replace(/["\\]/g, "\\$&") }
+
+// KLA-551 (connector export failsafe): render the "Fix mappings" resolve panel. Each unresolved
+// state/label the tracker couldn't match is shown with a picker of the tracker's LIVE options (plus a
+// free-text fallback), so the admin sets a PERMANENT mapping used on all future exports.
+function renderMapFixPanel(panel, cid, data) {
+  const pending = (data && data.pendingMappings) || []
+  if (!pending.length) { panel.innerHTML = `<div class="muted" style="font-size:12px">All mappings resolved.</div>`; return }
+  const opts = (data && data.options) || { states: [], labels: [] }
+  const rows = pending.map((p, i) => {
+    const list = p.field === "state" ? (opts.states || []) : (opts.labels || [])
+    const optionsHtml = [`<option value="">— pick a ${esc(p.field)} —</option>`]
+      .concat(list.map(n => `<option value="${esc(n)}">${esc(n)}</option>`)).join("")
+    return `<div class="mapfix-row" data-mrow="${i}" style="display:flex;gap:6px;align-items:center;margin:4px 0;flex-wrap:wrap">
+      <span style="font-size:12px"><b>${esc(p.field)}</b> "${esc(p.requested_name)}"</span>
+      <span style="font-size:12px;color:var(--muted)">${kicon('arrow-right')||'→'}</span>
+      <select class="mapfix-sel" data-field="${esc(p.field)}" data-req="${esc(p.requested_name)}" style="font-size:12px;padding:2px 4px">${optionsHtml}</select>
+      <input class="mapfix-txt" placeholder="or type a name" style="font-size:12px;padding:2px 4px;width:120px" />
+      <button class="btn btn-ghost btn-sm mapfix-save" data-field="${esc(p.field)}" data-req="${esc(p.requested_name)}">Save</button>
+      <span class="mapfix-msg" style="font-size:11px"></span>
+    </div>`
+  }).join("")
+  panel.innerHTML = `<div class="mapfix-panel" style="border:1px solid var(--border,#eee);border-radius:8px;padding:8px">
+    <div class="muted" style="font-size:12px;margin-bottom:4px">These names weren't found in your tracker, so reports were filed with the default. Map each to a real one — it sticks for all future exports.</div>
+    ${rows}</div>`
+  panel.querySelectorAll(".mapfix-save").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest(".mapfix-row")
+      const field = btn.getAttribute("data-field")
+      const req = btn.getAttribute("data-req")
+      const sel = row.querySelector(".mapfix-sel")
+      const txt = row.querySelector(".mapfix-txt")
+      const msg = row.querySelector(".mapfix-msg")
+      const target = (txt && txt.value.trim()) || (sel && sel.value) || ""
+      if (!target) { msg.style.color = "var(--rose)"; msg.textContent = "Pick or type a target."; return }
+      btn.disabled = true
+      const r = await fetch(projPath("/connectors/" + encodeURIComponent(cid) + "/mappings"), {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ field: field, requested_name: req, target_name: target })
+      }).catch(() => null)
+      const d = r ? await r.json().catch(() => ({})) : {}
+      btn.disabled = false
+      if (r && r.ok && d.ok) {
+        msg.style.color = "var(--emerald,#059669)"; msg.textContent = "Saved"
+        row.remove()
+        // Refresh the connectors list so the badge count/needs-attention flag updates.
+        await loadConnectors(true)
+      } else {
+        msg.style.color = "var(--rose)"; msg.textContent = (d && d.error) || "Couldn't save."
+      }
+    })
+  })
+}
 
 // Inline connector test/result message helpers (reuse .conn-result styling).
 function showConnResult(el, cls, html) {
