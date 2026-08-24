@@ -73,7 +73,7 @@ import { judgeWalk } from "./lib/trails-judge"
 import { WEEK_MS as TRUST_REPORT_WEEK_MS, sendTrustReport, type TrustReportDeps } from "./lib/trust-report"
 import type { TrailStatus } from "./lib/trails-types"
 import type { RecurrenceMemory } from "./lib/recurrence-memory"
-import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear } from "./lib/ratelimit"
+import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear, refund as rlRefund } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup, geoLookup } from "./lib/signup-alert"
 import { notifyNewReport } from "./lib/report-alert"
@@ -7325,9 +7325,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           } as any)
           sessionId = r.sessionId
         } catch (e: any) {
-          if (e instanceof WalkBusyError) return v1err("busy", "An AutoSim or authoring run is already in progress for this project.", 409)
+          // 409-busy = the global author/walk slot was taken; NO authored run was created. Refund the
+          // rate-limit slot so a CI client polling on 409 can't exhaust the per-project create window
+          // and lock itself out with 429 for the rest of the minute (KLA-558).
+          if (e instanceof WalkBusyError) {
+            rlRefund(`v1authored:create:${tokenProject}`)
+            return v1err("busy", "An AutoSim or authoring run is already in progress for this project.", 409)
+          }
           const msg = String(e?.message || e)
-          if (/busy|already running/i.test(msg)) return v1err("busy", "An AutoSim or authoring run is already in progress for this project.", 409)
+          if (/busy|already running/i.test(msg)) {
+            rlRefund(`v1authored:create:${tokenProject}`)
+            return v1err("busy", "An AutoSim or authoring run is already in progress for this project.", 409)
+          }
           return v1err("internal", oops(e, "v1-authored-create").id, 500)
         }
         if (idemKey) await saveIdempotentRunId(tokenProject, idemKey, sessionId).catch(() => {})
@@ -7430,7 +7439,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }, 202)
         } catch (e: any) {
           const msg = String(e?.message || e)
-          if (e instanceof WalkBusyError) return v1err("run_busy", "A run is already in progress for this project.", 409)
+          // 409-busy = the global walk slot was taken; NO run was created. Refund the rate-limit slot
+          // so a CI client polling on 409 can't exhaust the per-project create window and lock itself
+          // out with 429 for the rest of the minute (KLA-558).
+          if (e instanceof WalkBusyError) {
+            rlRefund(`v1runs:create:${v1Project}`)
+            return v1err("run_busy", "A run is already in progress for this project.", 409)
+          }
           if (msg === "trail not found") return v1err("not_found", "Unknown trail_id.", 404)
           if (msg === "trail is paused") return v1err("trail_paused", "The trail is paused.", 409)
           if (msg === "trail is snap-locked") return v1err("plan_locked", "This project's plan does not include AutoSim runs.", 409)

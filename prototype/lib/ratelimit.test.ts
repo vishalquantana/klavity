@@ -1,6 +1,6 @@
 // Unit tests for the in-process fixed-window rate limiter. Deterministic via the injected `now`.
 import { test, expect, beforeEach } from "bun:test"
-import { allow, record, count, retryAfterMs, clear, _resetAll } from "./ratelimit"
+import { allow, record, count, retryAfterMs, clear, refund, _resetAll } from "./ratelimit"
 
 beforeEach(() => _resetAll())
 
@@ -50,6 +50,43 @@ test("retryAfterMs reflects remaining window", () => {
   expect(retryAfterMs("k", t0)).toBe(1000)
   expect(retryAfterMs("k", t0 + 400)).toBe(600)
   expect(retryAfterMs("k", t0 + 1000)).toBe(0) // expired
+})
+
+test("refund gives back one slot in the current window (floored at 0)", () => {
+  const t0 = 8_000_000
+  expect(allow("k", 2, 1000, t0)).toBe(true)  // count 1
+  expect(allow("k", 2, 1000, t0)).toBe(true)  // count 2 (at limit)
+  refund("k", t0)                              // count 1
+  expect(count("k", t0)).toBe(1)
+  refund("k", t0); refund("k", t0)             // floors at 0, key dropped
+  expect(count("k", t0)).toBe(0)
+})
+
+test("refund is a no-op on an absent or expired window", () => {
+  const t0 = 8_100_000
+  refund("missing", t0)                        // no throw, nothing to give back
+  expect(count("missing", t0)).toBe(0)
+  allow("k", 1, 1000, t0)
+  refund("k", t0 + 2000)                        // window expired — no-op
+  expect(count("k", t0 + 2000)).toBe(0)
+})
+
+// KLA-558: N consecutive 409-busy rejections that refund must NOT exhaust the create window; a real
+// create after the busy slot frees still succeeds (does not 429). This is the exact create-window
+// contract the v1 /runs + /authored-runs routes rely on (rlAllow → engine → refund-on-409-busy).
+test("KLA-558: refunded 409-busy attempts don't exhaust the window; a later create still passes", () => {
+  const t0 = 8_200_000
+  const key = "v1runs:create:projX"
+  const LIMIT = 10
+  // 20 poll attempts while the global walk slot is busy: each charges then refunds on 409.
+  for (let i = 0; i < 20; i++) {
+    expect(allow(key, LIMIT, 60_000, t0)).toBe(true) // slot charged
+    refund(key, t0)                                   // 409-busy → give it back
+  }
+  expect(count(key, t0)).toBe(0)
+  // Slot frees; the real create charges 1 and is well under the limit (no 429 lockout).
+  expect(allow(key, LIMIT, 60_000, t0)).toBe(true)
+  expect(count(key, t0)).toBe(1)
 })
 
 test("lockout pattern: count gate + record on failure + clear on success", () => {
