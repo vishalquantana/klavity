@@ -29,8 +29,9 @@ test("aha-carry — homepage demo stashes its result into klav-aha-preview", () 
 })
 
 test("aha-carry — stash is URL-guarded and fail-soft", () => {
-  // Never clobbers a stash belonging to a different URL (onboarding re-runs instead).
-  expect(INDEX).toMatch(/String\(st\.url \|\| ''\) !== String\(url\)\) return/)
+  // Never clobbers a stash belonging to a different URL (onboarding re-runs instead) — but an
+  // EMPTY store must fall through and write (first-time visitors have no stash yet).
+  expect(INDEX).toMatch(/if \(st\.url && String\(st\.url\) !== String\(url\)\) return/)
   // Wrapped so quota/private-mode can never break the demo render.
   const fn = INDEX.slice(INDEX.indexOf("function stashAha"), INDEX.indexOf("function sentClass"))
   expect(fn).toContain("try {")

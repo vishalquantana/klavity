@@ -741,7 +741,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   function stashAha(url, personas, d) {
     try {
       var st = JSON.parse(localStorage.getItem('klav-aha-preview') || '{}') || {}
-      if (String(st.url || '') !== String(url)) return; // different page than what onboarding will show
+      // Skip only when a stash EXISTS and belongs to a different URL — an empty store must fall
+      // through and write (first-time visitors have no stash yet; behavioural test caught this).
+      if (st.url && String(st.url) !== String(url)) return
       st.url = url
       if (personas && personas.length && !(st.personas && st.personas.length)) st.personas = personas
       if (d) {
