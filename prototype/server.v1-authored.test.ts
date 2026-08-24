@@ -218,11 +218,18 @@ test("Idempotency-Key replays the same authored_run_id", async () => {
   // The global author slot may still be held by an earlier test's background drive; that drive fails
   // fast (no OPENROUTER key / no chromium) and releases the slot. Retry the FIRST create past any
   // transient 409 busy so the idempotency key gets stored. Once stored, replays never touch the slot.
+  //
+  // KLA-558 regression guard: a 409-busy MUST NOT charge the per-project create budget (the route
+  // refunds the rate-limit slot on busy). Before the fix, ~10 polled 409s inside a held-slot window
+  // exhausted the 10/min budget and every subsequent create returned 429 for the rest of the minute
+  // ("unexpected create status 429"). With the refund, this loop only ever sees 409 (busy) or 202
+  // (slot freed) — never 429 — so it converges deterministically.
   let a: Response, ja: any
   const deadline = Date.now() + 25_000
   for (;;) {
     a = await mk(); ja = await a.json()
     if (a.status === 202) break
+    if (a.status === 429) throw new Error(`KLA-558 regression: 409-busy polls exhausted the create budget → 429. Body: ${JSON.stringify(ja)}`)
     if (a.status !== 409) throw new Error(`unexpected create status ${a.status}: ${JSON.stringify(ja)}`)
     if (Date.now() > deadline) throw new Error("author slot never freed for idempotency create")
     await Bun.sleep(300)

@@ -49,6 +49,17 @@ export function retryAfterMs(key: string, now: number = Date.now()): number {
   return w.resetAt - now
 }
 
+// Give back one slot in `key`'s CURRENT window (floored at 0). Use to refund an allow()/record()
+// increment when the guarded action didn't actually happen (e.g. a create rejected as 409-busy
+// before doing any work) so a retry loop treating 409 as retryable can't exhaust the window.
+// No-op if the window is absent or already expired.
+export function refund(key: string, now: number = Date.now()): void {
+  const w = windows.get(key)
+  if (!w || now >= w.resetAt) return
+  if (w.count > 0) w.count--
+  if (w.count <= 0) windows.delete(key)
+}
+
 export function clear(key: string): void { windows.delete(key) }
 
 // Test-only: wipe all windows so cases don't bleed into each other.
