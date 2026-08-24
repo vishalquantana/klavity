@@ -1432,6 +1432,66 @@ export async function applySchema(c: Client) {
   // KLAVITYKLA-116: plain-language diagnosis (cause + remedy) attached to a RED verification walk.
   if (needCol("author_sessions", "red_cause_json")) await c.execute("ALTER TABLE author_sessions ADD COLUMN red_cause_json TEXT")
     .catch((e: any) => console.warn("author_sessions.red_cause_json ALTER skipped:", e?.message || e))
+  // KLA-550: /api/v1/runs — persist the caller's git metadata ({sha,pr,branch}) on the walk row so a
+  // run's results attach to the commit/PR that triggered it. Additive, nullable JSON; legacy rows null.
+  if (needCol("trail_runs", "git_json")) await c.execute("ALTER TABLE trail_runs ADD COLUMN git_json TEXT")
+    .catch((e: any) => console.warn("trail_runs.git_json ALTER skipped:", e?.message || e))
+  // KLA-550: idempotency ledger for POST /api/v1/runs. A retried create carrying the same
+  // Idempotency-Key (scoped per project) returns the ORIGINAL run instead of launching a new walk.
+  // PRIMARY KEY (project_id, idempotency_key) makes the mapping atomic + project-scoped.
+  await c.execute(`CREATE TABLE IF NOT EXISTS api_idempotency (
+    project_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (project_id, idempotency_key)
+  )`).catch((e: any) => console.warn("api_idempotency CREATE skipped:", e?.message || e))
+}
+
+// ── KLA-550: /api/v1/runs helpers (idempotency ledger + per-run git metadata) ──
+
+/** Look up the run_id a prior create stored under (projectId, idempotencyKey). Null when unseen. */
+export async function getIdempotentRunId(projectId: string, idempotencyKey: string): Promise<string | null> {
+  const r = await db!.execute({
+    sql: "SELECT run_id FROM api_idempotency WHERE project_id=? AND idempotency_key=?",
+    args: [projectId, idempotencyKey],
+  })
+  return r.rows.length ? String((r.rows[0] as any).run_id) : null
+}
+
+/**
+ * Record (projectId, idempotencyKey) -> runId. INSERT OR IGNORE so a race where two retries land at
+ * once keeps whichever row won; the caller re-reads getIdempotentRunId to converge on the winner.
+ */
+export async function saveIdempotentRunId(projectId: string, idempotencyKey: string, runId: string): Promise<void> {
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO api_idempotency (project_id, idempotency_key, run_id, created_at) VALUES (?, ?, ?, ?)",
+    args: [projectId, idempotencyKey, runId, Date.now()],
+  })
+}
+
+/** Persist git metadata (already JSON-stringified) on a walk row. Best-effort/no-op on empty. */
+export async function saveWalkGit(projectId: string, runId: string, gitJson: string | null): Promise<void> {
+  if (!gitJson) return
+  await db!.execute({
+    sql: "UPDATE trail_runs SET git_json=? WHERE project_id=? AND id=?",
+    args: [gitJson, projectId, runId],
+  })
+}
+
+/** Read the git metadata stored on a walk row. Returns the parsed object or null (missing/legacy/bad JSON). */
+export async function getWalkGit(projectId: string, runId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const r = await db!.execute({
+      sql: "SELECT git_json FROM trail_runs WHERE project_id=? AND id=?",
+      args: [projectId, runId],
+    })
+    if (!r.rows.length) return null
+    const raw = (r.rows[0] as any).git_json
+    if (raw == null) return null
+    const parsed = JSON.parse(String(raw))
+    return parsed && typeof parsed === "object" ? parsed : null
+  } catch { return null }
 }
 
 // ── schema_meta helpers ──

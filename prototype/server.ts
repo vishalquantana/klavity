@@ -97,6 +97,10 @@ import { getReplay, runsWithReplay, findingReplayOffsets } from "./lib/trails-re
 import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, reorderTrailSteps, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
+// KLA-550: /api/v1/runs — REST wrapper over the AutoSim/Trail engine (idempotency + git + AI report).
+import { getIdempotentRunId, saveIdempotentRunId, saveWalkGit, getWalkGit } from "./lib/db"
+import { buildV1RunStatus, buildV1Report, v1StatusForWalk } from "./lib/v1-runs"
+import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
 import { startCrashReaper } from "./lib/trails-reaper"
 import { runAuthorNow, getAuthorSession, getActiveAuthorSession, listStalledAuthorSessions, listNeedsAuthSessionsForAutoResume, AUTOSIM_DEADLINE_MS_DEFAULT } from "./lib/trails-author"
@@ -7160,6 +7164,172 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       return json({ error: "Not found" }, 404)
+    }
+
+    // ── v1 REST API (KLA-550) — documented, versioned machine API over the AutoSim/Trail engine. ──
+    // Reuses the same kci_* project-bound bearer tokens as /api/ci (mint via POST /api/ci/token).
+    // Structured errors: { error: { code, message, request_id } }. /api/ci/* is unchanged (alias).
+    //   POST /api/v1/runs                     — trigger a run (Idempotency-Key honored) → 202 {run_id,...}
+    //   GET  /api/v1/runs?project=:id         — list recent runs + status
+    //   GET  /api/v1/runs/:id?project=:id     — run status + severity summary + git
+    //   GET  /api/v1/runs/:id/report?project=:id — AI-consumable findings report (cursor-paginated)
+    //   POST /api/v1/runs/:id/cancel?project=:id — cooperative best-effort cancel
+    if (path === "/api/v1/runs" || path.startsWith("/api/v1/runs/")) {
+      // Structured-error helper — { error: { code, message, request_id } }. request_id echoes back for support.
+      const v1err = (code: string, message: string, status: number) =>
+        json({ error: { code, message, request_id: crypto.randomUUID().slice(0, 8) } }, status)
+
+      // Bearer auth: same kci_* extraction/validation as /api/ci. 401 on missing/invalid token.
+      const v1Raw = (req.headers.get("authorization") || "").match(/^Bearer\s+(kci_\S+)$/i)?.[1] ?? ""
+      if (!v1Raw) return v1err("unauthorized", "Missing or malformed bearer token.", 401)
+      const v1Info = await getExtensionTokenInfo(v1Raw)
+      if (!v1Info || !v1Info.projectId) return v1err("unauthorized", "Invalid or expired token.", 401)
+      const v1Project = v1Info.projectId
+
+      // ── POST /api/v1/runs — create a run. Project comes from the JSON body (not ?project). ──
+      if (req.method === "POST" && path === "/api/v1/runs") {
+        // Per-token rate limit (KLA-550): 30 creates / minute / project.
+        if (!rlAllow(`v1runs:create:${v1Project}`, 30, 60_000)) {
+          return v1err("rate_limited", "Too many run creations — slow down and retry shortly.", 429)
+        }
+        const parsed = await readJsonLimited(req, 8 * 1024)
+        if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+        const body = parsed.data as Record<string, any>
+        const projectId = String(body.project_id || "").trim()
+        const trailId = String(body.trail_id || "").trim()
+        if (!projectId || !trailId) return v1err("bad_request", "project_id and trail_id are required.", 400)
+        // Token is bound to exactly one project; the body's project_id must match it (IDOR guard).
+        if (projectId !== v1Project) return v1err("forbidden", "Token is not authorized for this project.", 403)
+
+        // git metadata ({sha,pr,branch}) — echoed back + persisted so results attach to the commit/PR.
+        const git = (body.git && typeof body.git === "object") ? body.git as Record<string, unknown> : null
+        const gitJson = git ? JSON.stringify(git) : null
+
+        // Idempotency-Key — a retry with the same key returns the ORIGINAL run (200), never a new walk.
+        const idemKey = (req.headers.get("idempotency-key") || "").trim().slice(0, 200)
+        if (idemKey) {
+          const priorRunId = await getIdempotentRunId(projectId, idemKey)
+          if (priorRunId) {
+            // Same key, DIFFERENT request (trail changed) → 409 conflict; same request → 200 replay.
+            const priorWalk = await getWalk(projectId, priorRunId).catch(() => null)
+            if (priorWalk && priorWalk.trailId !== trailId) {
+              return v1err("idempotency_conflict", "Idempotency-Key was already used for a different request.", 409)
+            }
+            return json({
+              run_id: priorRunId,
+              status: priorWalk ? v1StatusForWalk(priorWalk.status) : "queued",
+              status_url: `/api/v1/runs/${priorRunId}`,
+              report_url: `/api/v1/runs/${priorRunId}/report`,
+              ...(git ? { git } : {}),
+              idempotent_replay: true,
+            }, 200)
+          }
+        }
+
+        try {
+          const { runId } = await runWalkNow(projectId, trailId)
+          // Persist git + idempotency mapping best-effort. On an idempotency race (INSERT OR IGNORE)
+          // re-read to converge on the winner so both retries report the same run_id.
+          let finalRunId = runId
+          await saveWalkGit(projectId, runId, gitJson).catch(() => {})
+          if (idemKey) {
+            await saveIdempotentRunId(projectId, idemKey, runId).catch(() => {})
+            finalRunId = (await getIdempotentRunId(projectId, idemKey).catch(() => null)) || runId
+          }
+          return json({
+            run_id: finalRunId,
+            status: "queued",
+            status_url: `/api/v1/runs/${finalRunId}`,
+            report_url: `/api/v1/runs/${finalRunId}/report`,
+            ...(git ? { git } : {}),
+          }, 202)
+        } catch (e: any) {
+          const msg = String(e?.message || e)
+          if (e instanceof WalkBusyError) return v1err("run_busy", "A run is already in progress for this project.", 409)
+          if (msg === "trail not found") return v1err("not_found", "Unknown trail_id.", 404)
+          if (msg === "trail is paused") return v1err("trail_paused", "The trail is paused.", 409)
+          if (msg === "trail is snap-locked") return v1err("plan_locked", "This project's plan does not include AutoSim runs.", 409)
+          const o = oops(e, "v1-runs-create")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
+      }
+
+      // ── GET /api/v1/runs?project=:id — list recent runs (thin wrapper over listRecentWalks). ──
+      if (req.method === "GET" && path === "/api/v1/runs") {
+        const requested = url.searchParams.get("project") || ""
+        if (requested !== v1Project) return v1err("forbidden", "Token is not authorized for this project.", 403)
+        const limit = Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") || "20", 10) || 20, 1), 100)
+        try {
+          const walks = await listRecentWalks(v1Project, limit)
+          const runs = walks.map((w) => ({
+            run_id: w.id,
+            trail_id: w.trailId,
+            status: v1StatusForWalk(w.status),
+            verdict: ["green", "amber", "red", "skip"].includes(w.status) ? w.status : null,
+            started_at: w.startedAt,
+            finished_at: w.finishedAt,
+          }))
+          return json({ runs })
+        } catch (e) {
+          const o = oops(e, "v1-runs-list")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
+      }
+
+      // The remaining routes are :runId-scoped and project-scoped via ?project (must match the token).
+      const v1RequestedProject = url.searchParams.get("project") || ""
+      if (v1RequestedProject !== v1Project) return v1err("forbidden", "Token is not authorized for this project.", 403)
+
+      // ── GET /api/v1/runs/:id/report — AI-consumable findings report (cursor-paginated). ──
+      const v1ReportMatch = path.match(/^\/api\/v1\/runs\/([^/]+)\/report$/)
+      if (req.method === "GET" && v1ReportMatch) {
+        const runId = v1ReportMatch[1]
+        const walk = await getWalk(v1Project, runId)
+        if (!walk) return v1err("not_found", "Unknown run_id.", 404)
+        const limit = Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50
+        const cursor = url.searchParams.get("cursor")
+        try {
+          const report = await buildV1Report(v1Project, walk, { baseUrl: BASE, cursor, limit })
+          return json(report)
+        } catch (e) {
+          const o = oops(e, "v1-runs-report")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
+      }
+
+      // ── POST /api/v1/runs/:id/cancel — cooperative best-effort. The engine aborts an in-flight walk
+      // at the next step boundary (cancelCurrentWalk fires the AbortSignal). A run that is not currently
+      // 'running' cannot be cancelled after the fact — we return its real state rather than faking one. ──
+      const v1CancelMatch = path.match(/^\/api\/v1\/runs\/([^/]+)\/cancel$/)
+      if (req.method === "POST" && v1CancelMatch) {
+        const runId = v1CancelMatch[1]
+        const walk = await getWalk(v1Project, runId)
+        if (!walk) return v1err("not_found", "Unknown run_id.", 404)
+        if (walk.status !== "running") {
+          // Best-effort semantics: nothing to abort — echo the current state so callers see the truth.
+          return json({ run_id: runId, status: v1StatusForWalk(walk.status), cancel_requested: false, note: "Run is not currently running." })
+        }
+        const signalled = cancelCurrentWalk(runId)
+        return json({ run_id: runId, status: "running", cancel_requested: true, signalled })
+      }
+
+      // ── GET /api/v1/runs/:id — run status + severity summary + git metadata. ──
+      const v1RunMatch = path.match(/^\/api\/v1\/runs\/([^/]+)$/)
+      if (req.method === "GET" && v1RunMatch) {
+        const runId = v1RunMatch[1]
+        const walk = await getWalk(v1Project, runId)
+        if (!walk) return v1err("not_found", "Unknown run_id.", 404)
+        try {
+          const git = await getWalkGit(v1Project, runId)
+          const payload = await buildV1RunStatus(v1Project, walk, git)
+          return json(payload)
+        } catch (e) {
+          const o = oops(e, "v1-runs-status")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
+      }
+
+      return v1err("not_found", "Unknown v1 endpoint.", 404)
     }
 
     // ── Expectations graduation endpoints (Layer E, Task 6) — project-scoped, authed. ──
