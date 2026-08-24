@@ -1976,6 +1976,28 @@ export function buildModal(
     return true
   }
 
+  // KLA-556: viewport-ONLY capture. Same fast above-the-fold preview as captureViewportThenFull's Phase 1,
+  // but WITHOUT the background full-page swap — the default auto-capture shot must stay the viewport (what
+  // the user actually sees), and full-page remains an explicit "Full Page" click. Returns true when it drove
+  // a viewport capture; false when no onCaptureViewport is wired (caller falls back to onCaptureFull).
+  async function captureViewportOnly(activeBtn: HTMLButtonElement | null): Promise<boolean> {
+    if (!callbacks.onCaptureViewport) return false
+    const restore = maskOn ? maskNumbers(document.body) : null
+    try {
+      const { dataUrl } = normalizeCapture(await callbacks.onCaptureViewport())
+      if (dataUrl) {
+        capturing = false // a real preview is now shown — clear the "Capturing…" skeleton
+        addScreenshot(dataUrl, 'rendered', undefined, true, false)
+        if (activeBtn) setActiveCapture(activeBtn)
+      } else {
+        capturing = false
+        updateStrip()
+      }
+    } catch { capturing = false; updateStrip() }
+    finally { restore?.() }
+    return true
+  }
+
   // Capture buttons — each is guarded against double-click / re-entrancy via `busy`/lockComposer.
   const fullBtn = modal.querySelector('#klavity-full') as HTMLButtonElement
   fullBtn.addEventListener('click', async () => {
@@ -2955,11 +2977,13 @@ export function buildModal(
       capturing = true
       updateStrip()
       const runCapture = () => {
-        // KLAVITYKLA-509: viewport-first when available — the fast above-the-fold preview replaces the
-        // "Capturing…" skeleton within ~1s, then the full-page render swaps in from the background. Falls
-        // back to the direct full-page render (with the skeleton) when no onCaptureViewport is wired.
+        // KLA-556: the DEFAULT auto-capture shot is the VIEWPORT only (above-the-fold / what's visible) —
+        // it replaces the "Capturing…" skeleton within ~1s and does NOT swap to full-page. Full page stays
+        // an explicit "Full Page" click. The viewport default applies wherever onCaptureViewport is wired;
+        // no active-capture button is highlighted (this isn't a full-page shot). Falls back to the direct
+        // full-page render (with the skeleton) below when no onCaptureViewport is wired (e.g. the extension).
         if (callbacks.onCaptureViewport) {
-          captureViewportThenFull(fullBtn).catch(() => { capturing = false; updateStrip() })
+          captureViewportOnly(null).catch(() => { capturing = false; updateStrip() })
           return
         }
         callbacks.onCaptureFull()
