@@ -49,9 +49,13 @@ export async function handleMcpMessage(msg: any, ctx: McpToolCtx): Promise<objec
       } catch (e: any) {
         // MCP convention: tool execution errors are reported in-band (isError), not as protocol errors.
         // Expected ToolErrors (entitlement wall, IDOR guard, bad args, unknown id) carry a helpful,
-        // caller-safe message and are surfaced verbatim. Everything else is an UNEXPECTED internal
-        // error (DB/driver outage, bug) — opaque-ify it so raw internals never reach the AI agent.
-        const text = e instanceof ToolError
+        // caller-safe message and are surfaced verbatim. WalkBusyError/AuthorBusyError are an expected,
+        // RETRYABLE condition (the single global slot is busy) — the caller must see "try again shortly",
+        // so surface those verbatim too (matched by name to avoid importing the heavy trails-browser
+        // module). Everything else is an UNEXPECTED internal error (DB/driver outage, bug) — opaque-ify
+        // it so raw internals never reach the AI agent.
+        const busy = e instanceof Error && (e.name === "WalkBusyError" || e.name === "AuthorBusyError")
+        const text = (e instanceof ToolError || busy)
           ? String(e.message || "tool error")
           : mcpOops(e, `mcp-tools-call:${name}`)
         return ok(id, { content: [{ type: "text", text }], isError: true })

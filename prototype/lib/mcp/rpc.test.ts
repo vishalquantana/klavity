@@ -68,6 +68,22 @@ test("UNEXPECTED internal error (raw DB failure) is opaque-ified with a ref, nev
   }
 })
 
+test("WalkBusyError/AuthorBusyError (retryable busy) is surfaced verbatim, not opaque-ified", async () => {
+  const tool = MCP_TOOLS.find(t => t.name === "start_qa_run")!
+  const original = tool.handler
+  tool.handler = async () => { const e = new Error("Walk queue is full — try again shortly"); e.name = "WalkBusyError"; throw e }
+  try {
+    const r: any = await handleMcpMessage({ jsonrpc: "2.0", id: 8, method: "tools/call",
+      params: { name: "start_qa_run", arguments: { project_id: "proj_me", trail_id: "t1" } } }, ctx)
+    expect(r.result.isError).toBe(true)
+    const text = r.result.content[0].text
+    expect(text).toBe("Walk queue is full — try again shortly")   // caller sees the retry hint
+    expect(text).not.toMatch(/internal error \(ref:/)             // NOT opaque-ified
+  } finally {
+    tool.handler = original
+  }
+})
+
 test("unknown method → -32601", async () => {
   const r: any = await handleMcpMessage({ jsonrpc: "2.0", id: 5, method: "bogus/method" }, ctx)
   expect(r.error.code).toBe(-32601)
