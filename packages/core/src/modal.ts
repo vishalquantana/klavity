@@ -1990,8 +1990,15 @@ export function buildModal(
       }
     } catch (err) {
       // Upload failed — surface the error and re-open the composer (never leave it stuck/disabled).
+      // KLA-496 (declutter): the raw error message is DEVELOPER text (hosts throw things like
+      // "submit failed: 500", "Klavity backend error 502: <server response body>") and must not be
+      // printed to the END USER. Show one friendly, actionable line instead; the raw message still goes
+      // to console.error for support/telemetry, and appears in the error line itself only when the host
+      // opted into debug mode (ModalConfig.debug) so maintainers keep full fidelity while debugging.
       resetProgress()
-      errEl.textContent = (err as Error).message
+      const raw = (err as Error)?.message || 'Unknown error'
+      try { console.error('[Klavity] submit failed:', err) } catch {}
+      errEl.textContent = cfg.debug ? `Couldn't submit your report — ${raw}` : "Couldn't submit your report. Please check your connection and try again."
       errEl.style.display = 'block'
       submitBtn.textContent = 'Submit'
       lockComposer(false) // re-enable capture buttons + Submit (Submit only if still valid)
