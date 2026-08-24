@@ -202,6 +202,12 @@ export function validateModalConfigInput(body: unknown, opts: { isPro: boolean }
     config.rightClickMode = body.rightClickMode as RightClickMode
   }
   if ((body as any).maskNumbers === true) config.maskNumbers = true
+  // KLAVITYKLA-497 (server half): the pre-submit nudge is per-project configurable. Accept an explicit
+  // boolean here so the admin config POST can persist it (the composer treats absent/true as "shown as a
+  // non-blocking warning", false as "suppressed" — see resolveModalConfig). Boolean-only: anything else
+  // is ignored, mirroring maskNumbers.
+  if ((body as any).preSubmitNudge === true) config.preSubmitNudge = true
+  if ((body as any).preSubmitNudge === false) config.preSubmitNudge = false
   if (JSON.stringify(config).length > 2048) return { ok: false, error: 'Config too large.' }
   return { ok: true, config }
 }
