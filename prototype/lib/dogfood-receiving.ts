@@ -263,7 +263,7 @@ export async function runReceivingDogfood(opts: ReceivingRunOptions): Promise<Re
 //   RECEIVING_MINT_SECRET mint_link token/path (mint_link ladder)
 //   KLAV_TEST_OTP=1       enable the fixed_otp ladder (test email 666666)
 //   RECEIVING_EMAIL       override the test email
-if (import.meta.main) {
+if ((import.meta as any).main) {
   const base = process.env.RECEIVING_BASE || "https://klavity.in"
   const result = await runReceivingDogfood({
     base,
