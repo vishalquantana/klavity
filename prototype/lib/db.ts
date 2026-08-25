@@ -4393,6 +4393,49 @@ export async function listCreditLedgerForWorkspace(workspaceId: string, limit = 
   }))
 }
 
+// ── Klavity Credits: atomic balance mutators ─────────────────────────────────────────────────────
+export type DebitSplit = { grantMc: number; topupMc: number }
+
+// Spend grant-first, then top-up. Read-modify-write serialized via an OPTIMISTIC conditional UPDATE
+// (guard on the exact balances read — the same lock-free pattern tryReserveDailySpend uses; this
+// repo's @libsql/client is driven WITHOUT interactive transactions). Returns the actual split, or
+// null when short and allowNegative is off. With allowNegative (Phase-1 soft mode) it always debits,
+// draining grant to 0 then top-up (which may go negative) so consumption is recorded truthfully.
+export async function debitWorkspaceCredits(workspaceId: string, amountMc: number, opts: { allowNegative?: boolean } = {}): Promise<DebitSplit | null> {
+  const amt = Math.max(0, Math.trunc(amountMc))
+  if (amt === 0) return { grantMc: 0, topupMc: 0 }
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const r = await db!.execute({ sql: "SELECT granted_millicredits AS g, topup_millicredits AS t FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
+    if (!r.rows.length) return null
+    const g = Number((r.rows[0] as any).g) || 0
+    const t = Number((r.rows[0] as any).t) || 0
+    if (!opts.allowNegative && g + t < amt) return null
+    const grantMc = Math.min(g, amt)
+    const topupMc = amt - grantMc // remainder off top-up (may exceed t → t goes negative in soft mode)
+    const upd = await db!.execute({
+      sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=?, updated_at=? WHERE workspace_id=? AND granted_millicredits=? AND topup_millicredits=?",
+      args: [g - grantMc, t - topupMc, Date.now(), workspaceId, g, t],
+    })
+    if (Number(upd.rowsAffected) > 0) return { grantMc, topupMc }
+    // lost a race — another debit mutated the row; re-read and retry
+  }
+  return null
+}
+
+export async function creditWorkspaceCredits(workspaceId: string, split: DebitSplit): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits = granted_millicredits + ?, topup_millicredits = topup_millicredits + ?, updated_at=? WHERE workspace_id=?",
+    args: [Math.trunc(split.grantMc), Math.trunc(split.topupMc), Date.now(), workspaceId],
+  })
+}
+
+export async function markGraceUsed(workspaceId: string, period: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE workspace_credits SET last_grace_period=?, updated_at=? WHERE workspace_id=?",
+    args: [period, Date.now(), workspaceId],
+  })
+}
+
 export async function opsTotals(): Promise<{ totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }> {
   const r = await db!.execute(
     `SELECT COALESCE(SUM(cost_usd),0) AS cost, COALESCE(SUM(input_tokens),0) AS inp,

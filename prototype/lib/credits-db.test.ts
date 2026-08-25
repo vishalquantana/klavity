@@ -58,3 +58,39 @@ test("credit_ledger stores signed millicredits with refs + ai_call linkage", asy
   expect(spend.aiCallId).toBe("ai_abc")
   expect(spend.isGuest).toBe(false)
 })
+
+import { debitWorkspaceCredits, creditWorkspaceCredits } from "./db"
+
+test("debit spends grant-first, then top-up", async () => {
+  await ensureWorkspaceCredits("acct_dbt_1", 0) // seed empty
+  await (await import("./db")).db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=? WHERE workspace_id=?",
+    args: [1000, 5000, "acct_dbt_1"],
+  })
+  const split = await debitWorkspaceCredits("acct_dbt_1", 1500)
+  expect(split).toEqual({ grantMc: 1000, topupMc: 500 }) // grant emptied first
+  const w = await getWorkspaceCredits("acct_dbt_1")
+  expect(w!.grantedMc).toBe(0)
+  expect(w!.topupMc).toBe(4500)
+})
+
+test("debit without allowNegative returns null and does not mutate when short", async () => {
+  await ensureWorkspaceCredits("acct_dbt_2", 500)
+  const split = await debitWorkspaceCredits("acct_dbt_2", 1000) // 1000 > 500
+  expect(split).toBeNull()
+  const w = await getWorkspaceCredits("acct_dbt_2")
+  expect(w!.grantedMc).toBe(500) // untouched
+})
+
+test("credit restores a prior debit split (refund)", async () => {
+  await ensureWorkspaceCredits("acct_dbt_3", 0)
+  await (await import("./db")).db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=? WHERE workspace_id=?",
+    args: [1000, 1000, "acct_dbt_3"],
+  })
+  const split = await debitWorkspaceCredits("acct_dbt_3", 1500) // {grant:1000, topup:500}
+  await creditWorkspaceCredits("acct_dbt_3", split!)
+  const w = await getWorkspaceCredits("acct_dbt_3")
+  expect(w!.grantedMc).toBe(1000)
+  expect(w!.topupMc).toBe(1000) // fully restored
+})
