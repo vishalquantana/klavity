@@ -1,5 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
 import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
@@ -651,6 +652,11 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
   const transcripts = collectVideoTranscripts(fb)
   if (!transcripts.length) return // nothing transcribed yet → nothing to leverage
 
+  // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet once for this post-submit
+  // enrichment. Best-effort — a miss must NEVER touch the report; soft mode only logs wouldBlock.
+  const wsId = db ? await accountIdForAiCall(projectId, null, fb.actorEmail ?? null) : null
+  const creditsPlan = wsId ? await accountPlan(wsId) : null
+
   // ── (1) AI walkthrough summary — gated on a THIN reporter description (additive; never clobbers text). ──
   try {
     const alreadySummarized = fb.aiWalkthrough && typeof fb.aiWalkthrough === "object"
@@ -672,6 +678,12 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
           } catch (e: any) { console.warn("[video-enrich] screenshot fetch skipped (non-fatal):", e?.message || e) }
         }
         const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shotDataUrl)
+        // Soft-meter the transcript-enrichment vision call as a "transcript" action, priced per minute.
+        let transcriptMinutes = 1
+        try { const totalMs = transcripts.reduce((s, t) => s + (t.durationMs || 0), 0); if (totalMs > 0) transcriptMinutes = totalMs / 60000 } catch {}
+        let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+        try { if (wsId) rv = await reserveCredits(wsId, "transcript", { plan: creditsPlan, units: transcriptMinutes, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] video-enrich transcript reserve skipped (non-fatal):", e?.message || e) }
+        if (rv?.wouldBlock) console.log(`[credits] video-enrich transcript wouldBlock ws=${wsId} (soft)`)
         const draft = await generateEnhancedDraft(transcriptText, {
           llm: async (oneLiner, systemPrompt) => {
             const userParts: any[] = [{
@@ -695,6 +707,7 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
             return String(content ?? "")
           },
         })
+        try { await rv?.settle({ ok: !!draft, aiCallId: null }) } catch {}
         if (draft) {
           const text = renderDraftToText(draft)
           await setFeedbackWalkthroughSummary(feedbackId, projectId, {
@@ -714,11 +727,16 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
     const src: VideoTranscript | undefined =
       transcripts.find(t => t.key && t.segments && t.segments.length) || transcripts.find(t => t.key)
     if (!hasKeyframes && src && src.key) {
+      // Soft-meter keyframe extraction (flat 2cr). Reserved only here — inside the guard — so a
+      // no-op enrichment never books credits. Settled on whether any keyframe was actually appended.
+      let kfRv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try { if (wsId) kfRv = await reserveCredits(wsId, "keyframes", { plan: creditsPlan, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] keyframes reserve skipped (non-fatal):", e?.message || e) }
+      if (kfRv?.wouldBlock) console.log(`[credits] video-enrich keyframes wouldBlock ws=${wsId} (soft)`)
       const { bytes, contentType } = await getObjectBytes(src.key)
       const timestamps = pickKeyframeTimestampsMs(src.durationMs, src.segments, undefined)
       const frames = await extractKeyframes(bytes, String(src.contentType || contentType || ""), timestamps)
+      const newAtts: Array<Record<string, any>> = []
       if (frames.length) {
-        const newAtts: Array<Record<string, any>> = []
         for (let i = 0; i < frames.length; i++) {
           const f = frames[i]
           try {
@@ -732,6 +750,7 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
             .catch((e: any) => console.warn("[video-enrich] append keyframes failed (non-fatal):", e?.message || e))
         }
       }
+      try { await kfRv?.settle({ ok: newAtts.length > 0, aiCallId: null }) } catch {}
     }
   } catch (e: any) { console.warn("[video-enrich] keyframe extraction failed (non-fatal):", e?.message || e) }
 }
@@ -3563,6 +3582,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
       const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
 
+      // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet + reserve one "enhance" credit.
+      // Best-effort — a resolution/reserve miss must NEVER block Enhance, and in soft mode an
+      // insufficient balance only LOGS (wouldBlock); the draft still returns. Never gates the report.
+      const wsId = db ? await accountIdForAiCall(projectId, null, null) : null
+      const plan = wsId ? await accountPlan(wsId) : (proj?.plan ?? null)
+      let reservation: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try {
+        if (db && wsId) reservation = await reserveCredits(wsId, "enhance", { plan, refFeedbackId: null })
+        if (reservation?.wouldBlock) console.log(`[credits] enhance wouldBlock ws=${wsId} (soft)`)
+      } catch (e: any) { console.warn("[credits] enhance reserve skipped (non-fatal):", e?.message || e) }
+
       try {
         const draft = await generateEnhancedDraft(text, {
           llm: async (oneLiner, systemPrompt) => {
@@ -3585,8 +3615,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             return String(content ?? "")
           },
         })
+        try { await reservation?.settle({ ok: !!draft, aiCallId: null }) } catch {}
         return wjson({ draft }) // draft may be null → client no-ops
       } catch {
+        try { await reservation?.settle({ ok: false, aiCallId: null }) } catch {}
         return wjson({ draft: null }) // best-effort; never 500 into the composer
       }
     }
@@ -13015,6 +13047,10 @@ if (db && process.env.NODE_ENV !== "test") {
   // Once shortly after boot, then every 60s (rows carry their own backoff/next_attempt_at).
   setTimeout(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 45_000)
   setInterval(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 60_000)
+  // KLAVITY CREDITS: monthly grant-reset warm-up. Lazy re-grant already covers correctness on first
+  // AI touch; this batch walk re-grants idle wallets on a month rollover. Once after boot, then daily.
+  setTimeout(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 90_000)
+  setInterval(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 24 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.

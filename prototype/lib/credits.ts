@@ -3,8 +3,9 @@
 // 1 credit = 1000 millicredits, so voice (0.1cr) is an exact integer (100 mc).
 import { normalizePlan, type BillingPlan } from "./billing"
 import {
-  ensureWorkspaceCredits, getCreditActionCost, debitWorkspaceCredits, creditWorkspaceCredits,
-  insertCreditLedger, markGraceUsed, usagePeriod, planIsUnlimited, type DebitSplit,
+  db, ensureWorkspaceCredits, getWorkspaceCredits, getCreditActionCost, debitWorkspaceCredits,
+  creditWorkspaceCredits, insertCreditLedger, markGraceUsed, usagePeriod, planIsUnlimited,
+  type DebitSplit,
 } from "./db"
 
 export const MC_PER_CREDIT = 1000
@@ -125,4 +126,20 @@ export async function reserveCredits(workspaceId: string, action: CreditAction, 
     }
   }
   return { workspaceId, action, costMc, sufficient, usedGrace, wouldBlock, split, settle }
+}
+
+// ── Monthly grant-reset job (spec §5) ────────────────────────────────────────────────────────────
+// Lazy re-grant (ensureWorkspaceCredits) already keeps correctness; this batch job is a warm-up that
+// walks every account so wallets re-grant even without an AI touch. Idempotent within a period.
+export async function runMonthlyGrantReset(atMs: number = Date.now()): Promise<{ scanned: number; regranted: number }> {
+  if (!db) return { scanned: 0, regranted: 0 }
+  const r = await db.execute("SELECT id, plan FROM accounts")
+  let regranted = 0
+  for (const row of r.rows as any[]) {
+    const before = await getWorkspaceCredits(String(row.id))
+    await ensureWorkspaceCredits(String(row.id), planGrantMillicredits(row.plan), atMs)
+    const after = await getWorkspaceCredits(String(row.id))
+    if (!before || before.grantPeriod !== after!.grantPeriod) regranted++
+  }
+  return { scanned: r.rows.length, regranted }
 }
