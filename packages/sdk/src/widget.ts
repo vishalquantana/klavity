@@ -1,7 +1,7 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
-import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
@@ -47,7 +47,25 @@ const notKlavityChrome = (n: Node): boolean => {
 // maps OUTSIDE the capture (content deep inside a scrolled inner-scroller the DOM render clipped away), the
 // crop is flagged degenerate → suggestSharp so the composer steers the reporter to the pixel-perfect Screen
 // (getDisplayMedia) capture instead of seeding a blank crop.
-async function captureRegionCrop(rect: Rect): Promise<{ dataUrl: string; quality: CaptureQuality; suggestSharp: boolean }> {
+export async function captureRegionCrop(rect: Rect, opts?: { forceSnap?: boolean }): Promise<{ dataUrl: string; quality: CaptureQuality; suggestSharp: boolean }> {
+  // KLA-621: PREFER the pixel-perfect Snap frame as the crop source. The DOM render (modern-screenshot) comes
+  // back BLANK/WHITE for canvas + WebGL + cross-origin iframes (PX4 GIS map, canvas charts, embedded frames),
+  // so a region/element crop over that content is useless. We reach for the Snap frame when:
+  //   • forceSnap (the right-click-DRAG path — the founder's #1 use case): ALWAYS take a Snap and crop it to
+  //     the dragged rect. Reuse a live session stream silently (no re-prompt), else establish it with ONE
+  //     getDisplayMedia prompt chained to the drag gesture. It must NEVER re-open the picker for a full page,
+  //     and NEVER hand back a blank DOM render — the crop rect is ALWAYS applied.
+  //   • a share stream is already live this session (reuse it silently), OR
+  //   • the selection provably overlaps uncapturable content (canvas/WebGL/cross-origin iframe).
+  // Otherwise (e.g. the composer Region button on an ordinary page with no stream) the quiet DOM render is
+  // used so we don't surprise the reporter with an unasked-for share prompt. Snap crop → device-pixel accurate
+  // via the frame's real scale.
+  const preferSnap = !!activeSharedStream() || (sharpCaptureSupported() && (!!opts?.forceSnap || selectionNeedsSharp(rect)))
+  if (preferSnap) {
+    const snap = await snapCropForRect(rect)
+    if (snap) return { dataUrl: snap, quality: "real-pixel", suggestSharp: false }
+    // Snap unavailable/declined → fall through to the DOM render (still better than nothing).
+  }
   const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
   const { width, height } = fullPageCaptureSize()
   const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(node, { filter: notKlavityChrome, width, height })
@@ -147,7 +165,9 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
             shotQuality = quality
           }
         } catch { /* the crop is best-effort — the selector still pins the element even if capture fails */ }
-        resolve({ selector, text, shot, shotQuality })
+        // KLA-621: carry the element's rect so Retake can redo THIS element (re-resolved live from the selector,
+        // rect as fallback) cropped pixel-perfect from the shared Snap frame — not a full-screen grab.
+        resolve({ selector, text, shot, shotQuality, rect: { x: r.left, y: r.top, w: r.width, h: r.height } })
       })()
     }
     const onKey = (e: KeyboardEvent) => {
@@ -390,14 +410,129 @@ function hideFixedSticky(out: Array<{ el: HTMLElement; v: string }>) {
   }
 }
 
-async function captureSharpFullPage(): Promise<string> {
-  // getDisplayMedia MUST run first (preserves the click's user gesture); it throws if the user cancels the
-  // picker — the modal catches that and restores the composer.
+// ── KLA-621: session-scoped SHARED display-capture stream ────────────────────────────────────────────
+// The founder's core lever: "we already have tab-sharing approval." Once the reporter approves ONE
+// getDisplayMedia share (the on-open Snap, or any pixel-perfect capture), we KEEP the MediaStream alive and
+// reuse it as the crop source for every subsequent Snap / Region / Pick-element / Retake — no re-prompt, and
+// no falling back to the blank DOM render while a live stream exists. The DOM render returns blank/white for
+// canvas + WebGL + cross-origin iframes (PX4 GIS map, canvas charts), but the display frame contains those
+// real pixels. Released when the composer closes (releaseSharedDisplayStream) or the user hits the browser's
+// "Stop sharing" bar (the track's 'ended' event drops our handle so the next capture re-prompts cleanly).
+let _sharedDisplayStream: MediaStream | null = null
+let _sharedDisplayVideo: HTMLVideoElement | null = null
+
+// Return the live shared stream, or null if none / it has ended (user stopped sharing). Self-heals a dead one.
+export function activeSharedStream(): MediaStream | null {
+  const s = _sharedDisplayStream
+  if (!s) return null
+  const live = s.getTracks().some((t) => t.readyState === "live")
+  if (!live) { releaseSharedDisplayStream(); return null }
+  return s
+}
+
+// Stop every track + drop the cached video. Idempotent. Called on composer close / minimize and on 'ended'.
+export function releaseSharedDisplayStream() {
+  try { _sharedDisplayStream?.getTracks().forEach((t) => t.stop()) } catch { /* noop */ }
+  _sharedDisplayStream = null
+  if (_sharedDisplayVideo) { try { _sharedDisplayVideo.srcObject = null } catch { /* noop */ }; _sharedDisplayVideo = null }
+}
+
+// Reuse the live shared stream, else prompt getDisplayMedia ONCE and cache it. MUST be called synchronously
+// from a user gesture on the first (prompting) call — throws NotAllowedError/AbortError on decline (callers
+// catch and fall back gracefully). Subsequent calls resolve instantly with no prompt.
+export async function acquireDisplayStream(): Promise<MediaStream> {
+  const existing = activeSharedStream()
+  if (existing) return existing
   const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
     video: { frameRate: 30 },
     audio: false,
-    preferCurrentTab: true, // Chrome: pre-select the current tab in the picker (ignored elsewhere)
+    preferCurrentTab: true,
   })
+  _sharedDisplayStream = stream
+  // If the reporter stops sharing from the browser bar, drop our handle so the next capture re-prompts.
+  try { stream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => releaseSharedDisplayStream())) } catch { /* noop */ }
+  return stream
+}
+
+// Grab ONE settled viewport frame from a (shared) display stream → { dataUrl, scale }. scale = the stream's
+// real device-px per CSS-px (video.videoWidth / innerWidth), which is NOT plain devicePixelRatio when the
+// browser downscales the tab capture — so a crop MUST use this scale, not dpr. Reuses one <video> bound to the
+// shared stream across grabs (no re-play() churn). Never stops the stream (session-scoped; released on close).
+async function grabDisplayViewportFrame(stream: MediaStream): Promise<{ dataUrl: string; scale: number }> {
+  const widgetHost = document.getElementById(HOST_ID)
+  const prevHostDisplay = widgetHost ? widgetHost.style.display : ""
+  let video = _sharedDisplayVideo
+  if (!video || video.srcObject !== stream) {
+    video = document.createElement("video")
+    video.srcObject = stream
+    video.muted = true
+    ;(video as any).playsInline = true
+    _sharedDisplayVideo = video
+    try { await video.play() } catch { /* frames still arrive */ }
+  }
+  try {
+    const deadline = Date.now() + 3000
+    while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
+    if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
+    const vw = Math.max(1, window.innerWidth)
+    const vh = Math.max(1, window.innerHeight)
+    const scale = video.videoWidth / vw
+    if (widgetHost) widgetHost.style.display = "none" // keep our launcher out of the frame
+    await _raf(); await _sleep(STREAM_SETTLE_MS)       // let the stream reflect the hidden launcher
+    const canvas = document.createElement("canvas")
+    canvas.width = Math.round(vw * scale)
+    canvas.height = Math.round(vh * scale)
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("sharp viewport capture: no 2d context")
+    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height)
+    return { dataUrl: canvas.toDataURL("image/png"), scale }
+  } finally {
+    if (widgetHost) widgetHost.style.display = prevHostDisplay
+    // NOTE: deliberately DO NOT stop the stream here — it is session-scoped + reused. Released on composer close.
+  }
+}
+
+// KLA-621: crop a CSS-viewport rect out of the pixel-perfect Snap viewport frame. The Snap frame is
+// viewport-only (no scroll offset baked in), so we crop with scrollX/Y = 0 and the stream's real scale.
+// Returns null when no share stream is active and one can't be acquired (declined/unsupported) → the caller
+// falls back to the DOM render. Guards a degenerate (sub-pixel) crop by retrying non-strict rather than
+// emitting a 1px sliver. rect is in CSS viewport px (clientX/clientY), matching installRegionDrag's output.
+async function snapCropForRect(rect: Rect): Promise<string | null> {
+  let stream = activeSharedStream()
+  if (!stream) {
+    if (!sharpCaptureSupported()) return null
+    try { stream = await acquireDisplayStream() } catch { return null } // declined picker → graceful fallback
+  }
+  try {
+    const { dataUrl, scale } = await grabDisplayViewportFrame(stream)
+    try { return await cropDataUrl(dataUrl, rect, 0, 0, scale, { strict: true }) }
+    catch { return await cropDataUrl(dataUrl, rect, 0, 0, scale) } // degenerate guard → clamped (still real pixels)
+  } catch { return null }
+}
+
+// KLA-621: does the selection overlap content the DOM render provably can't capture (returns blank/white)?
+// Cross-origin iframes (reuse hasUncapturableEmbeds) AND canvas/WebGL surfaces (maps/charts). When true and
+// no share stream is active yet, the Region path reaches for a one-time Snap so the crop shows REAL pixels.
+export function selectionNeedsSharp(rect: Rect): boolean {
+  if (hasUncapturableEmbeds()) return true
+  try {
+    const canvases = document.getElementsByTagName("canvas")
+    for (let i = 0; i < canvases.length; i++) {
+      const c = canvases[i] as HTMLCanvasElement
+      const cr = c.getBoundingClientRect()
+      if (cr.width < 40 || cr.height < 40) continue
+      // intersects the selection rect?
+      if (cr.left < rect.x + rect.w && cr.left + cr.width > rect.x && cr.top < rect.y + rect.h && cr.top + cr.height > rect.y) return true
+    }
+  } catch { /* best-effort */ }
+  return false
+}
+
+async function captureSharpFullPage(): Promise<string> {
+  // KLA-621: reuse the session-scoped shared stream if the reporter already approved a share this session;
+  // otherwise getDisplayMedia runs FIRST (preserves the click's user gesture) and is cached for reuse. It
+  // throws if the user cancels the picker — the modal catches that and restores the composer.
+  const stream: MediaStream = await acquireDisplayStream()
 
   const widgetHost = document.getElementById(HOST_ID)
   const prevHostDisplay = widgetHost ? widgetHost.style.display : ""
@@ -450,7 +585,7 @@ async function captureSharpFullPage(): Promise<string> {
     for (const h of hiddenFixed) h.el.style.visibility = h.v
     if (widgetHost) widgetHost.style.display = prevHostDisplay
     window.scrollTo(origX, origY)
-    try { stream.getTracks().forEach((t) => t.stop()) } catch { /* noop */ }
+    // KLA-621: do NOT stop the stream — it's the shared session stream, reused by later captures + released on close.
   }
 }
 
@@ -460,40 +595,11 @@ async function captureSharpFullPage(): Promise<string> {
 // visible tab surface, so one frame drawn onto a viewport-sized canvas IS the viewport. Used for the on-open
 // DEFAULT capture; the manual "Screen" button keeps the full-page stitch.
 async function captureSharpViewport(): Promise<string> {
-  const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
-    video: { frameRate: 30 },
-    audio: false,
-    preferCurrentTab: true,
-  })
-  const widgetHost = document.getElementById(HOST_ID)
-  const prevHostDisplay = widgetHost ? widgetHost.style.display : ""
-  try {
-    const video = document.createElement("video")
-    video.srcObject = stream
-    video.muted = true
-    ;(video as any).playsInline = true
-    try { await video.play() } catch { /* frames still arrive */ }
-    const deadline = Date.now() + 3000
-    while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
-    if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
-    const vw = Math.max(1, window.innerWidth)
-    const vh = Math.max(1, window.innerHeight)
-    const scale = video.videoWidth / vw
-    // Hide OUR floating launcher so it isn't in the frame (the composer is already hidden by the modal).
-    if (widgetHost) widgetHost.style.display = "none"
-    await _raf(); await _sleep(STREAM_SETTLE_MS) // let the stream reflect the hidden launcher
-    const canvas = document.createElement("canvas")
-    canvas.width = Math.round(vw * scale)
-    canvas.height = Math.round(vh * scale)
-    const ctx = canvas.getContext("2d")
-    if (!ctx) throw new Error("sharp viewport capture: no 2d context")
-    // Draw the single live frame straight onto a viewport-sized canvas — no scrolling, no stitching.
-    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL("image/png")
-  } finally {
-    if (widgetHost) widgetHost.style.display = prevHostDisplay
-    try { stream.getTracks().forEach((t) => t.stop()) } catch { /* noop */ }
-  }
+  // KLA-621: acquire-or-reuse the shared session stream (one prompt per session), then grab one settled
+  // viewport frame. The stream is kept alive for later Region / Pick / Retake crops (released on close).
+  const stream = await acquireDisplayStream()
+  const { dataUrl } = await grabDisplayViewportFrame(stream)
+  return dataUrl
 }
 
 // KLAVITYKLA-473 (regression fix over #460): NEVER auto-invoke getDisplayMedia. #460 auto-triggered the
@@ -920,7 +1026,7 @@ async function mount() {
   }
   // Start (or continue) an evidence session, then open the composer in session mode. Falls back to a
   // plain single-page report if IndexedDB is unavailable, so nothing breaks where storage is blocked.
-  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string }) {
+  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture }) {
     let session: EvidenceSession | null = null
     try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
     if (session) evSession = session
@@ -1007,7 +1113,7 @@ async function mount() {
   }
   paintLauncher()
   mq.addEventListener('change', paintLauncher)
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
@@ -1072,9 +1178,34 @@ async function mount() {
       // KLA composer-polish: viewport-scoped real-pixel Screen frame for the on-open DEFAULT capture (single
       // visible frame, no scroll-stitch → not a tall full-page image). The manual Screen button still stitches.
       onCaptureSharpViewport: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }) : undefined,
-      // JTBD 1.9: "Retake sharp" on a degraded thumbnail → the same getDisplayMedia real-pixel capture. Only
-      // wired when the browser supports it (no getDisplayMedia on iOS Safari → no retake affordance shown).
-      onRetakeSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,
+      // JTBD 1.9 + KLA-621: "Retake" on a degraded thumbnail redoes the SAME selection it came from, cropped
+      // pixel-perfect from the shared Snap frame — a Region shot re-crops its rect; a Pick-element shot re-crops
+      // that element (re-resolved LIVE from its selector so it survives scroll/layout shifts, rect as fallback);
+      // a viewport shot redoes the viewport frame; a full/unknown shot redoes the full-page stitch. It must NOT
+      // collapse to a full-screen grab and lose the selection (the founder's disconnect). Only wired when the
+      // browser supports getDisplayMedia (no retake affordance on iOS Safari).
+      onRetakeSharp: sharpCaptureSupported() ? async (capture?: ShotCapture) => {
+        if (capture && (capture.kind === "region" || capture.kind === "element")) {
+          // Re-resolve the picked element's live rect from its selector; fall back to the stored rect.
+          let rect: Rect | undefined = capture.rect
+          if (capture.kind === "element" && capture.selector) {
+            try {
+              const el = document.querySelector(capture.selector)
+              if (el) { const r = el.getBoundingClientRect(); if (r.width >= 1 && r.height >= 1) rect = { x: r.left, y: r.top, w: r.width, h: r.height } }
+            } catch { /* stale selector → use the stored rect */ }
+          }
+          if (rect) {
+            const snap = await snapCropForRect(rect)
+            // Prefer the shared-frame crop; even a declined Snap falls back to the DOM-render crop of the SAME
+            // rect (still the selection), never a full-screen grab.
+            if (snap) return { dataUrl: snap, quality: "real-pixel" as const }
+            const dom = await captureRegionCrop(rect)
+            return { dataUrl: dom.dataUrl, quality: dom.quality, suggestSharp: dom.suggestSharp }
+          }
+        }
+        if (capture && capture.kind === "viewport") return { dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }
+        return { dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }
+      } : undefined,
       // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal
       // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector
       // pinned to the report as annotations.selector (the server sanitizer + ticket drawer already read it).
@@ -1293,6 +1424,10 @@ async function mount() {
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
       onClose: (reason?: 'submitted') => {
         emit("close", {})
+        // KLA-621: release the session-scoped shared display stream on EVERY composer exit (X/Esc/backdrop,
+        // minimize, submit) so no getDisplayMedia track lingers after the composer is gone — mirrors the
+        // camera/mic release discipline (#474). A later capture re-establishes it with one fresh share prompt.
+        releaseSharedDisplayStream()
         // Bug 2: drop the open-composer reference the moment it closes/minimizes so a follow-up region
         // capture reliably (re)OPENS an EXPANDED composer. close() removes the host on an exit animation
         // (~700ms), so isConnected can briefly stay true after a minimize — without clearing this, a region
@@ -1351,7 +1486,7 @@ async function mount() {
           // (addCapturedShot → fireAdded) so it becomes the SELECTED/active hero at the END of the strip,
           // not left behind the first seeded session shot. onShotAdded persists it to the session, so the
           // separate persistEvShot call is no longer needed (it would double-persist).
-          ctrl.addCapturedShot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname }, opts.initialShotSuggestSharp)
+          ctrl.addCapturedShot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname }, opts.initialShotSuggestSharp, opts.initialShotCapture)
         }
       })()
     } else if (opts?.initialShot) {
@@ -1359,7 +1494,7 @@ async function mount() {
       // JTBD 1.9: a right-click-drag region shot is an html-to-image crop, so it carries its capture-quality
       // tag → the composer badges it (and offers "Retake sharp" when it's rendered/wireframe).
       // KLAVITYKLA-473: also carry the blank/partial flag so the "Use Screen" callout shows for it.
-      ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, undefined, opts.initialShotSuggestSharp)
+      ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, undefined, opts.initialShotSuggestSharp, opts.initialShotCapture)
     }
     } catch (e) { console.warn("[Klavity] failed to open the report composer:", e) }
   }
@@ -1689,10 +1824,15 @@ async function mount() {
     let shotQuality: "rendered" | "wireframe" | "real-pixel" | undefined
     let shotSuggestSharp = false
     try {
-      // Pixel-accurate region crop (full-page source anchored at page origin + cumulative-scroll mapping +
-      // degenerate guard). Fixes the founder P1 where the crop came back a wrong/blank area on app-shell /
-      // inner-scroller pages. Best-effort: if capture fails, still open the composer to retry.
-      const r = await captureRegionCrop(rect)
+      // KLA-621 (founder's #1 use case): right-click-DRAG → take a Snap (pixel-perfect getDisplayMedia frame)
+      // and CROP it to the dragged rect — nothing else. forceSnap guarantees this: reuse a live session stream
+      // silently, else ONE getDisplayMedia prompt chained to this mouseup gesture, then crop to the rect. It
+      // NEVER re-opens the picker for a full page and NEVER hands back a blank DOM render — the crop rect is
+      // always applied, so the canvas GIS map / cross-origin iframes come through as REAL pixels. Only a
+      // declined/unsupported share falls back to the DOM-render crop (which carries the steer-to-Snap nudge if
+      // it's blank). The drag rect itself already painted live during the gesture (installRegionDrag), so there
+      // is ZERO pre-render before the selection — the capture happens only here, after the rect is chosen.
+      const r = await captureRegionCrop(rect, { forceSnap: true })
       shot = r.dataUrl
       shotQuality = r.quality
       shotSuggestSharp = r.suggestSharp
@@ -1702,12 +1842,14 @@ async function mount() {
     // openReport() early-returns while a composer is open (which silently dropped the new shot). When no
     // composer is open (or it was minimized to the dock), startBugReport (re)opens it EXPANDED, seeded with
     // this shot as the active preview (see the seed path in openReport, which now selects the newest shot).
+    // KLA-621: tag the right-click-drag region shot with its rect so Retake re-crops THIS area (not full-screen).
+    const regionCapture: ShotCapture = { kind: "region", rect }
     if (shot && composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
-      try { composer.addCapturedShot(shot, shotQuality, undefined, shotSuggestSharp); return } catch { /* fall through to (re)open */ }
+      try { composer.addCapturedShot(shot, shotQuality, undefined, shotSuggestSharp, regionCapture); return } catch { /* fall through to (re)open */ }
     }
     // KLA-412: a region shot also starts/continues an evidence session (the cropped selection becomes the
     // active shot, tagged with the current page).
-    void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality, initialShotSuggestSharp: shotSuggestSharp } : undefined)
+    void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality, initialShotSuggestSharp: shotSuggestSharp, initialShotCapture: regionCapture } : undefined)
   }
   let reportArmed = true
   // KLAVITYKLA-506: the right-click takeover is ARMED SYNCHRONOUSLY (before the non-blocking config fetch

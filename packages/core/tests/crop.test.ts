@@ -75,6 +75,16 @@ describe('cropDataUrl', () => {
     expect(lastDrawImageArgs.slice(0, 4)).toEqual([40, 12, 200, 48])
   })
 
+  it('KLA-621 Snap-frame source: a CSS viewport rect maps to DEVICE pixels by the frame scale, NO scroll offset', async () => {
+    // The pixel-perfect Snap frame is viewport-only at scale = video.videoWidth / innerWidth (here a 1440px
+    // CSS viewport streamed at 2160px → scale 1.5, e.g. a downscaled retina tab). A selection at CSS
+    // (300,200,400,150) must land at device px (450, 300, 600, 225) with scrollX/Y = 0 (the frame has no
+    // scroll baked in). This is exactly the call captureRegionCrop/snapCropForRect makes.
+    stubImage(2160, 1350)
+    await cropDataUrl('x', { x: 300, y: 200, w: 400, h: 150 }, 0, 0, 1.5)
+    expect(lastDrawImageArgs.slice(0, 4)).toEqual([450, 300, 600, 225])
+  })
+
   it('strict mode THROWS on a degenerate crop (selection maps outside the capture)', async () => {
     // Inner-scroller content the DOM render clipped away: rect+scroll (y 900) is far below a 900px-tall
     // capture, so the source rect clamps to a sliver → strict must throw so the caller steers to Screen.

@@ -226,6 +226,8 @@ export interface PickedTarget {
   shot?: string
   /** Capture-quality tag for `shot` (drives the thumbnail badge), when the host supplied a crop. */
   shotQuality?: CaptureQuality
+  /** KLA-621: picked element's bounding rect (CSS viewport px) at capture time — lets Retake redo THIS element. */
+  rect?: { x: number; y: number; w: number; h: number }
 }
 
 // KLAVITYKLA-241 (JTBD A.11): a known/recurring issue matched against the reporter's in-progress prose.
@@ -245,6 +247,18 @@ export interface ShotPageMeta {
   pageUrl?: string
   pagePath?: string
   label?: string
+}
+
+// KLA-621: per-shot capture PROVENANCE so "Retake" redoes the SAME thing the shot came from instead of
+// collapsing to a full-screen grab. A region shot re-crops its rect; a picked-element shot re-crops that
+// element (re-resolved live from its selector); a viewport/full shot redoes that same sharp mode. Carried
+// index-aligned with screenshots[] and threaded to onRetakeSharp so the host knows exactly what to redo.
+export interface ShotCapture {
+  kind: 'region' | 'element' | 'viewport' | 'full' | 'other'
+  /** Region/element bounding rect in CSS viewport px at capture time (fallback if a selector re-resolve fails). */
+  rect?: { x: number; y: number; w: number; h: number }
+  /** For kind==='element': the CSS selector so Retake can re-resolve a fresh rect after scroll/layout shifts. */
+  selector?: string
 }
 
 export interface ModalCallbacks {
@@ -275,7 +289,11 @@ export interface ModalCallbacks {
   // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
   // host hides its own UI during the capture (same as the Sharp button). Absent → no retake affordance.
-  onRetakeSharp?: () => Promise<CaptureResult>
+  // KLA-621: Retake now receives the ORIGINAL shot's capture provenance so it can redo the SAME selection —
+  // re-crop the same region rect, or re-crop the same picked element (re-resolved from its selector) — instead
+  // of falling back to a full-viewport grab and losing the selection. Backward compatible: hosts that ignore
+  // the argument keep the old full-frame behaviour. Absent → no retake affordance.
+  onRetakeSharp?: (capture?: ShotCapture) => Promise<CaptureResult>
   // KLAVITYKLA-228/371 (JTBD 1.11): optional on-page element picker. When provided, a "Pick element"
   // button appears in the capture actions row. Clicking it hides the composer and invokes this callback,
   // which lets the reporter click the broken element on the live page; it resolves a PickedTarget
@@ -476,13 +494,15 @@ export interface ModalController {
   // is seeding shots it already tracks. Backward compatible: existing 1/2-arg callers are unaffected.
   // KLAVITYKLA-473: an optional 4th arg flags a seeded shot as blank/partial so the sharp-capture callout
   // shows for it too (e.g. a right-click-drag region shot the host detected was partial). Defaults false.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => void
+  // KLA-621: an optional 5th arg carries the shot's capture provenance (region rect / picked element selector)
+  // so Retake redoes that exact selection instead of a full-frame grab. Backward compatible.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
   // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
   // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
   // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
   // added to an already-open composer, or seeded as the newest shot when (re)opening — so the composer shows
   // the fresh capture, not the first seeded one. (addScreenshot leaves activeIndex alone for silent seeds.)
-  addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => void
+  addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
   close: () => void
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
@@ -637,6 +657,10 @@ export function buildModal(
   // renderer couldn't inline dropped to white gaps). Drives a non-intrusive callout pointing at the Screen
   // button. Cleared when the shot is retaken sharp / removed. Index-aligned like the quality + page arrays.
   let screenshotSuggestSharp: boolean[] = []
+  // KLA-621: parallel array of per-shot capture provenance — screenshotCapture[i] tells Retake what to redo
+  // for screenshots[i] (region rect / picked element selector / sharp mode). undefined for shots with no known
+  // provenance (uploads / pastes) → Retake keeps its legacy full-frame behaviour. Index-aligned like the rest.
+  let screenshotCapture: (ShotCapture | undefined)[] = []
   // Set once the reporter dismisses the sharp-capture callout so it never nags again this session.
   let sharpHintDismissed = false
   // KLA-412: "session mode" is on whenever the host wired onMinimize — it means this composer is backed
@@ -1544,9 +1568,9 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture),
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
-    addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp),
+    addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
     setReplayState,
     // KLA-591: mirror the aggregate upload percent onto every video tile + file chip while a submit is in
@@ -1587,6 +1611,7 @@ export function buildModal(
         screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
         screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
         screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
+        screenshotCapture.splice(i, 1) // KLA-621: keep the capture-provenance aligned too
         // KLA-412: tell the host to drop the matching shot from the evidence session (index-aligned).
         try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
@@ -1847,7 +1872,7 @@ export function buildModal(
   // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
   // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
   // shots it already tracks (no re-persist, explicit page tag carried through).
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
@@ -1857,6 +1882,7 @@ export function buildModal(
     screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
     // KLAVITYKLA-473: a real-pixel shot can never be blank/partial, so never suggest sharp for one.
     screenshotSuggestSharp.push(suggestSharp && quality !== 'real-pixel')
+    screenshotCapture.push(capture) // KLA-621: remember what this shot was (region/element/…) for Retake
     // KLA-412: keep the page-tag array aligned. An interactive session-mode capture with no explicit tag
     // is tagged with the current page; everything else keeps whatever the caller passed (often undefined).
     screenshotPageMeta.push(pageMeta ?? (sessionMode && fireAdded ? currentPageMeta() : undefined))
@@ -1882,7 +1908,9 @@ export function buildModal(
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       let result: CaptureResult | undefined
-      try { result = await callbacks.onRetakeSharp() }
+      // KLA-621: hand the ORIGINAL shot's provenance to the host so Retake redoes the SAME region/element
+      // (pixel-perfect from the shared Snap frame) rather than a full-screen grab that loses the selection.
+      try { result = await callbacks.onRetakeSharp(screenshotCapture[index]) }
       finally { restore?.() }
       if (result) {
         const { dataUrl, quality } = normalizeCapture(result)
@@ -2980,7 +3008,8 @@ export function buildModal(
       finally { restore?.() }
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
-        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel'); setActiveCapture(sharpBtn); added = true }
+        // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
+        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true }
       }
     } catch (err) {
       // A cancelled picker or a spent user-gesture rejects as NotAllowedError|AbortError — an expected outcome
@@ -3075,6 +3104,10 @@ export function buildModal(
       // cleanup() callback inside mountRegionOverlay (both the cancel and pointerup paths).
       document.removeEventListener('keydown', escHandler, { capture: true })
       host.style.display = 'none'
+      // KLA-621 (latency): the selection overlay is mounted SYNCHRONOUSLY here — there is NO upfront capture /
+      // page render before the selector appears (the old ~3s html-to-image lag). The capture runs only in the
+      // onRect callback below, AFTER the reporter has dragged their rectangle, and is now a fast Snap
+      // frame-grab cropped to the selection. So the overlay paints on the same frame as the click.
       mountRegionOverlay(async (rect) => {
         // Re-register the modal Esc handler now that the overlay is gone (success path).
         document.addEventListener('keydown', escHandler, { capture: true })
@@ -3085,7 +3118,8 @@ export function buildModal(
           finally { restore?.() }
           if (shot) {
             const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
-            if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(regionBtn) }
+            // KLA-621: tag with the region rect so Retake re-crops THIS area from a fresh Snap frame.
+            if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp, { kind: 'region', rect }); setActiveCapture(regionBtn) }
           }
         } finally {
           host.style.display = ''
@@ -3140,7 +3174,9 @@ export function buildModal(
           // KLAVITYKLA-494: if the picker also produced a cropped screenshot of the element's bounding box,
           // add it to the images strip. addScreenshot enforces the MAX_IMAGES cap itself, so a full strip
           // just surfaces the usual "up to N images" notice and the selector/text pin still lands.
-          if (result.shot) addScreenshot(result.shot, result.shotQuality, undefined, true)
+          // KLA-621: tag with the element's selector (+ rect) so Retake re-crops THIS element (re-resolved
+          // live) from a fresh Snap frame instead of grabbing the whole screen.
+          if (result.shot) addScreenshot(result.shot, result.shotQuality, undefined, true, false, { kind: 'element', selector: result.selector, rect: result.rect })
         }
       } catch { /* picker failure must never break the composer */ }
       finally {
