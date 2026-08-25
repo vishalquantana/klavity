@@ -58,6 +58,21 @@ export interface ModalConfig {
    * failure without opening the console.
    */
   debug?: boolean
+  /**
+   * KLA submit-target toggle: show the "Where should this go?" segmented control just above Submit so a
+   * reporter can send the report to their own team (default) OR to Klavity (dogfood: "the widget/tool is
+   * broken"). DEFAULT ON — the founder wants it on every widget "at least for now"; a project turns it off
+   * by explicitly setting submitTargetToggle:false. When off, the composer behaves exactly as before and
+   * every report defaults to the origin project (feedbackTarget:'project'). The client never learns the
+   * Klavity intake project id — it only sends the 'klavity' flag and the SERVER resolves the real target.
+   */
+  submitTargetToggle?: boolean
+  /**
+   * Human-readable name of the site owner's project (e.g. "PX4 Project"), shown as the sub-label under the
+   * "Your team" option so the destination reads naturally. Absent → the segmented control falls back to a
+   * generic "your project" caption. Never used for routing — purely cosmetic.
+   */
+  projectDisplayName?: string
 }
 
 const HEX = /^#[0-9a-fA-F]{3,8}$/
@@ -141,6 +156,13 @@ export function resolveModalConfig(raw: unknown): ModalConfig & { theme: ModalTh
   // KLA-496: developer-only debug mode (raw error text in the error line). Default OFF; only an explicit
   // true enables it so no embedder gets internal text by accident.
   if (r.debug === true) out.debug = true
+  // KLA submit-target toggle (DEFAULT on). Only an explicit false hides the "Where should this go?" control;
+  // absent/true → shown. Preserved verbatim so the widget can disable it per-project later.
+  if (r.submitTargetToggle === false) out.submitTargetToggle = false
+  else if (r.submitTargetToggle === true) out.submitTargetToggle = true
+  // Project display name for the "Your team" sub-label (cosmetic; never used for routing).
+  const pdn = str(r.projectDisplayName, 60)
+  if (pdn) out.projectDisplayName = pdn
   // whiteLabel: read from top-level (already-resolved passthrough) or nested agency_branding (stored format).
   const ab = isObj(r.agency_branding) ? (r.agency_branding as Record<string, unknown>) : {}
   if (r.whiteLabel === true || ab.whiteLabel === true) out.whiteLabel = true

@@ -606,6 +606,12 @@ async function mount() {
       // modalConfig). Only false suppresses it — absent/true → the composer shows the non-blocking warning.
       const nudgeFalse = j.preSubmitNudge === false || (modalConfig && (modalConfig as any).preSubmitNudge === false)
       if (modalConfig && typeof modalConfig === "object") (modalConfig as any).preSubmitNudge = nudgeFalse ? false : true
+      // KLA submit-target: thread the project's display name into the "Your team" sub-label of the
+      // "Where should this go?" control. The toggle itself is DEFAULT ON (cfg.submitTargetToggle !== false);
+      // a project opts out by setting submitTargetToggle:false in its stored modal config (passed verbatim).
+      if (modalConfig && typeof modalConfig === "object" && typeof j.projectName === "string" && j.projectName.trim()) {
+        (modalConfig as any).projectDisplayName = j.projectName.trim().slice(0, 60)
+      }
       if (j.widget) widget = { mode: j.widget.mode || "support", ctaUrl: j.widget.ctaUrl || widget.ctaUrl, reportGate: j.widget.reportGate || "anonymous" }
       if (typeof j.turnstileSiteKey === "string") turnstileSiteKey = j.turnstileSiteKey
       // Pull launcher display overrides out of modalConfig
@@ -1140,6 +1146,10 @@ async function mount() {
           // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
           // project rejects the submit with 400. On the default anonymous gate this is undefined.
           reporterEmail: p.reporterEmail, turnstileToken,
+          // KLA submit-target: carry the reporter's destination choice ('project' default | 'klavity'). The
+          // SERVER resolves the real Klavity intake project from KLAVITY_INTAKE_PROJECT_ID — the client only
+          // ever sends this flag (never a target project id), so a report can't be routed to an arbitrary project.
+          feedbackTarget: p.feedbackTarget,
         }
         // Post-filing bookkeeping shared by both paths: fire the public 'submit' event and clear a
         // multi-page evidence session (KLA-412) now that the report is stored.
@@ -2044,7 +2054,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes
@@ -2096,6 +2106,10 @@ export async function submitFeedback(
   // TURNSTILE_SECRET_KEY is set) to replace the email gate's spam-shield role. Omitted when Turnstile
   // isn't configured for the project, in which case the server's rate limits remain the only bound.
   if (payload.turnstileToken) fd.set("cf_turnstile_token", payload.turnstileToken)
+  // KLA submit-target: only the 'klavity' choice is sent (the server defaults to the origin project). The
+  // client never names a target project id — the server resolves KLAVITY_INTAKE_PROJECT_ID — so this can't
+  // be abused to route a report into an arbitrary project (no IDOR).
+  if (payload.feedbackTarget === "klavity") fd.set("feedback_target", "klavity")
 
   // XHR path — used when the caller wants real upload-progress events (widget submit flow).
   // fetch() gives no upload progress; XHR's upload.onprogress fires as bytes hit the wire.

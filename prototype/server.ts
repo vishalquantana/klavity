@@ -4747,6 +4747,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // the project's report gate above (anonWidgetAllowed). no-Origin (curl/script) anonymous
             // calls still never reach projectById — the deferred surface stays closed.
             if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = await projectById(reqProject)
+            // ── KLA submit-target: dogfood intake routing ────────────────────────────────────────────
+            // When the reporter picked "Klavity" in the composer ("problem with this tool"), file the report
+            // into the DESIGNATED Klavity intake project (env KLAVITY_INTAKE_PROJECT_ID) instead of the
+            // customer's project — but resolve the real target SERVER-SIDE: the client only ever sends the
+            // 'klavity' flag, never a project id, so this can't be abused to route into an arbitrary project
+            // (no IDOR). The choice never bypasses the auth/gate/anon-triage checks already run above — a
+            // Klavity-targeted anonymous report is still untrusted intake. Origin context (which customer
+            // site/project + page URL + reporter) is preserved in the observation so Klavity can see exactly
+            // "reported via the widget on <customer site>". FAIL-SAFE: if the intake project is unset/invalid
+            // we do NOT drop or leak the report — we keep the origin project and tag it clearly, and warn.
+            const wantsKlavityIntake = String(form.get("feedback_target") || "").toLowerCase() === "klavity"
+            let klavityRerouteNote: string | null = null
+            if (resolved && wantsKlavityIntake) {
+              const originProject = resolved
+              const intakeId = (process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
+              const intakeProj = intakeId ? await projectById(intakeId).catch(() => null) : null
+              const originCtx = `origin project ${originProject.id} (${originProject.name || "unnamed"})` +
+                (reportUrl ? ` · ${reportUrl}` : "") +
+                (validReporterEmail ? ` · reporter ${reporterEmail}` : "")
+              if (intakeProj && intakeProj.id !== originProject.id) {
+                // Route into the Klavity intake project; carry the full origin context in the body.
+                resolved = intakeProj
+                klavityRerouteNote = `[Reported via the Klavity widget on ${originProject.name || originProject.id}` +
+                  (reportUrl ? ` — ${reportUrl}` : "") + `] — ${originCtx}`
+              } else {
+                // FAIL SAFE — intake project not configured / not found / same as origin. Keep the report in
+                // the origin project, tag it so it's never silently mis-filed, and log a warning for the founder.
+                console.warn(`[submit-target] KLAVITY_INTAKE_PROJECT_ID ${intakeId ? `("${intakeId}") is invalid or not found` : "is unset"} — filing Klavity-targeted report into ${originCtx}`)
+                klavityRerouteNote = `(intended for Klavity — intake project not configured; filed to ${originProject.name || originProject.id})`
+              }
+            }
             if (resolved) {
               const projectId = resolved.id
               // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
@@ -4845,8 +4876,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // post-intake AI drafter (below) refines it in place from the captured page context. Reports
               // that DID carry text keep it verbatim.
               const draftedTitle = !description && !String(form.get("observation") || "") && hasEvidence
-              const observation = String(form.get("observation") || "") || description ||
+              const observationBase = String(form.get("observation") || "") || description ||
                 (draftedTitle ? fallbackDraftTitle({ reportType, pageUrl }) : "")
+              // KLA submit-target: prepend the origin-context banner when this report was (re)routed to (or
+              // intended for) the Klavity intake project, so the reviewer sees WHERE it came from even after
+              // the projectId has been swapped to the intake project.
+              const observation = klavityRerouteNote
+                ? `${klavityRerouteNote}\n\n${observationBase}`
+                : observationBase
               const sentiment = String(form.get("sentiment") || "") || null
               const priority = String(form.get("priority") || "") || null
               let suggestedBug: any = null
@@ -6477,7 +6514,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // reportClarity (per-project, DEFAULT on) tells the widget whether to render the description-clarity
         // helper + wire the debounced /api/report/clarity tip. Threaded top-level (a sibling of modalConfig);
         // the widget merges it into the config it hands to buildModal.
-        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity }, 200, WIDGET_CORS)
+        // projectName (public, project-scoped) drives the "Your team" sub-label of the submit-target
+        // segmented control so the destination reads naturally (e.g. "PX4 Project"). submitTargetToggle
+        // (DEFAULT on) tells the widget whether to render the "Where should this go? · Your team / Klavity"
+        // control — the founder wants it on every widget for now; a project opts out via its modal config.
+        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity, projectName: proj.name }, 200, WIDGET_CORS)
       }
     }
 

@@ -245,6 +245,11 @@ export interface ModalCallbacks {
     // backend as reporter_email, otherwise an "email"-gated project rejects the submit with 400
     // "A valid email is required to submit." Undefined when no email field was shown.
     reporterEmail?: string
+    // KLA submit-target: where the reporter chose to send this report. 'project' (DEFAULT) → the site
+    // owner's project, exactly as today; 'klavity' → the reporter flagged Klavity's own tool/widget as
+    // broken and the SERVER reroutes it into the designated Klavity intake project. Only present when the
+    // host enabled cfg.submitTargetToggle; absent → always treated as 'project' by consumers.
+    feedbackTarget?: 'project' | 'klavity'
   }) => Promise<{ issueKey: string; issueUrl: string }>
   // ── PX4 enhancements (all optional + additive; absent => the composer is identical to today) ──
   // PX4 #411: show a single-line Title input at the top of the composer. Its trimmed value threads through
@@ -917,6 +922,17 @@ export function buildModal(
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     .klavity-submit{width:100%;min-height:40px;padding:12px;background:var(--kl-accent);color:var(--kl-on-accent);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
     .klavity-submit:disabled{opacity:.5;cursor:not-allowed;}
+    /* KLA submit-target: segmented "Where should this go?" control sitting just above Submit. Matches the
+       composer's chip styling and works at the narrow widget width (two flex columns, wrapping sub-labels). */
+    .klavity-target{margin:0 0 12px;}
+    .kl-tgt-label{font-size:11px;font-weight:650;color:var(--kl-muted);margin:0 0 6px 2px;text-transform:uppercase;letter-spacing:.04em;}
+    .kl-tgt-seg{display:flex;background:var(--kl-chip);border-radius:10px;padding:3px;gap:3px;}
+    .kl-tgt-opt{flex:1;min-width:0;border:none;background:transparent;border-radius:8px;padding:8px 6px;font-size:12.5px;font-weight:600;color:var(--kl-muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2;text-align:center;transition:background .15s ease,color .15s ease,transform .12s ease;}
+    .kl-tgt-opt small{font-weight:500;font-size:10px;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .kl-tgt-opt:hover:not(.on){color:var(--kl-fg);}
+    .kl-tgt-opt:active{transform:scale(.97);}
+    .kl-tgt-opt.on{background:var(--kl-input-bg);color:var(--kl-fg);box-shadow:0 1px 4px rgba(20,16,40,.14);}
+    .kl-tgt-opt.on small{color:var(--kl-accent);opacity:1;}
     /* Upload progress under Submit — collapsed until a submit is in flight; the fill is animated toward 90%
        over ~10s and snapped to 100% when the request resolves (fetch can't report real upload %). */
     .klavity-progress{height:5px;border-radius:999px;background:var(--kl-chip);overflow:hidden;opacity:0;max-height:0;margin-top:0;transition:opacity .2s ease,max-height .2s ease,margin-top .2s ease;}
@@ -1159,6 +1175,13 @@ export function buildModal(
         <div class="kl-nudge-h">This might be hard for the team to act on</div>
         <div class="kl-nudge-d">Adding what you expected + one step to reproduce gets it fixed faster. Or send it as-is — your call.</div>
         <div class="kl-nudge-row"><button type="button" class="kl-nudge-add" id="klavity-nudge-add">Add detail</button><button type="button" class="kl-nudge-anyway" id="klavity-nudge-anyway">Submit anyway</button></div>
+      </div>` : ''}
+      ${cfg.submitTargetToggle !== false ? `<div class="klavity-target" id="klavity-target">
+        <div class="kl-tgt-label">Where should this go?</div>
+        <div class="kl-tgt-seg" role="radiogroup" aria-label="Where should this report go?">
+          <button type="button" class="kl-tgt-opt on" id="klavity-target-project" role="radio" aria-checked="true" data-target="project">Your team<small>${escHtml(cfg.projectDisplayName || 'your project')}</small></button>
+          <button type="button" class="kl-tgt-opt" id="klavity-target-klavity" role="radio" aria-checked="false" data-target="klavity">Klavity<small>problem with this tool</small></button>
+        </div>
       </div>` : ''}
       <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
@@ -1840,6 +1863,28 @@ export function buildModal(
     })
   }
 
+  // KLA submit-target: the reporter's destination choice. Defaults to the site's own project so we NEVER
+  // surprise-route to Klavity; only an explicit tap on the "Klavity" segment flips it. Wired only when the
+  // segmented control was rendered (cfg.submitTargetToggle !== false).
+  let submitTarget: 'project' | 'klavity' = 'project'
+  {
+    const tgtSeg = modal.querySelector('#klavity-target') as HTMLElement | null
+    if (tgtSeg) {
+      const opts = Array.from(tgtSeg.querySelectorAll('.kl-tgt-opt')) as HTMLButtonElement[]
+      for (const opt of opts) {
+        opt.addEventListener('click', () => {
+          const t = opt.dataset.target === 'klavity' ? 'klavity' : 'project'
+          submitTarget = t
+          for (const o of opts) {
+            const on = o === opt
+            o.classList.toggle('on', on)
+            o.setAttribute('aria-checked', on ? 'true' : 'false')
+          }
+        })
+      }
+    }
+  }
+
   // Submit
   const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
   const submitBtn = modal.querySelector('#klavity-submit') as HTMLButtonElement
@@ -2247,6 +2292,10 @@ export function buildModal(
         ...(recordingsSnapshot.length ? { recordings: recordingsSnapshot } : {}),
         annotations: annotationsSnapshot,
         reporterEmail: emailSnapshot,
+        // KLA submit-target: ride the reporter's destination choice through onSubmit. Only present when the
+        // segmented control was rendered (cfg.submitTargetToggle !== false); default 'project' (never surprise-
+        // route to Klavity). The server resolves the real Klavity intake project — the client only says 'klavity'.
+        ...(cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}),
       }
       // NON-BLOCKING default path — hand the fully-built payload to the host (widget) and CLOSE the modal
       // + backdrop immediately. The host shows a bottom-right pill and drives the (possibly 16MB+) upload
