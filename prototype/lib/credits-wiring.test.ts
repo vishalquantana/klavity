@@ -19,3 +19,9 @@ test("sim-review reserves 'sim' credits alongside the usage meter", () => {
   expect(simReview.includes("reserveCredits")).toBe(true)
   expect(simReview.includes('"sim"')).toBe(true)
 })
+
+const trailsRunner = readFileSync(new URL("./trails-runner.ts", import.meta.url), "utf8")
+test("trails-runner reserves 'autosim' credits alongside the usage meter", () => {
+  expect(trailsRunner.includes("reserveCredits")).toBe(true)
+  expect(trailsRunner.includes('"autosim"')).toBe(true)
+})
