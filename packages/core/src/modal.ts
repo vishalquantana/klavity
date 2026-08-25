@@ -1089,12 +1089,19 @@ export function buildModal(
     .klavity-target{margin:0 0 12px;}
     .kl-tgt-label{font-size:11px;font-weight:650;color:var(--kl-muted);margin:0 0 6px 2px;text-transform:uppercase;letter-spacing:.04em;}
     .kl-tgt-seg{display:flex;background:var(--kl-chip);border-radius:10px;padding:3px;gap:3px;}
-    .kl-tgt-opt{flex:1;min-width:0;border:none;background:transparent;border-radius:8px;padding:8px 6px;font-size:12.5px;font-weight:600;color:var(--kl-muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2;text-align:center;transition:background .15s ease,color .15s ease,transform .12s ease;}
+    .kl-tgt-opt{position:relative;flex:1;min-width:0;border:none;background:transparent;border-radius:8px;padding:8px 18px 8px 8px;font-size:12.5px;font-weight:600;color:var(--kl-muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2;text-align:center;transition:background .15s ease,color .15s ease,box-shadow .15s ease,transform .12s ease;}
     .kl-tgt-opt small{font-weight:500;font-size:10px;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .kl-tgt-opt:hover:not(.on){color:var(--kl-fg);}
     .kl-tgt-opt:active{transform:scale(.97);}
-    .kl-tgt-opt.on{background:var(--kl-input-bg);color:var(--kl-fg);box-shadow:0 1px 4px rgba(20,16,40,.14);}
-    .kl-tgt-opt.on small{color:var(--kl-accent);opacity:1;}
+    /* Apple-HIG selected state: unmistakable at a glance — accent-tinted fill, a crisp accent ring
+       (inset box-shadow so there's no layout shift vs the borderless unselected segment), higher-contrast
+       bold label, an accent sub-label, a subtle lift shadow, and an accent checkmark tick in the corner.
+       Unselected segments stay muted + flat (rules above). */
+    .kl-tgt-opt.on{background:color-mix(in srgb,var(--kl-accent) 14%,var(--kl-input-bg));color:var(--kl-fg);font-weight:700;transform:translateY(-1px);box-shadow:inset 0 0 0 1.5px var(--kl-accent),0 3px 10px color-mix(in srgb,var(--kl-accent) 28%,transparent);}
+    .kl-tgt-opt.on small{color:var(--kl-accent);opacity:1;font-weight:600;}
+    /* CSS-drawn check tick (no glyph/emoji) — accent, top-right corner of the selected segment. */
+    .kl-tgt-opt.on::after{content:"";position:absolute;top:7px;right:8px;width:5px;height:9px;border:solid var(--kl-accent);border-width:0 2px 2px 0;transform:rotate(45deg);}
+    @media (prefers-reduced-motion:reduce){.kl-tgt-opt{transition:background .15s ease,color .15s ease,box-shadow .15s ease;}.kl-tgt-opt.on{transform:none;}.kl-tgt-opt:active{transform:none;}}
     /* Upload progress under Submit — collapsed until a submit is in flight; the fill is animated toward 90%
        over ~10s and snapped to 100% when the request resolves (fetch can't report real upload %). */
     .klavity-progress{height:5px;border-radius:999px;background:var(--kl-chip);overflow:hidden;opacity:0;max-height:0;margin-top:0;transition:opacity .2s ease,max-height .2s ease,margin-top .2s ease;}
