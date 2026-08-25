@@ -1103,6 +1103,15 @@ export async function applySchema(c: Client) {
   if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
   if (needCol("projects", "widget_cta_url")) await c.execute("ALTER TABLE projects ADD COLUMN widget_cta_url TEXT").catch((e) => console.warn("projects.widget_cta_url ALTER skipped:", e?.message || e))
   if (needCol("projects", "widget_notify_email")) await c.execute("ALTER TABLE projects ADD COLUMN widget_notify_email TEXT").catch((e) => console.warn("projects.widget_notify_email ALTER skipped:", e?.message || e))
+  // ── KLA-608: per-project "notify on EVERY new bug" channels (distinct from widget_notify_email,
+  // which is the LEAD-only alert). slack_webhook_url is a secret capability URL — write-only, NEVER
+  // returned to the client (same posture as widget_notify_email). bug_notify_emails is a JSON array /
+  // comma-separated list of extra recipients (falls back to account owner/admins when empty).
+  // notify_on_every_bug is the master on/off — DEFAULT 1 so existing projects keep the founder alert
+  // (lib/report-alert.ts) that shipped before this column; a project turns it OFF as a kill switch. ──
+  if (needCol("projects", "slack_webhook_url")) await c.execute("ALTER TABLE projects ADD COLUMN slack_webhook_url TEXT").catch((e) => console.warn("projects.slack_webhook_url ALTER skipped:", e?.message || e))
+  if (needCol("projects", "bug_notify_emails")) await c.execute("ALTER TABLE projects ADD COLUMN bug_notify_emails TEXT").catch((e) => console.warn("projects.bug_notify_emails ALTER skipped:", e?.message || e))
+  if (needCol("projects", "notify_on_every_bug")) await c.execute("ALTER TABLE projects ADD COLUMN notify_on_every_bug INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.notify_on_every_bug ALTER skipped:", e?.message || e))
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
   // 'anonymous' (default, JTBD 1.7) = open (identity asked post-submit); 'email' = logged-in OR a valid
   // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
@@ -2015,6 +2024,12 @@ export type ProjectRow = {
   autosimAuthStatus: string
   createdAt: number; updatedAt: number
   widgetMode: string; widgetCtaUrl: string | null; widgetNotifyEmail: string | null
+  // KLA-608 per-project every-bug notifications. slackWebhookUrl is a SECRET (never serialize to the
+  // client — the /config GET returns only a `slackConfigured` boolean). bugNotifyEmails = extra alert
+  // recipients (empty → fall back to account owner/admins). notifyOnEveryBug = master on/off (default on).
+  slackWebhookUrl: string | null
+  bugNotifyEmails: string[]
+  notifyOnEveryBug: boolean
   widgetReportGate: string
   widgetAutoCaptureErrors: boolean
   instructionsMd?: string | null
@@ -2071,6 +2086,10 @@ function rowToProject(x: any): ProjectRow {
     widgetMode: String(x.widget_mode || "support"),
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
+    slackWebhookUrl: x.slack_webhook_url != null ? String(x.slack_webhook_url) : null,
+    bugNotifyEmails: parseEmailList(x.bug_notify_emails),
+    // DEFAULT 1: NULL/undefined (pre-column rows) read as enabled; only an explicit 0 disables.
+    notifyOnEveryBug: x.notify_on_every_bug == null ? true : Number(x.notify_on_every_bug) !== 0,
     widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "anonymous",
     widgetAutoCaptureErrors: Number(x.widget_auto_capture_errors) === 1,
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
@@ -2744,6 +2763,64 @@ export async function getWidgetConfig(projectId: string): Promise<{ mode: string
 export async function getWidgetNotifyEmail(projectId: string): Promise<string | null> {
   const p = await projectById(projectId)
   return p?.widgetNotifyEmail || null
+}
+
+// ── KLA-608 per-project every-bug notifications ──
+// Parse a stored recipient list (JSON array OR comma/space/semicolon-separated) into a deduped,
+// per-address-validated, lowercased list. Bad/oversized entries are dropped (never throws); the
+// list is capped so a pathological value can't blow up a fan-out email.
+const BUG_NOTIFY_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+export function parseEmailList(raw: unknown): string[] {
+  if (raw == null) return []
+  let parts: string[]
+  if (Array.isArray(raw)) parts = raw.map((e) => String(e))
+  else {
+    const s = String(raw).trim()
+    if (s.startsWith("[")) { try { const a = JSON.parse(s); parts = Array.isArray(a) ? a.map((e) => String(e)) : [s] } catch { parts = s.split(/[,\s;]+/) } }
+    else parts = s.split(/[,\s;]+/)
+  }
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const p of parts) {
+    const e = p.trim().toLowerCase()
+    if (!e || e.length > 200 || !BUG_NOTIFY_EMAIL_RE.test(e) || seen.has(e)) continue
+    seen.add(e); out.push(e)
+    if (out.length >= 50) break
+  }
+  return out
+}
+
+// Read-side config for the settings UI + intake dispatch. Deliberately returns `slackConfigured`
+// (a boolean) rather than the webhook URL: the secret is write-only and never leaves the server.
+export interface BugNotifyConfig { notifyOnEveryBug: boolean; bugNotifyEmails: string[]; slackConfigured: boolean }
+export async function getBugNotifyConfig(projectId: string): Promise<BugNotifyConfig | null> {
+  const p = await projectById(projectId)
+  if (!p) return null
+  return { notifyOnEveryBug: p.notifyOnEveryBug, bugNotifyEmails: p.bugNotifyEmails, slackConfigured: !!p.slackWebhookUrl }
+}
+
+// The effective per-project Slack webhook, or null. Only https://hooks.slack.com/ URLs are honored
+// (defense in depth; the write path validates too and safeFetch pins the host again at POST time).
+export async function getProjectSlackWebhookUrl(projectId: string): Promise<string | null> {
+  const p = await projectById(projectId)
+  const raw = (p?.slackWebhookUrl || "").trim()
+  return /^https:\/\/hooks\.slack\.com\//.test(raw) && raw.length <= 500 ? raw : null
+}
+
+// Admin-gated write. slackWebhookUrl: pass a URL to set, "" to clear, undefined to keep as-is (the
+// caller must validate the URL shape first — this stores verbatim). bugNotifyEmails is normalized
+// through parseEmailList and stored as a JSON array. notifyOnEveryBug is the master on/off.
+export async function setBugNotifyConfig(
+  projectId: string,
+  cfg: { slackWebhookUrl?: string | null; bugNotifyEmails?: string[] | string | null; notifyOnEveryBug?: boolean },
+): Promise<void> {
+  const sets: string[] = [], args: any[] = []
+  if (cfg.slackWebhookUrl !== undefined) { sets.push("slack_webhook_url=?"); args.push(cfg.slackWebhookUrl ? String(cfg.slackWebhookUrl) : null) }
+  if (cfg.bugNotifyEmails !== undefined) { const list = parseEmailList(cfg.bugNotifyEmails); sets.push("bug_notify_emails=?"); args.push(list.length ? JSON.stringify(list) : null) }
+  if (cfg.notifyOnEveryBug !== undefined) { sets.push("notify_on_every_bug=?"); args.push(cfg.notifyOnEveryBug ? 1 : 0) }
+  if (!sets.length) return
+  sets.push("updated_at=?"); args.push(Date.now()); args.push(projectId)
+  await db!.execute({ sql: `UPDATE projects SET ${sets.join(", ")} WHERE id=?`, args })
 }
 
 export async function setWidgetConfig(projectId: string, cfg: { mode?: string; ctaUrl?: string | null; notifyEmail?: string | null; reportGate?: string; autoCaptureErrors?: boolean }): Promise<void> {
