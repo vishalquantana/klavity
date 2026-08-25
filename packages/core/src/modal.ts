@@ -1242,6 +1242,12 @@ export function buildModal(
       box-shadow:0 0 0 1.5px var(--kl-accent),0 4px 14px color-mix(in srgb,var(--kl-accent) 18%,transparent);
     }
     .klavity-actions button.kl-active .kl-cap-ic{color:var(--kl-accent);transform:scale(1.08) rotate(3deg);}
+    /* KLA-612: the primary Snap button (#klavity-sharp) ALWAYS has a SOLID accent (purple) background — even
+       when it's the .kl-active capture source. The generic .kl-active .kl-cap-ic rule above paints the glyph
+       --kl-accent (purple), which on this button = purple-on-purple → the app-window icon vanishes (same class
+       of bug as the "missing Bug icon"). Pin the Snap icon to on-accent (white) so it stays visible next to the
+       "Snap" label in BOTH rest and active states. ID specificity (1,0,1) beats the .kl-active rule (0,3,1). */
+    #klavity-sharp .kl-cap-ic{color:var(--kl-on-accent);}
     /* KLA composer-polish: the Bug/Feature toggle's ACTIVE chip has a SOLID accent (purple) background, so
        the icon must be on-accent (white) — NOT accent, which would paint the glyph the same colour as its
        background and make it invisible (the "missing Bug icon" report). Inactive chips inherit --kl-fg. */
