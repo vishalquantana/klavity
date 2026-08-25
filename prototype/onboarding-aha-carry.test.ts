@@ -53,3 +53,25 @@ test("aha-carry — pre-existing handoff behaviour intact", () => {
   expect(ONBOARD).toContain("$('uhUrl').value = _u")
   expect(ONBOARD).toContain("deriveName(_host)")
 })
+
+test("aha-carry — empty cast falls back to the carried stash instead of a dead end", () => {
+  // /api/persona/site intermittently returns personas:[] for sparse pages even when the homepage
+  // demo already got a full cast for the SAME URL. Onboarding must show the carried cast.
+  expect(ONBOARD).toMatch(/st0 && st0\.url===url && st0\.personas && st0\.personas\.length/)
+  // The fallback re-renders through the normal path and repaints the carried reaction card.
+  expect(ONBOARD).toMatch(/uhShowPersonas\(url, st0\.personas\)/)
+  expect(ONBOARD).toMatch(/rc && st0\.reactionText/)
+})
+
+test("aha-carry — preview failure shows the cached reaction, and the stash merge never wipes it", () => {
+  // Live /api/sim/preview can fail (rate limit, headless flake); the homepage already banked a
+  // reaction for this URL, so the failure path must paint that instead of a dead-end note.
+  const fn = ONBOARD.slice(ONBOARD.indexOf("function softNote"), ONBOARD.indexOf("// ── Onboarding state"))
+  expect(fn).toContain("function cachedReactionOrSoft")
+  expect(fn).toContain("c.url===url && c.reactionText")
+  expect(fn).not.toMatch(/catch\(e\)\{ softNote\(node/)   // every failure path goes through the cache
+  expect(fn).not.toMatch(/\{ softNote\(node,pname\); return \}/)
+  // uhShowPersonas MERGES into an existing same-URL stash instead of replacing it wholesale.
+  expect(fn).toMatch(/var same=prev\.url===url/)
+  expect(fn).toContain("shotDataUrl: same?(prev.shotDataUrl||undefined):undefined")
+})
