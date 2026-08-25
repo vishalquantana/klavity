@@ -34,6 +34,79 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+// ── KLA-586: WhatsApp-style live Markdown for the description field ───────────────────────────────────
+// The description is a contenteditable div whose SOURCE OF TRUTH is raw Markdown TEXT (round-trips through
+// the .value accessor untouched). renderInlineMarkdown() paints that raw text for display: it KEEPS the
+// markers ( * _ ~ ` ) visible-but-dimmed and styles the wrapped span, exactly like WhatsApp. It is HTML-safe
+// (escapes first) and pure, so it's unit-testable independent of the DOM. Newlines become <br>.
+export function renderInlineMarkdown(text: string): string {
+  let t = escHtml(String(text ?? ''))
+  // Order matters: code first (so * _ ~ inside `code` aren't re-interpreted), then bold/italic/strike.
+  t = t.replace(/`([^`\n]+)`/g, (_m, x) => `<span class="kl-mk">\`</span><code>${x}</code><span class="kl-mk">\`</span>`)
+  t = t.replace(/\*([^*\n]+)\*/g, (_m, x) => `<span class="kl-mk">*</span><b>${x}</b><span class="kl-mk">*</span>`)
+  t = t.replace(/_([^_\n]+)_/g, (_m, x) => `<span class="kl-mk">_</span><i>${x}</i><span class="kl-mk">_</span>`)
+  t = t.replace(/~([^~\n]+)~/g, (_m, x) => `<span class="kl-mk">~</span><s>${x}</s><span class="kl-mk">~</span>`)
+  t = t.replace(/\n/g, '<br>')
+  return t
+}
+
+// descPlainText: extract the RAW Markdown source from the field's DOM without relying on innerText (jsdom +
+// happy-dom don't implement it). Walks the tree: text nodes contribute their text verbatim, <br> and any
+// block element (a <div>/<p> the browser transiently inserts on Enter, before render() normalises it back to
+// <br>) become a newline. This exactly round-trips the controlled markup renderInlineMarkdown() produces.
+export function descPlainText(root: Node): string {
+  let out = ''
+  const walk = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3) {
+        out += child.textContent || ''
+      } else if (child.nodeName === 'BR') {
+        out += '\n'
+      } else if (child.nodeType === 1) {
+        const el = child as HTMLElement
+        const block = /^(DIV|P)$/.test(el.nodeName)
+        if (block && out && !out.endsWith('\n')) out += '\n'
+        walk(el)
+      }
+    }
+  }
+  walk(root)
+  return out
+}
+
+// A structural bug-draft the Enhance endpoint returns (mirrors prototype/lib/report-enhance.ts EnhancedDraft
+// without importing across the package boundary). Kept loose (severity/priority as strings) so the composer
+// never rejects a shape the server already validated.
+export interface EnhanceDraftLike {
+  summary: string
+  actualResult: string
+  expectedResult: string
+  stepsToReproduce: string[]
+  suggestedSeverity: string
+  suggestedPriority: string
+  confidence?: number
+}
+
+// renderDraftToWhatsApp: compose the field body from an accepted Enhance draft as WhatsApp-style Markdown so
+// it renders formatted LIVE in the field (bold summary + *Actual:* / *Expected:* labels, a numbered Steps
+// block, and a final Severity·Priority line). Pure + exported for tests. Skips empty sections.
+export function renderDraftToWhatsApp(d: EnhanceDraftLike): string {
+  const parts: string[] = []
+  if (d.summary) parts.push(`*${d.summary}*`)
+  const ae: string[] = []
+  if (d.actualResult) ae.push(`*Actual:* ${d.actualResult}`)
+  if (d.expectedResult) ae.push(`*Expected:* ${d.expectedResult}`)
+  if (ae.length) parts.push(ae.join('\n'))
+  if (d.stepsToReproduce && d.stepsToReproduce.length) {
+    const steps = d.stepsToReproduce.map((s, i) => `${i + 1}. ${s}`).join('\n')
+    parts.push(`*Steps to reproduce:*\n${steps}`)
+  }
+  if (d.suggestedSeverity || d.suggestedPriority) {
+    parts.push(`*Severity: ${d.suggestedSeverity}* · Priority: ${d.suggestedPriority}`)
+  }
+  return parts.join('\n\n')
+}
+
 // KLAVITYKLA-493: the reporter-facing "Replay · 60s" chip is intentionally NOT rendered (it read like an
 // action and confused users). Session-replay CAPTURE is unchanged — the widget keeps feeding replayEvents
 // into the submit payload and the server still stores them; replayState/setReplayState() are kept purely
@@ -227,6 +300,17 @@ export interface ModalCallbacks {
   // host can forward it to the clarity endpoint — the coach must never ask the reporter for anything already
   // on the report (URL/screenshot/browser/screen). `images` is the current screenshot count in the composer.
   onClarityTip?: (text: string, ctx?: { images?: number }) => Promise<{ tip: string } | null>
+  // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
+  // AI" button appears under the description; clicking it hands the reporter's current text + the primary
+  // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
+  // a structured developer-ready draft (or null). The composer REPLACES the field content in place with the
+  // draft rendered as WhatsApp Markdown, and offers Undo (restores the reporter's pre-enhance text) +
+  // Regenerate. Stale-guarded (seq) like onClarityTip. On null/failure the composer no-ops (keeps the text).
+  // Widget-only — the extension omits it (no button), preserving parity with onClarityTip/onPickElement.
+  onEnhance?: (
+    text: string,
+    ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null },
+  ) => Promise<EnhanceDraftLike | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -256,6 +340,11 @@ export interface ModalCallbacks {
     // broken and the SERVER reroutes it into the designated Klavity intake project. Only present when the
     // host enabled cfg.submitTargetToggle; absent → always treated as 'project' by consumers.
     feedbackTarget?: 'project' | 'klavity'
+    // KLA-586: when the reporter accepted an AI-Enhance draft, its suggested severity/priority ride the
+    // payload as STRUCTURED fields (in addition to the human-readable line in `description`) so the server
+    // can seed the ticket's triage. Absent when Enhance wasn't used (or was Undone). Host forwards verbatim.
+    suggestedSeverity?: string
+    suggestedPriority?: string
   }) => Promise<{ issueKey: string; issueUrl: string }>
   // ── PX4 enhancements (all optional + additive; absent => the composer is identical to today) ──
   // PX4 #411: show a single-line Title input at the top of the composer. Its trimmed value threads through
@@ -618,6 +707,10 @@ export function buildModal(
   // evidence-only report (replay but no typed prose / screenshot) can still Submit. Seeded from the
   // initial callback state and kept in sync by setReplayState() as rrweb resolves post-mount.
   let replayAttached = callbacks.replayState === 'attached'
+  // KLA-586: severity/priority from the last ACCEPTED AI-Enhance draft (cleared on Undo). Ride the submit
+  // payload as structured fields alongside the human-readable Severity line in the description.
+  let enhanceSeverity: string | null = null
+  let enhancePriority: string | null = null
   let autodismissTimeout: any = null
   // #468: single source of truth for "this modal instance has been torn down". Guards close() against a
   // double-fire (Esc/X/backdrop during a submit + the submit's later resolution both calling close()) and
@@ -697,10 +790,13 @@ export function buildModal(
     .kl-hero-empty{display:flex;flex-direction:column;align-items:center;gap:12px;color:#7d879f;font-size:13.5px;font-weight:500;text-align:center;max-width:260px;line-height:1.5;}
     .kl-hero-empty svg{opacity:.6;}
     .kl-side{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--kl-border);padding:22px 20px;overflow-y:auto;}
-    /* margin-top:auto pins Submit to the bottom when the composer is short; position:sticky keeps it in
-       view when the composer scrolls (long forms / small viewports) so Submit is ALWAYS reachable
-       (KLAVITYKLA-402). The -12px top shadow gutter blends content scrolling up beneath the button. */
-    .kl-side>.klavity-submit{margin-top:auto;position:sticky;bottom:0;box-shadow:0 -12px 14px -8px var(--kl-bg);}
+    /* KLA-586: Submit is pinned to the bottom by the DESCRIPTION field's flex:1 grow (it consumes the free
+       space and pushes the target-toggle + Submit down to sit right beneath it — no awkward gap). We must NOT
+       use margin-top:auto here: an auto margin claims positive free space BEFORE flex-grow, which would steal
+       the space back from the description and reopen the gap ABOVE Submit. position:sticky keeps Submit in
+       view when the panel scrolls (long forms / small viewports) so it's ALWAYS reachable (KLAVITYKLA-402).
+       The -12px top shadow gutter blends content scrolling up beneath the button. */
+    .kl-side>.klavity-submit{position:sticky;bottom:0;box-shadow:0 -12px 14px -8px var(--kl-bg);}
     @media (max-width:760px){.klavity-modal{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;max-height:96vh;width:96vw;}.kl-hero{max-height:44vh;}.kl-side{overflow-y:visible;border-left:none;border-top:1px solid var(--kl-border);}.kl-side>.klavity-submit{position:static;box-shadow:none;}}
     /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
     .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
@@ -737,8 +833,8 @@ export function buildModal(
     /* Staggered content reveal — the genie scales the panel in while its rows softly rise + fade so it feels
        alive (not a flat box). Subtle; zeroed under prefers-reduced-motion below. */
     @keyframes kl-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
-    .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>textarea.klavity-desc,.kl-side>input.klavity-remail,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
-    .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>textarea.klavity-desc{animation-delay:.18s}.kl-side>input.klavity-remail{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
+    .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>.klavity-desc,.kl-side>input.klavity-remail,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
+    .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>.klavity-desc{animation-delay:.18s}.kl-side>input.klavity-remail{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
@@ -758,6 +854,11 @@ export function buildModal(
     .kl-type-chip:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     /* PX4 #425: attached non-image file chips (evidence strip). */
     .klavity-files{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+    /* KLA-586 (founder-flagged stray amber bar): these boxes carry the hidden attribute but their author
+       display:flex declaration overrode the UA hidden rule (display:none) — so an EMPTY .klavity-capmsg
+       (amber bg + border + padding) rendered as a stray amber pill between the images-count row and the
+       description. Restore the hidden semantics explicitly so they only take space when they have content. */
+    .klavity-files[hidden]{display:none;}
     .kl-file-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 8px 6px 9px;border-radius:8px;border:1px solid var(--kl-border);background:var(--kl-chip);color:var(--kl-fg);font-size:12px;}
     .kl-file-chip .kl-file-ic{display:inline-flex;flex:none;color:var(--kl-muted);}
     .kl-file-chip .kl-file-nm{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
@@ -772,6 +873,7 @@ export function buildModal(
     .klavity-capmsg .kl-capmsg-cta{color:var(--kl-accent);font-weight:700;text-decoration:none;white-space:nowrap;}
     .klavity-capmsg .kl-capmsg-cta:hover{text-decoration:underline;}
     .klavity-capmsg .kl-capmsg-hint{color:var(--kl-muted);}
+    .klavity-capmsg[hidden]{display:none;}
     .kl-video-thumb{width:104px;height:72px;border-radius:8px;overflow:hidden;cursor:pointer;background:#000;outline:1px solid var(--kl-img-outline);outline-offset:-1px;}
     .kl-video-thumb.kl-thumb-active{outline:2px solid var(--kl-accent);outline-offset:1px;}
     .kl-video-thumb video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;}
@@ -884,11 +986,39 @@ export function buildModal(
     .kl-voice-circle:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .kl-voice-circle:disabled{opacity:.5;cursor:not-allowed;transform:none;}
     @media (prefers-reduced-motion: reduce){.kl-voice-circle{transition:none!important;}.kl-voice-circle:hover,.kl-voice-circle:active{transform:none;}}
-    /* KLA composer-polish: taller default description box (founder ask). min-height ~150px, still user-resizable.
-       max-height is viewport-relative so a tall box never pushes the composer past the scroll region on short
-       viewports — the .kl-side already scrolls (overflow-y:auto), so the textarea caps itself and the panel
-       scrolls rather than overflowing. */
-    textarea.klavity-desc{width:100%;min-height:150px;max-height:38vh;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
+    /* KLA-586: the description is a WhatsApp-style Markdown field — a contenteditable that HOLDS raw Markdown
+       (its source of truth is plain text, exposed via a .value accessor so every existing call site is
+       unchanged) but renders bold/italic/strike/mono live as the reporter types, markers kept + dimmed.
+       flex:1 so it GROWS to fill the freed vertical space in the scrollable side panel (founder ask) — the
+       target toggle + Submit sit right below it with no awkward gap. min-height keeps it usable + it stays
+       user-resizable; on short viewports the .kl-side panel scrolls (overflow-y:auto) rather than overflowing. */
+    .klavity-desc{flex:1 1 auto;width:100%;min-height:200px;resize:vertical;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;line-height:1.55;margin-bottom:12px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);outline:none;}
+    /* placeholder — shown only when the field is genuinely empty (render() clears stray <br> so :empty holds). */
+    .klavity-desc:empty:before{content:attr(data-ph);color:var(--kl-muted);opacity:.75;pointer-events:none;}
+    /* WhatsApp live-format: the markers stay in the raw text but render dimmed; the wrapped text is styled. */
+    .klavity-desc .kl-mk{color:var(--kl-muted);opacity:.65;}
+    .klavity-desc b{font-weight:750;}
+    .klavity-desc i{font-style:italic;}
+    .klavity-desc s{text-decoration:line-through;opacity:.85;}
+    .klavity-desc code{background:color-mix(in srgb,var(--kl-fg) 8%,transparent);border-radius:4px;padding:0 3px;font-size:.92em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+    .klavity-desc.kl-desc-disabled{opacity:.6;cursor:not-allowed;}
+    /* brief accent ring right after an AI-enhance replaces the field content, so the change is noticed. */
+    .klavity-desc.kl-just-enhanced{box-shadow:0 0 0 2px color-mix(in srgb,var(--kl-accent) 45%,transparent);transition:box-shadow .5s ease;}
+    /* KLA-586: AI-Enhance affordance — Enhance / Undo / Regenerate row + a drafting spinner, under the field. */
+    .klavity-enhance-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;}
+    .klavity-enhance-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid color-mix(in srgb,var(--kl-accent) 40%,var(--kl-border));background:color-mix(in srgb,var(--kl-accent) 10%,var(--kl-input-bg));color:var(--kl-accent);font-weight:700;font-size:12.5px;border-radius:9px;padding:8px 12px;cursor:pointer;transition:transform .15s cubic-bezier(.2,.7,.2,1),box-shadow .15s ease,filter .15s ease;will-change:transform;}
+    .klavity-enhance-btn:hover{transform:scale(1.02);box-shadow:0 3px 12px color-mix(in srgb,var(--kl-accent) 25%,transparent);}
+    .klavity-enhance-btn:active{transform:scale(.97);}
+    .klavity-enhance-btn:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none;}
+    .klavity-enhance-undo,.klavity-enhance-regen{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--kl-border);background:var(--kl-input-bg);color:var(--kl-muted);font-weight:650;font-size:12px;border-radius:9px;padding:8px 11px;cursor:pointer;transition:background .15s ease,color .15s ease;}
+    .klavity-enhance-regen{margin-left:auto;color:var(--kl-accent);border-color:color-mix(in srgb,var(--kl-accent) 40%,var(--kl-border));}
+    .klavity-enhance-undo:hover,.klavity-enhance-regen:hover{background:color-mix(in srgb,var(--kl-accent) 8%,var(--kl-input-bg));color:var(--kl-accent);}
+    .klavity-enhance-undo[hidden],.klavity-enhance-regen[hidden]{display:none;}
+    .klavity-enhance-spin{display:flex;align-items:center;gap:9px;margin:0 2px 12px;font-size:12px;color:var(--kl-accent);font-weight:600;}
+    .klavity-enhance-spin[hidden]{display:none;}
+    .kl-enh-loader{width:15px;height:15px;border:2.5px solid color-mix(in srgb,var(--kl-accent) 30%,transparent);border-top-color:var(--kl-accent);border-radius:50%;animation:kl-enh-spin .7s linear infinite;}
+    @keyframes kl-enh-spin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion: reduce){.kl-enh-loader{animation-duration:1.4s;}.klavity-enhance-btn{transition:none;}.klavity-enhance-btn:hover{transform:none;}}
     /* JTBD 1.10: hint shown when the reporter has attached a screenshot but typed nothing — Submit is
        enabled and the AI will title the report. Sits just under the textarea; hidden by default. */
     .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
@@ -997,10 +1127,10 @@ export function buildModal(
        rings. Same feel as the right-click menu + dashboard buttons. Transform amounts are CSS vars so
        prefers-reduced-motion can zero them (below). color-mix degrades gracefully if unsupported. ── */
     .klavity-modal{--kl-lift:translateY(-1px) scale(1.02);--kl-press:scale(.97);--kl-bhover:scale(1.05);--kl-bpress:scale(.97);}
-    .klavity-toggle button,.klavity-actions button,.klavity-submit,.klavity-lead button,.klavity-cta,textarea.klavity-desc,input.klavity-remail,.klavity-lead input{transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,border-color .15s ease,box-shadow .15s ease,color .15s ease,filter .15s ease;will-change:transform;}
+    .klavity-toggle button,.klavity-actions button,.klavity-submit,.klavity-lead button,.klavity-cta,.klavity-desc,input.klavity-remail,.klavity-lead input{transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,border-color .15s ease,box-shadow .15s ease,color .15s ease,filter .15s ease;will-change:transform;}
     .klavity-rm,.klavity-mk{transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,color .15s ease,box-shadow .15s ease;will-change:transform;}
-    textarea.klavity-desc:hover,input.klavity-remail:hover,.klavity-lead input:hover{transform:var(--kl-lift);border-color:var(--kl-accent);box-shadow:0 7px 18px color-mix(in srgb,var(--kl-accent) 16%,transparent),0 0 0 1px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
-    textarea.klavity-desc:focus,input.klavity-remail:focus,.klavity-lead input:focus{outline:none;border-color:var(--kl-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--kl-accent) 20%,transparent),0 8px 20px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
+    .klavity-desc:hover,input.klavity-remail:hover,.klavity-lead input:hover{transform:var(--kl-lift);border-color:var(--kl-accent);box-shadow:0 7px 18px color-mix(in srgb,var(--kl-accent) 16%,transparent),0 0 0 1px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
+    .klavity-desc:focus-within,.klavity-desc:focus,input.klavity-remail:focus,.klavity-lead input:focus{outline:none;border-color:var(--kl-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--kl-accent) 20%,transparent),0 8px 20px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
     /* Bug/Feature toggle — lift + soft accent glow (keeps the active chip's highlight intact) */
     .klavity-toggle button:hover{transform:var(--kl-lift);box-shadow:0 4px 12px color-mix(in srgb,var(--kl-accent) 20%,transparent);}
     .klavity-toggle button:active{transform:var(--kl-press);}
@@ -1187,8 +1317,14 @@ export function buildModal(
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
       ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
       <div class="klavity-error" id="klavity-err"></div>
-      <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
+      <div class="klavity-desc" id="klavity-desc" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Description" data-ph="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></div>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      ${callbacks.onEnhance ? `<div class="klavity-enhance-row" id="klavity-enhance-row">
+        <button type="button" class="klavity-enhance-btn" id="klavity-enhance">${icon('sparkles', { size: 14 })}<span>Enhance with AI</span></button>
+        <button type="button" class="klavity-enhance-undo" id="klavity-enhance-undo" hidden>${icon('rotate-cw', { size: 13 })}<span>Undo</span></button>
+        <button type="button" class="klavity-enhance-regen" id="klavity-enhance-regen" hidden>${icon('refresh-cw', { size: 13 })}<span>Regenerate</span></button>
+      </div>
+      <div class="klavity-enhance-spin" id="klavity-enhance-spin" hidden><span class="kl-enh-loader"></span><span>Drafting from your screenshot…</span></div>` : ''}
       ${voiceSupported ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
       ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
         <div class="kl-clr-bar"><i></i><i></i><i></i></div>
@@ -1838,7 +1974,10 @@ export function buildModal(
       // 's'/'S' would submit mid-word (eating the character). composedPath()[0] is the real focused
       // element across the shadow boundary (same guard the annotator key handlers below use).
       const el = ((typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target) as HTMLElement | null
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      // KLA-586: the description is now a contenteditable div (not a <textarea>). isContentEditable is the
+      // right check in real browsers, but jsdom doesn't derive it from the attribute — so also accept an
+      // explicit contenteditable attribute so 's'/'S' never submits mid-word while typing in the field.
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || el.getAttribute?.('contenteditable') === 'true')) return
       if (shadowRoot.querySelector('.kl-edtb')) return // fullscreen markup editor is open
       const btn = shadowRoot.getElementById('klavity-submit') as HTMLButtonElement | null
       if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click() }
@@ -1917,7 +2056,69 @@ export function buildModal(
   }
 
   // Submit
-  const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
+  // KLA-586: the description is a contenteditable WhatsApp-Markdown field (see renderInlineMarkdown). To keep
+  // EVERY existing call site untouched (submit payload, clarity coach, known-check, dictation insert, prefill,
+  // the char/length reads, the submit-lock disable), we expose textarea-shaped accessors on the element:
+  //   .value       raw Markdown text (get = descPlainText; set = render markers live)
+  //   .disabled    contentEditable toggle + a dimmed class (used by lockComposer during submit)
+  //   .placeholder the empty-state prompt (backed by the data-ph attribute + :empty:before)
+  // so `desc` behaves like the old <textarea> to all consumers while rendering formatting inline.
+  const desc = modal.querySelector('#klavity-desc') as HTMLElement & { value: string; disabled: boolean; placeholder: string }
+  {
+    const selection = (): Selection | null => {
+      try { return (shadowRoot as any).getSelection ? (shadowRoot as any).getSelection() : (typeof window !== 'undefined' ? window.getSelection() : null) }
+      catch { try { return typeof window !== 'undefined' ? window.getSelection() : null } catch { return null } }
+    }
+    // caret <-> character offset (counts text + newlines), so a live re-render preserves the caret.
+    const caretOffset = (): number => {
+      const sel = selection(); if (!sel || !sel.rangeCount) return -1
+      try {
+        const r = sel.getRangeAt(0)
+        if (!desc.contains(r.endContainer)) return -1
+        const pre = r.cloneRange(); pre.selectNodeContents(desc); pre.setEnd(r.endContainer, r.endOffset)
+        return pre.toString().length
+      } catch { return -1 }
+    }
+    const setCaret = (off: number): void => {
+      const sel = selection(); if (!sel) return
+      try {
+        const range = document.createRange()
+        const walk = document.createTreeWalker(desc, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT)
+        let n: Node | null, chars = off, done = false
+        while ((n = walk.nextNode())) {
+          if (n.nodeName === 'BR') { if (chars === 0) { range.setStartBefore(n); done = true; break } chars -= 1; continue }
+          if (n.nodeType === 3) { const len = (n.textContent || '').length; if (chars <= len) { range.setStart(n, chars); done = true; break } chars -= len }
+        }
+        if (!done) { range.selectNodeContents(desc); range.collapse(false) } else range.collapse(true)
+        sel.removeAllRanges(); sel.addRange(range)
+      } catch { /* selection APIs vary (jsdom) — caret restore is best-effort */ }
+    }
+    // Live render on user input: keep raw MD text as the source, repaint with markers dimmed, restore caret.
+    const renderLive = (): void => {
+      const off = caretOffset()
+      const text = descPlainText(desc).replace(/\n$/, '')  // drop the browser's trailing bookkeeping newline
+      // Empty → clear so :empty (placeholder) holds; otherwise repaint the formatted markup.
+      desc.innerHTML = text ? renderInlineMarkdown(text) : ''
+      if (off >= 0) setCaret(off)
+    }
+    // Attach FIRST so the DOM is normalised to our controlled markup before refreshSubmit/clarity/known read it.
+    desc.addEventListener('input', renderLive)
+    Object.defineProperty(desc, 'value', {
+      configurable: true,
+      get(): string { return descPlainText(desc) },
+      set(v: string) { const t = String(v ?? '').replace(/\n$/, ''); desc.innerHTML = t ? renderInlineMarkdown(t) : '' },
+    })
+    Object.defineProperty(desc, 'disabled', {
+      configurable: true,
+      get(): boolean { return desc.getAttribute('contenteditable') === 'false' },
+      set(on: boolean) { desc.setAttribute('contenteditable', on ? 'false' : 'true'); desc.classList.toggle('kl-desc-disabled', !!on) },
+    })
+    Object.defineProperty(desc, 'placeholder', {
+      configurable: true,
+      get(): string { return desc.getAttribute('data-ph') || '' },
+      set(v: string) { desc.setAttribute('data-ph', String(v ?? '')) },
+    })
+  }
   const submitBtn = modal.querySelector('#klavity-submit') as HTMLButtonElement
   const remail = modal.querySelector('#klavity-remail') as HTMLInputElement | null
   // PX4 #439: pre-fill the required-email field when the reporter identity is already known (no retyping).
@@ -1937,14 +2138,12 @@ export function buildModal(
   // re-running autosize there would stomp a description the reporter had manually resized. Autosize now
   // fires solely on description/content changes. The prefill path (widget.ts) reuses this single source of
   // truth by dispatching an 'input' event on the textarea rather than duplicating the layout math.
-  const autosizeDesc = () => {
-    desc.style.height = 'auto'
-    // .klavity-desc is box-sizing:border-box with a 1px border; scrollHeight excludes the border, so add
-    // the vertical border delta (offsetHeight−clientHeight) — otherwise a ~2px residual internal scroll
-    // remains and scrollHeight !== clientHeight. Cap at 40vh.
-    const border = desc.offsetHeight - desc.clientHeight
-    desc.style.height = Math.min(desc.scrollHeight + border, Math.round(window.innerHeight * 0.4)) + 'px'
-  }
+  // KLA-586: the description now GROWS via flex:1 to fill the freed vertical space in the side panel (founder
+  // ask), and the contenteditable expands with its own content up to that flex height (then scrolls
+  // internally). So the old explicit-height autosize is a no-op — setting an inline height would fight flex:1
+  // and reintroduce the empty gap. Kept as a named no-op so the prefill path (widget.ts dispatches an 'input'
+  // event) still funnels through refreshSubmit + the live Markdown render without duplicating layout math.
+  const autosizeDesc = () => { /* intentionally empty — flex:1 owns the sizing now */ }
   const refreshSubmit = () => {
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
@@ -1955,6 +2154,57 @@ export function buildModal(
   desc.addEventListener('input', autosizeDesc)
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
+
+  // ── KLA-586: AI "Enhance" — replace the reporter's one-liner IN PLACE with a structured, developer-ready
+  // draft rendered as WhatsApp Markdown, from the auto-captured screenshot + picked element. Opt-in: wired
+  // only when the host supplied onEnhance (widget path; the extension omits it, like onClarityTip). Undo
+  // restores the reporter's pre-enhance text; Regenerate re-drafts. Stale-guarded (seq) like the clarity tip;
+  // a null/failed draft is a silent no-op (the reporter's text is left untouched — no scary error).
+  if (callbacks.onEnhance) {
+    const onEnhance = callbacks.onEnhance
+    const enhanceBtn = modal.querySelector('#klavity-enhance') as HTMLButtonElement | null
+    const undoBtn = modal.querySelector('#klavity-enhance-undo') as HTMLButtonElement | null
+    const regenBtn = modal.querySelector('#klavity-enhance-regen') as HTMLButtonElement | null
+    const spinEl = modal.querySelector('#klavity-enhance-spin') as HTMLElement | null
+    let enhanceSeq = 0            // stale-guard: a slow response is ignored once a newer run started
+    let originalText: string | null = null   // the reporter's text captured ONCE before the first enhance
+    // The primary screenshot for grounding: the active hero shot, else the first captured shot.
+    const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
+    const runEnhance = async () => {
+      if (busy) return
+      const text = desc.value.trim()
+      if (originalText === null) originalText = desc.value   // remember the pre-enhance text once
+      const seq = ++enhanceSeq
+      if (enhanceBtn) enhanceBtn.disabled = true
+      if (spinEl) spinEl.hidden = false
+      try {
+        const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
+        const draft = await onEnhance(text, { images: screenshots.length, shot: primaryShot(), picked })
+        if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
+        if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
+        desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place
+        enhanceSeverity = draft.suggestedSeverity || null
+        enhancePriority = draft.suggestedPriority || null
+        desc.classList.add('kl-just-enhanced')
+        setTimeout(() => desc.classList.remove('kl-just-enhanced'), 700)
+        if (undoBtn) undoBtn.hidden = false
+        if (regenBtn) regenBtn.hidden = false
+        refreshSubmit()
+      } catch { /* best-effort — a failure never disturbs the composer */ }
+      finally {
+        if (seq === enhanceSeq) { if (enhanceBtn) enhanceBtn.disabled = false; if (spinEl) spinEl.hidden = true }
+      }
+    }
+    enhanceBtn?.addEventListener('click', () => { void runEnhance() })
+    regenBtn?.addEventListener('click', () => { void runEnhance() })
+    undoBtn?.addEventListener('click', () => {
+      if (originalText !== null) { desc.value = originalText; refreshSubmit() }
+      originalText = null                 // next enhance re-captures the (restored) text as the new baseline
+      enhanceSeverity = null; enhancePriority = null
+      if (undoBtn) undoBtn.hidden = true
+      if (regenBtn) regenBtn.hidden = true
+    })
+  }
 
   // KLAVITYKLA-241 (JTBD A.11): pre-submit known-issue acknowledgment. As the reporter types, debounce a
   // lookup for a matching known/recurring issue and, on a hit, surface an inline "Already reported —
@@ -2327,6 +2577,9 @@ export function buildModal(
         // segmented control was rendered (cfg.submitTargetToggle !== false); default 'project' (never surprise-
         // route to Klavity). The server resolves the real Klavity intake project — the client only says 'klavity'.
         ...(cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}),
+        // KLA-586: ride the accepted AI-Enhance draft's severity/priority as structured fields (cleared on Undo).
+        ...(enhanceSeverity ? { suggestedSeverity: enhanceSeverity } : {}),
+        ...(enhancePriority ? { suggestedPriority: enhancePriority } : {}),
       }
       // NON-BLOCKING default path — hand the fully-built payload to the host (widget) and CLOSE the modal
       // + backdrop immediately. The host shows a bottom-right pill and drives the (possibly 16MB+) upload
