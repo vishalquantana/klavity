@@ -8,8 +8,9 @@ import {
   isThinDescription, THIN_DESCRIPTION_MAX_CHARS,
   collectVideoTranscripts, gatherTranscriptText,
   buildTranscriptDetailsSection, formatTimestampedTranscript, fmtTimestamp,
-  pickKeyframeTimestampsMs, MAX_KEYFRAMES,
+  pickKeyframeTimestampsMs, MAX_KEYFRAMES, TRANSCRIPT_BODY_MAX_CHARS,
 } from "./video-enrich"
+import { redactSensitiveUrlsInText } from "./feedback"
 
 // ── (1) thin-description gate ──────────────────────────────────────────────────────────────────────
 test("isThinDescription: empty / whitespace / short is thin; a real sentence is not", () => {
@@ -87,6 +88,26 @@ test("buildTranscriptDetailsSection: collapsible, timestamped, and REDACTS sensi
 
 test("buildTranscriptDetailsSection: null when there are no transcripts", () => {
   expect(buildTranscriptDetailsSection([], (s) => s)).toBeNull()
+})
+
+// KLA-603 (privacy): an over-long transcript is truncated to TRANSCRIPT_BODY_MAX_CHARS. The cut must land
+// on a safe (whitespace) boundary and re-run redaction AFTER the cut, so a `?token=…` URL near the boundary
+// can never be split so that a partial secret's tail escapes the redactor. Marker + bound are preserved.
+test("buildTranscriptDetailsSection: truncates on a safe boundary + re-redacts so a secret near the cut can't leak", () => {
+  // ~8000 chars of filler places a secret URL right at the truncation boundary.
+  const filler = "word ".repeat(1600)  // 8000 chars, whitespace-delimited so a safe boundary exists
+  const secretUrl = "https://app.example.com/pay?token=SUPERSECRETTOKENVALUE123456789&x=1"
+  const text = filler + secretUrl + " and then it fails " + "more ".repeat(300)
+  const t = collectVideoTranscripts({
+    attachments: [{ key: "k1", filename: "w.mp4", contentType: "video/mp4", transcript_status: "done",
+      transcript_json: { text, segments: null } }],
+  })
+  const section = buildTranscriptDetailsSection(t, redactSensitiveUrlsInText)!
+  expect(section).toContain("… (truncated)")             // truncation marker present
+  expect(section).not.toContain("SUPERSECRETTOKENVALUE123456789")  // the raw secret never survives the cut
+  // Body is bounded: the fenced block content stays within the cap (+ marker/backoff slack).
+  const inner = section.slice(section.indexOf("```") + 3, section.lastIndexOf("```"))
+  expect(inner.length).toBeLessThanOrEqual(TRANSCRIPT_BODY_MAX_CHARS + 40)
 })
 
 test("formatTimestampedTranscript: falls back to plain text when no segments", () => {

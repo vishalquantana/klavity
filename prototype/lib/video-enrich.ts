@@ -126,7 +126,17 @@ export function buildTranscriptDetailsSection(
     let body = formatTimestampedTranscript(t)
     if (!body.trim()) continue
     body = redact(body)
-    if (body.length > TRANSCRIPT_BODY_MAX_CHARS) body = body.slice(0, TRANSCRIPT_BODY_MAX_CHARS) + "\n… (truncated)"
+    if (body.length > TRANSCRIPT_BODY_MAX_CHARS) {
+      // KLA-603 (privacy): a raw slice at TRANSCRIPT_BODY_MAX_CHARS can land MID-TOKEN — splitting a
+      // `?token=…` URL across the cut so a partial secret's tail survives. Two defenses: (1) back the cut
+      // off to the last whitespace boundary (within a short lookback) so we never sever a URL/token, and
+      // (2) re-run the URL redactor AFTER the cut, so any URL the truncation exposed is re-matched and its
+      // sensitive params re-redacted. redact() is idempotent, so re-redacting already-clean text is a no-op.
+      let cut = body.slice(0, TRANSCRIPT_BODY_MAX_CHARS)
+      const ws = Math.max(cut.lastIndexOf("\n"), cut.lastIndexOf(" "))
+      if (ws > TRANSCRIPT_BODY_MAX_CHARS - 200) cut = cut.slice(0, ws)
+      body = redact(cut) + "\n… (truncated)"
+    }
     blocks.push(`### ${t.name}\n\n\`\`\`\n${body}\n\`\`\``)
   }
   if (!blocks.length) return null
