@@ -24,7 +24,7 @@ mock.module("./s3", () => ({
 }))
 
 const { reconnectDb, applySchema, insertFeedback, feedbackById } = await import("./db")
-const { parseTranscribeResponse, parseDeepgramResponse, transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } = await import("./transcribe")
+const { parseTranscribeResponse, parseDeepgramResponse, transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel, DEEPGRAM_COST_PER_MIN, deepgramCostUsd } = await import("./transcribe")
 
 const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
 const ACCT = `acct_${RUN}`
@@ -279,6 +279,32 @@ test("parseDeepgramResponse: prerecorded shape → transcript text", () => {
   expect(out).not.toBeNull()
   expect(out!.text).toBe("the coupon code does nothing on mobile")
   expect(out!.usage.seconds).toBe(3.2)
+})
+
+test("KLA-609: Deepgram COGS is recorded (non-null cost ≈ duration × per-min rate)", () => {
+  const seconds = 120 // 2.0 minutes
+  const out = parseDeepgramResponse({
+    metadata: { duration: seconds },
+    results: { channels: [{ alternatives: [{ transcript: "two minutes of spoken audio here" }] }] },
+  })
+  expect(out).not.toBeNull()
+  expect(out!.usage.seconds).toBe(seconds)
+  // COGS must be a real (non-null) number so the margin panel stops understating STT COGS.
+  expect(out!.usage.cost).not.toBeNull()
+  const expected = (seconds / 60) * DEEPGRAM_COST_PER_MIN // 2 min × $0.0043 = $0.0086
+  expect(out!.usage.cost).toBeCloseTo(expected, 10)
+  expect(out!.usage.cost).toBeCloseTo(0.0086, 6)
+})
+
+test("KLA-609: deepgramCostUsd — proportional to duration, null on unknown duration", () => {
+  expect(deepgramCostUsd(60)).toBeCloseTo(DEEPGRAM_COST_PER_MIN, 10) // exactly one minute
+  expect(deepgramCostUsd(0)).toBe(0)
+  expect(deepgramCostUsd(null)).toBeNull()
+  expect(deepgramCostUsd(undefined)).toBeNull()
+  // A Deepgram response missing metadata.duration → seconds null → cost null (no fabricated COGS).
+  const noDur = parseDeepgramResponse({ results: { channels: [{ alternatives: [{ transcript: "no duration field" }] }] } })
+  expect(noDur!.usage.seconds).toBeNull()
+  expect(noDur!.usage.cost).toBeNull()
 })
 
 test("parseDeepgramResponse: utterances → timestamped segments", () => {

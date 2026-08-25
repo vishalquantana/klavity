@@ -49,6 +49,21 @@ const ENDPOINT = process.env.KLAV_TRANSCRIBE_ENDPOINT || "https://openrouter.ai/
 export const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2"
 // Overridable (and pointed at a local stand-in by the route test) via KLAV_DEEPGRAM_ENDPOINT.
 const DEEPGRAM_ENDPOINT = process.env.KLAV_DEEPGRAM_ENDPOINT || "https://api.deepgram.com/v1/listen"
+// KLA-609 batch-5 (money reporting): Deepgram prerecorded STT COGS rate in USD per audio-MINUTE.
+// nova-2 prerecorded list price ≈ $0.0043/min (i.e. ~$0.258/hour). Deepgram bills by audio duration,
+// so COGS = (metadata.duration seconds / 60) × this rate. Overridable at deploy via
+// KLAV_DEEPGRAM_COST_PER_MIN without a code change (e.g. if a committed rate changes). Recorded into
+// ai_calls.cost_usd so the opsadmin margin panel (creditsMarginByWorkspace) reflects true STT COGS
+// instead of understating it — previously this path hard-coded cost:null so all STT COGS was invisible.
+export const DEEPGRAM_COST_PER_MIN = Number(process.env.KLAV_DEEPGRAM_COST_PER_MIN || 0.0043)
+
+// Compute the Deepgram STT COGS (USD) for a clip of `seconds` audio, or null when the duration is
+// unknown/unusable. Exported so tests can assert cost ≈ duration × rate without a network call.
+export function deepgramCostUsd(seconds: number | null | undefined): number | null {
+  const s = Number(seconds)
+  if (seconds == null || !Number.isFinite(s) || s < 0) return null
+  return (s / 60) * DEEPGRAM_COST_PER_MIN
+}
 // Server-side ONLY. Never sent to the client, never logged/committed.
 function deepgramKey(): string | undefined {
   return process.env.DEEPGRAM_API_KEY
@@ -145,7 +160,9 @@ export function parseDeepgramResponse(data: any): TranscriptResult | null {
   const seconds = data?.metadata?.duration != null ? Number(data.metadata.duration) : null
   const finalText = text || (segments ? segments.map(s => s.text).join(" ") : "")
   if (!finalText && !(segments && segments.length)) return null
-  return { text: finalText, segments, usage: { seconds, cost: null } }
+  // KLA-609: derive the real STT COGS from the audio duration so recordAiCall stores a non-null
+  // cost_usd (was hard-coded null → margin panel understated Deepgram COGS by 100%).
+  return { text: finalText, segments, usage: { seconds, cost: deepgramCostUsd(seconds) } }
 }
 
 // Transcribe RAW audio bytes via Deepgram's prerecorded API. The body is the raw bytes with the clip's
