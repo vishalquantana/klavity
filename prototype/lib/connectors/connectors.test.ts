@@ -164,6 +164,37 @@ test("github createIssue throws on non-2xx", async () => {
   ).rejects.toThrow()
 })
 
+// KLA-582 (data-loss regression): GitHub has no attachment upload, so a log text-file attachment
+// would go NOWHERE. createIssue must fall back to inlining the (already-redacted) log content into
+// the issue body as a <details> block instead of silently dropping it.
+test("github createIssue inlines the console/network log attachment into the body", async () => {
+  const { LOG_ATTACHMENT_FILENAME } = await import("../feedback")
+  const calls: any[] = []
+  globalThis.fetch = mock(async (u: any, o: any) => {
+    calls.push([u, o])
+    return new Response(JSON.stringify({ number: 7, html_url: "https://gh/i/7" }), { status: 201 })
+  }) as any
+
+  const logText = "=== Console (1) ===\n[error] boom at https://x.com/a?token=REDACTED"
+  const ticketWithLog = {
+    ...TICKET,
+    attachments: [{
+      filename: LOG_ATTACHMENT_FILENAME,
+      contentType: "text/plain",
+      bytes: new TextEncoder().encode(logText),
+      url: "",
+    }],
+  }
+
+  await getConnector("github")!.createIssue(ticketWithLog, { owner: "o", repo: "r", token: "t" })
+  const sentBody = JSON.parse(calls[0][1].body).body
+  expect(sentBody).toContain("<details>")
+  expect(sentBody).toContain(LOG_ATTACHMENT_FILENAME)
+  expect(sentBody).toContain("boom at https://x.com/a?token=REDACTED")
+  // the original description is preserved
+  expect(sentBody).toContain("desc")
+})
+
 test("github validate flags missing repo", () => {
   expect(getConnector("github")!.validate({ owner: "o", token: "t" }).ok).toBe(false)
   expect(getConnector("github")!.validate({ owner: "o", repo: "r", token: "t" }).ok).toBe(true)

@@ -2,6 +2,7 @@ import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUp
 import { safeFetch } from "../safe-fetch"
 import { resolveIssueType } from "./resolve-issue-type"
 import { applyLabelMap } from "./mapping-failsafe"
+import { inlineLogAttachmentIntoBody } from "./inline-log-fallback"
 
 // Connector-field-mapping: overridable via KLAV_GITHUB_API so tests can point this at a loopback
 // fake. Read lazily (a function, not a module-level const) because bun's test runner shares one
@@ -66,11 +67,19 @@ export const githubConnector: Connector = {
   // Klavity->Jira #414: GitHub Issues has NO native attachment API (files must be uploaded to a
   // repo/gist or the user-content CDN, which needs a separate authenticated flow), so attachFiles is
   // intentionally NOT implemented — the issue body keeps the permanent signed fallback links.
+  // KLA-582: for the ONE attachment that has no body link (the console/network log text file, built
+  // in-memory), createIssue inlines its redacted content into the body (see inlineLogAttachmentIntoBody).
   // transitionIssue is likewise N/A (GitHub issues have only open/closed, no configurable workflow
   // statuses). TODO(#414): revisit if GitHub Projects v2 column moves are ever wanted.
   async createIssue(ticket: TicketPayload, cfg: Record<string, string>): Promise<ExportResult> {
     const { owner, repo, token } = cfg
     const url = `https://api.github.com/repos/${owner}/${repo}/issues`
+
+    // KLA-582: GitHub Issues has no native attachment upload, so it can't ship the console/network
+    // log text-file attachment. Fall back to inlining that (already-redacted) log text into the
+    // issue body as a collapsed <details> section — otherwise the logs would go NOWHERE for
+    // GitHub-connected projects (regression: they used to be inline in the body). Best-effort.
+    const body = inlineLogAttachmentIntoBody(ticket.body, ticket.attachments).body
 
     // Endpoint host is fixed (api.github.com), but owner/repo are user-supplied path
     // segments. safeFetch pins the request (and every redirect hop) to github.com so a
@@ -91,7 +100,7 @@ export const githubConnector: Connector = {
         // error). Omit the field entirely when there are neither labels nor a priority.
         body: JSON.stringify({
           title: ticket.title,
-          body: ticket.body,
+          body,
           ...((): { labels?: string[] } => {
             // KLA-551: apply the admin's PERMANENT label remap (label_map) before hitting GitHub.
             // GitHub silently ignores labels that don't exist (never an error, never auto-created via
