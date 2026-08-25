@@ -7,6 +7,10 @@ import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
+import {
+  clampZoom, wheelZoomFactor, zoomEasing, zoomTowardPan, visibleImageRect,
+  minimapToImage, panForImageCenter, heroLogoHref,
+} from './hero-zoom'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
@@ -875,10 +879,23 @@ export function buildModal(
     .kl-hmask{display:inline-flex;align-items:center;gap:5px;height:38px;padding:0 8px;border-radius:9px;color:#cfd5ea;font-size:11px;font-weight:600;cursor:pointer;user-select:none;white-space:nowrap;}
     .kl-hmask:hover{background:rgba(255,255,255,.08);}
     .kl-hmask input{cursor:pointer;margin:0;accent-color:var(--kl-accent);}
-    .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* Top-left Klavity logo — a link to the (UTM'd) homepage. Sits flush left in the editor toolbar. */
+    .kl-hlogo{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 8px 0 4px;border-radius:9px;text-decoration:none;color:#e6e9f5;font-weight:800;font-size:13px;letter-spacing:-.01em;cursor:pointer;transition:background .12s ease,transform .12s ease;}
+    .kl-hlogo:hover{background:rgba(255,255,255,.08);transform:translateY(-1px);}
+    .kl-hlogo:active{transform:scale(.97);}
+    .kl-hlogo svg{display:block;flex:none;}
+    .kl-hlogo-word{white-space:nowrap;}
+    @media (max-width:520px){.kl-hlogo-word{display:none;}}
+    /* Zoom minimap / navigator — a corner thumbnail shown only while zoomed. The viewport rect dims the
+       off-screen area (the big spread box-shadow) so the visible region reads at a glance. */
+    .kl-minimap{position:absolute;right:12px;bottom:12px;z-index:7;border:1px solid rgba(255,255,255,.4);border-radius:6px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.5);background:#0b0f1c;cursor:crosshair;touch-action:none;}
+    .kl-minimap[hidden]{display:none;}
+    .kl-minimap-img{display:block;width:100%;height:100%;object-fit:fill;opacity:.9;pointer-events:none;user-select:none;-webkit-user-drag:none;}
+    .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6c63ff);background:color-mix(in srgb,var(--kl-accent,#6c63ff) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
+    .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible,.kl-hlogo:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
     @media (max-width:760px){.kl-hhint{display:none;}}
-    @media (prefers-reduced-motion:reduce){.kl-htool,.kl-htbtn,.kl-hcolor{transition:none;}.kl-htool:hover,.kl-htbtn:hover,.kl-hcolor:hover{transform:none;}}
+    @media (prefers-reduced-motion:reduce){.kl-htool,.kl-htbtn,.kl-hcolor,.kl-hlogo{transition:none;}.kl-htool:hover,.kl-htbtn:hover,.kl-hcolor:hover,.kl-hlogo:hover{transform:none;}}
     .klavity-modal::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(to right,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(to bottom,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px;opacity:.36;}
     .klavity-modal>*{position:relative;z-index:1;}
     /* Staggered content reveal — the genie scales the panel in while its rows softly rise + fade so it feels
@@ -3214,10 +3231,16 @@ export function buildModal(
       return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.7
     }
     const c = (col: string) => `<button type="button" class="kl-hcolor${isLightSwatch(col) ? ' kl-hcolor-light' : ''}" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
+    // Klavity brand mark (compact dot-lattice, matches site/logo-source.svg) — lightened for the dark toolbar.
+    const klavityMark =
+      `<svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<g fill="#818cf8"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g>` +
+      `<g stroke="#818cf8" stroke-width="1.6" stroke-linecap="round" opacity="0.4"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg>`
     return (
-      // Redaction controls grouped at the TOP of the editing toolbar: the "Mask numbers" toggle (masks digits
-      // in fresh captures) sits alongside the Pixelate brush (drag to mosaic-redact a region of this image).
-      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
+      // Klavity logo, TOP-LEFT of the editor toolbar. It links to the homepage (UTM-stamped so clicks are
+      // attributable to WHICH project/site) — the href is assigned in JS (never innerHTML) per this file's
+      // XSS guards. See heroLogoHref + the #kl-hero-logo wiring in mountHeroAnnotator.
+      `<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)">${klavityMark}<span class="kl-hlogo-word">Klavity</span></a>` +
       `<span class="kl-hsep"></span>` +
       t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
       t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
@@ -3226,6 +3249,10 @@ export function buildModal(
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
       t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
       t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      `<span class="kl-hsep"></span>` +
+      // Redaction group: the "Mask numbers" toggle (masks digits in fresh captures) now sits next to the
+      // Pixelate brush + Crop — grouped with the other redact/edit tools so the logo owns the top-left.
+      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
       t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
@@ -3395,6 +3422,10 @@ export function buildModal(
 
     {
       tools.innerHTML = heroToolbarHtml((cropStacks[index]?.length ?? 0) > 0)
+      // Top-left logo → UTM'd Klavity homepage. Assigned via .href (not innerHTML) so a hostile embedding
+      // host in utm_source/utm_content can never break out of the attribute (this file's XSS discipline).
+      const logoLink = tools.querySelector('#kl-hero-logo') as HTMLAnchorElement | null
+      if (logoLink) logoLink.href = heroLogoHref(cfg.projectId)
       let activeTool = 'pen'
       let activeColor = '#ef4444'
       let textSize = 26
@@ -3483,35 +3514,107 @@ export function buildModal(
       }
       // ── Wheel-zoom + Shift-drag pan on the hero image. Zoom is a uniform translate()+scale() transform,
       //    so toImg()'s getBoundingClientRect math keeps annotation coordinates correct at any zoom.
-      //    Scroll to zoom toward the cursor; Shift+drag to pan when zoomed; double-click resets. ──
+      //    Scroll to zoom toward the cursor; Shift+drag to pan when zoomed; double-click resets. The zoom
+      //    step is gentle + eased (see hero-zoom.ts) so it feels smooth, and a corner minimap appears while
+      //    zoomed so you never lose your place. ──
       let zoom = 1, panX = 0, panY = 0, home: DOMRect | null = null
-      const clampZoom = (v: number) => Math.min(6, Math.max(1, v))
+      const reducedMotion = (() => { try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) } catch { return false } })()
+      const zoomEase = zoomEasing(reducedMotion)
+      // The untransformed canvas box (object-fit:contain baseline) — measured lazily by clearing the
+      // transform, reading the rect, then restoring, so cursor/minimap math has a fixed origin at any zoom.
+      const getHome = (): DOMRect | null => {
+        if (home) return home
+        const t = canvas.style.transform; canvas.style.transform = ''
+        home = canvas.getBoundingClientRect(); canvas.style.transform = t
+        return home
+      }
+
+      // ── Zoom minimap / navigator ── a thumbnail of the whole shot with a rectangle marking the current
+      //    viewport; visible only while zoomed (scale>1). Click / drag it to jump the main view. It draws
+      //    the base screenshot into a small <img>; the viewport rect comes from the live pan/scale.
+      const minimap = document.createElement('div')
+      minimap.className = 'kl-minimap'
+      minimap.hidden = true
+      minimap.setAttribute('role', 'navigation')
+      minimap.setAttribute('aria-label', 'Zoom navigator — click or drag to pan the image')
+      const mmImg = document.createElement('img')
+      mmImg.className = 'kl-minimap-img'
+      mmImg.alt = ''
+      mmImg.draggable = false
+      mmImg.src = dataUrl
+      const mmVp = document.createElement('div')
+      mmVp.className = 'kl-minimap-vp'
+      minimap.append(mmImg, mmVp)
+      stage.appendChild(minimap)
+      const updateMinimap = () => {
+        const aw = canvas.width, ah = canvas.height
+        if (zoom <= 1 || aw < 2 || ah < 2) { minimap.hidden = true; return }
+        const h = getHome(); if (!h) { minimap.hidden = true; return }
+        const MAX = 148
+        const m = Math.min(MAX / aw, MAX / ah)
+        const mmW = Math.max(1, Math.round(aw * m)), mmH = Math.max(1, Math.round(ah * m))
+        minimap.style.width = mmW + 'px'; minimap.style.height = mmH + 'px'
+        const sr = stage.getBoundingClientRect()
+        const vis = visibleImageRect(
+          { left: sr.left, top: sr.top, right: sr.right, bottom: sr.bottom },
+          { left: h.left, top: h.top, width: h.width, height: h.height },
+          { panX, panY }, zoom, aw, ah,
+        )
+        mmVp.style.left = (vis.x * m) + 'px'; mmVp.style.top = (vis.y * m) + 'px'
+        mmVp.style.width = Math.max(3, vis.w * m) + 'px'; mmVp.style.height = Math.max(3, vis.h * m) + 'px'
+        minimap.hidden = false
+      }
+
       const applyZoomTransform = () => {
-        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; return }
+        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; updateMinimap(); return }
         canvas.style.transformOrigin = '0 0'
         canvas.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`
         canvas.style.cursor = 'grab'
+        updateMinimap()
       }
       const zoomToward = (clientX: number, clientY: number, factor: number) => {
-        // Capture the untransformed "home" rect while at zoom 1 so cursor-anchored math has a fixed origin.
-        if (zoom === 1) { const t = canvas.style.transform; canvas.style.transform = ''; home = canvas.getBoundingClientRect(); canvas.style.transform = t }
-        if (!home) return
+        const h = getHome(); if (!h) return
         const prev = zoom
         zoom = clampZoom(zoom * factor)
         if (zoom === prev) return
-        // Keep the image point under the cursor stationary: solve the new pan from cursor invariance.
-        const lx = (clientX - home.left - panX) / prev
-        const ly = (clientY - home.top - panY) / prev
-        panX = clientX - home.left - zoom * lx
-        panY = clientY - home.top - zoom * ly
+        // Keep the image point under the cursor stationary (cursor-anchored zoom).
+        const p = zoomTowardPan(clientX, clientY, { left: h.left, top: h.top, width: h.width, height: h.height }, prev, zoom, { panX, panY })
+        panX = p.panX; panY = p.panY
+        canvas.style.transition = zoomEase // animate the scale change (elastic/bezier, or quick under reduced-motion)
         applyZoomTransform()
       }
+      // Jump the main view so an image point lands at the stage centre — powers minimap click + drag.
+      const jumpToImagePoint = (ix: number, iy: number) => {
+        const h = getHome(); if (!h) return
+        const sr = stage.getBoundingClientRect()
+        const p = panForImageCenter(ix, iy, { left: sr.left, top: sr.top, right: sr.right, bottom: sr.bottom }, { left: h.left, top: h.top, width: h.width, height: h.height }, zoom, canvas.width)
+        panX = p.panX; panY = p.panY
+        canvas.style.transition = zoomEase
+        applyZoomTransform()
+      }
+      let mmDragging = false
+      const mmJumpFromEvent = (clientX: number, clientY: number) => {
+        const r = minimap.getBoundingClientRect()
+        const { ix, iy } = minimapToImage(clientX - r.left, clientY - r.top, r.width, r.height, canvas.width, canvas.height)
+        jumpToImagePoint(ix, iy)
+      }
+      minimap.addEventListener('pointerdown', (e) => {
+        mmDragging = true
+        try { minimap.setPointerCapture(e.pointerId) } catch { /* noop */ }
+        mmJumpFromEvent(e.clientX, e.clientY)
+        e.preventDefault(); e.stopPropagation()
+      })
+      minimap.addEventListener('pointermove', (e) => { if (mmDragging) { mmJumpFromEvent(e.clientX, e.clientY); e.preventDefault() } })
+      const mmEnd = (e: PointerEvent) => { if (mmDragging) { mmDragging = false; try { minimap.releasePointerCapture(e.pointerId) } catch { /* noop */ } } }
+      minimap.addEventListener('pointerup', mmEnd)
+      minimap.addEventListener('pointercancel', mmEnd)
+
       stage.addEventListener('wheel', (e) => {
         if (activeTool === 'crop') return
         e.preventDefault()
-        zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18)
+        zoomToward(e.clientX, e.clientY, wheelZoomFactor(e.deltaY))
       }, { passive: false })
-      stage.addEventListener('dblclick', () => { zoom = 1; applyZoomTransform() })
+      stage.addEventListener('dblclick', () => { zoom = 1; canvas.style.transition = zoomEase; applyZoomTransform() })
       // Numbered-pin counter continues from any pins already on this image.
       let countN = annotator.shapes.reduce((m, s: any) => s.type === 'count' ? Math.max(m, s.n) : m, 0)
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
@@ -3524,6 +3627,7 @@ export function buildModal(
         // Shift+drag pans the zoomed image instead of drawing.
         if (e.shiftKey && zoom > 1) {
           panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
+          canvas.style.transition = 'none' // pan must track the pointer 1:1 — no easing lag
           canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
           e.preventDefault(); return
         }
@@ -3577,7 +3681,7 @@ export function buildModal(
         if (activeTool === 'pen') penPoints = [pt]
       })
       canvas.addEventListener('pointermove', (e) => {
-        if (panning) { panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
         if (!drawing) return
         if (activeTool === 'pen') {
           penPoints.push(toImg(e))
