@@ -269,3 +269,5 @@ export type Shape =
   | { type: 'circle'; color: string; x: number; y: number; rx: number; ry: number }
   // numbered marker pin: filled dot with a step number, dropped by the count tool
   | { type: 'count'; color: string; x: number; y: number; n: number }
+  // redaction: an axis-aligned region that is pixelated (mosaic) into the baked image for privacy
+  | { type: 'pixelate'; x: number; y: number; w: number; h: number }
