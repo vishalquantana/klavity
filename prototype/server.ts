@@ -3700,6 +3700,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
           ok: outcome.status === "done",
         }).catch(() => null)
+        // KLAVITY CREDITS (Phase 1, SOFT): meter one "voice" dictation (0.1cr). Best-effort — a
+        // resolution/reserve miss must never affect the returned text; soft mode only logs wouldBlock.
+        try {
+          const wsId = await accountIdForAiCall(projectId, null, null)
+          if (wsId) {
+            const rv = await reserveCredits(wsId, "voice", { plan: await accountPlan(wsId), units: 1 })
+            if (rv.wouldBlock) console.log(`[credits] voice wouldBlock ws=${wsId} (soft)`)
+            await rv.settle({ ok: outcome.status === "done", aiCallId: null })
+          }
+        } catch (e: any) { console.warn("[credits] voice reserve skipped (non-fatal):", e?.message || e) }
       }
 
       if (outcome.status === "done") return wjson({ text: outcome.result.text })
