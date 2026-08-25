@@ -39,6 +39,15 @@ describe("Screen = recommended default capture (KLA-587)", () => {
     expect(sharp!.classList.contains("kl-cap-primary")).toBe(true)
     expect(sharp!.querySelector(".kl-rec-tag")?.textContent).toMatch(/recommended/i)
     expect(sharp!.getAttribute("aria-label") || "").toMatch(/recommended/i)
+    // The badge is STACKED above the icon+label row (its own line) so the full word never truncates — the
+    // "Recommended" pill is a direct child of the button, and icon+"Screen" live in a separate .kl-cap-main row.
+    const main = sharp!.querySelector(".kl-cap-main")
+    expect(main).not.toBeNull()
+    expect(main!.querySelector(".kl-sharp-label")?.textContent).toMatch(/screen/i)
+    const recTag = sharp!.querySelector(".kl-rec-tag") as HTMLElement | null
+    expect(recTag).not.toBeNull()
+    expect(recTag!.parentElement).toBe(sharp) // stacked as a direct child, NOT inside the icon+label row
+    expect(main!.contains(recTag!)).toBe(false)
     // Full Page stays present as the fallback.
     expect(shadow.getElementById("klavity-full")).not.toBeNull()
   })
