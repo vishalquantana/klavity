@@ -82,6 +82,36 @@ test("debit without allowNegative returns null and does not mutate when short", 
   expect(w!.grantedMc).toBe(500) // untouched
 })
 
+test("KLA-609: concurrent debits on a SOLVENT wallet all succeed (no spurious insufficient from CAS races)", async () => {
+  await ensureWorkspaceCredits("acct_dbt_conc", 0)
+  const N = 12
+  const each = 1000
+  await (await import("./db")).db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=? WHERE workspace_id=?",
+    args: [N * each, 0, "acct_dbt_conc"], // exactly enough grant for all N debits
+  })
+  // Fire all N debits at once → they contend on the optimistic CAS. With a generous retry budget +
+  // backoff, every one must WIN (none may return null): the wallet is solvent, they just race.
+  const results = await Promise.all(
+    Array.from({ length: N }, () => debitWorkspaceCredits("acct_dbt_conc", each)),
+  )
+  expect(results.every(r => r !== null)).toBe(true) // zero spurious "insufficient" nulls
+  const w = await getWorkspaceCredits("acct_dbt_conc")
+  expect(w!.grantedMc + w!.topupMc).toBe(0) // all N debits landed exactly (no double/lost writes)
+})
+
+test("KLA-609: a truly-insufficient wallet still returns null (genuine short is distinguished from a race)", async () => {
+  await ensureWorkspaceCredits("acct_dbt_short", 0)
+  await (await import("./db")).db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=? WHERE workspace_id=?",
+    args: [800, 0, "acct_dbt_short"],
+  })
+  const split = await debitWorkspaceCredits("acct_dbt_short", 1000) // 1000 > 800 → genuinely short
+  expect(split).toBeNull()
+  const w = await getWorkspaceCredits("acct_dbt_short")
+  expect(w!.grantedMc).toBe(800) // untouched
+})
+
 test("credit restores a prior debit split (refund)", async () => {
   await ensureWorkspaceCredits("acct_dbt_3", 0)
   await (await import("./db")).db!.execute({

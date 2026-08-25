@@ -4401,15 +4401,22 @@ export type DebitSplit = { grantMc: number; topupMc: number }
 // repo's @libsql/client is driven WITHOUT interactive transactions). Returns the actual split, or
 // null when short and allowNegative is off. With allowNegative (Phase-1 soft mode) it always debits,
 // draining grant to 0 then top-up (which may go negative) so consumption is recorded truthfully.
+// KLA-609 batch-5 (latent, pre Phase-2 hard-enforce): the retry budget must be generous enough that a
+// SOLVENT wallet reliably wins the optimistic CAS even under heavy concurrent debits. A `null` return
+// here means GENUINELY INSUFFICIENT (balance < cost, hard mode) — it must NEVER mean "lost the CAS race
+// N times". We therefore re-check solvency on every read (returning null immediately only when actually
+// short) and, when we merely keep losing the CAS on a solvent wallet, retry many times with a small
+// jittered backoff rather than giving up and reporting a false insufficient.
+const DEBIT_MAX_ATTEMPTS = Number(process.env.KLAV_CREDITS_DEBIT_MAX_ATTEMPTS || 40)
 export async function debitWorkspaceCredits(workspaceId: string, amountMc: number, opts: { allowNegative?: boolean } = {}): Promise<DebitSplit | null> {
   const amt = Math.max(0, Math.trunc(amountMc))
   if (amt === 0) return { grantMc: 0, topupMc: 0 }
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < DEBIT_MAX_ATTEMPTS; attempt++) {
     const r = await db!.execute({ sql: "SELECT granted_millicredits AS g, topup_millicredits AS t FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
     if (!r.rows.length) return null
     const g = Number((r.rows[0] as any).g) || 0
     const t = Number((r.rows[0] as any).t) || 0
-    if (!opts.allowNegative && g + t < amt) return null
+    if (!opts.allowNegative && g + t < amt) return null // genuinely insufficient — the ONLY legit null
     const grantMc = Math.min(g, amt)
     const topupMc = amt - grantMc // remainder off top-up (may exceed t → t goes negative in soft mode)
     const upd = await db!.execute({
@@ -4417,8 +4424,14 @@ export async function debitWorkspaceCredits(workspaceId: string, amountMc: numbe
       args: [g - grantMc, t - topupMc, Date.now(), workspaceId, g, t],
     })
     if (Number(upd.rowsAffected) > 0) return { grantMc, topupMc }
-    // lost a race — another debit mutated the row; re-read and retry
+    // Lost a race — another debit mutated the row. Back off a touch (capped, jittered) so contending
+    // writers de-sync, then re-read and retry. We do NOT surface this as "insufficient".
+    const backoffMs = Math.min(20, 1 << Math.min(attempt, 4)) + Math.floor(Math.random() * 4)
+    await new Promise(res => setTimeout(res, backoffMs))
   }
+  // Exhausted the (large) budget under pathological contention on a solvent wallet. Return null so the
+  // caller can retry the whole operation, but note this is NOT a semantic "insufficient" signal — a
+  // truly-insufficient wallet returned null far earlier via the solvency check above.
   return null
 }
 
