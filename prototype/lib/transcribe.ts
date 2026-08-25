@@ -8,7 +8,24 @@
 // feedback submission, and every fetch/parse/network failure degrades to a `failed`/`none` status rather
 // than throwing to the caller.
 import { getObjectBytes } from "./s3"
-import { setRecordingTranscript, setFeedbackAttachmentTranscript, recordAiCall } from "./db"
+import { setRecordingTranscript, setFeedbackAttachmentTranscript, recordAiCall, accountIdForAiCall, accountPlan } from "./db"
+import { reserveCredits } from "./credits"
+
+// Best-effort transcript length (minutes) from a done STT result's segment timings; floor to 1 minute
+// so any non-empty clip costs at least 1cr. Used only to price the KLAVITY CREDITS "transcript" action.
+function transcriptMinutesFromOutcome(outcome: TranscribeOutcome): number {
+  if (outcome.status !== "done") return 1
+  try {
+    const segs: any[] = (outcome.result as any)?.segments || []
+    let endMs = 0
+    for (const s of segs) {
+      const e = Number(s?.endMs ?? (s?.end != null ? s.end * 1000 : 0))
+      if (Number.isFinite(e) && e > endMs) endMs = e
+    }
+    if (endMs > 0) return Math.max(1, endMs / 60000)
+  } catch {}
+  return 1
+}
 
 // Swappable model constant. Default: Nvidia's Nemotron streaming ASR (verified live on OpenRouter,
 // cheap + multilingual). Alternatives worth a swap if quality/timestamps disappoint:
@@ -202,6 +219,11 @@ export async function transcribeFeedbackRecordings(opts: {
   const { feedbackId, projectId, recordings } = opts
   if (!Array.isArray(recordings) || !recordings.length) return
 
+  // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet once. Best-effort — never blocks STT.
+  let wsId: string | null = null
+  let creditsPlan: string | null = null
+  try { wsId = await accountIdForAiCall(projectId, null, null); creditsPlan = wsId ? await accountPlan(wsId) : null } catch {}
+
   const configured = transcribeConfigured()
   for (const rec of recordings) {
     if (!rec || !rec.id || !rec.key) continue
@@ -236,6 +258,14 @@ export async function transcribeFeedbackRecordings(opts: {
     // Cost ledger. ai_calls has no seconds column; cost/model/type/ok are what the schema carries.
     // A skipped clip made NO upstream call → do not log a ledger row for it.
     if (outcome.status !== "skipped") {
+      // KLAVITY CREDITS (soft): reserve one "transcript" action (priced per started minute) per clip.
+      let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try {
+        if (wsId) {
+          rv = await reserveCredits(wsId, "transcript", { plan: creditsPlan, units: transcriptMinutesFromOutcome(outcome), refFeedbackId: feedbackId })
+          if (rv.wouldBlock) console.log(`[credits] transcript wouldBlock ws=${wsId} (soft)`)
+        }
+      } catch {}
       await recordAiCall({
         type: "transcribe",
         model: TRANSCRIBE_MODEL,
@@ -244,6 +274,7 @@ export async function transcribeFeedbackRecordings(opts: {
         costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
         ok: outcome.status === "done",
       }).catch(() => null)
+      try { await rv?.settle({ ok: outcome.status === "done", aiCallId: null }) } catch {}
     }
   }
 }
@@ -268,6 +299,11 @@ export async function transcribeFeedbackAttachments(opts: {
 }): Promise<void> {
   const { feedbackId, projectId, attachments } = opts
   if (!Array.isArray(attachments) || !attachments.length) return
+
+  // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet once. Best-effort — never blocks STT.
+  let wsId: string | null = null
+  let creditsPlan: string | null = null
+  try { wsId = await accountIdForAiCall(projectId, null, null); creditsPlan = wsId ? await accountPlan(wsId) : null } catch {}
 
   const configured = transcribeConfigured()
   for (const att of attachments) {
@@ -303,6 +339,14 @@ export async function transcribeFeedbackAttachments(opts: {
 
     // Cost ledger — mirror the recordings path. A skipped (over-cap) upload made NO upstream call → no row.
     if (outcome.status !== "skipped") {
+      // KLAVITY CREDITS (soft): reserve one "transcript" action (priced per started minute) per clip.
+      let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try {
+        if (wsId) {
+          rv = await reserveCredits(wsId, "transcript", { plan: creditsPlan, units: transcriptMinutesFromOutcome(outcome), refFeedbackId: feedbackId })
+          if (rv.wouldBlock) console.log(`[credits] transcript wouldBlock ws=${wsId} (soft)`)
+        }
+      } catch {}
       await recordAiCall({
         type: "transcribe",
         model: TRANSCRIBE_MODEL,
@@ -311,6 +355,7 @@ export async function transcribeFeedbackAttachments(opts: {
         costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
         ok: outcome.status === "done",
       }).catch(() => null)
+      try { await rv?.settle({ ok: outcome.status === "done", aiCallId: null }) } catch {}
     }
   }
 }
