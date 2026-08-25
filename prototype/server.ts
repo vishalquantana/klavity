@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -46,6 +46,7 @@ import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtR
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
+import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
@@ -7028,7 +7029,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // KLAVITYKLA-229: GET gates remember the intended destination via ?next= so verify can resume it.
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
-    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : loginGate(path, url.search)
+    if (req.method === "GET" && path === "/dashboard") {
+      if (me) return await dashboardPage()
+      // A member's own address-bar deep link (?ticket=<id>) must work for a colleague: send an
+      // unauthenticated visitor to the adaptive /t/:ref so they get the teaser, not a login wall.
+      const _tkt = url.searchParams.get("ticket")
+      if (_tkt) return redirect("/t/" + encodeURIComponent(_tkt))
+      return loginGate(path, url.search)
+    }
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
     if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : loginGate(path, url.search)
@@ -7291,24 +7299,109 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const ticketRefMatch = path.match(/^\/t\/([A-Za-z0-9_-]{1,80})$/)
     if (req.method === "GET" && ticketRefMatch) {
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
-      if (!me) return loginGate(path, url.search)
       const resolved = await resolveFeedbackRef(ticketRefMatch[1]).catch(() => null)
-      // Unknown/malformed ref → bare 404 (no info leak).
       if (!resolved) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
-      // Real membership gate: resolve project from the ROW, then check the caller belongs to it.
-      const tAccess = await projectAccess(me, resolved.projectId).catch(() => null)
-      if (!tAccess) return json({ error: "You are not a member of this ticket's project." }, 403)
-      // Serve the standalone page with the resolved FULL feedback id + project id injected as JS
-      // string literals (the ref may have been the short form; the page needs the full id for the APIs).
-      const _tPath = PUB + "/ticket.html"
-      if (!(await Bun.file(_tPath).exists())) return new Response("Not found", { status: 404 })
-      let _tHtml = await Bun.file(_tPath).text()
-      _tHtml = _tHtml
-        .replaceAll("__TICKET_ID__", resolved.id)
-        .replaceAll("__PROJECT_ID__", resolved.projectId)
+      const access = await ticketViewAccess(resolved.id, me)
+      if (access === "login") {
+        // share_mode=off — members only. Anon → login gate; signed-in non-member → bare 404 (no leak).
+        return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      }
+      const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
+      // Member/admin full → the fast standalone member page (KLA-491, unchanged).
+      const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
+      if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+      let _tHtml = await Bun.file(pagePath).text()
+      _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
       })
+    }
+
+    // ── GET /api/t/:ref — adaptive ticket JSON for the shared-ticket viewer page. Full payload only
+    // when ticketViewAccess resolves 'full'; otherwise a SERVER-SIDE-REDACTED teaser (title/status/
+    // priority/source/createdAt/commentCount ONLY — never description, screenshot, reporter, comments).
+    const apiTicketMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})$/)
+    if (req.method === "GET" && apiTicketMatch) {
+      if (!rlAllow("apiticket:" + clientIp(req, server), 120, 60_000)) return json({ error: "Rate limited" }, 429)
+      const me = await sessionEmail(req)
+      const resolved = await resolveFeedbackRef(apiTicketMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      const access = await ticketViewAccess(resolved.id, me)
+      if (access === "login") return json({ error: "Not found" }, 404) // share_mode=off — no teaser
+      const fbRow = await feedbackById(resolved.projectId, resolved.id)
+      if (!fbRow) return json({ error: "Not found" }, 404)
+      const comments = await listTicketComments(resolved.id).catch(() => [])
+      const teaser = {
+        ref: String(fbRow.id).split("-")[0],
+        title: effectiveTicketTitle(fbRow),
+        status: fbRow.status ?? null,
+        priority: fbRow.priority ?? null,
+        source: fbRow.source ?? null,
+        createdAt: fbRow.createdAt ?? null,
+        commentCount: comments.length,
+      }
+      if (access !== "full") {
+        // teaser | pending — redacted. No description, no screenshot, no comment bodies.
+        return json({ access, ticket: teaser }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
+      }
+      // full — description, screenshot (HMAC-gated /img/ token), page context, comments.
+      const ticket = {
+        ...teaser,
+        description: fbRow.observation,
+        screenshotUrl: fbRow.screenshotId ? `${BASE}/img/${signImageToken(fbRow.screenshotId)}` : null,
+        pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
+        urlHost: fbRow.urlHost ?? null,
+        comments: comments.map((c: any) => ({ author: c.author, body: c.body, createdAt: c.createdAt })),
+      }
+      return json({ access: "full", ticket }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
+    }
+
+    // ── POST /api/t/:ref/unlock {email} — email-to-unblur step 1. Issue an OTP for this email.
+    // Always responds 200 ("check your email") to avoid account enumeration; rate-limited per IP+ref.
+    const unlockMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})\/unlock$/)
+    if (req.method === "POST" && unlockMatch) {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`viewer:unlock:${ip}:${unlockMatch[1]}`, 5, 15 * 60_000)) {
+        return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "900" })
+      }
+      const resolved = await resolveFeedbackRef(unlockMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      const proj = await projectById(resolved.projectId)
+      if (normalizeShareMode(proj?.shareMode) === "off") return json({ error: "Not found" }, 404)
+      let email = ""
+      try { email = String((await req.json()).email || "").trim().toLowerCase() } catch { return json({ error: "invalid JSON" }, 400) }
+      if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      const code = otp()
+      await createOtp(email, code, Date.now() + 10 * 60 * 1000)
+      try { await sendOtp(email, code) } catch (err: any) { console.error("viewer unlock OTP email failed:", err?.message || err); if (DEV_SHOW_OTP) console.log(`viewer OTP for ${email} → ${code}`) }
+      return json({ ok: true, ...(DEV_SHOW_OTP ? { devCode: code } : {}) })
+    }
+
+    // ── POST /api/t/:ref/verify {email, code} — email-to-unblur step 2. Verify the OTP, mint a normal
+    // klav_session (but NO workspace — a viewer has no account), and grant a per-ticket viewer. Honors
+    // the same test-OTP bypass as /api/auth/verify so CI can drive it with the fixed code.
+    const verifyMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})\/verify$/)
+    if (req.method === "POST" && verifyMatch) {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`viewer:verify:${ip}:${verifyMatch[1]}`, 20, 15 * 60_000)) {
+        return json({ error: "Too many attempts. Please wait and try again." }, 429, { "Retry-After": "900" })
+      }
+      const resolved = await resolveFeedbackRef(verifyMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      let email = "", code = ""
+      try { const b = await req.json(); email = String(b.email || "").trim().toLowerCase(); code = String(b.code || "").trim() } catch { return json({ error: "invalid JSON" }, 400) }
+      if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      const testGranted = code === TEST_OTP_CODE ? (await testOtpDecision(email, () => isTestAccountEmail(email))).allowed : false
+      if (!(testGranted || await verifyOtp(email, code))) return json({ error: "Invalid or expired code." }, 401)
+      await upsertUser(email)
+      const proj = await projectById(resolved.projectId)
+      const mode = normalizeShareMode(proj?.shareMode)
+      const status = mode === "approval" ? "pending_approval" : "active"
+      await grantTicketViewer({ feedbackId: resolved.id, projectId: resolved.projectId, email, status, grantedBy: null })
+      const sid = token()
+      await createSession(sid, email, Date.now() + SESSION_DAYS * 86400 * 1000)
+      const access = status === "active" ? "full" : "pending"
+      return json({ ok: true, access }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
     }
 
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
@@ -10122,6 +10215,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!a) continue
           const row = await feedbackById(p.id, fid)
           if (row) { fbRow = row; fbAccess = a; break }
+        }
+        // Shared-ticket viewers: allow the COMMENTS subroute (read+write) for a caller whose access
+        // resolves 'full' via ticketViewAccess (an active per-ticket viewer, not a project member).
+        // Scoped to isComments only — every other subroute (PATCH/export/merge/labels/…) stays
+        // member-gated: a viewer that isn't a member leaves fbRow null and 404s below.
+        if (!fbRow && me && isComments) {
+          const _vres = await resolveFeedbackRef(fid).catch(() => null)
+          if (_vres && (await ticketViewAccess(_vres.id, me)) === "full") {
+            const _vrow = await feedbackById(_vres.projectId, _vres.id)
+            if (_vrow) fbRow = _vrow // fbAccess stays null — viewer is NOT a member/admin
+          }
         }
         if (!fbRow) return json({ error: "Feedback not found or not accessible." }, 404)
 
