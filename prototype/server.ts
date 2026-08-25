@@ -199,6 +199,47 @@ const ENHANCE_MAX_SHOT_BYTES = Number(process.env.KLAV_ENHANCE_MAX_SHOT_BYTES ||
 const VOICE_TRANSCRIBE_MAX_BYTES = Number(process.env.KLAV_VOICE_MAX_BYTES || 8 * 1024 * 1024)
 const VOICE_TRANSCRIBE_PER_IP = Number(process.env.KLAV_VOICE_PER_IP || 30)
 const VOICE_TRANSCRIBE_PER_PROJECT_DAY = Number(process.env.KLAV_VOICE_PROJECT_DAILY || 1000)
+
+// KLA-505 hardening (memory-DoS): a Content-Length guard is trivially bypassed by a chunked
+// transfer-encoding request (which carries no Content-Length header), after which req.formData()
+// buffers the ENTIRE streamed body into RAM before any size check runs. readBodyBounded() reads the
+// request body stream and ABORTS the moment cumulative bytes exceed `maxBytes`, so an attacker can't
+// smuggle a multi-GB chunked body into heap regardless of headers. Returns the buffered bytes on
+// success, or BODY_TOO_LARGE if the stream exceeds the ceiling (caller replies 413 without buffering
+// the whole thing). The bounded buffer can then be parsed safely (e.g. via Response#formData).
+const BODY_TOO_LARGE = Symbol("body-too-large")
+async function readBodyBounded(req: Request, maxBytes: number): Promise<Uint8Array | typeof BODY_TOO_LARGE> {
+  const body = req.body
+  if (!body) {
+    // No stream exposed (already-buffered / bodyless) — fall back to arrayBuffer with a post-hoc cap.
+    const buf = new Uint8Array(await req.arrayBuffer().catch(() => new ArrayBuffer(0)))
+    return buf.byteLength > maxBytes ? BODY_TOO_LARGE : buf
+  }
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value && value.byteLength) {
+        total += value.byteLength
+        if (total > maxBytes) {
+          try { await reader.cancel() } catch {} // stop the client; don't drain the oversized body into RAM
+          return BODY_TOO_LARGE
+        }
+        chunks.push(value)
+      }
+    }
+  } finally {
+    try { reader.releaseLock() } catch {}
+  }
+  const out = new Uint8Array(total)
+  let off = 0
+  for (const c of chunks) { out.set(c, off); off += c.byteLength }
+  return out
+}
+
 const PORT = Number(process.env.PORT || 4317)
 const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
   .replace("klavity.quantana.top", "klavity.in")
@@ -3428,13 +3469,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const ip = clientIp(req, server)
       // Per-IP abuse cap (short clips, several per minute is plenty for dictation).
       if (!rlAllow(`voice:ip:${ip}`, VOICE_TRANSCRIBE_PER_IP, 60_000)) return wjson({ error: "rate limited" }, 429)
-      // Size guard BEFORE req.formData() buffers the whole body into memory (DoS + cost cap). Reject an
-      // over-large upload up front with 413. Voice clips are a few seconds of Opus → well under this.
+      // Size guard BEFORE the whole body lands in memory (DoS + cost cap). Reject an over-large upload up
+      // front with 413. Voice clips are a few seconds of Opus → well under this. NOTE: a Content-Length
+      // check alone is bypassable by a chunked (no Content-Length) request, and req.formData() would then
+      // buffer the ENTIRE streamed body first. We keep the cheap Content-Length fast-reject AND stream the
+      // body through readBodyBounded(), which aborts once ACTUAL bytes cross the ceiling — bounding heap
+      // regardless of headers. The multipart is parsed only from the already-bounded buffer.
+      const SIZE_CEIL = VOICE_TRANSCRIBE_MAX_BYTES + 64 * 1024 // MAX + multipart framing overhead
       const declaredLen = Number(req.headers.get("content-length") || 0)
-      if (declaredLen > VOICE_TRANSCRIBE_MAX_BYTES + 64 * 1024) return wjson({ error: "payload too large" }, 413)
+      if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large" }, 413)
+
+      const bounded = await readBodyBounded(req, SIZE_CEIL)
+      if (bounded === BODY_TOO_LARGE) return wjson({ error: "payload too large" }, 413)
 
       let form: FormData
-      try { form = await req.formData() } catch { return wjson({ error: "expected multipart form" }, 400) }
+      try {
+        // Reconstruct a Request from the bounded bytes + original Content-Type (carries the multipart
+        // boundary) so Bun's multipart parser runs against a hard-capped buffer, never the raw stream.
+        form = await new Request("http://x/", {
+          method: "POST",
+          headers: { "content-type": req.headers.get("content-type") || "" },
+          body: bounded,
+        }).formData()
+      } catch { return wjson({ error: "expected multipart form" }, 400) }
       const projectId = String(form.get("projectId") || form.get("project") || "")
       if (!projectId) return wjson({ error: "project required" }, 400)
       const proj = db ? await projectById(projectId) : null
