@@ -307,6 +307,16 @@ export async function applySchema(c: Client) {
        project_role TEXT NOT NULL,           -- 'admin' | 'member'
        invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
     `CREATE INDEX IF NOT EXISTS proj_mem_email_idx ON project_members (email)`,
+    // ── Shared-ticket viewers (per-ticket, free & unlimited). A grant unlocks the full ticket +
+    // commenting for `email`. status 'active' = unblurred now; 'pending_approval' = waiting for an
+    // admin (share_mode='approval', Phase 2). UNIQUE(feedback_id,email) makes a grant idempotent.
+    `CREATE TABLE IF NOT EXISTS ticket_viewers (
+       id TEXT PRIMARY KEY, feedback_id TEXT NOT NULL, project_id TEXT NOT NULL,
+       email TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'pending_approval'
+       granted_by TEXT, created_at INTEGER NOT NULL, UNIQUE(feedback_id, email))`,
+    `CREATE INDEX IF NOT EXISTS ticket_viewers_feedback_idx ON ticket_viewers (feedback_id)`,
+    `CREATE INDEX IF NOT EXISTS ticket_viewers_email_idx ON ticket_viewers (email)`,
 
     // ── Sims-dashboard P3a (additive): provenance — transcripts + normalized sim_traits + append-only audit. ──
     // No live/consent/extension surface here (that is P3b). project_id is the canonical 'proj_'+account id.
@@ -1129,6 +1139,10 @@ export async function applySchema(c: Client) {
   // Report-clarity helper (the "password-strength, for bug reports" composer coach). DEFAULT 1 (ON) — the
   // dashboard settings UI to toggle it is a follow-up; for now every project gets the helper. Additive.
   if (needCol("projects", "report_clarity")) await c.execute("ALTER TABLE projects ADD COLUMN report_clarity INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.report_clarity ALTER skipped:", e?.message || e))
+  // ── Shared-ticket viewer onboarding: per-project share behavior. Default 'teaser' (blurred preview +
+  // email-to-unblur). share_allowlist is an optional JSON email array (approval/allowlist, Phase 2).
+  if (needCol("projects", "share_mode")) await c.execute("ALTER TABLE projects ADD COLUMN share_mode TEXT NOT NULL DEFAULT 'teaser'").catch((e: any) => console.warn("projects.share_mode ALTER skipped:", e?.message || e))
+  if (needCol("projects", "share_allowlist")) await c.execute("ALTER TABLE projects ADD COLUMN share_allowlist TEXT").catch((e: any) => console.warn("projects.share_allowlist ALTER skipped:", e?.message || e))
   // Thumbnail variant key: a small (≤~320px) client-generated JPEG stored alongside the full screenshot
   // so the dashboard list loads a lightweight preview via /api/screenshots/:id?thumb=1 instead of the
   // full-resolution original. Nullable — older rows and Sim/AutoSim screenshots (no client canvas) fall
@@ -2012,6 +2026,9 @@ export type ProjectRow = {
   planOverride: string | null
   // KLAVITYKLA-441: ordered auto-labeling rules, applied at ingest (first match wins). [] when unset.
   labelRules: LabelRule[]
+  // Shared-ticket viewer onboarding: per-project share behavior + optional allowlist (JSON emails).
+  shareMode: string
+  shareAllowlist: string[] | null
 }
 export const EXPORT_POLICIES = ["admins_only", "members_export", "members_request"] as const
 export type ExportPolicy = (typeof EXPORT_POLICIES)[number]
@@ -2026,6 +2043,15 @@ export type SnapRouting = (typeof SNAP_ROUTINGS)[number]
 export function normalizeSnapRouting(v: unknown): SnapRouting {
   const s = String(v ?? "")
   return (SNAP_ROUTINGS as readonly string[]).includes(s) ? (s as SnapRouting) : "autofile"
+}
+// Per-project shared-ticket behavior. 'teaser' (default) = blurred preview + email-to-unblur;
+// 'public' = full ticket to anyone with the link; 'approval'/'auto_join' = Phase 2; 'off' = members
+// only. Unknown/legacy values normalize to the safe default 'teaser'.
+export const SHARE_MODES = ["teaser", "public", "approval", "auto_join", "off"] as const
+export type ShareMode = (typeof SHARE_MODES)[number]
+export function normalizeShareMode(v: unknown): ShareMode {
+  const s = String(v ?? "")
+  return (SHARE_MODES as readonly string[]).includes(s) ? (s as ShareMode) : "teaser"
 }
 function rowToProject(x: any): ProjectRow {
   return {
@@ -2049,6 +2075,8 @@ function rowToProject(x: any): ProjectRow {
     snapRouting: normalizeSnapRouting(x.snap_routing),
     planOverride: x.plan_override != null ? String(x.plan_override) : null,
     labelRules: sanitizeLabelRules(safeJsonParse(x.label_rules_json)),
+    shareMode: normalizeShareMode(x.share_mode),
+    shareAllowlist: (() => { try { const a = JSON.parse(String(x.share_allowlist ?? "null")); return Array.isArray(a) ? a.map((e: any) => String(e)) : null } catch { return null } })(),
   }
 }
 
@@ -2775,7 +2803,13 @@ export async function projectAccess(email: string, projectId: string): Promise<'
   const acctRole = await accountRole(proj.accountId, email)
   if (acctRole === "owner" || acctRole === "admin") return "admin"
   const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [projectId, email] })
-  if (r.rows.length) return String((r.rows[0] as any).project_role) === "admin" ? "admin" : "member"
+  if (r.rows.length) {
+    const role = String((r.rows[0] as any).project_role)
+    if (role === "admin") return "admin"
+    // A 'viewer' row (shared-ticket onboarding) is NOT member access — viewers never mutate.
+    if (role === "viewer") return null
+    return "member"
+  }
   if (acctRole === "member") return null // account member with no explicit project row sees nothing
   return null
 }
@@ -2791,7 +2825,8 @@ export async function addProjectMember(projectId: string, accountId: string, ema
   await upsertUser(email)
   const now = Date.now()
   await db!.execute({ sql: "INSERT OR IGNORE INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)", args: ["am_" + accountId + "_" + email, accountId, email, "member", now] })
-  await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, projectRole === "admin" ? "admin" : "member", invitedBy ?? null, now] })
+  const role = projectRole === "admin" ? "admin" : projectRole === "viewer" ? "viewer" : "member"
+  await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, role, invitedBy ?? null, now] })
 }
 
 // Remove an ACTIVE member from a project (distinct from revokeProjectInvite, which only clears a
