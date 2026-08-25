@@ -1,5 +1,38 @@
 import type { Shape } from './types'
 
+/** Parse a #rgb / #rrggbb / rgb() colour to [r,g,b] (0-255), or null if it can't be read. */
+export function parseColor(color: string): [number, number, number] | null {
+  const c = (color || '').trim()
+  const hex = c.replace(/^#/, '')
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    return [parseInt(hex[0] + hex[0], 16), parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16)]
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
+  }
+  const m = c.match(/rgba?\(([^)]+)\)/i)
+  if (m) {
+    const p = m[1].split(',').map(s => parseFloat(s))
+    if (p.length >= 3 && p.every(n => !Number.isNaN(n))) return [p[0], p[1], p[2]]
+  }
+  return null
+}
+
+/** Relative luminance (0 dark → 1 light) for a CSS colour; unknown colours read as dark. */
+export function luminance(color: string): number {
+  const rgb = parseColor(color)
+  if (!rgb) return 0
+  const [r, g, b] = rgb.map(v => v / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** Contrasting halo colour drawn UNDER/AROUND a stroke so it's visible on any background: a dark halo
+ *  behind light strokes (white/yellow), a light halo behind dark strokes. Mirrors the outline that text
+ *  annotations already use. Founder: "colour on the line AND a stroke on the line so it's visible." */
+export function haloColor(color: string): string {
+  return luminance(color) > 0.55 ? 'rgba(17,17,17,0.92)' : 'rgba(255,255,255,0.92)'
+}
+
 export class Annotator {
   readonly shapes: Shape[] = []
   private canvas: HTMLCanvasElement
@@ -77,56 +110,101 @@ export class Annotator {
     }
   }
 
+  /** Total extra width (px) of the contrasting halo relative to the colour stroke — split half each side,
+   *  so it reads as a ~1-1.5px contrasting edge at the base weight and scales subtly for thick strokes. */
+  private haloPad(lw: number): number {
+    return Math.max(3, lw * 0.55)
+  }
+
+  /** Draw a stroked path TWICE: first a slightly-wider contrasting halo underneath, then the colour on top,
+   *  so the mark stays visible on any background (incl. a white line on white). `buildPath` must (re)issue
+   *  the path commands each call. */
+  private strokeWithHalo(
+    ctx: CanvasRenderingContext2D,
+    color: string,
+    lineWidth: number,
+    buildPath: () => void,
+  ): void {
+    const halo = haloColor(color)
+    // Halo pass — wider, contrasting, drawn first so it sits underneath the colour.
+    ctx.lineWidth = lineWidth + this.haloPad(lineWidth)
+    ctx.strokeStyle = halo
+    buildPath()
+    ctx.stroke()
+    // Colour pass on top at the true weight.
+    ctx.lineWidth = lineWidth
+    ctx.strokeStyle = color
+    buildPath()
+    ctx.stroke()
+  }
+
   private drawShape(ctx: CanvasRenderingContext2D, shape: Shape): void {
     ctx.strokeStyle = shape.color
     ctx.fillStyle = shape.color
     ctx.lineWidth = this.computeLineWidth()
     ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
 
     if (shape.type === 'pen') {
-      ctx.beginPath()
-      shape.points.forEach((p, i) =>
-        i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
-      )
-      ctx.stroke()
+      const base = this.computeLineWidth()
+      this.strokeWithHalo(ctx, shape.color, base, () => {
+        ctx.beginPath()
+        shape.points.forEach((p, i) =>
+          i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+        )
+      })
     } else if (shape.type === 'rect') {
+      const base = this.computeLineWidth()
+      // strokeRect (not a path) — draw the halo rect first, then the colour rect on top.
+      ctx.lineWidth = base + this.haloPad(base)
+      ctx.strokeStyle = haloColor(shape.color)
+      ctx.strokeRect(shape.x, shape.y, shape.w, shape.h)
+      ctx.lineWidth = base
+      ctx.strokeStyle = shape.color
       ctx.strokeRect(shape.x, shape.y, shape.w, shape.h)
     } else if (shape.type === 'arrow') {
       // Arrows read poorly at the base stroke weight, so they draw ~1.7x thicker by default (the S/M/L/XL
       // stroke control still scales this via computeLineWidth). The head grows with the thicker shaft.
       const lw = this.computeLineWidth() * 1.7
-      ctx.lineWidth = lw
       const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1)
       const headLen = Math.max(16, lw * 4)
-      ctx.beginPath()
-      ctx.moveTo(shape.x1, shape.y1)
-      ctx.lineTo(shape.x2, shape.y2)
-      ctx.lineTo(
-        shape.x2 - headLen * Math.cos(angle - Math.PI / 6),
-        shape.y2 - headLen * Math.sin(angle - Math.PI / 6),
-      )
-      ctx.moveTo(shape.x2, shape.y2)
-      ctx.lineTo(
-        shape.x2 - headLen * Math.cos(angle + Math.PI / 6),
-        shape.y2 - headLen * Math.sin(angle + Math.PI / 6),
-      )
-      ctx.stroke()
+      this.strokeWithHalo(ctx, shape.color, lw, () => {
+        ctx.beginPath()
+        ctx.moveTo(shape.x1, shape.y1)
+        ctx.lineTo(shape.x2, shape.y2)
+        ctx.lineTo(
+          shape.x2 - headLen * Math.cos(angle - Math.PI / 6),
+          shape.y2 - headLen * Math.sin(angle - Math.PI / 6),
+        )
+        ctx.moveTo(shape.x2, shape.y2)
+        ctx.lineTo(
+          shape.x2 - headLen * Math.cos(angle + Math.PI / 6),
+          shape.y2 - headLen * Math.sin(angle + Math.PI / 6),
+        )
+      })
     } else if (shape.type === 'line') {
       // Lines also default thicker (parity with arrows) so they read clearly; still scaled by the stroke control.
-      ctx.lineWidth = this.computeLineWidth() * 1.7
-      ctx.beginPath()
-      ctx.moveTo(shape.x1, shape.y1)
-      ctx.lineTo(shape.x2, shape.y2)
-      ctx.stroke()
+      const lw = this.computeLineWidth() * 1.7
+      this.strokeWithHalo(ctx, shape.color, lw, () => {
+        ctx.beginPath()
+        ctx.moveTo(shape.x1, shape.y1)
+        ctx.lineTo(shape.x2, shape.y2)
+      })
     } else if (shape.type === 'circle') {
-      ctx.beginPath()
-      ctx.ellipse(shape.x, shape.y, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2)
-      ctx.stroke()
+      const base = this.computeLineWidth()
+      this.strokeWithHalo(ctx, shape.color, base, () => {
+        ctx.beginPath()
+        ctx.ellipse(shape.x, shape.y, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2)
+      })
     } else if (shape.type === 'count') {
       const r = Math.max(13, this.computeFontSize())
       ctx.beginPath()
       ctx.arc(shape.x, shape.y, r, 0, Math.PI * 2)
       ctx.fill()
+      // Contrasting ring so the badge reads even on a same-colour background (halo-under approach).
+      ctx.lineWidth = this.haloPad(this.computeLineWidth())
+      ctx.strokeStyle = haloColor(shape.color)
+      ctx.stroke()
       ctx.fillStyle = '#fff'
       ctx.font = `bold ${Math.round(r * 1.05)}px sans-serif`
       ctx.textAlign = 'center'

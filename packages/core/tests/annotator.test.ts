@@ -1,7 +1,39 @@
 // packages/core/tests/annotator.test.ts
 import { describe, it, expect, vi } from 'vitest'
-import { Annotator } from '../src/annotator'
+import { Annotator, haloColor, luminance, parseColor } from '../src/annotator'
 import type { Shape } from '../src/types'
+
+/** Build a ctx that RECORDS every strokeStyle + lineWidth assignment (in order), plus a sync-decode Image
+ *  stub so the base bitmap caches and drawShape runs synchronously — lets us prove the halo pass. */
+function recordingCtx() {
+  const strokeStyles: string[] = []
+  const lineWidths: number[] = []
+  const ctx: any = {
+    clearRect: vi.fn(), drawImage: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+    stroke: vi.fn(), strokeRect: vi.fn(), ellipse: vi.fn(), arc: vi.fn(), fill: vi.fn(),
+    fillText: vi.fn(), strokeText: vi.fn(),
+    canvas: { width: 400, height: 300 }, font: '',
+    lineJoin: '', lineCap: '', textAlign: '', textBaseline: '',
+    _strokeStyle: '', _lineWidth: 0,
+    get strokeStyle() { return this._strokeStyle },
+    set strokeStyle(v: string) { this._strokeStyle = v; strokeStyles.push(v) },
+    get lineWidth() { return this._lineWidth },
+    set lineWidth(v: number) { this._lineWidth = v; lineWidths.push(v) },
+    fillStyle: '',
+  }
+  return { ctx, strokeStyles, lineWidths }
+}
+
+function withSyncImage<T>(fn: () => T): T {
+  const OrigImage = (globalThis as any).Image
+  ;(globalThis as any).Image = class {
+    onload: (() => void) | null = null
+    complete = false
+    naturalWidth = 0
+    set src(_v: string) { this.complete = true; this.naturalWidth = 400; this.onload && this.onload() }
+  }
+  try { return fn() } finally { (globalThis as any).Image = OrigImage }
+}
 
 function makeCanvas() {
   return {
@@ -155,7 +187,8 @@ describe('Annotator', () => {
       strokeRect.mockClear(); drawImage.mockClear()
       a.drawPreview({ type: 'rect', color: '#00f', x: 0, y: 0, w: 9, h: 9 })
       expect(drawImage).toHaveBeenCalledTimes(1)     // base repainted once
-      expect(strokeRect).toHaveBeenCalledTimes(2)    // committed rect + provisional preview rect
+      // Each rect now draws TWICE (contrasting halo pass + colour pass): committed rect + preview rect = 4.
+      expect(strokeRect).toHaveBeenCalledTimes(4)
       expect(a.shapes).toHaveLength(1)               // preview still not committed
     } finally {
       ;(globalThis as any).Image = OrigImage
@@ -192,5 +225,72 @@ describe('Annotator', () => {
     } finally {
       ;(globalThis as any).Image = OrigImage
     }
+  })
+
+  // ── Contrasting-outline visibility: colour on the line AND a wider contrasting halo underneath so the
+  //    mark reads on ANY background (esp. a white line on white). ──
+  describe('contrasting halo/outline for visibility', () => {
+    it('haloColor picks a DARK halo behind light strokes (white/yellow)', () => {
+      expect(haloColor('#ffffff')).toContain('17')   // rgba(17,17,17,..) dark halo under white
+      expect(haloColor('#fff')).toContain('17')
+      expect(haloColor('#facc15')).toContain('17')   // yellow → dark halo
+    })
+    it('haloColor picks a LIGHT halo behind dark strokes', () => {
+      expect(haloColor('#111827')).toContain('255')  // rgba(255,255,255,..) light halo under near-black
+      expect(haloColor('#ef4444')).toContain('255')  // red → light halo
+      expect(haloColor('#3b82f6')).toContain('255')  // blue → light halo
+    })
+    it('parseColor + luminance read hex and rgb() forms', () => {
+      expect(parseColor('#ffffff')).toEqual([255, 255, 255])
+      expect(parseColor('#f00')).toEqual([255, 0, 0])
+      expect(parseColor('rgb(0,0,0)')).toEqual([0, 0, 0])
+      expect(parseColor('not-a-color')).toBeNull()
+      expect(luminance('#ffffff')).toBeCloseTo(1)
+      expect(luminance('#000000')).toBeCloseTo(0)
+    })
+
+    it('draws a WHITE line with BOTH the colour AND a wider dark halo underneath', () => {
+      const { ctx, strokeStyles, lineWidths } = recordingCtx()
+      const canvas = { width: 400, height: 300, getContext: () => ctx, toDataURL: () => 'data:image/png;base64,flat' } as unknown as HTMLCanvasElement
+      withSyncImage(() => {
+        const a = new Annotator(canvas, 'data:image/png;base64,img')
+        a.addShape({ type: 'line', color: '#ffffff', x1: 0, y1: 0, x2: 40, y2: 40 })
+      })
+      // Two stroke passes: a dark halo colour AND the white colour itself.
+      expect(strokeStyles).toContain('#ffffff')
+      expect(strokeStyles.some(s => /17,\s*17,\s*17/.test(s))).toBe(true)
+      // Halo pass is WIDER than the colour pass.
+      expect(ctx.stroke).toHaveBeenCalledTimes(2)
+      expect(Math.max(...lineWidths)).toBeGreaterThan(Math.min(...lineWidths.filter(w => w > 0)))
+    })
+
+    it('draws a coloured (red) pen stroke with a contrasting LIGHT halo underneath', () => {
+      const { ctx, strokeStyles } = recordingCtx()
+      const canvas = { width: 400, height: 300, getContext: () => ctx, toDataURL: () => 'data:image/png;base64,flat' } as unknown as HTMLCanvasElement
+      withSyncImage(() => {
+        const a = new Annotator(canvas, 'data:image/png;base64,img')
+        a.addShape({ type: 'pen', color: '#ef4444', points: [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 5 }] })
+      })
+      expect(strokeStyles).toContain('#ef4444')
+      expect(strokeStyles.some(s => /255,\s*255,\s*255/.test(s))).toBe(true) // light halo under red
+      expect(ctx.stroke).toHaveBeenCalledTimes(2)
+    })
+
+    it('rect + circle + arrow each emit a halo pass and a colour pass', () => {
+      for (const shape of [
+        { type: 'rect', color: '#ffffff', x: 1, y: 1, w: 20, h: 20 } as Shape,
+        { type: 'circle', color: '#ffffff', x: 10, y: 10, rx: 8, ry: 6 } as Shape,
+        { type: 'arrow', color: '#ffffff', x1: 0, y1: 0, x2: 30, y2: 30 } as Shape,
+      ]) {
+        const { ctx, strokeStyles } = recordingCtx()
+        const canvas = { width: 400, height: 300, getContext: () => ctx, toDataURL: () => 'data:image/png;base64,flat' } as unknown as HTMLCanvasElement
+        withSyncImage(() => {
+          const a = new Annotator(canvas, 'data:image/png;base64,img')
+          a.addShape(shape)
+        })
+        expect(strokeStyles).toContain('#ffffff')                              // colour pass
+        expect(strokeStyles.some(s => /17,\s*17,\s*17/.test(s))).toBe(true)    // dark halo pass
+      }
+    })
   })
 })
