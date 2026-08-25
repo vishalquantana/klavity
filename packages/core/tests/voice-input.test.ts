@@ -5,11 +5,13 @@ class MockSpeechRecognition {
   continuous = false
   interimResults = false
   lang = ''
+  onstart = null
   onresult = null
   onerror = null
   onend = null
   start = vi.fn()
   stop = vi.fn()
+  _fireStart() { this.onstart?.() }
   _fireResult(transcript, isFinal) {
     this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript }], { isFinal })] })
   }
@@ -66,7 +68,7 @@ describe('VoiceInput errors', () => {
     expect(errors).toEqual([{ type: 'not-allowed', msg: 'Microphone access was denied' }])
     expect(stops).toHaveLength(1)
   })
-  it('KLAVITYKLA-495: first network drop auto-retries (status, no error)', () => {
+  it('KLA-590: first network drop auto-retries (soft status, no error)', () => {
     vi.useFakeTimers()
     const v = new VoiceInput(); const errors: any[] = []; const statuses: any[] = []
     v.onError = (type, msg) => errors.push({ type, msg })
@@ -77,27 +79,72 @@ describe('VoiceInput errors', () => {
     mockSR._fireError('network')       // transient blip
     expect(errors).toHaveLength(0)     // NOT surfaced as an error on the first drop
     expect(statuses).toEqual([{ type: 'retrying', msg: 'Reconnecting voice…' }])
-    mockSR._fireEnd()                  // onend follows onerror → schedules a reconnect
-    vi.advanceTimersByTime(500)
+    mockSR._fireEnd()                  // onend follows onerror → schedules a reconnect (400ms backoff)
+    vi.advanceTimersByTime(400)
     expect(mockSR.start).toHaveBeenCalledTimes(2) // reconnected, still recording
   })
 
-  it('KLAVITYKLA-495: surfaces the error only after retries are exhausted', () => {
+  it('KLA-590: a recovered reconnection clears the retry budget + status (no give-up)', () => {
+    vi.useFakeTimers()
+    const v = new VoiceInput(); const errors: any[] = []; const statuses: any[] = []
+    v.onError = (type, msg) => errors.push({ type, msg })
+    v.onStatus = (type, msg) => statuses.push({ type, msg })
+    v.onStop = () => {}
+    v.start()
+    // A blip, then a healthy restart, repeated many more times than the old MAX_RETRIES=2 — must NEVER
+    // surface "Voice disconnected" because each reconnection resets the consecutive-failure budget.
+    for (let i = 0; i < 10; i++) {
+      mockSR._fireError('network')
+      mockSR._fireEnd()
+      vi.advanceTimersByTime(400)
+      mockSR._fireStart()              // backend reconnected → recovery
+    }
+    expect(errors).toHaveLength(0)
+    expect(statuses.some(s => s.type === 'retrying')).toBe(true)
+    expect(statuses[statuses.length - 1]).toEqual({ type: 'idle', msg: '' })
+  })
+
+  it('KLA-590: surfaces the terminal error only after a SUSTAINED run of consecutive failures', () => {
     vi.useFakeTimers()
     const v = new VoiceInput(); const errors: any[] = []
     v.onError = (type, msg) => errors.push({ type, msg }); v.onStatus = () => {}; v.onStop = () => {}
     v.start()
-    // Two auto-retries (MAX_RETRIES=2), each: error → end → reconnect.
-    for (let i = 0; i < 2; i++) { mockSR._fireError('network'); mockSR._fireEnd(); vi.advanceTimersByTime(500) }
-    expect(errors).toHaveLength(0)
-    mockSR._fireError('network')       // third drop → give up
+    // Fail every reconnect with NO recovery in between — exponential backoff, capped at MAX_BACKOFF_MS.
+    // MAX_CONSEC_FAILURES=6 → the 7th consecutive failure's onend gives up.
+    for (let i = 0; i < 6; i++) {
+      mockSR._fireError('network')
+      mockSR._fireEnd()
+      vi.advanceTimersByTime(8000)     // advance past the largest backoff so the reconnect fires
+    }
+    expect(errors).toHaveLength(0)     // still trying across the whole window
+    mockSR._fireError('network')       // 7th consecutive failure
+    mockSR._fireEnd()
     expect(errors).toEqual([{ type: 'network', msg: 'Voice disconnected — tap Voice to try again' }])
   })
-  it('no-speech: silent stop, no onError', () => {
-    const v = new VoiceInput(); const errors = []; const stops = []
+
+  it('KLA-590: no-speech auto-restarts through silence (no error, no stop)', () => {
+    vi.useFakeTimers()
+    const v = new VoiceInput(); const errors: any[] = []; const stops: any[] = []
     v.onError = (_, msg) => errors.push(msg); v.onStop = () => stops.push(1); v.start()
-    mockSR._fireError('no-speech')
-    expect(errors).toHaveLength(0); expect(stops).toHaveLength(1)
+    expect(mockSR.start).toHaveBeenCalledTimes(1)
+    mockSR._fireError('no-speech')     // a pause — NOT a failure
+    mockSR._fireEnd()                  // Chrome ends recognition on the silence timeout
+    expect(errors).toHaveLength(0)
+    expect(stops).toHaveLength(0)      // session is NOT torn down
+    vi.advanceTimersByTime(250)        // benign near-instant restart
+    expect(mockSR.start).toHaveBeenCalledTimes(2) // still listening
+  })
+
+  it('KLA-590: not-allowed is terminal — surfaces immediately, no reconnect', () => {
+    vi.useFakeTimers()
+    const v = new VoiceInput(); const errors: any[] = []; const stops: any[] = []
+    v.onError = (type, msg) => errors.push({ type, msg }); v.onStop = () => stops.push(1); v.start()
+    mockSR._fireError('not-allowed')
+    mockSR._fireEnd()
+    expect(errors).toEqual([{ type: 'not-allowed', msg: 'Microphone access was denied' }])
+    expect(stops).toHaveLength(1)
+    vi.advanceTimersByTime(10000)
+    expect(mockSR.start).toHaveBeenCalledTimes(1) // never reconnected after a terminal error
   })
 })
 
@@ -110,9 +157,14 @@ describe('VoiceInput.stop', () => {
     const v = new VoiceInput(); const stops = []; v.onStop = () => stops.push(1); v.start(); v.stop(); v.stop()
     expect(stops).toHaveLength(1)
   })
-  it('fires onStop when onend fires unexpectedly', () => {
+  it('KLA-590: an unexpected onend auto-restarts (does NOT fire onStop)', () => {
+    vi.useFakeTimers()
     const v = new VoiceInput(); const stops = []; v.onStop = () => stops.push(1); v.start()
-    mockSR._fireEnd(); expect(stops).toHaveLength(1)
+    expect(mockSR.start).toHaveBeenCalledTimes(1)
+    mockSR._fireEnd()                 // Chrome auto-ended mid-session (≈60s cap / silence)
+    expect(stops).toHaveLength(0)     // session survives
+    vi.advanceTimersByTime(250)
+    expect(mockSR.start).toHaveBeenCalledTimes(2) // relaunched, still listening
   })
 })
 
