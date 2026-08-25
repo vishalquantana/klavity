@@ -5633,6 +5633,8 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     // (feedbackToTicketPayload / raw-row callers reference fb.report_type directly).
     reportType: x.report_type != null ? String(x.report_type) : null,
     report_type: x.report_type != null ? String(x.report_type) : null,
+    // KLA-173 source tag (widget/sim/manual/…) — surfaced in the shared-ticket teaser pills.
+    source: x.source != null ? String(x.source) : null,
     // PX4 #411: explicit Title (feedbackToTicketPayload prefers it over the observation first-line auto-title).
     title: x.title != null ? String(x.title) : null,
     // #543 straggler (Codex re-review): expose the parsed suggested bug so effectiveTicketTitle /
