@@ -238,8 +238,9 @@ export class LiveDictation {
     if (this._recording) return
     this._recording = true
     this._firstSegment = true
+    let stream: any
     try {
-      this._stream = await this._deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      stream = await this._deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     } catch (e: any) {
       this._recording = false
       const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
@@ -247,6 +248,16 @@ export class LiveDictation {
       this.onStop()
       return
     }
+    // getUserMedia is async (it shows the browser's mic-permission prompt). If the user pressed Stop while
+    // that prompt was open, stop() already ran (_recording flipped false, onStop fired) BEFORE the grant
+    // resolved here — so continuing would open a mic that never gets released (a zombie stream + a live
+    // session timer) and surface no transcript. Release the just-granted stream and bail. Founder-repro:
+    // "clicked Voice, nothing worked" when they re-clicked before the permission grant landed.
+    if (!this._recording) {
+      try { stream?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ }
+      return
+    }
+    this._stream = stream
     this._mime = pickDictationMime(this._deps)
     try {
       this._recorder = this._mime

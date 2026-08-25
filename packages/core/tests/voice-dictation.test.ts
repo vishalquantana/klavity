@@ -149,6 +149,25 @@ describe('LiveDictation session', () => {
     expect(transcribe).not.toHaveBeenCalled()
   })
 
+  it('stop() DURING the getUserMedia permission prompt releases the late-granted mic (no zombie stream)', async () => {
+    // Regression (founder P1): getUserMedia is async — it shows the mic-permission prompt. If the reporter
+    // presses Stop while that prompt is still open, start() must NOT proceed to open a recorder once the
+    // grant lands late; it must release the just-granted stream. Previously the stream leaked (a live mic +
+    // a running session timer) and no transcript ever surfaced — read by the user as "nothing worked".
+    vi.useRealTimers()
+    const track = { stop: vi.fn() }
+    let resolveGUM: (v: any) => void = () => {}
+    const gum = new Promise<any>(r => { resolveGUM = r })
+    const d = new LiveDictation({ transcribe: vi.fn(async () => ({ text: 'x' })), deps: deps({ getUserMedia: vi.fn(() => gum) }) })
+    const startP = d.start()          // awaiting the (still-pending) permission prompt
+    d.stop()                          // user taps Stop before granting
+    resolveGUM({ getTracks: () => [track] }) // permission granted late
+    await startP
+    await new Promise(r => setTimeout(r, 0))
+    expect(track.stop).toHaveBeenCalled() // the late-granted mic was released, not leaked
+    vi.useFakeTimers()
+  })
+
   it('stop() transcribes the final segment then ends and releases the mic', async () => {
     const transcribe = vi.fn(async () => ({ text: 'bye' }))
     const stream = makeStream()
