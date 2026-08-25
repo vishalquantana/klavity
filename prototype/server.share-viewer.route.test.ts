@@ -194,3 +194,25 @@ test("verify rejects a wrong code with 401", async () => {
   const r = await postJson(`/api/t/${FID}/verify`, { email: `other-${RUN}@test.local`, code: "000000" })
   expect(r.status).toBe(401)
 })
+
+test("an active viewer can POST a comment; a no-access caller gets 404", async () => {
+  // GUEST became an active viewer in the verify test. Mint a fresh session row for GUEST directly.
+  const guestSid = `sess_guest_${RUN}`
+  await exec("INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)", [guestSid, GUEST, NOW, NOW + 86400_000])
+  const posted = await fetch(`${BASE}/api/feedback/${FID}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: `klav_session=${guestSid}` },
+    body: JSON.stringify({ body: "Guest viewer comment — I see it too." }),
+  })
+  expect(posted.status).toBe(201)
+  const { comment } = await posted.json()
+  expect(comment.author).toBe(GUEST)
+
+  // A signed-in non-viewer (STRANGER has only teaser access) cannot comment.
+  const denied = await fetch(`${BASE}/api/feedback/${FID}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: `klav_session=${STRANGER_SID}` },
+    body: JSON.stringify({ body: "should be rejected" }),
+  })
+  expect(denied.status).toBe(404)
+})

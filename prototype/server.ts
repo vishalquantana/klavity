@@ -10216,6 +10216,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const row = await feedbackById(p.id, fid)
           if (row) { fbRow = row; fbAccess = a; break }
         }
+        // Shared-ticket viewers: allow the COMMENTS subroute (read+write) for a caller whose access
+        // resolves 'full' via ticketViewAccess (an active per-ticket viewer, not a project member).
+        // Scoped to isComments only — every other subroute (PATCH/export/merge/labels/…) stays
+        // member-gated: a viewer that isn't a member leaves fbRow null and 404s below.
+        if (!fbRow && me && isComments) {
+          const _vres = await resolveFeedbackRef(fid).catch(() => null)
+          if (_vres && (await ticketViewAccess(_vres.id, me)) === "full") {
+            const _vrow = await feedbackById(_vres.projectId, _vres.id)
+            if (_vrow) fbRow = _vrow // fbAccess stays null — viewer is NOT a member/admin
+          }
+        }
         if (!fbRow) return json({ error: "Feedback not found or not accessible." }, 404)
 
         // GET /api/feedback/:id/replay — the stored rrweb session-replay events for a ticket, so the
