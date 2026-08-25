@@ -1120,6 +1120,32 @@ async function mount() {
           return (data && typeof data.tip === "string" && data.tip) ? { tip: data.tip } : null
         } catch { return null }
       }) : undefined,
+      // KLA-586: AI "Enhance" — POST the reporter's one-liner + the primary captured screenshot + picked
+      // element to /api/report/enhance and resolve the structured, developer-ready draft (or null). Mirrors
+      // onClarityTip's auth/shape: projectId + pageUrl + the already-captured client info, plus the screenshot
+      // dataURL and picked element the composer hands in via ctx. Gated on the SAME per-project reportClarity
+      // toggle the server reuses for enhance. Longer timeout — it's a vision call, slower than the cheap tip.
+      // Best-effort: any failure resolves null so the composer silently no-ops (leaves the reporter's text).
+      onEnhance: reportClarity ? (async (text: string, ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null }) => {
+        try {
+          const res = await fetchWithTimeout(cfg.backendUrl + "/api/report/enhance", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              projectId: cfg.projectId,
+              text,
+              pageUrl: location.href,
+              shot: ctx?.shot || "",
+              picked: ctx?.picked || null,
+              images: ctx?.images ?? 0,
+              client: captureClientInfo(),
+            }),
+          }, 30000)
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && data.draft) ? data.draft : null
+        } catch { return null }
+      }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
       prefillEmail: _reporter?.email,
