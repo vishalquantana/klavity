@@ -822,6 +822,9 @@ export function buildModal(
     .kl-htextopts{display:inline-flex;align-items:center;gap:5px;}
     .kl-htextopts[hidden]{display:none;}
     .kl-hlabel{color:#7d879f;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:0 1px;}
+    /* Keep the "Stroke" label glued to its S/M/L/XL sizes as one control — never let flex-wrap split the
+       label onto one row and the size buttons onto another at the narrow widget width. */
+    .kl-hgroup{display:inline-flex;align-items:center;gap:5px;flex:none;flex-wrap:nowrap;}
     .kl-hopt{min-width:28px;height:30px;padding:0 8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#cfd5ea;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
     .kl-hopt:hover{background:rgba(255,255,255,.08);}
     .kl-hopt.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);border-color:transparent;}
@@ -3091,12 +3094,16 @@ export function buildModal(
       `<span class="kl-hsep"></span>` +
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
       // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
+      // The "Stroke" label + S/M/L/XL sizes live in ONE non-wrapping group so the label always reads with
+      // its options as a single control (never label-here / sizes-on-a-separate-row at the narrow width).
       `<span class="kl-hsep"></span>` +
-      `<span class="kl-hlabel">Stroke</span>` +
-      `<button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button>` +
-      `<button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button>` +
-      `<button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button>` +
-      `<button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button>` +
+      `<span class="kl-hgroup">` +
+        `<span class="kl-hlabel">Stroke</span>` +
+        `<button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button>` +
+        `<button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button>` +
+        `<button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button>` +
+        `<button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button>` +
+      `</span>` +
       // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
       `<span class="kl-htextopts" id="kl-hero-textopts" hidden>` +
         `<span class="kl-hsep"></span>` +
@@ -3116,7 +3123,9 @@ export function buildModal(
       (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · B redact · K crop · scroll to zoom · shift-drag to pan</span>`
+      // Only the genuinely non-duplicated navigation hints — the per-tool letter keys are already shown
+      // under each tool icon (the .kl-hk labels), so we no longer repeat the tool-name legend here.
+      `<span class="kl-hhint">scroll to zoom · shift-drag to pan</span>`
     )
   }
 
