@@ -87,6 +87,10 @@ export interface RecordingController {
   stop(): void
   state(): RecorderState
   screenOnly(): boolean
+  // KLA-602(b): the LIVE local camera stream (getUserMedia) when the recording actually includes the camera,
+  // so the overlay can render a self-view bubble (Loom/Mevak style). null when screen-only / camera blocked.
+  // This is the raw local preview stream — it is separate from the composited canvas that gets recorded.
+  cameraStream(): any | null
   // Resolves when the recording fully stops (native "stop sharing", Stop button, or a cap auto-stop).
   done: Promise<RecordingResult>
 }
@@ -334,6 +338,9 @@ export async function startRecording(
     stop() { stop() },
     state() { return state },
     screenOnly() { return screenOnly },
+    // KLA-602(b): expose the live camera stream ONLY when the camera is genuinely part of the capture, so the
+    // overlay can mount a self-view bubble. Screen-only / audio-only(mic) fallbacks return null → no bubble.
+    cameraStream() { return hadCamera && camStream ? camStream : null },
     done,
   }
   } catch (e) {
@@ -369,18 +376,74 @@ export async function recordingResultToAttachment(r: RecordingResult): Promise<R
   }
 }
 
-// ── recordMe(): thin browser-only overlay (consent → recording → preview → attach) ────────────────────
-// Resolves a RecordingAttachment when the reporter clicks "Attach to report", or null on cancel/close.
-// Deliberately self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of
-// the shared composer (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
+// ── KLA-602(b): live camera self-view bubble (Loom/Mevak style) ────────────────────────────────────────
+// A small circular LIVE preview of the LOCAL getUserMedia camera track, shown WHILE recording so the reporter
+// sees themselves. It plays a muted <video> off the camera stream and is NOT composited into the recorded file
+// here (compositing already happens in startRecording's PiP; live-bubble compositing is Phase B / KLA follow-up).
+// Returns the bubble element (the caller appends it to the recorder host so it's torn down with the overlay), or
+// null when there is no camera track (screen-only / camera blocked) — so a permission denial simply yields no
+// bubble and no error. Corner-anchored bottom-left by default; draggable via pointer events.
+export function startCameraPreview(stream: any | null): HTMLElement | null {
+  if (typeof document === 'undefined') return null
+  if (!stream || !(stream.getVideoTracks?.().length)) return null
+  const bubble = document.createElement('div')
+  bubble.setAttribute('data-klavity-ui', 'camera-preview')
+  bubble.setAttribute('role', 'img')
+  bubble.setAttribute('aria-label', 'Your camera preview')
+  bubble.style.cssText =
+    'position:fixed;left:24px;bottom:24px;width:128px;height:128px;border-radius:50%;overflow:hidden;' +
+    'z-index:2147483647;pointer-events:auto;cursor:grab;background:#000;border:3px solid #7c3aed;' +
+    'box-shadow:0 10px 30px rgba(28,22,40,.42);touch-action:none'
+  const video = document.createElement('video')
+  video.muted = true
+  ;(video as any).playsInline = true
+  video.setAttribute('playsinline', '')
+  video.autoplay = true
+  video.setAttribute('aria-hidden', 'true')
+  // Mirror horizontally so it reads like a selfie/webcam preview; cover-fit the circle.
+  video.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block'
+  try { (video as any).srcObject = stream } catch { /* jsdom/headless: no real playback */ }
+  try { const p = video.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {}) } catch { /* no-op */ }
+  bubble.appendChild(video)
+  // Best-effort drag to reposition (corner-anchored otherwise). Pointer events keep it simple + touch-friendly.
+  let dragging = false, startX = 0, startY = 0, originX = 0, originY = 0
+  const onDown = (e: any) => {
+    dragging = true
+    bubble.style.cursor = 'grabbing'
+    const r = bubble.getBoundingClientRect()
+    originX = r.left; originY = r.top; startX = e.clientX; startY = e.clientY
+    // switch from bottom/left anchoring to absolute top/left so the drag math is uniform
+    bubble.style.right = 'auto'; bubble.style.bottom = 'auto'
+    bubble.style.left = originX + 'px'; bubble.style.top = originY + 'px'
+    try { bubble.setPointerCapture?.(e.pointerId) } catch { /* no-op */ }
+  }
+  const onMove = (e: any) => {
+    if (!dragging) return
+    bubble.style.left = Math.max(0, originX + (e.clientX - startX)) + 'px'
+    bubble.style.top = Math.max(0, originY + (e.clientY - startY)) + 'px'
+  }
+  const onUp = () => { dragging = false; bubble.style.cursor = 'grab' }
+  bubble.addEventListener('pointerdown', onDown)
+  bubble.addEventListener('pointermove', onMove)
+  bubble.addEventListener('pointerup', onUp)
+  return bubble
+}
+
+// ── recordMe(): thin browser-only overlay (consent → recording → auto-attach) ─────────────────────────
+// KLA-602(a): the finished recording now resolves DIRECTLY when the reporter stops (no "Preview → Attach to
+// report" gate) — the composer drops it straight into the photos/videos gallery as a removable video tile, and
+// Re-record lives there as a tile action. recordMe still resolves null on cancel/close. Deliberately
+// self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of the shared composer
+// (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
 export interface RecordMeOptions {
   caps?: Partial<RecordingCaps>
   deps?: RecorderDeps
-  // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore
-  // the composer around a live recording. 'consent' and 'preview' render the centered card+backdrop; the
-  // ACTIVE 'recording' phase docks a compact bar and lets clicks pass through to the page, so the host
-  // should hide the composer while phase==='recording' and restore it on 'preview' (or when recordMe's
-  // promise resolves/rejects). Best-effort — listener errors never break capture.
+  // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore the
+  // composer around a live recording. 'consent' renders the centered card+backdrop; the ACTIVE 'recording'
+  // phase docks a compact bar and lets clicks pass through to the page, so the host should hide the composer
+  // while phase==='recording' and restore it otherwise (and when recordMe's promise resolves/rejects).
+  // ('preview' is retained in the union for back-compat but is NO LONGER emitted — KLA-602(a) dropped the
+  // preview panel; stop auto-attaches.) Best-effort — listener errors never break capture.
   onPhase?: (phase: 'consent' | 'recording' | 'preview') => void
 }
 
@@ -480,7 +543,16 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
         finish(null); return // user dismissed the screen-share picker
       }
       renderRecording(fallbackReason)
-      controller.done.then(async (r) => { renderPreview(await recordingResultToAttachment(r)) })
+      // KLA-602(b): live self-view bubble while recording, ONLY when the camera is genuinely part of the
+      // capture (opt-in via the consent camera checkbox + granted). A denial → cameraStream() is null → no
+      // bubble, no error. Appended to the recorder host so finish()'s host.remove() tears it down.
+      try {
+        const camBubble = startCameraPreview(controller?.cameraStream?.())
+        if (camBubble) host.appendChild(camBubble)
+      } catch { /* preview is a nicety — never let it break capture */ }
+      // KLA-602(a): on stop, resolve the attachment DIRECTLY (no preview/attach gate) — the composer auto-adds
+      // it to the gallery as a selected, removable video tile.
+      controller.done.then(async (r) => { finish(await recordingResultToAttachment(r)) })
     }
 
     // Panel 2 — ACTIVE recording. KLA-555: a NON-BLOCKING compact bar docked bottom-center (Loom/CleanShot
@@ -519,21 +591,9 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       ;(card.querySelector('#klr-stop') as HTMLButtonElement).onclick = () => controller?.stop()
     }
 
-    // Panel 3 — preview → attach.
-    const renderPreview = (att: RecordingAttachment) => {
-      setChrome('modal'); emitPhase('preview')
-      card.innerHTML =
-        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Preview</div>' +
-        '<div style="padding:14px">' +
-        `<video src="${att.dataUrl}" controls style="width:100%;border-radius:10px;background:#2a2740;max-height:220px"></video>` +
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
-        '<button id="klr-attach" style="padding:8px 13px;border-radius:8px;border:1px solid #6366f1;background:#6366f1;color:#fff;font-weight:600;cursor:pointer">Attach to report</button>' +
-        '<button id="klr-redo" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Re-record</button>' +
-        `<span style="margin-left:auto;font-size:11px;color:#574f45">${fmtTime(att.durationMs)} · ${fmtMB(att.bytes)}</span></div></div>`
-      ;(card.querySelector('#klr-attach') as HTMLButtonElement).onclick = () => finish(att)
-      ;(card.querySelector('#klr-redo') as HTMLButtonElement).onclick = () => { controller = null; renderConsent() }
-    }
-
+    // KLA-602(a): the old "Panel 3 — preview → attach" is GONE. Stopping the recording resolves the
+    // attachment directly (see begin()'s controller.done handler), and the composer drops it straight into the
+    // gallery as a selected, removable video tile with a Re-record tile action.
     renderConsent()
   })
 }

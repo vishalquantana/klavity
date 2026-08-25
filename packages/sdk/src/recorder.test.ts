@@ -4,6 +4,7 @@ import {
   pickRecordingMime,
   recordingSupported,
   startRecording,
+  startCameraPreview,
   recordMe,
   RECORDING_MIME_CANDIDATES,
   RECORDING_MAX_BYTES,
@@ -297,16 +298,13 @@ describe('recordMe walkthrough mode (KLA-555)', () => {
     expect(host.querySelector('#klr-meta')).not.toBeNull()
     expect(host.textContent || '').not.toContain('screen preview')
 
-    // Teardown from the docked bar still stops every track and fires no attach.
+    // KLA-602(a): stopping from the docked bar AUTO-ATTACHES — the promise resolves DIRECTLY with the
+    // recording (no "Preview → Attach to report" gate, no 'preview' phase) and the overlay is removed.
     ;(host.querySelector('#klr-stop') as HTMLButtonElement).click()
-    await tick(10)
-    // Stopping surfaces the preview panel → chrome flips back to the centered modal.
-    expect(phases).toContain('preview')
-    expect(host.style.pointerEvents).not.toBe('none')
-
-    // Dismiss so the promise resolves and the overlay is removed.
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await p
+    const result = await p
+    expect(phases).not.toContain('preview')
+    expect(result).not.toBeNull()
+    expect((result as any).dataUrl).toBeTruthy()
     expect(document.querySelector('[data-klavity-ui="recorder"]')).toBeNull()
   })
 
@@ -321,5 +319,51 @@ describe('recordMe walkthrough mode (KLA-555)', () => {
     expect(phases.slice(0, 2)).toEqual(['consent', 'recording'])
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await p
+  })
+})
+
+// KLA-602(b): live camera self-view bubble. It is OPT-IN (only mounts when the camera is genuinely part of the
+// capture) and DENIAL-SAFE (no camera track → no bubble, no error).
+describe('startCameraPreview (KLA-602b camera self-view bubble)', () => {
+  it('returns a rounded, aria-labelled bubble with a muted live <video> when a camera track is present', () => {
+    const stream = new FakeStream(1, 0) as any
+    const bubble = startCameraPreview(stream)
+    expect(bubble).not.toBeNull()
+    expect(bubble!.getAttribute('aria-label')).toMatch(/camera/i)
+    expect(bubble!.style.borderRadius).toBe('50%')      // circular
+    const video = bubble!.querySelector('video') as HTMLVideoElement
+    expect(video).not.toBeNull()
+    expect(video.muted).toBe(true)                       // never blares audio through the local preview
+    expect((video as any).srcObject).toBe(stream)        // wired to the LIVE local camera stream
+  })
+
+  it('returns null when there is no camera video track (screen-only / camera blocked) — denial-safe, no bubble', () => {
+    expect(startCameraPreview(null)).toBeNull()
+    expect(startCameraPreview(new FakeStream(0, 1) as any)).toBeNull() // audio-only (mic kept, no camera)
+  })
+
+  it('recordMe shows a camera bubble while recording when the camera is granted, and none when screen-only', async () => {
+    const tick = async (n = 3) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)) }
+    // Camera granted (user stream has a video track) → bubble appears during the recording phase.
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const withCam = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const p1 = recordMe({ deps: withCam })
+    let host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    ;(host.querySelector('#klr-start') as HTMLButtonElement).click()
+    await tick()
+    expect(host.querySelector('[data-klavity-ui="camera-preview"]')).not.toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p1
+
+    // Camera blocked (getUserMedia rejects) → screen-only recording → NO bubble, no error.
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const noCam = makeDeps({}, { screen: new FakeStream(1, 0), userRejects: true })
+    const p2 = recordMe({ deps: noCam })
+    host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    ;(host.querySelector('#klr-start') as HTMLButtonElement).click()
+    await tick()
+    expect(host.querySelector('[data-klavity-ui="camera-preview"]')).toBeNull()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p2
   })
 })
