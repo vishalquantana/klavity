@@ -457,6 +457,22 @@ export async function applySchema(c: Client) {
        grant_period TEXT NOT NULL,
        last_grace_period TEXT,
        updated_at INTEGER NOT NULL)`,
+    // KLAVITY CREDITS — append-only audit ledger. One row per credit movement: grants/top-ups/refunds
+    // are POSITIVE, spends are NEGATIVE (millicredits). Links to the ai_calls row it paid for (ai_call_id)
+    // for the /opsadmin credit-margin panel, and to the feedback/run + actor for the future admin nudge.
+    `CREATE TABLE IF NOT EXISTS credit_ledger (
+       id TEXT PRIMARY KEY,
+       workspace_id TEXT NOT NULL,
+       action TEXT NOT NULL,            -- enhance|transcript|keyframes|voice|sim|autosim|topup|grant|refund
+       millicredits INTEGER NOT NULL,   -- signed: + credits in, − spends
+       ref_feedback_id TEXT,
+       ref_run_id TEXT,
+       actor_email TEXT,
+       is_guest INTEGER NOT NULL DEFAULT 0,
+       ai_call_id TEXT,
+       created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS credit_ledger_ws_idx ON credit_ledger (workspace_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS credit_ledger_action_idx ON credit_ledger (action, created_at)`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
@@ -4333,6 +4349,48 @@ export async function ensureWorkspaceCredits(workspaceId: string, planGrantMc: n
   })
   const w = await getWorkspaceCredits(workspaceId)
   return w! // row is guaranteed to exist after the upsert
+}
+
+// ── Klavity Credits: append-only ledger ──────────────────────────────────────────────────────────
+export type CreditLedgerInsert = {
+  workspaceId: string; action: string; millicredits: number
+  refFeedbackId?: string | null; refRunId?: string | null
+  actorEmail?: string | null; isGuest?: boolean; aiCallId?: string | null; atMs?: number
+}
+export type CreditLedgerRow = {
+  id: string; workspaceId: string; action: string; millicredits: number
+  refFeedbackId: string | null; refRunId: string | null; actorEmail: string | null
+  isGuest: boolean; aiCallId: string | null; createdAt: number
+}
+
+export async function insertCreditLedger(e: CreditLedgerInsert): Promise<string> {
+  const id = "cl_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO credit_ledger
+            (id, workspace_id, action, millicredits, ref_feedback_id, ref_run_id, actor_email, is_guest, ai_call_id, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, e.workspaceId, e.action, Math.trunc(e.millicredits),
+           e.refFeedbackId ?? null, e.refRunId ?? null, e.actorEmail ?? null,
+           e.isGuest ? 1 : 0, e.aiCallId ?? null, e.atMs ?? Date.now()],
+  })
+  return id
+}
+
+export async function listCreditLedgerForWorkspace(workspaceId: string, limit = 200): Promise<CreditLedgerRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM credit_ledger WHERE workspace_id=? ORDER BY created_at DESC LIMIT ?",
+    args: [workspaceId, limit],
+  })
+  return r.rows.map((x: any) => ({
+    id: String(x.id), workspaceId: String(x.workspace_id), action: String(x.action),
+    millicredits: Number(x.millicredits) || 0,
+    refFeedbackId: x.ref_feedback_id != null ? String(x.ref_feedback_id) : null,
+    refRunId: x.ref_run_id != null ? String(x.ref_run_id) : null,
+    actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    isGuest: Number(x.is_guest) === 1,
+    aiCallId: x.ai_call_id != null ? String(x.ai_call_id) : null,
+    createdAt: Number(x.created_at) || 0,
+  }))
 }
 
 export async function opsTotals(): Promise<{ totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }> {

@@ -40,3 +40,21 @@ test("ensureWorkspaceCredits re-grants on a new month, keeps top-up, clears grac
   expect(w1.grantPeriod).toBe("2026-02")
   expect(w1.lastGracePeriod).toBeNull()     // grace reset for the new period
 })
+
+import { insertCreditLedger, listCreditLedgerForWorkspace } from "./db"
+
+test("credit_ledger stores signed millicredits with refs + ai_call linkage", async () => {
+  const id = await insertCreditLedger({
+    workspaceId: "acct_led_1", action: "enhance", millicredits: -1000,
+    refFeedbackId: "fb_9", actorEmail: "vishal@quantana.com.au", isGuest: false, aiCallId: "ai_abc",
+  })
+  expect(id).toStartWith("cl_")
+  await insertCreditLedger({ workspaceId: "acct_led_1", action: "refund", millicredits: 1000, refFeedbackId: "fb_9", aiCallId: "ai_abc" })
+  const rows = await listCreditLedgerForWorkspace("acct_led_1")
+  expect(rows.length).toBe(2)
+  const net = rows.reduce((s, r) => s + r.millicredits, 0)
+  expect(net).toBe(0) // spend −1000 + refund +1000 nets to zero
+  const spend = rows.find(r => r.action === "enhance")!
+  expect(spend.aiCallId).toBe("ai_abc")
+  expect(spend.isGuest).toBe(false)
+})
