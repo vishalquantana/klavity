@@ -943,7 +943,20 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       var res=await fetch('/api/persona/site',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url})})
       var data={}; try{ data=await res.json() }catch(e){}
       if(!res.ok){ err.textContent=data.error||(res.status===401?'Sign in to try this on your product.':'Could not read that URL — try another.'); return }
-      uhShowPersonas(url, data.personas||[])
+      var ps=data.personas||[]
+      // Sparse pages intermittently yield an empty cast even though an immediate retry succeeds
+      // (observed ~1 in 3 runs on example.com). One quiet retry before any dead end — a fresh
+      // visitor with no carried stash would otherwise bounce off "No Sims came back".
+      if(!ps.length){
+        var rtxt=document.getElementById('uhLoadTxt')
+        if(rtxt) rtxt.textContent='Taking another look…'
+        await new Promise(function(r2){ setTimeout(r2,1200) })
+        res=await fetch('/api/persona/site',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:url})})
+        data={}; try{ data=await res.json() }catch(e2){}
+        if(!res.ok){ err.textContent=data.error||'Could not read that URL — try another.'; return }
+        ps=data.personas||[]
+      }
+      uhShowPersonas(url, ps)
     }catch(e){ err.textContent='Network error — please try again.' }
     finally{ uhSetLoading(false) }
   }
