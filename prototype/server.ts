@@ -3564,6 +3564,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
       const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
 
+      // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet + reserve one "enhance" credit.
+      // Best-effort — a resolution/reserve miss must NEVER block Enhance, and in soft mode an
+      // insufficient balance only LOGS (wouldBlock); the draft still returns. Never gates the report.
+      const wsId = db ? await accountIdForAiCall(projectId, null, null) : null
+      const plan = wsId ? await accountPlan(wsId) : (proj?.plan ?? null)
+      let reservation: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try {
+        if (db && wsId) reservation = await reserveCredits(wsId, "enhance", { plan, refFeedbackId: null })
+        if (reservation?.wouldBlock) console.log(`[credits] enhance wouldBlock ws=${wsId} (soft)`)
+      } catch (e: any) { console.warn("[credits] enhance reserve skipped (non-fatal):", e?.message || e) }
+
       try {
         const draft = await generateEnhancedDraft(text, {
           llm: async (oneLiner, systemPrompt) => {
@@ -3586,8 +3597,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             return String(content ?? "")
           },
         })
+        try { await reservation?.settle({ ok: !!draft, aiCallId: null }) } catch {}
         return wjson({ draft }) // draft may be null → client no-ops
       } catch {
+        try { await reservation?.settle({ ok: false, aiCallId: null }) } catch {}
         return wjson({ draft: null }) // best-effort; never 500 into the composer
       }
     }
