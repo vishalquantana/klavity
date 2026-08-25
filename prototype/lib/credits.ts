@@ -4,7 +4,7 @@
 import { normalizePlan, type BillingPlan } from "./billing"
 import {
   db, ensureWorkspaceCredits, getWorkspaceCredits, getCreditActionCost, debitWorkspaceCredits,
-  creditWorkspaceCredits, insertCreditLedger, markGraceUsed, usagePeriod, planIsUnlimited,
+  creditWorkspaceCredits, insertCreditLedger, markGraceUsed, usagePeriod,
   type DebitSplit,
 } from "./db"
 
@@ -12,10 +12,21 @@ export const MC_PER_CREDIT = 1000
 
 export type CreditAction = "enhance" | "transcript" | "keyframes" | "voice" | "sim" | "autosim"
 
-// Monthly grant per tier in CREDITS (spec §5/§12). Internal slugs: pro=Solo, founding=Team-level
-// locked-for-life, agency=Scale-level, partner=unlimited (metering short-circuited elsewhere).
+// Monthly grant per tier in CREDITS (spec §5/§12 — GENEROUS revision 2026-08-26). Internal slugs:
+// pro=Solo, founding=Team-level locked-for-life, agency=Scale-level, partner=unlimited (metering
+// short-circuited via creditsUnlimited). NOTE: Scale IS metered for credits now (only partner is
+// unlimited) — so its grant is a real cap, not a placeholder. Every number here is ≥ the pre-revision
+// grant, so no existing wallet ever re-grants to LESS on the next monthly reset.
 export const PLAN_GRANT_CREDITS: Record<BillingPlan, number> = {
-  free: 100, pro: 1_500, team: 10_000, founding: 10_000, scale: 40_000, agency: 40_000, partner: 40_000,
+  free: 300, pro: 5_000, team: 30_000, founding: 30_000, scale: 150_000, agency: 150_000, partner: 150_000,
+}
+
+// Credits-specific "unlimited" check. Deliberately NARROWER than db.planIsUnlimited() (which also
+// treats `scale` as unlimited for legacy quota/billing gates): for the credits wallet ONLY `partner`
+// (internal/reseller) is unmetered. Scale meters like any paid tier. Do NOT swap this for
+// planIsUnlimited — that would silently un-meter Scale again.
+export function creditsUnlimited(plan: string | null | undefined): boolean {
+  return normalizePlan(plan) === "partner"
 }
 
 export function planGrantMillicredits(plan: string | null | undefined): number {
@@ -82,8 +93,9 @@ const NOOP_RESERVATION = (workspaceId: string, action: CreditAction): CreditRese
 export async function reserveCredits(workspaceId: string, action: CreditAction, opts: ReserveOpts): Promise<CreditReservation> {
   const enforce = typeof opts.enforce === "boolean" ? opts.enforce : creditsEnforceDefault()
   const plan = opts.plan
-  // Unlimited/internal (partner, scale) never meters — reuse the existing planIsUnlimited() helper.
-  if (planIsUnlimited(String(plan ?? ""))) return NOOP_RESERVATION(workspaceId, action)
+  // Only partner (internal/reseller) is unlimited for credits — Scale meters like any paid tier.
+  // creditsUnlimited() is intentionally narrower than db.planIsUnlimited() (see its docstring).
+  if (creditsUnlimited(plan)) return NOOP_RESERVATION(workspaceId, action)
 
   const w = await ensureWorkspaceCredits(workspaceId, planGrantMillicredits(plan))
   const baseMc = (await getCreditActionCost(action)) ?? undefined

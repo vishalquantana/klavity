@@ -19,6 +19,14 @@ test("runMonthlyGrantReset restores granted=plan_grant, keeps top-up across a mo
   const res = await runMonthlyGrantReset(feb)
   expect(res.scanned).toBeGreaterThanOrEqual(1)
   const w = await getWorkspaceCredits("acct_reset_1")
-  expect(w!.grantedMc).toBe(10_000_000) // team re-grant
+  expect(w!.grantedMc).toBe(30_000_000) // team re-grant (generous revision)
   expect(w!.topupMc).toBe(7_000_000)    // top-up survived the reset
+})
+
+test("a Scale account (formerly treated as unlimited) re-grants to 150,000 credits on reset", async () => {
+  await acct("acct_reset_scale", "scale")
+  const jan = Date.UTC(2026, 0, 10)
+  await runMonthlyGrantReset(jan)
+  const w = await getWorkspaceCredits("acct_reset_scale")
+  expect(w!.grantedMc).toBe(150_000_000) // 150,000cr × MC_PER_CREDIT — a real metered cap now
 })

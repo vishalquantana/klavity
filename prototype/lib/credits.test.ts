@@ -32,13 +32,25 @@ test("baseMc override (DB-config value) is respected", () => {
 
 import { PLAN_GRANT_CREDITS, planGrantMillicredits } from "./credits"
 
-test("plan grants match the locked numbers (spec §5/§12)", () => {
-  expect(PLAN_GRANT_CREDITS.free).toBe(100)
-  expect(PLAN_GRANT_CREDITS.pro).toBe(1500)     // Solo
-  expect(PLAN_GRANT_CREDITS.team).toBe(10000)
-  expect(PLAN_GRANT_CREDITS.founding).toBe(10000) // Team-level, locked
-  expect(PLAN_GRANT_CREDITS.scale).toBe(40000)
-  expect(planGrantMillicredits("pro")).toBe(1_500_000) // millicredits
+test("plan grants match the generous numbers (spec §5/§12, 2026-08-26 revision)", () => {
+  expect(PLAN_GRANT_CREDITS.free).toBe(300)
+  expect(PLAN_GRANT_CREDITS.pro).toBe(5000)      // Solo
+  expect(PLAN_GRANT_CREDITS.team).toBe(30000)
+  expect(PLAN_GRANT_CREDITS.founding).toBe(30000) // Team-level, locked-for-life
+  expect(PLAN_GRANT_CREDITS.scale).toBe(150000)   // now METERED (only partner is unlimited)
+  expect(PLAN_GRANT_CREDITS.agency).toBe(150000)  // Scale-level
+  expect(planGrantMillicredits("pro")).toBe(5_000_000) // millicredits (5000 × MC_PER_CREDIT)
+  expect(planGrantMillicredits("scale")).toBe(150_000_000)
+})
+
+import { creditsUnlimited } from "./credits"
+
+test("creditsUnlimited: only partner is unlimited for credits, Scale meters", () => {
+  expect(creditsUnlimited("partner")).toBe(true)
+  expect(creditsUnlimited("scale")).toBe(false)   // the whole point of the revision
+  expect(creditsUnlimited("agency")).toBe(false)
+  expect(creditsUnlimited("free")).toBe(false)
+  expect(creditsUnlimited(null)).toBe(false)
 })
 
 import { useIsolatedDb } from "./test-db-isolation"
@@ -122,4 +134,16 @@ test("partner (unlimited) short-circuits: cost 0, no debit, settle is a no-op", 
   expect(rv.sufficient).toBe(true)
   await rv.settle({ ok: true, aiCallId: "ai_p" })
   expect((await listCreditLedgerForWorkspace("acct_r7")).length).toBe(0)
+})
+
+test("scale is now METERED (not unlimited): reserves + debits + writes a ledger row", async () => {
+  await seedWallet("acct_r8", 150_000_000) // full 150,000-cr Scale grant in mc
+  const rv = await reserveCredits("acct_r8", "autosim", { plan: "scale" })
+  expect(rv.costMc).toBe(75_000)   // real cost, NOT short-circuited to 0
+  expect(rv.sufficient).toBe(true)
+  await rv.settle({ ok: true, aiCallId: "ai_scale" })
+  const w = await getWorkspaceCredits("acct_r8")
+  expect(w!.grantedMc).toBe(150_000_000 - 75_000) // Scale wallet was actually debited
+  const rows = await listCreditLedgerForWorkspace("acct_r8")
+  expect(rows[0].millicredits).toBe(-75_000)
 })
