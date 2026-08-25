@@ -869,16 +869,27 @@ export function viewportCaptureSize(): { width: number; height: number } {
 
 /**
  * KLAVITYKLA-509 (viewport-first capture): a FAST, above-the-fold render of the page top used as the
- * IMMEDIATE preview while the slower full-page render finishes in the background. Renders document.body
+ * IMMEDIATE preview while the slower full-page render finishes in the background. Renders the page
  * clipped to the viewport box (top slice) with fonts skipped for speed. The top slice is consistent with
- * the full-page render (which also renders document.body from the top), so swapping the preview for the
- * full-page image later is not jarring — the full image simply extends below the fold. Returns the same
- * shape as {@link safeToPngWithQuality} so the composer can badge/normalize it identically.
+ * the full-page render (which also renders from the top), so swapping the preview for the full-page image
+ * later is not jarring — the full image simply extends below the fold. Returns the same shape as
+ * {@link safeToPngWithQuality} so the composer can badge/normalize it identically.
+ *
+ * KLA-BLANK-VIEWPORT (founder P1, PX4): captures document.documentElement (<html>), NOT document.body. On
+ * app-shell / inner-scroller layouts (`display:flex; min-height:100vh` with the real content in a scrolled
+ * INNER child — e.g. PX4, a CodeIgniter app), document.body's own rendered box COLLAPSES to viewport height
+ * and its visible content lives in a scrolled descendant, so a DOM render of BODY sees an essentially empty
+ * box → a pure-white capture. <html> contains the real content on those layouts (same reasoning as
+ * {@link safeToPngFullPage} / KLAVITYKLA-404), and clipping it to the viewport box still yields the
+ * above-the-fold slice on a normal document. If the render STILL comes back blank/near-white (isBlankCapture
+ * after the built-in settle+retry in safeToPngWithScale), the `blank` flag flows out so the widget's
+ * withSharpSuggestion() steers the reporter to the pixel-perfect Screen (getDisplayMedia) capture instead of
+ * silently handing back a white image; the fetch-free wireframe fallback remains the last resort.
  */
 export async function safeToPngViewport(
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number } = {},
 ): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean; partial: boolean }> {
-  const node = (typeof document !== "undefined" ? (document.body ?? document.documentElement) : null) as HTMLElement
+  const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
   const { width, height } = viewportCaptureSize()
   const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, { ...opts, width, height, skipFonts: true })
   return { dataUrl, quality, blank, partial }

@@ -12,6 +12,8 @@ import {
   TRANSPARENT_PIXEL,
   fullPageCaptureSize,
   safeToPngFullPage,
+  safeToPngViewport,
+  viewportCaptureSize,
   MAX_FULLPAGE_CAPTURE_HEIGHT,
 } from "./capture"
 
@@ -124,5 +126,35 @@ describe("full-page live-review capture (KLAVITYKLA-404)", () => {
     // The renderer is told to render the full 5000px document, NOT the node's viewport-sized bounding box.
     expect(opts.height).toBe(5000)
     expect(opts.width).toBeGreaterThan(0)
+  })
+})
+
+describe("viewport-first capture — app-shell blank fix (founder P1, PX4)", () => {
+  it("safeToPngViewport captures documentElement (<html>), NOT the collapsible document.body", async () => {
+    // On app-shell layouts (display:flex; min-height:100vh with the real content in a scrolled inner child)
+    // document.body's own box collapses to viewport height and renders blank/white; <html> holds the content.
+    ;(domToPng as unknown as ReturnType<typeof vi.fn>).mockClear()
+    await safeToPngViewport()
+    const node = (domToPng as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(node).toBe(document.documentElement)
+    expect(node).not.toBe(document.body)
+  })
+
+  it("safeToPngViewport requests the VIEWPORT box (not the whole page height)", async () => {
+    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 9000 })
+    ;(domToPng as unknown as ReturnType<typeof vi.fn>).mockClear()
+    await safeToPngViewport()
+    const opts = (domToPng as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as { width?: number; height?: number }
+    const vp = viewportCaptureSize()
+    expect(opts.height).toBe(vp.height)
+    expect(opts.height).not.toBe(9000) // NOT the full-page height — this is the above-the-fold slice
+  })
+
+  it("flags a blank/near-uniform render so the widget can steer to the sharp Screen capture", async () => {
+    // A uniform PNG compresses to a handful of bytes (the mock returns a 4-byte payload) → isBlankCapture
+    // true. safeToPngViewport surfaces `blank`, which the widget's withSharpSuggestion() maps to suggestSharp.
+    ;(domToPng as unknown as ReturnType<typeof vi.fn>).mockClear()
+    const { blank } = await safeToPngViewport()
+    expect(blank).toBe(true)
   })
 })
