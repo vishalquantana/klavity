@@ -155,3 +155,42 @@ test("anon GET /dashboard?ticket=<id> 302s to /t/<id>", async () => {
   expect(r.status).toBe(302)
   expect(decodeURIComponent(r.headers.get("location") || "")).toContain(`/t/${FID}`)
 })
+
+async function postJson(path: string, body: any, sid?: string) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (sid) headers.Cookie = `klav_session=${sid}`
+  return fetch(`${BASE}${path}`, { method: "POST", headers, body: JSON.stringify(body), redirect: "manual" })
+}
+
+test("unlock always returns ok (no email enumeration) and issues an OTP", async () => {
+  const r = await postJson(`/api/t/${FID}/unlock`, { email: GUEST })
+  expect(r.status).toBe(200)
+  expect((await r.json()).ok).toBe(true)
+})
+
+test("unlock rejects a malformed email with 400", async () => {
+  const r = await postJson(`/api/t/${FID}/unlock`, { email: "not-an-email" })
+  expect(r.status).toBe(400)
+})
+
+test("verify (test-OTP 666666) mints a session, grants an active viewer, and /api/t/:ref then returns full", async () => {
+  const v = await postJson(`/api/t/${FID}/verify`, { email: GUEST, code: "666666" })
+  expect(v.status).toBe(200)
+  const vbody = await v.json()
+  expect(vbody.ok).toBe(true)
+  expect(vbody.access).toBe("full")
+  const setCookie = v.headers.get("set-cookie") || ""
+  expect(setCookie).toContain("klav_session=")
+  // The grant row is active.
+  const rows = await raw.execute({ sql: "SELECT status FROM ticket_viewers WHERE feedback_id=? AND email=?", args: [FID, GUEST] })
+  expect(String((rows.rows[0] as any).status)).toBe("active")
+  // The minted session now resolves full via /api/t/:ref.
+  const sid = (setCookie.match(/klav_session=([^;]+)/) || [])[1]
+  const full = await fetch(`${BASE}/api/t/${FID}`, { headers: { Cookie: `klav_session=${sid}` } })
+  expect((await full.json()).access).toBe("full")
+})
+
+test("verify rejects a wrong code with 401", async () => {
+  const r = await postJson(`/api/t/${FID}/verify`, { email: `other-${RUN}@test.local`, code: "000000" })
+  expect(r.status).toBe(401)
+})

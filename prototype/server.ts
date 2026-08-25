@@ -7356,6 +7356,54 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ access: "full", ticket }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
     }
 
+    // ── POST /api/t/:ref/unlock {email} — email-to-unblur step 1. Issue an OTP for this email.
+    // Always responds 200 ("check your email") to avoid account enumeration; rate-limited per IP+ref.
+    const unlockMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})\/unlock$/)
+    if (req.method === "POST" && unlockMatch) {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`viewer:unlock:${ip}:${unlockMatch[1]}`, 5, 15 * 60_000)) {
+        return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "900" })
+      }
+      const resolved = await resolveFeedbackRef(unlockMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      const proj = await projectById(resolved.projectId)
+      if (normalizeShareMode(proj?.shareMode) === "off") return json({ error: "Not found" }, 404)
+      let email = ""
+      try { email = String((await req.json()).email || "").trim().toLowerCase() } catch { return json({ error: "invalid JSON" }, 400) }
+      if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      const code = otp()
+      await createOtp(email, code, Date.now() + 10 * 60 * 1000)
+      try { await sendOtp(email, code) } catch (err: any) { console.error("viewer unlock OTP email failed:", err?.message || err); if (DEV_SHOW_OTP) console.log(`viewer OTP for ${email} → ${code}`) }
+      return json({ ok: true, ...(DEV_SHOW_OTP ? { devCode: code } : {}) })
+    }
+
+    // ── POST /api/t/:ref/verify {email, code} — email-to-unblur step 2. Verify the OTP, mint a normal
+    // klav_session (but NO workspace — a viewer has no account), and grant a per-ticket viewer. Honors
+    // the same test-OTP bypass as /api/auth/verify so CI can drive it with the fixed code.
+    const verifyMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})\/verify$/)
+    if (req.method === "POST" && verifyMatch) {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`viewer:verify:${ip}:${verifyMatch[1]}`, 20, 15 * 60_000)) {
+        return json({ error: "Too many attempts. Please wait and try again." }, 429, { "Retry-After": "900" })
+      }
+      const resolved = await resolveFeedbackRef(verifyMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      let email = "", code = ""
+      try { const b = await req.json(); email = String(b.email || "").trim().toLowerCase(); code = String(b.code || "").trim() } catch { return json({ error: "invalid JSON" }, 400) }
+      if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      const testGranted = code === TEST_OTP_CODE ? (await testOtpDecision(email, () => isTestAccountEmail(email))).allowed : false
+      if (!(testGranted || await verifyOtp(email, code))) return json({ error: "Invalid or expired code." }, 401)
+      await upsertUser(email)
+      const proj = await projectById(resolved.projectId)
+      const mode = normalizeShareMode(proj?.shareMode)
+      const status = mode === "approval" ? "pending_approval" : "active"
+      await grantTicketViewer({ feedbackId: resolved.id, projectId: resolved.projectId, email, status, grantedBy: null })
+      const sid = token()
+      await createSession(sid, email, Date.now() + SESSION_DAYS * 86400 * 1000)
+      const access = status === "active" ? "full" : "pending"
+      return json({ ok: true, access }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+    }
+
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
     // GET /shared/project/:token/data  — return JSON portal data (no auth)
     // Token format: 64-char lowercase hex (32 random bytes); 404 on bad/unknown token.
