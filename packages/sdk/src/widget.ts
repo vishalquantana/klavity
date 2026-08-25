@@ -1,6 +1,6 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
-import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport } from "./capture"
+import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, type Rect } from "@klavity/core/crop"
@@ -436,8 +436,13 @@ async function captureSharpFullPage(): Promise<string> {
 function withSharpSuggestion(
   r: { dataUrl: string; quality: "rendered" | "wireframe"; blank: boolean; partial?: boolean },
 ): { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean } {
+  // KLA-587: also steer to Screen when the page embeds a cross-origin iframe. The DOM render provably can't
+  // capture the frame's pixels, yet neither the blank nor the partial check flags it (the surrounding page
+  // rendered fine, so the PNG is content-rich) — so we detect the uncapturable embed directly. Screen
+  // (getDisplayMedia) grabs real tab pixels including the frame. Still a user-gesture click; this only nudges.
   // Only worth suggesting the sharp path when the browser can actually do it (hidden on iOS Safari).
-  return { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: !!(r.blank || r.partial) && sharpCaptureSupported() }
+  const suggest = (!!(r.blank || r.partial) || hasUncapturableEmbeds()) && sharpCaptureSupported()
+  return { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: suggest }
 }
 
 // Active watch-engine controller — torn down when Sims are undeployed.
@@ -977,7 +982,8 @@ async function mount() {
         // KLAVITYKLA-473: a blank/partial crop just carries the suggestSharp hint into the composer; we no
         // longer auto-invoke getDisplayMedia here (it surprised users with a screen-share prompt).
         const cropped = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
-        return { dataUrl: cropped, quality, suggestSharp: !!(blank || partial) && sharpCaptureSupported() }
+        // KLA-587: a cross-origin iframe inside the cropped rect is uncapturable by the DOM render too → steer to Screen.
+        return { dataUrl: cropped, quality, suggestSharp: (!!(blank || partial) || hasUncapturableEmbeds()) && sharpCaptureSupported() }
       },
       // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images) +
       // scroll-stitch to a full-page image. Feature-detected — undefined on iOS Safari (no getDisplayMedia),

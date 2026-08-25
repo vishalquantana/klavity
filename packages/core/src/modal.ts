@@ -841,7 +841,17 @@ export function buildModal(
     .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible,.klavity-x:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     /* ── Screen button: the (i) badge is a purely visual affordance nested inside the button.
        Hovering the entire Screen button shows the floating tooltip (KLA-15/KLA-26/KLA-31). ── */
-    #klavity-sharp{flex:1.4;}
+    /* KLA-587: Screen is the RECOMMENDED default capture — real tab pixels (every image, embedded frame and
+       web font, no CORS gaps). Style it as the primary/accent button so the reporter's eye + first click land
+       here; Full Page (the DOM re-render) stays the neutral fallback. Screen still requires a user gesture, so
+       "default" = the recommended button + steer, NOT an auto-fired permission prompt (see KLAVITYKLA-473). */
+    #klavity-sharp{flex:1.4;background:var(--kl-accent);color:var(--kl-on-accent);font-weight:600;}
+    #klavity-sharp:hover{filter:brightness(1.06);}
+    #klavity-sharp .kl-info-badge{opacity:.7;}
+    #klavity-sharp:hover .kl-info-badge,#klavity-sharp:focus-visible .kl-info-badge{opacity:1;}
+    /* Compact "Recommended" pill inside the Screen button. Hidden on narrow composers where the row is tight. */
+    .kl-rec-tag{font-size:9px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;line-height:1;padding:2px 5px;border-radius:999px;background:color-mix(in srgb,var(--kl-on-accent) 22%,transparent);color:var(--kl-on-accent);flex:none;}
+    @media (max-width:420px){.kl-rec-tag{display:none;}}
     /* Faded (i) circle inside the Screen button — lights up on button hover to signal "info here". */
     /* Absolutely-positioned in the button's top-right corner so it never consumes flex-row width and
        can't overflow the button edge (the "Screen (i)" overflow). Button is position:relative. */
@@ -940,8 +950,8 @@ export function buildModal(
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
-        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
-        <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Screen capture — recommended" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-rec-tag">Recommended</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Recommended.</b> Screen grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        <button id="klavity-full" title="Full Page — instant, but re-renders the page (may miss cross-origin images or embedded frames). Use Screen for a pixel-perfect shot."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
         ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a video or file (MP4, PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
         ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
@@ -1202,7 +1212,7 @@ export function buildModal(
         const txt = document.createElement('span')
         txt.className = 'kl-sh-txt'
         // ASCII-only copy, mirroring the approved mockup.
-        txt.textContent = "Some areas didn't capture (cross-origin images render blank) - click Screen for a pixel-perfect shot."
+        txt.textContent = "Some areas can't be captured this way (embedded frames or cross-origin images) - click Screen for a pixel-perfect shot."
         const use = document.createElement('button')
         use.type = 'button'
         use.className = 'kl-sh-use'

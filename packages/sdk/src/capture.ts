@@ -273,6 +273,43 @@ export async function settleForCapture(root: HTMLElement, budgetMs = SETTLE_BUDG
   } catch { /* settle is best-effort — never block or delay the capture on error */ }
 }
 
+// KLA-587: cross-origin iframes are UNCAPTURABLE by the html-to-image DOM render — their pixels live in a
+// separate origin's document the renderer is not allowed to read (the same reason cross-origin <img> drop to
+// white gaps). Neither the blank NOR the partial check flags this: the SURROUNDING page renders fine, so the
+// PNG is content-rich and non-uniform — the embedded frame just comes back empty. So we detect a RENDERED,
+// reasonably-sized cross-origin iframe up front and let the composer steer the reporter to the real "Screen"
+// capture (getDisplayMedia), which grabs true tab pixels including embedded frames. Kept cheap (a bounded tag
+// scan, no layout thrash beyond offset reads) and conservative — a hidden / 1×1 tracking-pixel frame never
+// counts, so a page whose only iframes are invisible ad/analytics beacons is NOT nudged. Browser-only; returns
+// false in non-DOM envs. Screen capture stays a user-gesture click — this only decides whether to SUGGEST it.
+const MIN_EMBED_AREA_PX = 100 * 100 // ~a 100×100 visible frame; smaller frames are treated as beacons, not content
+export function hasUncapturableEmbeds(): boolean {
+  if (typeof document === "undefined" || typeof location === "undefined") return false
+  let frames: HTMLCollectionOf<HTMLIFrameElement>
+  try { frames = document.getElementsByTagName("iframe") } catch { return false }
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i]
+    if (!f) continue
+    const src = f.getAttribute("src") || ""
+    // about:/data:/blob:/javascript: frames carry no separate origin the renderer can't reach → not relevant.
+    if (!src || /^(?:about:|data:|blob:|javascript:)/i.test(src)) continue
+    let origin: string | null = null
+    try { origin = new URL(src, location.href).origin } catch { continue }
+    if (!origin || origin === location.origin) continue // same-origin frames ARE captured (renderer can read them)
+    // Only count a frame that is actually rendered on the page. offsetWidth/Height (0 for hidden frames) is the
+    // primary signal; fall back to getBoundingClientRect, then the width/height attributes (drives the tests).
+    let w = 0, h = 0
+    try {
+      w = f.offsetWidth || 0; h = f.offsetHeight || 0
+      if (!w || !h) { const r = f.getBoundingClientRect(); w = w || r.width; h = h || r.height }
+    } catch { /* fall through to attribute sizes */ }
+    if (!w) w = parseFloat(f.getAttribute("width") || "0") || 0
+    if (!h) h = parseFloat(f.getAttribute("height") || "0") || 0
+    if (w * h >= MIN_EMBED_AREA_PX) return true
+  }
+  return false
+}
+
 function loadImageBounded(src: string, timeoutMs: number): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     if (typeof Image === "undefined") { resolve(null); return }
@@ -448,6 +485,14 @@ export async function safeToPngWithScale(
     // ~1.8× faster on the same DOM (benchmarked KLAVITYKLA-393). Option mapping vs html-to-image:
     //   pixelRatio → scale · skipFonts:true → font:false · imagePlaceholder → fetch.placeholderImage.
     // `maximumCanvasSize` bounds a very tall page's output (parity with html-to-image's implicit clamp).
+    // KLA-587 (font mitigation for the HTML-render fallback): fonts break in a DOM re-render two ways —
+    //   (1) the render fires before web fonts finish loading → text paints in a fallback face, and
+    //   (2) modern-screenshot can't always inline a cross-origin @font-face file the page's CORS blocks.
+    // We fully fix (1) by awaiting document.fonts.ready in settleForCapture() BELOW before the first render,
+    // so text rasterizes in the real, loaded face. (2) can't be fully fixed client-side (the browser won't
+    // hand us cross-origin font bytes) — `font: false` skips the doomed inline attempt to keep the render
+    // fast/correct for the common case, and the reporter is steered to Screen (getDisplayMedia) for a truly
+    // pixel-perfect shot when a page's fonts/frames don't render faithfully.
     const out = await withTimeout(domToPng(node, {
       scale: pixelRatio,
       ...(explicitSize ?? {}),
