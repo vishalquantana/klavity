@@ -8759,10 +8759,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // wizard calls this per attached file, then passes the returned {name,key,filename} into the
       // author-create body. Private S3; 25MB cap. The bytes are only ever fed to a file input.
       if (req.method === "POST" && path === "/api/trails/author/attachments") {
-        const len = Number(req.headers.get("content-length") || 0)
-        if (len > 25 * 1024 * 1024) return json({ error: "file too large (max 25MB)" }, 413)
+        // Memory-DoS hardening (same class as /api/voice/transcribe): a Content-Length guard alone is
+        // bypassed by a chunked transfer-encoding request (no Content-Length header), after which
+        // req.formData() buffers the ENTIRE streamed body into RAM before the size check runs. Keep the
+        // cheap Content-Length fast-reject AND bound the actual byte stream with readBodyBounded(), which
+        // aborts once cumulative bytes cross the ceiling — an oversized chunked body is answered 413
+        // without ever fully landing in heap. The multipart is parsed only from the already-bounded
+        // buffer (the reconstructed Request carries the original Content-Type, i.e. the boundary).
+        const ATTACH_CEIL = 25 * 1024 * 1024 + 64 * 1024 // file cap + multipart framing overhead
+        const declaredLen = Number(req.headers.get("content-length") || 0)
+        if (declaredLen > ATTACH_CEIL) return json({ error: "file too large (max 25MB)" }, 413)
+        const bounded = await readBodyBounded(req, ATTACH_CEIL)
+        if (bounded === BODY_TOO_LARGE) return json({ error: "file too large (max 25MB)" }, 413)
         let form: FormData
-        try { form = await req.formData() } catch { return json({ error: "expected multipart form-data with a 'file' field" }, 400) }
+        try {
+          form = await new Request("http://x/", {
+            method: "POST",
+            headers: { "content-type": req.headers.get("content-type") || "" },
+            body: bounded,
+          }).formData()
+        } catch { return json({ error: "expected multipart form-data with a 'file' field" }, 400) }
         const file = form.get("file")
         if (!(file instanceof File) || file.size === 0) return json({ error: "no file provided" }, 400)
         if (file.size > 25 * 1024 * 1024) return json({ error: "file too large (max 25MB)" }, 413)
