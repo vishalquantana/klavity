@@ -1,5 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
 import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
@@ -13015,6 +13016,10 @@ if (db && process.env.NODE_ENV !== "test") {
   // Once shortly after boot, then every 60s (rows carry their own backoff/next_attempt_at).
   setTimeout(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 45_000)
   setInterval(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 60_000)
+  // KLAVITY CREDITS: monthly grant-reset warm-up. Lazy re-grant already covers correctness on first
+  // AI touch; this batch walk re-grants idle wallets on a month rollover. Once after boot, then daily.
+  setTimeout(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 90_000)
+  setInterval(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 24 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.
