@@ -109,3 +109,20 @@ test("ticketViewerStatus reflects the grant status", async () => {
   expect(await ticketViewerStatus(FID, PENDING)).toBe("pending_approval")
   expect(await ticketViewerStatus(FID, STRANGER)).toBeNull()
 })
+
+import { projectAccess, addProjectMember } from "./db"
+
+test("projectAccess treats a 'viewer' project_members row as no member/admin access", async () => {
+  // PVIEWER has a project_role='viewer' row (seeded in Task 2). It must NOT resolve to member/admin.
+  expect(await projectAccess(PVIEWER, PROJECT)).toBeNull()
+  // An admin still resolves admin.
+  expect(await projectAccess(OWNER, PROJECT)).toBe("admin")
+})
+
+test("addProjectMember can store a 'viewer' role", async () => {
+  const NEWV = "newviewer-tv@test.local"
+  await addProjectMember(PROJECT, ACCOUNT, NEWV, "viewer", OWNER)
+  const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [PROJECT, NEWV] })
+  expect(String((r.rows[0] as any).project_role)).toBe("viewer")
+  expect(await projectAccess(NEWV, PROJECT)).toBeNull()
+})

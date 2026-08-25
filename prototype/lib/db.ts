@@ -2803,7 +2803,13 @@ export async function projectAccess(email: string, projectId: string): Promise<'
   const acctRole = await accountRole(proj.accountId, email)
   if (acctRole === "owner" || acctRole === "admin") return "admin"
   const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [projectId, email] })
-  if (r.rows.length) return String((r.rows[0] as any).project_role) === "admin" ? "admin" : "member"
+  if (r.rows.length) {
+    const role = String((r.rows[0] as any).project_role)
+    if (role === "admin") return "admin"
+    // A 'viewer' row (shared-ticket onboarding) is NOT member access — viewers never mutate.
+    if (role === "viewer") return null
+    return "member"
+  }
   if (acctRole === "member") return null // account member with no explicit project row sees nothing
   return null
 }
@@ -2819,7 +2825,8 @@ export async function addProjectMember(projectId: string, accountId: string, ema
   await upsertUser(email)
   const now = Date.now()
   await db!.execute({ sql: "INSERT OR IGNORE INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)", args: ["am_" + accountId + "_" + email, accountId, email, "member", now] })
-  await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, projectRole === "admin" ? "admin" : "member", invitedBy ?? null, now] })
+  const role = projectRole === "admin" ? "admin" : projectRole === "viewer" ? "viewer" : "member"
+  await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, role, invitedBy ?? null, now] })
 }
 
 // Remove an ACTIVE member from a project (distinct from revokeProjectInvite, which only clears a
