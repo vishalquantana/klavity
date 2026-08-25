@@ -122,6 +122,7 @@ import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
+import { generateEnhancedDraft } from "./lib/report-enhance"
 import { updateFeedbackTitle } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
@@ -178,6 +179,19 @@ const CLARITY_MODEL = process.env.KLAV_CLARITY_MODEL || "google/gemini-3.1-flash
 // only consumed by requests that ACTUALLY spend an LLM call. Overridable for ops.
 const CLARITY_PER_PROJECT_DAY = Number(process.env.KLAV_CLARITY_PROJECT_DAILY || 500)
 const CLARITY_PROJECT_WINDOW = 24 * 60 * 60 * 1000
+// KLA-586 — AI-enhanced bug description ("smart-compose for bug reports"). POST /api/report/enhance turns
+// the reporter's one-liner + the auto-captured SCREENSHOT + URL + picked element into a structured rich
+// draft via a VISION call. The screenshot is a first-class input, so this MUST use a vision-capable model —
+// do NOT reuse CLARITY_MODEL (gemini-3.1-flash-lite, text-only). Default to MODEL (google/gemini-2.5-flash),
+// the same vision model reactToPage already sends images to. Overridable for ops.
+const ENHANCE_MODEL = process.env.KLAV_ENHANCE_MODEL || MODEL
+// Per-PROJECT daily cap for the enhance vision call. Vision tokens cost more than the clarity text tip, so
+// this default (200/day) is TIGHTER than clarity's 500. IP-independent (keyed on projectId), reuses
+// CLARITY_PROJECT_WINDOW (24h). Overridable for ops.
+const ENHANCE_PER_PROJECT_DAY = Number(process.env.KLAV_ENHANCE_PROJECT_DAILY || 200)
+// A dataURL screenshot can be large. Reject/skip the image when it exceeds this base64 cap BEFORE calling
+// chat() — bounds cost + memory, analogous to the voice route's pre-buffer size guard.
+const ENHANCE_MAX_SHOT_BYTES = Number(process.env.KLAV_ENHANCE_MAX_SHOT_BYTES || 8 * 1024 * 1024)
 // KLA-505 — live-dictation STT endpoint (POST /api/voice/transcribe) budget/abuse guards. A voice clip is
 // a few seconds of Opus (tens of KB), so 8MB is a generous hard cap that still bounds cost + memory. The
 // per-IP window and per-project daily cap mirror the clarity route's dual bound (a forged XFF can't buy a
@@ -3316,6 +3330,73 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         } catch { /* best-effort — heuristic still returns below */ }
       }
       return wjson({ score: h.score, coverage: h.coverage, level: h.level, tip })
+    }
+
+    // ── KLA-586: POST /api/report/enhance — anonymous, project-scoped, CORS-gated "smart-compose for bug
+    // reports". Turns a reporter's one-liner + the auto-captured SCREENSHOT + page URL + picked element into
+    // a structured rich draft ({summary, actualResult, expectedResult, stepsToReproduce, suggestedSeverity,
+    // suggestedPriority, confidence}) they can accept/edit before submit. This is the heavier, opt-in rung
+    // above the clarity coach: where clarity only NUDGES the text, enhance WRITES the expected/actual/steps
+    // block from the evidence already on the report. VISION call routed through the shared budget-gated
+    // chat() helper (tenant budget + daily cap + cost-log all automatic). Best-effort: any failure returns
+    // { draft: null } (never 500) so the composer simply no-ops. Auth mirrors /api/report/clarity exactly.
+    if (req.method === "POST" && path === "/api/report/enhance") {
+      // Per-IP abuse cap — TIGHTER than clarity (heavier vision call, invoked on explicit click, not per keystroke).
+      if (!rlAllow(`enhance:ip:${clientIp(req, server)}`, 20, 60_000)) return wjson({ error: "rate limited" }, 429)
+      let body: any = null
+      try { body = await req.json() } catch { return wjson({ error: "invalid" }, 400) }
+      const projectId = String(body?.projectId || body?.project || "")
+      const text = String(body?.text || "").slice(0, 4000)
+      if (!projectId) return wjson({ error: "project required" }, 400)
+      const proj = db ? await projectById(projectId) : null
+      if (!proj) return wjson({ error: "not found" }, 404)
+      // Reuse the SAME per-project toggle as clarity — a disabled project never spends an AI call here.
+      if (!proj.reportClarity) return wjson({ error: "disabled" }, 403)
+      if (!KEY) return wjson({ draft: null })
+
+      // Per-project daily LLM cap (in ADDITION to the per-IP window). Keyed on projectId (not IP) so a
+      // forged/rotated X-Forwarded-For can't buy a fresh budget. Rejected WITHOUT an LLM call when over cap.
+      if (!rlAllow(`enhance:proj:${projectId}`, ENHANCE_PER_PROJECT_DAY, CLARITY_PROJECT_WINDOW)) {
+        return wjson({ error: "daily enhance limit reached", draft: null }, 429)
+      }
+
+      // Assemble VISION input. `shot` is a dataURL from the composer's screenshots[]. URL + picked element
+      // are UNTRUSTED data → coerced + clipped.
+      const shot = String(body?.shot || "")
+      const pageUrl = String(body?.pageUrl || "").slice(0, 300)
+      const picked = (body?.picked && typeof body.picked === "object") ? body.picked : null
+      const pickedLine = picked
+        ? `\nReporter picked this element as broken — selector: ${String(picked.selector || "").slice(0, 300)}; label: ${String(picked.text || "").slice(0, 120)}`
+        : ""
+      // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
+      const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
+
+      try {
+        const draft = await generateEnhancedDraft(text, {
+          llm: async (oneLiner, systemPrompt) => {
+            const userParts: any[] = [{
+              type: "text",
+              text: "REPORTER NOTE:\n" + wrapUntrusted(oneLiner) +
+                    "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)") +
+                    pickedLine,
+            }]
+            if (shotOk) userParts.push({ type: "image_url", image_url: { url: shot } })
+            const { content } = await chat(
+              [
+                { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+                { role: "user", content: userParts },
+              ],
+              700,   // maxTokens — the structured draft is small
+              true,  // jsonMode
+              { type: "report-enhance", feature: "report-enhance", model: ENHANCE_MODEL, projectId, email: null, temperature: 0.2 },
+            )
+            return String(content ?? "")
+          },
+        })
+        return wjson({ draft }) // draft may be null → client no-ops
+      } catch {
+        return wjson({ draft: null }) // best-effort; never 500 into the composer
+      }
     }
 
     // ── KLA-505: POST /api/voice/transcribe — server-side LIVE DICTATION for the composer Voice button.
