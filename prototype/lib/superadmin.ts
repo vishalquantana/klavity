@@ -225,3 +225,46 @@ export async function buildSuperadminPL(now: number = Date.now()): Promise<Super
     },
   }
 }
+
+// ── KLAVITY CREDITS margin panel (spec 2026-08-25 §10/§12) ──────────────────────────────────────
+// Per-workspace: what the metered AI CONSUMPTION is worth at retail (1cr = $0.01) minus the real LLM
+// COGS from ai_calls over the same window → credit margin. Reads-only, OPS_ADMIN-gated (the route is).
+// NOTE (Phase-1 approximation): the ledger row does not store which bucket (grant vs top-up) a spend
+// came from, so grant-vs-topup CONSUMED is approximated — consumed against grant = min(consumed,
+// plan_grant), remainder against top-up. Exact per-bucket attribution is a Phase-2 refinement. Also,
+// ai_calls rows are matched by workspace (account_id) not by exact credit_ledger row (aiCallId is null
+// in Phase-1 soft wiring), so llmCogsUsd is the account's whole-window COGS.
+export type CreditsPLRow = {
+  workspaceId: string; grantedConsumedMc: number; topupConsumedMc: number
+  creditRevenueUsd: number; llmCogsUsd: number; creditMarginUsd: number
+}
+
+const CREDITS_MC_PER_CREDIT = 1000
+const CREDITS_USD_PER_CREDIT = 0.01
+
+export async function creditsMarginByWorkspace(_now: number = Date.now()): Promise<CreditsPLRow[]> {
+  // consumed = −SUM(negative spend rows) per workspace
+  const consumed = new Map<string, number>()
+  for (const r of await q(
+    `SELECT workspace_id AS ws, COALESCE(SUM(-millicredits),0) AS mc
+       FROM credit_ledger WHERE millicredits < 0 GROUP BY workspace_id`)) {
+    consumed.set(String(r.ws), Number(r.mc) || 0)
+  }
+  const planGrant = new Map<string, number>()
+  for (const r of await q(`SELECT workspace_id AS ws, plan_grant_millicredits AS pg FROM workspace_credits`)) {
+    planGrant.set(String(r.ws), Number(r.pg) || 0)
+  }
+  const llm = new Map<string, number>()
+  for (const r of await q(`SELECT account_id AS aid, COALESCE(SUM(cost_usd),0) AS c FROM ai_calls WHERE account_id IS NOT NULL GROUP BY account_id`)) {
+    llm.set(String(r.aid), Number(r.c) || 0)
+  }
+  const rows: CreditsPLRow[] = []
+  for (const [ws, mc] of consumed) {
+    const grantedConsumedMc = Math.min(mc, planGrant.get(ws) ?? mc)
+    const topupConsumedMc = Math.max(0, mc - grantedConsumedMc)
+    const creditRevenueUsd = (mc / CREDITS_MC_PER_CREDIT) * CREDITS_USD_PER_CREDIT
+    const llmCogsUsd = llm.get(ws) ?? 0
+    rows.push({ workspaceId: ws, grantedConsumedMc, topupConsumedMc, creditRevenueUsd, llmCogsUsd, creditMarginUsd: creditRevenueUsd - llmCogsUsd })
+  }
+  return rows.sort((a, b) => b.creditRevenueUsd - a.creditRevenueUsd)
+}

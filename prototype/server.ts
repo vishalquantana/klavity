@@ -68,7 +68,7 @@ import {
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
 // KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
 import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
-import { buildSuperadminPL } from "./lib/superadmin"
+import { buildSuperadminPL, creditsMarginByWorkspace } from "./lib/superadmin"
 import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
@@ -7741,7 +7741,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!me || !isOpsAdmin(me)) return json({ error: "Forbidden" }, 403)
       try {
         const pl = await buildSuperadminPL()
-        return json(pl, 200, { "cache-control": "no-store" })
+        // KLAVITY CREDITS: fold the per-workspace credit-margin rollup (retail credit value − LLM COGS)
+        // into the P&L payload the /superadmin dashboard renders. Best-effort — never fail the P&L on it.
+        let credits: Awaited<ReturnType<typeof creditsMarginByWorkspace>> = []
+        try { credits = await creditsMarginByWorkspace() } catch (e: any) { console.warn("[credits] margin panel skipped (non-fatal):", e?.message || e) }
+        return json({ ...pl, credits }, 200, { "cache-control": "no-store" })
       } catch (e: any) { return json(oops(e, "superadmin-pl"), 500) }
     }
     // ── Short-links CRUD (OPS_ADMIN-gated). The public redirector /s/:code is UNGATED (above). ──

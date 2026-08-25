@@ -101,6 +101,19 @@ tbody tr:hover{background:var(--ink-3)}
         </table>
       </div>
     </div>
+
+    <div class="panel">
+      <h2 id="crHead">Credits margin</h2>
+      <div class="sub" style="margin-bottom:14px">Metered-AI consumption valued at retail (1cr = $0.01) minus real LLM COGS. Phase-1 SOFT metering — nothing is blocked; grant-vs-topup split is approximate.</div>
+      <div style="overflow-x:auto">
+        <table id="crTbl">
+          <thead><tr>
+            <th>Workspace</th><th class="r">Consumed (cr)</th><th class="r">Grant</th><th class="r">Top-up</th><th class="r">Credit value</th><th class="r">LLM COGS</th><th class="r">Margin</th>
+          </tr></thead>
+          <tbody id="crBody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <div class="view" id="view-links">
@@ -249,10 +262,31 @@ tbody tr:hover{background:var(--ink-3)}
     }).join("");
   }
 
+  function renderCredits(d){
+    var rows = d.credits || [];
+    var body = document.getElementById("crBody");
+    if (!body) return;
+    if (!rows.length) { body.innerHTML = "<tr><td colspan='7' class='muted'>No metered AI consumption yet.</td></tr>"; return; }
+    body.innerHTML = rows.map(function(r){
+      var cr = (r.grantedConsumedMc + r.topupConsumedMc) / 1000;
+      var mcls = r.creditMarginUsd >= 0 ? "pos" : "neg";
+      return "<tr>"
+        + "<td class='mono'>" + esc(r.workspaceId) + "</td>"
+        + "<td class='r'>" + num(cr) + "</td>"
+        + "<td class='r'>" + num(r.grantedConsumedMc / 1000) + "</td>"
+        + "<td class='r'>" + num(r.topupConsumedMc / 1000) + "</td>"
+        + "<td class='r'>" + money(r.creditRevenueUsd) + "</td>"
+        + "<td class='r'>" + money(r.llmCogsUsd) + "</td>"
+        + "<td class='r " + mcls + "'>" + money(r.creditMarginUsd) + "</td>"
+        + "</tr>";
+    }).join("");
+  }
+
   function boot(d){
     state.rows = d.workspaces || [];
     document.getElementById("cacHead").innerHTML = ic("user") + " Customer Acquisition Cost";
     document.getElementById("wsHead").innerHTML = ic("users") + " Workspaces · sorted by margin";
+    var crH = document.getElementById("crHead"); if (crH) crH.innerHTML = ic("coins") + " Credits margin";
     var r = d.rates || {};
     document.getElementById("gen").textContent = "generated " + new Date(d.generatedAt).toLocaleString()
       + " · rates: storage $" + r.s3GbMonthUsd + "/GB-mo, egress $" + r.s3EgressGbUsd + "/GB, browser $" + r.browserMinUsd + "/min, email $" + r.emailSendUsd + "/send";
@@ -260,6 +294,7 @@ tbody tr:hover{background:var(--ink-3)}
     renderCac(d);
     renderHead();
     renderRows();
+    renderCredits(d);
   }
 
   fetch("/api/superadmin/pl", { credentials: "include" })
