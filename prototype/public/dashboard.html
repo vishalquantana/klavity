@@ -1091,6 +1091,10 @@ body.tkt-page-open #tktQuickChips,body.tkt-page-open #tktFilterBar{display:none!
 .tkt-shotwrap.zoomed .tkt-shot-inner img{cursor:zoom-out}
 .tkt-ann-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .tkt-ann-svg.off{display:none}
+/* Redaction layer: pixelate/redact regions re-applied over the CLEAN screenshot. Kept as a SEPARATE
+   always-on layer (NOT part of the toggleable .tkt-ann-svg markup) so toggling "Markup" off can never
+   reveal the PII underneath — redaction must never fail open. Sits on top of the markup layer. */
+.tkt-ann-redact{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
 .tkt-ann-bar{position:absolute;top:8px;right:8px;display:flex;gap:6px;line-height:1;z-index:2}
 .tkt-ann-btn{font-family:var(--body);font-size:11px;font-weight:600;padding:5px 9px;border-radius:7px;border:1px solid rgba(255,255,255,.22);background:rgba(25,20,15,.55);color:#fff;cursor:pointer;transition:border-color .15s,color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
 .tkt-ann-btn:hover{border-color:rgba(255,255,255,.4);color:#fff;transform:var(--mi-lift);box-shadow:0 6px 18px -8px rgba(99,102,241,.35)}
@@ -8076,19 +8080,100 @@ function buildAnnotationSvg(ann) {
   })
   return { svg, W, H, sw }
 }
+// KLA-593 fail-open fix: extract the reporter's pixelate/redact regions. The composer (annotator.ts)
+// BAKES pixelation into the exported PNG, but the dashboard re-renders shapes over the CLEAN stored
+// screenshot — which still contains the un-redacted PII inside these rects. So every path that re-draws
+// shapes from data MUST re-apply the redaction, or a reporter who redacted PII sees it in the clear here.
+function redactShapes(ann) {
+  return ((ann && ann.shapes) || []).filter(s => s && (s.type === "pixelate" || s.type === "redact"))
+}
+// Live overlay redaction: an always-on SVG layer of OPAQUE mosaic blocks covering each redact region.
+// The live overlay can't sample the underlying <img> pixels (cross-origin), so we cover the region with
+// fully-opaque blocks — matching annotator.ts's own tainted-canvas fallback rgb(30,30,40). The mosaic
+// grid (two dark shades per block) reads as an intentional "pixelated/redacted" region. Because every
+// block is opaque and the base rect underneath is opaque too, nothing leaks even if a block is clipped.
+function buildRedactionSvg(ann) {
+  const shapes = redactShapes(ann)
+  if (!shapes.length) return null
+  const W = ann.w || 1000, H = ann.h || 700, NS = "http://www.w3.org/2000/svg"
+  const svg = document.createElementNS(NS, "svg")
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H)
+  svg.setAttribute("preserveAspectRatio", "none")
+  svg.setAttribute("class", "tkt-ann-redact")
+  const set = (el, o) => { for (const k in o) el.setAttribute(k, o[k]); return el }
+  const block = Math.max(8, Math.round(W / 90))
+  shapes.forEach(s => {
+    const x = Math.min(s.x, s.x + (s.w || 0)), y = Math.min(s.y, s.y + (s.h || 0))
+    const w = Math.abs(s.w || 0), h = Math.abs(s.h || 0)
+    if (w <= 0 || h <= 0) return
+    // Opaque base rect guarantees full coverage (fail-closed) regardless of the mosaic grid on top.
+    svg.appendChild(set(document.createElementNS(NS, "rect"), { x: x, y: y, width: w, height: h, fill: "rgb(30,30,40)" }))
+    for (let by = 0; by < h; by += block) {
+      for (let bx = 0; bx < w; bx += block) {
+        // Deterministic two-tone shade per cell (no flicker on re-render) so it reads as a mosaic.
+        const shade = ((Math.floor(bx / block) + Math.floor(by / block)) % 2) ? "rgb(46,46,58)" : "rgb(24,24,32)"
+        svg.appendChild(set(document.createElementNS(NS, "rect"), {
+          x: x + bx, y: y + by, width: Math.min(block, w - bx), height: Math.min(block, h - by), fill: shade,
+        }))
+      }
+    }
+  })
+  return svg
+}
+// Export/flatten redaction: on the offscreen canvas we DO have the image pixels, so reproduce the
+// composer's real block-average mosaic (annotator.ts drawPixelate) — reading back what's painted and
+// overwriting each block with its average colour. Falls back to an opaque block if getImageData throws
+// (cross-origin taint), exactly like the composer, so the export never leaks the redacted region.
+function applyPixelateToCanvas(ctx, ann, cw, ch) {
+  const shapes = redactShapes(ann)
+  if (!shapes.length) return
+  const W = ann.w || cw, H = ann.h || ch
+  const sx = cw / W, sy = ch / H
+  const block = Math.max(8, Math.round(cw / 90))
+  shapes.forEach(s => {
+    const x = Math.max(0, Math.floor(Math.min(s.x, s.x + (s.w || 0)) * sx))
+    const y = Math.max(0, Math.floor(Math.min(s.y, s.y + (s.h || 0)) * sy))
+    const w = Math.min(cw - x, Math.ceil(Math.abs(s.w || 0) * sx))
+    const h = Math.min(ch - y, Math.ceil(Math.abs(s.h || 0) * sy))
+    if (w <= 0 || h <= 0) return
+    let data
+    try { data = ctx.getImageData(x, y, w, h) } catch { data = null }
+    if (!data || !data.data) { ctx.fillStyle = "rgb(30,30,40)"; ctx.fillRect(x, y, w, h); return }
+    const px = data.data
+    for (let by = 0; by < h; by += block) {
+      for (let bx = 0; bx < w; bx += block) {
+        let r = 0, g = 0, b = 0, count = 0
+        const maxY = Math.min(by + block, h), maxX = Math.min(bx + block, w)
+        for (let yy = by; yy < maxY; yy++) {
+          for (let xx = bx; xx < maxX; xx++) {
+            const i = (yy * w + xx) * 4
+            r += px[i]; g += px[i + 1]; b += px[i + 2]; count++
+          }
+        }
+        if (!count) continue
+        ctx.fillStyle = "rgb(" + Math.round(r / count) + "," + Math.round(g / count) + "," + Math.round(b / count) + ")"
+        ctx.fillRect(x + bx, y + by, maxX - bx, maxY - by)
+      }
+    }
+  })
+}
 // #531: mount the reporter's markup as a LIVE SVG overlay, once. The box is reserved via aspect-ratio
 // from the reporter's coords BEFORE the (async) screenshot decodes, and the SVG stays hidden until the
 // image decodes — so the markup never renders over a zero-height / undecoded box (the pre-fix flash).
 function mountAnnotationOverlay(box, img, ann, url) {
   const { svg, W, H } = buildAnnotationSvg(ann)
+  // Always-on redaction layer (separate from the toggleable markup svg) so "Markup" off never reveals PII.
+  const redact = buildRedactionSvg(ann)
   const inner = document.createElement("div"); inner.className = "tkt-shot-inner"
   if (W && H) inner.style.aspectRatio = W + " / " + H
   svg.style.visibility = "hidden"
-  const reveal = () => { svg.style.visibility = ""; inner.style.aspectRatio = "" }
+  if (redact) redact.style.visibility = "hidden"
+  const reveal = () => { svg.style.visibility = ""; if (redact) redact.style.visibility = ""; inner.style.aspectRatio = "" }
   const onReady = () => { if (img.decode) img.decode().then(reveal).catch(reveal); else reveal() }
   if (img.complete && img.naturalWidth) onReady()
   else { img.addEventListener("load", onReady); img.addEventListener("error", reveal) }
-  inner.appendChild(img); inner.appendChild(svg)
+  // Order: image, markup (toggleable), redaction (always-on, on top) — redaction wins the z-order.
+  inner.appendChild(img); inner.appendChild(svg); if (redact) inner.appendChild(redact)
   const bar = document.createElement("div"); bar.className = "tkt-ann-bar"
   const tg = document.createElement("button"); tg.type = "button"; tg.className = "tkt-ann-btn on"; tg.textContent = "⦿ Markup"
   tg.addEventListener("click", e => { e.stopPropagation(); svg.classList.toggle("off"); tg.classList.toggle("on") })
@@ -8131,6 +8216,9 @@ async function exportAnnotatedShot(url, ann) {
     const canvas = document.createElement("canvas"); canvas.width = cw; canvas.height = ch
     const ctx = canvas.getContext("2d")
     ctx.drawImage(base, 0, 0, cw, ch)
+    // KLA-593: bake redaction into the flattened export BEFORE the markup overlay, else the "Full size"
+    // composite would carry the un-redacted PII from the clean screenshot.
+    applyPixelateToCanvas(ctx, ann, cw, ch)
     const s = svg.cloneNode(true)
     s.setAttribute("xmlns", "http://www.w3.org/2000/svg")
     s.setAttribute("width", String(cw)); s.setAttribute("height", String(ch))
