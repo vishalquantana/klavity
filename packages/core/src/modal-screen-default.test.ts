@@ -26,7 +26,7 @@ const baseCallbacks = () => ({
 beforeEach(() => { document.body.innerHTML = "" })
 
 describe("Screen = recommended default capture (KLA-587)", () => {
-  it("renders the Screen button as the primary/recommended control when onCaptureSharp is wired", () => {
+  it("renders the primary 'Snap' capture button (no RECOMMENDED pill) when onCaptureSharp is wired", () => {
     buildModal(
       "bug",
       { ...baseCallbacks(), onCaptureSharp: async () => ({ dataUrl: "data:image/png;base64,SHARP", quality: "real-pixel" as const }) } as any,
@@ -35,19 +35,16 @@ describe("Screen = recommended default capture (KLA-587)", () => {
     const shadow = modalShadow()
     const sharp = shadow.getElementById("klavity-sharp") as HTMLButtonElement | null
     expect(sharp).not.toBeNull()
-    // Primary styling hook + the visible "Recommended" cue + an explicit recommended a11y label.
+    // Primary styling hook + a "Snap" a11y label (accent styling now carries the emphasis).
     expect(sharp!.classList.contains("kl-cap-primary")).toBe(true)
-    expect(sharp!.querySelector(".kl-rec-tag")?.textContent).toMatch(/recommended/i)
-    expect(sharp!.getAttribute("aria-label") || "").toMatch(/recommended/i)
-    // The badge is STACKED above the icon+label row (its own line) so the full word never truncates — the
-    // "Recommended" pill is a direct child of the button, and icon+"Screen" live in a separate .kl-cap-main row.
+    expect(sharp!.getAttribute("aria-label") || "").toMatch(/snap/i)
+    // The button is labelled "Snap" (renamed from "Screen"); the underlying getDisplayMedia behaviour is unchanged.
     const main = sharp!.querySelector(".kl-cap-main")
     expect(main).not.toBeNull()
-    expect(main!.querySelector(".kl-sharp-label")?.textContent).toMatch(/screen/i)
-    const recTag = sharp!.querySelector(".kl-rec-tag") as HTMLElement | null
-    expect(recTag).not.toBeNull()
-    expect(recTag!.parentElement).toBe(sharp) // stacked as a direct child, NOT inside the icon+label row
-    expect(main!.contains(recTag!)).toBe(false)
+    expect(main!.querySelector(".kl-sharp-label")?.textContent).toMatch(/^snap$/i)
+    // The stacked "RECOMMENDED" pill was removed per founder ask — it must be gone.
+    expect(sharp!.querySelector(".kl-rec-tag")).toBeNull()
+    expect((sharp!.textContent || "").toLowerCase()).not.toContain("recommended")
     // Full Page stays present as the fallback.
     expect(shadow.getElementById("klavity-full")).not.toBeNull()
   })

@@ -31,7 +31,7 @@ describe('KLAVITYKLA-473 suggest-Screen callout', () => {
     const hint = q(c, '#klavity-sharphint') as HTMLElement
     expect(hint).not.toBeNull()
     expect(hint.hidden).toBe(false)
-    expect(hint.textContent).toContain('Screen')
+    expect(hint.textContent).toContain('Snap')
     // The Screen button is highlighted so the eye is drawn to it.
     expect((q(c, '#klavity-sharp') as HTMLElement).classList.contains('kl-suggest')).toBe(true)
     // CRITICAL: the sharp/getDisplayMedia path was NOT auto-invoked — no surprise share prompt.
