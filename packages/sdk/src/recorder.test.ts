@@ -320,6 +320,44 @@ describe('recordMe walkthrough mode (KLA-555)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await p
   })
+
+  // KLA-620: the consent card is a standard modal — clicking the dim BACKDROP (outside the card) dismisses it
+  // exactly like Cancel (resolves null, tears down). Clicking INSIDE the card must NOT dismiss. Once recording is
+  // active the backdrop-dismiss is disarmed so a stray page click can't kill a live capture.
+  it('KLA-620: pointerdown on the backdrop (outside the card) dismisses the consent panel like Cancel', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const p = recordMe({ deps })
+    const host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    const card = host.firstElementChild as HTMLElement
+    // dialog a11y attributes present on the consent card
+    expect(card.getAttribute('role')).toBe('dialog')
+    expect(card.getAttribute('aria-modal')).toBe('true')
+    // Clicking INSIDE the card does NOT dismiss.
+    card.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await tick(1)
+    expect(document.querySelector('[data-klavity-ui="recorder"]')).not.toBeNull()
+    // Clicking the backdrop (host itself) DOES dismiss → promise resolves null, overlay removed.
+    host.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    const result = await p
+    expect(result).toBeNull()
+    expect(document.querySelector('[data-klavity-ui="recorder"]')).toBeNull()
+  })
+
+  it('KLA-620: backdrop-dismiss is disarmed once recording is active (stray page click cannot kill capture)', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const p = recordMe({ deps })
+    const host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    ;(host.querySelector('#klr-start') as HTMLButtonElement).click()
+    await tick()
+    // Now in the recording bar phase — a pointerdown on the host must NOT dismiss.
+    host.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await tick(1)
+    expect(document.querySelector('[data-klavity-ui="recorder"]')).not.toBeNull()
+    ;(host.querySelector('#klr-stop') as HTMLButtonElement).click()
+    await p
+  })
 })
 
 // KLA-602(b): live camera self-view bubble. It is OPT-IN (only mounts when the camera is genuinely part of the

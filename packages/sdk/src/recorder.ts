@@ -477,6 +477,11 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
 
     let settled = false
     let controller: RecordingController | null = null
+    // KLA-620: click-outside-to-dismiss for the consent card (standard modal affordance). Only armed while the
+    // consent panel is up (modal chrome); the ACTIVE 'recording' bar must NOT be dismissed by a stray page click
+    // (its host is pointer-events:none anyway, so clicks pass through to the live app). renderConsent arms this;
+    // renderRecording disarms it. Same effect as Cancel/Escape — finish(null) tears down every track.
+    let backdropDismiss = false
     // #474 (privacy) teardown hook: recordMe owns its own fixed overlay, sibling to the composer modal. If the
     // overlay is dismissed (Attach/Cancel/Re-record), the reporter presses Escape, or the host page navigates
     // away while a recording is ACTIVE, every camera/mic/screen track must stop. finish() is the single exit and
@@ -489,12 +494,21 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); finish(null) }
     }
     const onPageHide = () => { teardownRecorder() }
+    // KLA-620: backdrop pointerdown. host is the full-screen dim layer that centers the card; a pointerdown whose
+    // target is host itself (i.e. OUTSIDE the card) while the consent panel is up dismisses like Cancel. Clicks
+    // landing on the card (or its descendants) have target !== host and are ignored, so the card stays put.
+    const onBackdropDown = (e: PointerEvent) => {
+      if (!backdropDismiss) return
+      if (e.target === host) { e.preventDefault(); e.stopPropagation(); finish(null) }
+    }
+    host.addEventListener('pointerdown', onBackdropDown)
     document.addEventListener('keydown', onKeydown, { capture: true })
     if (typeof window !== 'undefined') { window.addEventListener('pagehide', onPageHide); window.addEventListener('beforeunload', onPageHide) }
     const finish = (val: RecordingAttachment | null) => {
       if (settled) return
       settled = true
       teardownRecorder() // stop any live camera/mic/screen tracks on EVERY exit (cancel/attach/redo/esc/close)
+      host.removeEventListener('pointerdown', onBackdropDown)
       document.removeEventListener('keydown', onKeydown, { capture: true })
       if (typeof window !== 'undefined') { window.removeEventListener('pagehide', onPageHide); window.removeEventListener('beforeunload', onPageHide) }
       try { host.remove() } catch { /* no-op */ }
@@ -508,6 +522,8 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     // Panel 1 — consent-first start.
     const renderConsent = () => {
       setChrome('modal'); emitPhase('consent')
+      backdropDismiss = true // KLA-620: consent panel is a real modal — click-outside dismisses like Cancel
+      card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.setAttribute('aria-label', 'Record a walkthrough')
       card.innerHTML =
         '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Record a walkthrough</div>' +
         '<div style="padding:14px">' +
@@ -572,6 +588,8 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
           ? '<div style="padding:0 14px 10px;font-size:11px;color:#574f45">Camera/mic blocked — recording <b>screen only</b>. Narrate by typing, or use the extension.</div>'
           : ''
       setChrome('bar'); emitPhase('recording')
+      backdropDismiss = false // KLA-620: recording is ACTIVE — a stray page click must NOT tear it down
+      card.removeAttribute('role'); card.removeAttribute('aria-modal'); card.removeAttribute('aria-label')
       card.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px">' +
         '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap">' +
