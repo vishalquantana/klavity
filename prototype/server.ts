@@ -7573,8 +7573,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       let email = "", code = ""
       try { const b = await req.json(); email = String(b.email || "").trim().toLowerCase(); code = String(b.code || "").trim() } catch { return json({ error: "invalid JSON" }, 400) }
       if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      // Brute-force lockout mirroring /api/auth/verify (H1/A07): the per-(IP,ref) cap above is defeated
+      // by an attacker rotating source IPs / X-Forwarded-For to buy a fresh 20-attempt budget against
+      // one email's 6-digit OTP. This IP-INDEPENDENT per-(email,ref) counter bounds the total wrong
+      // codes for this ticket's unblur regardless of source IP, so the OTP dies after OTP_FAIL_EMAIL_MAX
+      // wrong tries even from a fresh IP. Successful (or test-OTP) verify clears it.
+      const failEmailKey = `viewerfail:e:${email}:${verifyMatch[1]}`
+      if (rlCount(failEmailKey) >= OTP_FAIL_EMAIL_MAX)
+        return json({ error: "Too many attempts. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
       const testGranted = code === TEST_OTP_CODE ? (await testOtpDecision(email, () => isTestAccountEmail(email))).allowed : false
-      if (!(testGranted || await verifyOtp(email, code))) return json({ error: "Invalid or expired code." }, 401)
+      if (!(testGranted || await verifyOtp(email, code))) {
+        rlRecord(failEmailKey, OTP_FAIL_EMAIL_WINDOW)
+        return json({ error: "Invalid or expired code." }, 401)
+      }
+      rlClear(failEmailKey)
       await upsertUser(email)
       const proj = await projectById(resolved.projectId)
       const mode = normalizeShareMode(proj?.shareMode)

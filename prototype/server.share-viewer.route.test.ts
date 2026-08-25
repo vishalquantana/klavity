@@ -195,6 +195,24 @@ test("verify rejects a wrong code with 401", async () => {
   expect(r.status).toBe(401)
 })
 
+test("verify enforces an IP-INDEPENDENT per-(email,ref) brute-force lockout (OTP dies after N wrong tries)", async () => {
+  // Use the SHORT ref (resolves to the same ticket) so this test's counters are isolated from the
+  // other verify tests above. The per-(email,ref) lockout keys ONLY on email+ref — NOT on source IP —
+  // so an attacker rotating IPs / X-Forwarded-For can't buy a fresh brute-force budget against this OTP.
+  const victim = `bruteforce-${RUN}@test.local`
+  // OTP_FAIL_EMAIL_MAX = 10 wrong codes → the 11th is blocked with 429 (well before the per-IP cap of 20,
+  // proving a distinct per-email cap exists rather than only the IP limiter).
+  let last: Response | null = null
+  for (let i = 0; i < 10; i++) {
+    last = await postJson(`/api/t/${SHORT_REF}/verify`, { email: victim, code: "000000" })
+    expect(last.status).toBe(401)
+  }
+  // Next attempt for the SAME email is locked out — the code is dead regardless of source IP.
+  const blocked = await postJson(`/api/t/${SHORT_REF}/verify`, { email: victim, code: "111111" })
+  expect(blocked.status).toBe(429)
+  expect(blocked.headers.get("retry-after")).toBe("900")
+})
+
 test("an active viewer can POST a comment; a no-access caller gets 404", async () => {
   // GUEST became an active viewer in the verify test. Mint a fresh session row for GUEST directly.
   const guestSid = `sess_guest_${RUN}`
