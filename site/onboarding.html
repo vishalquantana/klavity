@@ -759,6 +759,21 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   // "New reports" = the dashboard triage view (#triage is its existing deep link).
   function dashTriageHref(){ var pid=(typeof projectId!=='undefined'&&projectId)?projectId:null; return '/dashboard'+(pid?'?project='+encodeURIComponent(pid):'')+'#triage' }
   function softNote(node,pname){ node.innerHTML='<b>'+esc(pname)+'</b> is ready to react — <a href="'+dashTriageHref()+'" style="color:var(--indigo);font-weight:600">open New reports in your dashboard →</a>' }
+  // Preview failed (or came back empty). If the homepage demo already banked a reaction for THIS
+  // URL, show that instead of a dead-end note — the work already happened once; never waste it.
+  function cachedReactionOrSoft(node,url,pname){
+    try{
+      var c=JSON.parse(localStorage.getItem('klav-aha-preview')||'null')
+      if(c && c.url===url && c.reactionText){
+        var wd=(c.sentiment==='critical')?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
+        node.innerHTML='<div class="uh-label">'+wd+'</div>'
+          +(c.reactionTitle?'<div style="font-weight:650;margin-bottom:3px">'+esc(c.reactionTitle)+'</div>':'')
+          +'<div style="font-style:italic">\u201c'+esc(c.reactionText)+'\u201d</div>'
+        return
+      }
+    }catch(e){}
+    softNote(node,pname)
+  }
   window.klavPreviewReact = async function(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
     var persona=(personas&&personas[0])||null
@@ -786,7 +801,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           if(bu){ try{ bu.textContent=new URL(url).host }catch(e2){} }
         }catch(e){}
       }
-      if(!rx||!(rx.observation||rx.title)){ softNote(node,pname); return }
+      if(!rx||!(rx.observation||rx.title)){ cachedReactionOrSoft(node,url,pname); return }
       // Aha carry-through: keep the reaction + captured screenshot + region alongside the stashed
       // personas so the Insights step can render the real visual evidence. Wrapped in try/catch so a
       // localStorage quota overflow (large base64) simply falls back to the text-only finding.
@@ -807,7 +822,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       node.innerHTML='<div class="uh-label">'+word+'</div>'
         +(rx.title?'<div style="font-weight:650;margin-bottom:3px">'+esc(rx.title)+'</div>':'')
         +'<div style="font-style:italic">\u201c'+esc(rx.observation||rx.title)+'\u201d</div>'
-    }catch(e){ softNote(node,pname) }
+    }catch(e){ cachedReactionOrSoft(node,url,pname) }
     finally{ clearInterval(waitTimer) }
   }
 })();
@@ -839,12 +854,52 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   function uhShowPersonas(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
-    if(!personas||!personas.length){ r.innerHTML='<p style="font-size:13px;color:var(--rose);margin-top:10px">No Sims came back — try a different URL.</p>'; return }
+    if(!personas||!personas.length){
+      // Sparse pages can yield an empty cast intermittently (observed: example.com returns
+      // personas:[] ~1 in 3 runs). If the homepage demo already stashed a cast + reaction for THIS
+      // URL, show that instead of a dead end — never make the user re-run a pipeline that succeeded.
+      try{
+        var st0=JSON.parse(localStorage.getItem('klav-aha-preview')||'null')
+        if(st0 && st0.url===url && st0.personas && st0.personas.length){
+          uhShowPersonas(url, st0.personas)
+          // Restore the carried reaction too — klavPreviewReact didn't run on this path.
+          try{
+            var rc=r.querySelector('.uh-catch')
+            if(rc && st0.reactionText){
+              var pn0=st0.personaName||((st0.personas&&st0.personas[0]&&st0.personas[0].name)||'A customer')
+              var wd=(st0.sentiment==='critical')?(esc(pn0)+' found something before your users would:'):(esc(pn0)+' reacted to your real page:')
+              rc.innerHTML='<div class="uh-label">'+wd+'</div>'
+                +(st0.reactionTitle?'<div style="font-weight:650;margin-bottom:3px">'+esc(st0.reactionTitle)+'</div>':'')
+                +'<div style="font-style:italic">\u201c'+esc(st0.reactionText)+'\u201d</div>'
+            }
+          }catch(e){}
+          return
+        }
+      }catch(e){}
+      r.innerHTML='<p style="font-size:13px;color:var(--rose);margin-top:10px">No Sims came back — try a different URL.</p>'; return
+    }
     // first-catch hook — if any Sim returned, mark that the user reached their first Sim reaction
     try{ localStorage.setItem('klav-aha-sims-seen','1') }catch(e){}
     // Aha carry-through: stash so signup can persist these Sims into the new project and
     // the automate step can link straight to their first review. klavPreviewReact fills reactionText.
-    try{ localStorage.setItem('klav-aha-preview', JSON.stringify({ url: url, personas: personas, reactionText: '', ts: Date.now() })) }catch(e){}
+    // MERGE, don't replace: an existing stash (homepage handoff) may already carry reactionText/
+    // shotDataUrl/region for this URL — replacing it would drop the visual evidence on preview failure.
+    try{
+      var prev=JSON.parse(localStorage.getItem('klav-aha-preview')||'{}')||{}
+      var same=prev.url===url
+      localStorage.setItem('klav-aha-preview', JSON.stringify({
+        url: url,
+        personas: personas,
+        reactionText: same?(prev.reactionText||''):'',
+        reactionTitle: same?(prev.reactionTitle||''):'',
+        sentiment: same?(prev.sentiment||''):'',
+        personaName: same?(prev.personaName||''):'',
+        personaRole: same?(prev.personaRole||''):'',
+        shotDataUrl: same?(prev.shotDataUrl||undefined):undefined,
+        region: same?(prev.region||undefined):undefined,
+        ts: Date.now()
+      }))
+    }catch(e){}
     // Friction: prefill signup from the URL the user already typed (still editable there).
     try{
       var host=new URL(url).hostname.replace(/^www\./,'')
