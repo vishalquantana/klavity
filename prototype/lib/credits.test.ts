@@ -118,6 +118,32 @@ test("refund on failure restores balance and nets the ledger to zero", async () 
   expect(net).toBe(0)
 })
 
+test("KLA-609: failed action books ZERO consumed credits (no lingering spend row, no double-count)", async () => {
+  await seedWallet("acct_r5b", 5000)
+  const rv = await reserveCredits("acct_r5b", "keyframes", { plan: "pro" }) // cost 2000
+  await rv.settle({ ok: false }) // AI action failed
+  const w = await getWorkspaceCredits("acct_r5b")
+  expect(w!.grantedMc).toBe(5000) // hold fully restored
+  const rows = await listCreditLedgerForWorkspace("acct_r5b")
+  // The margin panel (creditsMarginByWorkspace) sums ONLY negative rows as "consumed". A failed action
+  // must contribute 0 consumed — i.e. no negative spend row lingering (the double-count bug).
+  const consumedMc = rows.filter(r => r.millicredits < 0).reduce((s, r) => s - r.millicredits, 0)
+  expect(consumedMc).toBe(0)
+  expect(rows.length).toBe(0) // net-zero effect: nothing booked at all
+})
+
+test("KLA-609: soft-mode failure that went NEGATIVE still nets to 0 consumed (no overstated consumption)", async () => {
+  await seedWallet("acct_r5c", 0) // empty wallet → soft mode drives it negative on the hold
+  const rv = await reserveCredits("acct_r5c", "sim", { plan: "free" }) // cost 15000, wallet goes negative
+  expect(rv.wouldBlock).toBe(true)
+  await rv.settle({ ok: false }) // failed
+  const w = await getWorkspaceCredits("acct_r5c")
+  expect(w!.grantedMc + w!.topupMc).toBe(0) // hold restored back to zero, not left negative
+  const rows = await listCreditLedgerForWorkspace("acct_r5c")
+  const consumedMc = rows.filter(r => r.millicredits < 0).reduce((s, r) => s - r.millicredits, 0)
+  expect(consumedMc).toBe(0)
+})
+
 test("grant-before-topup spend order via reserve", async () => {
   await seedWallet("acct_r6", 1000, 9000) // grant 1000 + topup 9000
   const rv = await reserveCredits("acct_r6", "sim", { plan: "team" }) // 15000 > 10000

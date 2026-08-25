@@ -121,21 +121,21 @@ export async function reserveCredits(workspaceId: string, action: CreditAction, 
 
   const wouldBlock = !sufficient && !graceEligible
   const settle: CreditReservation["settle"] = async ({ ok, aiCallId }) => {
-    // Always record the spend (the metered consumption). On failure, ALSO restore the held balance
-    // and write the compensating +refund row so the ledger nets to zero (spec ambiguity §10/§14).
-    await insertCreditLedger({
-      workspaceId, action, millicredits: -costMc, aiCallId: aiCallId ?? null,
-      refFeedbackId: opts.refFeedbackId ?? null, refRunId: opts.refRunId ?? null,
-      actorEmail: opts.actorEmail ?? null, isGuest: opts.isGuest ?? false,
-    })
-    if (!ok && split) {
-      await creditWorkspaceCredits(workspaceId, split) // restore the hold
+    if (ok) {
+      // Success: book the metered consumption as a single debit row.
       await insertCreditLedger({
-        workspaceId, action: "refund", millicredits: costMc, aiCallId: aiCallId ?? null,
+        workspaceId, action, millicredits: -costMc, aiCallId: aiCallId ?? null,
         refFeedbackId: opts.refFeedbackId ?? null, refRunId: opts.refRunId ?? null,
         actorEmail: opts.actorEmail ?? null, isGuest: opts.isGuest ?? false,
       })
+      return
     }
+    // Failure (KLA-609 batch-5): a failed AI action consumed NOTHING, so it must net to ZERO
+    // consumption. Restore the held balance and book NO spend row at all. We deliberately do NOT
+    // write a spend(−costMc)+refund(+costMc) pair: creditsMarginByWorkspace() sums only negative
+    // rows (millicredits < 0), so a lingering −costMc spend row would DOUBLE-COUNT the failed action
+    // in the margin panel (and overstate consumption when the wallet had gone negative).
+    if (split) await creditWorkspaceCredits(workspaceId, split) // restore the hold; no ledger row
   }
   return { workspaceId, action, costMc, sufficient, usedGrace, wouldBlock, split, settle }
 }
