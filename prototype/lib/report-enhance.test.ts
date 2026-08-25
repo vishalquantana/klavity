@@ -35,6 +35,41 @@ describe("ENHANCE_SYSTEM_PROMPT", () => {
     // KLA-492 invariant: never re-ask for already-captured context.
     expect(ENHANCE_SYSTEM_PROMPT).toContain("NEVER ask")
   })
+
+  test("carries Raghu's QA-manager persona (canonical prompt swapped in)", () => {
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("Senior QA Manager")
+    // Screenshot-first analysis discipline.
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("ANALYZE THE SCREENSHOT FIRST")
+    // Actual-vs-expected discipline (current behavior only).
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("CURRENT OBSERVED BEHAVIOR ONLY")
+  })
+
+  test("JSON-only output contract, not markdown (his §15/§16 overridden)", () => {
+    // The prompt must instruct JSON-only and explicitly override the Markdown report format.
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("OUTPUT FORMAT")
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("no markdown")
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("OVERRIDES any Markdown")
+    // Summary must NOT carry the [CLASSIFICATION] prefix (that rides severity/priority fields).
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("WITHOUT the [CLASSIFICATION] prefix")
+    // Exact JSON keys our parser expects are named in the contract.
+    for (const k of ["summary", "actualResult", "expectedResult", "stepsToReproduce", "suggestedSeverity", "suggestedPriority", "confidence"]) {
+      expect(ENHANCE_SYSTEM_PROMPT).toContain(k)
+    }
+  })
+
+  test("never-fabricate + no-over-infer intent present (his §11)", () => {
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("DO NOT OVER-INFER")
+    expect(ENHANCE_SYSTEM_PROMPT.toLowerCase()).toContain("fabricate")
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("plausible fiction")
+  })
+
+  test("conservative classification rule (bias lower + low confidence, never P1 'to be safe')", () => {
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("Not specified")
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("LOWER severity")
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("to be safe")
+    // Severity->priority derivation is spelled out.
+    expect(ENHANCE_SYSTEM_PROMPT).toContain("C1->P1")
+  })
 })
 
 describe("parseEnhanceReply", () => {
@@ -99,6 +134,30 @@ describe("parseEnhanceReply", () => {
     expect(parseEnhanceReply(JSON.stringify({ ...VALID, confidence: -2 }))!.confidence).toBe(0)
     expect(parseEnhanceReply(JSON.stringify({ ...VALID, confidence: "oops" }))!.confidence).toBe(0)
   })
+
+  test("severity→priority mapping is enforced when priority is omitted (C1→P1, C2→P2, C3→P3)", () => {
+    const mk = (sev: string) => parseEnhanceReply(JSON.stringify({ ...VALID, suggestedSeverity: sev, suggestedPriority: undefined }))!
+    expect(mk("C1").suggestedPriority).toBe("P1")
+    expect(mk("C2").suggestedPriority).toBe("P2")
+    expect(mk("C3").suggestedPriority).toBe("P3")
+  })
+
+  test("'Not specified'/undeterminable classification → conservative C3/P3 + low confidence", () => {
+    // Model followed Raghu's conservative rule: no gradable signal → biases to the lowest severity and a low
+    // confidence rather than upgrading 'to be safe'. Off-list severity clamps to C3, priority derives to P3.
+    const d = parseEnhanceReply(JSON.stringify({
+      summary: "Dashboard tile shows no value",
+      actualResult: "The revenue tile renders blank; classification not specified.",
+      expectedResult: "The revenue tile should display the computed value.",
+      stepsToReproduce: ["Open the dashboard"],
+      suggestedSeverity: "Not specified",
+      suggestedPriority: "Not specified",
+      confidence: 0.2,
+    }))!
+    expect(d.suggestedSeverity).toBe("C3")
+    expect(d.suggestedPriority).toBe("P3")
+    expect(d.confidence).toBeLessThanOrEqual(0.4)
+  })
 })
 
 describe("renderDraftToText", () => {
@@ -113,6 +172,10 @@ describe("renderDraftToText", () => {
     expect(txt).toContain("3. Click 'Place order'")
     expect(txt).toContain("Severity: C2")
     expect(txt).toContain("Priority: P2")
+    // Raghu §15 section order: Summary → Steps → Actual → Expected → Severity·Priority.
+    expect(txt.indexOf("Steps to reproduce:")).toBeLessThan(txt.indexOf("Actual result:"))
+    expect(txt.indexOf("Actual result:")).toBeLessThan(txt.indexOf("Expected result:"))
+    expect(txt.indexOf("Expected result:")).toBeLessThan(txt.indexOf("Severity:"))
   })
 
   test("skips empty sections", () => {
