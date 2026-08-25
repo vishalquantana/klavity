@@ -49,7 +49,7 @@ import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
-import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines } from "./lib/feedback"
+import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
@@ -1705,6 +1705,23 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
         attachments.push({ filename, contentType: String(r.contentType || contentType || "video/webm"), bytes, url })
       } catch (e: any) { console.warn("recording fetch failed for ticket (non-fatal):", e?.message || e) }
     }
+  }
+  // KLA-582: console/network logs are no longer dumped into the ticket body (noisy, low-signal inline).
+  // They travel as a single text-file attachment instead, so the exported Jira/Plane/etc. issue AND the
+  // Klavity ticket carry the full capture for a dev to open. Best-effort — never block the export if the
+  // log-file build fails. No S3 round-trip: the bytes are serialized in-memory from the stored context.
+  if (fb.clientContext) {
+    try {
+      const logText = buildLogAttachmentText(fb.clientContext)
+      if (logText) {
+        attachments.push({
+          filename: LOG_ATTACHMENT_FILENAME,
+          contentType: "text/plain",
+          bytes: new TextEncoder().encode(logText),
+          url: "",
+        })
+      }
+    } catch (e: any) { console.warn("console/network log attachment build failed for ticket (non-fatal):", e?.message || e) }
   }
   // A.8: occurrence timeline — when this report recurred, append each occurrence's own verbatim
   // wording + date so the external ticket carries the receipts ("you said X on Y, then Y2, then Y3").
