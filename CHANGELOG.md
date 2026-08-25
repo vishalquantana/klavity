@@ -15,6 +15,11 @@ section for the bump rules.
 > (one entry per shipped version, titled from its feature branch). Re-run that
 > script to refresh after new versions ship.
 
+## [Unreleased]
+
+### Added
+- **Shared-ticket viewer onboarding (Phase 1):** the normal ticket URL `/t/:ref` is now an adaptive share link — members see the full ticket, everyone else gets a server-side-redacted blurred teaser and can unblur + comment with just an email (passwordless). New `ticket_viewers` grants (free & unlimited, per-ticket). Dashboard Copy-link now produces `/t/:ref`.
+
 ## [0.39.109] — 2026-06-22
 
 ### Shipped
