@@ -1075,6 +1075,12 @@ async function mount() {
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
+      // KLA-591: role-aware over-cap CTA. An identified reporter (first-party page / signed-in widget) is a
+      // workspace member/owner → offer a direct upgrade link; an anonymous end-user on a customer's site is
+      // never asked to pay → the composer shows "ask your team to upgrade / attach a smaller file". The
+      // 100MB per-file cap is the composer default (DEFAULT_MAX_FILE_BYTES); raise per plan here later.
+      reporterRole: identified ? "member" : "anon",
+      upgradeUrl: cfg.backendUrl ? cfg.backendUrl + "/settings/billing" : "https://klavity.in/settings/billing",
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
@@ -1169,7 +1175,11 @@ async function mount() {
         const result = await submitFeedback(uploadCfg, uploadPayload, (pct) => {
           const fill = composer?.shadowRoot.getElementById("klavity-progress-fill") as HTMLElement | null
           if (fill) { fill.style.transition = "width 0.15s ease"; fill.style.width = pct + "%" }
+          // KLA-591: mirror the real XHR upload percent onto each attachment (video tile / file chip) so a
+          // large video visibly uploads instead of looking stuck.
+          try { composer?.setUploadProgress(pct) } catch {}
         })
+        try { composer?.setUploadProgress(null) } catch {} // clear the per-attachment bars once done
         await afterFiled(result)
         return result
       },
