@@ -59,9 +59,11 @@ Storage quota (Free 2GB / Solo 25 / Team 150 / Scale 500 GB, per the KLA-594 dec
 | AI Enhance (1 vision call) | ~$0.002 | **1** |
 | Video transcript | ~$0.001–0.006 / min | **1 / min** |
 | Keyframes + summary | ~$0.003 | **2** |
-| Voice dictation | ~$0.001 / clip | **0 (bundled) or 1** |
+| Voice dictation | ~$0.001 / clip | **1 per 10 dictations** (≈0.1cr each) — metered but cheap (founder call) |
 | Sim | ~$0.05–0.15 | **15** |
 | AutoSim run | ~$0.30–0.50 | **75** |
+
+Fractional-cost actions (voice) debit in **tenths of a credit** (store credits ×10 internally, or a `millicredits` integer column) so "10 dictations = 1 credit" is exact without float drift.
 
 Costs are **config-driven constants** (one table), never hard-coded at call sites, so they re-tune without a deploy chain.
 
@@ -155,15 +157,18 @@ Current meter = "Sims + guarded AutoSim." Migrate that into the unified wallet: 
 
 ---
 
-## 12. Open decisions (founder sign-off)
+## 12. Decisions
 
-1. **Credit peg + markup** — is `1cr ≈ $0.01`, `~4–5× COGS` the right margin? (drives all costs/grants)
-2. **Monthly grants** — Free 100 / Solo 1,500 / Team 10,000 / Scale 40,000 — generous enough / too generous?
-3. **Voice dictation** — bundle free (like clarity) or meter at 1cr?
-4. **Grant rollover** — confirm: monthly grant resets (no rollover), top-ups roll over.
-5. **Top-up price** — $10/1,000 credits + volume tiers?
-6. **"Last taste" grace** — allow one over-limit AI action per period, or hard stop at zero?
-7. **Plan-change re-grant** — pro-rata immediately vs next cycle.
+**LOCKED (founder, 2026-08-25):**
+1. **Credit peg + markup** — ✅ `1cr ≈ $0.01`, `~4–5× COGS`.
+2. **Monthly grants** — ✅ Free 100 / Solo 1,500 / Team 10,000 / Scale 40,000.
+3. **Voice dictation** — ✅ metered but cheap: **1 credit per 10 dictations** (≈0.1cr each; store millicredits).
+5. **Top-up price** — ✅ ~$10 / 1,000 credits (retail $0.01/credit) + volume tiers.
+
+**Defaulted to spec recommendation (adjustable at build):**
+4. **Grant rollover** — monthly grant resets (no rollover); purchased top-ups roll over; spend grant-first.
+6. **"Last taste" grace** — allow ONE over-limit AI action per period (loss-aversion nudge), then hard stop.
+7. **Plan-change re-grant** — next cycle (no immediate pro-rata) for launch simplicity.
 
 ---
 
