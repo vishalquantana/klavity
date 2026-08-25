@@ -71,15 +71,18 @@ Costs are **config-driven constants** (one table), never hard-coded at call site
 
 ## 5. Grants, top-ups, upgrades
 
-**Monthly grant per tier (resets monthly; recommended):**
+**Monthly grant per tier (resets monthly; GENEROUS revision 2026-08-26):**
 
 | Plan | Monthly credits | ≈ what that buys |
 |---|---|---|
-| **Free** | **100** | ~100 Enhances, or ~1 AutoSim — a real taste |
-| **Solo $49** | **1,500** | daily Enhance habit + light Sims |
-| **Team $249** | **10,000** | a team's steady AI use |
-| **Scale $599** | **40,000** | heavy/CI AutoSim cadence |
-| **Founding Ten $299** | Team-level (10,000) locked-for-life | founder loyalty |
+| **Free** | **300** | a generous taste — dozens of Enhances or a few AutoSims |
+| **Solo $49** | **5,000** | daily Enhance habit + regular Sims |
+| **Team $249** | **30,000** | a team's steady AI use with headroom |
+| **Scale $599** | **150,000** | heavy/CI AutoSim cadence — **metered, not unlimited** |
+| **Founding Ten $299** | Team-level (30,000) locked-for-life | founder loyalty |
+| **Agency** | Scale-level (150,000) | reseller/agency volume |
+
+> **Metering scope (2026-08-26):** for the credits wallet, **only `partner`** (internal/reseller) is unlimited. Scale is now metered like any paid tier — previously it was wrongly short-circuited as unlimited (it shared the legacy `planIsUnlimited` gate). A credits-specific `creditsUnlimited(plan) = plan === 'partner'` check now guards the wallet, leaving the shared quota/billing `planIsUnlimited` (partner + scale) untouched. Every new grant number is **≥** its old value, so no wallet re-grants to less at launch.
 
 - **Reset:** monthly grant does NOT roll over (keeps it a habit meter); **purchased top-up credits DO roll over** and are spent *after* the monthly grant (grant first, then top-up balance).
 - **Top-up:** à-la-carte packs, e.g. **$10 / 1,000 credits** (retail $0.01/credit), with volume tiers. For bursts without a plan change. Owner/admin only.
@@ -161,7 +164,7 @@ Current meter = "Sims + guarded AutoSim." Migrate that into the unified wallet: 
 
 **LOCKED (founder, 2026-08-25):**
 1. **Credit peg + markup** — ✅ `1cr ≈ $0.01`, `~4–5× COGS`.
-2. **Monthly grants** — ✅ Free 100 / Solo 1,500 / Team 10,000 / Scale 40,000.
+2. **Monthly grants** — ✅ GENEROUS revision (2026-08-26): Free 300 / Solo 5,000 / Team 30,000 / Scale 150,000 / Founding 30,000 (Team-level, locked-for-life) / Agency 150,000 (Scale-level). **Metering:** only `partner` is unlimited for credits; **Scale is metered** (was wrongly unlimited). All numbers ≥ the original grants, so re-grants never shrink an existing wallet.
 3. **Voice dictation** — ✅ metered but cheap: **1 credit per 10 dictations** (≈0.1cr each; store millicredits).
 5. **Top-up price** — ✅ ~$10 / 1,000 credits (retail $0.01/credit) + volume tiers.
 
