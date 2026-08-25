@@ -702,6 +702,11 @@ export function buildModal(
   // as an inline <video controls> preview instead of the image annotator. Cleared when an image thumb is
   // selected, when the video is removed, or when there are no videos.
   let activeVideoIndex: number | null = null
+  // KLA-602(a): when non-null, a "Record me" recording (recordings[activeRecordingIndex]) owns the hero as an
+  // inline <video controls> preview. Recordings now render as removable video TILES in the gallery strip
+  // (reusing the KLA-591 tile look), no longer as text chips behind a separate Preview→Attach modal. Mutually
+  // exclusive with activeVideoIndex + the image annotator selection.
+  let activeRecordingIndex: number | null = null
   let heroKeyHandler: ((e: KeyboardEvent) => void) | null = null
   // JTBD 1.10: track whether a session-replay buffer is attached — it counts as evidence, so an
   // evidence-only report (replay but no typed prose / screenshot) can still Submit. Seeded from the
@@ -881,6 +886,12 @@ export function buildModal(
     .kl-video-thumb:hover .kl-video-play{background:rgba(0,0,0,.12);}
     .kl-video-thumb .kl-video-play svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));}
     .kl-video-thumb .kl-video-badge{position:absolute;left:4px;bottom:4px;display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:5px;background:rgba(0,0,0,.62);color:#fff;font-size:9px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;}
+    /* KLA-602(a): a "Re-record" action on a recording tile — a small circular control in the top-LEFT corner
+       (Remove is top-right), so a reporter can redo a walkthrough without hunting for the Record button. */
+    .kl-rerec{position:absolute;top:3px;left:3px;z-index:2;width:19px;height:19px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease;}
+    .kl-rerec:hover{transform:scale(1.08);background:var(--kl-accent);}
+    .kl-rerec:active{transform:scale(.94);}
+    .kl-rerec:focus-visible{outline:2px solid var(--kl-accent);outline-offset:1px;}
     .kl-att-prog{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(0,0,0,.35);overflow:hidden;}
     .kl-att-prog i{display:block;height:100%;width:0;background:var(--kl-accent);transition:width .2s ease;}
     .kl-file-chip{position:relative;overflow:hidden;}
@@ -1200,6 +1211,19 @@ export function buildModal(
     .kl-float-tip{position:fixed;width:228px;max-width:calc(100vw - 16px);padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;z-index:2147483647;pointer-events:none;visibility:hidden;opacity:0;transition:opacity .15s ease,visibility .15s step-end;}
     .kl-float-tip.kl-show{visibility:visible;opacity:1;transition:opacity .15s ease;}
     .kl-float-tip b{color:var(--kl-fg);font-weight:600;}
+    /* KLA-601: the Screen-decline NUDGE — an action-oriented callout anchored to the Screen button after the
+       reporter cancels the share picker (we keep the rendered fallback). It reuses the floating-tip shell but
+       is DISMISSIBLE (its own close affordance / auto-hide), captures pointer events, and gets an accent hairline
+       + a small arrow so it reads as a proactive tip, not the passive hover tooltip. Shown at most once/session. */
+    .kl-float-tip.kl-nudge{pointer-events:auto;box-shadow:0 0 0 1.5px var(--kl-accent),0 12px 30px rgba(20,16,40,.26);}
+    .kl-float-tip.kl-nudge .kl-nudge-row{display:flex;align-items:flex-start;gap:8px;}
+    .kl-float-tip.kl-nudge .kl-nudge-x{flex:none;margin:-2px -2px 0 auto;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:6px;background:transparent;color:var(--kl-muted);cursor:pointer;transition:background .15s ease,color .15s ease;}
+    .kl-float-tip.kl-nudge .kl-nudge-x:hover{background:color-mix(in srgb,var(--kl-accent) 14%,transparent);color:var(--kl-accent);}
+    .kl-float-tip.kl-nudge .kl-nudge-x:focus-visible{outline:2px solid var(--kl-accent);outline-offset:1px;}
+    /* Gently pulse the Screen button to draw the eye toward the one-tap retry. */
+    @keyframes kl-screen-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--kl-accent) 60%,transparent);}70%{box-shadow:0 0 0 8px rgba(124,58,237,0);}100%{box-shadow:0 0 0 0 rgba(124,58,237,0);}}
+    #klavity-sharp.kl-pulse{animation:kl-screen-pulse 1.4s cubic-bezier(.4,0,.2,1) 3;}
+    @media (prefers-reduced-motion:reduce){#klavity-sharp.kl-pulse{animation:none;}}
     /* ── Capture-source active/selected indicator (KLA-21) ──────────────────────────────────────
        .kl-active is applied to whichever capture button the user most recently used successfully.
        Uses the same accent palette and transition system as the rest of the modal so it reads as
@@ -1315,7 +1339,7 @@ export function buildModal(
       </div>
       ${fileAttachEnabled ? '<div class="klavity-capmsg" id="klavity-capmsg" role="alert" hidden></div>' : ''}
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
-      ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
+      ${/* KLA-602(a): recordings render as video TILES in the strip (updateStrip), not a separate chip row. */''}
       <div class="klavity-error" id="klavity-err"></div>
       <div class="klavity-desc" id="klavity-desc" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Description" data-ph="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></div>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
@@ -1406,6 +1430,52 @@ export function buildModal(
     sharpBtn.addEventListener('blur', hideTip)
   }
 
+  // ── KLA-601: Screen-decline helper NUDGE ──────────────────────────────────────────────────────────────
+  // When the reporter cancels the getDisplayMedia share picker, we KEEP the rendered fallback (never leave
+  // them shot-less) but surface a one-time, dismissible, action-oriented callout anchored to the (recommended)
+  // Screen button — plus a gentle pulse to draw the eye — instead of failing silently. Shown AT MOST ONCE per
+  // composer session (no nagging on every decline) and NEVER when Screen isn't supported (no sharpBtn → iOS
+  // Safari). Reuses the floating-tip shell so it can't be clipped by the modal's overflow:hidden.
+  let screenNudgeShown = false
+  let screenNudgeEl: HTMLElement | null = null
+  function dismissScreenNudge() {
+    try { screenNudgeEl?.remove() } catch { /* no-op */ }
+    screenNudgeEl = null
+    try { sharpBtn?.classList.remove('kl-pulse') } catch { /* no-op */ }
+  }
+  function showScreenNudge() {
+    if (screenNudgeShown || !sharpBtn || _closed) return // once/session + Screen-supported only
+    screenNudgeShown = true
+    const el = document.createElement('div')
+    el.className = 'kl-float-tip kl-nudge'
+    el.setAttribute('role', 'status')
+    el.setAttribute('aria-live', 'polite')
+    el.innerHTML =
+      '<div class="kl-nudge-row"><span><b>Get pixel-perfect screenshots by sharing</b> — try it now.</span>' +
+      `<button type="button" class="kl-nudge-x" aria-label="Dismiss">${icon('x', { size: 13 })}</button></div>`
+    shadowRoot.appendChild(el)
+    screenNudgeEl = el
+    // Position like the hover tip (below the Screen button, flipping above when short on room).
+    const r = sharpBtn.getBoundingClientRect()
+    const TIP_W = Math.min(228, window.innerWidth - 16)
+    const PAD = 8
+    const vw = window.innerWidth, vh = window.innerHeight
+    el.style.left = Math.max(PAD, Math.min((r.left + r.width / 2) - TIP_W / 2, vw - TIP_W - PAD)) + 'px'
+    el.style.top = '-9999px'; el.style.visibility = 'hidden'; el.style.display = 'block'
+    const tipH = el.offsetHeight
+    el.style.display = ''; el.style.visibility = ''
+    let top = r.bottom + 8
+    if (top + tipH + PAD > vh) top = r.top - tipH - 8
+    el.style.top = Math.max(PAD, Math.min(top, vh - tipH - PAD)) + 'px'
+    el.classList.add('kl-show')
+    ;(el.querySelector('.kl-nudge-x') as HTMLButtonElement | null)?.addEventListener('click', dismissScreenNudge)
+    // Pulse the Screen button to steer the eye toward the one-tap manual retry (CSS-gated for reduced-motion).
+    try { sharpBtn.classList.add('kl-pulse') } catch { /* no-op */ }
+    // Auto-dismiss after a while so it never lingers; also drop it the moment the reporter clicks Screen.
+    try { setTimeout(() => dismissScreenNudge(), 9000) } catch { /* no-op */ }
+    sharpBtn.addEventListener('click', dismissScreenNudge, { once: true })
+  }
+
   // JTBD 1.8: mutate the attached-proof chip after mount (rrweb loads async). No-op if no chip exists.
   function setReplayState(state: 'attached' | 'unavailable'): void {
     // JTBD 1.10: a resolved replay buffer is evidence — re-evaluate Submit so a replay-only report enables.
@@ -1457,7 +1527,7 @@ export function buildModal(
       }, { once: true })
       // Image-hero: clicking a thumbnail selects it as the active shot in the big hero annotator.
       // KLA-591: also drop any active video hero so the annotator (not the <video>) owns the stage.
-      img.addEventListener('click', () => { activeIndex = i; activeVideoIndex = null; updateStrip() })
+      img.addEventListener('click', () => { activeIndex = i; activeVideoIndex = null; activeRecordingIndex = null; updateStrip() })
       const rm = document.createElement('button')
       rm.className = 'klavity-rm'
       rm.innerHTML = icon('x', { size: 13 })
@@ -1564,7 +1634,7 @@ export function buildModal(
       label.className = 'kl-video-badge'
       label.innerHTML = icon('play', { size: 9 }) + '<span>Video</span>'
       wrap.title = 'Click to play ' + f.name
-      wrap.addEventListener('click', () => { activeVideoIndex = fi; updateStrip() })
+      wrap.addEventListener('click', () => { activeVideoIndex = fi; activeRecordingIndex = null; updateStrip() })
       const rm = document.createElement('button')
       rm.className = 'klavity-rm'
       rm.innerHTML = icon('x', { size: 13 })
@@ -1576,6 +1646,68 @@ export function buildModal(
       if (pct != null) {
         const bar = document.createElement('div'); bar.className = 'kl-att-prog'
         const fillEl = document.createElement('i'); fillEl.style.width = pct + '%'
+        bar.appendChild(fillEl); wrap.appendChild(bar)
+      }
+      strip.appendChild(wrap)
+    })
+    // KLA-602(a): "Record me" recordings render as removable video TILES in the SAME strip (reusing the
+    // KLA-591 video-tile look) — no separate Preview→Attach modal, no text-chip strip. Clicking selects it as
+    // the inline-playable hero; a corner "Re-record" action lets the reporter redo the walkthrough; Remove
+    // deletes it. They live in recordings[] (not attachedFiles) so they still thread through onSubmit as the
+    // dedicated `recordings` field (Phase-2 transcript hook), while looking + behaving like any gallery video.
+    recordings.forEach((rec, ri) => {
+      const wrap = document.createElement('div')
+      wrap.className = 'klavity-thumb kl-video-thumb kl-rec-tile'
+      if (activeRecordingIndex === ri) wrap.classList.add('kl-thumb-active')
+      const vid = document.createElement('video')
+      vid.src = rec.dataUrl
+      vid.muted = true
+      vid.preload = 'metadata'
+      vid.setAttribute('playsinline', '')
+      vid.tabIndex = -1
+      const play = document.createElement('span')
+      play.className = 'kl-video-play'
+      play.setAttribute('aria-hidden', 'true')
+      play.innerHTML = icon('play', { size: 16 })
+      const secs = Math.round(rec.durationMs / 1000)
+      const label = document.createElement('span')
+      label.className = 'kl-video-badge'
+      label.innerHTML = icon('play', { size: 9 }) + `<span>${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${rec.screenOnly ? ' · screen' : ''}</span>`
+      wrap.title = 'Click to play your recording'
+      wrap.addEventListener('click', () => { activeRecordingIndex = ri; activeVideoIndex = null; updateStrip() })
+      // Re-record (top-left): drop this clip + re-open the recorder for a fresh take.
+      const redo = document.createElement('button')
+      redo.type = 'button'
+      redo.className = 'kl-rerec'
+      redo.innerHTML = icon('refresh-cw', { size: 12 })
+      redo.title = 'Re-record'
+      redo.setAttribute('aria-label', 'Re-record')
+      redo.addEventListener('click', (e) => {
+        e.stopPropagation()
+        recordings.splice(ri, 1)
+        if (activeRecordingIndex === ri) activeRecordingIndex = null
+        else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
+        renderRecordings()
+        // Re-open the recorder via the same Record button gesture (kept in-DOM so the click is user-initiated).
+        try { (shadowRoot.getElementById('klavity-record') as HTMLButtonElement | null)?.click() } catch { /* no-op */ }
+      })
+      // Remove (top-right): delete the recording from the gallery.
+      const rm = document.createElement('button')
+      rm.className = 'klavity-rm'
+      rm.innerHTML = icon('x', { size: 13 })
+      rm.title = 'Remove'
+      rm.addEventListener('click', (e) => {
+        e.stopPropagation()
+        recordings.splice(ri, 1)
+        if (activeRecordingIndex === ri) activeRecordingIndex = null
+        else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
+        renderRecordings()
+      })
+      wrap.append(vid, play, label, redo, rm)
+      const rpct = attachmentProgressPercent(uploadProgressPct)
+      if (rpct != null) {
+        const bar = document.createElement('div'); bar.className = 'kl-att-prog'
+        const fillEl = document.createElement('i'); fillEl.style.width = rpct + '%'
         bar.appendChild(fillEl); wrap.appendChild(bar)
       }
       strip.appendChild(wrap)
@@ -1684,7 +1816,8 @@ export function buildModal(
     // call with fireAdded=true) must become the ACTIVE hero image, otherwise the editor keeps showing the
     // first shot while the new one sits at the end of the strip. Only for real captures; the seed path
     // (fireAdded=false, from controller.addScreenshot) leaves activeIndex alone so session restore is undisturbed.
-    if (fireAdded) activeIndex = screenshots.length - 1
+    // A genuine new capture becomes the hero — drop any video/recording hero selection so the fresh image shows.
+    if (fireAdded) { activeIndex = screenshots.length - 1; activeVideoIndex = null; activeRecordingIndex = null }
     updateStrip()
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
@@ -1860,41 +1993,14 @@ export function buildModal(
     }
   }
 
-  // ── KLAVITYKLA-438: "Record me" video chips ───────────────────────────────────────────────────────
-  // Render the attached-recording chips (a video-style chip with duration + size + remove) into the
-  // recordings strip. Hidden when empty so the row takes no space. A recording is evidence in its own
-  // right — re-evaluate Submit so a recording-only report is valid.
+  // ── KLAVITYKLA-438 / KLA-602(a): "Record me" recordings ─────────────────────────────────────────────
+  // Recordings now live as removable video TILES in the unified gallery strip (see updateStrip) — NOT as text
+  // chips behind a separate Preview→Attach modal. This keeps the wiring point (renderRecordings) that the
+  // record handler + tile actions already call; it just repaints the strip and re-evaluates Submit (a
+  // recording-only report is valid evidence).
   function renderRecordings() {
-    const box = shadowRoot.getElementById('klavity-recordings') as HTMLElement | null
-    if (!box) return
-    box.innerHTML = ''
-    box.hidden = recordings.length === 0
-    recordings.forEach((r, i) => {
-      const chip = document.createElement('div')
-      chip.className = 'kl-file-chip kl-rec-chip'
-      chip.setAttribute('data-kind', 'recording')
-      const ic = document.createElement('span')
-      ic.className = 'kl-file-ic'
-      ic.innerHTML = icon('play', { size: 14 })
-      const nm = document.createElement('span')
-      nm.className = 'kl-file-nm'
-      const secs = Math.round(r.durationMs / 1000)
-      const label = `Recording ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${r.screenOnly ? ' (screen only)' : ''}`
-      nm.textContent = label
-      nm.title = label
-      const sz = document.createElement('span')
-      sz.className = 'kl-file-sz'
-      sz.textContent = r.bytes < 1024 * 1024 ? `${Math.round(r.bytes / 1024)} KB` : `${(r.bytes / 1024 / 1024).toFixed(1)} MB`
-      const rm = document.createElement('button')
-      rm.type = 'button'
-      rm.className = 'kl-file-rm'
-      rm.setAttribute('aria-label', `Remove ${label}`)
-      rm.title = 'Remove'
-      rm.innerHTML = icon('x', { size: 11 })
-      rm.addEventListener('click', () => { recordings.splice(i, 1); renderRecordings() })
-      chip.append(ic, nm, sz, rm)
-      box.appendChild(chip)
-    })
+    if (_closed) return
+    updateStrip()
     refreshSubmit()
   }
 
@@ -2763,6 +2869,12 @@ export function buildModal(
       // we fall back from SILENTLY (no error toast). A genuine, unexpected failure still falls back, but we
       // leave a dev-console breadcrumb so it's diagnosable.
       if (!isScreenDeclineError(err)) { try { console.warn('[Klavity] Screen capture failed; using rendered fallback:', err) } catch {} }
+      else {
+        // KLA-601: the reporter cancelled the share picker. We keep the rendered fallback, but instead of
+        // failing silently, surface a one-time helper nudge on the Screen button so they know the sharper
+        // option is one tap away. Once-per-session + dismissible (see showScreenNudge).
+        try { showScreenNudge() } catch { /* the nudge is a nicety — never let it break the fallback */ }
+      }
     } finally {
       host.style.display = ''
       target.textContent = orig
@@ -2820,7 +2932,15 @@ export function buildModal(
       }
       try {
         const rec = await callbacks.onRecord!(onPhase)
-        if (rec) { recordings.push(rec); renderRecordings(); setActiveCapture(recordBtn) }
+        // KLA-602(a): a finished recording drops STRAIGHT into the gallery as a selected, removable video tile
+        // (no Preview→Attach modal). Select it as the inline-playable hero, like addCapturedShot does for images.
+        if (rec) {
+          recordings.push(rec)
+          activeRecordingIndex = recordings.length - 1
+          activeVideoIndex = null
+          renderRecordings()
+          setActiveCapture(recordBtn)
+        }
       } catch { /* user cancelled or recorder failed — leave the composer untouched */ }
       finally { host.style.display = ''; recordBtn.classList.remove('kl-loading'); lockComposer(false) }
     })
@@ -2988,25 +3108,31 @@ export function buildModal(
     if (activeVideoIndex != null && !(attachedFiles[activeVideoIndex] && attachmentKind(attachedFiles[activeVideoIndex]) === 'video')) {
       activeVideoIndex = null
     }
-    if (activeVideoIndex != null) { mountHeroVideo(activeVideoIndex); return }
+    // KLA-602(a): clear a stale recording selection (removed while it was the hero).
+    if (activeRecordingIndex != null && !recordings[activeRecordingIndex]) {
+      activeRecordingIndex = null
+    }
+    // A selected "Record me" recording takes hero priority (inline <video controls>), same as a video attachment.
+    if (activeRecordingIndex != null) { mountHeroVideoSrc(recordings[activeRecordingIndex].dataUrl); return }
+    if (activeVideoIndex != null) { mountHeroVideoSrc(attachedFiles[activeVideoIndex]?.dataUrl); return }
     if (screenshots.length === 0) { activeIndex = 0; renderHeroEmpty(); return }
     if (activeIndex >= screenshots.length) activeIndex = screenshots.length - 1
     if (activeIndex < 0) activeIndex = 0
     mountHeroAnnotator(activeIndex)
   }
 
-  // KLA-591: render an inline, playable video preview in the hero stage (mirrors how an image shot expands).
-  // No annotator toolbar for video — just <video controls>. Browser-only; safe no-op in headless test envs.
-  function mountHeroVideo(fileIndex: number) {
+  // KLA-591/602(a): render an inline, playable video preview in the hero stage (mirrors how an image shot
+  // expands). No annotator toolbar for video — just <video controls>. Shared by video attachments AND "Record
+  // me" recordings. Browser-only; safe no-op in headless test envs.
+  function mountHeroVideoSrc(src: string | undefined) {
     const stage = shadowRoot.getElementById('klavity-hero-stage')
     const tools = shadowRoot.getElementById('klavity-hero-tools')
-    const f = attachedFiles[fileIndex]
-    if (!stage || !f) { renderHeroEmpty(); return }
+    if (!stage || !src) { renderHeroEmpty(); return }
     detachHeroKeys()
     if (tools) tools.innerHTML = ''
     stage.innerHTML = ''
     const video = document.createElement('video')
-    video.src = f.dataUrl
+    video.src = src
     video.controls = true
     video.setAttribute('playsinline', '')
     video.preload = 'metadata'
