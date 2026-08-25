@@ -1080,6 +1080,13 @@ export async function applySchema(c: Client) {
     // persisted, but this stamp makes the silent evidence loss visible (dashboard render is a follow-up).
     // Null/0 on healthy rows — additive, back-compat.
     ["evidence_dropped",       "INTEGER"],
+    // KLA-603: server-side "AI summary from walkthrough" — when an uploaded/recorded video's transcript
+    // completes and the reporter's own description was thin/empty, a post-transcription enrichment pass
+    // (server.ts enrichReportFromTranscript) generates a structured summary/actual/expected/steps GROUNDED
+    // in the transcript + captured screenshot and stores it here as JSON { text, draft, source, at }. It is
+    // ADDITIVE (never overwrites the reporter's observation) and surfaces in the tracker body + report read.
+    // Null on rows without a video walkthrough — additive, back-compat.
+    ["ai_walkthrough_json",    "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -5650,7 +5657,54 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     // by feedbackToTicketPayload to attribute the exported ticket.
     reporter: safeJsonParse(x.reporter_json),
     clientInfo: safeJsonParse(x.client_info_json),
+    // KLA-603: server-side "AI summary from walkthrough" (see ai_walkthrough_json column). Null when the
+    // report had no transcribed video or the description was already substantial. Additive.
+    aiWalkthrough: safeJsonParse(x.ai_walkthrough_json),
   }
+}
+
+// KLA-603: store the server-side "AI summary from walkthrough" JSON blob (post-transcription enrichment).
+// ADDITIVE — this is a dedicated column and NEVER touches the reporter's observation. Overwrites any prior
+// walkthrough summary for the row (the enrichment pass is idempotent per report). Best-effort caller.
+export async function setFeedbackWalkthroughSummary(
+  feedbackId: string,
+  projectId: string,
+  walkthrough: { text: string; draft?: any; source?: string; at?: number },
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE feedback SET ai_walkthrough_json=? WHERE id=? AND project_id=? AND (ai_walkthrough_json IS NULL OR ai_walkthrough_json='')",
+    args: [JSON.stringify(walkthrough), feedbackId, projectId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
+// KLA-603: append extracted video KEY FRAMES (and any other synthesized evidence) to a report's
+// attachments_json array. Reuses the SAME { key, filename, contentType, size } descriptor shape #425 uses,
+// so each frame flows to the external tracker natively AND surfaces (presigned) in the dashboard/report read
+// for free. Extra fields on a descriptor (e.g. `keyframe: true`, `atMs`) are preserved. Idempotent-ish: it
+// APPENDS, so the caller must only run once per report (the enrichment pass does). Best-effort caller.
+export async function appendFeedbackAttachments(
+  feedbackId: string,
+  projectId: string,
+  newAttachments: Array<Record<string, any>>,
+): Promise<boolean> {
+  if (!Array.isArray(newAttachments) || !newAttachments.length) return false
+  const r = await db!.execute({
+    sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row) return false
+  let atts: any[] = []
+  if (row.attachments_json != null) {
+    try { const parsed = JSON.parse(String(row.attachments_json)); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] }
+  }
+  atts.push(...newAttachments)
+  await db!.execute({
+    sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?",
+    args: [JSON.stringify(atts), feedbackId, projectId],
+  })
+  return true
 }
 
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given
