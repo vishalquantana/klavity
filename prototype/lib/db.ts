@@ -445,6 +445,18 @@ export async function applySchema(c: Client) {
     // hand-edited price). Millicredits: 1 credit = 1000 mc.
     `CREATE TABLE IF NOT EXISTS credit_action_costs (
        action TEXT PRIMARY KEY, millicredits INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    // KLAVITY CREDITS — per-workspace (=account) wallet. granted resets monthly (no rollover);
+    // topup rolls over; spend is grant-first (see lib/credits.ts). grant_period = 'YYYY-MM' of the
+    // active grant; last_grace_period = the period in which the one "last taste" grace was consumed
+    // (spec §6/§12 decision 6). Millicredits (integer).
+    `CREATE TABLE IF NOT EXISTS workspace_credits (
+       workspace_id TEXT PRIMARY KEY,
+       granted_millicredits INTEGER NOT NULL DEFAULT 0,
+       topup_millicredits INTEGER NOT NULL DEFAULT 0,
+       plan_grant_millicredits INTEGER NOT NULL DEFAULT 0,
+       grant_period TEXT NOT NULL,
+       last_grace_period TEXT,
+       updated_at INTEGER NOT NULL)`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
@@ -4273,6 +4285,54 @@ export async function seedCreditActionCosts(): Promise<void> {
       args: [action, mc, now],
     }).catch((e: any) => console.warn(`seedCreditActionCosts ${action} skipped:`, e?.message || e))
   }
+}
+
+// ── Klavity Credits: per-workspace wallet ────────────────────────────────────────────────────────
+export type WorkspaceCredits = {
+  workspaceId: string; grantedMc: number; topupMc: number; planGrantMc: number
+  grantPeriod: string; lastGracePeriod: string | null; updatedAt: number
+}
+
+function mapWorkspaceCredits(x: any): WorkspaceCredits {
+  return {
+    workspaceId: String(x.workspace_id),
+    grantedMc: Number(x.granted_millicredits) || 0,
+    topupMc: Number(x.topup_millicredits) || 0,
+    planGrantMc: Number(x.plan_grant_millicredits) || 0,
+    grantPeriod: String(x.grant_period),
+    lastGracePeriod: x.last_grace_period != null ? String(x.last_grace_period) : null,
+    updatedAt: Number(x.updated_at) || 0,
+  }
+}
+
+export async function getWorkspaceCredits(workspaceId: string): Promise<WorkspaceCredits | null> {
+  if (!workspaceId) return null
+  const r = await db!.execute({ sql: "SELECT * FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
+  return r.rows.length ? mapWorkspaceCredits(r.rows[0]) : null
+}
+
+// Create-on-first-touch (seeded to a full grant — the §11 launch migration: nobody worse off) and
+// lazily re-grant when the UTC month has rolled. Top-up survives; grace resets each period.
+export async function ensureWorkspaceCredits(workspaceId: string, planGrantMc: number, atMs: number = Date.now()): Promise<WorkspaceCredits> {
+  const period = usagePeriod(atMs)
+  const now = atMs
+  await db!.execute({
+    sql: `INSERT INTO workspace_credits
+            (workspace_id, granted_millicredits, topup_millicredits, plan_grant_millicredits, grant_period, last_grace_period, updated_at)
+          VALUES (?,?,?,?,?,NULL,?)
+          ON CONFLICT(workspace_id) DO NOTHING`,
+    args: [workspaceId, planGrantMc, 0, planGrantMc, period, now],
+  })
+  // Lazy re-grant: only when the stored period is strictly older than the current one.
+  await db!.execute({
+    sql: `UPDATE workspace_credits
+             SET granted_millicredits = ?, plan_grant_millicredits = ?, grant_period = ?,
+                 last_grace_period = NULL, updated_at = ?
+           WHERE workspace_id = ? AND grant_period < ?`,
+    args: [planGrantMc, planGrantMc, period, now, workspaceId, period],
+  })
+  const w = await getWorkspaceCredits(workspaceId)
+  return w! // row is guaranteed to exist after the upsert
 }
 
 export async function opsTotals(): Promise<{ totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }> {

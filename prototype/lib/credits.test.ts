@@ -29,3 +29,14 @@ test("baseMc override (DB-config value) is respected", () => {
   expect(creditCostFor("enhance", 1, 2500)).toBe(2500)
   expect(creditCostFor("transcript", 3, 500)).toBe(1500)  // 500 × 3
 })
+
+import { PLAN_GRANT_CREDITS, planGrantMillicredits } from "./credits"
+
+test("plan grants match the locked numbers (spec §5/§12)", () => {
+  expect(PLAN_GRANT_CREDITS.free).toBe(100)
+  expect(PLAN_GRANT_CREDITS.pro).toBe(1500)     // Solo
+  expect(PLAN_GRANT_CREDITS.team).toBe(10000)
+  expect(PLAN_GRANT_CREDITS.founding).toBe(10000) // Team-level, locked
+  expect(PLAN_GRANT_CREDITS.scale).toBe(40000)
+  expect(planGrantMillicredits("pro")).toBe(1_500_000) // millicredits
+})

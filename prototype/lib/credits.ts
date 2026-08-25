@@ -1,9 +1,21 @@
 // Unified "Klavity Credits" — the metered-AI wallet layer (spec 2026-08-25). Sits ALONGSIDE the
 // existing COGS plumbing (chat() → tryReserveDailySpend/recordAiCall). MILLICREDITS everywhere:
 // 1 credit = 1000 millicredits, so voice (0.1cr) is an exact integer (100 mc).
+import { normalizePlan, type BillingPlan } from "./billing"
+
 export const MC_PER_CREDIT = 1000
 
 export type CreditAction = "enhance" | "transcript" | "keyframes" | "voice" | "sim" | "autosim"
+
+// Monthly grant per tier in CREDITS (spec §5/§12). Internal slugs: pro=Solo, founding=Team-level
+// locked-for-life, agency=Scale-level, partner=unlimited (metering short-circuited elsewhere).
+export const PLAN_GRANT_CREDITS: Record<BillingPlan, number> = {
+  free: 100, pro: 1_500, team: 10_000, founding: 10_000, scale: 40_000, agency: 40_000, partner: 40_000,
+}
+
+export function planGrantMillicredits(plan: string | null | undefined): number {
+  return PLAN_GRANT_CREDITS[normalizePlan(plan)] * MC_PER_CREDIT
+}
 
 // Locked per-action costs (spec §4/§12), in millicredits. Config-driven at runtime via
 // credit_action_costs; these are the seed/fallback defaults, NEVER hard-coded at call sites.
