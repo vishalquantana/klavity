@@ -453,12 +453,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <h1 class="hd">Klavity is testing your product.</h1>
     <p class="sub">It browses your app like a first-time customer — no test scripts to write. Watch it work; this live walkthrough is the heart of Klavity.</p>
     <div class="cols">
-      <div class="card pad chk-list">
-        <div class="li done"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span> Opened your product</div>
-        <div class="li done"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span> Scanning pages &amp; navigation</div>
-        <div class="li act"><span class="cbead">•</span> Detecting forms &amp; interactions</div>
-        <div class="li"><span class="cbead"></span> Mapping important journeys</div>
-        <div class="li"><span class="cbead"></span> Preparing your first result</div>
+      <div class="card pad chk-list" id="uhChk">
+        <div class="li"><span class="cbead"></span> Reading your page</div>
+        <div class="li"><span class="cbead"></span> Sketching your customer Sims</div>
+        <div class="li"><span class="cbead"></span> Visiting it like a real customer</div>
+        <div class="li"><span class="cbead"></span> Writing their first reaction</div>
       </div>
       <div class="browser">
         <div class="bchrome"><div class="dots"><i></i><i></i><i></i></div><div class="burl">app.yourproduct.com/dashboard</div><span style="font-family:var(--mono);font-size:11px;color:var(--indigo)">reading…</span></div>
@@ -774,8 +773,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     }catch(e){}
     softNote(node,pname)
   }
+  // Checklist helper for failure paths: freeze at `stage` items done with nothing active —
+  // defined locally since uhChkIdle lives in another script block.
+  function uhChkIdleAt(stage){ try{ (window.uhChkIdle||function(){})(stage) }catch(e){} }
   window.klavPreviewReact = async function(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
+    // checklist stage 2: the live visit actually started (personas already rendered)
+    try{ window.uhChkTo(2) }catch(e){}
     var persona=(personas&&personas[0])||null
     var pname=(persona&&persona.name)||'A customer'
     var node=r.querySelector('.uh-catch')
@@ -801,7 +805,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           if(bu){ try{ bu.textContent=new URL(url).host }catch(e2){} }
         }catch(e){}
       }
-      if(!rx||!(rx.observation||rx.title)){ cachedReactionOrSoft(node,url,pname); return }
+      if(!rx||!(rx.observation||rx.title)){ uhChkIdleAt(2); cachedReactionOrSoft(node,url,pname); return }
       // Aha carry-through: keep the reaction + captured screenshot + region alongside the stashed
       // personas so the Insights step can render the real visual evidence. Wrapped in try/catch so a
       // localStorage quota overflow (large base64) simply falls back to the text-only finding.
@@ -819,10 +823,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       window._ahaReaction={reactionText:String(rx.observation||rx.title||''),reactionTitle:String(rx.title||''),sentiment:String(rx.sentiment||'neutral'),personaName:String(pname||''),personaRole:String((persona&&persona.role)||'')}
       var sent=String(rx.sentiment||'neutral')
       var word=sent==='critical'?(esc(pname)+' found something before your users would:'):(esc(pname)+' reacted to your real page:')
+      // checklist stage 4: the reaction is on screen — all four items now genuinely done
+      try{ window.uhChkTo(4) }catch(e){}
       node.innerHTML='<div class="uh-label">'+word+'</div>'
         +(rx.title?'<div style="font-weight:650;margin-bottom:3px">'+esc(rx.title)+'</div>':'')
         +'<div style="font-style:italic">\u201c'+esc(rx.observation||rx.title)+'\u201d</div>'
-    }catch(e){ cachedReactionOrSoft(node,url,pname) }
+    }catch(e){ uhChkIdleAt(2); cachedReactionOrSoft(node,url,pname) }
     finally{ clearInterval(waitTimer) }
   }
 })();
@@ -840,6 +846,36 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   // Persona generation takes ~10-20s — rotate staged progress lines client-side while we wait.
   var UH_WAIT_LINES=['Opening your page…','Taking a screenshot…','Reading what is on the page…','Sketching your customers…']
   var uhWaitTimer=null, uhWaitIx=0
+  // ── Honest checklist (audit 2026-08): the step-3 list previously shipped pre-ticked as pure
+  // decoration while the real pipeline ran. Each item now maps to a REAL event and is ticked by
+  // uhChkTo() when that event actually happens: fetch start → personas return → preview fires →
+  // reaction renders. No fake progress.
+  var CHECK_SVG='<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+  function uhChkTo(stage){
+    var chk=document.getElementById('uhChk'); if(!chk) return
+    var items=chk.querySelectorAll('.li')
+    for(var i=0;i<items.length;i++){
+      var done=i<stage, act=(i===stage&&!done)
+      items[i].classList.toggle('done',done)
+      items[i].classList.toggle('act',act)
+      var bead=items[i].querySelector('.cbead')
+      if(bead) bead.innerHTML=done?CHECK_SVG:(act?'•':'')
+    }
+  }
+  // like uhChkTo but leaves `stage` neutral (not active) — used when the pipeline stopped short
+  // so we never show a spinner for work that isn't happening.
+  function uhChkIdle(stage){
+    var chk=document.getElementById('uhChk'); if(!chk) return
+    var items=chk.querySelectorAll('.li')
+    for(var i=0;i<items.length;i++){
+      items[i].classList.toggle('done',i<stage)
+      items[i].classList.toggle('act',false)
+      var bead=items[i].querySelector('.cbead')
+      if(bead) bead.innerHTML=i<stage?CHECK_SVG:''
+    }
+  }
+  window.uhChkTo=uhChkTo; window.uhChkIdle=uhChkIdle
+
   function uhSetLoading(on){
     var lo=document.getElementById('uhLoading'), go=document.getElementById('uhGo'), txt=document.getElementById('uhLoadTxt')
     if(lo) lo.classList.toggle('hide',!on)
@@ -849,12 +885,17 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       uhWaitIx=0
       if(txt) txt.textContent=UH_WAIT_LINES[0]
       uhWaitTimer=setInterval(function(){ uhWaitIx=Math.min(uhWaitIx+1,UH_WAIT_LINES.length-1); if(txt) txt.textContent=UH_WAIT_LINES[uhWaitIx] },4000)
+      // fetch started: first item goes active (it ticks the moment personas actually return)
+      uhChkTo(0)
     }
   }
 
   function uhShowPersonas(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
     if(!personas||!personas.length){
+      // empty cast (after retry): tick what genuinely happened, nothing active — the fetch
+      // completed but produced no Sims, so item 1 stays honest-ticked and the rest stay neutral.
+      try{ uhChkIdle(1) }catch(e){}
       // Sparse pages can yield an empty cast intermittently (observed: example.com returns
       // personas:[] ~1 in 3 runs). If the homepage demo already stashed a cast + reaction for THIS
       // URL, show that instead of a dead end — never make the user re-run a pipeline that succeeded.
@@ -880,6 +921,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     }
     // first-catch hook — if any Sim returned, mark that the user reached their first Sim reaction
     try{ localStorage.setItem('klav-aha-sims-seen','1') }catch(e){}
+    // checklist stage 1 done + stage 2 active: the cast is real, the visit is about to start
+    // (klavPreviewReact ticks 2→3 when the preview actually fires; reaction render ticks 4)
+    try{ uhChkTo(1) }catch(e){}
     // Aha carry-through: stash so signup can persist these Sims into the new project and
     // the automate step can link straight to their first review. klavPreviewReact fills reactionText.
     // MERGE, don't replace: an existing stash (homepage handoff) may already carry reactionText/
