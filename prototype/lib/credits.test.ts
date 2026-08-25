@@ -40,3 +40,86 @@ test("plan grants match the locked numbers (spec §5/§12)", () => {
   expect(PLAN_GRANT_CREDITS.scale).toBe(40000)
   expect(planGrantMillicredits("pro")).toBe(1_500_000) // millicredits
 })
+
+import { useIsolatedDb } from "./test-db-isolation"
+import { reserveCredits, InsufficientCreditsError } from "./credits"
+import { getWorkspaceCredits, listCreditLedgerForWorkspace, ensureWorkspaceCredits } from "./db"
+
+const { getClient } = useIsolatedDb("klav-credits-reserve")
+
+async function seedWallet(id: string, grantMc: number, topupMc = 0) {
+  await ensureWorkspaceCredits(id, grantMc)
+  await getClient().execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=? WHERE workspace_id=?",
+    args: [grantMc, topupMc, id],
+  })
+}
+
+test("sufficient → debit + a ledger spend row linked to the ai_call", async () => {
+  await seedWallet("acct_r1", 5000)
+  const rv = await reserveCredits("acct_r1", "enhance", { plan: "pro" })
+  expect(rv.sufficient).toBe(true)
+  expect(rv.costMc).toBe(1000)
+  await rv.settle({ ok: true, aiCallId: "ai_1" })
+  const w = await getWorkspaceCredits("acct_r1")
+  expect(w!.grantedMc).toBe(4000) // 5000 − 1000
+  const rows = await listCreditLedgerForWorkspace("acct_r1")
+  expect(rows[0].millicredits).toBe(-1000)
+  expect(rows[0].aiCallId).toBe("ai_1")
+})
+
+test("hard-enforce insufficient → throws, NO debit, NO ledger row", async () => {
+  await seedWallet("acct_r2", 500) // < 1000
+  await expect(reserveCredits("acct_r2", "enhance", { plan: "pro", enforce: true }))
+    .rejects.toBeInstanceOf(InsufficientCreditsError)
+  const w = await getWorkspaceCredits("acct_r2")
+  expect(w!.grantedMc).toBe(500) // untouched
+  expect((await listCreditLedgerForWorkspace("acct_r2")).length).toBe(0)
+})
+
+test("one last-taste grace per period, then hard stop", async () => {
+  await seedWallet("acct_r3", 0)
+  const g = await reserveCredits("acct_r3", "enhance", { plan: "pro", enforce: true })
+  expect(g.usedGrace).toBe(true)         // first over-limit action allowed
+  await g.settle({ ok: true, aiCallId: "ai_g" })
+  await expect(reserveCredits("acct_r3", "enhance", { plan: "pro", enforce: true }))
+    .rejects.toBeInstanceOf(InsufficientCreditsError) // second → blocked
+})
+
+test("soft mode never throws and records consumption even when short (wouldBlock=true)", async () => {
+  await seedWallet("acct_r4", 0)
+  const rv = await reserveCredits("acct_r4", "sim", { plan: "free" }) // enforce omitted → soft
+  expect(rv.wouldBlock).toBe(true)
+  expect(rv.sufficient).toBe(false)
+  await rv.settle({ ok: true, aiCallId: "ai_s" })
+  const rows = await listCreditLedgerForWorkspace("acct_r4")
+  expect(rows[0].millicredits).toBe(-15000) // real consumption still recorded
+})
+
+test("refund on failure restores balance and nets the ledger to zero", async () => {
+  await seedWallet("acct_r5", 5000)
+  const rv = await reserveCredits("acct_r5", "keyframes", { plan: "pro" })
+  await rv.settle({ ok: false }) // failed/empty AI result
+  const w = await getWorkspaceCredits("acct_r5")
+  expect(w!.grantedMc).toBe(5000) // fully restored
+  const net = (await listCreditLedgerForWorkspace("acct_r5")).reduce((s, r) => s + r.millicredits, 0)
+  expect(net).toBe(0)
+})
+
+test("grant-before-topup spend order via reserve", async () => {
+  await seedWallet("acct_r6", 1000, 9000) // grant 1000 + topup 9000
+  const rv = await reserveCredits("acct_r6", "sim", { plan: "team" }) // 15000 > 10000
+  await rv.settle({ ok: true, aiCallId: "ai_x" })
+  const w = await getWorkspaceCredits("acct_r6")
+  expect(w!.grantedMc).toBe(0)      // grant spent first
+  expect(w!.topupMc).toBe(-5000)    // soft mode allowed the overspend off top-up
+})
+
+test("partner (unlimited) short-circuits: cost 0, no debit, settle is a no-op", async () => {
+  await seedWallet("acct_r7", 0)
+  const rv = await reserveCredits("acct_r7", "autosim", { plan: "partner" })
+  expect(rv.costMc).toBe(0)
+  expect(rv.sufficient).toBe(true)
+  await rv.settle({ ok: true, aiCallId: "ai_p" })
+  expect((await listCreditLedgerForWorkspace("acct_r7")).length).toBe(0)
+})

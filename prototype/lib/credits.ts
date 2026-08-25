@@ -2,6 +2,10 @@
 // existing COGS plumbing (chat() → tryReserveDailySpend/recordAiCall). MILLICREDITS everywhere:
 // 1 credit = 1000 millicredits, so voice (0.1cr) is an exact integer (100 mc).
 import { normalizePlan, type BillingPlan } from "./billing"
+import {
+  ensureWorkspaceCredits, getCreditActionCost, debitWorkspaceCredits, creditWorkspaceCredits,
+  insertCreditLedger, markGraceUsed, usagePeriod, planIsUnlimited, type DebitSplit,
+} from "./db"
 
 export const MC_PER_CREDIT = 1000
 
@@ -35,4 +39,90 @@ export function creditCostFor(action: CreditAction, units = 1, baseMc?: number):
   if (action === "transcript") return base * Math.max(1, Math.ceil(units || 0))
   if (action === "voice") return base * Math.max(1, Math.floor(units || 1))
   return base
+}
+
+// ── reserveCredits orchestrator (spec §9) ────────────────────────────────────────────────────────
+export class InsufficientCreditsError extends Error {
+  readonly action: CreditAction; readonly neededMc: number; readonly availableMc: number
+  constructor(action: CreditAction, neededMc: number, availableMc: number) {
+    super(`Insufficient credits for ${action}: need ${neededMc}mc, have ${availableMc}mc`)
+    this.name = "InsufficientCreditsError"
+    this.action = action; this.neededMc = neededMc; this.availableMc = availableMc
+  }
+}
+
+export type ReserveOpts = {
+  plan: string | null | undefined
+  units?: number
+  actorEmail?: string | null
+  isGuest?: boolean
+  refFeedbackId?: string | null
+  refRunId?: string | null
+  enforce?: boolean // default: env KLAV_CREDITS_ENFORCE === "1"
+}
+
+export type CreditReservation = {
+  workspaceId: string; action: CreditAction; costMc: number
+  sufficient: boolean; usedGrace: boolean; wouldBlock: boolean; split: DebitSplit | null
+  settle(r: { ok: boolean; aiCallId?: string | null }): Promise<void>
+}
+
+// Phase-1 default is SOFT (off): reserveCredits records the decision + debit but never blocks. Phase 2
+// flips this to hard-enforce by setting KLAV_CREDITS_ENFORCE=1.
+export function creditsEnforceDefault(): boolean {
+  return process.env.KLAV_CREDITS_ENFORCE === "1"
+}
+
+const NOOP_RESERVATION = (workspaceId: string, action: CreditAction): CreditReservation => ({
+  workspaceId, action, costMc: 0, sufficient: true, usedGrace: false, wouldBlock: false, split: null,
+  async settle() { /* unlimited plan — nothing to record */ },
+})
+
+export async function reserveCredits(workspaceId: string, action: CreditAction, opts: ReserveOpts): Promise<CreditReservation> {
+  const enforce = typeof opts.enforce === "boolean" ? opts.enforce : creditsEnforceDefault()
+  const plan = opts.plan
+  // Unlimited/internal (partner, scale) never meters — reuse the existing planIsUnlimited() helper.
+  if (planIsUnlimited(String(plan ?? ""))) return NOOP_RESERVATION(workspaceId, action)
+
+  const w = await ensureWorkspaceCredits(workspaceId, planGrantMillicredits(plan))
+  const baseMc = (await getCreditActionCost(action)) ?? undefined
+  const costMc = creditCostFor(action, opts.units ?? 1, baseMc)
+  const available = w.grantedMc + w.topupMc
+  const period = usagePeriod()
+  const sufficient = available >= costMc
+  // "Last taste" grace is the relief valve for HARD enforcement only (the one free action when the
+  // wallet has hit empty). In Phase-1 SOFT mode nothing blocks, so grace is never consumed — a short
+  // action just proceeds and records consumption (wouldBlock=true) for measurement.
+  // (Deviation from plan prose §5/§6: grace is gated on enforce && available===0 so the plan's own
+  // r2 (partial-balance→throw) / r3 (empty→grace) / r4 (soft→wouldBlock) tests are mutually satisfiable.)
+  const graceEligible = enforce && !sufficient && available === 0 && w.lastGracePeriod !== period
+
+  if (enforce && !sufficient && !graceEligible) {
+    throw new InsufficientCreditsError(action, costMc, available)
+  }
+  const usedGrace = graceEligible
+  if (usedGrace) await markGraceUsed(workspaceId, period)
+
+  // Reserve (hold). allowNegative when soft OR when this is the granted grace action.
+  const split = await debitWorkspaceCredits(workspaceId, costMc, { allowNegative: !enforce || usedGrace })
+
+  const wouldBlock = !sufficient && !graceEligible
+  const settle: CreditReservation["settle"] = async ({ ok, aiCallId }) => {
+    // Always record the spend (the metered consumption). On failure, ALSO restore the held balance
+    // and write the compensating +refund row so the ledger nets to zero (spec ambiguity §10/§14).
+    await insertCreditLedger({
+      workspaceId, action, millicredits: -costMc, aiCallId: aiCallId ?? null,
+      refFeedbackId: opts.refFeedbackId ?? null, refRunId: opts.refRunId ?? null,
+      actorEmail: opts.actorEmail ?? null, isGuest: opts.isGuest ?? false,
+    })
+    if (!ok && split) {
+      await creditWorkspaceCredits(workspaceId, split) // restore the hold
+      await insertCreditLedger({
+        workspaceId, action: "refund", millicredits: costMc, aiCallId: aiCallId ?? null,
+        refFeedbackId: opts.refFeedbackId ?? null, refRunId: opts.refRunId ?? null,
+        actorEmail: opts.actorEmail ?? null, isGuest: opts.isGuest ?? false,
+      })
+    }
+  }
+  return { workspaceId, action, costMc, sufficient, usedGrace, wouldBlock, split, settle }
 }
