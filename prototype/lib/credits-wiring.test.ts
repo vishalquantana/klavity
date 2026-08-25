@@ -13,3 +13,9 @@ test("voice route reserves voice credits (0.1cr) softly", () => {
   expect(slice.includes("reserveCredits")).toBe(true)
   expect(slice.includes('"voice"')).toBe(true)
 })
+
+const simReview = readFileSync(new URL("./sim-review.ts", import.meta.url), "utf8")
+test("sim-review reserves 'sim' credits alongside the usage meter", () => {
+  expect(simReview.includes("reserveCredits")).toBe(true)
+  expect(simReview.includes('"sim"')).toBe(true)
+})
