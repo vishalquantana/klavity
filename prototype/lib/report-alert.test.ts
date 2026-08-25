@@ -7,7 +7,8 @@ import { _resetAll as rlResetAll } from "./ratelimit"
 import {
   claimAlertSlot, alertRecipients, projectSlackWebhook, projectNotifyRow, buildReportEmail,
   buildReportSlackPayload, notifyNewReport, ticketUrl, REPORT_ALERT_WINDOW_MS,
-  type ReportAlertInput,
+  notifyUpgradeRequest, buildUpgradeRequestEmail, buildUpgradeRequestSlackPayload, reasonLabel,
+  type ReportAlertInput, type UpgradeRequestInput,
 } from "./report-alert"
 
 // The Slack rate cap (KLA-608) uses the in-process rlAllow store; reset it between cases so the
@@ -307,6 +308,105 @@ test("bug_notify_emails custom list is used instead of owner/admins", async () =
   })
   expect(mails.length).toBe(1)
   expect(mails[0]).toEqual(["alerts@company.com", "oncall@company.com"])
+})
+
+// ── KLA-612: upgrade-request nudge ───────────────────────────────────────────────────────────────
+
+function upReq(over: Partial<UpgradeRequestInput> = {}): UpgradeRequestInput {
+  return {
+    projectId: "proj_1", projectName: "Acme Web", accountId: "acct_1",
+    reason: "storage_over_cap",
+    context: { page: "https://acme.example/checkout", fileName: "demo.mp4", fileSizeMb: 150 },
+    reporterEmail: null, baseUrl: "https://klavity.in", at: 1_000_000_000_000,
+    ...over,
+  }
+}
+
+test("reasonLabel maps known walls and falls back to 'an upgrade'", () => {
+  expect(reasonLabel("storage_over_cap")).toContain("larger file")
+  expect(reasonLabel("credit_wall")).toContain("credits")
+  expect(reasonLabel("quota_exceeded")).toContain("limit")
+  expect(reasonLabel("other")).toBe("an upgrade")
+})
+
+test("upgrade email carries project, what they hit, page, file and the plans link", () => {
+  const { subject, html, text } = buildUpgradeRequestEmail(upReq())
+  expect(subject).toBe("Someone on Acme Web asked to upgrade")
+  expect(html).toContain("Acme Web")
+  expect(html).toContain("larger file")
+  expect(html).toContain("https://acme.example/checkout")
+  expect(html).toContain("demo.mp4")
+  expect(html).toContain("https://klavity.in/dashboard?project=proj_1#tickets")
+  expect(html).toContain("an anonymous reporter") // no email given
+  expect(text).toContain("Review plans:")
+})
+
+test("upgrade email HTML-escapes user-controlled context", () => {
+  const { html } = buildUpgradeRequestEmail(upReq({
+    context: { page: "https://x/<script>", fileName: '<img src=x onerror=1>' }, reporterEmail: 'a<b>@c.com',
+  }))
+  expect(html).not.toContain("<script>")
+  expect(html).not.toContain("<img src=x")
+  expect(html).toContain("&lt;")
+})
+
+test("upgrade slack payload is Block-Kit with a plans button and no emoji flags", () => {
+  const p = buildUpgradeRequestSlackPayload(upReq())
+  expect(p.text).toContain("Acme Web")
+  const blocks = p.blocks as any[]
+  expect(blocks[0].type).toBe("header")
+  const actions = blocks.find((b) => b.type === "actions")
+  expect(actions.elements[0].url).toBe(ticketUrl({ baseUrl: "https://klavity.in", projectId: "proj_1" } as any))
+  expect(JSON.stringify(blocks)).toContain('"emoji":false')
+})
+
+test("notifyUpgradeRequest emails owner/admins and posts Slack when configured", async () => {
+  const c = await fresh()
+  await seedProject(c, { admins: [["owner@acme.io", "owner"]], slackUrl: "https://hooks.slack.com/services/T0/B0/xyz" })
+  const mails: any[] = [], hooks: any[] = []
+  await notifyUpgradeRequest(upReq(), {
+    db: c,
+    sendEmail: async (to, subject, html, text) => { mails.push({ to, subject, html, text }) },
+    postSlack: async (url, payload) => { hooks.push({ url, payload }) },
+  })
+  expect(mails.length).toBe(1)
+  expect(mails[0].to).toEqual(["owner@acme.io"])
+  expect(mails[0].subject).toBe("Someone on Acme Web asked to upgrade")
+  expect(hooks.length).toBe(1)
+  expect(hooks[0].url).toBe("https://hooks.slack.com/services/T0/B0/xyz")
+})
+
+test("notifyUpgradeRequest fires even when the every-bug toggle is OFF (distinct high-intent signal)", async () => {
+  const c = await freshWithBugNotify()
+  await seedProject(c, { admins: [["owner@acme.io", "owner"]] })
+  await c.execute("UPDATE projects SET notify_on_every_bug=0 WHERE id='proj_1'")
+  const mails: any[] = []
+  await notifyUpgradeRequest(upReq(), { db: c, sendEmail: async (...a: any[]) => { mails.push(a) }, postSlack: async () => {} })
+  expect(mails.length).toBe(1)
+})
+
+test("notifyUpgradeRequest uses the custom bug_notify_emails list when set", async () => {
+  const c = await freshWithBugNotify()
+  await seedProject(c, { admins: [["owner@acme.io", "owner"]] })
+  await c.execute({ sql: "UPDATE projects SET bug_notify_emails=? WHERE id='proj_1'", args: [JSON.stringify(["billing@company.com"])] })
+  const mails: any[] = []
+  await notifyUpgradeRequest(upReq(), { db: c, sendEmail: async (to: string[], ...a: any[]) => { mails.push(to) }, postSlack: async () => {} })
+  expect(mails[0]).toEqual(["billing@company.com"])
+})
+
+test("notifyUpgradeRequest NEVER throws: mail + slack + DB failures", async () => {
+  const c = await fresh()
+  await seedProject(c, { admins: [["owner@acme.io", "owner"]], slackUrl: "https://hooks.slack.com/services/T0/B0/xyz" })
+  const hooks: any[] = []
+  await expect(notifyUpgradeRequest(upReq(), {
+    db: c, sendEmail: async () => { throw new Error("SendGrid 500") }, postSlack: async (...a: any[]) => { hooks.push(a) },
+  })).resolves.toBeUndefined()
+  expect(hooks.length).toBe(1) // email failure must not stop Slack
+
+  const broken = { execute: async () => { throw new Error("db gone") } } as any
+  await expect(notifyUpgradeRequest(upReq(), {
+    db: broken, sendEmail: async () => { throw new Error("x") }, postSlack: async () => { throw new Error("x") },
+  })).resolves.toBeUndefined()
 })
 
 test("Slack rate cap: over the cap drops but posts ONE coalesced note per window", async () => {

@@ -1181,6 +1181,24 @@ async function mount() {
           return (data && typeof data.text === 'string') ? { text: data.text } : null
         } catch { return null }
       },
+      // KLA-612: a guest/anon reporter who hits a cap (e.g. an over-cap file) can REQUEST an upgrade instead of
+      // being asked to pay. The composer's "Request upgrade" button calls this; we POST an attributed request to
+      // the server, which notifies the workspace owner/admins (Slack + email, KLA-608 dispatch). Best-effort:
+      // resolve true only on a 2xx so the composer shows the "sent" confirmation, false on any failure so the
+      // reporter can retry / attach a smaller file. Never throws into the composer.
+      onRequestUpgrade: async (rq) => {
+        try {
+          const res = await fetchWithTimeout(cfg.backendUrl + '/api/upgrade-request', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            // No email attribution here: the request button is shown to guest/anon reporters (an identified
+            // member gets the direct upgrade LINK instead), and an anon reporter hasn't given an email yet. The
+            // server attributes by project + page/fileMeta context. `email` stays optional on the endpoint.
+            body: JSON.stringify({ projectId: cfg.projectId, reason: rq.reason, context: rq.context || {} }),
+          })
+          return res.ok
+        } catch { return false }
+      },
       issueTypes: composerIssueTypes,
       // Pre-compress each screenshot as soon as it's captured (runs while the user types their
       // description). By submit time the Promise is settled → zero compression delay before upload.

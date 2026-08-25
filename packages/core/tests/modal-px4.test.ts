@@ -211,10 +211,10 @@ describe('KLA-591 — unified attachment gallery (images + video + docs, one con
     ctrl.close()
   })
 
-  it('an anon reporter over cap is never asked to pay (ask-team copy, no upgrade link)', async () => {
+  it('an anon reporter over cap is never asked to pay — no upgrade link; degrades to the smaller-file hint when no request host callback (KLA-612)', async () => {
     const ctrl = buildModal('bug', {
       onCaptureFull: async () => 'x', onSubmit: ok, allowFileAttachments: true,
-      maxFileBytes: 1024, reporterRole: 'anon', upgradeUrl: 'https://app/billing',
+      maxFileBytes: 1024, reporterRole: 'anon', upgradeUrl: 'https://app/billing', // no onRequestUpgrade wired
     })
     const input = q(ctrl, '#klavity-file') as HTMLInputElement
     Object.defineProperty(input, 'files', { value: [fakeFile('big.mp4', 'video/mp4', 5000)], configurable: true })
@@ -222,8 +222,32 @@ describe('KLA-591 — unified attachment gallery (images + video + docs, one con
     await settle()
     const cap = q(ctrl, '#klavity-capmsg') as HTMLElement
     expect(cap.hidden).toBe(false)
-    expect(cap.querySelector('.kl-capmsg-cta')).toBeNull()          // no upgrade link
-    expect(cap.querySelector('.kl-capmsg-hint')?.textContent || '').toMatch(/ask your team/i)
+    // NEVER a payment link for an anon reporter (neither an anchor nor a request button, since no callback).
+    expect(cap.querySelector('a.kl-capmsg-cta')).toBeNull()
+    expect(cap.querySelector('button.kl-capmsg-req')).toBeNull()
+    // The escape hatch stays in view.
+    expect(cap.querySelector('.kl-capmsg-hint')?.textContent || '').toMatch(/attach a smaller file/i)
+    ctrl.close()
+  })
+
+  it('an anon reporter over cap CAN request an upgrade (attributed POST) when the host wires onRequestUpgrade — still never a payment link (KLA-612)', async () => {
+    const onRequestUpgrade = vi.fn().mockResolvedValue(true)
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x', onSubmit: ok, allowFileAttachments: true,
+      maxFileBytes: 1024, reporterRole: 'anon', upgradeUrl: 'https://app/billing', onRequestUpgrade,
+    })
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [fakeFile('big.mp4', 'video/mp4', 5000)], configurable: true })
+    input.dispatchEvent(new Event("change"))
+    await settle()
+    const cap = q(ctrl, '#klavity-capmsg') as HTMLElement
+    expect(cap.querySelector('a.kl-capmsg-cta')).toBeNull() // never a payment link
+    const btn = cap.querySelector('button.kl-capmsg-req') as HTMLButtonElement
+    expect(btn).not.toBeNull()
+    btn.click()
+    await tick()
+    expect(onRequestUpgrade).toHaveBeenCalledTimes(1)
+    expect(onRequestUpgrade.mock.calls[0][0].reason).toBe('storage_over_cap')
     ctrl.close()
   })
 })

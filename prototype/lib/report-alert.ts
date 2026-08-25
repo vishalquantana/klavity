@@ -328,3 +328,141 @@ export async function notifyNewReport(
     console.error("report alert (non-fatal):", err?.message || err)
   }
 }
+
+// ── KLA-612: upgrade-request nudge ──────────────────────────────────────────────────
+// A guest/anon reporter who hits a cap (e.g. an over-cap file) can REQUEST an upgrade instead of being asked
+// to pay. The composer POSTs POST /api/upgrade-request → this dispatches an ATTRIBUTED nudge to the workspace
+// owner/admins over the SAME channels as the report alert (KLA-608): email (owner/admins, or the project's
+// custom bug_notify_emails) + the per-project Slack webhook. Reuses alertRecipients / projectSlackWebhook /
+// the injected transports so it's hermetically testable. Best-effort + never-throws — the endpoint already
+// rate-limits per (workspace, IP); we do NOT gate this on notify_on_every_bug (that toggle governs the bug
+// firehose; an upgrade request is a distinct, low-volume, high-intent signal the admin always wants).
+
+export type UpgradeRequestReason = "storage_over_cap" | "credit_wall" | "quota_exceeded" | "other"
+
+export interface UpgradeRequestInput {
+  projectId: string
+  projectName: string
+  /** projects.account_id — drives the owner/admin recipient lookup. */
+  accountId: string
+  /** What wall the reporter hit. Unknown values are coerced to "other" at the endpoint. */
+  reason: UpgradeRequestReason
+  /** Attribution context: the page they were on, an optional ticket ref, and the file that hit the cap. */
+  context?: { page?: string | null; ticketId?: string | null; fileName?: string | null; fileSizeMb?: number | null }
+  /** Optional reporter email (only when they've already given one — anon reporters have none). */
+  reporterEmail?: string | null
+  baseUrl: string
+  at: number
+}
+
+export function reasonLabel(reason: UpgradeRequestReason): string {
+  switch (reason) {
+    case "storage_over_cap": return "a larger file upload"
+    case "credit_wall": return "more credits"
+    case "quota_exceeded": return "a higher plan limit"
+    default: return "an upgrade"
+  }
+}
+
+export function buildUpgradeRequestEmail(input: UpgradeRequestInput): { subject: string; html: string; text: string } {
+  const want = reasonLabel(input.reason)
+  const link = ticketUrl({ baseUrl: input.baseUrl, projectId: input.projectId })
+  const page = input.context?.page ? truncate(String(input.context.page), 200) : ""
+  const file = input.context?.fileName
+    ? `${truncate(String(input.context.fileName), 80)}${input.context.fileSizeMb ? ` (${input.context.fileSizeMb}MB)` : ""}`
+    : ""
+  const subject = `Someone on ${input.projectName} asked to upgrade`
+
+  const textLines = [
+    `A reporter on ${input.projectName} hit a limit and requested ${want}.`,
+    "",
+    page ? `Page: ${page}` : "",
+    file ? `File: ${file}` : "",
+    input.context?.ticketId ? `Ticket: ${input.context.ticketId}` : "",
+    input.reporterEmail ? `From: ${input.reporterEmail}` : "From: an anonymous reporter",
+    "",
+    `Review plans: ${link}`,
+  ].filter((l, i, a) => l !== "" || a[i - 1] !== "")
+  const text = textLines.join("\n")
+
+  const f = "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif"
+  const html = `<div style="${f};color:#1d1d24;max-width:560px">
+  <p style="margin:0 0 12px;font-size:15px">A reporter on <b>${escapeHtml(input.projectName)}</b> hit a limit and <b>requested ${escapeHtml(want)}</b>.</p>
+  <div style="border:1px solid #e6e4ff;background:#f7f6ff;border-radius:10px;padding:14px 16px;margin:0 0 14px">
+    ${page ? `<p style="margin:0 0 6px;font-size:13px;color:#3f3a52">Page: ${escapeHtml(page)}</p>` : ""}
+    ${file ? `<p style="margin:0 0 6px;font-size:13px;color:#3f3a52">File: ${escapeHtml(file)}</p>` : ""}
+    ${input.context?.ticketId ? `<p style="margin:0 0 6px;font-size:13px;color:#3f3a52">Ticket: ${escapeHtml(String(input.context.ticketId))}</p>` : ""}
+    <p style="margin:0;font-size:13px;color:#6b6678">From: <b>${escapeHtml(input.reporterEmail || "an anonymous reporter")}</b></p>
+  </div>
+  <p style="margin:16px 0 0"><a href="${escapeHtml(link)}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:8px">Review plans in Klavity</a></p>
+  <p style="margin:18px 0 0;font-size:11px;color:#b6b3c0">Sent by Klavity when a reporter on your project asks to upgrade. The reporter was never asked to pay.</p>
+</div>`
+
+  return { subject, html, text }
+}
+
+export function buildUpgradeRequestSlackPayload(input: UpgradeRequestInput): { text: string; blocks: unknown[] } {
+  const want = reasonLabel(input.reason)
+  const link = ticketUrl({ baseUrl: input.baseUrl, projectId: input.projectId })
+  const fields: Array<{ type: string; text: string }> = [
+    { type: "mrkdwn", text: `*Project*\n${input.projectName}` },
+    { type: "mrkdwn", text: `*Wants*\n${want}` },
+  ]
+  if (input.context?.page) fields.push({ type: "mrkdwn", text: `*Page*\n${truncate(String(input.context.page), 120)}` })
+  if (input.context?.fileName) fields.push({ type: "mrkdwn", text: `*File*\n${truncate(String(input.context.fileName), 80)}${input.context.fileSizeMb ? ` (${input.context.fileSizeMb}MB)` : ""}` })
+  fields.push({ type: "mrkdwn", text: `*From*\n${input.reporterEmail || "anonymous reporter"}` })
+  return {
+    text: `Upgrade request on ${input.projectName}: someone wants ${want}`,
+    blocks: [
+      { type: "header", text: { type: "plain_text", text: `Upgrade request: ${input.projectName}`, emoji: false } },
+      { type: "section", text: { type: "mrkdwn", text: `A reporter hit a limit and requested *${want}*.` } },
+      { type: "section", fields },
+      { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Review plans", emoji: false }, url: link }] },
+    ],
+  }
+}
+
+export interface UpgradeRequestDeps {
+  db: Client
+  sendEmail: (to: string[], subject: string, html: string, text: string) => Promise<void>
+  postSlack: (webhookUrl: string, payload: unknown) => Promise<void>
+}
+
+/**
+ * Fire-and-forget dispatch for an upgrade request. NEVER throws — every leg (recipient lookup, SendGrid,
+ * Slack) is guarded independently so a notification failure can't 500 the endpoint. Email + Slack are both
+ * best-effort; an email failure must not stop the Slack post.
+ */
+export async function notifyUpgradeRequest(
+  input: UpgradeRequestInput, overrides: Partial<UpgradeRequestDeps> = {},
+): Promise<void> {
+  try {
+    const c = overrides.db ?? db
+    if (!c) return
+    const sendEmail = overrides.sendEmail ?? sendReportAlertEmail
+    const postSlack = overrides.postSlack ?? defaultPostSlack
+
+    // 1. Email — the project's custom bug_notify_emails when set, else the account owner/admins. NOT throttled
+    //    (low-volume, high-intent) — the endpoint's per-(workspace,IP) rate limit is the flood guard.
+    try {
+      const notifyCfg = await projectNotifyRow(c, input.projectId).catch(() => ({ notifyOnEveryBug: true, bugNotifyEmails: [] as string[] }))
+      const to = notifyCfg.bugNotifyEmails.length ? notifyCfg.bugNotifyEmails : await alertRecipients(c, input.accountId)
+      if (to.length) {
+        const { subject, html, text } = buildUpgradeRequestEmail(input)
+        await sendEmail(to, subject, html, text)
+      }
+    } catch (err: any) {
+      console.error("upgrade request email (non-fatal):", err?.message || err)
+    }
+
+    // 2. Slack — per-project webhook when configured.
+    try {
+      const hook = await projectSlackWebhook(c, input.projectId)
+      if (hook) await postSlack(hook, buildUpgradeRequestSlackPayload(input))
+    } catch (err: any) {
+      console.error("upgrade request slack (non-fatal):", err?.message || err)
+    }
+  } catch (err: any) {
+    console.error("upgrade request (non-fatal):", err?.message || err)
+  }
+}

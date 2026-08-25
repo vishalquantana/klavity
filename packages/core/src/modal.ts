@@ -370,6 +370,13 @@ export interface ModalCallbacks {
   reporterRole?: ReporterRole
   // KLA-591: where the "Upgrade for larger uploads" CTA points (workspace members/owners only).
   upgradeUrl?: string
+  // KLA-612: host callback the "Request upgrade" primitive fires for a guest/anon reporter (who is NEVER
+  // asked to pay). The host POSTs an attributed upgrade REQUEST (POST /api/upgrade-request) so the workspace
+  // owner/admins get a notified nudge (Slack + email, KLA-608 dispatch) with what the reporter hit + the page.
+  // Resolve true when the request landed (client shows "Request sent to your team"), false/throw otherwise
+  // (client re-enables the button so the reporter can retry or just attach a smaller file). Best-effort —
+  // never blocks the composer. Absent (e.g. the extension, for parity) → the guest CTA degrades to a hint.
+  onRequestUpgrade?: (req: { reason: string; context?: Record<string, unknown> }) => Promise<boolean>
   // KLAVITYKLA-438 "Record me" (Phase 1): opt-in composer flag. When true AND onRecord is provided, a
   // "Record me" button appears in the capture row; clicking it invokes onRecord() (the host drives the
   // consent → record → preview flow via the sdk recorder) and the resolved recording is added to the
@@ -554,9 +561,12 @@ export interface FileCapDecision {
   overCap: boolean
   // Friendly, non-blocking message shown inline when the file exceeds the per-file cap. Absent when under.
   message?: string
-  // Role-aware call to action. 'upgrade' → a direct link (members/owners); 'ask-team' → the guest copy
-  // (never a payment ask). Absent when the file is under the cap.
-  cta?: { kind: 'upgrade' | 'ask-team'; label: string; url?: string }
+  // Role-aware call to action, rendered by the reusable "Request upgrade" primitive (buildUpgradeControl).
+  // 'upgrade' → a direct upgrade LINK (members/owners, opens `url`); 'ask-team' → a guest/anon REQUEST button
+  // that POSTs an attributed upgrade nudge to the workspace admins (never a payment ask). `reason` tags what
+  // wall was hit (drives the admin notification + future credit walls); `hint` is the secondary "or attach a
+  // smaller file" affordance. Absent when the file is under the cap.
+  cta?: { kind: 'upgrade' | 'ask-team'; label: string; url?: string; reason?: string; hint?: string }
 }
 
 // KLA-591: decide what to do with a file relative to the per-file cap, role-aware. NEVER hard-blocks — the
@@ -571,9 +581,12 @@ export function evaluateFileCap(
   const canUpgrade = opts.role === 'owner' || opts.role === 'admin' || opts.role === 'member'
   const name = file.name ? `"${file.name}"` : 'This file'
   const message = `${name} is over the ${mb}MB limit on your plan.`
+  // KLA-612: both roles now get a real "Request upgrade" ACTION (not advisory text). member/owner → a direct
+  // upgrade link; guest/anon → a button that POSTs an attributed request to the workspace admins. The
+  // secondary hint keeps the always-available escape hatch (attach a smaller file) so we never dead-end.
   const cta = canUpgrade
-    ? { kind: 'upgrade' as const, label: 'Upgrade for larger uploads', url: opts.upgradeUrl }
-    : { kind: 'ask-team' as const, label: 'Ask your team to upgrade — or attach a smaller file' }
+    ? { kind: 'upgrade' as const, label: 'Request upgrade', url: opts.upgradeUrl, reason: 'storage_over_cap', hint: 'or attach a smaller file' }
+    : { kind: 'ask-team' as const, label: 'Request upgrade', reason: 'storage_over_cap', hint: 'or attach a smaller file' }
   return { overCap: true, message, cta }
 }
 
@@ -879,8 +892,20 @@ export function buildModal(
     .klavity-capmsg{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:1.4;color:var(--kl-fg);background:color-mix(in srgb,#f59e0b 14%,transparent);border:1px solid color-mix(in srgb,#f59e0b 45%,transparent);border-radius:8px;padding:8px 10px;margin-bottom:10px;}
     .klavity-capmsg .kl-capmsg-t{font-weight:600;}
     .klavity-capmsg .kl-capmsg-cta{color:var(--kl-accent);font-weight:700;text-decoration:none;white-space:nowrap;}
-    .klavity-capmsg .kl-capmsg-cta:hover{text-decoration:underline;}
+    .klavity-capmsg a.kl-capmsg-cta:hover{text-decoration:underline;}
+    /* KLA-612: the guest "Request upgrade" action is a real button (POSTs an admin nudge). Styled as a compact
+       accent pill so it reads as the primary action in the notice, with the standard hover/press micro-anim. */
+    .klavity-capmsg button.kl-capmsg-req{border:none;cursor:pointer;font-size:12px;line-height:1;padding:6px 11px;border-radius:7px;background:var(--kl-accent);color:var(--kl-on-accent);font-weight:700;transition:transform .15s cubic-bezier(.2,.7,.2,1),filter .15s ease;will-change:transform;}
+    .klavity-capmsg button.kl-capmsg-req:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.06);text-decoration:none;}
+    .klavity-capmsg button.kl-capmsg-req:active{transform:scale(.97);}
+    .klavity-capmsg button.kl-capmsg-req:disabled{opacity:.6;cursor:default;transform:none;}
+    .klavity-capmsg button.kl-capmsg-req:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* Confirmation after the request lands — a check glyph + green tint (no emoji; uses core icon()). */
+    .klavity-capmsg .kl-capmsg-sent{display:inline-flex;align-items:center;gap:5px;font-weight:700;color:#059669;}
+    .klavity-capmsg .kl-capmsg-sent-ic{display:inline-flex;}
+    .klavity-capmsg .kl-capmsg-sent-ic svg{width:14px;height:14px;display:block;}
     .klavity-capmsg .kl-capmsg-hint{color:var(--kl-muted);}
+    @media (prefers-reduced-motion: reduce){.klavity-capmsg button.kl-capmsg-req{transition:none;}}
     .klavity-capmsg[hidden]{display:none;}
     .kl-video-thumb{width:104px;height:72px;border-radius:8px;overflow:hidden;cursor:pointer;background:#000;outline:1px solid var(--kl-img-outline);outline-offset:-1px;}
     .kl-video-thumb.kl-thumb-active{outline:2px solid var(--kl-accent);outline-offset:1px;}
@@ -1274,13 +1299,19 @@ export function buildModal(
     .kl-vring-bg{stroke:color-mix(in srgb,var(--kl-border) 80%,transparent);}
     .kl-vring-prog{stroke:var(--kl-accent);transition:stroke .3s ease;}
     #klavity-voice.kl-voice-rec .kl-vring{display:block;}
-    #klavity-voice.kl-voice-rec{color:rgb(220 38 38);background:color-mix(in srgb,rgb(220 38 38) 10%,var(--kl-chip));}
+    /* KLA-613: the recording state is unmistakable AT THE CONTROL — a clearly red, GLOWING/PULSING circle with
+       the stop-square glyph — so we no longer need (and no longer render) the disconnected "Recording — tap to
+       stop" text row far below the description. Action + feedback are now co-located where the user clicked. */
+    #klavity-voice.kl-voice-rec{color:rgb(220 38 38);background:color-mix(in srgb,rgb(220 38 38) 16%,var(--kl-chip));box-shadow:0 0 0 2px rgba(220,38,38,.55),0 0 12px 2px rgba(220,38,38,.45);animation:kl-rec-glow 1.4s ease-in-out infinite;}
+    @keyframes kl-rec-glow{0%{box-shadow:0 0 0 0 rgba(220,38,38,.55),0 0 10px 1px rgba(220,38,38,.35);}50%{box-shadow:0 0 0 4px rgba(220,38,38,.28),0 0 18px 5px rgba(220,38,38,.55);}100%{box-shadow:0 0 0 0 rgba(220,38,38,.55),0 0 10px 1px rgba(220,38,38,.35);}}
+    @media (prefers-reduced-motion: reduce){#klavity-voice.kl-voice-rec{animation:none;box-shadow:0 0 0 2px rgba(220,38,38,.6);}}
     #klavity-voice.kl-voice-warn .kl-vring-prog{stroke:#f97316;}
     .kl-vdot{display:none;position:absolute;top:0;right:0;width:6px;height:6px;border-radius:50%;background:rgb(220 38 38);}
     #klavity-voice.kl-voice-rec .kl-vdot{display:block;animation:kl-vdot-pulse 1.2s ease infinite;}
-    /* KLA voice-fix: an OBVIOUS Stop affordance while recording — the mic icon swaps to a solid red stop
-       square so the user can clearly see it's live and that tapping stops it (paired with the
-       "Recording — tap to stop" status row below the description). */
+    @media (prefers-reduced-motion: reduce){#klavity-voice.kl-voice-rec .kl-vdot{animation:none;}}
+    /* KLA voice-fix / KLA-613: an OBVIOUS Stop affordance while recording — the mic icon swaps to a solid red
+       stop square so the user can clearly see it's live and that tapping stops it. This glyph + the red glow ARE
+       the recording feedback now (no separate status text). */
     .kl-vstop{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:2px;background:rgb(220 38 38);}
     #klavity-voice.kl-voice-rec .kl-cap-ic>svg{opacity:0;}
     #klavity-voice.kl-voice-rec .kl-vstop{display:block;}
@@ -1953,23 +1984,63 @@ export function buildModal(
     updateStrip()
   }
 
-  // KLA-591: role-aware over-cap notice. Shows a friendly inline message + the right CTA (member/owner →
-  // upgrade link; anon/guest → ask-team) WITHOUT dropping the file silently and without dead-ending.
-  function showCapMessage(decision: FileCapDecision) {
+  // KLA-612: reusable "Request upgrade" control primitive — the single affordance behind the over-cap file
+  // notice AND (future) credit walls. Role-driven:
+  //   • kind:'upgrade' + url  → a member/owner is sent STRAIGHT to the upgrade page (a normal external link).
+  //   • kind:'ask-team'       → a guest/anon reporter (never asked to pay) gets a BUTTON that POSTs an
+  //                             attributed upgrade REQUEST via callbacks.onRequestUpgrade; on success it swaps
+  //                             to a "Request sent to your team" confirmation. On failure (or no host callback)
+  //                             it degrades gracefully so the reporter is never dead-ended.
+  // `ctx` is forwarded to the host (page/ticket/fileMeta) so the admin notification can be attributed.
+  function buildUpgradeControl(
+    cta: { kind: 'upgrade' | 'ask-team'; label: string; url?: string; reason?: string },
+    ctx?: Record<string, unknown>,
+  ): HTMLElement | null {
+    if (cta.kind === 'upgrade') {
+      if (!cta.url) return null // no destination configured → fall back to the hint alone (no broken link)
+      const a = document.createElement('a')
+      a.className = 'kl-capmsg-cta'; a.href = cta.url; a.target = '_blank'; a.rel = 'noopener noreferrer'
+      a.textContent = cta.label
+      return a
+    }
+    // guest/anon → a real request button. When the host wired no callback (e.g. the extension, for parity)
+    // there's no actionable request, so return null and let the secondary hint carry the escape hatch.
+    if (!callbacks.onRequestUpgrade) return null
+    const btn = document.createElement('button')
+    btn.type = 'button'; btn.className = 'kl-capmsg-cta kl-capmsg-req'; btn.textContent = cta.label
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return
+      const prev = btn.textContent || cta.label
+      btn.disabled = true; btn.textContent = 'Requesting…'
+      let ok = false
+      try { ok = await callbacks.onRequestUpgrade!({ reason: cta.reason || 'upgrade', context: ctx }) } catch { ok = false }
+      if (ok) {
+        const done = document.createElement('span'); done.className = 'kl-capmsg-sent'
+        done.innerHTML = `<span class="kl-capmsg-sent-ic">${icon('check')}</span>Request sent to your team`
+        btn.replaceWith(done)
+      } else {
+        btn.disabled = false; btn.textContent = prev // never dead-end — let them retry
+      }
+    })
+    return btn
+  }
+
+  // KLA-591 / KLA-612: role-aware over-cap notice. Shows a friendly inline message + the reusable "Request
+  // upgrade" control (member/owner → upgrade link; anon/guest → attributed request button) WITHOUT dropping
+  // the file silently and without dead-ending — the secondary hint keeps "attach a smaller file" in view.
+  function showCapMessage(decision: FileCapDecision, ctx?: Record<string, unknown>) {
     const box = shadowRoot.getElementById('klavity-capmsg') as HTMLElement | null
     if (!box || !decision.overCap) return
     box.innerHTML = ''
     const msg = document.createElement('span'); msg.className = 'kl-capmsg-t'; msg.textContent = decision.message || ''
     box.appendChild(msg)
     if (decision.cta) {
-      if (decision.cta.kind === 'upgrade' && decision.cta.url) {
-        const a = document.createElement('a')
-        a.className = 'kl-capmsg-cta'; a.href = decision.cta.url; a.target = '_blank'; a.rel = 'noopener noreferrer'
-        a.textContent = decision.cta.label
-        box.appendChild(a)
-      } else {
-        const span = document.createElement('span'); span.className = 'kl-capmsg-hint'; span.textContent = decision.cta.label
-        box.appendChild(span)
+      const ctrl = buildUpgradeControl(decision.cta, ctx)
+      if (ctrl) box.appendChild(ctrl)
+      // Secondary escape hatch, shown alongside the upgrade action (the button/link doesn't repeat it).
+      if (decision.cta.hint) {
+        const hint = document.createElement('span'); hint.className = 'kl-capmsg-hint'; hint.textContent = decision.cta.hint
+        box.appendChild(hint)
       }
     }
     box.hidden = false
@@ -1990,7 +2061,14 @@ export function buildModal(
       if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); break }
       // KLA-591: role-aware over-cap decision. Do NOT silently drop — show the message + CTA and move on.
       const decision = evaluateFileCap(file, { capBytes: PER_FILE_MAX_BYTES, role: reporterRole, upgradeUrl })
-      if (decision.overCap) { showCapMessage(decision); continue }
+      if (decision.overCap) {
+        // KLA-612: attribute the (guest) upgrade request — what wall + which page + the file that hit it.
+        showCapMessage(decision, {
+          page: (typeof location !== 'undefined' ? location.href : '') || '',
+          fileMeta: { name: file.name, sizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10 },
+        })
+        continue
+      }
       const total = attachedFiles.reduce((n, f) => n + f.size, 0)
       if (total + file.size > MAX_FILES_TOTAL_BYTES) { showError(`Attachments exceed the ${Math.round(MAX_FILES_TOTAL_BYTES / 1024 / 1024)} MB total limit.`); break }
       try {
@@ -2571,21 +2649,21 @@ export function buildModal(
       voiceStatusEl.hidden = false
       if (autoHideMs) voiceStatusHideTimer = setTimeout(clearVoiceStatus, autoHideMs)
     }
-    // KLA voice-fix: an OBVIOUS, immediate "Recording — tap to stop" affordance. The old recording state
-    // (mic circle turning red + a progress ring) was too subtle — the founder couldn't tell it was live and,
-    // in server mode, the first transcript is ~5s away, so it read as "nothing happened". We now paint this
-    // status the MOMENT recording starts (instant feedback), swap the mic glyph to a red stop square, and set
-    // aria-pressed/aria-label so assistive tech announces the toggle.
-    const RECORDING_MSG = 'Recording — tap to stop'
-    const showRecordingLabel = () => setVoiceStatus('info', RECORDING_MSG)
-    // On stop, clear any INFO-level voice status (the recording label or a soft reconnect note) but leave a
-    // real ERROR row up for its own auto-hide window so the user still sees why it failed.
+    // KLA-613: the recording affordance is the CONTROL ITSELF — a red, glowing/pulsing circle with a stop-square
+    // glyph, co-located where the user clicked. We deliberately do NOT paint a steady "Recording — tap to stop"
+    // TEXT row below the description anymore (that separated the action from its feedback and read as a cognitive
+    // disconnect). The status row (#klavity-voice-status) is now reserved for TRANSIENT signals only — a soft
+    // reconnect note or a real error — never the steady recording state. The button carries the tooltip + a
+    // proper aria-label/aria-pressed so assistive tech still announces the live toggle.
+    const RECORDING_TITLE = 'Recording — tap to stop'
+    // On stop, clear any INFO-level voice status (a soft reconnect note) but leave a real ERROR row up for its
+    // own auto-hide window so the user still sees why it failed.
     const clearInfoStatus = () => { if (voiceStatusEl && voiceStatusEl.classList.contains('kl-vs-info')) clearVoiceStatus() }
     const setVoiceBtnMode = (recording: boolean) => {
       voiceBtn.classList.toggle('kl-voice-rec', recording)
       voiceBtn.setAttribute('aria-pressed', recording ? 'true' : 'false')
-      voiceBtn.setAttribute('aria-label', recording ? 'Stop dictation' : 'Voice dictation')
-      voiceBtn.title = recording ? RECORDING_MSG : 'Voice dictation'
+      voiceBtn.setAttribute('aria-label', recording ? 'Stop recording' : 'Voice dictation')
+      voiceBtn.title = recording ? RECORDING_TITLE : 'Voice dictation'
     }
 
     // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
@@ -2596,9 +2674,9 @@ export function buildModal(
         refreshSubmit()
       }
       // Non-alarming reconnect status while an engine auto-retries a transient drop. When it recovers ('idle')
-      // restore the persistent "Recording — tap to stop" label (still live) rather than blanking the row.
+      // we just clear the transient note — the control's own red glow already signals we're still live (KLA-613).
       engine.onStatus = (type, message) => {
-        if (type === 'idle') { if (voiceRecording) showRecordingLabel(); else clearInfoStatus() }
+        if (type === 'idle') clearInfoStatus()
         else setVoiceStatus('info', message)
       }
       engine.onError = (_, message) => {
@@ -2649,8 +2727,7 @@ export function buildModal(
         clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
         voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
         voiceRecording = true
-        setVoiceBtnMode(true)
-        showRecordingLabel() // instant, obvious feedback that we're live (server mode's 1st result is ~5s away)
+        setVoiceBtnMode(true) // instant, obvious feedback AT the control: red glow + stop-square glyph (KLA-613)
         void voice.start(); startRing()
       } else {
         voice.stop()

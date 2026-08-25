@@ -79,7 +79,7 @@ import type { RecurrenceMemory } from "./lib/recurrence-memory"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear, refund as rlRefund } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup, geoLookup } from "./lib/signup-alert"
-import { notifyNewReport } from "./lib/report-alert"
+import { notifyNewReport, notifyUpgradeRequest, type UpgradeRequestReason } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
 import { autoTicketError } from "./lib/error-autoticket"
@@ -1050,6 +1050,8 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/ping":
     case "/api/widget/lead":
     case "/api/widget/sims":
+    // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
+    case "/api/upgrade-request":
     case "/api/feedback":
     case "/api/errors":
     case "/api/consent":
@@ -3368,6 +3370,47 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
         } catch (e: any) { console.error("lead alert (non-fatal):", e?.message || e) }
       })().catch(() => {})
+      return wjson({ ok: true })
+    }
+
+    // ── KLA-612: upgrade-request nudge ─────────────────────────────────────────────────
+    // A guest/anon reporter who hits a cap (e.g. an over-cap file) can REQUEST an upgrade instead of being
+    // asked to pay. Project-scoped, cross-origin (the widget runs on the customer's site), anon-friendly. We
+    // validate the project exists, rate-limit per (workspace, IP) to prevent spam, then dispatch an ATTRIBUTED
+    // nudge to the workspace owner/admins (Slack + email, reusing the KLA-608 report-alert dispatch). The
+    // notification is fire-and-forget and NEVER blocks the response — the endpoint just returns { ok: true }.
+    if (req.method === "POST" && path === "/api/upgrade-request") {
+      const ip = clientIp(req, server)
+      const parsed = await readJsonLimited(req, 4_096) // small structured payload only
+      if (!parsed.ok) return wjson({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      const projectId = String(b.projectId || b.project_id || "")
+      if (!projectId) return wjson({ error: "projectId required" }, 400)
+      const proj = db ? await projectById(projectId).catch(() => null) : null
+      if (!proj) return wjson({ error: "not found" }, 404)
+      // Rate-limit per (workspace, IP): a reporter can nudge a few times an hour, no more (anti-spam).
+      if (!rlAllow(`upgradereq:${projectId}:${ip}`, 3, 60 * 60 * 1000)) return wjson({ error: "rate limited" }, 429)
+      // Coerce the reason to the known set; unknown → "other" (never trust client strings verbatim).
+      const REASONS: UpgradeRequestReason[] = ["storage_over_cap", "credit_wall", "quota_exceeded", "other"]
+      const rawReason = String(b.reason || "")
+      const reason: UpgradeRequestReason = (REASONS as string[]).includes(rawReason) ? (rawReason as UpgradeRequestReason) : "other"
+      // Sanitize attribution context — cap every string; only keep http(s) page URLs.
+      const rawCtx = (b.context && typeof b.context === "object") ? (b.context as Record<string, unknown>) : {}
+      const pageRaw = String(rawCtx.page || "").trim().slice(0, 500)
+      const page = /^https?:\/\//i.test(pageRaw) ? pageRaw : null
+      const fileMeta = (rawCtx.fileMeta && typeof rawCtx.fileMeta === "object") ? (rawCtx.fileMeta as Record<string, unknown>) : {}
+      const fileName = fileMeta.name ? String(fileMeta.name).trim().slice(0, 120) : null
+      const sizeMbNum = Number(fileMeta.sizeMb)
+      const fileSizeMb = isFinite(sizeMbNum) && sizeMbNum > 0 ? Math.round(sizeMbNum * 10) / 10 : null
+      const ticketId = rawCtx.ticketId ? String(rawCtx.ticketId).trim().slice(0, 80) : null
+      const emailRaw = String(b.email || "").trim().toLowerCase()
+      const reporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailRaw) && emailRaw.length <= 200 ? emailRaw : null
+      // fire-and-forget — never blocks / fails the response
+      void notifyUpgradeRequest({
+        projectId, projectName: proj.name, accountId: proj.accountId,
+        reason, context: { page, ticketId, fileName, fileSizeMb },
+        reporterEmail, baseUrl: BASE, at: Date.now(),
+      }).catch((err: any) => console.error("upgrade request (non-fatal):", err?.message || err))
       return wjson({ ok: true })
     }
 

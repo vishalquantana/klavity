@@ -71,7 +71,7 @@ describe('voice dictation → description (Web Speech engine)', () => {
     ctrl.close()
   })
 
-  it('shows an OBVIOUS "Recording — tap to stop" affordance the moment recording starts, cleared on stop', () => {
+  it('KLA-613: recording feedback is AT the control (red glow + stop glyph + aria), NOT a disconnected text row', () => {
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
     const status = q(ctrl, '#klavity-voice-status') as HTMLElement
@@ -81,24 +81,25 @@ describe('voice dictation → description (Web Speech engine)', () => {
     expect(voiceBtn.getAttribute('aria-pressed')).toBe('false')
 
     voiceBtn.click() // start
-    // Immediate feedback — before ANY transcript — so the user knows it's live + how to stop.
-    expect(status.hidden).toBe(false)
-    expect(status.textContent).toMatch(/recording.*tap to stop/i)
+    // Feedback lives on the CONTROL: recording class (drives the red glow) + stop glyph + aria.
     expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(true)
     expect(voiceBtn.getAttribute('aria-pressed')).toBe('true')
-    expect(voiceBtn.getAttribute('aria-label')).toMatch(/stop/i)
-    // The mic swaps to a visible stop glyph.
+    expect(voiceBtn.getAttribute('aria-label')).toMatch(/stop recording/i)
     expect(voiceBtn.querySelector('.kl-vstop')).not.toBeNull()
+    // The separated status TEXT row is NOT painted with the steady recording label anymore.
+    expect(status.hidden).toBe(true)
+    expect(status.textContent || '').not.toMatch(/recording.*tap to stop/i)
 
     liveRec.fireResult('some words', true)
-    // While still recording, the recording label persists (not blanked by a transient idle status).
-    expect(status.textContent).toMatch(/recording.*tap to stop/i)
+    // Still recording: the control keeps its state; no steady text row appears.
+    expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(true)
+    expect(status.textContent || '').not.toMatch(/recording.*tap to stop/i)
 
     voiceBtn.click() // stop
     expect(voiceBtn.classList.contains('kl-voice-rec')).toBe(false)
     expect(voiceBtn.getAttribute('aria-pressed')).toBe('false')
     expect(voiceBtn.getAttribute('aria-label')).toMatch(/voice dictation/i)
-    expect(status.hidden).toBe(true) // recording label cleared on stop
+    expect(status.hidden).toBe(true)
     ctrl.close()
   })
 })
