@@ -966,6 +966,12 @@ async function mount() {
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
       autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
+      // KLA-587 (founder decision, 2026-08-25 — REVERSES the #460/#473 "no auto-prompt" stance): real Screen
+      // capture (getDisplayMedia) is the ACTUAL default capture on open. Feature-detected — false on iOS Safari
+      // (no getDisplayMedia) so the rendered viewport stays the default there. The composer fires the share
+      // picker chained to the opening gesture; on decline/lost-gesture it silently falls back to the rendered
+      // viewport capture and leaves Screen as the primed one-tap primary button. The founder wants this prompt.
+      screenCaptureDefault: sharpCaptureSupported(),
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
       // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).

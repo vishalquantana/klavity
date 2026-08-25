@@ -82,6 +82,46 @@ function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: Captur
   return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: r.suggestSharp }
 }
 
+/**
+ * KLA-587 (founder decision, 2026-08-25): real "Screen" capture (getDisplayMedia) is the ACTUAL DEFAULT
+ * capture fired when the composer opens — this deliberately REVERSES the earlier #460/#473 "never auto-invoke
+ * getDisplayMedia" stance. The founder explicitly wants the share picker on first use and accepts the
+ * one-prompt friction, because Screen is the only path that captures pixel-perfect fidelity AND cross-origin
+ * embedded iframes. A future dev should NOT re-revert this as a regression — see KLA-587.
+ *
+ * The pieces below are PURE (no DOM / no browser API) so the default-capture decision and the decline→fallback
+ * classification are unit-testable independent of getDisplayMedia (which is browser-only).
+ */
+export type DefaultCaptureMode = 'screen' | 'viewport' | 'full' | 'none'
+
+/**
+ * Pick the capture path fired on composer open. Screen is the default when the host wired it AND opted into
+ * the Screen-default (browsers that support getDisplayMedia); it degrades to the rendered viewport capture,
+ * then the full render, then nothing — so the reporter is NEVER left with no way to capture.
+ */
+export function defaultCaptureMode(caps: {
+  screenCaptureDefault?: boolean
+  onCaptureSharp?: unknown
+  onCaptureViewport?: unknown
+  onCaptureFull?: unknown
+}): DefaultCaptureMode {
+  if (caps.screenCaptureDefault && typeof caps.onCaptureSharp === 'function') return 'screen'
+  if (typeof caps.onCaptureViewport === 'function') return 'viewport'
+  if (typeof caps.onCaptureFull === 'function') return 'full'
+  return 'none'
+}
+
+/**
+ * Classify a getDisplayMedia rejection as an EXPECTED decline (user cancelled the picker, or the browser
+ * refused because the user-gesture was already spent) vs a genuine error. In every one of these we silently
+ * fall back to the rendered capture with NO error toast (per the founder decision) — this helper only decides
+ * whether the failure is also worth a dev-console warning.
+ */
+export function isScreenDeclineError(err: unknown): boolean {
+  const name = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : ''
+  return name === 'NotAllowedError' || name === 'AbortError' || name === 'NotFoundError' || name === 'InvalidStateError'
+}
+
 /** JTBD 1.9 badge metadata per capture-quality tag: label + icon + whether "Retake sharp" applies. */
 const QUALITY_META: Record<CaptureQuality, { label: string; iconName: string; degraded: boolean }> = {
   'real-pixel': { label: 'Sharp', iconName: 'check-circle', degraded: false },
@@ -265,6 +305,12 @@ export interface ModalCallbacks {
   // When true, onCaptureFull() is called automatically ~200ms after the modal mounts and the
   // result is added to the screenshot strip. Default false — the production widget is unaffected.
   autoCaptureOnOpen?: boolean
+  // KLA-587 (founder decision): when true AND onCaptureSharp is wired, the DEFAULT on-open capture is real
+  // Screen (getDisplayMedia) — the share picker fires as the first-choice capture, chained to the composer's
+  // opening user-gesture. On decline / lost-gesture / failure it silently falls back to the rendered viewport
+  // capture (never an error toast, never a re-prompt loop). Host sets it from a getDisplayMedia feature-detect
+  // (undefined on iOS Safari → the rendered viewport stays the default there). See defaultCaptureMode().
+  screenCaptureDefault?: boolean
   // Called once when the composer closes — via Esc, overlay click, X button, or programmatic close.
   // Used by the widget to fire the public window.Klavity.on('close') event. `reason` is 'submitted'
   // ONLY on the non-blocking background-upload close (see backgroundUpload): the report was handed off
@@ -2114,41 +2160,49 @@ export function buildModal(
     catch { /* ignore */ }
     finally { fullBtn.classList.remove('kl-loading'); lockComposer(false) }
   })
-  if (sharpBtn && callbacks.onCaptureSharp) {
-    // The "Sharp" word lives in its own span so the "Capturing…" state never clobbers the icon or the
-    // embedded (i) (setting button.textContent would wipe both).
+  // KLA-587: shared "capture via real Screen (getDisplayMedia)" runner — used by BOTH the Screen button
+  // (manual click) and the on-open DEFAULT capture (founder decision). Hides the composer so it isn't in the
+  // shot, fires onCaptureSharp (which calls getDisplayMedia as its FIRST step so the click's/opening user
+  // gesture is preserved), and adds the resulting real-pixel shot. Returns true when a shot was added; false
+  // on a user DECLINE / lost-gesture / unsupported / empty result so the caller can fall back to a rendered
+  // capture. NEVER surfaces an error for a decline — the fallback is silent (per the founder decision).
+  async function runScreenCapture(): Promise<boolean> {
+    if (busy || !callbacks.onCaptureSharp || !sharpBtn) return false // re-entrancy / not wired
+    // The "Screen" word lives in its own span so the "Capturing…" state never clobbers the icon or the (i).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
-    const runSharp = async () => {
-      if (busy) return // re-entrancy: a capture/submit is already running
-      lockComposer(true)
-      sharpBtn.classList.add('kl-loading')
-      // Hide the composer so it isn't in the captured pixels. onCaptureSharp calls getDisplayMedia as its
-      // first step, so the click's user gesture (required by the permission prompt) is preserved.
-      host.style.display = 'none'
-      const target = sharpLabel ?? sharpBtn
-      const orig = target.textContent
-      target.textContent = 'Capturing…'
-      try {
-        const restore = maskOn ? maskNumbers(document.body) : null
-        let shot: CaptureResult | undefined
-        try { shot = await callbacks.onCaptureSharp!() }
-        finally { restore?.() }
-        if (shot) {
-          const { dataUrl, quality } = normalizeCapture(shot)
-          if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel'); setActiveCapture(sharpBtn) }
-        }
-      } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
-      finally {
-        host.style.display = ''
-        target.textContent = orig
-        sharpBtn.classList.remove('kl-loading')
-        lockComposer(false)
+    lockComposer(true)
+    sharpBtn.classList.add('kl-loading')
+    host.style.display = 'none' // keep the composer out of the captured pixels
+    const target = sharpLabel ?? sharpBtn
+    const orig = target.textContent
+    target.textContent = 'Capturing…'
+    let added = false
+    try {
+      const restore = maskOn ? maskNumbers(document.body) : null
+      let shot: CaptureResult | undefined
+      try { shot = await callbacks.onCaptureSharp() }
+      finally { restore?.() }
+      if (shot) {
+        const { dataUrl, quality } = normalizeCapture(shot)
+        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel'); setActiveCapture(sharpBtn); added = true }
       }
+    } catch (err) {
+      // A cancelled picker or a spent user-gesture rejects as NotAllowedError|AbortError — an expected outcome
+      // we fall back from SILENTLY (no error toast). A genuine, unexpected failure still falls back, but we
+      // leave a dev-console breadcrumb so it's diagnosable.
+      if (!isScreenDeclineError(err)) { try { console.warn('[Klavity] Screen capture failed; using rendered fallback:', err) } catch {} }
+    } finally {
+      host.style.display = ''
+      target.textContent = orig
+      sharpBtn.classList.remove('kl-loading')
+      lockComposer(false)
     }
+    return added
+  }
+  if (sharpBtn && callbacks.onCaptureSharp) {
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
     // handler (preserving the click's user gesture).
-    sharpBtn.addEventListener('click', () => { void runSharp() })
-
+    sharpBtn.addEventListener('click', () => { void runScreenCapture() })
   }
   const fileInput = modal.querySelector('#klavity-file') as HTMLInputElement
   const uploadBtn = modal.querySelector('#klavity-upload') as HTMLButtonElement
@@ -3078,6 +3132,27 @@ export function buildModal(
       // on resolve so the thumbnail slot is never blank.
       capturing = true
       updateStrip()
+      // KLA-587 (founder decision — REVERSES #460/#473): when Screen-default is on, the on-open DEFAULT capture
+      // is real getDisplayMedia. It MUST run PROMPTLY (NOT via requestIdleCallback — an idle/timer task spends
+      // the transient user-activation the picker needs) so it stays chained to the composer's opening gesture.
+      // Whether the on-open prompt actually fires depends on the gesture surviving the open path; if the
+      // browser refuses (spent gesture → NotAllowedError) OR the user declines, we silently fall back to the
+      // rendered viewport capture, and the primed primary "Screen" button is the one-tap manual retry. We do
+      // NOT re-prompt (no surprise-loop).
+      if (defaultCaptureMode(callbacks) === 'screen') {
+        void (async () => {
+          const ok = await runScreenCapture()
+          if (ok) { capturing = false; updateStrip(); return }
+          if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
+          // Silent fallback → rendered viewport (or full render where no viewport path is wired).
+          capturing = true; updateStrip()
+          if (callbacks.onCaptureViewport) { captureViewportOnly(null).catch(() => { capturing = false; updateStrip() }); return }
+          callbacks.onCaptureFull()
+            .then(shot => { const { dataUrl, quality, suggestSharp } = normalizeCapture(shot); capturing = false; addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn) })
+            .catch(() => { capturing = false; updateStrip() })
+        })()
+        return controller
+      }
       const runCapture = () => {
         // KLA-556: the DEFAULT auto-capture shot is the VIEWPORT only (above-the-fold / what's visible) —
         // it replaces the "Capturing…" skeleton within ~1s and does NOT swap to full-page. Full page stays
