@@ -21,3 +21,11 @@ test("enhance route reserves credits softly (returns draft regardless)", () => {
   expect(slice.includes("reserveCredits")).toBe(true)
   expect(slice.includes('"enhance"')).toBe(true)
 })
+
+test("enrichReportFromTranscript reserves transcript + keyframes credits (soft)", () => {
+  const start = server.indexOf("async function enrichReportFromTranscript")
+  const slice = server.slice(start, start + 8000)
+  expect(slice.includes('reserveCredits')).toBe(true)
+  expect(slice.includes('"transcript"')).toBe(true)
+  expect(slice.includes('"keyframes"')).toBe(true)
+})

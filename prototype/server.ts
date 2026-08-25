@@ -652,6 +652,11 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
   const transcripts = collectVideoTranscripts(fb)
   if (!transcripts.length) return // nothing transcribed yet → nothing to leverage
 
+  // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet once for this post-submit
+  // enrichment. Best-effort — a miss must NEVER touch the report; soft mode only logs wouldBlock.
+  const wsId = db ? await accountIdForAiCall(projectId, null, fb.actorEmail ?? null) : null
+  const creditsPlan = wsId ? await accountPlan(wsId) : null
+
   // ── (1) AI walkthrough summary — gated on a THIN reporter description (additive; never clobbers text). ──
   try {
     const alreadySummarized = fb.aiWalkthrough && typeof fb.aiWalkthrough === "object"
@@ -673,6 +678,12 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
           } catch (e: any) { console.warn("[video-enrich] screenshot fetch skipped (non-fatal):", e?.message || e) }
         }
         const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shotDataUrl)
+        // Soft-meter the transcript-enrichment vision call as a "transcript" action, priced per minute.
+        let transcriptMinutes = 1
+        try { const totalMs = transcripts.reduce((s, t) => s + (t.durationMs || 0), 0); if (totalMs > 0) transcriptMinutes = totalMs / 60000 } catch {}
+        let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+        try { if (wsId) rv = await reserveCredits(wsId, "transcript", { plan: creditsPlan, units: transcriptMinutes, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] video-enrich transcript reserve skipped (non-fatal):", e?.message || e) }
+        if (rv?.wouldBlock) console.log(`[credits] video-enrich transcript wouldBlock ws=${wsId} (soft)`)
         const draft = await generateEnhancedDraft(transcriptText, {
           llm: async (oneLiner, systemPrompt) => {
             const userParts: any[] = [{
@@ -696,6 +707,7 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
             return String(content ?? "")
           },
         })
+        try { await rv?.settle({ ok: !!draft, aiCallId: null }) } catch {}
         if (draft) {
           const text = renderDraftToText(draft)
           await setFeedbackWalkthroughSummary(feedbackId, projectId, {
@@ -715,11 +727,16 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
     const src: VideoTranscript | undefined =
       transcripts.find(t => t.key && t.segments && t.segments.length) || transcripts.find(t => t.key)
     if (!hasKeyframes && src && src.key) {
+      // Soft-meter keyframe extraction (flat 2cr). Reserved only here — inside the guard — so a
+      // no-op enrichment never books credits. Settled on whether any keyframe was actually appended.
+      let kfRv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try { if (wsId) kfRv = await reserveCredits(wsId, "keyframes", { plan: creditsPlan, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] keyframes reserve skipped (non-fatal):", e?.message || e) }
+      if (kfRv?.wouldBlock) console.log(`[credits] video-enrich keyframes wouldBlock ws=${wsId} (soft)`)
       const { bytes, contentType } = await getObjectBytes(src.key)
       const timestamps = pickKeyframeTimestampsMs(src.durationMs, src.segments, undefined)
       const frames = await extractKeyframes(bytes, String(src.contentType || contentType || ""), timestamps)
+      const newAtts: Array<Record<string, any>> = []
       if (frames.length) {
-        const newAtts: Array<Record<string, any>> = []
         for (let i = 0; i < frames.length; i++) {
           const f = frames[i]
           try {
@@ -733,6 +750,7 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
             .catch((e: any) => console.warn("[video-enrich] append keyframes failed (non-fatal):", e?.message || e))
         }
       }
+      try { await kfRv?.settle({ ok: newAtts.length > 0, aiCallId: null }) } catch {}
     }
   } catch (e: any) { console.warn("[video-enrich] keyframe extraction failed (non-fatal):", e?.message || e) }
 }
