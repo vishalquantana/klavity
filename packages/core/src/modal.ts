@@ -259,7 +259,17 @@ export interface ModalCallbacks {
   // PX4 #425: allow non-image file attachments (PDF, .log, .har, .txt, ...). When true an "Attach file" button
   // appears in the capture row; selected files show as chips below the evidence strip and thread through
   // onSubmit as `files`. Default false → only images can be attached (upload/paste stay image-only), unchanged.
+  // KLA-591: when true, the single unified attach control accepts images, video AND docs through one input.
   allowFileAttachments?: boolean
+  // KLA-591: per-file size cap (bytes) for the unified attach control. Defaults to DEFAULT_MAX_FILE_BYTES
+  // (100MB). Raise per plan later. When a file exceeds it the composer shows a friendly, role-aware CTA —
+  // it never silently drops the file (enforced per-workspace QUOTA + billing is KLA-594 fast-follow).
+  maxFileBytes?: number
+  // KLA-591: who is filing — drives the over-cap CTA. A member/owner/admin is offered a direct upgrade link;
+  // an anon/guest end-user is never asked to pay. Absent/undefined is treated as 'anon' (the safe default).
+  reporterRole?: ReporterRole
+  // KLA-591: where the "Upgrade for larger uploads" CTA points (workspace members/owners only).
+  upgradeUrl?: string
   // KLAVITYKLA-438 "Record me" (Phase 1): opt-in composer flag. When true AND onRecord is provided, a
   // "Record me" button appears in the capture row; clicking it invokes onRecord() (the host drives the
   // consent → record → preview flow via the sdk recorder) and the resolved recording is added to the
@@ -370,6 +380,10 @@ export interface ModalController {
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
   setReplayState: (state: 'attached' | 'unavailable') => void
+  // KLA-591: drive per-attachment upload progress bars while a submit is in flight. Pass the aggregate
+  // upload percent (0..100); every video tile + file chip mirrors it (one request → one % for all). Pass
+  // null to clear the bars (upload done/failed). No-op when the composer already closed.
+  setUploadProgress: (pct: number | null) => void
 }
 
 // video-upload: pure, unit-testable predicates for the "Attach file" ingest path. A video is matched by
@@ -402,6 +416,73 @@ export function videoContentType(name?: string): string {
 // standard `file` cap. Kept pure so ingestAttachments and the tests share one source of truth.
 export function attachmentSizeCap(file: { type?: string; name?: string }, caps: { file: number; video: number }): number {
   return isVideoFile(file) ? caps.video : caps.file
+}
+
+// ── KLA-591: unified attachment gallery ──────────────────────────────────────────────────────────────
+// ONE control replaces the old split Upload (images) + Attach file (video/doc) buttons: a single <input>
+// with a broad accept list ingests images, video, PDFs, and log-style files. Kept as a named const so the
+// markup and the tests agree on exactly what the picker offers.
+export const UNIFIED_ATTACH_ACCEPT = 'image/*,.heic,.heif,video/*,.pdf,.log,.har,.txt,.json,.csv,.zip,.xml,.yml,.yaml'
+
+// KLA-591: the default per-file size cap (100MB). Overridable per plan later — the enforced per-workspace
+// storage QUOTA + billing is KLA-594 (fast-follow); this const is just the per-file ceiling the composer UI
+// warns against. Exposed so the host can raise it for a higher plan without touching the composer.
+export const DEFAULT_MAX_FILE_MB = 100
+export const DEFAULT_MAX_FILE_BYTES = DEFAULT_MAX_FILE_MB * 1024 * 1024
+
+// KLA-591: is this file previewable as an inline image? (mirrors the composer's image predicate, but pure
+// so attachmentKind + tests can share it.) HEIC/HEIF and empty-type images are matched by extension.
+export function isImageLike(file: { type?: string; name?: string }): boolean {
+  return (file.type || '').toLowerCase().startsWith('image/') ||
+    /\.(heic|heif|png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(file.name || '')
+}
+
+// KLA-591: classify an attachment for the unified gallery. 'image' → screenshot strip + annotator; 'video'
+// → poster tile in the strip + inline <video controls> hero; 'file' → the non-previewable file chip.
+export type AttachmentKind = 'image' | 'video' | 'file'
+export function attachmentKind(file: { type?: string; name?: string }): AttachmentKind {
+  if (isVideoFile(file)) return 'video'
+  if (isImageLike(file)) return 'image'
+  return 'file'
+}
+
+// KLA-591: who is filing the report — drives the over-cap CTA. A workspace member/owner/admin can be sent
+// straight to an upgrade; an anonymous/guest end-user on a customer's site is NEVER asked to pay.
+export type ReporterRole = 'owner' | 'admin' | 'member' | 'guest' | 'anon' | undefined
+
+export interface FileCapDecision {
+  overCap: boolean
+  // Friendly, non-blocking message shown inline when the file exceeds the per-file cap. Absent when under.
+  message?: string
+  // Role-aware call to action. 'upgrade' → a direct link (members/owners); 'ask-team' → the guest copy
+  // (never a payment ask). Absent when the file is under the cap.
+  cta?: { kind: 'upgrade' | 'ask-team'; label: string; url?: string }
+}
+
+// KLA-591: decide what to do with a file relative to the per-file cap, role-aware. NEVER hard-blocks — the
+// caller shows the message + CTA and lets the reporter pick a smaller file. Kept pure + exported so the
+// composer and the tests share one decision.
+export function evaluateFileCap(
+  file: { size: number; name?: string },
+  opts: { capBytes: number; role?: ReporterRole; upgradeUrl?: string },
+): FileCapDecision {
+  if (file.size <= opts.capBytes) return { overCap: false }
+  const mb = Math.round(opts.capBytes / 1024 / 1024)
+  const canUpgrade = opts.role === 'owner' || opts.role === 'admin' || opts.role === 'member'
+  const name = file.name ? `"${file.name}"` : 'This file'
+  const message = `${name} is over the ${mb}MB limit on your plan.`
+  const cta = canUpgrade
+    ? { kind: 'upgrade' as const, label: 'Upgrade for larger uploads', url: opts.upgradeUrl }
+    : { kind: 'ask-team' as const, label: 'Ask your team to upgrade — or attach a smaller file' }
+  return { overCap: true, message, cta }
+}
+
+// KLA-591: per-attachment upload progress. Every attachment rides ONE upload request, so each mirrors the
+// aggregate upload percent while a submit is in flight. Returns a clamped whole percent, or null when no
+// upload is running (which clears the bars). Pure so the render + tests share the clamp.
+export function attachmentProgressPercent(pct: number | null | undefined): number | null {
+  if (pct == null || typeof pct !== 'number' || !isFinite(pct)) return null
+  return Math.max(0, Math.min(100, Math.round(pct)))
 }
 
 export function buildModal(
@@ -459,13 +540,19 @@ export function buildModal(
   // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
   const fileAttachEnabled = !!callbacks.allowFileAttachments
   const MAX_FILES = 5
-  // KLAVITYKLA-480 / video-upload: videos are large, so they get their own (higher) per-file cap. The
-  // backend attach path (prototype/server.ts) mirrors this: video/* → ATTACH_VIDEO_MAX_BYTES (100MB),
-  // non-video → SCREENSHOT_MAX_BYTES (8MB), total → ATTACH_TOTAL_MAX_BYTES (120MB). Keep these consistent
-  // with the server so nothing that passes here gets 413'd there.
-  const MAX_VIDEO_BYTES = 100 * 1024 * 1024 // 100 MB per video file
-  const MAX_FILES_TOTAL_BYTES = 120 * 1024 * 1024 // 120 MB across all attached files (holds one video)
+  // KLA-591: the unified per-file cap (100MB default, overridable per plan via callbacks.maxFileBytes). A
+  // file over this isn't silently dropped — the composer shows a friendly, role-aware over-cap CTA. The
+  // backend attach path (prototype/server.ts) mirrors the 100MB video ceiling + 120MB total; the enforced
+  // per-workspace storage QUOTA + billing is KLA-594 (fast-follow).
+  const PER_FILE_MAX_BYTES = callbacks.maxFileBytes && callbacks.maxFileBytes > 0 ? callbacks.maxFileBytes : DEFAULT_MAX_FILE_BYTES
+  // KLA-591: who is filing — drives the over-cap CTA (member/owner → upgrade link; anon/guest → ask-team).
+  const reporterRole: ReporterRole = callbacks.reporterRole ?? 'anon'
+  const upgradeUrl = callbacks.upgradeUrl
+  const MAX_FILES_TOTAL_BYTES = Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
   let attachedFiles: ReportFileAttachment[] = []
+  // KLA-591: current aggregate upload percent while a submit is in flight (null = not uploading). Painted
+  // onto every video tile + file chip so the reporter sees a large video actually uploading.
+  let uploadProgressPct: number | null = null
   // KLAVITYKLA-438: "Record me" recordings. Enabled only when the host opted in AND provided onRecord.
   const recordingEnabled = !!(callbacks.allowRecording && callbacks.onRecord)
   // KLA-505: pick the dictation engine for the Voice button — prefer the server STT endpoint (onDictate +
@@ -511,6 +598,10 @@ export function buildModal(
   // Image-hero: the screenshot currently shown big + live-annotated in the hero pane. Clicking a
   // thumbnail selects it; the inline annotator mounts on it and persists shapes to annotationsByIndex.
   let activeIndex = 0
+  // KLA-591: when non-null, a VIDEO attachment (attachedFiles[activeVideoIndex]) owns the hero — it renders
+  // as an inline <video controls> preview instead of the image annotator. Cleared when an image thumb is
+  // selected, when the video is removed, or when there are no videos.
+  let activeVideoIndex: number | null = null
   let heroKeyHandler: ((e: KeyboardEvent) => void) | null = null
   // JTBD 1.10: track whether a session-replay buffer is attached — it counts as evidence, so an
   // evidence-only report (replay but no typed prose / screenshot) can still Submit. Seeded from the
@@ -662,6 +753,24 @@ export function buildModal(
     .kl-file-chip .kl-file-sz{color:var(--kl-muted);font-variant-numeric:tabular-nums;font-size:11px;}
     .kl-file-rm{flex:none;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:color-mix(in srgb,var(--kl-fg) 12%,transparent);color:var(--kl-fg);cursor:pointer;padding:0;}
     .kl-file-rm:hover{background:color-mix(in srgb,var(--kl-fg) 22%,transparent);}
+    /* KLA-591 unified attach: hint line + role-aware over-cap message + video tiles + upload progress. */
+    .klavity-attach-hint{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--kl-muted);margin:-2px 0 10px;}
+    .klavity-attach-hint svg{flex:none;opacity:.8;}
+    .klavity-capmsg{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:1.4;color:var(--kl-fg);background:color-mix(in srgb,#f59e0b 14%,transparent);border:1px solid color-mix(in srgb,#f59e0b 45%,transparent);border-radius:8px;padding:8px 10px;margin-bottom:10px;}
+    .klavity-capmsg .kl-capmsg-t{font-weight:600;}
+    .klavity-capmsg .kl-capmsg-cta{color:var(--kl-accent);font-weight:700;text-decoration:none;white-space:nowrap;}
+    .klavity-capmsg .kl-capmsg-cta:hover{text-decoration:underline;}
+    .klavity-capmsg .kl-capmsg-hint{color:var(--kl-muted);}
+    .kl-video-thumb{width:104px;height:72px;border-radius:8px;overflow:hidden;cursor:pointer;background:#000;outline:1px solid var(--kl-img-outline);outline-offset:-1px;}
+    .kl-video-thumb.kl-thumb-active{outline:2px solid var(--kl-accent);outline-offset:1px;}
+    .kl-video-thumb video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;}
+    .kl-video-thumb .kl-video-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(0,0,0,.28);transition:background .12s;}
+    .kl-video-thumb:hover .kl-video-play{background:rgba(0,0,0,.12);}
+    .kl-video-thumb .kl-video-play svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));}
+    .kl-video-thumb .kl-video-badge{position:absolute;left:4px;bottom:4px;display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:5px;background:rgba(0,0,0,.62);color:#fff;font-size:9px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;}
+    .kl-att-prog{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(0,0,0,.35);overflow:hidden;}
+    .kl-att-prog i{display:block;height:100%;width:0;background:var(--kl-accent);transition:width .2s ease;}
+    .kl-file-chip{position:relative;overflow:hidden;}
     @media (prefers-reduced-motion:reduce){.kl-type-chip{transition:none;}.kl-type-chip:hover{transform:none;}}
     .klavity-page{font-size:12px;color:var(--kl-muted);margin-bottom:12px;}
     /* JTBD 1.8 attached-proof chip: tells the reporter (and later the reviewer, in the drawer) that a
@@ -1011,8 +1120,9 @@ export function buildModal(
       <div class="klavity-actions">
         ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Screen capture — recommended" aria-describedby="klavity-sharp-tip"><span class="kl-rec-tag">Recommended</span><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Recommended.</b> Screen grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
         <button id="klavity-full" title="Full Page — instant, but re-renders the page (may miss cross-origin images or embedded frames). Use Screen for a pixel-perfect shot."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
-        <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
-        ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a video or file (MP4, PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
+        ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
+             image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
+        <button id="klavity-upload" title="${fileAttachEnabled ? 'Add a screenshot, video, or file (images, MP4, PDF, .log, .har, ...)' : 'Upload a screenshot'}"><span class="kl-cap-ic">${icon(fileAttachEnabled ? 'paperclip' : 'image')}</span><span class="kl-upload-label">${fileAttachEnabled ? 'Attach' : 'Upload'}</span></button>
         ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
@@ -1021,9 +1131,12 @@ export function buildModal(
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       ${/* KLA-593: the "Mask numbers" redaction toggle moved to the TOP of the image-editing (hero) toolbar,
           grouped with the other redaction/editing tools — see heroToolbarHtml. */''}
-      <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
-      ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" accept="video/*,image/*,.pdf,.log,.har,.txt,.json,.csv,.zip" multiple style="display:none">' : ''}
+      ${/* KLA-591: ONE hidden input drives the unified attach control (broad accept) when file attachments
+           are enabled; the image-only accept is kept for the plain Upload button otherwise. */''}
+      <input type="file" id="klavity-file" accept="${fileAttachEnabled ? UNIFIED_ATTACH_ACCEPT : 'image/*,.heic,.heif'}" multiple style="display:none">
+      ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${Math.round(PER_FILE_MAX_BYTES / 1024 / 1024)}MB each</span></div>` : ''}
       <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
+      ${fileAttachEnabled ? '<div class="klavity-capmsg" id="klavity-capmsg" role="alert" hidden></div>' : ''}
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
       ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
       <div class="klavity-error" id="klavity-err"></div>
@@ -1128,6 +1241,13 @@ export function buildModal(
     addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp),
     close,
     setReplayState,
+    // KLA-591: mirror the aggregate upload percent onto every video tile + file chip while a submit is in
+    // flight. Re-renders the strip + chips so the bars paint; passing null clears them.
+    setUploadProgress: (pct: number | null) => {
+      uploadProgressPct = attachmentProgressPercent(pct)
+      if (_closed) return
+      try { updateStrip(); renderFiles() } catch { /* progress paint is best-effort */ }
+    },
   }
 
   function updateStrip() {
@@ -1146,7 +1266,8 @@ export function buildModal(
         if (img.naturalHeight > img.naturalWidth * 1.4) wrap.classList.add('kl-tall')
       }, { once: true })
       // Image-hero: clicking a thumbnail selects it as the active shot in the big hero annotator.
-      img.addEventListener('click', () => { activeIndex = i; updateStrip() })
+      // KLA-591: also drop any active video hero so the annotator (not the <video>) owns the stage.
+      img.addEventListener('click', () => { activeIndex = i; activeVideoIndex = null; updateStrip() })
       const rm = document.createElement('button')
       rm.className = 'klavity-rm'
       rm.innerHTML = icon('x', { size: 13 })
@@ -1228,6 +1349,45 @@ export function buildModal(
       // trail to the description on submit (buildPagesTrail), so the multi-page evidence still reaches the
       // ticket; only the visible per-thumbnail label is gone for a clean composer.
 
+      strip.appendChild(wrap)
+    })
+    // KLA-591: unified gallery — render VIDEO attachments as poster tiles in the SAME strip, right after the
+    // image thumbs. Each shows the first frame (the <video> element itself, muted/preload=metadata) under a
+    // play overlay; clicking selects it as the active hero (inline <video controls> preview). Non-video docs
+    // stay as chips (renderFiles). Uses the real attachedFiles index so remove/hero-selection stay aligned.
+    attachedFiles.forEach((f, fi) => {
+      if (attachmentKind(f) !== 'video') return
+      const wrap = document.createElement('div')
+      wrap.className = 'klavity-thumb kl-video-thumb'
+      if (activeVideoIndex === fi) wrap.classList.add('kl-thumb-active')
+      const vid = document.createElement('video')
+      vid.src = f.dataUrl
+      vid.muted = true
+      vid.preload = 'metadata'
+      vid.setAttribute('playsinline', '')
+      vid.tabIndex = -1
+      const play = document.createElement('span')
+      play.className = 'kl-video-play'
+      play.setAttribute('aria-hidden', 'true')
+      play.innerHTML = icon('play', { size: 16 })
+      const label = document.createElement('span')
+      label.className = 'kl-video-badge'
+      label.innerHTML = icon('play', { size: 9 }) + '<span>Video</span>'
+      wrap.title = 'Click to play ' + f.name
+      wrap.addEventListener('click', () => { activeVideoIndex = fi; updateStrip() })
+      const rm = document.createElement('button')
+      rm.className = 'klavity-rm'
+      rm.innerHTML = icon('x', { size: 13 })
+      rm.title = 'Remove'
+      rm.addEventListener('click', (e) => { e.stopPropagation(); removeAttachmentAt(fi) })
+      wrap.append(vid, play, label, rm)
+      // KLA-591: shared upload-progress bar while a submit is in flight (especially a large video).
+      const pct = attachmentProgressPercent(uploadProgressPct)
+      if (pct != null) {
+        const bar = document.createElement('div'); bar.className = 'kl-att-prog'
+        const fillEl = document.createElement('i'); fillEl.style.width = pct + '%'
+        bar.appendChild(fillEl); wrap.appendChild(bar)
+      }
       strip.appendChild(wrap)
     })
     // Bug 3: keep the active thumbnail in view — when a fresh capture is selected at the END of a long
@@ -1396,14 +1556,17 @@ export function buildModal(
     }
   }
 
-  // ── PX4 #425: non-image file attachments ─────────────────────────────────────────────────────────
-  // Render the attached-file chips (name + size + remove). Hidden when empty so the row takes no space.
+  // ── KLA-591 unified gallery: non-previewable file CHIPS (video attachments render in the strip below) ──
+  // Render chips for non-image, non-video attachments (PDF/log/har/…). Videos live in attachedFiles too but
+  // are rendered as poster tiles inside the thumbnail strip by updateStrip(), not here. Hidden when empty.
   function renderFiles() {
     const box = shadowRoot.getElementById('klavity-files') as HTMLElement | null
     if (!box) return
     box.innerHTML = ''
-    box.hidden = attachedFiles.length === 0
+    const docs = attachedFiles.filter(f => attachmentKind(f) === 'file')
+    box.hidden = docs.length === 0
     attachedFiles.forEach((f, i) => {
+      if (attachmentKind(f) !== 'file') return // videos are rendered in the strip, images in screenshots[]
       const chip = document.createElement('div')
       chip.className = 'kl-file-chip'
       const ic = document.createElement('span')
@@ -1422,25 +1585,72 @@ export function buildModal(
       rm.setAttribute('aria-label', `Remove ${f.name}`)
       rm.title = 'Remove'
       rm.innerHTML = icon('x', { size: 11 })
-      rm.addEventListener('click', () => { attachedFiles.splice(i, 1); renderFiles() })
+      rm.addEventListener('click', () => { removeAttachmentAt(i) })
       chip.append(ic, nm, sz, rm)
+      // KLA-591: paint the shared upload-progress bar on the chip while a submit is in flight.
+      const pct = attachmentProgressPercent(uploadProgressPct)
+      if (pct != null) {
+        const bar = document.createElement('div'); bar.className = 'kl-att-prog'
+        const fillEl = document.createElement('i'); fillEl.style.width = pct + '%'
+        bar.appendChild(fillEl); chip.appendChild(bar)
+      }
       box.appendChild(chip)
     })
     // An attached file is evidence in its own right — re-evaluate Submit (a file-only report is valid).
     refreshSubmit()
   }
 
-  // Ingest non-image files from the "Attach file" picker: enforce count + per-file + total-size caps, and
-  // surface a clear message on any reject. An image dropped here is redirected to the image path so users
-  // aren't penalised for picking the wrong button. Files are read as data URLs and threaded through onSubmit.
+  // KLA-591: remove an attachment (video or doc) by its attachedFiles index, keeping the strip + chips +
+  // active-video hero in sync. If the removed item was the active video hero, drop the hero selection.
+  function removeAttachmentAt(index: number) {
+    const wasVideo = attachedFiles[index] && attachmentKind(attachedFiles[index]) === 'video'
+    attachedFiles.splice(index, 1)
+    if (activeVideoIndex != null) {
+      if (wasVideo && activeVideoIndex === index) activeVideoIndex = null
+      else if (activeVideoIndex > index) activeVideoIndex -= 1
+    }
+    renderFiles()
+    updateStrip()
+  }
+
+  // KLA-591: role-aware over-cap notice. Shows a friendly inline message + the right CTA (member/owner →
+  // upgrade link; anon/guest → ask-team) WITHOUT dropping the file silently and without dead-ending.
+  function showCapMessage(decision: FileCapDecision) {
+    const box = shadowRoot.getElementById('klavity-capmsg') as HTMLElement | null
+    if (!box || !decision.overCap) return
+    box.innerHTML = ''
+    const msg = document.createElement('span'); msg.className = 'kl-capmsg-t'; msg.textContent = decision.message || ''
+    box.appendChild(msg)
+    if (decision.cta) {
+      if (decision.cta.kind === 'upgrade' && decision.cta.url) {
+        const a = document.createElement('a')
+        a.className = 'kl-capmsg-cta'; a.href = decision.cta.url; a.target = '_blank'; a.rel = 'noopener noreferrer'
+        a.textContent = decision.cta.label
+        box.appendChild(a)
+      } else {
+        const span = document.createElement('span'); span.className = 'kl-capmsg-hint'; span.textContent = decision.cta.label
+        box.appendChild(span)
+      }
+    }
+    box.hidden = false
+  }
+  function clearCapMessage() {
+    const box = shadowRoot.getElementById('klavity-capmsg') as HTMLElement | null
+    if (box) { box.hidden = true; box.innerHTML = '' }
+  }
+
+  // KLA-591: ingest from the ONE unified picker (or paste). Images fan out to the screenshot path; videos +
+  // docs become attachments. Enforces count + per-file + total-size caps; an over-cap file surfaces a
+  // friendly, role-aware CTA (never a silent drop). Files are read as data URLs and threaded through onSubmit.
   async function ingestAttachments(files: File[]) {
     clearError()
+    clearCapMessage()
     for (const file of files) {
       if (isImageFile(file)) { await ingestFiles([file]); continue } // route images to the screenshot path
       if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); break }
-      // Videos are large — give them the higher MAX_VIDEO_BYTES cap; everything else keeps MAX_FILE_BYTES.
-      const perFileCap = attachmentSizeCap(file, { file: MAX_FILE_BYTES, video: MAX_VIDEO_BYTES })
-      if (file.size > perFileCap) { showError(`"${file.name}" is too large — ${isVideoFile(file) ? 'videos' : 'files'} must be under ${Math.round(perFileCap / 1024 / 1024)} MB.`); continue }
+      // KLA-591: role-aware over-cap decision. Do NOT silently drop — show the message + CTA and move on.
+      const decision = evaluateFileCap(file, { capBytes: PER_FILE_MAX_BYTES, role: reporterRole, upgradeUrl })
+      if (decision.overCap) { showCapMessage(decision); continue }
       const total = attachedFiles.reduce((n, f) => n + f.size, 0)
       if (total + file.size > MAX_FILES_TOTAL_BYTES) { showError(`Attachments exceed the ${Math.round(MAX_FILES_TOTAL_BYTES / 1024 / 1024)} MB total limit.`); break }
       try {
@@ -1449,8 +1659,11 @@ export function buildModal(
         // the server's content-type-based 100MB video cap agrees with the client (KLA-560 item 6). Non-video
         // or already-typed files keep their reported type.
         const effectiveType = file.type || (isVideoFile(file) ? videoContentType(file.name) : '')
-        attachedFiles.push({ name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) })
+        const idx = attachedFiles.push({ name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) }) - 1
         renderFiles()
+        // KLA-591: a freshly-added video becomes the active hero (inline playable preview) + shows in the strip.
+        if (attachmentKind(attachedFiles[idx]) === 'video') activeVideoIndex = idx
+        updateStrip()
       } catch {
         showError(`Couldn't add "${file.name}". Please try a different file.`)
       }
@@ -2225,47 +2438,29 @@ export function buildModal(
     // handler (preserving the click's user gesture).
     sharpBtn.addEventListener('click', () => { void runScreenCapture() })
   }
+  // KLA-591: ONE unified attach control. When file attachments are enabled the single button opens one
+  // picker (broad accept) and routes EVERY selection through ingestAttachments — which fans images out to
+  // the screenshot path and keeps videos/docs as attachments. When disabled it stays the image-only Upload.
   const fileInput = modal.querySelector('#klavity-file') as HTMLInputElement
   const uploadBtn = modal.querySelector('#klavity-upload') as HTMLButtonElement
   uploadBtn.addEventListener('click', () => {
-    if (busy || screenshots.length >= MAX_IMAGES) {
-      if (screenshots.length >= MAX_IMAGES) showError(`You can attach up to ${MAX_IMAGES} images.`)
-      return
-    }
+    if (busy) return
+    // The image cap only blocks the picker when file attachments are OFF (image-only mode). With the unified
+    // control, videos/docs may still be addable even when the image slots are full — ingest enforces caps.
+    if (!fileAttachEnabled && screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     fileInput.click()
   })
   fileInput.addEventListener('change', async (e) => {
     const input = e.target as HTMLInputElement
     const files = input.files ? Array.from(input.files) : []
     input.value = '' // reset so re-selecting the SAME file fires change again (and clears stuck state)
-    if (files.length) {
-      const before = screenshots.length
-      await ingestFiles(files) // ingestFiles enforces cap + type + size + failure handling
-      if (screenshots.length > before) setActiveCapture(uploadBtn) // at least one file was accepted
-    }
+    if (!files.length) return
+    const beforeImages = screenshots.length
+    const beforeFiles = attachedFiles.length
+    if (fileAttachEnabled) await ingestAttachments(files) // unified: images→screenshots, video/doc→attachments
+    else await ingestFiles(files)                          // image-only mode: cap + type + size handling
+    if (screenshots.length > beforeImages || attachedFiles.length > beforeFiles) setActiveCapture(uploadBtn)
   })
-
-  // PX4 #425: "Attach file" button + its own (non-image) hidden input — only rendered when the host enabled
-  // allowFileAttachments. Mirrors the Upload button's click→picker→ingest flow, routed to ingestAttachments.
-  const attachBtn = shadowRoot.getElementById('klavity-attach') as HTMLButtonElement | null
-  const attachInput = shadowRoot.getElementById('klavity-attach-input') as HTMLInputElement | null
-  if (attachBtn && attachInput) {
-    attachBtn.addEventListener('click', () => {
-      if (busy) return
-      if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); return }
-      attachInput.click()
-    })
-    attachInput.addEventListener('change', async (e) => {
-      const input = e.target as HTMLInputElement
-      const files = input.files ? Array.from(input.files) : []
-      input.value = '' // reset so re-selecting the SAME file fires change again
-      if (files.length) {
-        const before = attachedFiles.length
-        await ingestAttachments(files)
-        if (attachedFiles.length > before) setActiveCapture(attachBtn)
-      }
-    })
-  }
 
   // KLAVITYKLA-438: "Record me" button — only rendered when the host enabled allowRecording + provided
   // onRecord. Click → onRecord() drives the consent → record → preview flow (sdk recorder); the resolved
@@ -2449,11 +2644,37 @@ export function buildModal(
 
   // Keep the hero pane in sync with the strip: clamp the active index, show the empty state when there
   // are no shots, otherwise mount the inline annotator on the active screenshot.
+  // KLA-591: a selected VIDEO attachment takes priority — it renders as an inline <video controls> preview.
   function syncHero() {
+    // Clear a stale video selection (removed, or no longer a video at that index).
+    if (activeVideoIndex != null && !(attachedFiles[activeVideoIndex] && attachmentKind(attachedFiles[activeVideoIndex]) === 'video')) {
+      activeVideoIndex = null
+    }
+    if (activeVideoIndex != null) { mountHeroVideo(activeVideoIndex); return }
     if (screenshots.length === 0) { activeIndex = 0; renderHeroEmpty(); return }
     if (activeIndex >= screenshots.length) activeIndex = screenshots.length - 1
     if (activeIndex < 0) activeIndex = 0
     mountHeroAnnotator(activeIndex)
+  }
+
+  // KLA-591: render an inline, playable video preview in the hero stage (mirrors how an image shot expands).
+  // No annotator toolbar for video — just <video controls>. Browser-only; safe no-op in headless test envs.
+  function mountHeroVideo(fileIndex: number) {
+    const stage = shadowRoot.getElementById('klavity-hero-stage')
+    const tools = shadowRoot.getElementById('klavity-hero-tools')
+    const f = attachedFiles[fileIndex]
+    if (!stage || !f) { renderHeroEmpty(); return }
+    detachHeroKeys()
+    if (tools) tools.innerHTML = ''
+    stage.innerHTML = ''
+    const video = document.createElement('video')
+    video.src = f.dataUrl
+    video.controls = true
+    video.setAttribute('playsinline', '')
+    video.preload = 'metadata'
+    video.className = 'kl-hero-video'
+    video.style.cssText = 'display:block;max-width:100%;max-height:100%;border-radius:8px;background:#000;box-shadow:0 12px 40px rgba(0,0,0,.5);'
+    stage.appendChild(video)
   }
 
   // #449 — reversible crop: replace screenshots[index] with the selected region of the CLEAN image and

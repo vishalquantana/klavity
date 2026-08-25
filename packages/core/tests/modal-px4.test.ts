@@ -107,21 +107,34 @@ describe('PX4 #411 — Task/Query issue-type chips', () => {
   })
 })
 
-describe('PX4 #425 — non-image file attachments', () => {
-  it('renders the Attach file button + hidden input only when allowFileAttachments is set', () => {
+describe('KLA-591 — unified attachment gallery (images + video + docs, one control)', () => {
+  it('merges Upload + Attach into ONE control (no separate #klavity-attach) with a broad accept + hint', () => {
     const on = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok, allowFileAttachments: true })
-    expect(q(on, '#klavity-attach')).not.toBeNull()
-    expect(q(on, '#klavity-attach-input')).not.toBeNull()
+    // The old separate "Attach file" button is gone — there is a single unified control.
+    expect(q(on, '#klavity-attach')).toBeNull()
+    expect(q(on, '#klavity-attach-input')).toBeNull()
+    const upload = q(on, '#klavity-upload') as HTMLButtonElement
+    expect(upload).not.toBeNull()
+    expect(upload.getAttribute('title') || '').toMatch(/screenshot, video, or file/i)
+    const input = q(on, '#klavity-file') as HTMLInputElement
+    const accept = input.getAttribute('accept') || ''
+    expect(accept).toContain('video/*')
+    expect(accept).toContain('.pdf')
+    expect(accept).toContain('image/*')
+    // 100MB hint is shown near the control.
+    expect((q(on, '#klavity-attach-hint')?.textContent || '')).toContain('100MB')
     on.close()
     const off = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
-    expect(q(off, '#klavity-attach')).toBeNull()
+    // Image-only mode: no hint, image-only accept.
+    expect(q(off, '#klavity-attach-hint')).toBeNull()
+    expect((q(off, '#klavity-file') as HTMLInputElement).getAttribute('accept')).not.toContain('video')
     off.close()
   })
 
-  it('an attached non-image file shows as a chip (name + remove) and threads through onSubmit as `files`', async () => {
+  it('a non-image file shows as a chip (name + remove) and threads through onSubmit as `files`', async () => {
     const onSubmit = vi.fn(ok)
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit, allowFileAttachments: true })
-    const input = q(ctrl, '#klavity-attach-input') as HTMLInputElement
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
     const file = fakeFile('invoice.pdf', 'application/pdf', 2048)
     Object.defineProperty(input, 'files', { value: [file], configurable: true })
     input.dispatchEvent(new Event("change"))
@@ -143,13 +156,74 @@ describe('PX4 #425 — non-image file attachments', () => {
 
   it('the file chip remove button drops the attachment', async () => {
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok, allowFileAttachments: true })
-    const input = q(ctrl, '#klavity-attach-input') as HTMLInputElement
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
     Object.defineProperty(input, 'files', { value: [fakeFile('app.log', 'text/plain')], configurable: true })
     input.dispatchEvent(new Event("change"))
     await settle()
     expect(qa(ctrl, '.kl-file-chip').length).toBe(1)
     ;(q(ctrl, '.kl-file-rm') as HTMLButtonElement).click()
     expect(qa(ctrl, '.kl-file-chip').length).toBe(0)
+    ctrl.close()
+  })
+
+  it('a VIDEO renders a poster tile in the thumbnail strip (not a chip) and threads through as `files`', async () => {
+    const onSubmit = vi.fn(ok)
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit, allowFileAttachments: true })
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [fakeFile('demo.mp4', 'video/mp4', 5 * 1024 * 1024)], configurable: true })
+    input.dispatchEvent(new Event("change"))
+    await settle()
+    // Video → strip tile, NOT a file chip.
+    expect(qa(ctrl, '.kl-file-chip').length).toBe(0)
+    const tiles = qa(ctrl, '.kl-video-thumb')
+    expect(tiles.length).toBe(1)
+    expect(tiles[0].querySelector('video')).not.toBeNull()
+    // Clicking the tile mounts an inline <video controls> preview in the hero stage.
+    ;(tiles[0] as HTMLElement).click()
+    const heroVideo = q(ctrl, '.kl-hero-video') as HTMLVideoElement | null
+    expect(heroVideo).not.toBeNull()
+    expect(heroVideo!.controls).toBe(true)
+    // Submit still carries the video under files.
+    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
+    await tick()
+    const arg = onSubmit.mock.calls[0][0]
+    expect(arg.files[0]).toMatchObject({ name: 'demo.mp4', type: 'video/mp4' })
+    ctrl.close()
+  })
+
+  it('an over-cap file surfaces a role-aware CTA and is NOT dropped silently (member → upgrade link)', async () => {
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x', onSubmit: ok, allowFileAttachments: true,
+      maxFileBytes: 1024, reporterRole: 'member', upgradeUrl: 'https://app/billing',
+    })
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [fakeFile('big.mp4', 'video/mp4', 5000)], configurable: true })
+    input.dispatchEvent(new Event("change"))
+    await settle()
+    // No tile/chip added — but a friendly message + upgrade CTA is shown (not a dead end).
+    expect(qa(ctrl, '.kl-video-thumb').length).toBe(0)
+    const cap = q(ctrl, '#klavity-capmsg') as HTMLElement
+    expect(cap.hidden).toBe(false)
+    expect(cap.textContent || '').toMatch(/limit on your plan/i)
+    const cta = cap.querySelector('.kl-capmsg-cta') as HTMLAnchorElement
+    expect(cta).not.toBeNull()
+    expect(cta.getAttribute('href')).toBe('https://app/billing')
+    ctrl.close()
+  })
+
+  it('an anon reporter over cap is never asked to pay (ask-team copy, no upgrade link)', async () => {
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x', onSubmit: ok, allowFileAttachments: true,
+      maxFileBytes: 1024, reporterRole: 'anon', upgradeUrl: 'https://app/billing',
+    })
+    const input = q(ctrl, '#klavity-file') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [fakeFile('big.mp4', 'video/mp4', 5000)], configurable: true })
+    input.dispatchEvent(new Event("change"))
+    await settle()
+    const cap = q(ctrl, '#klavity-capmsg') as HTMLElement
+    expect(cap.hidden).toBe(false)
+    expect(cap.querySelector('.kl-capmsg-cta')).toBeNull()          // no upgrade link
+    expect(cap.querySelector('.kl-capmsg-hint')?.textContent || '').toMatch(/ask your team/i)
     ctrl.close()
   })
 })
