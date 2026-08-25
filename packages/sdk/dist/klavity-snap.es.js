@@ -3633,7 +3633,7 @@ function Ih(e, t, r = {}) {
     const F = () => c[he] || c[0] || "", P = async () => {
       if (ot) return;
       const D = ne.value.trim();
-      _ === null && (_ = ne.value);
+      _ = ne.value;
       const B = ++T;
       R && (R.disabled = !0), A && (A.hidden = !1);
       try {
