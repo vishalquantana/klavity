@@ -97,6 +97,10 @@ export async function initDb() {
   await backfillOnboardedAt(db)
   await sweepOrphanedWalks(db)
   await sweepOrphanedAuthorSessions(db)
+  // KLAVITY CREDITS: seed the action-cost config table from code defaults (idempotent; only fills
+  // missing rows). Lazy fallback exists in reserveCredits, but seeding at boot keeps the table
+  // browsable/editable centrally.
+  await seedCreditActionCosts().catch(() => {})
   console.log("✓ Turso connected, schema ready")
 }
 
@@ -435,6 +439,12 @@ export async function applySchema(c: Client) {
     `CREATE INDEX IF NOT EXISTS cost_events_proj_idx ON cost_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS cost_events_kind_idx ON cost_events (kind, created_at)`,
     `CREATE INDEX IF NOT EXISTS cost_events_run_idx ON cost_events (run_id) WHERE run_id IS NOT NULL`,
+    // KLAVITY CREDITS (spec 2026-08-25) — config table of action → millicredit cost. Editable
+    // centrally so per-action prices re-tune WITHOUT a code deploy. Seeded from DEFAULT_ACTION_COST_MC
+    // (lib/credits.ts) on boot via seedCreditActionCosts(); only fills missing rows (never clobbers a
+    // hand-edited price). Millicredits: 1 credit = 1000 mc.
+    `CREATE TABLE IF NOT EXISTS credit_action_costs (
+       action TEXT PRIMARY KEY, millicredits INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
@@ -4237,6 +4247,32 @@ export async function recordAiCall(a: AiCallInsert): Promise<void> {
     args: [id, Date.now(), a.type, a.model, accountId, feature, a.actorEmail ?? null, a.projectId ?? null,
            a.inputTokens ?? null, a.outputTokens ?? null, a.costUsd ?? null, a.ok === false ? 0 : 1, a.runId ?? null],
   })
+}
+
+// ── Klavity Credits: action-cost config ──────────────────────────────────────────────────────────
+export async function getCreditActionCost(action: string): Promise<number | null> {
+  try {
+    const r = await db!.execute({ sql: "SELECT millicredits FROM credit_action_costs WHERE action=?", args: [action] })
+    if (!r.rows.length) return null
+    const v = Number((r.rows[0] as any).millicredits)
+    return Number.isFinite(v) ? v : null
+  } catch { return null }
+}
+
+// Fill any missing action rows from the code defaults. Idempotent (INSERT OR IGNORE) — a price a human
+// edited in the table is preserved. Call once at boot AFTER applySchema.
+export async function seedCreditActionCosts(): Promise<void> {
+  const now = Date.now()
+  const defaults: Array<[string, number]> = [
+    ["enhance", 1000], ["transcript", 1000], ["keyframes", 2000],
+    ["voice", 100], ["sim", 15000], ["autosim", 75000],
+  ]
+  for (const [action, mc] of defaults) {
+    await db!.execute({
+      sql: "INSERT OR IGNORE INTO credit_action_costs (action, millicredits, updated_at) VALUES (?,?,?)",
+      args: [action, mc, now],
+    }).catch((e: any) => console.warn(`seedCreditActionCosts ${action} skipped:`, e?.message || e))
+  }
 }
 
 export async function opsTotals(): Promise<{ totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }> {
