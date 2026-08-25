@@ -97,6 +97,10 @@ export async function initDb() {
   await backfillOnboardedAt(db)
   await sweepOrphanedWalks(db)
   await sweepOrphanedAuthorSessions(db)
+  // KLAVITY CREDITS: seed the action-cost config table from code defaults (idempotent; only fills
+  // missing rows). Lazy fallback exists in reserveCredits, but seeding at boot keeps the table
+  // browsable/editable centrally.
+  await seedCreditActionCosts().catch(() => {})
   console.log("✓ Turso connected, schema ready")
 }
 
@@ -435,6 +439,40 @@ export async function applySchema(c: Client) {
     `CREATE INDEX IF NOT EXISTS cost_events_proj_idx ON cost_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS cost_events_kind_idx ON cost_events (kind, created_at)`,
     `CREATE INDEX IF NOT EXISTS cost_events_run_idx ON cost_events (run_id) WHERE run_id IS NOT NULL`,
+    // KLAVITY CREDITS (spec 2026-08-25) — config table of action → millicredit cost. Editable
+    // centrally so per-action prices re-tune WITHOUT a code deploy. Seeded from DEFAULT_ACTION_COST_MC
+    // (lib/credits.ts) on boot via seedCreditActionCosts(); only fills missing rows (never clobbers a
+    // hand-edited price). Millicredits: 1 credit = 1000 mc.
+    `CREATE TABLE IF NOT EXISTS credit_action_costs (
+       action TEXT PRIMARY KEY, millicredits INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    // KLAVITY CREDITS — per-workspace (=account) wallet. granted resets monthly (no rollover);
+    // topup rolls over; spend is grant-first (see lib/credits.ts). grant_period = 'YYYY-MM' of the
+    // active grant; last_grace_period = the period in which the one "last taste" grace was consumed
+    // (spec §6/§12 decision 6). Millicredits (integer).
+    `CREATE TABLE IF NOT EXISTS workspace_credits (
+       workspace_id TEXT PRIMARY KEY,
+       granted_millicredits INTEGER NOT NULL DEFAULT 0,
+       topup_millicredits INTEGER NOT NULL DEFAULT 0,
+       plan_grant_millicredits INTEGER NOT NULL DEFAULT 0,
+       grant_period TEXT NOT NULL,
+       last_grace_period TEXT,
+       updated_at INTEGER NOT NULL)`,
+    // KLAVITY CREDITS — append-only audit ledger. One row per credit movement: grants/top-ups/refunds
+    // are POSITIVE, spends are NEGATIVE (millicredits). Links to the ai_calls row it paid for (ai_call_id)
+    // for the /opsadmin credit-margin panel, and to the feedback/run + actor for the future admin nudge.
+    `CREATE TABLE IF NOT EXISTS credit_ledger (
+       id TEXT PRIMARY KEY,
+       workspace_id TEXT NOT NULL,
+       action TEXT NOT NULL,            -- enhance|transcript|keyframes|voice|sim|autosim|topup|grant|refund
+       millicredits INTEGER NOT NULL,   -- signed: + credits in, − spends
+       ref_feedback_id TEXT,
+       ref_run_id TEXT,
+       actor_email TEXT,
+       is_guest INTEGER NOT NULL DEFAULT 0,
+       ai_call_id TEXT,
+       created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS credit_ledger_ws_idx ON credit_ledger (workspace_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS credit_ledger_action_idx ON credit_ledger (action, created_at)`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
@@ -4236,6 +4274,165 @@ export async function recordAiCall(a: AiCallInsert): Promise<void> {
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, Date.now(), a.type, a.model, accountId, feature, a.actorEmail ?? null, a.projectId ?? null,
            a.inputTokens ?? null, a.outputTokens ?? null, a.costUsd ?? null, a.ok === false ? 0 : 1, a.runId ?? null],
+  })
+}
+
+// ── Klavity Credits: action-cost config ──────────────────────────────────────────────────────────
+export async function getCreditActionCost(action: string): Promise<number | null> {
+  try {
+    const r = await db!.execute({ sql: "SELECT millicredits FROM credit_action_costs WHERE action=?", args: [action] })
+    if (!r.rows.length) return null
+    const v = Number((r.rows[0] as any).millicredits)
+    return Number.isFinite(v) ? v : null
+  } catch { return null }
+}
+
+// Fill any missing action rows from the code defaults. Idempotent (INSERT OR IGNORE) — a price a human
+// edited in the table is preserved. Call once at boot AFTER applySchema.
+export async function seedCreditActionCosts(): Promise<void> {
+  const now = Date.now()
+  const defaults: Array<[string, number]> = [
+    ["enhance", 1000], ["transcript", 1000], ["keyframes", 2000],
+    ["voice", 100], ["sim", 15000], ["autosim", 75000],
+  ]
+  for (const [action, mc] of defaults) {
+    await db!.execute({
+      sql: "INSERT OR IGNORE INTO credit_action_costs (action, millicredits, updated_at) VALUES (?,?,?)",
+      args: [action, mc, now],
+    }).catch((e: any) => console.warn(`seedCreditActionCosts ${action} skipped:`, e?.message || e))
+  }
+}
+
+// ── Klavity Credits: per-workspace wallet ────────────────────────────────────────────────────────
+export type WorkspaceCredits = {
+  workspaceId: string; grantedMc: number; topupMc: number; planGrantMc: number
+  grantPeriod: string; lastGracePeriod: string | null; updatedAt: number
+}
+
+function mapWorkspaceCredits(x: any): WorkspaceCredits {
+  return {
+    workspaceId: String(x.workspace_id),
+    grantedMc: Number(x.granted_millicredits) || 0,
+    topupMc: Number(x.topup_millicredits) || 0,
+    planGrantMc: Number(x.plan_grant_millicredits) || 0,
+    grantPeriod: String(x.grant_period),
+    lastGracePeriod: x.last_grace_period != null ? String(x.last_grace_period) : null,
+    updatedAt: Number(x.updated_at) || 0,
+  }
+}
+
+export async function getWorkspaceCredits(workspaceId: string): Promise<WorkspaceCredits | null> {
+  if (!workspaceId) return null
+  const r = await db!.execute({ sql: "SELECT * FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
+  return r.rows.length ? mapWorkspaceCredits(r.rows[0]) : null
+}
+
+// Create-on-first-touch (seeded to a full grant — the §11 launch migration: nobody worse off) and
+// lazily re-grant when the UTC month has rolled. Top-up survives; grace resets each period.
+export async function ensureWorkspaceCredits(workspaceId: string, planGrantMc: number, atMs: number = Date.now()): Promise<WorkspaceCredits> {
+  const period = usagePeriod(atMs)
+  const now = atMs
+  await db!.execute({
+    sql: `INSERT INTO workspace_credits
+            (workspace_id, granted_millicredits, topup_millicredits, plan_grant_millicredits, grant_period, last_grace_period, updated_at)
+          VALUES (?,?,?,?,?,NULL,?)
+          ON CONFLICT(workspace_id) DO NOTHING`,
+    args: [workspaceId, planGrantMc, 0, planGrantMc, period, now],
+  })
+  // Lazy re-grant: only when the stored period is strictly older than the current one.
+  await db!.execute({
+    sql: `UPDATE workspace_credits
+             SET granted_millicredits = ?, plan_grant_millicredits = ?, grant_period = ?,
+                 last_grace_period = NULL, updated_at = ?
+           WHERE workspace_id = ? AND grant_period < ?`,
+    args: [planGrantMc, planGrantMc, period, now, workspaceId, period],
+  })
+  const w = await getWorkspaceCredits(workspaceId)
+  return w! // row is guaranteed to exist after the upsert
+}
+
+// ── Klavity Credits: append-only ledger ──────────────────────────────────────────────────────────
+export type CreditLedgerInsert = {
+  workspaceId: string; action: string; millicredits: number
+  refFeedbackId?: string | null; refRunId?: string | null
+  actorEmail?: string | null; isGuest?: boolean; aiCallId?: string | null; atMs?: number
+}
+export type CreditLedgerRow = {
+  id: string; workspaceId: string; action: string; millicredits: number
+  refFeedbackId: string | null; refRunId: string | null; actorEmail: string | null
+  isGuest: boolean; aiCallId: string | null; createdAt: number
+}
+
+export async function insertCreditLedger(e: CreditLedgerInsert): Promise<string> {
+  const id = "cl_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO credit_ledger
+            (id, workspace_id, action, millicredits, ref_feedback_id, ref_run_id, actor_email, is_guest, ai_call_id, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, e.workspaceId, e.action, Math.trunc(e.millicredits),
+           e.refFeedbackId ?? null, e.refRunId ?? null, e.actorEmail ?? null,
+           e.isGuest ? 1 : 0, e.aiCallId ?? null, e.atMs ?? Date.now()],
+  })
+  return id
+}
+
+export async function listCreditLedgerForWorkspace(workspaceId: string, limit = 200): Promise<CreditLedgerRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM credit_ledger WHERE workspace_id=? ORDER BY created_at DESC LIMIT ?",
+    args: [workspaceId, limit],
+  })
+  return r.rows.map((x: any) => ({
+    id: String(x.id), workspaceId: String(x.workspace_id), action: String(x.action),
+    millicredits: Number(x.millicredits) || 0,
+    refFeedbackId: x.ref_feedback_id != null ? String(x.ref_feedback_id) : null,
+    refRunId: x.ref_run_id != null ? String(x.ref_run_id) : null,
+    actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    isGuest: Number(x.is_guest) === 1,
+    aiCallId: x.ai_call_id != null ? String(x.ai_call_id) : null,
+    createdAt: Number(x.created_at) || 0,
+  }))
+}
+
+// ── Klavity Credits: atomic balance mutators ─────────────────────────────────────────────────────
+export type DebitSplit = { grantMc: number; topupMc: number }
+
+// Spend grant-first, then top-up. Read-modify-write serialized via an OPTIMISTIC conditional UPDATE
+// (guard on the exact balances read — the same lock-free pattern tryReserveDailySpend uses; this
+// repo's @libsql/client is driven WITHOUT interactive transactions). Returns the actual split, or
+// null when short and allowNegative is off. With allowNegative (Phase-1 soft mode) it always debits,
+// draining grant to 0 then top-up (which may go negative) so consumption is recorded truthfully.
+export async function debitWorkspaceCredits(workspaceId: string, amountMc: number, opts: { allowNegative?: boolean } = {}): Promise<DebitSplit | null> {
+  const amt = Math.max(0, Math.trunc(amountMc))
+  if (amt === 0) return { grantMc: 0, topupMc: 0 }
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const r = await db!.execute({ sql: "SELECT granted_millicredits AS g, topup_millicredits AS t FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
+    if (!r.rows.length) return null
+    const g = Number((r.rows[0] as any).g) || 0
+    const t = Number((r.rows[0] as any).t) || 0
+    if (!opts.allowNegative && g + t < amt) return null
+    const grantMc = Math.min(g, amt)
+    const topupMc = amt - grantMc // remainder off top-up (may exceed t → t goes negative in soft mode)
+    const upd = await db!.execute({
+      sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=?, updated_at=? WHERE workspace_id=? AND granted_millicredits=? AND topup_millicredits=?",
+      args: [g - grantMc, t - topupMc, Date.now(), workspaceId, g, t],
+    })
+    if (Number(upd.rowsAffected) > 0) return { grantMc, topupMc }
+    // lost a race — another debit mutated the row; re-read and retry
+  }
+  return null
+}
+
+export async function creditWorkspaceCredits(workspaceId: string, split: DebitSplit): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits = granted_millicredits + ?, topup_millicredits = topup_millicredits + ?, updated_at=? WHERE workspace_id=?",
+    args: [Math.trunc(split.grantMc), Math.trunc(split.topupMc), Date.now(), workspaceId],
+  })
+}
+
+export async function markGraceUsed(workspaceId: string, period: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE workspace_credits SET last_grace_period=?, updated_at=? WHERE workspace_id=?",
+    args: [period, Date.now(), workspaceId],
   })
 }
 
