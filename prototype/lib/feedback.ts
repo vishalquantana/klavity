@@ -49,6 +49,23 @@ export function redactSensitiveParams(urlStr: string): string {
   }
 }
 
+// Matches http(s) URLs embedded in free text (console messages / error stacks). Stops at
+// whitespace, quotes, angle brackets, or a closing paren so a parenthesised stack frame like
+// `at fn (https://x.com/a?token=SECRET:1:2)` doesn't swallow the trailing `)`.
+const EMBEDDED_URL_RE = /https?:\/\/[^\s)<>"'`]+/g
+
+/**
+ * KLA-582 (security): console error messages/stacks routinely embed full request URLs, including
+ * `?token=…`/`?api_key=…`/`?password=…`. Scan a free-text string for embedded http(s) URLs and
+ * redact the sensitive query params of each (via redactSensitiveParams), leaving everything else —
+ * file paths, line/col numbers, error text — intact. Returns the string unchanged when it holds no
+ * URL with a sensitive param, so the common case is allocation-free.
+ */
+export function redactSensitiveUrlsInText(text: string): string {
+  if (!text || text.indexOf('http') === -1) return text
+  return text.replace(EMBEDDED_URL_RE, (m) => redactSensitiveParams(m))
+}
+
 const PERF_TYPES = new Set(['longtask', 'paint', 'resource'])
 
 export function sanitizeClientContext(raw: any): any | null {
@@ -59,11 +76,14 @@ export function sanitizeClientContext(raw: any): any | null {
   if (raw.screenSize) out.screenSize = capStr(raw.screenSize, 40)
   if (raw.viewportSize) out.viewportSize = capStr(raw.viewportSize, 40)
   if (Array.isArray(raw.consoleErrors)) {
+    // KLA-582 (security): redact sensitive URL query params embedded in console message/stack text,
+    // exactly as networkFailures[].url is redacted below. Applied HERE at intake so BOTH the stored
+    // row and the log-file attachment (built from stored ctx) inherit the redaction.
     out.consoleErrors = raw.consoleErrors.slice(0, CTX_MAX_ENTRIES).map((e: any) => ({
-      message: capStr(e?.message),
+      message: redactSensitiveUrlsInText(capStr(e?.message)),
       level: ['log', 'info', 'warn', 'error'].includes(e?.level) ? e.level : 'error',
       timestamp: Number(e?.timestamp) || 0,
-      ...(e?.stack ? { stack: capStr(e.stack) } : {}),
+      ...(e?.stack ? { stack: redactSensitiveUrlsInText(capStr(e.stack)) } : {}),
     }))
   }
   if (Array.isArray(raw.networkFailures)) {
@@ -314,8 +334,10 @@ export function buildLogAttachmentText(ctx: any): string | null {
     for (const e of consoleErrors) {
       const level = ['log', 'info', 'warn', 'error'].includes(e?.level) ? e.level : 'error'
       const ts = fmtTs(e?.timestamp)
-      out.push(`${ts ? ts + ' ' : ''}[${level}] ${capStr(e?.message ?? '')}`)
-      if (e?.stack) for (const sl of capStr(e.stack).split('\n')) out.push(`    ${sl}`)
+      // KLA-582 (security): stored ctx is already redacted at intake (sanitizeClientContext), but
+      // redact here too so a raw/unsanitized ctx can never leak `?token=…` into the attachment file.
+      out.push(`${ts ? ts + ' ' : ''}[${level}] ${redactSensitiveUrlsInText(capStr(e?.message ?? ''))}`)
+      if (e?.stack) for (const sl of redactSensitiveUrlsInText(capStr(e.stack)).split('\n')) out.push(`    ${sl}`)
     }
   }
   if (networkFailures.length) {

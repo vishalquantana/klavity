@@ -6,7 +6,7 @@
 // All pure unit tests — no server process, no network.
 
 import { test, expect, describe } from 'bun:test'
-import { redactSensitiveParams, sanitizeClientContext, SENSITIVE_PARAM_NAMES } from './feedback'
+import { redactSensitiveParams, redactSensitiveUrlsInText, sanitizeClientContext, SENSITIVE_PARAM_NAMES, buildLogAttachmentText } from './feedback'
 
 // ── (a) redactSensitiveParams ─────────────────────────────────────────────────
 
@@ -131,6 +131,73 @@ describe('sanitizeClientContext — networkFailures URL redaction', () => {
     // clientSecret is not in the allow-list — it must be absent
     expect(JSON.stringify(out)).not.toContain('SHOULD_NOT_APPEAR')
     expect(out.clientSecret).toBeUndefined()
+  })
+})
+
+// ── (b2) KLA-582: console message/stack URL redaction ─────────────────────────
+// Console error stacks routinely embed full request URLs including ?token=…/?api_key=…. Before
+// KLA-582 the log-file attachment shipped the raw stack verbatim to external trackers. Redaction
+// now applies to consoleErrors[].message + .stack at intake AND in the attachment builder.
+
+describe('redactSensitiveUrlsInText', () => {
+  test('redacts a sensitive param embedded in free text, preserves the rest', () => {
+    const out = redactSensitiveUrlsInText('failed GET https://x.com/a?token=SECRET&id=7 (500)')
+    expect(out).not.toContain('SECRET')
+    expect(out).toContain('REDACTED')
+    expect(out).toContain('id=7')
+    expect(out).toContain('failed GET')
+  })
+
+  test('leaves URL-free text untouched', () => {
+    expect(redactSensitiveUrlsInText('TypeError: cannot read x of undefined')).toBe('TypeError: cannot read x of undefined')
+  })
+
+  test('redacts URL inside a parenthesised stack frame without eating error text', () => {
+    const stack = 'Error: boom\n    at fetchThing (https://api.co/v1?api_key=LIVEKEY)'
+    const out = redactSensitiveUrlsInText(stack)
+    expect(out).not.toContain('LIVEKEY')
+    expect(out).toContain('REDACTED')
+    expect(out).toContain('at fetchThing')
+    expect(out).toContain('Error: boom')
+  })
+})
+
+describe('KLA-582 — console error stack redaction (stored ctx + attachment)', () => {
+  test('token in console stack is redacted in stored ctx AND in buildLogAttachmentText output', () => {
+    const raw = {
+      pageUrl: 'https://app.example.com/dash',
+      consoleErrors: [{
+        level: 'error',
+        message: 'Request failed: https://x.com/a?token=SECRET',
+        stack: 'Error: Request failed\n    at doFetch (https://x.com/a?token=SECRET:12:9)',
+        timestamp: 1700000000000,
+      }],
+    }
+    const out = sanitizeClientContext(raw)
+    // (1) stored ctx is redacted
+    const storedJson = JSON.stringify(out.consoleErrors)
+    expect(storedJson).not.toContain('SECRET')
+    expect(storedJson).toContain('REDACTED')
+    // (2) the log-file attachment built from stored ctx is redacted
+    const attachment = buildLogAttachmentText(out)!
+    expect(attachment).not.toContain('SECRET')
+    expect(attachment).toContain('REDACTED')
+    // error text / frame preserved
+    expect(attachment).toContain('doFetch')
+  })
+
+  test('buildLogAttachmentText redacts even when handed a RAW (unsanitized) ctx', () => {
+    const rawCtx = {
+      consoleErrors: [{
+        level: 'error',
+        message: 'boom',
+        stack: 'at f (https://y.io/z?password=hunter2)',
+        timestamp: 0,
+      }],
+    }
+    const attachment = buildLogAttachmentText(rawCtx)!
+    expect(attachment).not.toContain('hunter2')
+    expect(attachment).toContain('REDACTED')
   })
 })
 
