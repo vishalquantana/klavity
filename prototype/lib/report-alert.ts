@@ -18,11 +18,19 @@
 // Every DB/network dependency is injectable so tests run hermetically (no SendGrid, no Slack).
 
 import type { Client } from "@libsql/client"
-import { db } from "./db"
+import { db, parseEmailList } from "./db"
 import { sendReportAlertEmail } from "./mail"
 import { safeFetch } from "./safe-fetch"
+import { allow as rlAllow } from "./ratelimit"
 
 export const REPORT_ALERT_WINDOW_MS = 10 * 60 * 1000 // 1 email per project per 10 minutes
+
+// KLA-608: per-project Slack posts are per-report (a firehose channel by choice), but a high-volume
+// project must not be able to runaway-spam the webhook. Cap posts per project per minute; over the cap
+// we drop, and emit ONE coalesced "N more this minute" note per window so the channel stays informed
+// without flooding. In-process (rlAllow) — consistent with the auth/feedback limiters.
+export const SLACK_RATE_CAP_PER_MIN = 10
+export const SLACK_RATE_WINDOW_MS = 60 * 1000
 
 export interface ReportAlertInput {
   projectId: string
@@ -48,6 +56,9 @@ export interface ReportAlertDeps {
   sendEmail: (to: string[], subject: string, html: string, text: string) => Promise<void>
   postSlack: (webhookUrl: string, payload: unknown) => Promise<void>
   windowMs: number
+  /** KLA-608 Slack per-project rate cap (posts per window); over it, drop + one coalesced note. */
+  slackCapPerMin: number
+  slackWindowMs: number
 }
 
 // ── throttle state (DB-backed so it survives restarts) ───────────────────────────
@@ -122,18 +133,46 @@ export async function alertRecipients(c: Client, accountId: string): Promise<str
   return [...new Set(emails)]
 }
 
-// ── per-project Slack webhook (modal_config_json.slack_webhook_url) ──────────────
-// Only https://hooks.slack.com/ URLs are honored — anything else stored in the config is ignored
-// (defense in depth; the write path validates too, and safeFetch pins the host again at send time).
+// ── per-project Slack webhook ────────────────────────────────────────────────────
+// Only https://hooks.slack.com/ URLs are honored — anything else stored is ignored (defense in
+// depth; the write path validates too, and safeFetch pins the host again at send time).
+// KLA-608: the canonical store is the `projects.slack_webhook_url` COLUMN (set via the settings UI).
+// The legacy `modal_config_json.slack_webhook_url` (API-only, pre-KLA-608) is still honored as a
+// fallback so already-configured projects keep working. `SELECT *` so a schema without the new column
+// (hermetic test DBs) degrades gracefully to the modal_config path instead of throwing.
+function validSlackHook(raw: unknown): string | null {
+  const s = typeof raw === "string" ? raw.trim() : ""
+  return /^https:\/\/hooks\.slack\.com\//.test(s) && s.length <= 500 ? s : null
+}
 export async function projectSlackWebhook(c: Client, projectId: string): Promise<string | null> {
   try {
-    const r = await c.execute({ sql: "SELECT modal_config_json FROM projects WHERE id=?", args: [projectId] })
+    const r = await c.execute({ sql: "SELECT * FROM projects WHERE id=?", args: [projectId] })
     if (!r.rows.length) return null
-    const cfg = JSON.parse(String((r.rows[0] as any).modal_config_json || "{}")) || {}
-    const raw = typeof cfg.slack_webhook_url === "string" ? cfg.slack_webhook_url.trim() : ""
-    return /^https:\/\/hooks\.slack\.com\//.test(raw) && raw.length <= 500 ? raw : null
+    const row = r.rows[0] as any
+    const col = validSlackHook(row.slack_webhook_url)
+    if (col) return col
+    try {
+      const cfg = JSON.parse(String(row.modal_config_json || "{}")) || {}
+      return validSlackHook(cfg.slack_webhook_url)
+    } catch { return null }
   } catch {
     return null
+  }
+}
+
+// KLA-608 master toggle + custom recipient list, read defensively (SELECT * tolerates pre-column
+// schemas: missing → notifyOnEveryBug defaults ON, bugNotifyEmails empty).
+export interface ProjectNotifyRow { notifyOnEveryBug: boolean; bugNotifyEmails: string[] }
+export async function projectNotifyRow(c: Client, projectId: string): Promise<ProjectNotifyRow> {
+  try {
+    const r = await c.execute({ sql: "SELECT * FROM projects WHERE id=?", args: [projectId] })
+    const row = r.rows.length ? (r.rows[0] as any) : {}
+    return {
+      notifyOnEveryBug: row.notify_on_every_bug == null ? true : Number(row.notify_on_every_bug) !== 0,
+      bugNotifyEmails: parseEmailList(row.bug_notify_emails),
+    }
+  } catch {
+    return { notifyOnEveryBug: true, bugNotifyEmails: [] }
   }
 }
 
@@ -242,12 +281,20 @@ export async function notifyNewReport(
     const windowMs = overrides.windowMs ?? REPORT_ALERT_WINDOW_MS
     const sendEmail = overrides.sendEmail ?? sendReportAlertEmail
     const postSlack = overrides.postSlack ?? defaultPostSlack
+    const slackCap = overrides.slackCapPerMin ?? SLACK_RATE_CAP_PER_MIN
+    const slackWindow = overrides.slackWindowMs ?? SLACK_RATE_WINDOW_MS
 
-    // 1. Email — throttled per project (DB-backed, restart-safe).
+    // KLA-608 master switch: a project can turn the every-bug channel OFF entirely. Default ON
+    // (pre-column rows / new projects) so this never silences the founder alert that shipped before.
+    const notifyCfg = await projectNotifyRow(c, input.projectId).catch(() => ({ notifyOnEveryBug: true, bugNotifyEmails: [] as string[] }))
+    if (!notifyCfg.notifyOnEveryBug) return
+
+    // 1. Email — throttled per project (DB-backed, restart-safe). Recipients: the project's explicit
+    //    bug_notify_emails list when set, else the account owner/admins (back-compat default).
     try {
       const slot = await claimAlertSlot(c, input.projectId, input.at, windowMs)
       if (slot.send) {
-        const to = await alertRecipients(c, input.accountId)
+        const to = notifyCfg.bugNotifyEmails.length ? notifyCfg.bugNotifyEmails : await alertRecipients(c, input.accountId)
         if (to.length) {
           const { subject, html, text } = buildReportEmail(input, slot.missedSinceLast)
           await sendEmail(to, subject, html, text)
@@ -257,10 +304,23 @@ export async function notifyNewReport(
       console.error("report alert email (non-fatal):", err?.message || err)
     }
 
-    // 2. Slack — per report, only when the project config carries a hooks.slack.com URL.
+    // 2. Slack — per report, only when the project config carries a hooks.slack.com URL. Rate-capped
+    //    per project: up to `slackCap` posts/window; over the cap we drop, and post ONE coalesced
+    //    "N more this minute" note per window so the channel is told it's throttled, not silently cut.
     try {
       const hook = await projectSlackWebhook(c, input.projectId)
-      if (hook) await postSlack(hook, buildReportSlackPayload(input))
+      if (hook) {
+        if (rlAllow(`bugnotify:slack:${input.projectId}`, slackCap, slackWindow, input.at)) {
+          await postSlack(hook, buildReportSlackPayload(input))
+        } else if (rlAllow(`bugnotify:slack-note:${input.projectId}`, 1, slackWindow, input.at)) {
+          // first overflow this window → one compact throttle note (no per-report firehose beyond the cap)
+          await postSlack(hook, {
+            text: `Klavity: more new reports on ${input.projectName} this minute (alerts rate-limited)`,
+            blocks: [{ type: "context", elements: [{ type: "mrkdwn", text: `_More new reports on *${input.projectName}* this minute — Slack alerts are rate-limited to ${slackCap}/min. Open the dashboard for the full list._` }] }],
+          })
+        }
+        // else: silently dropped (already emitted the note this window)
+      }
     } catch (err: any) {
       console.error("report alert slack (non-fatal):", err?.message || err)
     }

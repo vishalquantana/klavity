@@ -1,13 +1,18 @@
 // prototype/lib/report-alert.test.ts — founder notifications on new reports.
 // Hermetic: in-memory libsql + injected mail/Slack mocks (no SendGrid, no network).
-import { test, expect } from "bun:test"
+import { test, expect, beforeEach } from "bun:test"
 import { createClient, type Client } from "@libsql/client"
 import { applySchema } from "./db"
+import { _resetAll as rlResetAll } from "./ratelimit"
 import {
-  claimAlertSlot, alertRecipients, projectSlackWebhook, buildReportEmail,
+  claimAlertSlot, alertRecipients, projectSlackWebhook, projectNotifyRow, buildReportEmail,
   buildReportSlackPayload, notifyNewReport, ticketUrl, REPORT_ALERT_WINDOW_MS,
   type ReportAlertInput,
 } from "./report-alert"
+
+// The Slack rate cap (KLA-608) uses the in-process rlAllow store; reset it between cases so the
+// module-level window state can't bleed across tests.
+beforeEach(() => rlResetAll())
 
 const WINDOW = REPORT_ALERT_WINDOW_MS
 
@@ -250,4 +255,79 @@ test("no recipients resolvable: claim still consumed, no crash, no email", async
     postSlack: async () => {},
   })
   expect(mails.length).toBe(0)
+})
+
+// ── KLA-608: master toggle, custom recipients, dedicated Slack column, per-project rate cap ──────────
+
+// Add the KLA-608 columns to the hermetic schema (prod adds them via needCol ALTER in initDb).
+async function freshWithBugNotify(): Promise<Client> {
+  const c = await fresh()
+  await c.execute("ALTER TABLE projects ADD COLUMN slack_webhook_url TEXT").catch(() => {})
+  await c.execute("ALTER TABLE projects ADD COLUMN bug_notify_emails TEXT").catch(() => {})
+  await c.execute("ALTER TABLE projects ADD COLUMN notify_on_every_bug INTEGER NOT NULL DEFAULT 1").catch(() => {})
+  return c
+}
+
+test("projectNotifyRow defaults ON with no recipients on a pre-column schema", async () => {
+  const c = await fresh() // no KLA-608 columns → SELECT * tolerant path
+  await seedProject(c)
+  expect(await projectNotifyRow(c, "proj_1")).toEqual({ notifyOnEveryBug: true, bugNotifyEmails: [] })
+})
+
+test("slack webhook column takes precedence over the legacy modal_config value", async () => {
+  const c = await freshWithBugNotify()
+  await seedProject(c, { slackUrl: "https://hooks.slack.com/services/LEGACY/MODAL/cfg" })
+  await c.execute({ sql: "UPDATE projects SET slack_webhook_url=? WHERE id='proj_1'", args: ["https://hooks.slack.com/services/NEW/COLUMN/win"] })
+  expect(await projectSlackWebhook(c, "proj_1")).toBe("https://hooks.slack.com/services/NEW/COLUMN/win")
+})
+
+test("master toggle OFF fires nothing (no email, no slack)", async () => {
+  const c = await freshWithBugNotify()
+  await seedProject(c, { admins: [["owner@acme.io", "owner"]], slackUrl: "https://hooks.slack.com/services/T0/B0/xyz" })
+  await c.execute("UPDATE projects SET notify_on_every_bug=0 WHERE id='proj_1'")
+  const mails: any[] = [], hooks: any[] = []
+  await notifyNewReport(input(), {
+    db: c,
+    sendEmail: async (...a: any[]) => { mails.push(a) },
+    postSlack: async (...a: any[]) => { hooks.push(a) },
+  })
+  expect(mails.length).toBe(0)
+  expect(hooks.length).toBe(0)
+})
+
+test("bug_notify_emails custom list is used instead of owner/admins", async () => {
+  const c = await freshWithBugNotify()
+  await seedProject(c, { admins: [["owner@acme.io", "owner"]] })
+  await c.execute({ sql: "UPDATE projects SET bug_notify_emails=? WHERE id='proj_1'", args: [JSON.stringify(["alerts@company.com", "oncall@company.com"])] })
+  const mails: any[] = []
+  await notifyNewReport(input(), {
+    db: c,
+    sendEmail: async (to: string[], ...a: any[]) => { mails.push(to) },
+    postSlack: async () => {},
+  })
+  expect(mails.length).toBe(1)
+  expect(mails[0]).toEqual(["alerts@company.com", "oncall@company.com"])
+})
+
+test("Slack rate cap: over the cap drops but posts ONE coalesced note per window", async () => {
+  const c = await freshWithBugNotify()
+  await seedProject(c, { slackUrl: "https://hooks.slack.com/services/T0/B0/xyz" })
+  const hooks: any[] = []
+  const deps = {
+    db: c,
+    sendEmail: async () => {},
+    postSlack: async (_url: string, payload: any) => { hooks.push(payload) },
+    slackCapPerMin: 2,
+    slackWindowMs: 60_000,
+  }
+  const t0 = 2_000_000
+  // 4 reports inside one 60s window, cap = 2
+  for (let i = 0; i < 4; i++) await notifyNewReport(input({ at: t0 + i, feedbackId: `fb_${i}` }), deps)
+  // 2 real posts + exactly 1 coalesce note = 3
+  expect(hooks.length).toBe(3)
+  const notes = hooks.filter((p) => JSON.stringify(p).includes("rate-limited"))
+  expect(notes.length).toBe(1)
+  // Next window resets the cap → posts again
+  await notifyNewReport(input({ at: t0 + 61_000, feedbackId: "fb_next" }), deps)
+  expect(hooks.length).toBe(4)
 })
