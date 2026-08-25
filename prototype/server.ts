@@ -9,7 +9,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -50,7 +50,7 @@ import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
-import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME } from "./lib/feedback"
+import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
@@ -123,7 +123,10 @@ import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
-import { generateEnhancedDraft } from "./lib/report-enhance"
+import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
+// KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
+import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
+import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
@@ -624,6 +627,115 @@ async function generateAndSaveTitle(feedbackId: string, observation: string | nu
     console.warn("[auto-title] non-fatal:", e?.message || e)
   }
 }
+// KLA-603: POST-SUBMIT video-transcript enrichment. Runs AFTER the async STT pass (transcribeFeedback*)
+// resolves a video's transcript — see the intake fire-and-forget block. Turns the (already-generated)
+// walkthrough transcript into leverage, all BEST-EFFORT (a failure here NEVER touches the stored report,
+// its exports, or the transcript itself):
+//   1. AI walkthrough summary — ONLY when the reporter's own description was thin/empty, generate a
+//      structured summary/actual/expected/steps GROUNDED in the transcript + the captured screenshot via
+//      the budget-gated chat() path, and store it in a DEDICATED column (never overwriting observation).
+//   2. Key frames — extract a handful of bounded, downscaled stills at transcript-flagged (or evenly
+//      spaced) moments and append them to the report as image attachments (they flow to the tracker +
+//      dashboard for free).
+// The transcript→tracker-body <details> block is added at EXPORT time in feedbackToTicketPayload (so it
+// always reflects the latest transcript), not here.
+async function enrichReportFromTranscript(opts: { feedbackId: string; projectId: string }): Promise<void> {
+  const { feedbackId, projectId } = opts
+  if (!db) return
+  let fb: any
+  try {
+    fb = await feedbackById(projectId, feedbackId)
+  } catch (e: any) { console.warn("[video-enrich] load failed (non-fatal):", e?.message || e); return }
+  if (!fb) return
+
+  const transcripts = collectVideoTranscripts(fb)
+  if (!transcripts.length) return // nothing transcribed yet → nothing to leverage
+
+  // ── (1) AI walkthrough summary — gated on a THIN reporter description (additive; never clobbers text). ──
+  try {
+    const alreadySummarized = fb.aiWalkthrough && typeof fb.aiWalkthrough === "object"
+    if (KEY && !alreadySummarized && isThinDescription(fb.observation)) {
+      const transcriptText = gatherTranscriptText(transcripts)
+      if (transcriptText) {
+        // Fetch the captured primary screenshot as a dataURL so the summary is grounded in the page too,
+        // exactly like the pre-submit /api/report/enhance vision call. Best-effort — text-only if absent.
+        let shotDataUrl = ""
+        if (fb.screenshotId) {
+          try {
+            const shot = await screenshotById(String(fb.screenshotId))
+            if (shot) {
+              const { bytes, contentType } = await getObjectBytes(shot.s3Key)
+              if (bytes.byteLength <= ENHANCE_MAX_SHOT_BYTES) {
+                shotDataUrl = `data:${contentType || "image/png"};base64,${Buffer.from(bytes).toString("base64")}`
+              }
+            }
+          } catch (e: any) { console.warn("[video-enrich] screenshot fetch skipped (non-fatal):", e?.message || e) }
+        }
+        const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shotDataUrl)
+        const draft = await generateEnhancedDraft(transcriptText, {
+          llm: async (oneLiner, systemPrompt) => {
+            const userParts: any[] = [{
+              type: "text",
+              // The transcript + reporter note + page URL are UNTRUSTED (a spoken walkthrough is user
+              // content) → fence them so the model treats them as data, never instructions.
+              text: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating the bug):\n" + wrapUntrusted(oneLiner) +
+                    "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(String(fb.observation || "(none)")) +
+                    "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(String(fb.reportUrl || fb.pageUrl || "(unknown)")),
+            }]
+            if (shotOk) userParts.push({ type: "image_url", image_url: { url: shotDataUrl } })
+            const { content } = await chat(
+              [
+                { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+                { role: "user", content: userParts },
+              ],
+              700, true,
+              // feature tag 'video-enrich' → budget-gated + cost-logged like every other LLM call.
+              { type: "video-enrich", feature: "video-enrich", model: ENHANCE_MODEL, projectId, email: fb.actorEmail ?? null, temperature: 0.2 },
+            )
+            return String(content ?? "")
+          },
+        })
+        if (draft) {
+          const text = renderDraftToText(draft)
+          await setFeedbackWalkthroughSummary(feedbackId, projectId, {
+            text, draft, source: transcripts[0].source, at: Date.now(),
+          }).catch((e: any) => console.warn("[video-enrich] store summary failed (non-fatal):", e?.message || e))
+        }
+      }
+    }
+  } catch (e: any) { console.warn("[video-enrich] walkthrough summary failed (non-fatal):", e?.message || e) }
+
+  // ── (2) Key frames — bounded, downscaled stills at transcript-flagged/evenly-spaced moments. ──
+  try {
+    // Don't re-extract if this report already carries keyframes (the pass appends, so it must run once).
+    const existing = Array.isArray(fb.attachments) ? fb.attachments : []
+    const hasKeyframes = existing.some((a: any) => a && a.keyframe === true)
+    // Prefer a source we can actually fetch bytes for; bias to one with narration segments (better picks).
+    const src: VideoTranscript | undefined =
+      transcripts.find(t => t.key && t.segments && t.segments.length) || transcripts.find(t => t.key)
+    if (!hasKeyframes && src && src.key) {
+      const { bytes, contentType } = await getObjectBytes(src.key)
+      const timestamps = pickKeyframeTimestampsMs(src.durationMs, src.segments, undefined)
+      const frames = await extractKeyframes(bytes, String(src.contentType || contentType || ""), timestamps)
+      if (frames.length) {
+        const newAtts: Array<Record<string, any>> = []
+        for (let i = 0; i < frames.length; i++) {
+          const f = frames[i]
+          try {
+            const label = `keyframe-${String(i + 1).padStart(2, "0")}-at-${fmtTimestamp(f.atMs / 1000).replace(/:/g, "")}.jpg`
+            const up = await uploadAttachment(f.bytes, label, f.contentType)
+            newAtts.push({ key: up.key, filename: up.filename, contentType: up.contentType, size: f.bytes.byteLength, keyframe: true, atMs: f.atMs })
+          } catch (e: any) { console.warn("[video-enrich] keyframe upload failed (non-fatal):", e?.message || e) }
+        }
+        if (newAtts.length) {
+          await appendFeedbackAttachments(feedbackId, projectId, newAtts)
+            .catch((e: any) => console.warn("[video-enrich] append keyframes failed (non-fatal):", e?.message || e))
+        }
+      }
+    }
+  } catch (e: any) { console.warn("[video-enrich] keyframe extraction failed (non-fatal):", e?.message || e) }
+}
+
 // parseJSON is imported from ./lib/parse-json (extracted for unit-testability).
 // All callers below use the imported function; behaviour is identical.
 // sanitizeTypedFields: alias for sanitizeInsight (imported from lib/extract-sanitize).
@@ -1670,6 +1782,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
   const title = resolvedTitle && resolvedTitle !== "Untitled report" ? resolvedTitle : "Sim report"
   const lines: string[] = []
   if (fb.observation) lines.push(fb.observation)
+  // KLA-603: "AI summary from walkthrough" — when the reporter leaned on a video (thin/empty typed text),
+  // the post-submit enrichment pass generated a structured summary GROUNDED in the transcript + screenshot.
+  // Surface it prominently (right under the observation) so a dev reads the leverage first. ADDITIVE — this
+  // never replaces the reporter's own words. Tolerant of both the parsed (aiWalkthrough) + raw-row shapes.
+  {
+    let wt: any = (fb as any).aiWalkthrough
+    if (!wt && (fb as any).ai_walkthrough_json) { try { wt = JSON.parse(String((fb as any).ai_walkthrough_json)) } catch { wt = null } }
+    const wtText = wt && typeof wt.text === "string" ? wt.text.trim() : ""
+    if (wtText) lines.push(`AI summary from walkthrough (generated by Klavity):\n${wtText}`)
+  }
   if (simName) lines.push(`Sim: ${simName}`)
   else if (fb.simId) lines.push(`Sim: ${fb.simId}`)
   // Source site = the embed page (host + path). Prefer the stored host so the external ticket shows
@@ -1762,6 +1884,16 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       } catch (e: any) { console.warn("recording fetch failed for ticket (non-fatal):", e?.message || e) }
     }
   }
+  // KLA-603 (part 2): push the (timestamped) video walkthrough transcript into the tracker body as a
+  // collapsible <details> block — the SAME markdown-<details> pattern inline-log-fallback uses for logs —
+  // so a dev in Jira/GitHub reads the walkthrough WITHOUT opening Klavity or watching the clip. Redacted
+  // with the same URL-param redactor as the rest of the captured content (a spoken/on-screen ?token=…
+  // never leaks). Best-effort: a build failure must never block the export. Only DONE transcripts appear.
+  try {
+    const transcripts = collectVideoTranscripts(fb)
+    const section = buildTranscriptDetailsSection(transcripts, redactSensitiveUrlsInText)
+    if (section) lines.push(section)
+  } catch (e: any) { console.warn("transcript body block skipped (non-fatal):", e?.message || e) }
   // KLA-582: console/network logs are no longer dumped into the ticket body (noisy, low-signal inline).
   // They travel as a single text-file attachment instead, so the exported Jira/Plane/etc. issue AND the
   // Klavity ticket carry the full capture for a dev to open. Best-effort — never block the export if the
@@ -5139,28 +5271,32 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 }
               }
 
-              // KLAVITYKLA-438 (Phase 2): async STT transcription of each "Record me" clip. Fire-and-forget
-              // (mirrors the title/label enrichment above) — fetches the clip bytes from S3, transcribes via
-              // OpenRouter, and stores the transcript back on the recording keyed by its id. Never blocks the
-              // submit; new rows only (a deduped repeat already transcribed on its first submission).
-              if (feedbackId && !dedupedInto && recordingDescs.length) {
-                const fbForRec = feedbackId
-                void transcribeFeedbackRecordings({
-                  feedbackId: fbForRec, projectId,
-                  recordings: recordingDescs.map(r => ({ id: r.id, key: r.key, contentType: r.contentType })),
-                }).catch((err: any) => console.warn("[transcribe] non-fatal:", err?.message || err))
-              }
-
-              // KLAVITYKLA-480: transcribe spoken notes in ANY uploaded video attachment (#425 path), not just
-              // "Record me" clips. Same async fire-and-forget contract — transcribeFeedbackAttachments only
-              // touches video/* uploads (others untouched), applies the 20MB cap, stores the transcript by
-              // key, and logs ai_calls. New rows only (a deduped repeat already transcribed on first submit).
-              if (feedbackId && !dedupedInto && attachmentDescs.some(a => /^video\//i.test(a.contentType || ""))) {
-                const fbForAtt = feedbackId
-                void transcribeFeedbackAttachments({
-                  feedbackId: fbForAtt, projectId,
-                  attachments: attachmentDescs.map(a => ({ key: a.key, filename: a.filename, contentType: a.contentType })),
-                }).catch((err: any) => console.warn("[transcribe] attachment non-fatal:", err?.message || err))
+              // KLAVITYKLA-438 (Phase 2) + KLAVITYKLA-480: async STT transcription of "Record me" clips AND
+              // any uploaded video/* attachment. Fire-and-forget (mirrors the title/label enrichment above) —
+              // fetches each clip's bytes from S3, transcribes via OpenRouter, and stores the transcript back
+              // on the recording (by id) / attachment (by key). Never blocks the submit; new rows only (a
+              // deduped repeat already transcribed on its first submission). KLA-603: once ALL transcription
+              // for this report settles, run the post-submit enrichment pass (walkthrough AI-summary +
+              // keyframe stills) — chained here so it sees the just-stored transcripts. All best-effort.
+              const hasVideoRec = feedbackId && !dedupedInto && recordingDescs.length > 0
+              const hasVideoAtt = feedbackId && !dedupedInto && attachmentDescs.some(a => /^video\//i.test(a.contentType || ""))
+              if (hasVideoRec || hasVideoAtt) {
+                const fbForVideo = feedbackId!
+                void (async () => {
+                  const jobs: Promise<any>[] = []
+                  if (hasVideoRec) jobs.push(transcribeFeedbackRecordings({
+                    feedbackId: fbForVideo, projectId,
+                    recordings: recordingDescs.map(r => ({ id: r.id, key: r.key, contentType: r.contentType })),
+                  }))
+                  if (hasVideoAtt) jobs.push(transcribeFeedbackAttachments({
+                    feedbackId: fbForVideo, projectId,
+                    attachments: attachmentDescs.map(a => ({ key: a.key, filename: a.filename, contentType: a.contentType })),
+                  }))
+                  await Promise.allSettled(jobs)
+                  // KLA-603: transcripts are now stored → enrich (never blocks/affects the transcription above).
+                  await enrichReportFromTranscript({ feedbackId: fbForVideo, projectId })
+                    .catch((err: any) => console.warn("[video-enrich] non-fatal:", err?.message || err))
+                })().catch((err: any) => console.warn("[transcribe/enrich] non-fatal:", err?.message || err))
               }
 
               // ── founder notifications (P0 retention loop): email to account owner/admins
@@ -10436,6 +10572,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
             // KLA-200: human-readable sequential number
             seqNum: fbRow.seqNum ?? null,
+            // KLA-603: server-side "AI summary from walkthrough" (post-transcription enrichment). Null when
+            // the report had no transcribed video or the reporter's description was already substantial.
+            aiWalkthrough: fbRow.aiWalkthrough ?? null,
             // A.8: chronological per-occurrence receipts (own wording + screenshot + date).
             occurrences: occurrenceMemory?.occurrences ?? [],
             // B.7: guard-caught receipt offer state. guardCaught gates the "Send regression-caught
