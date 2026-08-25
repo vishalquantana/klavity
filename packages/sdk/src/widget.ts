@@ -454,6 +454,48 @@ async function captureSharpFullPage(): Promise<string> {
   }
 }
 
+// KLA composer-polish (founder PX4 repro): VIEWPORT-scoped sharp capture — the same getDisplayMedia real-pixel
+// path as captureSharpFullPage but grabbing a SINGLE visible-viewport frame with NO scroll-stitch, so the shot
+// is exactly what's above the fold (not a tall full-page image). getDisplayMedia already streams only the
+// visible tab surface, so one frame drawn onto a viewport-sized canvas IS the viewport. Used for the on-open
+// DEFAULT capture; the manual "Screen" button keeps the full-page stitch.
+async function captureSharpViewport(): Promise<string> {
+  const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
+    video: { frameRate: 30 },
+    audio: false,
+    preferCurrentTab: true,
+  })
+  const widgetHost = document.getElementById(HOST_ID)
+  const prevHostDisplay = widgetHost ? widgetHost.style.display : ""
+  try {
+    const video = document.createElement("video")
+    video.srcObject = stream
+    video.muted = true
+    ;(video as any).playsInline = true
+    try { await video.play() } catch { /* frames still arrive */ }
+    const deadline = Date.now() + 3000
+    while ((video.videoWidth === 0 || video.videoHeight === 0) && Date.now() < deadline) await _sleep(50)
+    if (!video.videoWidth || !video.videoHeight) throw new Error("sharp viewport capture: no video frame")
+    const vw = Math.max(1, window.innerWidth)
+    const vh = Math.max(1, window.innerHeight)
+    const scale = video.videoWidth / vw
+    // Hide OUR floating launcher so it isn't in the frame (the composer is already hidden by the modal).
+    if (widgetHost) widgetHost.style.display = "none"
+    await _raf(); await _sleep(STREAM_SETTLE_MS) // let the stream reflect the hidden launcher
+    const canvas = document.createElement("canvas")
+    canvas.width = Math.round(vw * scale)
+    canvas.height = Math.round(vh * scale)
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("sharp viewport capture: no 2d context")
+    // Draw the single live frame straight onto a viewport-sized canvas — no scrolling, no stitching.
+    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL("image/png")
+  } finally {
+    if (widgetHost) widgetHost.style.display = prevHostDisplay
+    try { stream.getTracks().forEach((t) => t.stop()) } catch { /* noop */ }
+  }
+}
+
 // KLAVITYKLA-473 (regression fix over #460): NEVER auto-invoke getDisplayMedia. #460 auto-triggered the
 // sharp screen-share whenever a capture was flagged blank — but on a legitimately white/minimalist page that
 // popped a surprise "share your screen" system prompt on a normal "Report a bug" click (Antigravity #4).
@@ -1027,6 +1069,9 @@ async function mount() {
       // where the modal hides the Sharp button and users fall back to the html-to-image "Full Page" above.
       // Tagged 'real-pixel' so its thumbnail shows the sharp badge and no retake.
       onCaptureSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,
+      // KLA composer-polish: viewport-scoped real-pixel Screen frame for the on-open DEFAULT capture (single
+      // visible frame, no scroll-stitch → not a tall full-page image). The manual Screen button still stitches.
+      onCaptureSharpViewport: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }) : undefined,
       // JTBD 1.9: "Retake sharp" on a degraded thumbnail → the same getDisplayMedia real-pixel capture. Only
       // wired when the browser supports it (no getDisplayMedia on iOS Safari → no retake affordance shown).
       onRetakeSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,

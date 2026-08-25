@@ -192,6 +192,12 @@ export interface ModalCallbacks {
   // the capture so the composer isn't in the shot. Feature-detected by the host (absent on iOS Safari →
   // button hidden → users fall back to the html-to-image "Full Page").
   onCaptureSharp?: () => Promise<CaptureResult>
+  // KLA composer-polish (viewport-default, founder PX4 repro): the SAME getDisplayMedia real-pixel path as
+  // onCaptureSharp but capturing a SINGLE VISIBLE-VIEWPORT frame (no scroll-stitch → not a tall full-page
+  // image). When wired, the on-open DEFAULT Screen capture uses THIS so the auto shot is viewport-scoped
+  // (what the reporter actually sees). The manual "Screen" button still uses the full-page onCaptureSharp,
+  // and "Full Page" stays an explicit opt-in. Absent → the default falls back to onCaptureSharp (unchanged).
+  onCaptureSharpViewport?: () => Promise<CaptureResult>
   // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
   // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
@@ -866,8 +872,23 @@ export function buildModal(
     .klav-mask-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--kl-muted);cursor:pointer;margin-bottom:10px;user-select:none;}
     .klav-mask-row input[type=checkbox]{accent-color:var(--kl-accent);width:13px;height:13px;cursor:pointer;}
     .klav-mask-row:hover{color:var(--kl-fg);}
-    .klavity-counter{font-size:11px;color:var(--kl-muted);margin-bottom:8px;font-variant-numeric:tabular-nums;}
-    textarea.klavity-desc{width:100%;min-height:100px;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
+    .klavity-counter{font-size:11px;color:var(--kl-muted);font-variant-numeric:tabular-nums;}
+    /* KLA composer-polish: images-count + Voice-mic row (Mevak style). The circular mic sits at the right end;
+       margin-left:auto keeps it pinned right even when the counter is hidden (no images yet). */
+    .klavity-descbar{display:flex;align-items:center;gap:8px;min-height:36px;margin-bottom:8px;}
+    .kl-voice-circle{position:relative;flex:none;margin-left:auto;width:36px;height:36px;min-width:36px;padding:0;border:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--kl-chip);color:var(--kl-fg);cursor:pointer;transition:background .15s ease,color .15s ease,transform .12s ease;}
+    .kl-voice-circle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;line-height:1;}
+    .kl-voice-circle .kl-cap-ic svg{display:block;width:17px;height:17px;}
+    .kl-voice-circle:hover{color:var(--kl-accent);transform:scale(1.06);}
+    .kl-voice-circle:active{transform:scale(.95);}
+    .kl-voice-circle:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .kl-voice-circle:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+    @media (prefers-reduced-motion: reduce){.kl-voice-circle{transition:none!important;}.kl-voice-circle:hover,.kl-voice-circle:active{transform:none;}}
+    /* KLA composer-polish: taller default description box (founder ask). min-height ~150px, still user-resizable.
+       max-height is viewport-relative so a tall box never pushes the composer past the scroll region on short
+       viewports — the .kl-side already scrolls (overflow-y:auto), so the textarea caps itself and the panel
+       scrolls rather than overflowing. */
+    textarea.klavity-desc{width:100%;min-height:150px;max-height:38vh;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     /* JTBD 1.10: hint shown when the reporter has attached a screenshot but typed nothing — Submit is
        enabled and the AI will title the report. Sits just under the textarea; hidden by default. */
     .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
@@ -1061,7 +1082,11 @@ export function buildModal(
       background:color-mix(in srgb,var(--kl-accent) 12%,var(--kl-chip));
       box-shadow:0 0 0 1.5px var(--kl-accent),0 4px 14px color-mix(in srgb,var(--kl-accent) 18%,transparent);
     }
-    .klavity-actions button.kl-active .kl-cap-ic,.klavity-toggle button.active .kl-cap-ic{color:var(--kl-accent);transform:scale(1.08) rotate(3deg);}
+    .klavity-actions button.kl-active .kl-cap-ic{color:var(--kl-accent);transform:scale(1.08) rotate(3deg);}
+    /* KLA composer-polish: the Bug/Feature toggle's ACTIVE chip has a SOLID accent (purple) background, so
+       the icon must be on-accent (white) — NOT accent, which would paint the glyph the same colour as its
+       background and make it invisible (the "missing Bug icon" report). Inactive chips inherit --kl-fg. */
+    .klavity-toggle button.active .kl-cap-ic{color:var(--kl-on-accent);transform:scale(1.08) rotate(3deg);}
     .klavity-actions button.kl-active::after{
       content:"";position:absolute;top:-4px;right:-4px;
       width:14px;height:14px;border-radius:50%;
@@ -1142,7 +1167,6 @@ export function buildModal(
         ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
-        ${voiceSupported ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
       </div>
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
       ${/* KLA-593: the "Mask numbers" redaction toggle moved to the TOP of the image-editing (hero) toolbar,
@@ -1151,7 +1175,14 @@ export function buildModal(
            are enabled; the image-only accept is kept for the plain Upload button otherwise. */''}
       <input type="file" id="klavity-file" accept="${fileAttachEnabled ? UNIFIED_ATTACH_ACCEPT : 'image/*,.heic,.heif'}" multiple style="display:none">
       ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${Math.round(PER_FILE_MAX_BYTES / 1024 / 1024)}MB each</span></div>` : ''}
-      <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
+      ${/* KLA composer-polish: the images-count row now also hosts the Mevak-style circular Voice mic at its
+           right end (replaces the old full-width Voice button in the capture grid). The row always renders when
+           Voice is supported so the mic has a home even before any image is attached (the counter itself stays
+           hidden until there's an image). */''}
+      <div class="klavity-descbar">
+        <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
+        ${voiceSupported ? `<button id="klavity-voice" class="kl-voice-circle" type="button" title="Voice dictation" aria-label="Voice dictation"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
+      </div>
       ${fileAttachEnabled ? '<div class="klavity-capmsg" id="klavity-capmsg" role="alert" hidden></div>' : ''}
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
       ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
@@ -2449,8 +2480,13 @@ export function buildModal(
   // gesture is preserved), and adds the resulting real-pixel shot. Returns true when a shot was added; false
   // on a user DECLINE / lost-gesture / unsupported / empty result so the caller can fall back to a rendered
   // capture. NEVER surfaces an error for a decline — the fallback is silent (per the founder decision).
-  async function runScreenCapture(): Promise<boolean> {
-    if (busy || !callbacks.onCaptureSharp || !sharpBtn) return false // re-entrancy / not wired
+  async function runScreenCapture(opts?: { viewport?: boolean }): Promise<boolean> {
+    // KLA composer-polish: the on-open DEFAULT capture asks for the VIEWPORT-scoped Screen frame (single
+    // visible frame, no scroll-stitch) when the host wired onCaptureSharpViewport; the manual Screen button
+    // asks for the full-page onCaptureSharp. Falls back to onCaptureSharp when the viewport variant isn't
+    // wired (e.g. the extension), so no host regresses.
+    const capFn = (opts?.viewport && callbacks.onCaptureSharpViewport) ? callbacks.onCaptureSharpViewport : callbacks.onCaptureSharp
+    if (busy || !capFn || !sharpBtn) return false // re-entrancy / not wired
     // The "Screen" word lives in its own span so the "Capturing…" state never clobbers the icon or the (i).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
     lockComposer(true)
@@ -2463,7 +2499,7 @@ export function buildModal(
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       let shot: CaptureResult | undefined
-      try { shot = await callbacks.onCaptureSharp() }
+      try { shot = await capFn() }
       finally { restore?.() }
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
@@ -3462,7 +3498,9 @@ export function buildModal(
       // NOT re-prompt (no surprise-loop).
       if (defaultCaptureMode(callbacks) === 'screen') {
         void (async () => {
-          const ok = await runScreenCapture()
+          // KLA composer-polish (founder PX4 repro): the DEFAULT on-open Screen capture is VIEWPORT-scoped —
+          // a single visible frame, NOT the full-page scroll-stitch. The manual Screen button stays full-page.
+          const ok = await runScreenCapture({ viewport: true })
           if (ok) { capturing = false; updateStrip(); return }
           if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
           // Silent fallback → rendered viewport (or full render where no viewport path is wired).

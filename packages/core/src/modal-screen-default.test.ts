@@ -136,3 +136,53 @@ describe("on-open Screen-default capture + decline fallback (KLA-587)", () => {
     expect(err && err.style.display === "block").toBeFalsy()
   })
 })
+
+// KLA composer-polish (founder PX4 repro): the on-open DEFAULT Screen capture must be VIEWPORT-scoped (a single
+// visible frame), NOT the full-page scroll-stitch. When the host wires onCaptureSharpViewport, the default fires
+// THAT; the manual Screen button still fires the full-page onCaptureSharp.
+describe("on-open default is VIEWPORT-scoped Screen, manual Screen stays full-page (composer-polish)", () => {
+  const cbs = (onCaptureSharp: any, onCaptureSharpViewport: any) => ({
+    onCaptureFull: vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,FULL", quality: "rendered" as const }),
+    onCaptureViewport: vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,VIEWPORT", quality: "rendered" as const }),
+    onCaptureSharp,
+    onCaptureSharpViewport,
+    onClose: vi.fn(),
+    onSubmit: vi.fn().mockResolvedValue({ issueKey: "KLA-1", issueUrl: "" }),
+    autoCaptureOnOpen: true,
+    screenCaptureDefault: true,
+  })
+
+  it("on open, fires the VIEWPORT-scoped Screen capture (not the full-page one)", async () => {
+    const onCaptureSharp = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_FULL", quality: "real-pixel" as const })
+    const onCaptureSharpViewport = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_VIEWPORT", quality: "real-pixel" as const })
+    const c = cbs(onCaptureSharp, onCaptureSharpViewport)
+    buildModal("bug", c as any, { theme: "light" } as any)
+    await wait(60)
+    // Default targets the viewport (single visible frame) — the full-page scroll-stitch is NOT auto-fired.
+    expect(onCaptureSharpViewport).toHaveBeenCalledTimes(1)
+    expect(onCaptureSharp).not.toHaveBeenCalled()
+    // And the rendered fallback isn't needed when Screen succeeds.
+    expect(c.onCaptureViewport).not.toHaveBeenCalled()
+  })
+
+  it("clicking the manual Screen button still fires the FULL-PAGE capture (onCaptureSharp), not the viewport one", async () => {
+    const onCaptureSharp = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_FULL", quality: "real-pixel" as const })
+    const onCaptureSharpViewport = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_VIEWPORT", quality: "real-pixel" as const })
+    // No autoCaptureOnOpen so we isolate the manual click.
+    const c = { ...cbs(onCaptureSharp, onCaptureSharpViewport), autoCaptureOnOpen: false }
+    buildModal("bug", c as any, { theme: "light" } as any)
+    const shadow = modalShadow()
+    ;(shadow.getElementById("klavity-sharp") as HTMLButtonElement).click()
+    await wait(30)
+    expect(onCaptureSharp).toHaveBeenCalledTimes(1)
+    expect(onCaptureSharpViewport).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the full-page onCaptureSharp on open when no viewport variant is wired (unchanged hosts)", async () => {
+    const onCaptureSharp = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_FULL", quality: "real-pixel" as const })
+    const c = cbs(onCaptureSharp, undefined)
+    buildModal("bug", c as any, { theme: "light" } as any)
+    await wait(60)
+    expect(onCaptureSharp).toHaveBeenCalledTimes(1)
+  })
+})
