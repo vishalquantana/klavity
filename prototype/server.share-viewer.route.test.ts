@@ -118,3 +118,40 @@ test("anon teaser payload is redacted the same way", async () => {
   expect(bodyText).not.toContain(DESC)
   expect(bodyText).not.toContain(SHOT)
 })
+
+test("GET /t/:ref serves the standalone member page for a member (KLA-491 preserved)", async () => {
+  const r = await get(`/t/${FID}`, OWNER_SID)
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  expect(html).toContain("standalone single-ticket page") // the existing member page marker
+  expect(html).toContain(`"${FID}"`)
+})
+
+test("GET /t/:ref serves the teaser page for a signed-in non-member (default teaser mode)", async () => {
+  const r = await get(`/t/${FID}`, STRANGER_SID)
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  expect(html).toContain("shared-ticket teaser page") // the new teaser page marker
+  expect(html).not.toContain("__TICKET_ID__")
+})
+
+test("GET /t/:ref serves the teaser page for an anon visitor (default teaser mode)", async () => {
+  const r = await get(`/t/${FID}`)
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  expect(html).toContain("shared-ticket teaser page")
+})
+
+test("GET /t/:ref redirects anon to login only when share_mode=off", async () => {
+  await exec("UPDATE projects SET share_mode=? WHERE id=?", ["off", PROJ])
+  const r = await get(`/t/${FID}`)
+  expect(r.status).toBe(302)
+  expect((r.headers.get("location") || "")).toContain("/login")
+  await exec("UPDATE projects SET share_mode=? WHERE id=?", ["teaser", PROJ]) // restore
+})
+
+test("anon GET /dashboard?ticket=<id> 302s to /t/<id>", async () => {
+  const r = await get(`/dashboard?ticket=${FID}`)
+  expect(r.status).toBe(302)
+  expect(decodeURIComponent(r.headers.get("location") || "")).toContain(`/t/${FID}`)
+})

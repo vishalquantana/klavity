@@ -117,17 +117,16 @@ test("GET /t/:ref also accepts the short quotable ref and resolves the full id",
   expect(html).toContain(`"${FID}"`)
 })
 
-test("GET /t/:ref returns 403 for a logged-in non-member", async () => {
+test("GET /t/:ref serves the teaser (not a 403) for a logged-in non-member under default share_mode", async () => {
   const r = await get(`/t/${FID}`, OUTSIDE_SID)
-  expect(r.status).toBe(403)
+  expect(r.status).toBe(200)
+  expect(await r.text()).toContain("shared-ticket teaser page")
 })
 
-test("GET /t/:ref redirects unauthenticated visitors to login with a return-to", async () => {
-  const r = await get(`/t/${FID}`) // no session cookie
-  expect(r.status).toBe(302)
-  const loc = r.headers.get("location") || ""
-  expect(loc).toContain("/login")
-  expect(decodeURIComponent(loc)).toContain(`/t/${FID}`)
+test("GET /t/:ref serves the teaser to an unauthenticated visitor under default share_mode", async () => {
+  const r = await get(`/t/${FID}`)
+  expect(r.status).toBe(200)
+  expect(await r.text()).toContain("shared-ticket teaser page")
 })
 
 test("GET /t/:ref 404s an unknown ref without leaking existence", async () => {

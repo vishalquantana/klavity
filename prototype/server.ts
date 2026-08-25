@@ -7029,7 +7029,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // KLAVITYKLA-229: GET gates remember the intended destination via ?next= so verify can resume it.
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
-    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : loginGate(path, url.search)
+    if (req.method === "GET" && path === "/dashboard") {
+      if (me) return await dashboardPage()
+      // A member's own address-bar deep link (?ticket=<id>) must work for a colleague: send an
+      // unauthenticated visitor to the adaptive /t/:ref so they get the teaser, not a login wall.
+      const _tkt = url.searchParams.get("ticket")
+      if (_tkt) return redirect("/t/" + encodeURIComponent(_tkt))
+      return loginGate(path, url.search)
+    }
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
     if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : loginGate(path, url.search)
@@ -7292,21 +7299,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const ticketRefMatch = path.match(/^\/t\/([A-Za-z0-9_-]{1,80})$/)
     if (req.method === "GET" && ticketRefMatch) {
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
-      if (!me) return loginGate(path, url.search)
       const resolved = await resolveFeedbackRef(ticketRefMatch[1]).catch(() => null)
-      // Unknown/malformed ref → bare 404 (no info leak).
       if (!resolved) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
-      // Real membership gate: resolve project from the ROW, then check the caller belongs to it.
-      const tAccess = await projectAccess(me, resolved.projectId).catch(() => null)
-      if (!tAccess) return json({ error: "You are not a member of this ticket's project." }, 403)
-      // Serve the standalone page with the resolved FULL feedback id + project id injected as JS
-      // string literals (the ref may have been the short form; the page needs the full id for the APIs).
-      const _tPath = PUB + "/ticket.html"
-      if (!(await Bun.file(_tPath).exists())) return new Response("Not found", { status: 404 })
-      let _tHtml = await Bun.file(_tPath).text()
-      _tHtml = _tHtml
-        .replaceAll("__TICKET_ID__", resolved.id)
-        .replaceAll("__PROJECT_ID__", resolved.projectId)
+      const access = await ticketViewAccess(resolved.id, me)
+      if (access === "login") {
+        // share_mode=off — members only. Anon → login gate; signed-in non-member → bare 404 (no leak).
+        return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      }
+      const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
+      // Member/admin full → the fast standalone member page (KLA-491, unchanged).
+      const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
+      if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+      let _tHtml = await Bun.file(pagePath).text()
+      _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
       })
