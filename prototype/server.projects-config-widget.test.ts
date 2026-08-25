@@ -222,6 +222,56 @@ test("admin GET /api/projects/:id/config?admin=1 returns widget config (no notif
   expect(raw).not.toContain("notify_email")
 })
 
+// ── KLA-608: per-project bug notifications (slack webhook secret + custom emails + master toggle) ──
+
+test("admin POST config persists KLA-608 bug-notify fields to columns", async () => {
+  const r = await apiPost(`/api/projects/${PROJECT_DEFAULT_ID}/config`, {
+    theme: "light", mode: "support",
+    slackWebhookUrl: "https://hooks.slack.com/services/T1/B1/secretcap",
+    bugNotifyEmails: "Alerts@Company.com, oncall@company.com, junk",
+    notifyOnEveryBug: false,
+  }, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const dbCheck = await rawClient.execute({
+    sql: "SELECT slack_webhook_url, bug_notify_emails, notify_on_every_bug FROM projects WHERE id=?",
+    args: [PROJECT_DEFAULT_ID],
+  })
+  const row = dbCheck.rows[0] as any
+  expect(String(row.slack_webhook_url)).toBe("https://hooks.slack.com/services/T1/B1/secretcap")
+  // list is lowercased, deduped, per-address validated ("junk" dropped) and stored as JSON
+  expect(JSON.parse(String(row.bug_notify_emails))).toEqual(["alerts@company.com", "oncall@company.com"])
+  expect(Number(row.notify_on_every_bug)).toBe(0)
+})
+
+test("admin GET config exposes bugNotify config but NEVER the slack webhook secret", async () => {
+  const r = await apiGet(`/api/projects/${PROJECT_DEFAULT_ID}/config?admin=1`, ADMIN_SID)
+  expect(r.status).toBe(200)
+  const body = await r.json() as any
+  expect(body).toHaveProperty("bugNotify")
+  expect(body.bugNotify.slackConfigured).toBe(true)
+  expect(body.bugNotify.notifyOnEveryBug).toBe(false)
+  expect(body.bugNotify.bugNotifyEmails).toEqual(["alerts@company.com", "oncall@company.com"])
+  // the secret URL must not appear anywhere in the response
+  const raw = JSON.stringify(body)
+  expect(raw).not.toContain("secretcap")
+  expect(raw).not.toContain("slackWebhookUrl")
+})
+
+test("public GET config never leaks the slack webhook", async () => {
+  const r = await apiGet(`/api/projects/${PROJECT_DEFAULT_ID}/config`)
+  const raw = JSON.stringify(await r.json())
+  expect(raw).not.toContain("secretcap")
+  expect(raw).not.toContain("bugNotify")
+})
+
+test("admin POST with a non-Slack webhook URL → 400", async () => {
+  const r = await apiPost(`/api/projects/${PROJECT_DEFAULT_ID}/config`, {
+    theme: "light", mode: "support",
+    slackWebhookUrl: "https://evil.example/hook",
+  }, ADMIN_SID)
+  expect(r.status).toBe(400)
+})
+
 test("non-admin member POST /api/projects/:id/config → 403", async () => {
   const r = await apiPost(`/api/projects/${PROJECT_DEFAULT_ID}/config`, {
     theme: "light",

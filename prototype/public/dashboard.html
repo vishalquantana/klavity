@@ -2443,6 +2443,23 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <span style="font-size:13px;">Mask numbers in screenshots by default</span>
         </label>
         <p style="font-size:12px;opacity:.7;margin-top:-4px">Reporters can always override this per-report.</p>
+        <div id="kl-bugnotify" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(120,120,140,.18)">
+          <div style="font-weight:600;font-size:14px;margin-bottom:2px">Bug notifications</div>
+          <p style="font-size:12px;opacity:.7;margin:0 0 10px">Get pinged on <b>every</b> new bug reported for this project. Distinct from the lead-notify email above.</p>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="kl-notify-every-bug" style="accent-color:#6366f1;width:14px;height:14px">
+            <span style="font-size:13px">Notify on every new bug</span>
+          </label>
+          <p style="font-size:12px;opacity:.7;margin-top:-2px">Master switch. Turn off to silence all bug notifications for this project.</p>
+          <label>Slack incoming webhook
+            <input type="url" id="kl-slack-webhook" placeholder="https://hooks.slack.com/services/...">
+          </label>
+          <p id="kl-slack-webhook-hint" style="font-size:12px;opacity:.7;margin-top:-4px">Paste a Slack incoming-webhook URL to post each new bug to a channel. Leave blank to keep the current one; the saved URL is never shown back.</p>
+          <label>Email these people on every bug
+            <input type="text" id="kl-bug-emails" placeholder="alerts@company.com, oncall@company.com">
+          </label>
+          <p style="font-size:12px;opacity:.7;margin-top:-4px">Comma-separated. Leave blank to alert the account owner and admins instead.</p>
+        </div>
         </div><!-- /.wp-config -->
         <div class="wp-preview">
           <div class="wp-preview-head">
@@ -9658,6 +9675,15 @@ async function loadAppearance() {
       if (maskChk) body.maskNumbers = maskChk.checked ? true : undefined
       const notifyVal = $("kl-notify").value.trim()
       if (notifyVal) body.notify_email = notifyVal
+      // KLA-608 bug notifications. notifyOnEveryBug (master) + bugNotifyEmails always sent; the Slack
+      // webhook is write-only — only send when the admin actually typed a value (blank keeps the current
+      // secret; the field is never pre-filled). "clear" is an explicit sentinel handled below.
+      const nebChk = $("kl-notify-every-bug")
+      if (nebChk) body.notifyOnEveryBug = nebChk.checked
+      const bugEmailsEl = $("kl-bug-emails")
+      if (bugEmailsEl) body.bugNotifyEmails = bugEmailsEl.value.trim()
+      const slackEl = $("kl-slack-webhook")
+      if (slackEl) { const sv = slackEl.value.trim(); if (sv) body.slackWebhookUrl = sv }
       msg.textContent = "Saving…"
       try {
         const r = await fetch(projPath("/config"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -9706,6 +9732,19 @@ async function loadAppearance() {
       const acHint = acRow.closest("label").nextElementSibling
       if (acHint) acHint.style.display = isAdminNow ? "" : "none"
     }
+    // KLA-608 bug notifications (admin-only read-back). The Slack webhook URL is a secret and is never
+    // returned — we only get a `slackConfigured` boolean, so the input stays blank and its hint tells the
+    // admin whether one is already set (typing a new value replaces it; blank keeps it).
+    const bn = d.bugNotify || {}
+    if ($("kl-notify-every-bug")) $("kl-notify-every-bug").checked = bn.notifyOnEveryBug !== false
+    if ($("kl-bug-emails")) $("kl-bug-emails").value = Array.isArray(bn.bugNotifyEmails) ? bn.bugNotifyEmails.join(", ") : ""
+    const swHint = $("kl-slack-webhook-hint")
+    if (swHint) swHint.innerHTML = bn.slackConfigured
+      ? "<b>A Slack webhook is configured.</b> Leave blank to keep it, or paste a new URL to replace it. The saved URL is never shown back."
+      : "Paste a Slack incoming-webhook URL to post each new bug to a channel. Leave blank to keep the current one; the saved URL is never shown back."
+    // Show the whole section to admins only (writes are admin-gated server-side too).
+    const bnBox = $("kl-bugnotify")
+    if (bnBox) bnBox.style.display = (state.active && state.active.role === "admin") ? "" : "none"
     // Store isPro on the note element for the save handler to read
     proNote.dataset.pro = isPro ? "1" : "0"
     proNote.style.display = isPro ? "none" : "block"
