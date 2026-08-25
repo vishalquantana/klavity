@@ -92,8 +92,12 @@ export class Annotator {
     } else if (shape.type === 'rect') {
       ctx.strokeRect(shape.x, shape.y, shape.w, shape.h)
     } else if (shape.type === 'arrow') {
+      // Arrows read poorly at the base stroke weight, so they draw ~1.7x thicker by default (the S/M/L/XL
+      // stroke control still scales this via computeLineWidth). The head grows with the thicker shaft.
+      const lw = this.computeLineWidth() * 1.7
+      ctx.lineWidth = lw
       const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1)
-      const headLen = Math.max(12, this.computeLineWidth() * 4)
+      const headLen = Math.max(16, lw * 4)
       ctx.beginPath()
       ctx.moveTo(shape.x1, shape.y1)
       ctx.lineTo(shape.x2, shape.y2)
@@ -108,6 +112,8 @@ export class Annotator {
       )
       ctx.stroke()
     } else if (shape.type === 'line') {
+      // Lines also default thicker (parity with arrows) so they read clearly; still scaled by the stroke control.
+      ctx.lineWidth = this.computeLineWidth() * 1.7
       ctx.beginPath()
       ctx.moveTo(shape.x1, shape.y1)
       ctx.lineTo(shape.x2, shape.y2)
@@ -144,6 +150,49 @@ export class Annotator {
       }
       ctx.fillText(shape.text, shape.x, shape.y)
       ctx.textBaseline = 'alphabetic'
+    } else if (shape.type === 'pixelate') {
+      this.drawPixelate(ctx, shape)
+    }
+  }
+
+  /** Redaction: replace the pixels inside the region with a coarse mosaic (block-averaged colours). Reads
+   *  back what's already painted (base image + any earlier shapes) so the redaction bakes into save()/export.
+   *  No-ops safely on headless/tainted canvases (getImageData throws) — the region just isn't redacted. */
+  private drawPixelate(ctx: CanvasRenderingContext2D, shape: { x: number; y: number; w: number; h: number }): void {
+    const x = Math.max(0, Math.floor(Math.min(shape.x, shape.x + shape.w)))
+    const y = Math.max(0, Math.floor(Math.min(shape.y, shape.y + shape.h)))
+    const w = Math.min(this.canvas.width - x, Math.ceil(Math.abs(shape.w)))
+    const h = Math.min(this.canvas.height - y, Math.ceil(Math.abs(shape.h)))
+    if (w <= 0 || h <= 0) return
+    // Mosaic block size scales with the image so it looks consistent across resolutions (min 8px).
+    const block = Math.max(8, Math.round(this.canvas.width / 90))
+    let data: ImageData | undefined
+    try {
+      data = ctx.getImageData(x, y, w, h)
+    } catch {
+      data = undefined // tainted canvas
+    }
+    if (!data || !data.data) {
+      // Tainted/headless canvas (or a stubbed context) — fall back to an opaque block so nothing leaks.
+      ctx.fillStyle = 'rgba(30,30,40,1)'
+      ctx.fillRect(x, y, w, h)
+      return
+    }
+    const px = data.data
+    for (let by = 0; by < h; by += block) {
+      for (let bx = 0; bx < w; bx += block) {
+        let r = 0, g = 0, b = 0, count = 0
+        const maxY = Math.min(by + block, h), maxX = Math.min(bx + block, w)
+        for (let yy = by; yy < maxY; yy++) {
+          for (let xx = bx; xx < maxX; xx++) {
+            const i = (yy * w + xx) * 4
+            r += px[i]; g += px[i + 1]; b += px[i + 2]; count++
+          }
+        }
+        if (!count) continue
+        ctx.fillStyle = `rgb(${Math.round(r / count)},${Math.round(g / count)},${Math.round(b / count)})`
+        ctx.fillRect(x + bx, y + by, maxX - bx, maxY - by)
+      }
     }
   }
 
