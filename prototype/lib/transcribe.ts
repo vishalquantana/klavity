@@ -38,6 +38,30 @@ export const TRANSCRIBE_MODEL =
 // change. Defaults to OpenRouter's audio-transcription endpoint.
 const ENDPOINT = process.env.KLAV_TRANSCRIBE_ENDPOINT || "https://openrouter.ai/api/v1/audio/transcriptions"
 
+// ── DEEPGRAM (PRIMARY STT backend) ─────────────────────────────────────────────────────────────────
+// KLA voice-502 fix: the OpenRouter model above was returning non-2xx on prod → the /api/voice/transcribe
+// handler surfaced a 502 and live dictation never produced text. Deepgram's prerecorded API (nova-2) is
+// fast (~1.8s) + reliable, so it becomes the PRIMARY backend whenever DEEPGRAM_API_KEY is set; the
+// OpenRouter path stays as an explicit fallback (never deleted). Deepgram takes the RAW audio bytes with
+// the clip's Content-Type as the body (no multipart/base64), which is a clean drop-in for both the
+// live-dictation clip and the KLA-480/603 video-transcript path (nova-2 handles longer audio too).
+// Model is a swappable const; overridable at deploy via DEEPGRAM_MODEL without a code change.
+export const DEEPGRAM_MODEL = process.env.DEEPGRAM_MODEL || "nova-2"
+// Overridable (and pointed at a local stand-in by the route test) via KLAV_DEEPGRAM_ENDPOINT.
+const DEEPGRAM_ENDPOINT = process.env.KLAV_DEEPGRAM_ENDPOINT || "https://api.deepgram.com/v1/listen"
+// Server-side ONLY. Never sent to the client, never logged/committed.
+function deepgramKey(): string | undefined {
+  return process.env.DEEPGRAM_API_KEY
+}
+export function deepgramConfigured(): boolean {
+  return !!deepgramKey()
+}
+// The model actually used for a given call (for the ai_calls cost ledger). Deepgram when configured,
+// else the OpenRouter model.
+export function activeTranscribeModel(): string {
+  return deepgramConfigured() ? `deepgram/${DEEPGRAM_MODEL}` : TRANSCRIBE_MODEL
+}
+
 export type TranscriptSegment = { start: number; end: number; text: string }
 export type TranscriptJson = { text: string; segments: TranscriptSegment[] | null }
 export type TranscriptResult = TranscriptJson & { usage: { seconds: number | null; cost: number | null } }
@@ -65,7 +89,8 @@ function apiKey(): string | undefined {
   return process.env.OPENROUTER_API_KEY || process.env.KLAV_OPENROUTER_KEY
 }
 export function transcribeConfigured(): boolean {
-  return !!apiKey()
+  // Configured if EITHER backend has a key. Deepgram is preferred when both are set.
+  return !!apiKey() || deepgramConfigured()
 }
 
 // Map an S3/browser content-type to the `format` hint the endpoint expects (a bare container name,
@@ -100,6 +125,83 @@ export function parseTranscribeResponse(data: any): TranscriptResult | null {
   return { text: finalText, segments, usage: { seconds, cost } }
 }
 
+// Normalize a Deepgram prerecorded response into { text, segments, usage }. The transcript lives at
+// results.channels[0].alternatives[0].transcript; when utterances=true, results.utterances carries
+// timestamped {start,end,transcript} segments (used for the video-transcript citation "@ mm:ss").
+// metadata.duration gives the audio seconds. Returns null when there is nothing usable to store.
+// Exported so tests can exercise parsing without a network call.
+export function parseDeepgramResponse(data: any): TranscriptResult | null {
+  if (!data || typeof data !== "object") return null
+  const alt = data?.results?.channels?.[0]?.alternatives?.[0]
+  const text = typeof alt?.transcript === "string" ? alt.transcript.trim() : ""
+  let segments: TranscriptSegment[] | null = null
+  const utts = Array.isArray(data?.results?.utterances) ? data.results.utterances : null
+  if (utts && utts.length) {
+    const mapped = utts
+      .map((u: any) => ({ start: Number(u?.start) || 0, end: Number(u?.end) || 0, text: String(u?.transcript ?? "").trim() }))
+      .filter((s: TranscriptSegment) => s.text)
+    if (mapped.length) segments = mapped
+  }
+  const seconds = data?.metadata?.duration != null ? Number(data.metadata.duration) : null
+  const finalText = text || (segments ? segments.map(s => s.text).join(" ") : "")
+  if (!finalText && !(segments && segments.length)) return null
+  return { text: finalText, segments, usage: { seconds, cost: null } }
+}
+
+// Transcribe RAW audio bytes via Deepgram's prerecorded API. The body is the raw bytes with the clip's
+// Content-Type (no multipart/base64). Same resilience contract as the OpenRouter core: NEVER throws,
+// returns the discriminated outcome ('failed' on missing key / non-2xx / timeout / empty; 'done' with a
+// parsed transcript). The over-cap 'skipped' decision is made by the caller (transcribeAudioBytes) BEFORE
+// this runs, so this function is only ever reached with in-cap bytes.
+async function transcribeAudioBytesDeepgram(
+  bytes: Uint8Array,
+  contentType: string,
+  opts: { language?: string } = {},
+): Promise<TranscribeOutcome> {
+  const key = deepgramKey()
+  if (!key) return { status: "failed", reason: "no-api-key" }
+  const language = opts.language || "en"
+  const ct = contentType || "audio/webm"
+
+  const url = new URL(DEEPGRAM_ENDPOINT)
+  url.searchParams.set("model", DEEPGRAM_MODEL)
+  url.searchParams.set("smart_format", "true")
+  url.searchParams.set("punctuate", "true")
+  // utterances=true → timestamped segments (parity with the OpenRouter verbose_json segments).
+  url.searchParams.set("utterances", "true")
+  if (language) url.searchParams.set("language", language)
+
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), TRANSCRIBE_TIMEOUT_MS)
+  try {
+    const resp = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        "Authorization": `Token ${key}`,
+        "Content-Type": ct,
+      },
+      body: bytes,
+      signal: ac.signal,
+    })
+    if (!resp.ok) {
+      const detail = (await resp.text().catch(() => "?")).slice(0, 200)
+      // Every non-2xx degrades to 'failed' — the caller turns this into a clean handled error, NOT a 502.
+      console.warn(`[transcribe] Deepgram ${resp.status}: ${detail}`)
+      return { status: "failed", reason: resp.status === 413 ? "payload-too-large" : `http-${resp.status}` }
+    }
+    const data: any = await resp.json()
+    const parsed = parseDeepgramResponse(data)
+    if (!parsed) return { status: "failed", reason: "empty-or-unparseable" }
+    return { status: "done", result: parsed }
+  } catch (e: any) {
+    const aborted = e?.name === "AbortError"
+    console.warn("[transcribe] Deepgram failed (non-fatal):", aborted ? "timeout" : (e?.message || e))
+    return { status: "failed", reason: aborted ? "timeout" : "network-error" }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Content-type / extension for the multipart `file` part, matched to the format hint.
 function fileMetaFor(ct: string): { mime: string; ext: string } {
   const fmt = audioFormatFor(ct)
@@ -118,7 +220,7 @@ function fileMetaFor(ct: string): { mime: string; ext: string } {
 // PX4 #471: the S3 bytes stream to OpenRouter as multipart/form-data (a `file` field). We do NOT
 // base64-encode the whole file into a JSON body (that ~doubles memory and blows the request-size cap).
 export async function transcribeRecording(s3Key: string, contentType: string): Promise<TranscribeOutcome> {
-  if (!apiKey()) return { status: "failed", reason: "no-api-key" }
+  if (!transcribeConfigured()) return { status: "failed", reason: "no-api-key" }
 
   let bytes: Uint8Array
   let ct = contentType
@@ -145,8 +247,7 @@ export async function transcribeAudioBytes(
   contentType: string,
   opts: { language?: string } = {},
 ): Promise<TranscribeOutcome> {
-  const key = apiKey()
-  if (!key) return { status: "failed", reason: "no-api-key" }
+  if (!transcribeConfigured()) return { status: "failed", reason: "no-api-key" }
 
   // Payload cap FIRST — before any encode/allocation. An over-cap clip is intentionally not sent.
   if (bytes.byteLength > TRANSCRIBE_MAX_BYTES) {
@@ -158,6 +259,13 @@ export async function transcribeAudioBytes(
 
   const ct = contentType
   const language = opts.language || "en"
+
+  // PREFER Deepgram (fast + reliable) whenever its key is present — this is the fix for the prod voice 502.
+  // Falls through to the legacy OpenRouter multipart path only when Deepgram is NOT configured.
+  if (deepgramConfigured()) return transcribeAudioBytesDeepgram(bytes, ct, { language })
+
+  const key = apiKey()
+  if (!key) return { status: "failed", reason: "no-api-key" }
   const format = audioFormatFor(ct)
   const { mime, ext } = fileMetaFor(ct)
 
@@ -268,7 +376,7 @@ export async function transcribeFeedbackRecordings(opts: {
       } catch {}
       await recordAiCall({
         type: "transcribe",
-        model: TRANSCRIBE_MODEL,
+        model: activeTranscribeModel(),
         projectId,
         feature: "transcribe",
         costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
@@ -349,7 +457,7 @@ export async function transcribeFeedbackAttachments(opts: {
       } catch {}
       await recordAiCall({
         type: "transcribe",
-        model: TRANSCRIBE_MODEL,
+        model: activeTranscribeModel(),
         projectId,
         feature: "transcribe",
         costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,

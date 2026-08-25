@@ -129,7 +129,7 @@ import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
 import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
 import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle } from "./lib/db"
-import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL } from "./lib/transcribe"
+import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, activeTranscribeModel } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { findKnownIssue } from "./lib/known-issue"
@@ -3694,7 +3694,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (outcome.status !== "skipped") {
         await recordAiCall({
           type: "transcribe",
-          model: TRANSCRIBE_MODEL,
+          model: activeTranscribeModel(),
           projectId,
           feature: "voice-dictation",
           costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
@@ -3714,7 +3714,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       if (outcome.status === "done") return wjson({ text: outcome.result.text })
       if (outcome.status === "skipped") return wjson({ error: outcome.reason, text: "" }, 413)
-      return wjson({ error: "transcription failed", reason: outcome.reason, text: "" }, 502)
+      // A backend (Deepgram/OpenRouter) error is a CLEAN, HANDLED failure — return 503 (NOT 502/crash) so
+      // the client shows a graceful message and transparently engages its Web Speech fallback (it treats any
+      // non-ok response as "endpoint unavailable"). fallback:true is advisory for the client.
+      return wjson({ error: "transcription failed", reason: outcome.reason, text: "", fallback: true }, 503)
     }
 
     // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──
