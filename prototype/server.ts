@@ -2364,8 +2364,18 @@ async function reconcileStaleInFlightExportOutbox(): Promise<void> {
   }
 }
 
+// Single-flight gate: the sweep runs on a 60s interval, but ONE sweep can take longer than 60s when a
+// tracker is slow (e.g. Plane timing out at 30s/attempt × up to 25 rows). Without this gate two sweeps
+// overlap and both walk the same due rows — the per-row atomic claim (markExportOutboxInFlight) already
+// stops a double-file, but overlapping sweeps still double the tracker load and can race the stale-
+// in_flight reconciler. This module-level boolean makes the sweep skip if a prior run is still draining.
+let outboxSweepRunning = false
+
 async function runExportOutboxSweep(): Promise<void> {
   if (!db) return
+  if (outboxSweepRunning) return
+  outboxSweepRunning = true
+  try {
   await reconcileStaleInFlightExportOutbox()
   const due = await listDueExportOutbox(25).catch(() => [] as Awaited<ReturnType<typeof listDueExportOutbox>>)
   for (const row of due) {
@@ -2423,6 +2433,9 @@ async function runExportOutboxSweep(): Promise<void> {
       touchConnectorHeartbeat(row.connectorId, { kind: "outbound", success: false, error: e?.message || "retry failed" })
         .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
     }
+  }
+  } finally {
+    outboxSweepRunning = false
   }
 }
 

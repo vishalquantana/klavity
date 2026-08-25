@@ -1461,6 +1461,14 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("export_outbox_due_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS export_outbox_proj_idx ON export_outbox (project_id, status)")
     .catch((e: any) => console.warn("export_outbox_proj_idx skipped:", e?.message || e))
+  // P3 (QA): stop two concurrent enqueues from both SELECT-then-INSERTing a duplicate PENDING row for
+  // the same (feedback,connector). A partial UNIQUE index makes "at most one pending row per pair" a DB
+  // invariant so the loser of an INSERT race hits a constraint (enqueueExportOutbox catches it and re-
+  // arms the winner instead). Additive + IF NOT EXISTS; if a prod DB already has duplicate pending rows
+  // the CREATE just skips (caught below) — no double-FILING results anyway (the sweep's atomic claim +
+  // findPriorSuccessfulExport precheck already dedupe at file time), this only tidies the queue forward.
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS export_outbox_pending_uniq ON export_outbox (feedback_id, connector_id) WHERE status='pending'")
+    .catch((e: any) => console.warn("export_outbox_pending_uniq skipped:", e?.message || e))
   // KLAVITYKLA-149: persist the wizard-picked judge/reviewer Sim so it survives a resume and lands on the
   // crystallized Trail. (Relocated to the end of applySchema per the append-only migration rule.)
   if (needCol("author_sessions", "judge_persona_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN judge_persona_id TEXT")
@@ -5377,12 +5385,31 @@ export async function enqueueExportOutbox(x: {
     return id
   }
   const id = "outbox_" + crypto.randomUUID()
-  await db!.execute({
-    sql: `INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,attempts,last_error,next_attempt_at,created_by,created_at,updated_at)
-          VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)`,
-    args: [id, x.feedbackId, x.projectId, x.connectorId, x.type, x.error ?? null, nextAt, x.createdBy ?? null, now, now],
-  })
-  return id
+  try {
+    await db!.execute({
+      sql: `INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,attempts,last_error,next_attempt_at,created_by,created_at,updated_at)
+            VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)`,
+      args: [id, x.feedbackId, x.projectId, x.connectorId, x.type, x.error ?? null, nextAt, x.createdBy ?? null, now, now],
+    })
+    return id
+  } catch (e: any) {
+    // Lost an INSERT race to a concurrent enqueue of the same (feedback,connector) pending row (blocked
+    // by the export_outbox_pending_uniq partial index). Don't drop the retry — re-fetch the winner and
+    // re-arm it, matching the idempotent existing-row branch above. Re-throw only if there's no winner.
+    const raced = await db!.execute({
+      sql: "SELECT id FROM export_outbox WHERE feedback_id=? AND connector_id=? AND status='pending' LIMIT 1",
+      args: [x.feedbackId, x.connectorId],
+    })
+    if (raced.rows.length) {
+      const winner = String((raced.rows[0] as any).id)
+      await db!.execute({
+        sql: "UPDATE export_outbox SET last_error=?, next_attempt_at=?, updated_at=? WHERE id=?",
+        args: [x.error ?? null, nextAt, now, winner],
+      })
+      return winner
+    }
+    throw e
+  }
 }
 
 // List due pending outbox rows (next_attempt_at <= now), oldest first, for the retry sweep.
