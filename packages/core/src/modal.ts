@@ -623,6 +623,9 @@ export function buildModal(
     .kl-hopt:hover{background:rgba(255,255,255,.08);}
     .kl-hopt.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);border-color:transparent;}
     .kl-osq{width:13px;height:13px;border-radius:3px;display:inline-block;}
+    .kl-hmask{display:inline-flex;align-items:center;gap:5px;height:38px;padding:0 8px;border-radius:9px;color:#cfd5ea;font-size:11px;font-weight:600;cursor:pointer;user-select:none;white-space:nowrap;}
+    .kl-hmask:hover{background:rgba(255,255,255,.08);}
+    .kl-hmask input{cursor:pointer;margin:0;accent-color:var(--kl-accent);}
     .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
     @media (max-width:760px){.kl-hhint{display:none;}}
@@ -1016,7 +1019,8 @@ export function buildModal(
         ${voiceSupported ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
       </div>
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
-      <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
+      ${/* KLA-593: the "Mask numbers" redaction toggle moved to the TOP of the image-editing (hero) toolbar,
+          grouped with the other redaction/editing tools — see heroToolbarHtml. */''}
       <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
       ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" accept="video/*,image/*,.pdf,.log,.har,.txt,.json,.csv,.zip" multiple style="display:none">' : ''}
       <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
@@ -1050,9 +1054,6 @@ export function buildModal(
 
   overlay.appendChild(modal)
   shadowRoot.appendChild(overlay)
-
-  const maskChk = shadowRoot.getElementById('klavity-mask-numbers') as HTMLInputElement | null
-  if (maskChk) maskChk.addEventListener('change', () => { maskOn = maskChk.checked })
 
   // ── Floating info tooltip — lives outside the modal so overflow:hidden never clips it. ──
   // .klavity-info-pop in the markup is the text source; we copy its innerHTML into a shadow-root-level
@@ -2389,6 +2390,10 @@ export function buildModal(
       `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
     const c = (col: string) => `<button type="button" class="kl-hcolor" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
     return (
+      // Redaction controls grouped at the TOP of the editing toolbar: the "Mask numbers" toggle (masks digits
+      // in fresh captures) sits alongside the Pixelate brush (drag to mosaic-redact a region of this image).
+      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
+      `<span class="kl-hsep"></span>` +
       t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
       t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
       t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
@@ -2396,6 +2401,7 @@ export function buildModal(
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
       t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
       t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
       c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
@@ -2425,7 +2431,7 @@ export function buildModal(
       (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop · scroll to zoom · shift-drag to pan</span>`
+      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · B redact · K crop · scroll to zoom · shift-drag to pan</span>`
     )
   }
 
@@ -2523,6 +2529,9 @@ export function buildModal(
       let activeColor = '#ef4444'
       let textSize = 26
       let textOutline: 'black' | 'white' | 'none' = 'black'
+      // The currently-open text-annotation <input> (in document.body), or null. The document-level tool-hotkey
+      // handler bails while this is set so letters land as text, not tool switches (KLA-593 BUG 0).
+      let activeTextInput: HTMLInputElement | null = null
       const textOpts = tools.querySelector('#kl-hero-textopts') as HTMLElement | null
       const persist = () => {
         if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
@@ -2539,6 +2548,10 @@ export function buildModal(
       }
       tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
+      // Mask-numbers toggle now lives at the top of the editing toolbar (moved from the capture panel). It
+      // drives the same `maskOn` flag consumed by every capture path, so masking behaviour is unchanged.
+      const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
+      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
@@ -2583,6 +2596,7 @@ export function buildModal(
         if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey }
         if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
         if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2 }
+        if (tool === 'pixelate') return { type: 'pixelate', x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
         return null
       }
       // ── Wheel-zoom + Shift-drag pan on the hero image. Zoom is a uniform translate()+scale() transform,
@@ -2653,9 +2667,19 @@ export function buildModal(
           const inputFont = Math.max(6, textSize * s)
           const sz = textSize, ol = textOutline
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:transparent;border:0;color:${activeColor};font-size:${inputFont}px;font-family:sans-serif;font-weight:700;text-shadow:${shadow};outline:1px dashed ${activeColor};z-index:2147483647;min-width:80px;`
-          document.body.appendChild(input); input.focus()
-          input.addEventListener('blur', () => { if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } safeRemove(input) }, { once: true })
-          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
+          document.body.appendChild(input)
+          // Track the live text input so the document-level tool-hotkey handler can bail unconditionally while
+          // it exists (belt-and-suspenders alongside its composedPath guard).
+          activeTextInput = input
+          // KLA-593 BUG 0: focus MUST be deferred to the next frame. Focusing synchronously inside this
+          // pointerdown gets undone by the browser's default mousedown action moving focus to the (unfocusable)
+          // canvas → the empty input is then blurred + removed before a single character can land, so the Text
+          // tool "couldn't type" and letter keys fell through to the tool shortcuts. requestAnimationFrame runs
+          // AFTER that default action, so the caret sticks and every character (incl. t/l/r/o/c/k/p/b) types
+          // into the input rather than triggering a tool shortcut.
+          requestAnimationFrame(() => { if (document.body.contains(input)) input.focus() })
+          input.addEventListener('blur', () => { activeTextInput = null; if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } safeRemove(input) }, { once: true })
+          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); if (ke.key === 'Escape') { input.value = ''; input.blur() } ke.stopPropagation() })
           return
         }
         if (activeTool === 'count') {
@@ -2710,13 +2734,15 @@ export function buildModal(
           return
         }
         // #449: snapshot before adding so this shape becomes one undo step in the unified history.
-        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow'
+        const isPixel = activeTool === 'pixelate' && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4
+        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow' || isPixel
         if (willAdd) pushUndo(index)
         if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
         else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
         else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        else if (isPixel) annotator.addShape({ type: 'pixelate', x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         persist()
       })
       // KLAVITYKLA-507: safety net — if the OS cancels the pointer stream (e.g. gesture interrupt), drop any
@@ -2728,9 +2754,12 @@ export function buildModal(
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
-      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', k: 'crop' }
+      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', b: 'pixelate', k: 'crop' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
+        // KLA-593 BUG 0 (defense-in-depth): if a text-annotation input is open, NEVER treat keys as tool
+        // shortcuts — let every character reach the field. Robust even if focus is momentarily elsewhere.
+        if (activeTextInput && document.body.contains(activeTextInput)) return
         // This is a document-level listener but the modal (Describe textarea, the Text-tool input, etc.)
         // lives in a shadow root — so e.target is RETARGETED to the shadow host (a DIV), not the focused
         // field. Use composedPath()[0] to see the real innermost target, else typing in any field triggers
@@ -2916,12 +2945,14 @@ export function buildModal(
           const input = document.createElement('input')
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:16px;outline:none;z-index:9999999;min-width:80px;`
           document.body.appendChild(input)
-          input.focus()
+          // KLA-593 BUG 0: defer focus to the next frame so the browser's default mousedown focus-shift (to
+          // the unfocusable canvas) doesn't immediately blur + remove this empty input before the user types.
+          requestAnimationFrame(() => { if (document.body.contains(input)) input.focus() })
           input.addEventListener('blur', () => {
             if (input.value.trim()) annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim() })
             safeRemove(input)
           }, { once: true })
-          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur() })
+          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
         }
       })
 
