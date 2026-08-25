@@ -1,9 +1,9 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
-import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds } from "./capture"
+import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
-import { cropDataUrl, type Rect } from "@klavity/core/crop"
+import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
@@ -36,6 +36,32 @@ const notKlavityChrome = (n: Node): boolean => {
   const el = n as HTMLElement
   if (el.id === HOST_ID) return false
   return !(typeof el.getAttribute === "function" && el.getAttribute("data-klavity-ui") != null)
+}
+
+// Region screenshot (right-click-drag OR the composer's "Region" button). Crops the selected VIEWPORT rect
+// out of a TRUE full-page DOM capture anchored at the PAGE ORIGIN (documentElement + fullPageCaptureSize),
+// mapping the rect by the selection's CUMULATIVE scroll (window scroll + any scrolled inner-scroller). This
+// fixes the founder P1: the old path captured document.body (whose box collapses to viewport height on
+// app-shell / height:100vh layouts) and added only window.scroll (which is 0 when the page scrolls INSIDE a
+// child, not the document) — so a selection cropped the wrong, often blank/white, area. When the selection
+// maps OUTSIDE the capture (content deep inside a scrolled inner-scroller the DOM render clipped away), the
+// crop is flagged degenerate → suggestSharp so the composer steers the reporter to the pixel-perfect Screen
+// (getDisplayMedia) capture instead of seeding a blank crop.
+async function captureRegionCrop(rect: Rect): Promise<{ dataUrl: string; quality: CaptureQuality; suggestSharp: boolean }> {
+  const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
+  const { width, height } = fullPageCaptureSize()
+  const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(node, { filter: notKlavityChrome, width, height })
+  const { scrollX, scrollY } = cumulativeScrollForRect(rect)
+  let cropped: string
+  let degenerate = false
+  try {
+    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale, { strict: true })
+  } catch {
+    degenerate = true
+    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale)
+  }
+  const suggestSharp = (!!(blank || partial || degenerate) || hasUncapturableEmbeds()) && sharpCaptureSupported()
+  return { dataUrl: cropped, quality, suggestSharp }
 }
 const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
@@ -114,8 +140,10 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
         let shotQuality: CaptureQuality | undefined
         try {
           if (r.width >= 1 && r.height >= 1) {
-            const { dataUrl, scale, quality } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
-            shot = await cropDataUrl(dataUrl, { x: r.left, y: r.top, w: r.width, h: r.height }, window.scrollX, window.scrollY, scale)
+            // Same pixel-accurate region crop as the drag/Region paths so the picked-element shot matches the
+            // element's box even on app-shell / inner-scroller layouts (full-page source + cumulative scroll).
+            const { dataUrl, quality } = await captureRegionCrop({ x: r.left, y: r.top, w: r.width, h: r.height })
+            shot = dataUrl
             shotQuality = quality
           }
         } catch { /* the crop is best-effort — the selector still pins the element even if capture fails */ }
@@ -982,14 +1010,11 @@ async function mount() {
       // image within ~1s while onCaptureFull() finishes the full-page render in the background and swaps in.
       onCaptureViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
       onRegionCapture: async (rect) => {
-        // Crop the selected VIEWPORT rect out of a full-page capture. Pass the capture's scale so the rect
-        // lands correctly even when the fetch-free fallback downscaled a tall page (otherwise → black).
-        const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
-        // KLAVITYKLA-473: a blank/partial crop just carries the suggestSharp hint into the composer; we no
-        // longer auto-invoke getDisplayMedia here (it surprised users with a screen-share prompt).
-        const cropped = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
-        // KLA-587: a cross-origin iframe inside the cropped rect is uncapturable by the DOM render too → steer to Screen.
-        return { dataUrl: cropped, quality, suggestSharp: (!!(blank || partial) || hasUncapturableEmbeds()) && sharpCaptureSupported() }
+        // Pixel-accurate region crop: full-page source anchored at page origin + cumulative-scroll mapping,
+        // with a degenerate-crop guard that steers to the sharp Screen capture instead of a blank sliver.
+        // KLAVITYKLA-473: a blank/partial/degenerate crop just carries the suggestSharp hint into the
+        // composer; we no longer auto-invoke getDisplayMedia here (it surprised users with a share prompt).
+        return await captureRegionCrop(rect)
       },
       // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images) +
       // scroll-stitch to a full-page image. Feature-detected — undefined on iOS Safari (no getDisplayMedia),
@@ -1159,6 +1184,12 @@ async function mount() {
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
       onClose: (reason?: 'submitted') => {
         emit("close", {})
+        // Bug 2: drop the open-composer reference the moment it closes/minimizes so a follow-up region
+        // capture reliably (re)OPENS an EXPANDED composer. close() removes the host on an exit animation
+        // (~700ms), so isConnected can briefly stay true after a minimize — without clearing this, a region
+        // drag right after minimizing saw a still-"open" composer and openReport early-returned, leaving the
+        // reporter stuck at the minimized dock bar instead of expanding with the new shot.
+        if (composer === ctrl) composer = null
         // 'submitted' => the report was handed off to the background pill; onSubmit/afterFiled owns
         // clearing the evidence session, so skip the keep-evidence / restore-dock bookkeeping here.
         if (reason === "submitted") { evMinimizing = false; return }
@@ -1207,8 +1238,11 @@ async function mount() {
           } catch { /* skip an unreadable shot */ }
         }
         if (opts?.initialShot) {
-          ctrl.addScreenshot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname }, opts.initialShotSuggestSharp)
-          void queueEvWrite(() => persistEvShot(ev.id, opts.initialShot!))
+          // Bug 3 (wrong image selected): seed the freshly-captured region shot as a GENUINE capture
+          // (addCapturedShot → fireAdded) so it becomes the SELECTED/active hero at the END of the strip,
+          // not left behind the first seeded session shot. onShotAdded persists it to the session, so the
+          // separate persistEvShot call is no longer needed (it would double-persist).
+          ctrl.addCapturedShot(opts.initialShot, opts.initialShotQuality, { pageUrl: location.href, pagePath: location.pathname }, opts.initialShotSuggestSharp)
         }
       })()
     } else if (opts?.initialShot) {
@@ -1546,19 +1580,24 @@ async function mount() {
     let shotQuality: "rendered" | "wireframe" | "real-pixel" | undefined
     let shotSuggestSharp = false
     try {
-      // Full-page capture (CSP/CORS-resilient), then crop to the selected VIEWPORT rect (cropDataUrl adds
-      // the scroll offset). Pass the capture's scale so the crop is correct even when the fetch-free
-      // fallback downscaled a tall page. Best-effort: if capture fails, still open the composer to retry.
-      const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(document.body, { filter: notKlavityChrome })
-      // KLAVITYKLA-473: this right-click-drag is a path QA flagged as blank on PX4/Charantra. We no longer
-      // auto-invoke getDisplayMedia (the #460 surprise screen-share prompt) — instead crop as normal and
-      // carry a suggestSharp hint so the composer nudges the user to the Screen button on their own click.
-      shot = await cropDataUrl(dataUrl, rect, window.scrollX, window.scrollY, scale)
-      shotQuality = quality
-      shotSuggestSharp = !!(blank || partial) && sharpCaptureSupported()
+      // Pixel-accurate region crop (full-page source anchored at page origin + cumulative-scroll mapping +
+      // degenerate guard). Fixes the founder P1 where the crop came back a wrong/blank area on app-shell /
+      // inner-scroller pages. Best-effort: if capture fails, still open the composer to retry.
+      const r = await captureRegionCrop(rect)
+      shot = r.dataUrl
+      shotQuality = r.quality
+      shotSuggestSharp = r.suggestSharp
     } catch { /* fall back to an empty composer */ }
+    // Bug 2 (region snapshot must show its preview): if a composer is already open, add the fresh region shot
+    // straight to it — selected as the active hero + persisted — instead of calling startBugReport, whose
+    // openReport() early-returns while a composer is open (which silently dropped the new shot). When no
+    // composer is open (or it was minimized to the dock), startBugReport (re)opens it EXPANDED, seeded with
+    // this shot as the active preview (see the seed path in openReport, which now selects the newest shot).
+    if (shot && composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
+      try { composer.addCapturedShot(shot, shotQuality, undefined, shotSuggestSharp); return } catch { /* fall through to (re)open */ }
+    }
     // KLA-412: a region shot also starts/continues an evidence session (the cropped selection becomes the
-    // first shot, tagged with the current page).
+    // active shot, tagged with the current page).
     void startBugReport(shot ? { initialShot: shot, initialShotQuality: shotQuality, initialShotSuggestSharp: shotSuggestSharp } : undefined)
   }
   let reportArmed = true

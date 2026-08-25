@@ -360,6 +360,12 @@ export interface ModalController {
   // KLAVITYKLA-473: an optional 4th arg flags a seeded shot as blank/partial so the sharp-capture callout
   // shows for it too (e.g. a right-click-drag region shot the host detected was partial). Defaults false.
   addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => void
+  // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
+  // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
+  // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
+  // added to an already-open composer, or seeded as the newest shot when (re)opening — so the composer shows
+  // the fresh capture, not the first seeded one. (addScreenshot leaves activeIndex alone for silent seeds.)
+  addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => void
   close: () => void
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
@@ -1117,6 +1123,8 @@ export function buildModal(
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
     addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp),
+    // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
+    addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp),
     close,
     setReplayState,
   }
@@ -1221,6 +1229,14 @@ export function buildModal(
 
       strip.appendChild(wrap)
     })
+    // Bug 3: keep the active thumbnail in view — when a fresh capture is selected at the END of a long
+    // strip, scroll it into view so the reporter sees the shot that's now in the hero (best-effort).
+    try {
+      const activeWrap = strip.children[activeIndex] as HTMLElement | undefined
+      if (activeWrap && typeof activeWrap.scrollIntoView === 'function') {
+        activeWrap.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
+    } catch { /* scrollIntoView is a nicety — never let it break the strip render */ }
     // KLAVITYKLA-509: while auto-capture is rendering the first shot, show a skeleton tile so the slot isn't
     // blank. Swapped out the instant addScreenshot() runs (which flips `capturing` off + re-renders).
     if (capturing) {

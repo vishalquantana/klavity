@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { cropDataUrl } from '../src/crop'
+import { cropDataUrl, computeSourceRect, cumulativeScrollForRect } from '../src/crop'
 
 let lastDrawImageArgs: number[] = []
 
@@ -59,5 +59,68 @@ describe('cropDataUrl', () => {
     await cropDataUrl('x', { x: 400, y: 350, w: 300, h: 200 }, 0, 1000, 0.5)
     const [sx, sy, sw, sh] = lastDrawImageArgs
     expect([sx, sy, sw, sh]).toEqual([200, 675, 150, 100])
+  })
+
+  it('maps a retina (dpr=2) source: rect+scroll multiplied by scale 2', async () => {
+    // A dpr-2 source rendered at scale 2 → image is CSS*2. A viewport rect (100,50,300,80) scrolled 200px
+    // must land at image px (200, 500, 600, 160), i.e. everything *2 with scroll folded into y.
+    stubImage(3000, 20000)
+    await cropDataUrl('x', { x: 100, y: 50, w: 300, h: 80 }, 0, 200, 2)
+    expect(lastDrawImageArgs.slice(0, 4)).toEqual([200, 500, 600, 160])
+  })
+
+  it('viewport source (scale 1, NO scroll): rect maps 1:1 with no offset', async () => {
+    stubImage(1280, 900)
+    await cropDataUrl('x', { x: 40, y: 12, w: 200, h: 48 }, 0, 0, 1)
+    expect(lastDrawImageArgs.slice(0, 4)).toEqual([40, 12, 200, 48])
+  })
+
+  it('strict mode THROWS on a degenerate crop (selection maps outside the capture)', async () => {
+    // Inner-scroller content the DOM render clipped away: rect+scroll (y 900) is far below a 900px-tall
+    // capture, so the source rect clamps to a sliver → strict must throw so the caller steers to Screen.
+    stubImage(1280, 900)
+    await expect(
+      cropDataUrl('x', { x: 40, y: 900, w: 300, h: 200 }, 0, 0, 1, { strict: true }),
+    ).rejects.toThrow(/degenerate/i)
+  })
+
+  it('strict mode does NOT throw when the selection fits inside the capture', async () => {
+    stubImage(1280, 900)
+    await expect(
+      cropDataUrl('x', { x: 40, y: 12, w: 300, h: 200 }, 0, 0, 1, { strict: true }),
+    ).resolves.toMatch(/^data:/)
+  })
+})
+
+describe('computeSourceRect', () => {
+  it('flags a crop that clamps to a sliver as degenerate', () => {
+    // Selection at y=880 of a 900-tall image with h=200 → only ~19px of height survive (< half) → degenerate.
+    const r = computeSourceRect({ x: 0, y: 880, w: 300, h: 200 }, 0, 0, 1, 1280, 900)
+    expect(r.degenerate).toBe(true)
+    expect(r.sh).toBeLessThan(200 * 0.5)
+  })
+
+  it('is NOT degenerate when the full selection fits', () => {
+    const r = computeSourceRect({ x: 10, y: 10, w: 300, h: 200 }, 0, 0, 1, 1280, 900)
+    expect(r.degenerate).toBe(false)
+    expect([r.sx, r.sy, r.sw, r.sh]).toEqual([10, 10, 300, 200])
+  })
+})
+
+describe('cumulativeScrollForRect', () => {
+  it('adds a scrolled inner-scroller offset that window.scroll (0) misses (app-shell)', () => {
+    // Simulate an app-shell: the DOCUMENT is at scroll 0, but the content lives in a child scrolled 260px.
+    const scroller = { scrollTop: 260, scrollLeft: 0, parentElement: null as any }
+    const leaf = { scrollTop: 0, scrollLeft: 0, parentElement: scroller }
+    scroller.parentElement = { scrollTop: 0, scrollLeft: 0, parentElement: null } // stands in for <body>
+    vi.stubGlobal('window', { scrollX: 0, scrollY: 0, pageXOffset: 0, pageYOffset: 0 })
+    vi.stubGlobal('document', {
+      documentElement: { tag: 'html' },
+      body: scroller.parentElement,
+      elementFromPoint: () => leaf,
+    })
+    const { scrollX, scrollY } = cumulativeScrollForRect({ x: 100, y: 40, w: 300, h: 90 })
+    expect(scrollX).toBe(0)
+    expect(scrollY).toBe(260) // picked up the inner scroller's scrollTop, not just window's 0
   })
 })
