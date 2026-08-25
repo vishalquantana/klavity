@@ -852,6 +852,12 @@ export function buildModal(
     .kl-hcolor{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,.65);cursor:pointer;padding:0;transition:transform .12s ease;}
     .kl-hcolor:hover{transform:scale(1.14);}
     .kl-hcolor.kl-on{outline:2px solid #fff;outline-offset:2px;}
+    /* Light swatches (white/yellow) need a dark inset ring so they read against the toolbar. */
+    .kl-hcolor-light{border-color:rgba(0,0,0,.35);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);}
+    .kl-hcolor-cwrap{position:relative;display:inline-flex;}
+    /* Rainbow "custom colour" swatch — opens the native picker; its bg is overwritten with the chosen colour. */
+    .kl-hcolor-custom{background:conic-gradient(from 0deg,#ef4444,#f59e0b,#facc15,#16a34a,#3b82f6,#a855f7,#ef4444);}
+    .kl-hcolor-input{position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;}
     .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
     .kl-hgrow{flex:1;}
     .kl-hhint{color:#7d879f;font-size:11px;font-weight:600;white-space:nowrap;}
@@ -3195,7 +3201,14 @@ export function buildModal(
   function heroToolbarHtml(showRevert: boolean): string {
     const t = (name: string, label: string, glyph: string, key: string) =>
       `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
-    const c = (col: string) => `<button type="button" class="kl-hcolor" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
+    // Light swatches (white/yellow) get a dark inset ring so they're visible against the light-on-dark toolbar.
+    const isLightSwatch = (col: string) => {
+      const h = col.replace('#', '')
+      if (!/^[0-9a-fA-F]{6}$/.test(h)) return false
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.7
+    }
+    const c = (col: string) => `<button type="button" class="kl-hcolor${isLightSwatch(col) ? ' kl-hcolor-light' : ''}" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
     return (
       // Redaction controls grouped at the TOP of the editing toolbar: the "Mask numbers" toggle (masks digits
       // in fresh captures) sits alongside the Pixelate brush (drag to mosaic-redact a region of this image).
@@ -3211,7 +3224,14 @@ export function buildModal(
       t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
-      c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
+      c('#ef4444') + c('#f97316') + c('#16a34a') + c('#3b82f6') + c('#ffffff') + c('#111827') +
+      // Custom colour picker — a rainbow swatch that opens a native <input type="color">. The chosen colour
+      // becomes the active colour and shows as the selected swatch. Input is visually hidden but focusable
+      // via the button (kept inside the shadow root so its styling stays scoped).
+      `<span class="kl-hcolor-cwrap">` +
+        `<button type="button" class="kl-hcolor kl-hcolor-custom" title="Custom colour" aria-label="Choose a custom colour"></button>` +
+        `<input type="color" class="kl-hcolor-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1">` +
+      `</span>` +
       // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
       // The "Stroke" label + S/M/L/XL sizes live in ONE non-wrapping group so the label always reads with
       // its options as a single control (never label-here / sizes-on-a-separate-row at the narrow width).
@@ -3387,12 +3407,24 @@ export function buildModal(
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
         if (textOpts) textOpts.hidden = t !== 'text'
       }
+      const customBtn = tools.querySelector('.kl-hcolor-custom') as HTMLElement | null
+      const colorInput = tools.querySelector('.kl-hcolor-input') as HTMLInputElement | null
       const selectColor = (col: string, btn?: HTMLElement) => {
         activeColor = col
         tools.querySelectorAll<HTMLElement>('[data-color]').forEach(el => el.classList.toggle('kl-on', el === btn))
+        // The custom swatch has no [data-color], so toggle its selected state explicitly.
+        if (customBtn) customBtn.classList.toggle('kl-on', customBtn === btn)
       }
       tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
+      // Custom colour picker: clicking the rainbow swatch opens the native <input type="color">; picking a
+      // colour makes it the active colour and paints the swatch so it reads as the current selection.
+      if (customBtn && colorInput) {
+        customBtn.addEventListener('click', () => colorInput.click())
+        const applyCustom = () => { customBtn.style.background = colorInput.value; selectColor(colorInput.value, customBtn) }
+        colorInput.addEventListener('input', applyCustom)
+        colorInput.addEventListener('change', applyCustom)
+      }
       // Mask-numbers toggle now lives at the top of the editing toolbar (moved from the capture panel). It
       // drives the same `maskOn` flag consumed by every capture path, so masking behaviour is unchanged.
       const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
@@ -3646,8 +3678,14 @@ export function buildModal(
         <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
         <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#16a34a" style="background:#16a34a;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#3b82f6" style="background:#3b82f6;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#ffffff" style="background:#ffffff;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);"></button>
         <button data-color="#111827" style="background:#111827;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;border:1px solid #555;"></button>
+        <span style="position:relative;display:inline-flex;">
+          <button id="klavity-color-custom" title="Custom colour" aria-label="Choose a custom colour" style="width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;background:conic-gradient(from 0deg,#ef4444,#f59e0b,#facc15,#16a34a,#3b82f6,#a855f7,#ef4444);"></button>
+          <input type="color" id="klavity-color-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1" style="position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;">
+        </span>
         <span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;">
           <button id="klavity-zoom-out" class="kl-zb" title="Zoom out" aria-label="Zoom out">−</button>
           <span id="klavity-zoom-pct" style="min-width:46px;text-align:center;color:#a6adc8;font-size:12px;font-variant-numeric:tabular-nums;">100%</span>
@@ -3728,6 +3766,17 @@ export function buildModal(
       }
       toolbar.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       toolbar.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => { activeColor = (b as HTMLElement).dataset.color! }))
+      // Custom colour picker (parity with the hero toolbar): open the native picker and adopt the chosen colour.
+      {
+        const cBtn = toolbar.querySelector('#klavity-color-custom') as HTMLElement | null
+        const cIn = toolbar.querySelector('#klavity-color-input') as HTMLInputElement | null
+        if (cBtn && cIn) {
+          cBtn.addEventListener('click', () => cIn.click())
+          const apply = () => { cBtn.style.background = cIn.value; activeColor = cIn.value }
+          cIn.addEventListener('input', apply)
+          cIn.addEventListener('change', apply)
+        }
+      }
       toolbar.querySelector('#klavity-undo')!.addEventListener('click', () => annotator.undo())
       toolbar.querySelector('#klavity-clear-ann')!.addEventListener('click', () => annotator.clearAll())
 
