@@ -1,0 +1,113 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Write a Blameless Postmortem for a Production Bug · Klavity</title>
+<meta name="description" content="A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Write a Blameless Postmortem for a Production Bug"><meta property="og:description" content="A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Write a Blameless Postmortem for a Production Bug"><meta name="twitter:description" content="A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Write a Blameless Postmortem for a Production Bug","description":"A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template.","datePublished":"2026-08-25","dateModified":"2026-08-25","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write a Blameless Postmortem for a Production Bug","item":"https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a blameless postmortem?","acceptedAnswer":{"@type":"Answer","text":"A blameless postmortem investigates a production incident by focusing on the systems, processes, and information gaps that let the bug through — not on which person made a mistake. The goal is honest reporting: when people aren't punished for the timeline, they document what really happened, which is the only way to find the true root cause."}},{"@type":"Question","name":"When should you write a postmortem?","acceptedAnswer":{"@type":"Answer","text":"Write one for any incident that reached production and caused customer-visible impact, data loss, or a significant near-miss. Small internal bugs caught before release usually don't need a full postmortem, but a recurring bug — even a minor one — is a strong signal that a systemic gap deserves the full treatment."}},{"@type":"Question","name":"What is the difference between a postmortem and root cause analysis?","acceptedAnswer":{"@type":"Answer","text":"Root cause analysis is one section of a postmortem — the part that traces the bug back to its origin. The postmortem is the wider document: it also covers the timeline, the customer impact, how the incident was detected and resolved, and the action items that prevent recurrence."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-25</div>
+    <h1>How to Write a Blameless Postmortem for a Production Bug</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A production-bug postmortem should document the timeline, root cause, and impact — then convert each contributing factor into an owned, dated action item. Keep it blameless (focus on systems and gaps, not people) so engineers report honestly, and always add a regression test so the same bug can't ship twice.</div>
+    <div class="prose"><p>A postmortem for a production bug is a written record that answers three questions: what broke, why it broke, and what will stop it from happening again. A useful one is blameless — it focuses on the systems and information gaps that let the bug reach users, not on who typed the change — and it ends with owned, dated action items rather than vague promises. Write it while the details are fresh, ideally within a day or two of resolution, and keep it short enough that people actually read it.</p>
+
+<h2>What goes in a production-bug postmortem?</h2>
+<p>A complete postmortem has a predictable structure, which is what makes it fast to write and easy to scan later. Include these sections:</p>
+<ul>
+<li><strong>Summary</strong> — two or three sentences: what happened, who was affected, and for how long.</li>
+<li><strong>Impact</strong> — the concrete, measurable effect: which users, which feature, how many requests failed, whether any data was lost or corrupted.</li>
+<li><strong>Timeline</strong> — a timestamped sequence from the moment the faulty change shipped to the moment service was fully restored.</li>
+<li><strong>Root cause</strong> — the underlying reason the bug existed and reached production, not just the line of code that threw.</li>
+<li><strong>Detection and resolution</strong> — how you found out, how long that took, and what you did to stop the bleeding.</li>
+<li><strong>Action items</strong> — specific changes, each with an owner and a due date.</li>
+</ul>
+<p>Keep the tone factual. A postmortem is a reference document, not a performance review.</p>
+
+<h2>How to build the incident timeline</h2>
+<p>The timeline is the backbone of the document, and it has to be built from evidence rather than memory. Reconstruct it in order:</p>
+<ol>
+<li><strong>Anchor to the deploy.</strong> Find the exact commit or release that introduced the bug and note when it shipped. If you're not sure which change is responsible, a bisect over the suspect range narrows it quickly.</li>
+<li><strong>Pull the signals.</strong> Gather the error logs, alerts, dashboards, and the first customer report, each with its own timestamp. These are your objective markers.</li>
+<li><strong>Record the human moments.</strong> When did someone notice? When was the incident declared? When did the fix or rollback go out? These reveal how long detection and response actually took.</li>
+<li><strong>Note the gaps.</strong> A long stretch between "bug shipped" and "anyone noticed" is itself a finding — it points at missing monitoring, not a slow engineer.</li>
+</ol>
+<p>Use UTC and a consistent format so the timeline reads unambiguously across a distributed team.</p>
+
+<h2>How to find the root cause without blaming a person</h2>
+<p>The most common postmortem failure is stopping at the first symptom — "the API returned 500" — instead of the underlying gap that let a 500 reach production. Push past the symptom by asking "why" repeatedly until the answer is a process or a system, not a person. A null-pointer crash isn't a root cause; the root cause is closer to "an unexpected null was possible because the input was never validated, and no test covered the empty case." For the full method, see our guide to <a href="/blog/root-cause-analysis-for-bugs">root cause analysis for bugs</a>.</p>
+<p>Blameless doesn't mean no accountability — the action items carry that. It means the investigation assumes competent people acting on the information they had. When a team trusts that the write-up won't be used against them, they document the messy reality, and the messy reality is where the real fixes hide.</p>
+
+<h2>Turning findings into action items that stick</h2>
+<p>A postmortem with no follow-through is just a story. Every contributing factor should map to at least one action item, and each item needs three things to be real:</p>
+<ol>
+<li><strong>A named owner.</strong> "The team" owns nothing; one person owns it.</li>
+<li><strong>A due date.</strong> Undated action items drift indefinitely. Tie them to a sprint or a specific week.</li>
+<li><strong>A tracked ticket.</strong> Put each item in your bug tracker or backlog so it lives alongside other prioritized work rather than dying in the document.</li>
+</ol>
+<p>Distinguish prevention from mitigation. Prevention stops the bug from being written or shipped (better validation, a required review, a test); mitigation shrinks the blast radius next time (an alert, a feature flag, a faster rollback path). A strong postmortem produces at least one of each.</p>
+
+<h2>Always close with a regression test</h2>
+<p>The single most durable action item is a test that reproduces the exact bug — one that fails against the broken code and passes against the fix. Without it, the same defect can quietly return in a future refactor and you'll be writing this postmortem again. Capturing the precise conditions that triggered the bug (the input, the state, the environment) makes that test straightforward to write; our guide on <a href="/blog/turn-a-bug-into-a-regression-test">turning a bug into a regression test</a> walks through it step by step.</p>
+<p>This is also where good evidence pays off. When the original report already carries the reproduction steps, console output, and network state, you spend the postmortem analyzing the incident instead of reconstructing it from scratch. Klavity <a href="/snap">Snap</a> captures that context at the moment a bug is flagged, so the timeline and the repro are waiting for you when you sit down to write. Once the fix is in, an <a href="/autosim">AutoSim</a> end-to-end test can hold the line against the same regression as your UI keeps changing.</p>
+
+<h2>A short postmortem template</h2>
+<p>You don't need heavyweight tooling to start — a shared document with these headings is enough:</p>
+<ul>
+<li><strong>Summary:</strong> one paragraph.</li>
+<li><strong>Impact:</strong> who, what, how long, how measured.</li>
+<li><strong>Timeline:</strong> timestamped events in UTC.</li>
+<li><strong>Root cause:</strong> the system/process gap.</li>
+<li><strong>What went well / what was hard:</strong> a few honest bullets.</li>
+<li><strong>Action items:</strong> owner, due date, ticket link.</li>
+</ul>
+<p>Review it as a team, publish it somewhere searchable, and revisit the action items at your next planning session. A postmortem's value isn't in the writing — it's in the recurring bug that never comes back. For more on reading incident signals and preventing repeat defects, browse the <a href="/blog">Klavity blog</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Reconstruct an evidence-based timeline before assigning any cause</li><li>Trace to a root cause, not the first symptom you find</li><li>Convert every contributing factor into an owned, dated action item</li><li>Add a regression test so the exact bug can't ship again</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is a blameless postmortem?</summary><p>A blameless postmortem investigates a production incident by focusing on the systems, processes, and information gaps that let the bug through — not on which person made a mistake. The goal is honest reporting: when people aren't punished for the timeline, they document what really happened, which is the only way to find the true root cause.</p></details><details><summary>When should you write a postmortem?</summary><p>Write one for any incident that reached production and caused customer-visible impact, data loss, or a significant near-miss. Small internal bugs caught before release usually don't need a full postmortem, but a recurring bug — even a minor one — is a strong signal that a systemic gap deserves the full treatment.</p></details><details><summary>What is the difference between a postmortem and root cause analysis?</summary><p>Root cause analysis is one section of a postmortem — the part that traces the bug back to its origin. The postmortem is the wider document: it also covers the timeline, the customer impact, how the incident was detected and resolved, and the action items that prevent recurrence.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

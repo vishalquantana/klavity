@@ -446,5 +446,12 @@
     "excerpt": "Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format.",
     "category": "Guides",
     "date": "2026-08-24"
+  },
+  {
+    "slug": "how-to-write-a-blameless-postmortem-for-a-production-bug",
+    "title": "How to Write a Blameless Postmortem for a Production Bug",
+    "excerpt": "A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template.",
+    "category": "Guides",
+    "date": "2026-08-25"
   }
 ]
