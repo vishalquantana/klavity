@@ -3420,8 +3420,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const shot = String(body?.shot || "")
       const pageUrl = String(body?.pageUrl || "").slice(0, 300)
       const picked = (body?.picked && typeof body.picked === "object") ? body.picked : null
+      // KLA-586: the picked element's selector + text are reporter/page-controlled DOM (an attacker
+      // page can set element text to injection strings), exactly like the reporter note and page URL
+      // above — so fence them with the SAME wrapUntrusted delimiters instead of appending raw text.
       const pickedLine = picked
-        ? `\nReporter picked this element as broken — selector: ${String(picked.selector || "").slice(0, 300)}; label: ${String(picked.text || "").slice(0, 120)}`
+        ? "\n\nPICKED ELEMENT (untrusted):\n" + wrapUntrusted(
+            `selector: ${String(picked.selector || "").slice(0, 300)}; label: ${String(picked.text || "").slice(0, 120)}`,
+          )
         : ""
       // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
       const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
