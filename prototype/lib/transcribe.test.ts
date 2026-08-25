@@ -24,7 +24,7 @@ mock.module("./s3", () => ({
 }))
 
 const { reconnectDb, applySchema, insertFeedback, feedbackById } = await import("./db")
-const { parseTranscribeResponse, transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES } = await import("./transcribe")
+const { parseTranscribeResponse, parseDeepgramResponse, transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeRecording, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } = await import("./transcribe")
 
 const RUN = `${Date.now()}_${Math.random().toString(36).slice(2)}`
 const ACCT = `acct_${RUN}`
@@ -270,11 +270,60 @@ test("transcribeFeedbackAttachments: STT failure → status=failed, report intac
   expect(Number(calls[calls.length - 1].ok)).toBe(0)
 })
 
+// ── Deepgram parsing (voice-502 fix) ─────────────────────────────────────────────────────────────
+test("parseDeepgramResponse: prerecorded shape → transcript text", () => {
+  const out = parseDeepgramResponse({
+    metadata: { duration: 3.2 },
+    results: { channels: [{ alternatives: [{ transcript: "  the coupon code does nothing on mobile  " }] }] },
+  })
+  expect(out).not.toBeNull()
+  expect(out!.text).toBe("the coupon code does nothing on mobile")
+  expect(out!.usage.seconds).toBe(3.2)
+})
+
+test("parseDeepgramResponse: utterances → timestamped segments", () => {
+  const out = parseDeepgramResponse({
+    metadata: { duration: 6 },
+    results: {
+      channels: [{ alternatives: [{ transcript: "hello there general" }] }],
+      utterances: [
+        { start: 0.1, end: 1.2, transcript: "hello there" },
+        { start: 1.3, end: 2.0, transcript: "general" },
+      ],
+    },
+  })
+  expect(out).not.toBeNull()
+  expect(out!.segments).toEqual([
+    { start: 0.1, end: 1.2, text: "hello there" },
+    { start: 1.3, end: 2.0, text: "general" },
+  ])
+})
+
+test("parseDeepgramResponse: empty transcript → null", () => {
+  expect(parseDeepgramResponse({ results: { channels: [{ alternatives: [{ transcript: "" }] }] } })).toBeNull()
+  expect(parseDeepgramResponse(null)).toBeNull()
+})
+
+test("activeTranscribeModel: DEEPGRAM_API_KEY present → deepgram model, else OpenRouter", () => {
+  const saved = process.env.DEEPGRAM_API_KEY
+  try {
+    process.env.DEEPGRAM_API_KEY = "dg-test"
+    expect(activeTranscribeModel()).toBe("deepgram/nova-2")
+    delete process.env.DEEPGRAM_API_KEY
+    expect(activeTranscribeModel()).toBe(TRANSCRIBE_MODEL)
+  } finally {
+    if (saved) process.env.DEEPGRAM_API_KEY = saved
+    else delete process.env.DEEPGRAM_API_KEY
+  }
+})
+
 test("transcribeFeedbackRecordings: no API key → status=none (no stuck spinner)", async () => {
   const saved = process.env.OPENROUTER_API_KEY
   delete process.env.OPENROUTER_API_KEY
   const savedAlt = process.env.KLAV_OPENROUTER_KEY
   delete process.env.KLAV_OPENROUTER_KEY
+  const savedDg = process.env.DEEPGRAM_API_KEY
+  delete process.env.DEEPGRAM_API_KEY
   try {
     const rec = { id: `rec_${RUN}_none`, key: "attachments/x.webm", contentType: "video/webm", transcript_status: "pending" }
     const fid = await insertFeedback({ projectId: P, observation: "no key bug", recordings: [rec] })
@@ -285,5 +334,6 @@ test("transcribeFeedbackRecordings: no API key → status=none (no stuck spinner
   } finally {
     if (saved) process.env.OPENROUTER_API_KEY = saved
     if (savedAlt) process.env.KLAV_OPENROUTER_KEY = savedAlt
+    if (savedDg) process.env.DEEPGRAM_API_KEY = savedDg
   }
 })
