@@ -6709,10 +6709,12 @@ function _tktOrderedVisibleIds() {
   const ids = []; KANBAN_COLS.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
   return ids
 }
-// KLA-563: the shareable canonical URL for a ticket's dedicated page — the hash route #tickets/<id>.
+// Share-viewer onboarding: the shareable canonical URL is the ADAPTIVE ticket link /t/<id>. A member
+// who opens it gets the full ticket; a colleague without access gets the redacted teaser + email
+// unblur. (The in-dashboard deep link still uses ?ticket= / #tickets/<id> via maybeOpenDeepLinkTicket.)
 function ticketPageUrl(id) {
-  try { const u = new URL(location.href); u.searchParams.delete("ticket"); u.hash = "tickets/" + encodeURIComponent(String(id)); return u.toString() }
-  catch (e) { return location.origin + location.pathname + "#tickets/" + encodeURIComponent(String(id)) }
+  try { return new URL("/t/" + encodeURIComponent(String(id)), location.origin).toString() }
+  catch (e) { return location.origin + "/t/" + encodeURIComponent(String(id)) }
 }
 // KLA-563 §6.7: wrap the detail screenshot in fake-browser chrome (traffic lights + URL pill) and paint
 // an immediate placeholder (skeleton + red "Reported here" box) so it's never a bare "Loading…" state.
