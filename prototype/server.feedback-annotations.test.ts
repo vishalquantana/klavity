@@ -215,3 +215,74 @@ test("malformed annotations_json never fails the submission", async () => {
   const stored = await submit("{not valid json", "bad annotations blob")
   expect(stored).toBeNull()
 })
+
+// ── KLA-605 (PRIVACY, end-to-end): pixelate/redact shapes are the reporter's PII-cover regions. Before the
+// okTypes fix, the intake sanitizer's allowlist omitted "pixelate"/"redact", so those shapes were DROPPED
+// at storage — the clean screenshot shipped WITHOUT the cover shapes and the dashboard redaction layer
+// (buildRedactionSvg) had nothing to cover → reporter-redacted PII rendered in the clear. These tests drive
+// the REAL server intake, then feed the STORED annotation through the SHIPPED dashboard redaction builder,
+// proving the redaction survives intake and covers the region end-to-end.
+function extractFn(src: string, marker: string): string {
+  const i = src.indexOf(marker); if (i < 0) throw new Error("marker not found: " + marker)
+  let j = i; while (src[j] !== "{") j++
+  let depth = 0
+  for (; j < src.length; j++) {
+    if (src[j] === "{") depth++
+    else if (src[j] === "}") { depth--; if (depth === 0) return src.slice(i, j + 1) }
+  }
+  throw new Error("unbalanced braces from: " + marker)
+}
+function fakeDoc() {
+  const created: any[] = []
+  const mk = () => ({
+    ns: null as any, tag: null as any, attrs: {} as Record<string, string>, children: [] as any[], style: {} as any,
+    setAttribute(k: string, v: any) { this.attrs[k] = String(v) },
+    getAttribute(k: string) { return this.attrs[k] },
+    appendChild(c: any) { this.children.push(c); return c },
+  })
+  return { document: { createElementNS(ns: string, tag: string) { const el: any = mk(); el.ns = ns; el.tag = tag; created.push(el); return el } }, created }
+}
+async function loadRedactBuilders() {
+  const HTML = await Bun.file(import.meta.dir + "/public/dashboard.html").text()
+  const src = extractFn(HTML, "function redactShapes(ann)") + "\n" +
+    extractFn(HTML, "function buildRedactionSvg(ann)") + "\n" +
+    "return { redactShapes, buildRedactionSvg };"
+  return (doc: any) => new Function("document", src)(doc)
+}
+
+test("KLA-605: a pixelate redaction shape SURVIVES intake (was dropped by okTypes) with coords preserved", async () => {
+  const stored = await submit({
+    w: 1000, h: 700,
+    shapes: [
+      { type: "pixelate", x: 100, y: 100, w: 200, h: 80 },
+      { type: "rect", x: 5, y: 5, w: 10, h: 10, color: "#ef4444" },  // a normal markup shape rides alongside
+    ],
+  }, "screenshot with a redacted PII region")
+  expect(stored).not.toBeNull()
+  const px = stored.shapes.find((s: any) => s.type === "pixelate")
+  expect(px).toBeTruthy()               // the redaction shape must reach storage, not be stripped
+  expect(px.x).toBe(100); expect(px.y).toBe(100); expect(px.w).toBe(200); expect(px.h).toBe(80)  // coords intact
+  expect(stored.shapes.some((s: any) => s.type === "rect")).toBe(true)  // markup unaffected
+})
+
+test("KLA-605: intake-stored pixelate feeds the dashboard redaction layer → region is covered opaque (end-to-end)", async () => {
+  const stored = await submit({ w: 1000, h: 700, shapes: [{ type: "pixelate", x: 100, y: 100, w: 200, h: 80 }] }, "e2e redaction")
+  expect(stored).not.toBeNull()
+  // Now run the STORED annotation through the actual dashboard renderer — the loop the ticket page uses.
+  const { document, created } = fakeDoc()
+  const { buildRedactionSvg } = (await loadRedactBuilders())(document)
+  const svg = buildRedactionSvg(stored)
+  expect(svg).not.toBeNull()            // redaction engages because the pixelate shape survived intake
+  const base = created.filter((e: any) => e.tag === "rect").find((r: any) => r.attrs.fill === "rgb(30,30,40)" && +r.attrs.width === 200 && +r.attrs.height === 80)
+  expect(base).toBeTruthy()             // an opaque block fully covers the reporter's redacted region
+  expect(+base.attrs.x).toBe(100); expect(+base.attrs.y).toBe(100)
+})
+
+test("KLA-605: a `redact`-aliased shape also survives intake and covers", async () => {
+  const stored = await submit({ w: 500, h: 500, shapes: [{ type: "redact", x: 10, y: 10, w: 50, h: 50 }] }, "redact alias")
+  expect(stored).not.toBeNull()
+  expect(stored.shapes.some((s: any) => s.type === "redact")).toBe(true)
+  const { document } = fakeDoc()
+  const { buildRedactionSvg } = (await loadRedactBuilders())(document)
+  expect(buildRedactionSvg(stored)).not.toBeNull()
+})
