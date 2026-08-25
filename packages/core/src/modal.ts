@@ -2402,13 +2402,18 @@ export function buildModal(
     const regenBtn = modal.querySelector('#klavity-enhance-regen') as HTMLButtonElement | null
     const spinEl = modal.querySelector('#klavity-enhance-spin') as HTMLElement | null
     let enhanceSeq = 0            // stale-guard: a slow response is ignored once a newer run started
-    let originalText: string | null = null   // the reporter's text captured ONCE before the first enhance
+    // KLA-586: the Undo restore point. Captured as the field's CURRENT text immediately before EACH
+    // enhance/regenerate — NOT once before the first enhance. Capturing once discarded any edits the
+    // reporter made to an enhanced draft before enhancing again (Undo rolled all the way back to the
+    // pre-first-enhance text). Snapshotting each run means Undo restores exactly what was there just
+    // before the most recent enhance, so edit→re-enhance→Undo returns the edited draft.
+    let originalText: string | null = null
     // The primary screenshot for grounding: the active hero shot, else the first captured shot.
     const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
     const runEnhance = async () => {
       if (busy) return
       const text = desc.value.trim()
-      if (originalText === null) originalText = desc.value   // remember the pre-enhance text once
+      originalText = desc.value   // snapshot the restore point (current field text) before THIS enhance
       const seq = ++enhanceSeq
       if (enhanceBtn) enhanceBtn.disabled = true
       if (spinEl) spinEl.hidden = false

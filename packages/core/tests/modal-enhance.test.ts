@@ -157,6 +157,48 @@ describe('AI Enhance flow', () => {
     ctrl.close()
   })
 
+  it('KLA-586: Undo after edit→re-enhance restores the EDITED draft, not the pre-first-enhance text', async () => {
+    // Repro: Enhance → hand-edit the enhanced draft → Enhance again → Undo. Before the fix, originalText was
+    // captured ONCE (pre-first-enhance), so Undo rolled all the way back and DISCARDED the user's edits.
+    let n = 0
+    const onEnhance = vi.fn(async () => ({ ...DRAFT, summary: `ENHANCED_${++n}` }))
+    const ctrl = buildModal('bug', enhanceOpts(onEnhance))
+    const desc = q(ctrl, '#klavity-desc') as any
+    desc.value = 'original note'
+    ;(q(ctrl, '#klavity-enhance') as HTMLButtonElement).click()          // first enhance
+    await new Promise(r => setTimeout(r, 0))
+    expect(desc.value).toContain('ENHANCED_1')
+    // The reporter edits the enhanced draft — this edit must survive a re-enhance+undo.
+    const edited = 'my hand-edited draft I want to keep'
+    desc.value = edited
+    ;(q(ctrl, '#klavity-enhance') as HTMLButtonElement).click()          // re-enhance
+    await new Promise(r => setTimeout(r, 0))
+    expect(desc.value).toContain('ENHANCED_2')
+    ;(q(ctrl, '#klavity-enhance-undo') as HTMLButtonElement).click()     // Undo → restore the EDITED text
+    expect(desc.value).toBe(edited)
+    expect(desc.value).not.toBe('original note')
+    ctrl.close()
+  })
+
+  it('KLA-586: Undo→Enhance→Undo chains revert to the text that preceded each enhance', async () => {
+    let n = 0
+    const onEnhance = vi.fn(async () => ({ ...DRAFT, summary: `E${++n}` }))
+    const ctrl = buildModal('bug', enhanceOpts(onEnhance))
+    const desc = q(ctrl, '#klavity-desc') as any
+    desc.value = 'A'
+    ;(q(ctrl, '#klavity-enhance') as HTMLButtonElement).click()          // A → E1, restore=A
+    await new Promise(r => setTimeout(r, 0))
+    ;(q(ctrl, '#klavity-enhance-undo') as HTMLButtonElement).click()     // Undo → A
+    expect(desc.value).toBe('A')
+    desc.value = 'B'                                                     // fresh edit
+    ;(q(ctrl, '#klavity-enhance') as HTMLButtonElement).click()          // B → E2, restore=B
+    await new Promise(r => setTimeout(r, 0))
+    expect(desc.value).toContain('E2')
+    ;(q(ctrl, '#klavity-enhance-undo') as HTMLButtonElement).click()     // Undo → B (not A)
+    expect(desc.value).toBe('B')
+    ctrl.close()
+  })
+
   it('null draft is a silent no-op (leaves the reporter text untouched, no error)', async () => {
     const onEnhance = vi.fn(async () => null)
     const ctrl = buildModal('bug', enhanceOpts(onEnhance))
