@@ -34,6 +34,35 @@ function fatEvent(seq: number) {
   return { type: 3, timestamp: seq, data: { blob, seq } }
 }
 
+function deterministicNoise(length: number, seed: number) {
+  let value = seed >>> 0
+  let blob = ""
+  for (let i = 0; i < length; i++) {
+    value = (Math.imul(value, 1_664_525) + 1_013_904_223) >>> 0
+    blob += String.fromCharCode(32 + (value % 95))
+  }
+  return blob
+}
+
+test("default cap keeps a representative replay larger than the former 600 KB limit", () => {
+  const events = [
+    { type: 4, timestamp: 0, data: { href: "https://app.example/dashboard", width: 1440, height: 900 } },
+    { type: 2, timestamp: 1, data: { node: { type: 0, html: deterministicNoise(250_000, 99) } } },
+    ...Array.from({ length: 900 }, (_, i) => ({
+      type: 3,
+      timestamp: 50 + i * 67,
+      data: { source: i % 8, text: deterministicNoise(600, i + 1) },
+    })),
+  ]
+  const encodedBytes = R.encodeReplay(events).length
+  expect(encodedBytes).toBeGreaterThan(600_000)
+  expect(encodedBytes).toBeLessThan(10_000_000)
+
+  const capped = R.capReplayEvents(events)
+  expect(capped.trimmed).toBe(false)
+  expect(capped.events).toHaveLength(events.length)
+})
+
 test("capReplayEvents trims OLDEST events first when the encoded payload exceeds the cap", () => {
   // Each event is a chunky random string; 5000 of them blow well past a small cap.
   const events = Array.from({ length: 5000 }, (_, i) => fatEvent(i))
