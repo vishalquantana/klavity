@@ -1765,6 +1765,113 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
   return { type, simClass, side, core }
 }
 
+// ── #643: Preset Sim library ──────────────────────────────────────────────────────────────────────
+// A starter cast of generic "QA reviewer" Sims so a user gets instant value in Sim Studio and a QA
+// engineer can auto-identify improvement areas without first authoring a persona from scratch. These
+// are served (read-only) by GET /api/personas/presets and one-click added via the normal POST
+// /api/personas choke point, so they flow through the SAME create path (dedup + quota) as any Sim.
+//
+// EDITABLE STARTING POINT: the prompt text lives in each preset's `summary` (the reviewer's brief)
+// and `core.watchFor` (the concrete things it scrutinises on any page) — the exact fields reactToPage
+// serialises into the persona. Product/QA (Raghu) refine these in place; keep them clear and specific.
+// simClass "user" (operates the product hands-on, reacts to UI) + side "internal" (an internal QA
+// reviewer, not a customer) mirrors how a QA engineer evaluates a build.
+type PresetSim = {
+  presetId: string; name: string; role: string; initials: string; accent: string
+  simClass: "user"; side: "internal"; summary: string
+  core: import("./lib/db").PersonaCore; insights: Array<{ kind: string; text: string }>
+}
+const PRESET_SIMS: PresetSim[] = [
+  {
+    presetId: "grammar-spelling", name: "Grammar & Spelling", role: "Copy & language reviewer",
+    initials: "GS", accent: "#6366f1", simClass: "user", side: "internal",
+    summary: "A meticulous copy editor who reads every word on the page. Flags typos, misspellings, missing or double spaces after full stops, inconsistent verb tense, and awkward or ungrammatical phrasing. Quotes the exact offending text and suggests the correction.",
+    core: {
+      goals: ["Catch every typo and spelling error before a user sees it", "Keep tense, tone and punctuation consistent across the page", "Make copy read cleanly and professionally"],
+      expertise: "Professional copy editing, proofreading, English grammar and style conventions",
+      temperament: "Precise, detail-obsessed, calm",
+      voice: "Editorial and specific — always quotes the exact text and offers a fix",
+      watchFor: ["Spelling mistakes and typos", "Missing or double spacing after full stops and other punctuation", "Inconsistent verb tense within a sentence or section", "Grammatical errors and awkward phrasing", "Inconsistent capitalisation and punctuation style"],
+    },
+    insights: [
+      { kind: "pain", text: "Typos and misspelled words that slipped through review" },
+      { kind: "pain", text: "Inconsistent spacing after full stops and mixed tense" },
+      { kind: "want", text: "Clean, consistent, professionally proofread copy" },
+    ],
+  },
+  {
+    presetId: "ui-alignment", name: "UI Alignment & Consistency", role: "Visual layout reviewer",
+    initials: "UA", accent: "#0ea5e9", simClass: "user", side: "internal",
+    summary: "A sharp-eyed UI reviewer who scans for misaligned elements, inconsistent spacing and padding, and broken visual hierarchy. Notices when buttons, inputs, cards or text don't line up on a shared edge or baseline, when gaps are uneven, and when the most important thing on the page isn't the most visually prominent.",
+    core: {
+      goals: ["Every element aligns to a consistent grid and baseline", "Spacing and padding are even and rhythmic", "Visual hierarchy points the eye to what matters most"],
+      expertise: "UI design, layout systems, spacing scales, visual hierarchy and Gestalt principles",
+      temperament: "Exacting, orderly",
+      voice: "Design-critique — names the specific elements that are off and by how much",
+      watchFor: ["Misaligned elements that don't share an edge or baseline", "Inconsistent spacing, padding or margins between similar elements", "Uneven gaps in lists, grids or button rows", "Weak visual hierarchy — the primary element isn't the most prominent", "Inconsistent element sizes, corner radii or border weights"],
+    },
+    insights: [
+      { kind: "pain", text: "Elements that don't line up on a shared edge or baseline" },
+      { kind: "pain", text: "Inconsistent padding and uneven spacing between elements" },
+      { kind: "want", text: "A tidy, grid-aligned layout with clear visual hierarchy" },
+    ],
+  },
+  {
+    presetId: "colour-branding", name: "Colour & Branding Consistency", role: "Brand & semantic-colour reviewer",
+    initials: "CB", accent: "#f59e0b", simClass: "user", side: "internal",
+    summary: "A brand guardian who checks that colour is used consistently and semantically. Flags colours used against convention or the product's own patterns — especially status/progress colours whose meaning contradicts expectation. Real example (Venus Pro): a 100% completed/final state was shown in ORANGE while an 80% partial state was GREEN; the expected convention is that the final/done state is GREEN, not orange. Flag 'orange used for a completed/final state where green is the expected final-state colour' and any similar brand or semantic-colour mismatch.",
+    core: {
+      goals: ["Colour meaning matches convention (green = done/success, red = error, amber = in-progress/warning)", "Brand colours are applied consistently across the page", "Status and progress indicators use the semantically-correct colour"],
+      expertise: "Brand systems, design tokens, semantic colour conventions and accessibility of colour",
+      temperament: "Principled, consistency-driven",
+      voice: "Brand-review — names the element, the colour used, and the colour convention expects",
+      watchFor: ["Orange/amber used for a completed or final (100%) state where green is the expected final-state colour", "A partial or in-progress state shown in green where amber/blue is expected", "Colours used against the product's own established convention or brand palette", "Success shown in red, or error/danger shown in green", "Inconsistent brand colours (off-brand shades) across similar components"],
+    },
+    insights: [
+      { kind: "pain", text: "Orange used for a 100% completed/final state where green is expected (Venus Pro example)" },
+      { kind: "pain", text: "Status colours that contradict their conventional meaning" },
+      { kind: "want", text: "Consistent, semantically-correct, on-brand use of colour" },
+    ],
+  },
+  {
+    presetId: "accessibility", name: "Accessibility", role: "Accessibility & a11y reviewer",
+    initials: "AY", accent: "#10b981", simClass: "user", side: "internal",
+    summary: "An accessibility reviewer who checks the page against common a11y needs. Flags images missing alt text, interactive elements missing hover/title text, low-contrast text or controls, and form fields missing labels. Calls out anything that would block a screen-reader or keyboard user, or a low-vision user.",
+    core: {
+      goals: ["Every image has meaningful alt text", "Every control is labelled and reachable", "Text and controls meet contrast guidelines"],
+      expertise: "WCAG 2.1/2.2, ARIA, screen readers, keyboard navigation and colour contrast",
+      temperament: "Empathetic, thorough, advocacy-minded",
+      voice: "Standards-based — cites the a11y gap and who it excludes",
+      watchFor: ["Images missing alt text", "Buttons, icons or links missing hover/title/aria labels", "Poor colour contrast between text and its background", "Form inputs missing visible or programmatic labels", "Controls that can't be reached or operated by keyboard alone"],
+    },
+    insights: [
+      { kind: "pain", text: "Images with no alt text and controls with no labels" },
+      { kind: "pain", text: "Low-contrast text that low-vision users can't read" },
+      { kind: "want", text: "A page usable by screen-reader, keyboard and low-vision users" },
+    ],
+  },
+  {
+    presetId: "cta-clarity", name: "User-Friendliness & CTA Clarity", role: "UX & CTA clarity reviewer",
+    initials: "UF", accent: "#ec4899", simClass: "user", side: "internal",
+    summary: "A first-time user who judges how obvious and friendly the page is. Checks that the primary call-to-action is evidently visible without hunting or scrolling, that the key information a user needs is surfaced on the right screen, and that the flow is intuitive. Flags buried CTAs, competing buttons, and important info hidden below the fold or behind extra clicks.",
+    core: {
+      goals: ["The primary action is immediately obvious", "The information a user needs is on the screen they need it", "The flow feels intuitive with no dead-ends or guesswork"],
+      expertise: "UX, conversion, information architecture and first-run/onboarding flows",
+      temperament: "Impatient, pragmatic, user-first",
+      voice: "Plain-spoken first-time-user reactions — says what confused them and what they expected",
+      watchFor: ["Primary CTA that's buried, low-contrast, or requires scrolling to find", "Multiple competing CTAs with no clear primary action", "Key information hidden below the fold or behind extra clicks", "Unclear or vague button labels that don't say what happens next", "Non-intuitive flows, dead-ends or missing next-step guidance"],
+    },
+    insights: [
+      { kind: "pain", text: "The main CTA is buried or needs scrolling to find" },
+      { kind: "pain", text: "Key info isn't surfaced on the screen where it's needed" },
+      { kind: "want", text: "An obvious primary action and an intuitive, friendly flow" },
+    ],
+  },
+]
+// Shape a preset into the exact body POST /api/personas accepts (so the UI can add it one-click and
+// the server stamps it as simSource:'preset'). Exposed for tests.
+export function _presetSimsForTest(): PresetSim[] { return PRESET_SIMS }
+
 // ── KLAVITYKLA-461: Convert a Sim → an AutoSim ────────────────────────────────────────────────────
 // Pull the persona's pains (things she watches for) and wants (her goals) from BOTH the insights[]
 // array and the v3 core, so the carried-over chips + objective survive either storage shape.
@@ -5486,6 +5593,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (path === "/api/personas" || path.startsWith("/api/personas/")) {
       const me2 = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!me2) return wjson({ error: "Sign in to continue." }, 401)
+      // #643: preset Sim library — static starter cast, no project needed to browse. Serve BEFORE
+      // resolveProject (a brand-new account may have no project yet, but should still see presets).
+      // The one-click "Add" then POSTs the chosen preset back through the normal create path below.
+      if (req.method === "GET" && path === "/api/personas/presets") {
+        return wjson({ presets: PRESET_SIMS })
+      }
       const proj2 = await resolveProject(me2, url.searchParams.get("project"))
       if (!proj2) return wjson({ error: "No project." }, 400)
       const wid = proj2.id
@@ -5536,9 +5649,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const id = "sim_" + crypto.randomUUID()
           const v3 = v3PersonaFields(body)
           // KLAVITYKLA-301: stamp the creation path so the checklist can tick honestly.
-          // The client sends simSource: 'describe' | 'from-site' | 'transcript' depending on
-          // which Add-a-Sim modal tab was active. Unknown/missing → null (legacy back-compat).
-          const SIM_SOURCE_VALID = new Set(["describe", "from-site", "transcript"])
+          // The client sends simSource: 'describe' | 'from-site' | 'transcript' | 'preset' depending
+          // on which Add-a-Sim modal tab was active. Unknown/missing → null (legacy back-compat).
+          const SIM_SOURCE_VALID = new Set(["describe", "from-site", "transcript", "preset"])
           const simSource = SIM_SOURCE_VALID.has(String(body.simSource || "")) ? String(body.simSource) : null
           await upsertPersona(id, wid, {
             name: incomingName, role: incomingRole,

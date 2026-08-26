@@ -10845,6 +10845,7 @@ load()
       <button class="on" data-pane="describe"><span class="e"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /> <path d="m15 5 4 4" /></svg></span>Describe</button>
       <button data-pane="site"><span class="e"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /> <path d="M20 2v4" /> <path d="M22 4h-4" /> <circle cx="4" cy="20" r="2" /></svg></span>From your site</button>
       <button data-pane="call"><span class="e"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19v3" /> <path d="M19 10v2a7 7 0 0 1-14 0v-2" /> <rect x="9" y="2" width="6" height="13" rx="3" /></svg></span>From a call</button>
+      <button data-pane="preset"><span class="e"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg></span>Presets</button>
     </div>
     <div class="sm-pane on" data-pane="describe">
       <div class="sm-field">
@@ -10869,6 +10870,9 @@ load()
         <button class="btn btn-indigo" id="smTxGo">Extract Sims →</button>
       </div>
       <p class="sm-note lft">Most realistic — Sims quote the call. Drop in a <b>.txt</b>, <b>.vtt</b> or <b>.srt</b> transcript, or paste it. Names &amp; quotes stay private to this project.</p>
+    </div>
+    <div class="sm-pane" data-pane="preset">
+      <p class="sm-note">A ready-made cast of QA reviewer Sims — grammar, UI alignment, colour &amp; branding, accessibility and CTA clarity. Add one in a click and edit it later. Great for auto-identifying improvement areas on any page.</p>
     </div>
     <div class="sm-out" id="smOut"></div>
     <!-- Post-add success panel: shown after at least one Sim is saved; guides user to activate their Sims -->
@@ -10977,7 +10981,7 @@ load()
   let lastSims=[];
   // KLAVITYKLA-301: track which Add-a-Sim tab produced the current Sims so saveSim can stamp source.
   // Maps pane name → simSource value sent to POST /api/personas.
-  const PANE_TO_SOURCE = { describe: 'describe', site: 'from-site', call: 'transcript' };
+  const PANE_TO_SOURCE = { describe: 'describe', site: 'from-site', call: 'transcript', preset: 'preset' };
   let lastSimSource = 'describe'; // default to the first tab
   // KLAVITYKLA-388: remember the exact URL the user just typed into "From your site" so the
   // post-add success panel can funnel straight into "Run a review now" on THAT site — the
@@ -11021,6 +11025,19 @@ load()
     lastSimSource=PANE_TO_SOURCE["call"]||"transcript";
     try{ const d=await postJSON("/api/extract",{transcript:v}); showSims(d.personas||[]); }
     catch(e){ fail(e.message+(e.traceId&&!e.message.includes("ref:")?" (ref: "+e.traceId+".)":"")); }
+  }
+  // #643: preset Sim library. Fetch the static QA-reviewer starter cast and render them as normal
+  // candidate cards — the existing Add/Add-all buttons (saveSim) POST them through /api/personas
+  // stamped simSource:'preset'. Cached after first load so re-opening the tab is instant.
+  let presetSimsCache=null;
+  async function genPresets(){
+    lastSimSource=PANE_TO_SOURCE["preset"]||"preset";
+    if(presetSimsCache){ showSims(presetSimsCache); return; }
+    think("Loading preset Sims…");
+    try{ const r=await fetch("/api/personas/presets",{credentials:"include"}); const d=await r.json().catch(()=>({}));
+      if(!r.ok){ fail(d.error||"Couldn't load presets."); return; }
+      presetSimsCache=Array.isArray(d.presets)?d.presets:[]; showSims(presetSimsCache);
+    }catch(e){ fail("Network error — check your connection and try again."); }
   }
   // ── Post-add success panel ──
   const successEl=$("smSuccess");
@@ -11246,6 +11263,8 @@ load()
     // KLAVITYKLA-301: keep lastSimSource in sync with the active tab
     lastSimSource=PANE_TO_SOURCE[b.dataset.pane]||"describe";
     out.innerHTML=""; hideSuccessPanel();
+    // #643: the preset tab has no input to fire — auto-load the starter cast on select.
+    if(b.dataset.pane==="preset") genPresets();
   }));
   // example chips
   $("smChips").innerHTML=EXAMPLES.map(x=>`<button class="sm-chip">${esc(x)}</button>`).join("");
