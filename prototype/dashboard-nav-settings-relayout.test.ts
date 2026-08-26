@@ -1,6 +1,6 @@
 // Guards for the nav/settings relayout lane:
-//  #710 Tickets promoted directly after "New reports" (triage) in the sidebar order
-//  #711 "Bugs by page" renamed to "Sim Reports" (nav label + view heading)
+//  #744 sidebar clustered into four groups; WORK group order = overview · tickets · triage · recurring
+//  #711/#740 "Bugs by page" → triage nav label "Sim Reports"; pagebugs nav label is "Reports"
 //  #712 Settings view uses a two-column (heading-left / controls-right) layout
 //  #713 "Getting started" removed from the sidebar
 // String-assertion style, matching the other dashboard-*.test.ts guards — the rendered sidebar order
@@ -17,14 +17,20 @@ function viewsArray(): string[] {
   return m[1].split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
 }
 
-test("#710 rendered sidebar order puts Tickets immediately after New reports (triage)", () => {
+test("#744 WORK group order: overview · tickets · triage (Sim Reports) · recurring, before Sims", () => {
   const v = viewsArray()
-  const iTriage = v.indexOf("triage")
+  const iOverview = v.indexOf("overview")
   const iTickets = v.indexOf("tickets")
+  const iTriage = v.indexOf("triage")
+  const iRecurring = v.indexOf("recurring")
   const iSims = v.indexOf("sims")
-  expect(iTriage).toBeGreaterThanOrEqual(0)
-  expect(iTickets).toBe(iTriage + 1) // directly after New reports
-  expect(iTickets).toBeLessThan(iSims) // and before Sims
+  expect(iOverview).toBe(0)
+  // WORK cluster is contiguous and in this order
+  expect(iTickets).toBe(iOverview + 1)
+  expect(iTriage).toBe(iTickets + 1)
+  expect(iRecurring).toBe(iTriage + 1)
+  // whole WORK group sits above the SIMS group
+  expect(iRecurring).toBeLessThan(iSims)
 })
 
 test("#713 Getting started is gone from the sidebar (VIEWS + nav button)", () => {
@@ -33,12 +39,14 @@ test("#713 Getting started is gone from the sidebar (VIEWS + nav button)", () =>
   expect(HTML).not.toContain("nv-getting-started")
 })
 
-test("#711 pagebugs nav label and view heading read 'Sim Reports' (routing key unchanged)", () => {
-  // routing key preserved
+test("#711/#740 triage nav label reads 'Sim Reports'; pagebugs reads 'Reports' (routing keys unchanged)", () => {
+  // routing keys preserved
+  expect(HTML).toContain('data-go="triage"')
   expect(HTML).toContain('data-go="pagebugs"')
-  // nav label + card heading renamed
-  expect(HTML).toContain("</svg></span>Sim Reports</button>")
-  expect(HTML).toContain("Sim Reports\n      </h2>")
+  // triage carries the "Sim Reports" label (with its live count span)
+  expect(HTML).toContain('</svg></span>Sim Reports <span class="ct" id="navTriageCount">')
+  // pagebugs is the plain "Reports" bucket
+  expect(HTML).toContain("</svg></span>Reports</button>")
   // old label fully retired from user-facing copy
   expect(HTML).not.toContain(">Bugs by page</button>")
 })

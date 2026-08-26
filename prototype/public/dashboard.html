@@ -12682,15 +12682,18 @@ load()
 <script>
 // ===== sidebar view switching =====
 (function(){
-  // #740: sidebar clustered into three separator-divided groups (owner request):
-  //   Group 1 (setup):    overview · snap · tickets
-  //   Group 2 (testing):  sims · autosims · triage("Sim Reports") · recurring · guards
-  //   Group 3 (admin):    settings · team · pagebugs("Reports")
-  // recurring + guards stay in Group 2 so they remain reachable (setView() redirects any view NOT in
-  // this array to 'overview'). #713: 'getting-started' dropped from the sidebar.
-  var VIEWS=['overview','snap','tickets','sims','autosims','triage','recurring','guards','settings','team','pagebugs'];
-  // A thin divider is injected AFTER each of these keys to visually cluster the three groups.
-  var SEP_AFTER={tickets:1,guards:1};
+  // #744: sidebar clustered into four separator-divided groups (owner adopted the UX recommendation):
+  //   Group A (WORK):            overview · tickets · triage("Sim Reports") · recurring
+  //   Group B (SIMS):            sims · autosims
+  //   Group C (SET UP/ANALYZE):  snap · pagebugs("Reports") · guards
+  //   Group D (ADMIN):           team · settings
+  // Supersedes the #740 three-group layout: recurring now lives in WORK (not appended to Sims), and
+  // guards in SET UP/ANALYZE — fixing the earlier awkward "recurring/guards tacked onto Sims" cluster.
+  // All view-ids / data-go / JS keys are unchanged (this is order + separators only). setView()
+  // redirects any view NOT in this array to 'overview'. #713: 'getting-started' dropped from the sidebar.
+  var VIEWS=['overview','tickets','triage','recurring','sims','autosims','snap','pagebugs','guards','team','settings'];
+  // A thin divider is injected AFTER each of these keys to visually cluster the four groups.
+  var SEP_AFTER={recurring:1,autosims:1,guards:1};
   function sidebarNavs(){
     return [].slice.call(document.querySelectorAll('.side .nv'));
   }
