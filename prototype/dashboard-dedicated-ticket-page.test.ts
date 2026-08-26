@@ -161,7 +161,8 @@ test("#707: the two drag gutters resize + PERSIST both column widths to localSto
   expect(fn).toContain('"klav:tkt3col:c3"')
   expect(fn).toContain("--t3c1")
   expect(fn).toContain("--t3c3")
-  expect(fn).toContain("clamp(startC1 + dx, 200, 560)")
+  // #725b: col1 (screenshot) clamp max raised 560→760 so the image can be dragged bigger.
+  expect(fn).toContain("clamp(startC1 + dx, 200, 760)")
   expect(fn).toContain("clamp(startC3 - dx, 200, 520)")
   expect(fn).toContain("pointerdown")
   expect(fn).toContain("pointermove")
@@ -192,6 +193,60 @@ test("#707: Enhance-with-AI wires the existing /api/report/enhance endpoint with
   // optimistic save reuses the same guarded PATCH { observation } path + revert-on-fail
   expect(fn).toContain("window.__klavMutating++")
   expect(fn).toContain("Enhanced draft couldn’t be saved — reverted.")
+})
+
+// ── #725a: the dedicated page uses the FULL content width (both the 1180px + 1380px caps dropped) ────
+test("#725a: the ticket page is uncapped width and widens the outer .wrap when open", () => {
+  // the double cap (1180px page clamp + 1380px .wrap cap) is gone on the dedicated page.
+  expect(HTML).toContain("#ticketSingle.tkt-page{max-width:none;margin:0}")
+  expect(HTML).toContain("body.tkt-page-open .wrap{max-width:none}")
+  expect(HTML).not.toContain("#ticketSingle.tkt-page{max-width:1180px")
+})
+
+// ── #725b: the screenshot column defaults WIDE so the report image is shown as big as possible ───────
+test("#725b: the 3-col grid defaults col1 (screenshot) to a wide 460px", () => {
+  expect(HTML).toContain("grid-template-columns:var(--t3c1,460px) 8px minmax(320px,1fr) 8px var(--t3c3,270px)")
+  expect(HTML).not.toContain("var(--t3c1,300px)")
+})
+
+// ── #725c: the redundant "ACTIVITY & COMMENTS" parent heading is removed from the middle column ──────
+test("#725c: no 'Activity & comments' parent heading above the activity mount", () => {
+  const fn = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
+  expect(fn).not.toContain("Activity &amp; comments")
+  // the activity mount + its separator remain
+  expect(fn).toContain('<div class="t3-activity-mount"></div>')
+})
+
+// ── #725d: Activity + Comments are two tabs on the dedicated page (composer under Comments) ──────────
+test("#725d: buildTimelineSection renders an Activity/Comments tab switcher on the page only", () => {
+  const fn = extractFn(HTML, "function buildTimelineSection(ticketId, report)")
+  // tabbed ONLY on the dedicated page (not the slide-over panel)
+  expect(fn).toContain('const _tabbed = (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")')
+  expect(fn).toContain('class="t3-tabs"')
+  expect(fn).toContain('data-tab="activity"')
+  expect(fn).toContain('data-tab="comments"')
+  // two panels: activity list (#tl-) + comments list (#cl-) with the composer under Comments
+  expect(fn).toContain('data-panel="activity"')
+  expect(fn).toContain('data-panel="comments"')
+  expect(fn).toContain("tkt-cmt-list")
+  expect(fn).toContain('id="cl-')
+  // composer still carries the @mention picker + placeholder inside the Comments tab
+  expect(fn).toContain('placeholder="Leave a comment… @ to tag"')
+  expect(fn).toContain('class="t3-mention hide"')
+  // per-tab counts + default-to-Comments-when-any-exist (else Activity), respecting a manual pick
+  expect(fn).toContain('_setTabCount("activity"')
+  expect(fn).toContain('_setTabCount("comments"')
+  expect(fn).toContain('if (!_userPickedTab) _activateTab(cmts.length > 0 ? "comments" : "activity", false)')
+  // paintTimeline splits events vs comments into the two lists
+  expect(fn).toContain('items.filter(it => it.kind !== "comment")')
+  expect(fn).toContain('items.filter(it => it.kind === "comment")')
+  // the panel/legacy layout keeps the classic single "Activity" heading + merged list
+  expect(fn).toContain('<div class="tkt-timeline-hd">Activity</div>')
+})
+
+test("#725d: the tab switcher styles exist (underline pill row)", () => {
+  expect(HTML).toContain(".t3-tabs{")
+  expect(HTML).toContain(".t3-tab.on::after{")
 })
 
 // ── §10: accessibility ────────────────────────────────────────────────────────────────────────────

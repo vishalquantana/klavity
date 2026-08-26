@@ -1211,7 +1211,11 @@ body.tkt-page-open #tktQuickChips,body.tkt-page-open #tktFilterBar,
 body.tkt-page-open .content>.head,
 /* The dedicated ticket page shows ONLY the ticket — Project settings belongs to the board view, not here. */
 body.tkt-page-open #settingsDrawer{display:none!important}
-#ticketSingle.tkt-page{max-width:1180px;margin:0 auto}
+/* #725a: the dedicated ticket page uses the FULL content width — the old 1180px clamp (plus the
+   outer .wrap 1380px cap) wasted big side margins. When a ticket page is open we drop BOTH caps so
+   the 3-col paper card fills the available width; the .wrap side padding stays as a modest gutter. */
+#ticketSingle.tkt-page{max-width:none;margin:0}
+body.tkt-page-open .wrap{max-width:none}
 #ticketSingle.tkt-page .tkt-detail,#ticketSingle.tkt-page .single-head{max-width:none}
 .tkt-crumb{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;color:var(--paper-faint);margin:2px 0 14px}
 .tkt-crumb-link{background:none;border:none;padding:0;font-family:inherit;font-size:inherit;color:var(--paper-dim);cursor:pointer;text-decoration:none}
@@ -1262,7 +1266,10 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .tkt3-card .single-head{max-width:none;margin:0;padding:18px 22px 6px;gap:12px}
 #ticketSingle.tkt-page .tkt3-card .tkt-detail{border:none;border-radius:0;max-width:none;padding:0;background:transparent}
 /* the resizable grid: col1 | 8px gutter | middle | 8px gutter | col3 (widths persisted to localStorage) */
-.t3-cols{display:grid;grid-template-columns:var(--t3c1,300px) 8px minmax(320px,1fr) 8px var(--t3c3,270px)}
+/* #725b: default the screenshot column (col1) WIDE so the report's image is shown as big as possible
+   on the reclaimed page width. The user can still drag it larger/smaller (clamp raised to 760, see
+   wireT3Resize). The image is width:100% so a wider column = a bigger image. */
+.t3-cols{display:grid;grid-template-columns:var(--t3c1,460px) 8px minmax(320px,1fr) 8px var(--t3c3,270px)}
 .t3-col{padding:16px 22px;min-width:0;border-top:1px solid var(--line)}
 .t3-gutter{cursor:col-resize;background:transparent;position:relative;border-top:1px solid var(--line);touch-action:none;user-select:none}
 .t3-gutter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
@@ -1364,6 +1371,20 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .tkt-tl-text{font-size:13px;margin-top:2px;line-height:1.5;word-break:break-word}
 .tkt-tl-meta{font-size:11px;color:var(--paper-faint);margin-top:2px}
 .tkt-tl-empty{font-size:13px;color:var(--paper-faint);padding:4px 0 2px}
+/* #725d: Activity / Comments tab switcher on the dedicated page (underline pill row). The panel keeps
+   the classic stacked "Activity" heading. */
+.t3-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
+.t3-tab{position:relative;background:none;border:none;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-faint);cursor:pointer;padding:7px 12px 9px;border-radius:8px 8px 0 0;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.t3-tab:hover{color:var(--paper-dim)}
+.t3-tab:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+.t3-tab.on{color:var(--paper)}
+.t3-tab.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--indigo);border-radius:2px}
+.t3-tabc{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--paper-faint)}
+.t3-tab.on .t3-tabc{color:var(--indigo)}
+.t3-tabpanel{animation:t3TabIn .16s ease}
+.t3-tabpanel.hide{display:none}
+@keyframes t3TabIn{from{opacity:.4}to{opacity:1}}
+.tkt-cmt-list{margin-bottom:10px}
 /* A.8 occurrence timeline — per-report receipts (own wording + date + screenshot) */
 .tkt-occ-wrap{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px;max-width:900px}
 .tkt-occ-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -6321,7 +6342,8 @@ function wireRecordingSeek(root) {
   })
 }
 // #707: pointer-drag resize for the dedicated-page 3-col grid. Two gutters set --t3c1 / --t3c3 CSS
-// vars on the grid, clamped (col1 200–560, col3 200–520), and PERSISTED to localStorage instantly
+// vars on the grid, clamped (col1 200–760 — #725b raised the max so the screenshot can go bigger;
+// col3 200–520), and PERSISTED to localStorage instantly
 // (optimistic) so the widths are restored on the next open. Mirrors the approved mockup's script.
 function wireT3Resize(detailEl) {
   const cols = detailEl.querySelector(".t3-cols"); if (!cols) return
@@ -6329,7 +6351,7 @@ function wireT3Resize(detailEl) {
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
   // Restore persisted widths (instant, optimistic).
   try {
-    const s1 = parseFloat(localStorage.getItem(KEY1)); if (!isNaN(s1)) cols.style.setProperty("--t3c1", clamp(s1, 200, 560) + "px")
+    const s1 = parseFloat(localStorage.getItem(KEY1)); if (!isNaN(s1)) cols.style.setProperty("--t3c1", clamp(s1, 200, 760) + "px")
     const s3 = parseFloat(localStorage.getItem(KEY3)); if (!isNaN(s3)) cols.style.setProperty("--t3c3", clamp(s3, 200, 520) + "px")
   } catch (e) {}
   let drag = null, startX = 0, startC1 = 0, startC3 = 0
@@ -6345,7 +6367,7 @@ function wireT3Resize(detailEl) {
     g.addEventListener("pointermove", e => {
       if (drag !== g.dataset.g) return
       const dx = e.clientX - startX
-      if (g.dataset.g === "1") { const v = clamp(startC1 + dx, 200, 560); cols.style.setProperty("--t3c1", v + "px"); try { localStorage.setItem(KEY1, String(Math.round(v))) } catch (_) {} }
+      if (g.dataset.g === "1") { const v = clamp(startC1 + dx, 200, 760); cols.style.setProperty("--t3c1", v + "px"); try { localStorage.setItem(KEY1, String(Math.round(v))) } catch (_) {} }
       else { const v = clamp(startC3 - dx, 200, 520); cols.style.setProperty("--t3c3", v + "px"); try { localStorage.setItem(KEY3, String(Math.round(v))) } catch (_) {} }
     })
     const end = e => { if (drag === g.dataset.g) { drag = null; g.classList.remove("drag"); try { g.releasePointerCapture(e.pointerId) } catch (_) {} } }
@@ -6524,7 +6546,10 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" disabled title="File attachments are coming soon">${kicon('paperclip',{size:13})} Attach</button>
       </div>`
       const _left = `<div class="t3-col t3-left"><div class="t3-colh">Screenshot</div>${t.screenshotId ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
-      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}<hr class="t3-hr"><div class="t3-colh">Activity &amp; comments</div><div class="t3-activity-mount"></div></div>`
+      // #725c: the redundant "ACTIVITY & COMMENTS" parent heading is gone — the Activity/Comments tab
+      // row (built by buildTimelineSection) is the section header now. The <hr> still separates the
+      // description/recordings block above from the activity/comments section below.
+      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}<hr class="t3-hr"><div class="t3-activity-mount"></div></div>`
       const _right = `<div class="t3-col t3-right"><div class="t3-colh">Properties</div>${_bodyHtml}</div>`
       detailEl.innerHTML = `<div class="t3-cols">${_left}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_mid}<div class="t3-gutter" data-g="2" aria-hidden="true"></div>${_right}</div>`
     } else {
@@ -7341,9 +7366,11 @@ function renderTimelineItem(item) {
 function buildTimelineSection(ticketId, report) {
   const wrap = document.createElement("div")
   wrap.className = "tkt-timeline-wrap"
-  wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
-    <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
-    <div class="tkt-comment-form">
+  // #725d: on the dedicated PAGE, split the section into two tabs — [Activity] (the event timeline) and
+  // [Comments] (the comments list + composer). The slide-over panel and board-expand keep the classic
+  // single stack (Activity heading → merged list → composer). Same ids/handlers/@mention either way.
+  const _tabbed = (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")
+  const _composerHtml = `<div class="tkt-comment-form">
       <div class="t3-mention hide" role="listbox" aria-label="Tag a teammate"></div>
       <textarea class="tkt-comment-ta" placeholder="Leave a comment… @ to tag" rows="2"></textarea>
       <div class="tkt-comment-row">
@@ -7352,11 +7379,44 @@ function buildTimelineSection(ticketId, report) {
         <span class="tkt-comment-msg" style="color:var(--paper-faint)"></span>
       </div>
     </div>`
+  if (_tabbed) {
+    wrap.classList.add("tkt-tl-tabbed")
+    wrap.innerHTML = `<div class="t3-tabs" role="tablist">
+        <button type="button" class="t3-tab on" role="tab" aria-selected="true" data-tab="activity">Activity<span class="t3-tabc" data-c="activity"></span></button>
+        <button type="button" class="t3-tab" role="tab" aria-selected="false" data-tab="comments">Comments<span class="t3-tabc" data-c="comments"></span></button>
+      </div>
+      <div class="t3-tabpanel" data-panel="activity" role="tabpanel">
+        <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
+      </div>
+      <div class="t3-tabpanel hide" data-panel="comments" role="tabpanel">
+        <div class="tkt-tl-list tkt-cmt-list" id="cl-${esc(ticketId)}"></div>
+        ${_composerHtml}
+      </div>`
+  } else {
+    wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
+      <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
+      ${_composerHtml}`
+  }
 
   const listEl = wrap.querySelector(`#tl-${CSS.escape(ticketId)}`)
+  const cmtListEl = _tabbed ? wrap.querySelector(`#cl-${CSS.escape(ticketId)}`) : null
   const ta = wrap.querySelector(".tkt-comment-ta")
   const submitBtn = wrap.querySelector(".tkt-comment-submit")
   const msgEl = wrap.querySelector(".tkt-comment-msg")
+  // #725d: tab state (page only). Default lands on Comments when any exist, else Activity — until the
+  // user manually picks a tab (then we respect their choice across reloads). Counts shown per tab.
+  let _userPickedTab = false
+  function _activateTab(name, byUser) {
+    if (!_tabbed) return
+    if (byUser) _userPickedTab = true
+    wrap.querySelectorAll(".t3-tab").forEach(b => { const on = b.getAttribute("data-tab") === name; b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false") })
+    wrap.querySelectorAll(".t3-tabpanel").forEach(p => p.classList.toggle("hide", p.getAttribute("data-panel") !== name))
+  }
+  function _setTabCount(name, n) {
+    const el = wrap.querySelector('.t3-tabc[data-c="' + name + '"]')
+    if (el) el.textContent = n ? " " + n : ""
+  }
+  if (_tabbed) wrap.querySelectorAll(".t3-tab").forEach(b => b.addEventListener("click", () => _activateTab(b.getAttribute("data-tab"), true)))
 
   // #707: @-mention teammates. Typing "@" opens a dropdown of workspace members (reusing the same
   // projectMemberEmails() list the assignee picker uses); Arrow/Enter/Tab or click inserts "@handle".
@@ -7448,11 +7508,25 @@ function buildTimelineSection(ticketId, report) {
     // activity count read 1, never 0, for a single-report ticket.
     const first = synthFirstItem()
     if (first && !items.some(it => it.type === "report_received")) items.unshift(first)
-    listEl.innerHTML = ""
-    if (!items.length) {
-      listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
+    if (_tabbed && cmtListEl) {
+      // #725d: route events → Activity tab, comment items → Comments tab (each with its own empty state
+      // + count). One merged sort above keeps chronology within each list.
+      const acts = items.filter(it => it.kind !== "comment")
+      const cmts = items.filter(it => it.kind === "comment")
+      listEl.innerHTML = acts.length ? "" : '<div class="tkt-tl-empty">No activity yet.</div>'
+      acts.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+      cmtListEl.innerHTML = cmts.length ? "" : '<div class="tkt-tl-empty">No comments yet.</div>'
+      cmts.forEach(item => cmtListEl.appendChild(renderTimelineItem(item)))
+      _setTabCount("activity", acts.length)
+      _setTabCount("comments", cmts.length)
+      if (!_userPickedTab) _activateTab(cmts.length > 0 ? "comments" : "activity", false)
     } else {
-      items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+      listEl.innerHTML = ""
+      if (!items.length) {
+        listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
+      } else {
+        items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+      }
     }
   }
 
@@ -7509,6 +7583,7 @@ function buildTimelineSection(ticketId, report) {
             body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(),
           })
           paintTimeline([])   // instant on-screen render from local state (no network wait)
+          _activateTab("comments")   // #725d: surface the just-posted comment (no-op off the tabbed page)
         }
         if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Comment posted." }
         setTimeout(() => { if (msgEl) msgEl.textContent = "" }, 2500)
