@@ -2325,6 +2325,27 @@ async function applyStripeCheckoutSession(session: any): Promise<string | null> 
 const AUTOCOPY_WINDOW = 60 * 60 * 1000
 const AUTOCOPY_PER_PROJECT = 60
 
+// KLA-650: the KLA-554 AI auto-title used to RACE the connector export — both were fire-and-forget on
+// submit, and the LLM title (seconds) usually lost, so the tracker got the raw first-line fallback. The
+// fix orders title→export in the post-response async path (and generate-if-missing on manual export).
+// This bound keeps the export best-effort: if the LLM is slow/failing we stop waiting after this window
+// and file with whatever title exists, so filing is never blocked indefinitely. Env-tunable for prod.
+const AUTO_TITLE_EXPORT_TIMEOUT_MS = Math.max(1000, Number(process.env.KLAV_AUTO_TITLE_EXPORT_TIMEOUT_MS) || 5000)
+
+// Run a title-generation job bounded by AUTO_TITLE_EXPORT_TIMEOUT_MS. ALWAYS resolves (never rejects):
+// on timeout the job keeps running in the background (it may still stamp the title for later) but the
+// caller proceeds to export with the current title. A rejecting job is swallowed too — best-effort.
+async function awaitTitleWithTimeout(job: () => Promise<unknown>): Promise<void> {
+  try {
+    await Promise.race([
+      Promise.resolve().then(job),
+      new Promise<void>((resolve) => setTimeout(resolve, AUTO_TITLE_EXPORT_TIMEOUT_MS)),
+    ])
+  } catch (e: any) {
+    console.warn("[auto-title] before-export (non-fatal):", e?.message || e)
+  }
+}
+
 // Short-link click-LOGGING caps (Codex review — MED). These bound how many click rows a single
 // (code, ip) can write per window; they NEVER affect the redirect, which always 302s. Bots get a
 // tight cap because they add lots of volume but little analytics signal.
@@ -2613,6 +2634,18 @@ function recordExportMappingFallbacks(
 async function runManualExport(
   fbRow: any, connector: any, actor: string,
 ): Promise<{ exportResult: { type: string; externalKey: string | null; externalUrl: string | null; status: "ok" | "failed"; error: string | null }; exportId: string | null }> {
+  // KLA-650 (generate-if-missing): the KLA-554 AI auto-title only runs on fresh Snap submit. A row that
+  // was held for manual triage ('review' mode) or a Sim/AutoSim report reaching manual export may still
+  // carry only the first-line fallback title. Before building the payload, if no explicit/AI title was
+  // ever stamped (shouldAutoTitle) and there's prose to title, generate one now — bounded by the same
+  // timeout — then re-read the row so feedbackToTicketPayload (effectiveTicketTitle) sees it. Best-effort:
+  // on timeout/failure we export with the current title. Covers BOTH the direct POST /export and the
+  // admin-approval-of-request path, since both funnel through here.
+  if (fbRow?.id && fbRow?.projectId && shouldAutoTitle(fbRow?.title) && String(fbRow?.observation ?? "").trim()) {
+    await awaitTitleWithTimeout(() => generateAndSaveTitle(fbRow.id, fbRow.observation, fbRow.projectId, actor))
+    const refreshed = await feedbackById(fbRow.projectId, fbRow.id).catch(() => null)
+    if (refreshed) fbRow = refreshed
+  }
   const adapter = getConnector(connector.type)
   if (!adapter) {
     return { exportResult: { type: connector.type, externalKey: null, externalUrl: null, status: "failed", error: "Unknown connector type." }, exportId: null }
@@ -5471,7 +5504,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // (isHumanSnap: no raw sim_id AND no sim/autosim/adhoc source — PX4 #472) and only for
               // genuinely new rows (a deduped repeat already reached the tracker on its first
               // submission). No-ops in 'review' mode / when no auto-copy connector.
-              if (feedbackId && !dedupedInto && isHumanSnap && !feedbackSourceTag) {
+              // KLA-650: the autofile export (autoFileHumanSnap → autoCopyFeedback) and the KLA-554 AI
+              // auto-title used to be TWO independent fire-and-forget jobs that RACED. The connector export
+              // re-reads the row (feedbackById → effectiveTicketTitle prefers the `title` column), so
+              // whichever landed first decided the ticket summary — and the LLM title (seconds) almost
+              // always lost, so Jira got the raw first-line fallback. Fix: in ONE post-response async job
+              // (still fire-and-forget — the submit response returns at the bottom of this handler, so the
+              // cross-origin submit stays fast), generate the title FIRST (bounded by AUTO_TITLE_EXPORT_
+              // TIMEOUT_MS) and THEN run the autofile export, so the export re-reads the freshly-stamped
+              // AI title. Best-effort: on timeout/failure the export still fires with the current title.
+              if (feedbackId && !dedupedInto) {
+                const fbEnrichId = feedbackId
+                // Label suggestion is independent of the title→export ordering — keep it fire-and-forget.
+                const suggestText = (suggestedBug?.title ? `${suggestedBug.title}\n${observation || ""}` : observation || "").slice(0, 2000)
+                void suggestLabelsForFeedback({ feedbackId: fbEnrichId, projectId, text: suggestText })
+                  .catch((err: any) => console.warn("[label-suggest] non-fatal:", err?.message || err))
+
+                // Pick the applicable title generator (if any):
+                //  • draftedTitle → JTBD 1.10 screenshot-only draft from captured page context.
+                //  • shouldAutoTitle(reportTitle) → KLA-554 typed-prose auto-title into the `title` column.
+                //  • otherwise the user supplied an explicit title — nothing to generate.
+                const titleJob: (() => Promise<unknown>) | null =
+                  draftedTitle
+                    ? () => draftTitleForFeedback({ feedbackId: fbEnrichId, projectId, reportType, pageUrl, clientContext })
+                    : shouldAutoTitle(reportTitle)
+                      ? () => generateAndSaveTitle(fbEnrichId, observation, projectId, actor)
+                      : null
+
                 // #534 hardening (Codex review): only an AUTHENTICATED workspace member's connector-less
                 // autofile may advance new→open onto the Tickets board. `actor` is the resolved member
                 // identity (extension bearer token OR first-party session cookie); an anonymous/public
@@ -5479,27 +5538,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // lands in the New-Reports triage inbox (the spam/bot safety net). `!feedbackSourceTag`
                 // additionally excludes host-detected Studio-demo quarantine rows. Reuses the hoisted
                 // `trustedProvenance` (Fix 1/2) — one definition for the whole handler.
-                autoFileHumanSnap(feedbackId, projectId, rawSimId, actor, priority, trustedProvenance)
-              }
+                const willAutofile = isHumanSnap && !feedbackSourceTag
 
-              // KLA-175: AI label suggestion — fire-and-forget, never blocks the response.
-              if (feedbackId && !dedupedInto) {
-                const suggestText = (suggestedBug?.title ? `${suggestedBug.title}\n${observation || ""}` : observation || "").slice(0, 2000)
-                void suggestLabelsForFeedback({ feedbackId, projectId, text: suggestText })
-                  .catch((err: any) => console.warn("[label-suggest] non-fatal:", err?.message || err))
-                // JTBD 1.10: screenshot-only report → refine the fallback title from captured page context.
-                // Fire-and-forget; the row already carries a deterministic fallback observation.
-                if (draftedTitle) {
-                  void draftTitleForFeedback({ feedbackId, projectId, reportType, pageUrl, clientContext })
-                    .catch((err: any) => console.warn("[title-draft] non-fatal:", err?.message || err))
-                } else if (shouldAutoTitle(reportTitle)) {
-                  // KLA-554: a report WITH typed prose (not screenshot-only) and NO explicit user title —
-                  // auto-generate a short bug-style title into the `title` column so the card stops showing
-                  // the raw first line of the body. Fire-and-forget; observation is left untouched.
-                  const fbForTitle = feedbackId
-                  void generateAndSaveTitle(fbForTitle, observation, projectId, actor)
-                    .catch((err: any) => console.warn("[auto-title] non-fatal:", err?.message || err))
-                }
+                void (async () => {
+                  // Title FIRST (bounded) so the export below re-reads the AI title, not the fallback.
+                  if (titleJob) await awaitTitleWithTimeout(titleJob)
+                  // THEN export. autoFileHumanSnap no-ops for Sim rows / 'review' mode / no connector.
+                  if (willAutofile) autoFileHumanSnap(fbEnrichId, projectId, rawSimId, actor, priority, trustedProvenance)
+                })().catch((err: any) => console.warn("[title→export] non-fatal:", err?.message || err))
               }
 
               // KLAVITYKLA-438 (Phase 2) + KLAVITYKLA-480: async STT transcription of "Record me" clips AND

@@ -841,3 +841,54 @@ test("KLA-524 idempotency: autofiled-then-triage-accepted files exactly once and
     expect(await ticketsContain(fid)).toBe(true)
   } finally { recv.stop(true) }
 }, 20000)
+
+// KLA-650: the connector export must carry the AI/stamped TITLE, not the raw observation first line.
+// The AI auto-title used to race the export and usually lost, so the tracker got the fallback. We now
+// (a) order title→export on submit and (b) generate-if-missing on manual export. This test proves the
+// export READS the `title` column when it's present (so once the title is stamped, the ticket summary
+// is the good title) AND that a title-less row still exports best-effort (never blocked/hung).
+test("KLA-650: manual export uses the stamped title column; a title-less row still exports best-effort", async () => {
+  let lastTitle: string | null = null
+  const recv = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      try { const b: any = await req.json(); lastTitle = b?.ticket?.title ?? null } catch { /* ignore */ }
+      return new Response(JSON.stringify({ id: "kla650" }), { status: 201 })
+    },
+  })
+  try {
+    // 'review' mode so nothing auto-files on submit — we drive the manual export path explicitly.
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "KLA650 Title Webhook",
+      config: { url: `http://localhost:${recv.port}/hook` }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    // (a) Row whose AI title was already stamped into the `title` column → export must use it, NOT the
+    //     raw observation first line (effectiveTicketTitle prefers `title`; runManualExport re-reads it).
+    const titledId = `fb_kla650_titled_${ts}`
+    await rawExec(
+      `INSERT INTO feedback (id, project_id, actor_email, observation, title, status, created_at) VALUES (?,?,?,?,?, 'new', ?)`,
+      [titledId, PROJECT_ID, ADMIN_EMAIL, "raw first line that must NOT become the title\nmore body", "Checkout button does nothing on mobile", Date.now()],
+    )
+    const ex1 = await api("POST", `/api/feedback/${titledId}/export`, { connectorId: cid }, ADMIN_SID)
+    expect(ex1.status).toBe(200)
+    const landed1 = await waitForExport(cid, 1, 8000)
+    expect(landed1.filter(r => String(r.feedback_id) === titledId && String(r.status) === "ok").length).toBe(1)
+    expect(lastTitle).toBe("Checkout button does nothing on mobile")
+
+    // (b) Title-less row (only a fallback). generate-if-missing runs (no valid LLM in test → no stamp),
+    //     bounded by the timeout, then the export STILL fires best-effort — it must not block or fail.
+    const untitledId = `fb_kla650_untitled_${ts}`
+    await rawExec(
+      `INSERT INTO feedback (id, project_id, actor_email, observation, status, created_at) VALUES (?,?,?,?, 'new', ?)`,
+      [untitledId, PROJECT_ID, ADMIN_EMAIL, "Sidebar overlaps the footer on narrow screens", Date.now()],
+    )
+    const ex2 = await api("POST", `/api/feedback/${untitledId}/export`, { connectorId: cid }, ADMIN_SID)
+    expect(ex2.status).toBe(200)
+    const landed2 = await waitForExport(cid, 2, 8000)
+    expect(landed2.filter(r => String(r.feedback_id) === untitledId && String(r.status) === "ok").length).toBe(1)
+  } finally { recv.stop(true) }
+}, 25000)
