@@ -38,8 +38,11 @@ test("kanbanKeyForStatus routes done and dismissed to distinct keys (KLA-206)", 
   expect(html).toContain('if (status === "done") return "done"')
   expect(html).toContain('if (status === "dismissed") return "dismissed"')
   expect(html).not.toContain('return "closed"')
-  // Grid widened to fit the extra column, and both dots are styled.
-  expect(html).toContain('grid-template-columns:repeat(5,minmax(0,1fr))')
+  // #636: board is a horizontal-scroll flex row (columns keep a fixed width instead of squishing),
+  // and both status dots are styled.
+  expect(html).toContain('.kanban{display:flex;flex-wrap:nowrap')
+  expect(html).toContain('overflow-x:auto')
+  expect(html).toContain('.kb-col{flex:0 0 300px')
   expect(html).toContain('.kb-dot-done{')
   expect(html).toContain('.kb-dot-dismissed{')
 })

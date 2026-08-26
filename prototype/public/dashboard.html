@@ -976,10 +976,13 @@ details.drawer .drawer-in{padding:0 22px 22px}
 [data-theme="dark"] .seg button.active{color:#0c0a08}
 .seg button:not(.active):hover{background:var(--ink-3)}
 /* Tickets kanban board */
-.kanban{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;align-items:start}
-.kb-col{background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+/* #636: Jira-style horizontal scroll — columns keep a fixed width and the board scrolls sideways
+   instead of every column squishing when many statuses are present. */
+.kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:flex-start;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.kb-col{flex:0 0 300px;min-width:300px;max-width:300px;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
 .kb-col.drag-over{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo-soft)}
-.kb-head{display:flex;align-items:center;gap:8px;padding:2px 4px 6px}
+/* Sticky column header: stays visible as the page scrolls past long card stacks. */
+.kb-head{position:sticky;top:0;z-index:2;background:var(--ink);display:flex;align-items:center;gap:8px;padding:6px 4px;margin:-4px -4px 0;border-radius:10px}
 .kb-head .kb-title{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
 .kb-head .kb-n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 8px}
 .kb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
@@ -1108,8 +1111,9 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .chip.kb-st-new{background:rgba(219,39,119,.14);color:var(--rose)}
 .chip.kb-st-dismissed{background:rgba(107,114,128,.16);color:var(--paper-faint)}
 .kb-item .tkt-detail{border-radius:12px;border-top:1px solid var(--line);margin-top:8px}
-@media(max-width:1100px){.kanban{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.kanban{grid-template-columns:1fr}}
+/* #636: columns keep their fixed width at every breakpoint; the board scrolls horizontally instead of
+   collapsing to fewer/narrower columns. Slightly narrower fixed columns on small screens. */
+@media(max-width:760px){.kb-col{flex:0 0 84vw;min-width:84vw;max-width:84vw}}
 .tkt-fields{display:flex;gap:10px;flex-wrap:wrap}
 .tkt-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px}
 .tkt-field label{font-size:11px;color:var(--paper-faint)}
@@ -5622,10 +5626,72 @@ async function patchTicketAssignee(ticketId, assignee) {
 function assigneePickerHtml(t, compact = false) {
   const current = t.assignee || ""
   const placeholder = compact ? "Assign email" : "name@company.com"
-  return `<div class="${compact ? "kb-card-assign" : "tkt-assignee-row"}">
+  if (compact) {
+    // #628: on a card that already shows the "→ email" assignee line, DON'T also render an open
+    // pre-filled input. When assigned, collapse to a small ghost "Reassign" button; clicking it
+    // reveals the input + Save (see wireCardAssign). Only unassigned cards show the open input+Assign.
+    const assigned = !!current
+    const editRow = `<span class="kb-card-assign-edit${assigned ? " hide" : ""}" style="display:inline-flex;gap:6px;align-items:center">
+        <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="${placeholder}" value="${esc(current)}" autocomplete="off" />
+        <button class="btn btn-ghost btn-sm tkt-assignee-save" type="button">${assigned ? "Save" : "Assign"}</button>
+      </span>`
+    const reassignBtn = assigned
+      ? `<button class="btn btn-ghost btn-sm tkt-assignee-reassign" type="button">Reassign</button>`
+      : ""
+    return `<div class="kb-card-assign">${reassignBtn}${editRow}</div>`
+  }
+  return `<div class="tkt-assignee-row">
     <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="${placeholder}" value="${esc(current)}" autocomplete="off" />
-    ${compact ? `<button class="btn btn-ghost btn-sm tkt-assignee-save" type="button">Assign</button>` : `<button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>`}
+    <button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>
   </div>`
+}
+
+// #628: card assignee wiring, extracted so it can run on first render AND after a reveal/save rebuild.
+// Stop-propagation is attached to the whole .kb-card-assign box so interacting with any control
+// (Reassign button, input, Save) never bubbles up to the card's open-ticket click handler.
+function wireCardAssign(cardEl, t, ticketId, renderCard) {
+  const box = cardEl.querySelector(".kb-card-assign")
+  if (!box) return
+  const stop = ev => ev.stopPropagation()
+  box.addEventListener("click", stop)
+  box.addEventListener("mousedown", stop)
+  box.addEventListener("dragstart", stop)
+  const reassignBtn = box.querySelector(".tkt-assignee-reassign")
+  const editRow = box.querySelector(".kb-card-assign-edit")
+  if (reassignBtn && editRow) {
+    reassignBtn.addEventListener("click", ev => {
+      ev.stopPropagation()
+      reassignBtn.classList.add("hide")
+      editRow.classList.remove("hide")
+      const inp = editRow.querySelector(".assignee-inp"); if (inp) inp.focus()
+    })
+  }
+  const assignBtn = box.querySelector(".tkt-assignee-save")
+  const assignInp = box.querySelector(".assignee-inp")
+  if (assignBtn && assignInp) {
+    assignBtn.addEventListener("click", async ev => {
+      ev.stopPropagation()
+      const next = assignInp.value.trim()
+      assignBtn.disabled = true
+      try {
+        await patchTicketAssignee(ticketId, next)
+        t.assignee = next || null
+        if (typeof renderCard === "function") renderCard()   // refresh the "→ email" meta line
+        // Rebuild the assign control in place so it collapses to "Reassign" (assigned) or the open
+        // input (cleared) — renderCard only repaints .kb-card-meta, not the picker.
+        const tmp = document.createElement("div")
+        tmp.innerHTML = assigneePickerHtml(t, true)
+        const fresh = tmp.firstElementChild
+        if (fresh) { box.replaceWith(fresh); wireCardAssign(cardEl, t, ticketId, renderCard) }
+      } catch (e) {
+        assignInp.setCustomValidity(e.message || "Couldn't assign.")
+        assignInp.reportValidity()
+        setTimeout(() => assignInp.setCustomValidity(""), 2000)
+      } finally {
+        assignBtn.disabled = false
+      }
+    })
+  }
 }
 
 // Build the shared expandable detail panel for a ticket. onChange(field, value) is
@@ -5710,8 +5776,10 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     // PATCH /api/feedback/:id VALID_STATUS set.
     const statuses = ["new", "open", "in_progress", "done", "dismissed"]
     const curStatus = t.status || "open"
-    const segBtns = statuses.map(s =>
-      `<button class="seg-btn${s===curStatus?" active":""}" data-status="${s}">${STATUS_LABELS[s]}</button>`
+    // #630(a): STATUS as a compact <select> (mirrors the Priority picker beside it) instead of 5 inline
+    // pills — far less clutter on the single-ticket view. Same option set / state machine as before.
+    const statusOpts = statuses.map(s =>
+      `<option value="${s}"${s===curStatus?" selected":""}>${STATUS_LABELS[s]}</option>`
     ).join("")
 
     // Export badges HTML. A failed export (KLA-283) gets an inline Retry control instead of a dead
@@ -5806,7 +5874,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const _bodyHtml = `
       <div class="tkt-status-row">
         <span class="tkt-status-lbl">Status</span>
-        <div class="seg">${segBtns}</div>
+        <select class="tkt-status-sel seg-like">${statusOpts}</select>
       </div>
       <div class="tkt-status-row tkt-pri-row">
         <span class="tkt-status-lbl">Priority</span>
@@ -5849,15 +5917,17 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       : `${_contextHtml}${_recHtml}${_bodyHtml}`
     wireRecordingSeek(detailEl)
 
-    // Wire up status buttons
-    detailEl.querySelectorAll(".seg-btn").forEach(btn => {
-      btn.addEventListener("click", async (ev) => {
+    // #630(a): Wire up the status <select> (was 5 seg buttons). Same PATCH + optimistic-state logic;
+    // a single change handler replaces the per-pill click handlers.
+    const statusSelEl = detailEl.querySelector(".tkt-status-sel")
+    if (statusSelEl) {
+      let _prevStatus = curStatus
+      statusSelEl.addEventListener("change", async (ev) => {
         ev.stopPropagation()
-        const newStatus = btn.getAttribute("data-status")
-        // #537: reflect in-flight state immediately (disable the seg + aria-busy) so a click during a
+        const newStatus = statusSelEl.value
+        // #537: reflect in-flight state immediately (disable + aria-busy) so a change during a
         // project-switch race / offline blip isn't a silent no-op.
-        const segBtns = Array.from(detailEl.querySelectorAll(".seg-btn"))
-        segBtns.forEach(b => { b.disabled = true; b.setAttribute("aria-busy", "true") })
+        statusSelEl.disabled = true; statusSelEl.setAttribute("aria-busy", "true")
         // #532: bump the mutation guard so the 25s liveness poll's refreshAll() can't wholesale-repaint
         // the board mid-save and clobber the just-saved value.
         window.__klavMutating++
@@ -5868,10 +5938,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
             body: JSON.stringify({ status: newStatus })
           }).catch(() => null)
           d = r ? await r.json().catch(() => ({})) : {}
-        } finally { window.__klavMutating-- }
-        segBtns.forEach(b => { b.disabled = false; b.removeAttribute("aria-busy") })
+        } finally { window.__klavMutating--; statusSelEl.disabled = false; statusSelEl.removeAttribute("aria-busy") }
         if (d.ok) {
-          detailEl.querySelectorAll(".seg-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-status") === newStatus))
+          _prevStatus = newStatus
           // Update state
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.status = newStatus
@@ -5886,10 +5955,12 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
             showTktMsg(detailEl, "Saved.", false)
           }
         } else {
+          // Revert the visible selection to the last-saved value on failure.
+          statusSelEl.value = _prevStatus
           showTktMsg(detailEl, d.error || "Couldn't save — retry.", true)
         }
       })
-    })
+    }
 
     // KLA-199: Wire up priority picker — auto-saves on change, updates state + rail + chip in-place
     const priSelEl = detailEl.querySelector(".tkt-pri-sel")
@@ -6392,18 +6463,29 @@ function buildTimelineSection(ticketId, report) {
 
   function reloadTimeline(attempt) {
     if (!listEl) return
-    fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline")
+    // #631: guard against a hung/never-settling request. On the dedicated ticket page a stalled
+    // /timeline fetch (slow connection, dropped socket) would otherwise leave the Activity section
+    // on "Loading…" forever, because neither .then nor .catch ever fires. An AbortController timeout
+    // forces the promise to settle into .catch (→ retry, then a real empty/error state).
+    const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null
+    const to = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) {} }, 9000) : null
+    const clearTo = () => { if (to) clearTimeout(to) }
+    fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline", ctrl ? { signal: ctrl.signal } : undefined)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(d => { paintTimeline((d.items || []).slice()) })
+      .then(d => { clearTo(); paintTimeline((d.items || []).slice()) })
       .catch(() => {
+        clearTo()
         // Short retry/backoff on a failed read before giving up (never drops a local comment).
         if ((attempt || 0) < 2) { setTimeout(() => reloadTimeline((attempt || 0) + 1), 600 * ((attempt || 0) + 1)); return }
         // On persistent failure, still show the origin row + any locally-posted comments.
         const first = synthFirstItem()
         if (listEl) {
           if (first || localComments.length) paintTimeline([])
-          else listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline.</div>'
+          else listEl.innerHTML = '<div class="tkt-tl-empty" style="color:var(--rose)">Failed to load timeline. <button type="button" class="tkt-tl-retry" style="background:none;border:none;color:var(--indigo);cursor:pointer;font:inherit;padding:0;text-decoration:underline">Retry</button></div>'
         }
+        // Wire the manual Retry affordance so a transient outage is one click to recover.
+        const rb = listEl && listEl.querySelector(".tkt-tl-retry")
+        if (rb) rb.addEventListener("click", () => { listEl.innerHTML = '<div class="tkt-tl-empty" style="padding:6px 0">Loading…</div>'; reloadTimeline(0) })
       })
   }
 
@@ -6550,17 +6632,41 @@ function buildMergeControl(ticketId) {
   const byLabel = {}
   cands.forEach(x => { byLabel[mergeCandLabel(x)] = String(x.id) })
   const opts = cands.map(x => `<option value="${esc(mergeCandLabel(x))}"></option>`).join("")
+  // #630(b): progressive disclosure — the always-visible large search box was clutter. Start collapsed
+  // behind a small "Merge another ticket" toggle; the search input + Merge action only appear on click.
   wrap.innerHTML = `
-    <div class="tkt-merge-hd" style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;margin-bottom:6px">${kicon('link',{size:14})} Merge another ticket into this one</div>
-    <div class="tkt-merge-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <input class="tkt-merge-input seg-like" list="${esc(listId)}" placeholder="Search a ticket by # or title…" autocomplete="off" style="flex:1;min-width:220px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--ink-2);color:inherit;font-family:inherit;font-size:13px">
-      <datalist id="${esc(listId)}">${opts}</datalist>
-      <button class="btn btn-ghost btn-sm tkt-merge-go" type="button">${kicon('link',{size:13})} Merge</button>
-    </div>
-    <div class="tkt-merge-msg muted" style="font-size:12px;margin-top:6px"></div>`
+    <button class="btn btn-ghost btn-sm tkt-merge-toggle" type="button" style="display:inline-flex;align-items:center;gap:6px">${kicon('link',{size:13})} Merge another ticket</button>
+    <div class="tkt-merge-body hide" style="margin-top:8px">
+      <div class="tkt-merge-hd" style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;margin-bottom:6px">${kicon('link',{size:14})} Merge another ticket into this one</div>
+      <div class="tkt-merge-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input class="tkt-merge-input seg-like" list="${esc(listId)}" placeholder="Search a ticket by # or title…" autocomplete="off" style="flex:1;min-width:220px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--ink-2);color:inherit;font-family:inherit;font-size:13px">
+        <datalist id="${esc(listId)}">${opts}</datalist>
+        <button class="btn btn-ghost btn-sm tkt-merge-go" type="button">${kicon('link',{size:13})} Merge</button>
+        <button class="btn btn-ghost btn-sm tkt-merge-cancel" type="button">Cancel</button>
+      </div>
+      <div class="tkt-merge-msg muted" style="font-size:12px;margin-top:6px"></div>
+    </div>`
+  const toggleBtn = wrap.querySelector(".tkt-merge-toggle")
+  const bodyEl = wrap.querySelector(".tkt-merge-body")
   const input = wrap.querySelector(".tkt-merge-input")
   const goBtn = wrap.querySelector(".tkt-merge-go")
+  const cancelBtn = wrap.querySelector(".tkt-merge-cancel")
   const msgEl = wrap.querySelector(".tkt-merge-msg")
+  if (toggleBtn && bodyEl) {
+    toggleBtn.addEventListener("click", () => {
+      bodyEl.classList.remove("hide")
+      toggleBtn.classList.add("hide")
+      if (input) input.focus()
+    })
+  }
+  if (cancelBtn && bodyEl && toggleBtn) {
+    cancelBtn.addEventListener("click", () => {
+      if (input) input.value = ""
+      if (msgEl) msgEl.textContent = ""
+      bodyEl.classList.add("hide")
+      toggleBtn.classList.remove("hide")
+    })
+  }
   const setMsg = (t, isErr) => { if (msgEl) { msgEl.textContent = t || ""; msgEl.style.color = isErr ? "var(--rose)" : "" } }
   goBtn.addEventListener("click", async () => {
     const val = (input.value || "").trim()
@@ -7961,31 +8067,9 @@ function renderTicketsKanban(boardTickets) {
       const detailEl = buildTktDetail(t, admin, () => renderCard())
       const cardCopyIcon = cardEl.querySelector(".copy-ai-icon")
       if (cardCopyIcon) cardCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, cardCopyIcon, detailEl) })
-      cardEl.querySelectorAll(".kb-card-assign, .kb-card-assign *").forEach(el => {
-        el.addEventListener("click", ev => ev.stopPropagation())
-        el.addEventListener("mousedown", ev => ev.stopPropagation())
-        el.addEventListener("dragstart", ev => ev.stopPropagation())
-      })
-      const assignBtn = cardEl.querySelector(".tkt-assignee-save")
-      const assignInp = cardEl.querySelector(".assignee-inp")
-      if (assignBtn && assignInp) {
-        assignBtn.addEventListener("click", async ev => {
-          ev.stopPropagation()
-          const next = assignInp.value.trim()
-          assignBtn.disabled = true
-          try {
-            await patchTicketAssignee(ticketId, next)
-            t.assignee = next || null
-            renderCard()
-          } catch (e) {
-            assignInp.setCustomValidity(e.message || "Couldn't assign.")
-            assignInp.reportValidity()
-            setTimeout(() => assignInp.setCustomValidity(""), 2000)
-          } finally {
-            assignBtn.disabled = false
-          }
-        })
-      }
+      // #628: reveal/collapse + assign wiring (stop-propagation included) lives in wireCardAssign so the
+      // same logic runs on first paint and after a save-driven rebuild.
+      wireCardAssign(cardEl, t, ticketId, renderCard)
 
       cardEl.addEventListener("click", (ev) => {
         // Shift-click anywhere on a card selects a range without opening the ticket. Plain click opens.
@@ -10709,6 +10793,32 @@ load()
   mirror('ticketCount','navTicketCount');
   mirror('memCount','navTeamCount');
   mirror('triageCount','navTriageCount');
+  // #633: the sidebar is static single-source markup and normalizeSidebar() already dedupes by data-go
+  // on every setView — but that only runs on navigation. If a stray re-render / injected node ever
+  // duplicates a nav button (the reported "New reports N" showing many times), it would persist until
+  // the next setView. This self-healing observer collapses any duplicate nav (same data-go) to one the
+  // moment it appears. Removal-only + a reentrancy flag → idempotent: once clean it makes no mutations,
+  // so the observer stays quiet (no loop). childList without subtree so it ignores the mirror count text.
+  var _dedupingSidebar=false;
+  function dedupeSidebarNavs(){
+    if(_dedupingSidebar)return;
+    _dedupingSidebar=true;
+    try{
+      var seen={};
+      sidebarNavs().forEach(function(b){
+        var key=b.getAttribute('data-go')||(b.textContent||'').trim();
+        if(key&&seen[key]){b.remove();return;}
+        if(key)seen[key]=true;
+      });
+    }finally{_dedupingSidebar=false;}
+  }
+  try{
+    var _sideEl=document.querySelector('.side');
+    if(_sideEl&&typeof MutationObserver!=='undefined'){
+      new MutationObserver(dedupeSidebarNavs).observe(_sideEl,{childList:true});
+    }
+    dedupeSidebarNavs();
+  }catch(e){}
   var init=(location.hash||'').replace('#','');
   // Deep-link form "triage/<feedbackId>" (from a Sim-run observation) opens New reports on that row.
   var deepTriage=init.match(/^triage\/(.+)$/);
