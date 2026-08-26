@@ -1665,6 +1665,8 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .triage-banner .tb-go{margin-left:auto;font-weight:600;color:var(--indigo,#6366f1)}
 .triage-banner.hide{display:none}
 .tg-row{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-top:1px solid var(--line,#eee)}
+/* #649: optimistic dismiss/accept — the row fades out immediately without a full list re-render */
+.tg-row.tg-removing{opacity:0;transform:translateX(10px);transition:opacity .15s ease,transform .15s ease;pointer-events:none}
 /* JTBD 3.8: transient highlight when a Sim-run observation deep-links to this row */
 .tg-row.tg-focus{animation:tgFocusPulse 2.4s ease}
 @keyframes tgFocusPulse{0%,100%{background:transparent}12%{background:rgba(99,102,241,.16)}}
@@ -3387,43 +3389,91 @@ function tgBtnPending(btn) {
   btn.disabled = true; btn.setAttribute("aria-busy", "true")
   return () => { btn.disabled = prevDisabled; btn.removeAttribute("aria-busy") }
 }
+// #649: cheaply adjust the "New reports N" count (overview banner + mirrored sidebar nav) by delta
+// WITHOUT a refreshAll()/re-fetch. The MutationObserver in mirror() propagates triageCount → the
+// sidebar navTriageCount automatically, so we only touch the one source element + its banner.
+function tgAdjustCount(delta) {
+  const tc = $("triageCount")
+  if (!tc) return
+  const cur = parseInt(String(tc.textContent || "0").replace(/[^0-9]/g, ""), 10) || 0
+  const next = Math.max(0, cur + delta)
+  tc.textContent = String(next)
+  const banner = $("triageBanner"); if (banner) banner.classList.toggle("hide", next === 0)
+}
+// #649: OPTIMISTIC removal — drop the given ids from local _triageItems and fade out just their DOM
+// rows (never rebuilding the list innerHTML, so the remaining rows' thumbnails are NOT re-fetched).
+// Refreshes only the cheap filter bar + the New-reports count. Returns the removed item objects so a
+// failed background PATCH can restore them. When nothing visible remains we swap in the empty state.
+function tgRemoveLocal(ids) {
+  const idSet = new Set(ids.map(String))
+  const removed = [], kept = []
+  for (const t of (_triageItems || [])) { (idSet.has(String(t.id)) ? removed : kept).push(t) }
+  _triageItems = kept
+  ids.forEach(id => {
+    _tgSelected.delete(String(id))
+    const row = tgRowById(id)
+    if (row) { row.classList.add("tg-removing"); setTimeout(() => { if (row.parentNode) row.remove() }, 160) }
+  })
+  renderTriageFilters()           // cheap: chips/select only — no thumbnails
+  renderTriageBulkBar()           // selection shrank
+  tgAdjustCount(-removed.length)
+  // If the filters now leave nothing visible, show the empty state (list innerHTML replaced only when
+  // empty — still no thumbnail re-fetch of any surviving row).
+  if (!tgVisibleItems().length) renderTriageItems([])
+  return removed
+}
+// #649: restore optimistically-removed items on a failed background PATCH (or an Undo). A full
+// renderTriageView() here IS acceptable — it's the rare failure/undo path, not the common success path.
+function tgRestoreLocal(items) {
+  if (!items || !items.length) return
+  const existing = new Set((_triageItems || []).map(t => String(t.id)))
+  const add = items.filter(t => !existing.has(String(t.id)))
+  if (add.length) { _triageItems = add.concat(_triageItems || []); tgAdjustCount(add.length) }
+  renderTriageView()
+}
 // Accept (single or bulk): status=open, priority applied to all. Reduces the inbox count by N.
 async function tgAccept(ids, priority, btn) {
   const body = { status: "open" }
   if (priority) body.priority = priority
   const restore = tgBtnPending(btn)   // #537: pending immediately on click
-  let res
-  try { res = await tgBulkPatch(ids, body) } finally { restore() }
-  if (res.ok) {
-    _tgSelected.clear(); await refreshAll(); renderTriage()
-    // KLAVITYKLA-512: the accepted row silently vanished before (contrast the dismiss undo-toast).
-    // Confirm the move and offer a deep link into the ticket in the Tickets view.
-    const one = ids.length === 1 ? String(ids[0]) : null
-    const link = one
-      ? ` — <a href="#tickets" style="color:var(--indigo)" onclick="try{setView('tickets');openSingleTicket('${esc(one)}')}catch(e){};return false">view in Tickets</a>`
-      : ""
-    klavToast((one ? "Accepted" : ids.length + " accepted") + " &rarr; moved to Open in Tickets" + link)
-  } else {
+  // #649: OPTIMISTIC — the accepted rows move to Tickets, so remove them from New reports IMMEDIATELY
+  // (no refreshAll, no thumbnail reload). Fire the PATCH in the background and restore only on failure.
+  const removed = tgRemoveLocal(ids)
+  // KLAVITYKLA-512: confirm the move + offer a deep link into the ticket in the Tickets view.
+  const one = ids.length === 1 ? String(ids[0]) : null
+  const link = one
+    ? ` — <a href="#tickets" style="color:var(--indigo)" onclick="try{setView('tickets');openSingleTicket('${esc(one)}')}catch(e){};return false">view in Tickets</a>`
+    : ""
+  klavToast((one ? "Accepted" : ids.length + " accepted") + " &rarr; moved to Open in Tickets" + link)
+  // tgBulkPatch keeps the __klavMutating liveness-poll guard (#510) around the in-flight PATCH.
+  const res = await tgBulkPatch(ids, body)
+  restore()
+  if (!res.ok) {
     // #537: surface the failure instead of swallowing {ok:false} (project-switch race / offline blip).
+    tgRestoreLocal(removed)
     tgFlash("Couldn't accept — retry.")
   }
   return res
 }
 // Dismiss (single or bulk): status=dismissed, then show an undo toast that restores status=new.
 async function tgDismiss(ids, btn) {
-  const restore = ids.slice()
   const undoBtn = tgBtnPending(btn)   // #537: pending immediately on click
-  let res
-  try { res = await tgBulkPatch(ids, { status: "dismissed" }) } finally { undoBtn() }
-  if (res.ok) {
-    _tgSelected.clear()
-    await refreshAll(); renderTriage()
-    tgUndoToast(restore.length, async () => {
-      const r = await tgBulkPatch(restore, { status: "new" })
-      if (r.ok) { await refreshAll(); renderTriage() }
-    })
-  } else {
-    // #537: no more silent no-op — tell the reviewer the dismiss didn't land and to retry.
+  // #649: OPTIMISTIC — remove the dismissed rows from local state + DOM RIGHT NOW (no refreshAll, no
+  // thumbnail reload of the survivors), then PATCH in the background. Keep the removed items so we can
+  // restore them on a failed PATCH or an Undo.
+  const removed = tgRemoveLocal(ids)
+  // Undo re-adds the item(s) locally (one renderTriageView) + a background PATCH back to status='new'.
+  tgUndoToast(removed.length || ids.length, async () => {
+    tgRestoreLocal(removed)
+    const r = await tgBulkPatch(ids, { status: "new" })
+    if (!r.ok) tgFlash("Couldn't undo — retry.")
+  })
+  // tgBulkPatch keeps the __klavMutating liveness-poll guard (#510) around the in-flight PATCH.
+  const res = await tgBulkPatch(ids, { status: "dismissed" })
+  undoBtn()
+  if (!res.ok) {
+    // #537: no more silent no-op — restore the row(s) and tell the reviewer to retry.
+    tgRestoreLocal(removed)
     tgFlash("Couldn't dismiss — retry.")
   }
   return res
@@ -3452,15 +3502,46 @@ async function tgSendToTracker(ids) {
   }
   let ok = 0, fail = 0
   for (const id of ids) {
-    const r = await fetch("/api/feedback/" + encodeURIComponent(id) + "/export", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ connectorId: conn.id }),
-    }).catch(() => null)
-    if (r && (r.ok || r.status === 409)) ok++; else fail++
+    let r = null, d = null
+    try {
+      r = await fetch("/api/feedback/" + encodeURIComponent(id) + "/export", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ connectorId: conn.id }),
+      })
+      d = await r.json().catch(() => null)
+    } catch { r = null }
+    if (r && (r.ok || r.status === 409)) {
+      ok++
+      // #649: update local state + just this row's affordance instead of refreshAll()+renderTriage()
+      // (which reloaded every thumbnail). Pull the filed key/url from the export result (200) or the
+      // already-exported guard (409) so the row flips to the "Filed to Jira · KEY" badge in place.
+      const info = d && (d.export || d.alreadyExported)
+      const item = (_triageItems || []).find(x => String(x.id) === String(id))
+      if (item && info) {
+        if (info.externalKey && !item.planeIssueKey) item.planeIssueKey = info.externalKey
+        if (info.externalUrl && !item.planeIssueUrl) item.planeIssueUrl = info.externalUrl
+        tgRefreshRowAffordance(id)
+      }
+    } else fail++
   }
   _tgSelected.clear()
-  await refreshAll(); renderTriage()
+  renderTriageBulkBar()   // selection cleared — collapse the bulk bar without a re-fetch
   tgFlash(fail ? `Sent ${ok}, ${fail} failed.` : `Sent ${ok} to ${conn.name || "tracker"}.`)
+}
+// #649: re-render a SINGLE row's Snap-routing affordance (Send to Jira → Filed badge) in place, so a
+// send/export never triggers a full list rebuild + thumbnail reload of every other row.
+function tgRefreshRowAffordance(id) {
+  const row = tgRowById(id); if (!row) return
+  const t = (_triageItems || []).find(x => String(x.id) === String(id)); if (!t) return
+  const actions = row.querySelector(".tg-actions"); if (!actions) return
+  const old = actions.querySelector(".tg-send-jira, .tg-filed")
+  const tmp = document.createElement("div"); tmp.innerHTML = tgRoutingAffordance(t)
+  const nu = tmp.firstElementChild
+  if (old) { nu ? old.replaceWith(nu) : old.remove() }
+  else if (nu) actions.insertBefore(nu, actions.firstChild)
+  // If the freshly-inserted affordance is a Send button, re-bind its handler (replaceWith drops it).
+  const sendBtn = actions.querySelector(".tg-send-jira")
+  if (sendBtn) sendBtn.addEventListener("click", () => tgSendToTracker([String(id)]))
 }
 // Minimal transient notice, reusing the dismiss-toast element/styling without an Undo button.
 function tgFlash(text) {
