@@ -5442,12 +5442,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
         // get a dashboard URL — anonymous widget end-users on a customer's site have no dashboard
         // access, so handing them a link would be useless (and leak our app structure). They get
-        // just the reference id to quote to support. The dashboard has no per-ticket route yet, so
-        // the deepest stable link is the Tickets board of the submitting project.
+        // just the reference id to quote to support. Deep-link straight to the newly-created single
+        // ticket (#tickets/<feedbackId>) so "Open in Klavity" lands on the report itself, not the
+        // whole board (KLA-632).
         const dashBase = baseOrigin || reqOrigin
         const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
         const issueUrl = (!anonActor && feedbackId && dashBase)
-          ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
+          ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets/${encodeURIComponent(feedbackId)}`
           : ""
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
       } catch (e: any) {
@@ -11061,12 +11062,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const projects = await listProjects(me)
         const projectIds = projects.map((p) => p.id)
         const rows = await listInboxForProjects(projectIds, { windowMs })
-        // Annotate each row with the project name and role for the UI
+        // Annotate each row with the project name and role for the UI.
+        // KLA-634: resolve per-project role CONCURRENTLY. Doing this sequentially was an N+1
+        // (projectAccess ≈ 2-3 queries each) that made /api/inbox scale linearly with project
+        // count — the dominant latency for accounts with many projects (18+). Promise.all fans
+        // the lookups out so total latency ≈ one round-trip, not N.
         const projectMeta: Record<string, { name: string; role: string | null }> = {}
-        for (const p of projects) {
-          const role = await projectAccess(me, p.id)
-          projectMeta[p.id] = { name: p.name, role }
-        }
+        const roles = await Promise.all(projects.map((p) => projectAccess(me, p.id)))
+        projects.forEach((p, i) => {
+          projectMeta[p.id] = { name: p.name, role: roles[i] }
+        })
         const out = rows.map((r) => ({
           projectId: r.projectId,
           projectName: projectMeta[r.projectId]?.name ?? r.projectId,

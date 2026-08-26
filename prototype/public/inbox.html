@@ -298,8 +298,23 @@ function renderProjectCard(p) {
 }
 
 function renderInbox(data) {
-  const { projects, totalNew, totalReg, windowHours } = data
-  const projectCount = (projects || []).length
+  const projects = Array.isArray(data && data.projects) ? data.projects : []
+  const projectCount = projects.length
+  const windowHours = Number(data && data.windowHours) || 48
+
+  // KLA-634: derive the new/regression totals from the SAME project rows that render the list,
+  // rather than trusting the server's aggregate totalNew/totalReg independently. Previously the
+  // empty-state decision keyed off the server aggregate while the list rendered off the per-project
+  // rows — if the two ever disagreed you'd see "All clear" AND a populated list at once. Summing the
+  // groups here makes the banner, the empty-state, and the list mathematically impossible to
+  // contradict. (Fall back to the server aggregate only if a row omits the count.)
+  const totalNew = projects.reduce((s, p) => s + (Number(p.newReportCount) || 0), 0)
+  const totalReg = projects.reduce((s, p) => s + (Number(p.regressionCount) || 0), 0)
+
+  // This render is authoritative: clear any transient loading/error UI so we can never paint a
+  // populated inbox with a stuck spinner or a stale error banner beside it.
+  hide($("loadingEl"))
+  hide($("errEl"))
 
   // Summary banner
   show($("summaryBanner"))
@@ -320,6 +335,7 @@ function renderInbox(data) {
     show($("allClearEl"))
     $("allClearMsg").textContent = `No new reports or regressions across ${projectCount} project${projectCount !== 1 ? "s" : ""} in the ${wLabel}.`
     hide($("projectList"))
+    $("projectList").innerHTML = ""
     return
   }
 
@@ -351,7 +367,12 @@ function renderInbox(data) {
 }
 
 /* ── Fetch ──────────────────────────────────────────────────────────────── */
+// Monotonic request token: only the most-recent loadInbox call is allowed to paint. Without this a
+// slow in-flight request (e.g. the boot 48h load) could resolve AFTER a newer window selection and
+// overwrite it with stale state — another way the inbox ended up showing contradictory content.
+let inboxSeq = 0
 async function loadInbox(windowHours) {
+  const mySeq = ++inboxSeq
   hide($("errEl"))
   hide($("summaryBanner"))
   hide($("allClearEl"))
@@ -360,18 +381,23 @@ async function loadInbox(windowHours) {
 
   try {
     const r = await fetch(`/api/inbox?window=${encodeURIComponent(windowHours)}`)
+    if (mySeq !== inboxSeq) return // a newer load supersedes this one — drop the result
     if (r.status === 401) { window.location.href = "/login"; return }
     if (!r.ok) {
       const d = await r.json().catch(() => ({}))
       throw new Error(d.error || `Server returned ${r.status}`)
     }
     const data = await r.json()
+    if (mySeq !== inboxSeq) return
     hide($("loadingEl"))
     renderInbox(data)
   } catch (e) {
+    if (mySeq !== inboxSeq) return
     hide($("loadingEl"))
+    // Never surface an empty error banner — always carry a human-readable message.
+    const msg = (e && e.message) ? e.message : "unknown error"
+    $("errEl").textContent = "Could not load inbox: " + msg
     show($("errEl"))
-    $("errEl").textContent = "Could not load inbox: " + (e.message || "unknown error")
   }
 }
 
