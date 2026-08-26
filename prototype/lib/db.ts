@@ -1240,27 +1240,37 @@ export async function applySchema(c: Client) {
   // in. When set, schedule_cron is LOCAL wall-clock and the UTC fire instant is computed per tick so
   // a 9am-local guard survives DST. Null = legacy baked-UTC cron (unchanged behavior).
   if (needCol("trails", "schedule_tz")) await c.execute("ALTER TABLE trails ADD COLUMN schedule_tz TEXT").catch((e) => console.warn("trails.schedule_tz ALTER skipped:", e?.message || e))
-  // KLA-70: dedup-race fix — enforce UNIQUE(project_id, dedup_key) so recordFinding's
-  // INSERT ON CONFLICT is atomic. Pre-collapse any legacy duplicates (keep oldest rowid) first.
-  await c.execute("DELETE FROM findings WHERE rowid NOT IN (SELECT MIN(rowid) FROM findings GROUP BY project_id, dedup_key)")
-    .catch((e: any) => console.warn("findings dedup pre-collapse skipped:", e?.message || e))
-  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
-    .catch((e: any) => console.warn("finding_dedup_uq skipped:", e?.message || e))
-  // #722 (P2.4) + #722-fix (Codex QA, Finding 4): finding_dedup_idx (non-unique) covers the IDENTICAL
-  // columns findings(project_id, dedup_key) as the UNIQUE finding_dedup_uq above — pure write amplification
-  // with zero read benefit once the UNIQUE index exists. BUT the CREATE above is best-effort (its error is
-  // swallowed), so we must NOT drop the only backing index unconditionally: if the UNIQUE create failed,
-  // dropping finding_dedup_idx would leave recordFinding's `ON CONFLICT(project_id,dedup_key)` (trails.ts)
-  // and every dedup lookup with NO index at all. Verify finding_dedup_uq is actually present first, and
-  // only then drop the redundant one.
-  const uqPresent = await c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='finding_dedup_uq' LIMIT 1")
-    .then((r: any) => (r.rows?.length ?? 0) > 0)
-    .catch(() => false)
-  if (uqPresent) {
+  // KLA-70 / #722-fix2 (Codex QA, Finding 1): the app REQUIRES a UNIQUE index on
+  // findings(project_id, dedup_key). trails.ts recordFinding relies on
+  // `INSERT ... ON CONFLICT(project_id, dedup_key) DO UPDATE ...`, and SQLite ONLY accepts an ON CONFLICT
+  // target that is backed by a UNIQUE index/constraint (a non-unique index throws
+  // "ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint"). So a non-unique
+  // finding_dedup_idx is NOT a usable fallback — we must GUARANTEE finding_dedup_uq exists rather than
+  // silently swallow its create failure. A create almost always fails only because of pre-existing
+  // duplicate (project_id, dedup_key) rows, so collapse duplicates (keep the oldest rowid) then create;
+  // retry once more if rows slipped in between; finally verify before dropping the redundant index.
+  const collapseFindingDupes = () => c.execute(
+    "DELETE FROM findings WHERE rowid NOT IN (SELECT MIN(rowid) FROM findings GROUP BY project_id, dedup_key)",
+  ).catch((e: any) => console.warn("findings dedup collapse skipped:", e?.message || e))
+  const createFindingUq = () => c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
+    .then(() => true).catch((e: any) => { console.warn("finding_dedup_uq create failed:", e?.message || e); return false })
+  const findingUqExists = () => c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='finding_dedup_uq' LIMIT 1")
+    .then((r: any) => (r.rows?.length ?? 0) > 0).catch(() => false)
+  await collapseFindingDupes()
+  if (!(await createFindingUq()) || !(await findingUqExists())) {
+    // Second chance: collapse any duplicates inserted since the first pass, then retry the unique create.
+    await collapseFindingDupes()
+    await createFindingUq()
+  }
+  if (await findingUqExists()) {
+    // uq is guaranteed present → the non-unique finding_dedup_idx is pure write amplification with zero
+    // read benefit (uq serves every lookup). Drop it unconditionally now that uq is confirmed.
     await c.execute("DROP INDEX IF EXISTS finding_dedup_idx")
       .catch((e: any) => console.warn("finding_dedup_idx drop skipped:", e?.message || e))
   } else {
-    console.warn("finding_dedup_idx drop SKIPPED — finding_dedup_uq not present; keeping the non-unique index as the backing lookup for dedup ON CONFLICT")
+    // Must not happen after collapse+retry. Surface loudly — Trails dedup (ON CONFLICT) writes will FAIL
+    // until this is resolved. Leave finding_dedup_idx in place (it can still back dedup LOOKUPS as a stopgap).
+    console.error("CRITICAL: finding_dedup_uq could not be created — Trails dedup ON CONFLICT writes will fail until resolved")
   }
   // KLA-73: persona-judged walks — which persona judges this Trail's results.
   if (needCol("trails", "judge_persona_id")) await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
@@ -4104,25 +4114,33 @@ const DASH_CACHE_TTL_MS = 20_000
 type DashCacheEntry<T> = { at: number; value: T }
 const dashCountsCache = new Map<string, DashCacheEntry<{ feedback: number | null; tickets: number | null; activity: number | null }>>()
 const dashInsightsCache = new Map<string, DashCacheEntry<any>>()
-// #722-fix (Codex QA, Finding 3): per-project generation counter. Bumped on EVERY invalidate so a read
-// that STARTED before a mutation cannot repopulate the cache with now-stale data. Each aggregate read
-// captures the project's gen BEFORE it queries, and only stores its result if the gen is UNCHANGED when
-// the query completes (see dashGen usage in dashboardCounts / computeDashboardInsights). Without this,
-// a read whose queries began pre-mutation could `.set(...)` its stale result AFTER invalidate ran and
-// pin it for the whole TTL. Deleting the entry alone (below) does not close that race.
+// #722-fix (Codex QA, Finding 3/2): generation guard so a read that STARTED before a mutation cannot
+// repopulate the cache with now-stale data. Each aggregate read snapshots the GLOBAL sequence before it
+// queries and only stores its result if it can PROVE no invalidation touched its project since then.
+//
+// #722-fix2 (Codex QA, Finding 2): the generation is a SINGLE GLOBAL monotonically-increasing sequence,
+// never reused. The earlier design used a per-project counter reset to 0 on prune — an ABA hole: a read
+// that captured gen 0 could match a re-added project also reset to 0 and cache stale data. With a global
+// monotonic sequence a generation value can never recur, closing that hole. When the gen map is pruned
+// for memory, dashGenFloor records the sequence at prune time; any project MISSING from the map is treated
+// as if invalidated at the floor (i.e. "as recently as the prune"), so a read that started before the
+// prune cannot prove freshness and correctly declines to cache ("evicted/missing ⇒ cannot prove ⇒ don't
+// cache"). dashGenOf() returns a project's effective last-invalidation sequence.
+let dashGenSeq = 0
+let dashGenFloor = 0
 const dashCacheGen = new Map<string, number>()
-function dashGen(projectId: string): number { return dashCacheGen.get(projectId) ?? 0 }
-// Bust both aggregate caches for one project AND advance its generation. Called by feedback mutations so
-// counts/insights refresh on the next read instead of waiting out the TTL. Scoped by projectId — never
-// touches other projects.
+function dashGenOf(projectId: string): number { return dashCacheGen.get(projectId) ?? dashGenFloor }
+// Bust both aggregate caches for one project AND stamp it with a fresh global sequence. Called by feedback
+// mutations so counts/insights refresh on the next read instead of waiting out the TTL. Scoped by projectId.
 export function invalidateDashboardCache(projectId: string): void {
   dashCountsCache.delete(projectId)
   dashInsightsCache.delete(projectId)
-  dashCacheGen.set(projectId, dashGen(projectId) + 1)
-  // Keep the generation map from growing without bound across a long-lived process (one small int per
-  // project ever mutated). Clearing it is safe: it only resets counters to 0, and any in-flight read that
-  // captured a now-cleared higher gen simply fails its equality check and declines to cache — never stale.
-  if (dashCacheGen.size > 5000) { const keep = dashGen(projectId); dashCacheGen.clear(); dashCacheGen.set(projectId, keep) }
+  dashGenSeq += 1
+  dashCacheGen.set(projectId, dashGenSeq)
+  // Bound the gen map. On prune, raise the floor to the current sequence so every evicted project is
+  // treated as invalidated-as-recently-as-now: no in-flight read that started earlier may cache. Because
+  // the sequence is monotonic and the floor only ever rises, no stale read can slip through post-prune.
+  if (dashCacheGen.size > 5000) { dashGenFloor = dashGenSeq; dashCacheGen.clear() }
 }
 // Invalidate several projects at once (e.g. a GDPR erase that spans multiple projects, Finding 2).
 export function invalidateDashboardCaches(projectIds: Iterable<string>): void {
@@ -4143,7 +4161,7 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashCountsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
-  const genAtStart = dashGen(projectId) // Finding 3: capture BEFORE querying so a racing invalidate is detectable
+  const seqAtStart = dashGenSeq // Finding 3/2: snapshot the GLOBAL sequence BEFORE querying
   const q = (sql: string) => db!.execute({ sql, args: [projectId] })
   const settled = await Promise.allSettled([
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=?"),
@@ -4154,10 +4172,12 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
   const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
   // Only cache a fully-successful read; a partial/failed count (any null) is left uncached so it
-  // retries next poll rather than pinning a "—" for the whole TTL. AND only if no invalidation raced in
-  // while we were querying (Finding 3) — otherwise we'd pin a value that predates the mutation.
+  // retries next poll rather than pinning a "—" for the whole TTL. AND only if we can prove no
+  // invalidation touched this project since we started (Finding 3/2): its effective last-invalidation
+  // sequence must be no newer than our start snapshot. An evicted/missing project defaults to the floor,
+  // which is >= any pre-prune snapshot, so such reads decline to cache — never pinning stale data.
   if (result.feedback !== null && result.tickets !== null && result.activity !== null
-      && dashGen(projectId) === genAtStart) {
+      && dashGenOf(projectId) <= seqAtStart) {
     dashCachePrune(dashCountsCache)
     dashCountsCache.set(projectId, { at: Date.now(), value: result })
   }
@@ -6454,14 +6474,14 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
   const e = email.toLowerCase()
   const shots = await db!.execute({ sql: "SELECT s3_key FROM screenshots WHERE owner_email=?", args: [e] })
   const s3Keys = shots.rows.map((r: any) => String(r.s3_key))
-  // #722-fix (Codex QA, Finding 2): a GDPR erase deletes this user's feedback which may span MULTIPLE
-  // projects — capture the distinct affected project_ids BEFORE the delete so we can bust each project's
-  // dashboard cache afterward (previously erase did no invalidation at all → stale counts for the TTL).
-  const affected = await db!.execute({ sql: "SELECT DISTINCT project_id FROM feedback WHERE actor_email=?", args: [e] })
-  const affectedProjectIds = affected.rows.map((r: any) => String(r.project_id)).filter(Boolean)
   // ticket_exports of feedback this user authored (FK-less, so clean up explicitly).
   await db!.execute({ sql: "DELETE FROM ticket_exports WHERE feedback_id IN (SELECT id FROM feedback WHERE actor_email=?)", args: [e] })
-  await db!.execute({ sql: "DELETE FROM feedback WHERE actor_email=?", args: [e] })
+  // #722-fix2 (Codex QA, Finding 3): a GDPR erase deletes this user's feedback which may span MULTIPLE
+  // projects. Derive the invalidation set from what the DELETE ACTUALLY removed (RETURNING project_id),
+  // NOT a prior `SELECT DISTINCT` — otherwise a row inserted for this email in a new project between the
+  // select and the delete would be deleted without its project being invalidated (stale count for the TTL).
+  const deleted = await db!.execute({ sql: "DELETE FROM feedback WHERE actor_email=? RETURNING project_id", args: [e] })
+  const affectedProjectIds = deleted.rows.map((r: any) => String(r.project_id)).filter(Boolean)
   await db!.execute({ sql: "DELETE FROM screenshots WHERE owner_email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM ai_calls WHERE actor_email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM account_members WHERE email=?", args: [e] })
@@ -6495,7 +6515,7 @@ export async function computeDashboardInsights(projectId: string) {
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashInsightsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
-  const genAtStart = dashGen(projectId) // Finding 3: capture BEFORE querying so a racing invalidate is detectable
+  const seqAtStart = dashGenSeq // Finding 3/2: snapshot the GLOBAL sequence BEFORE querying
   try {
     const now = Date.now()
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000
@@ -6520,9 +6540,10 @@ export async function computeDashboardInsights(projectId: string) {
     for (let i = 6; i >= 0; i--) out.volume7d.push(byDay[todayIdx - i] || 0)
     for (const r of throughputRows.rows) { const k = String((r as any).k); if (k === "resolved") out.resolved7d = Number((r as any).n); else out.opened7d = Number((r as any).n) }
     // Only successful computations are cached; the catch below returns `empty` WITHOUT caching so a
-    // transient DB error never pins zeros for the whole TTL. AND only if no invalidation raced in while
-    // we were querying (Finding 3) — otherwise we'd pin insights that predate the mutation.
-    if (dashGen(projectId) === genAtStart) {
+    // transient DB error never pins zeros for the whole TTL. AND only if we can prove no invalidation
+    // touched this project since we started (Finding 3/2) — otherwise we'd pin insights that predate the
+    // mutation. Evicted/missing projects default to the floor (>= any pre-prune snapshot) → decline to cache.
+    if (dashGenOf(projectId) <= seqAtStart) {
       dashCachePrune(dashInsightsCache)
       dashInsightsCache.set(projectId, { at: Date.now(), value: out })
     }
