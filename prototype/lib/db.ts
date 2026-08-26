@@ -1401,6 +1401,48 @@ export async function applySchema(c: Client) {
   `).catch((e: any) => console.warn("feedback.seq_num backfill skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS feedback_seq_idx ON feedback (project_id, seq_num)")
     .catch((e: any) => console.warn("feedback_seq_idx skipped:", e?.message || e))
+  // ── #728 Workspace-alias & ticket-permalink (Phase 1) — collision-safe pretty URLs
+  //    klavity.in/<slug>/t/<KEY>-<n>. ADDITIVE, idempotent. The globally-unique namespace is
+  //    accounts.slug; project keys are unique-within-account; <n> reuses the EXISTING clean
+  //    per-project sequence feedback.seq_num (KLA-200) — no new feedback column is introduced.
+  //    projects.ticket_seq is an ATOMIC per-project counter (bumped via UPDATE…RETURNING at insert)
+  //    so concurrent inserts never collide; UNIQUE(project_id, seq_num) is the backstop. ──
+  if (needCol("accounts", "slug")) await c.execute("ALTER TABLE accounts ADD COLUMN slug TEXT")
+    .catch((e: any) => console.warn("accounts.slug ALTER skipped:", e?.message || e))
+  if (needCol("accounts", "display_slug")) await c.execute("ALTER TABLE accounts ADD COLUMN display_slug TEXT")
+    .catch((e: any) => console.warn("accounts.display_slug ALTER skipped:", e?.message || e))
+  if (needCol("accounts", "slug_updated_at")) await c.execute("ALTER TABLE accounts ADD COLUMN slug_updated_at INTEGER")
+    .catch((e: any) => console.warn("accounts.slug_updated_at ALTER skipped:", e?.message || e))
+  if (needCol("projects", "ticket_key")) await c.execute("ALTER TABLE projects ADD COLUMN ticket_key TEXT")
+    .catch((e: any) => console.warn("projects.ticket_key ALTER skipped:", e?.message || e))
+  if (needCol("projects", "ticket_seq")) await c.execute("ALTER TABLE projects ADD COLUMN ticket_seq INTEGER NOT NULL DEFAULT 0")
+    .catch((e: any) => console.warn("projects.ticket_seq ALTER skipped:", e?.message || e))
+  // Global uniqueness of slug; NULLs are distinct in SQLite so un-slugged accounts coexist.
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS accounts_slug_uidx ON accounts (slug)")
+    .catch((e: any) => console.warn("accounts_slug_uidx skipped:", e?.message || e))
+  // Ticket key unique WITHIN an account (not global — Acme's KLAV ≠ Globex's KLAV).
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS projects_key_uidx ON projects (account_id, ticket_key)")
+    .catch((e: any) => console.warn("projects_key_uidx skipped:", e?.message || e))
+  // Backstop against a double-assigned <n> under concurrency. Wrapped: pre-existing dup seq_num
+  // rows (rare, from the legacy COUNT-based assignment) must not hard-fail boot — warn and continue.
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_proj_seqnum_uidx ON feedback (project_id, seq_num)")
+    .catch((e: any) => console.warn("feedback_proj_seqnum_uidx skipped (pre-existing dup seq_num?):", e?.message || e))
+  // Redirect map for renamed slugs/keys (never-404 contract). Populated by Phase-2 rename flows;
+  // the resolver already consults it so an old handle 301s to the current pretty URL.
+  await c.execute(`CREATE TABLE IF NOT EXISTS alias_redirects (
+       id TEXT PRIMARY KEY,
+       kind TEXT NOT NULL,             -- 'slug' | 'key'
+       old_value TEXT NOT NULL,        -- lowercased slug OR uppercased key
+       account_id TEXT NOT NULL,
+       project_id TEXT,                -- null for slug redirects
+       created_at INTEGER NOT NULL,
+       UNIQUE(kind, old_value, account_id)
+     )`).catch((e: any) => console.warn("alias_redirects table skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS alias_redirects_lookup ON alias_redirects (kind, old_value)")
+    .catch((e: any) => console.warn("alias_redirects_lookup skipped:", e?.message || e))
+  // One-time, gated backfill: slugs for existing accounts, keys for existing projects, and seed
+  // the atomic per-project counter to the current MAX(seq_num). Idempotent + guarded (§8).
+  await backfillWorkspaceAlias(c)
   // KLA-145: tenant COGS columns for the AI-call ledger. Keep these before any tenant summary
   // query/index can reference them, or established DBs boot with "no such column: account_id".
   if (needCol("ai_calls", "account_id")) await c.execute("ALTER TABLE ai_calls ADD COLUMN account_id TEXT")
@@ -2278,6 +2320,14 @@ export async function ensureAccount(email: string, attr?: SanitizedAttr | null):
     args: ["proj_" + aid, aid, "Default Project", "active", "auto", 200, "named", now, now],
   })
   await db!.execute({ sql: "INSERT OR IGNORE INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?)", args: ["pm_" + aid + "_" + email, "proj_" + aid, email, "admin", null, now] })
+  // #728: mint the globally-unique workspace slug + the default project's ticket key at creation.
+  // Best-effort — a failure here never blocks signup (the opaque fb_ permalink always works).
+  try {
+    const slug = await generateUniqueSlug(`${local}'s Workspace`, { seedId: aid })
+    await db!.execute({ sql: "UPDATE accounts SET slug=?, display_slug=?, slug_updated_at=? WHERE id=? AND slug IS NULL", args: [slug, slug, now, aid] })
+    const key = await generateUniqueTicketKey(aid, "Default Project", "proj_" + aid)
+    await db!.execute({ sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL", args: [key, "proj_" + aid] })
+  } catch (e: any) { console.warn("ensureAccount slug/key mint skipped:", e?.message || e) }
   if (attr) await setAccountAttribution(aid, attr)
   return membershipsFor(email)
 }
@@ -2353,6 +2403,11 @@ export async function createProject(accountId: string, name: string, siteUrl?: s
           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, accountId, name, "active", "auto", 200, "named", siteUrl ?? null, "anonymous", now, now],
   })
+  // #728: derive a ticket key unique within this account (KLAV, KLAV2, …). Best-effort.
+  try {
+    const key = await generateUniqueTicketKey(accountId, name, id)
+    await db!.execute({ sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL", args: [key, id] })
+  } catch (e: any) { console.warn("createProject ticket_key mint skipped:", e?.message || e) }
   const p = await projectById(id)
   return p!
 }
@@ -3405,14 +3460,9 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            (f.clientInfo && Object.keys(f.clientInfo).length) ? JSON.stringify(f.clientInfo) : null,
            now, status],
   })
-  // KLA-200: assign per-project sequential number immediately after insert
-  await db!.execute({
-    sql: `UPDATE feedback SET seq_num = (
-      SELECT COUNT(*) FROM feedback f2
-      WHERE f2.project_id = ? AND (f2.created_at < ? OR (f2.created_at = ? AND f2.id <= ?))
-    ) WHERE id = ? AND seq_num IS NULL`,
-    args: [f.projectId, now, now, id, id],
-  }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
+  // KLA-200 + #728: assign per-project sequential number (feedback.seq_num, also the pretty
+  // permalink <n>) atomically via the projects.ticket_seq counter — collision-safe under concurrency.
+  await allocTicketSeq(f.projectId, id, now)
   invalidateDashboardCache(f.projectId) // #722 (P2.2): new report changes counts/insights
   return id
 }
@@ -4073,12 +4123,7 @@ export async function splitOccurrenceToNewTicket(
       args: [occ.reporterEmail, newId, projectId],
     }).catch((e: any) => console.warn("split contact carry skipped:", e?.message || e))
   }
-  await db!.execute({
-    sql: `UPDATE feedback SET seq_num = (
-      SELECT COUNT(*) FROM feedback f2 WHERE f2.project_id = ? AND (f2.created_at < ? OR (f2.created_at = ? AND f2.id <= ?))
-    ) WHERE id = ? AND seq_num IS NULL`,
-    args: [projectId, now, now, newId, newId],
-  }).catch((e: any) => console.warn("split seq_num skipped:", e?.message || e))
+  await allocTicketSeq(projectId, newId, now)
 
   // Remove the occurrence from the source cluster and decrement its recurrence count/dates.
   await db!.execute({ sql: `DELETE FROM feedback_occurrences WHERE id=? AND feedback_id=?`, args: [occurrenceId, headId] })
@@ -6244,6 +6289,321 @@ export async function publicReportStatus(ref: string): Promise<PublicReportStatu
 // (GET /t/:ref page + the single-ticket API) uses the resolved project_id to run the real
 // membership gate (403 for non-members) instead of leaking existence via a bare 404. Returns null
 // only when no such ticket exists or the ref is malformed/ambiguous.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// #728 Workspace-alias & ticket-permalink — generation, validation, resolution (Phase 1)
+// The invariant (Linear/Jira/GitHub all use it): GLOBALLY_UNIQUE_NAMESPACE (accounts.slug) +
+// LOCALLY_UNIQUE_KEY (projects.ticket_key, unique-in-account) + SEQUENCE (feedback.seq_num).
+// fb_<uuid> stays canonical underneath (resolveFeedbackRef) so renames are 301s, never 404s.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+// Reserved first-path segments — a claimed slug must NEVER shadow a real top-level route or brand
+// surface (and vice-versa). Kept in ONE place shared by the claim validator and the router. Union of
+// the design brief's blocklist (§3) + every live server.ts first path-segment / root static file.
+export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
+  // generic/brand + planned surfaces (design §3)
+  "t", "s", "r", "api", "app", "admin", "superadmin", "opsadmin", "dashboard", "inbox",
+  "login", "logout", "signup", "signin", "auth", "oauth", "sso", "otp", "verify", "unlock",
+  "settings", "account", "billing", "pricing", "help", "docs", "blog", "status", "static",
+  "assets", "cdn", "img", "images", "media", "public", "widget", "embed", "extension", "ext",
+  "share", "invite", "onboarding", "welcome", "new", "edit", "delete", "mail", "email",
+  "klavity", "klav", "support", "security", "legal", "privacy", "terms", "cookies", "dpa",
+  "root", "system", "null", "undefined", "me", "you", "us", "www", "ftp", "ns1", "ns2",
+  // live server.ts route first-segments
+  "mcp", "snap", "snap-popup", "sim", "sims", "sim-runs", "sim-component", "sim-emotions",
+  "sim-identity", "sim-options", "sim-studio-a", "sim-studio-b", "sim-studio-c", "sim-studio-hybrid",
+  "autosim", "autosims", "trails", "bug-check", "widget-connect", "local", "unsubscribe",
+  "for", "alternatives", "cro", "home", "intro-reel", "site", "fonts", "vendor", "icons",
+  // root static files (bare names; dotted files can never match the slug charset anyway)
+  "favicon", "logo", "og", "robots", "sitemap", "kit", "tokens", "attr",
+])
+
+// slugify(workspaceName) → candidate slug per design §3: NFKD strip accents → lowercase →
+// non-alnum runs → single hyphen → trim. May return "" or <3 chars (caller supplies fallback).
+export function slugifyName(name: string): string {
+  return String(name || "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+// Charset + length gate (§3): ^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$, 3–40 chars, no double/edge hyphen.
+export function isValidSlug(slug: unknown): boolean {
+  if (typeof slug !== "string") return false
+  if (slug.length < 3 || slug.length > 40) return false
+  if (slug.includes("--")) return false
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug)
+}
+
+export function isReservedSlug(slug: string): boolean {
+  return RESERVED_SLUGS.has(String(slug || "").toLowerCase())
+}
+
+// A slug is claimable iff it is well-formed, not reserved, and free. Pure syntax gate here;
+// availability (accounts.slug) is checked by generateUniqueSlug/isSlugAvailable.
+export function slugSyntaxOk(slug: string): boolean {
+  return isValidSlug(slug) && !isReservedSlug(slug)
+}
+
+function rand62(n: number): string {
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+  const buf = crypto.getRandomValues(new Uint8Array(n))
+  return Array.from(buf, (b) => alphabet[b % 36]).join("")
+}
+
+async function slugTaken(slug: string, excludeAccountId?: string): Promise<boolean> {
+  const r = await db!.execute({ sql: "SELECT id FROM accounts WHERE slug=? LIMIT 1", args: [slug] })
+  if (!r.rows.length) return false
+  if (excludeAccountId && String((r.rows[0] as any).id) === excludeAccountId) return false
+  return true
+}
+
+// generateUniqueSlug: derive from name, guarantee syntax-ok + globally-unique. De-dupes by
+// appending -2, -3, … then a random base62 suffix (never leaks a sequential org count).
+export async function generateUniqueSlug(
+  name: string,
+  opts?: { seedId?: string; excludeAccountId?: string },
+): Promise<string> {
+  let base = slugifyName(name)
+  if (base.length > 36) base = base.slice(0, 36).replace(/-+$/, "")
+  if (base.length < 3) base = "w-" + rand62(6) // e.g. name was "我们" or empty
+  // If the bare base collides with a reserved word, treat it as taken and suffix it.
+  let candidate = base
+  let attempt = 1
+  while (!slugSyntaxOk(candidate) || await slugTaken(candidate, opts?.excludeAccountId)) {
+    attempt++
+    if (attempt <= 50) {
+      candidate = `${base}-${attempt}`
+    } else {
+      candidate = `${base}-${rand62(4)}`
+    }
+    if (candidate.length > 40) { base = base.slice(0, 30).replace(/-+$/, "") ; candidate = `${base}-${rand62(4)}` }
+    if (attempt > 200) { candidate = "w-" + rand62(8); break }
+  }
+  return candidate
+}
+
+// deriveTicketKey(projectName) → e.g. "Klavity" → KLAV. Single significant word → first 4 alpha;
+// multiple words → initials (up to 4). Guaranteed to match ^[A-Z][A-Z0-9]{1,9}$.
+export function deriveTicketKey(name: string): string {
+  const words = String(name || "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean)
+  let key = ""
+  if (words.length >= 2) {
+    key = words.slice(0, 4).map((w) => w[0]).join("")
+  } else if (words.length === 1) {
+    key = words[0].slice(0, 4)
+  }
+  key = key.replace(/[^A-Z0-9]/g, "")
+  if (!/^[A-Z]/.test(key)) key = "K" + key
+  if (key.length < 2) key = (key + "KEY").slice(0, 3)
+  if (key.length > 10) key = key.slice(0, 10)
+  return key
+}
+
+export function isValidTicketKey(key: unknown): boolean {
+  return typeof key === "string" && /^[A-Z][A-Z0-9]{1,9}$/.test(key)
+}
+
+async function ticketKeyTaken(accountId: string, key: string, excludeProjectId?: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "SELECT id FROM projects WHERE account_id=? AND ticket_key=? LIMIT 1",
+    args: [accountId, key],
+  })
+  if (!r.rows.length) return false
+  if (excludeProjectId && String((r.rows[0] as any).id) === excludeProjectId) return false
+  return true
+}
+
+// generateUniqueTicketKey: derive from name, guarantee unique WITHIN the account. Collision →
+// append a digit (KLAV, KLAV2, KLAV3…) then a random digit run; always stays ≤10 chars / valid.
+export async function generateUniqueTicketKey(
+  accountId: string, name: string, excludeProjectId?: string,
+): Promise<string> {
+  let base = deriveTicketKey(name)
+  let candidate = base
+  let n = 1
+  while (!isValidTicketKey(candidate) || await ticketKeyTaken(accountId, candidate, excludeProjectId)) {
+    n++
+    const suffix = String(n)
+    // keep base+suffix ≤ 10; trim base if needed
+    const trimmed = base.slice(0, Math.max(1, 10 - suffix.length))
+    candidate = trimmed + suffix
+    if (!/^[A-Z]/.test(candidate)) candidate = "K" + candidate.slice(0, 9)
+    if (n > 500) { candidate = ("K" + rand62(4).toUpperCase().replace(/[^A-Z0-9]/g, "0")).slice(0, 10); break }
+  }
+  return candidate
+}
+
+// Atomic per-project sequence allocation for feedback.seq_num. UPDATE…RETURNING on the single
+// projects row is atomic under concurrency (SQLite serializes writes) so two concurrent inserts
+// get distinct numbers. Falls back to the legacy COUNT-based assignment when there is NO project
+// row (some unit tests insert feedback for a bare projectId) — preserving pre-existing behavior.
+export async function allocTicketSeq(projectId: string, feedbackId: string, now: number): Promise<void> {
+  const bump = await db!.execute({
+    sql: "UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=? RETURNING ticket_seq",
+    args: [projectId],
+  }).catch(() => ({ rows: [] as any[] }))
+  if (bump.rows && bump.rows.length) {
+    const seq = Number((bump.rows[0] as any).ticket_seq)
+    await db!.execute({
+      sql: "UPDATE feedback SET seq_num=? WHERE id=? AND seq_num IS NULL",
+      args: [seq, feedbackId],
+    }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
+    return
+  }
+  // No project row → legacy per-project COUNT (chronological rank). Idempotent (seq_num IS NULL).
+  await db!.execute({
+    sql: `UPDATE feedback SET seq_num = (
+            SELECT COUNT(*) FROM feedback f2
+            WHERE f2.project_id = ? AND (f2.created_at < ? OR (f2.created_at = ? AND f2.id <= ?))
+          ) WHERE id = ? AND seq_num IS NULL`,
+    args: [projectId, now, now, feedbackId, feedbackId],
+  }).catch((e: any) => console.warn("seq_num assign (fallback) skipped:", e?.message || e))
+}
+
+export async function accountBySlug(slug: string): Promise<{ id: string; slug: string; displaySlug: string | null } | null> {
+  const s = String(slug || "").toLowerCase()
+  if (!s) return null
+  const r = await db!.execute({ sql: "SELECT id, slug, display_slug FROM accounts WHERE slug=? LIMIT 1", args: [s] })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return { id: String(row.id), slug: String(row.slug), displaySlug: row.display_slug != null ? String(row.display_slug) : null }
+}
+
+// Phase-2 rename hooks (write side of the never-404 redirect map). Idempotent (UNIQUE key).
+export async function recordSlugAlias(oldSlug: string, accountId: string): Promise<void> {
+  const ov = String(oldSlug || "").toLowerCase()
+  if (!ov) return
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO alias_redirects (id,kind,old_value,account_id,project_id,created_at) VALUES (?,?,?,?,?,?)",
+    args: ["alr_" + crypto.randomUUID(), "slug", ov, accountId, null, Date.now()],
+  }).catch((e: any) => console.warn("recordSlugAlias skipped:", e?.message || e))
+}
+export async function recordKeyAlias(oldKey: string, accountId: string, projectId: string): Promise<void> {
+  const ov = String(oldKey || "").toUpperCase()
+  if (!ov) return
+  await db!.execute({
+    sql: "INSERT OR IGNORE INTO alias_redirects (id,kind,old_value,account_id,project_id,created_at) VALUES (?,?,?,?,?,?)",
+    args: ["alr_" + crypto.randomUUID(), "key", ov, accountId, projectId, Date.now()],
+  }).catch((e: any) => console.warn("recordKeyAlias skipped:", e?.message || e))
+}
+
+// Three-layer resolve for a pretty permalink /<slug>/t/<ref>. Returns the SAME { id, projectId }
+// shape as resolveFeedbackRef so every downstream membership/403 gate is unchanged. When a stale
+// slug/key is used, returns { redirect } with the canonical pretty path for a 301. Order (§5):
+//   1. Pretty:   account.slug → project.(account_id,ticket_key) → feedback.(project_id,seq_num)
+//   2. Redirect: alias_redirects (old slug/key → current) → 301
+//   3. Opaque:   ref is an fb_<uuid>/fb_<8hex> → resolveFeedbackRef (can never 404 from a rename)
+export type WorkspaceTicketResolution =
+  | { id: string; projectId: string }
+  | { redirect: string }
+  | null
+
+export async function resolveWorkspaceTicket(slug: string, ref: string): Promise<WorkspaceTicketResolution> {
+  const rawSlug = String(slug || "").toLowerCase()
+  const rawRef = String(ref || "").trim()
+  // Opaque fb_ fallback works under any slug segment (item 4: /<slug>/t/<opaqueFbShort>).
+  if (/^fb_/i.test(rawRef)) {
+    return await resolveFeedbackRef(rawRef)
+  }
+  const m = rawRef.match(/^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/)
+  if (!m) return null
+  const key = m[1].toUpperCase()
+  const seq = Number(m[2])
+  if (!Number.isSafeInteger(seq) || seq < 1) return null
+
+  // Layer 1/2: resolve account by slug, else consult slug redirect map.
+  let acct = await accountBySlug(rawSlug)
+  if (!acct) {
+    const ar = await db!.execute({
+      sql: "SELECT account_id FROM alias_redirects WHERE kind='slug' AND old_value=? LIMIT 1",
+      args: [rawSlug],
+    })
+    if (!ar.rows.length) return null
+    const accountId = String((ar.rows[0] as any).account_id)
+    const cur = await db!.execute({ sql: "SELECT slug FROM accounts WHERE id=? AND slug IS NOT NULL LIMIT 1", args: [accountId] })
+    if (!cur.rows.length) return null
+    const curSlug = String((cur.rows[0] as any).slug)
+    return { redirect: `/${curSlug}/t/${key}-${seq}` }
+  }
+
+  // Resolve project by (account_id, key), else consult key redirect map (scoped to this account).
+  let proj = await db!.execute({
+    sql: "SELECT id, ticket_key FROM projects WHERE account_id=? AND ticket_key=? LIMIT 1",
+    args: [acct.id, key],
+  })
+  if (!proj.rows.length) {
+    const ar = await db!.execute({
+      sql: "SELECT project_id FROM alias_redirects WHERE kind='key' AND old_value=? AND account_id=? LIMIT 1",
+      args: [key, acct.id],
+    })
+    if (!ar.rows.length) return null
+    const projectId = String((ar.rows[0] as any).project_id)
+    const cur = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? AND ticket_key IS NOT NULL LIMIT 1", args: [projectId] })
+    if (!cur.rows.length) return null
+    const curKey = String((cur.rows[0] as any).ticket_key)
+    return { redirect: `/${acct.slug}/t/${curKey}-${seq}` }
+  }
+  const projectId = String((proj.rows[0] as any).id)
+
+  // Layer 1 final hop: feedback by (project_id, seq_num).
+  const fb = await db!.execute({
+    sql: "SELECT id FROM feedback WHERE project_id=? AND seq_num=? LIMIT 1",
+    args: [projectId, seq],
+  })
+  if (!fb.rows.length) return null
+  return { id: String((fb.rows[0] as any).id), projectId }
+}
+
+// One-time, gated backfill (design §8): assign slugs to existing accounts, ticket_keys to existing
+// projects, and seed projects.ticket_seq to the current MAX(seq_num). seq_num itself is already
+// backfilled inline above (the KLA-200 WHERE seq_num IS NULL UPDATE). Idempotent + guarded by a
+// schema_migrations key so it runs once per DB.
+export async function backfillWorkspaceAlias(c: Client): Promise<{ slugs: number; keys: number }> {
+  const migKey = "workspace_alias_backfill_2026_08_26"
+  const already = await c.execute({ sql: "SELECT key FROM schema_migrations WHERE key=?", args: [migKey] }).catch(() => ({ rows: [] as any[] }))
+  if (already.rows && already.rows.length) return { slugs: 0, keys: 0 }
+
+  // 1. Slugs — oldest accounts first so the incumbent gets the "best" (unsuffixed) slug.
+  let slugs = 0
+  const accts = await c.execute({ sql: "SELECT id, name FROM accounts WHERE slug IS NULL ORDER BY created_at ASC, id ASC" }).catch(() => ({ rows: [] as any[] }))
+  for (const row of (accts.rows as any[])) {
+    const id = String(row.id)
+    const slug = await generateUniqueSlug(String(row.name || ""), { seedId: id })
+    const r = await c.execute({
+      sql: "UPDATE accounts SET slug=?, display_slug=?, slug_updated_at=? WHERE id=? AND slug IS NULL",
+      args: [slug, slug, Date.now(), id],
+    }).catch((e: any) => { console.warn("backfill slug skipped:", e?.message || e); return { rowsAffected: 0 } as any })
+    slugs += Number((r as any).rowsAffected || 0)
+  }
+
+  // 2. Ticket keys — unique within each account.
+  let keys = 0
+  const projs = await c.execute({ sql: "SELECT id, account_id, name FROM projects WHERE ticket_key IS NULL ORDER BY created_at ASC, id ASC" }).catch(() => ({ rows: [] as any[] }))
+  for (const row of (projs.rows as any[])) {
+    const id = String(row.id)
+    const accountId = String(row.account_id)
+    const key = await generateUniqueTicketKey(accountId, String(row.name || "Project"), id)
+    const r = await c.execute({
+      sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL",
+      args: [key, id],
+    }).catch((e: any) => { console.warn("backfill key skipped:", e?.message || e); return { rowsAffected: 0 } as any })
+    keys += Number((r as any).rowsAffected || 0)
+  }
+
+  // 3. Seed the atomic counter to the current max seq_num per project so new allocations continue.
+  await c.execute(`UPDATE projects SET ticket_seq = COALESCE(
+       (SELECT MAX(seq_num) FROM feedback WHERE feedback.project_id = projects.id), 0)
+     WHERE ticket_seq = 0`).catch((e: any) => console.warn("backfill ticket_seq seed skipped:", e?.message || e))
+
+  await c.execute({ sql: "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)", args: [migKey, Date.now()] }).catch(() => {})
+  if (slugs || keys) console.log(`[backfillWorkspaceAlias] assigned ${slugs} slug(s), ${keys} ticket key(s)`)
+  return { slugs, keys }
+}
+
 export async function resolveFeedbackRef(ref: string): Promise<{ id: string; projectId: string } | null> {
   const raw = String(ref || "").trim().toLowerCase()
   const isFull = /^fb_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(raw)
