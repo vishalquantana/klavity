@@ -142,7 +142,7 @@ export function sanitizeClientInfo(raw: any): Record<string, any> | null {
 
 // Human-friendly ordered field labels for the ticket body reporter block.
 const REPORTER_LABELS: Record<string, string> = {
-  name: 'Name', email: 'Email', id: 'User ID', org: 'Org', orgId: 'Org ID',
+  name: 'Name', email: 'Email', id: 'User ID', org: 'Company Name', orgId: 'Org ID',
   role: 'Role', product: 'Product', env: 'Environment', server: 'Server',
 }
 
