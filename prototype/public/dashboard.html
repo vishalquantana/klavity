@@ -1046,7 +1046,9 @@ body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
 /* KLA-563: dedicated ticket page (/:project/tickets/:key → hash #tickets/<id>). The board is never
    mounted behind it; the page renders directly from a single-ticket fetch. Centered card, max 1180px. */
 body.tkt-page-open #ticketsKanban,body.tkt-page-open #tktListView,body.tkt-page-open .kb-toolbar,
-body.tkt-page-open #tktQuickChips,body.tkt-page-open #tktFilterBar{display:none!important}
+body.tkt-page-open #tktQuickChips,body.tkt-page-open #tktFilterBar,
+/* The dedicated ticket page shows ONLY the ticket — Project settings belongs to the board view, not here. */
+body.tkt-page-open #settingsDrawer{display:none!important}
 #ticketSingle.tkt-page{max-width:1180px;margin:0 auto}
 #ticketSingle.tkt-page .tkt-detail,#ticketSingle.tkt-page .single-head{max-width:none}
 .tkt-crumb{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;color:var(--paper-faint);margin:2px 0 14px}
