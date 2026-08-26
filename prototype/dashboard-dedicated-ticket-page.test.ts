@@ -155,7 +155,9 @@ test("the Tickets page heading (.content>.head) is hidden on the dedicated ticke
 
 // ── #679b: exactly ONE assignee control (redesigned avatar picker) — no legacy open input/Clear row ──
 test("ticket detail renders only the redesigned avatar assignee control (no legacy .tkt-assignee-row)", () => {
-  const picker = extractFn(HTML, "function assigneePickerHtml(t, compact = false)")
+  // #678: assigneePickerHtml is now single-purpose (the detail-panel avatar control) — the on-card
+  // `compact` variant was removed, so the signature is assigneePickerHtml(t).
+  const picker = extractFn(HTML, "function assigneePickerHtml(t)")
   // the redesigned control: avatar + email, edit row starts hidden and reveals on click
   expect(picker).toContain('class="tkt-assignee-ctrl-wrap"')
   expect(picker).toContain('class="tkt-assignee-edit hide"')
@@ -164,7 +166,7 @@ test("ticket detail renders only the redesigned avatar assignee control (no lega
   expect(HTML).not.toContain(".tkt-assignee-row{")
   // both routes build the detail via the SAME buildTktDetail (single assignee UI everywhere)
   const detail = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
-  expect(detail).toContain("assigneePickerHtml(t, false)")
+  expect(detail).toContain("assigneePickerHtml(t)")
 })
 
 // ── #679a: the assignee avatar is a fixed circle (never a stretched oval) ───────────────────────────
