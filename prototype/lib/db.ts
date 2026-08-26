@@ -1423,10 +1423,12 @@ export async function applySchema(c: Client) {
   // Ticket key unique WITHIN an account (not global — Acme's KLAV ≠ Globex's KLAV).
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS projects_key_uidx ON projects (account_id, ticket_key)")
     .catch((e: any) => console.warn("projects_key_uidx skipped:", e?.message || e))
-  // Backstop against a double-assigned <n> under concurrency. Wrapped: pre-existing dup seq_num
-  // rows (rare, from the legacy COUNT-based assignment) must not hard-fail boot — warn and continue.
-  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_proj_seqnum_uidx ON feedback (project_id, seq_num)")
-    .catch((e: any) => console.warn("feedback_proj_seqnum_uidx skipped (pre-existing dup seq_num?):", e?.message || e))
+  // Backstop against a double-assigned <n> under concurrency (QA #728 finding 4). A silent
+  // CREATE-UNIQUE-INDEX failure on legacy duplicate (project_id, seq_num) rows would leave the DB
+  // with NO backstop and silently accept future duplicate pretty numbers. So: COLLAPSE any legacy
+  // duplicates deterministically FIRST (renumber the affected projects by created_at,id), THEN
+  // create the unique index and VERIFY it exists — an unrepairable failure is a loud CRITICAL.
+  await dedupeAndIndexFeedbackSeq(c)
   // Redirect map for renamed slugs/keys (never-404 contract). Populated by Phase-2 rename flows;
   // the resolver already consults it so an old handle 301s to the current pretty URL.
   await c.execute(`CREATE TABLE IF NOT EXISTS alias_redirects (
@@ -1440,6 +1442,12 @@ export async function applySchema(c: Client) {
      )`).catch((e: any) => console.warn("alias_redirects table skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS alias_redirects_lookup ON alias_redirects (kind, old_value)")
     .catch((e: any) => console.warn("alias_redirects_lookup skipped:", e?.message || e))
+  // QA #728 finding 3: slugs are a GLOBAL namespace, so a historical (freed) slug must map to at
+  // most ONE account forever — the table's UNIQUE(kind,old_value,account_id) would wrongly permit
+  // the same old slug under two accounts. This partial unique index enforces global uniqueness of
+  // historical SLUG handles (keys stay account-scoped, handled by the checks in generateUniqueTicketKey).
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS alias_redirects_slug_global_uidx ON alias_redirects (old_value) WHERE kind='slug'")
+    .catch((e: any) => console.warn("alias_redirects_slug_global_uidx skipped:", e?.message || e))
   // One-time, gated backfill: slugs for existing accounts, keys for existing projects, and seed
   // the atomic per-project counter to the current MAX(seq_num). Idempotent + guarded (§8).
   await backfillWorkspaceAlias(c)
@@ -2321,13 +2329,10 @@ export async function ensureAccount(email: string, attr?: SanitizedAttr | null):
   })
   await db!.execute({ sql: "INSERT OR IGNORE INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?)", args: ["pm_" + aid + "_" + email, "proj_" + aid, email, "admin", null, now] })
   // #728: mint the globally-unique workspace slug + the default project's ticket key at creation.
-  // Best-effort — a failure here never blocks signup (the opaque fb_ permalink always works).
-  try {
-    const slug = await generateUniqueSlug(`${local}'s Workspace`, { seedId: aid })
-    await db!.execute({ sql: "UPDATE accounts SET slug=?, display_slug=?, slug_updated_at=? WHERE id=? AND slug IS NULL", args: [slug, slug, now, aid] })
-    const key = await generateUniqueTicketKey(aid, "Default Project", "proj_" + aid)
-    await db!.execute({ sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL", args: [key, "proj_" + aid] })
-  } catch (e: any) { console.warn("ensureAccount slug/key mint skipped:", e?.message || e) }
+  // Race-safe claim (finding 9): retries on a UNIQUE conflict so a concurrent same-name signup never
+  // leaves the row un-slugged. Best-effort — never blocks signup (opaque fb_ permalink always works).
+  await claimAccountSlug(aid, `${local}'s Workspace`).catch((e: any) => { console.warn("ensureAccount slug mint skipped:", e?.message || e); return null })
+  await claimProjectKey(aid, "proj_" + aid, "Default Project").catch((e: any) => { console.warn("ensureAccount key mint skipped:", e?.message || e); return null })
   if (attr) await setAccountAttribution(aid, attr)
   return membershipsFor(email)
 }
@@ -2403,11 +2408,8 @@ export async function createProject(accountId: string, name: string, siteUrl?: s
           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, accountId, name, "active", "auto", 200, "named", siteUrl ?? null, "anonymous", now, now],
   })
-  // #728: derive a ticket key unique within this account (KLAV, KLAV2, …). Best-effort.
-  try {
-    const key = await generateUniqueTicketKey(accountId, name, id)
-    await db!.execute({ sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL", args: [key, id] })
-  } catch (e: any) { console.warn("createProject ticket_key mint skipped:", e?.message || e) }
+  // #728: derive a ticket key unique within this account (KLAV, KLAV2, …), race-safe (finding 9).
+  await claimProjectKey(accountId, id, name).catch((e: any) => { console.warn("createProject ticket_key mint skipped:", e?.message || e); return null })
   const p = await projectById(id)
   return p!
 }
@@ -6311,8 +6313,10 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   // live server.ts route first-segments
   "mcp", "snap", "snap-popup", "sim", "sims", "sim-runs", "sim-component", "sim-emotions",
   "sim-identity", "sim-options", "sim-studio-a", "sim-studio-b", "sim-studio-c", "sim-studio-hybrid",
-  "autosim", "autosims", "trails", "bug-check", "widget-connect", "local", "unsubscribe",
+  "autosim", "autosims", "trails", "trails-demo", "bug-check", "widget-connect", "local", "unsubscribe",
   "for", "alternatives", "cro", "home", "intro-reel", "site", "fonts", "vendor", "icons",
+  // QA #728 finding 8: additional live first-path segments that must never be shadowed by a slug.
+  "shared", "ts", "well-known",
   // root static files (bare names; dotted files can never match the slug charset anyway)
   "favicon", "logo", "og", "robots", "sitemap", "kit", "tokens", "attr",
 ])
@@ -6354,9 +6358,17 @@ function rand62(n: number): string {
 
 async function slugTaken(slug: string, excludeAccountId?: string): Promise<boolean> {
   const r = await db!.execute({ sql: "SELECT id FROM accounts WHERE slug=? LIMIT 1", args: [slug] })
-  if (!r.rows.length) return false
-  if (excludeAccountId && String((r.rows[0] as any).id) === excludeAccountId) return false
-  return true
+  if (r.rows.length) {
+    if (!(excludeAccountId && String((r.rows[0] as any).id) === excludeAccountId)) return true
+  }
+  // QA #728 finding 3: slugs are a GLOBAL namespace. A HISTORICAL (freed) slug in alias_redirects
+  // must stay reserved forever so a different tenant can never reclaim it and silently hijack old
+  // links. Reserve any historical slug — including this account's own freed slugs (never reissue).
+  const hist = await db!.execute({
+    sql: "SELECT account_id FROM alias_redirects WHERE kind='slug' AND old_value=? LIMIT 1",
+    args: [slug],
+  }).catch(() => ({ rows: [] as any[] }))
+  return (hist.rows && hist.rows.length) ? true : false
 }
 
 // generateUniqueSlug: derive from name, guarantee syntax-ok + globally-unique. De-dupes by
@@ -6412,9 +6424,16 @@ async function ticketKeyTaken(accountId: string, key: string, excludeProjectId?:
     sql: "SELECT id FROM projects WHERE account_id=? AND ticket_key=? LIMIT 1",
     args: [accountId, key],
   })
-  if (!r.rows.length) return false
-  if (excludeProjectId && String((r.rows[0] as any).id) === excludeProjectId) return false
-  return true
+  if (r.rows.length) {
+    if (!(excludeProjectId && String((r.rows[0] as any).id) === excludeProjectId)) return true
+  }
+  // QA #728 finding 3: a HISTORICAL (freed) ticket key within THIS account must stay reserved so a
+  // sibling project can't reclaim it and shadow the original project's old <KEY>-<n> links.
+  const hist = await db!.execute({
+    sql: "SELECT project_id FROM alias_redirects WHERE kind='key' AND old_value=? AND account_id=? LIMIT 1",
+    args: [key, accountId],
+  }).catch(() => ({ rows: [] as any[] }))
+  return (hist.rows && hist.rows.length) ? true : false
 }
 
 // generateUniqueTicketKey: derive from name, guarantee unique WITHIN the account. Collision →
@@ -6437,10 +6456,102 @@ export async function generateUniqueTicketKey(
   return candidate
 }
 
+// Claim a slug for an account, resolving the check-then-write RACE (QA #728 finding 9): generate a
+// candidate then attempt the guarded UPDATE; if the global UNIQUE index rejects it (a concurrent
+// creator grabbed the same candidate), retry with a fresh candidate instead of silently leaving the
+// row un-slugged. Returns the claimed slug, or null if it genuinely couldn't (caller logs).
+export async function claimAccountSlug(accountId: string, name: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const slug = await generateUniqueSlug(name, { seedId: accountId, excludeAccountId: accountId })
+    try {
+      const r = await db!.execute({
+        sql: "UPDATE accounts SET slug=?, display_slug=?, slug_updated_at=? WHERE id=? AND slug IS NULL",
+        args: [slug, slug, Date.now(), accountId],
+      })
+      // rowsAffected 0 means the account already had a slug (nothing to do) — treat as success.
+      const cur = await db!.execute({ sql: "SELECT slug FROM accounts WHERE id=? LIMIT 1", args: [accountId] })
+      const have = cur.rows.length ? (cur.rows[0] as any).slug : null
+      if (have != null) return String(have)
+      if (Number((r as any).rowsAffected || 0) > 0) return slug
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (/UNIQUE|constraint/i.test(msg)) continue // lost the race — regenerate + retry
+      console.warn("claimAccountSlug error:", msg)
+      return null
+    }
+  }
+  return null
+}
+
+// Claim a ticket key for a project, unique WITHIN the account, race-safe (finding 9) via the
+// UNIQUE(account_id,ticket_key) index + retry-on-conflict.
+export async function claimProjectKey(accountId: string, projectId: string, name: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const key = await generateUniqueTicketKey(accountId, name, projectId)
+    try {
+      const r = await db!.execute({
+        sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL",
+        args: [key, projectId],
+      })
+      const cur = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? LIMIT 1", args: [projectId] })
+      const have = cur.rows.length ? (cur.rows[0] as any).ticket_key : null
+      if (have != null) return String(have)
+      if (Number((r as any).rowsAffected || 0) > 0) return key
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (/UNIQUE|constraint/i.test(msg)) continue
+      console.warn("claimProjectKey error:", msg)
+      return null
+    }
+  }
+  return null
+}
+
+// QA #728 finding 4: safely install the (project_id, seq_num) uniqueness backstop even when legacy
+// duplicate rows exist. Collapse duplicates FIRST (deterministically renumber every affected project
+// by created_at,id so the pretty <n> stays stable-ish and unique), THEN create the unique index and
+// VERIFY it exists. An unrepairable failure is a LOUD error — never a silent "future dups accepted".
+export async function dedupeAndIndexFeedbackSeq(c: Client): Promise<void> {
+  const indexExists = async () => {
+    const r = await c.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='feedback_proj_seqnum_uidx'").catch(() => ({ rows: [] as any[] }))
+    return !!(r.rows && r.rows.length)
+  }
+  // Find projects that have at least one duplicated (project_id, seq_num) among non-null seq_num rows.
+  const dupProjects = await c.execute(`
+    SELECT project_id FROM feedback
+    WHERE seq_num IS NOT NULL
+    GROUP BY project_id, seq_num HAVING COUNT(*) > 1
+  `).catch(() => ({ rows: [] as any[] }))
+  const projectIds = Array.from(new Set((dupProjects.rows as any[]).map((r) => String(r.project_id))))
+  for (const pid of projectIds) {
+    // Deterministic renumber of the WHOLE project by (created_at, id) so the result is a clean 1..N
+    // bijection — the only safe way to remove duplicates without losing rows. Correlated UPDATE.
+    await c.execute({
+      sql: `UPDATE feedback SET seq_num = (
+              SELECT COUNT(*) FROM feedback f2
+              WHERE f2.project_id = feedback.project_id
+                AND (f2.created_at < feedback.created_at
+                  OR (f2.created_at = feedback.created_at AND f2.id <= feedback.id))
+            ) WHERE project_id = ?`,
+      args: [pid],
+    }).catch((e: any) => console.warn(`dedupe renumber skipped for ${pid}:`, e?.message || e))
+    // Keep the atomic counter consistent with the renumbered max.
+    await c.execute({
+      sql: "UPDATE projects SET ticket_seq = COALESCE((SELECT MAX(seq_num) FROM feedback WHERE project_id=?), ticket_seq) WHERE id=?",
+      args: [pid, pid],
+    }).catch(() => {})
+  }
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS feedback_proj_seqnum_uidx ON feedback (project_id, seq_num)")
+    .catch((e: any) => console.warn("feedback_proj_seqnum_uidx create failed after dedupe:", e?.message || e))
+  if (!(await indexExists())) {
+    // Truly unrepairable — make it LOUD so it surfaces in logs/monitoring, not a silent accept.
+    console.error("[CRITICAL] #728 feedback_proj_seqnum_uidx could NOT be created — duplicate pretty ticket numbers may be silently accepted. Investigate feedback (project_id, seq_num) duplicates.")
+  }
+}
+
 // Atomic per-project sequence allocation for feedback.seq_num. UPDATE…RETURNING on the single
 // projects row is atomic under concurrency (SQLite serializes writes) so two concurrent inserts
-// get distinct numbers. Falls back to the legacy COUNT-based assignment when there is NO project
-// row (some unit tests insert feedback for a bare projectId) — preserving pre-existing behavior.
+// get distinct numbers. Falls back to an atomic MAX+1 when there is NO project row (finding 5).
 export async function allocTicketSeq(projectId: string, feedbackId: string, now: number): Promise<void> {
   const bump = await db!.execute({
     sql: "UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=? RETURNING ticket_seq",
@@ -6454,13 +6565,16 @@ export async function allocTicketSeq(projectId: string, feedbackId: string, now:
     }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
     return
   }
-  // No project row → legacy per-project COUNT (chronological rank). Idempotent (seq_num IS NULL).
+  // No project row (some unit tests insert feedback for a bare projectId) → allocate atomically as
+  // MAX(seq_num)+1 for the project in a SINGLE statement. QA #728 finding 5: the old COUNT-with-
+  // created_at-tiebreak recomputed an already-used rank when an already-numbered same-timestamp row
+  // sorted after a newer row, producing a duplicate. A single-statement MAX+1 is collision-safe
+  // because SQLite serializes writers, so each sequential UPDATE sees the prior committed max.
   await db!.execute({
-    sql: `UPDATE feedback SET seq_num = (
-            SELECT COUNT(*) FROM feedback f2
-            WHERE f2.project_id = ? AND (f2.created_at < ? OR (f2.created_at = ? AND f2.id <= ?))
-          ) WHERE id = ? AND seq_num IS NULL`,
-    args: [projectId, now, now, feedbackId, feedbackId],
+    sql: `UPDATE feedback SET seq_num =
+            1 + COALESCE((SELECT MAX(seq_num) FROM feedback f2 WHERE f2.project_id = ? AND f2.id <> ?), 0)
+          WHERE id = ? AND seq_num IS NULL`,
+    args: [projectId, feedbackId, feedbackId],
   }).catch((e: any) => console.warn("seq_num assign (fallback) skipped:", e?.message || e))
 }
 
@@ -6491,71 +6605,115 @@ export async function recordKeyAlias(oldKey: string, accountId: string, projectI
   }).catch((e: any) => console.warn("recordKeyAlias skipped:", e?.message || e))
 }
 
-// Three-layer resolve for a pretty permalink /<slug>/t/<ref>. Returns the SAME { id, projectId }
-// shape as resolveFeedbackRef so every downstream membership/403 gate is unchanged. When a stale
-// slug/key is used, returns { redirect } with the canonical pretty path for a 301. Order (§5):
-//   1. Pretty:   account.slug → project.(account_id,ticket_key) → feedback.(project_id,seq_num)
-//   2. Redirect: alias_redirects (old slug/key → current) → 301
-//   3. Opaque:   ref is an fb_<uuid>/fb_<8hex> → resolveFeedbackRef (can never 404 from a rename)
+// Resolve a pretty permalink /<slug>/t/<ref>. CRITICAL security contract (QA #728 findings 1,2,7):
+// this resolver NEVER decides auth and NEVER emits a redirect for a handle whose target ticket does
+// not exist. It returns the REAL, existence-checked ticket so the ROUTE can apply the membership
+// gate BEFORE serving OR redirecting — a nonexistent ref (or an unauthorized caller) must not be
+// able to tell aliases/slugs/keys apart via a 301. `kind` tells the route which gate to apply:
+//   - "pretty" = the ENUMERABLE <KEY>-<n> path → route enforces STRICT member-only (403 non-member,
+//     login-gate anon). `redirectTo` (set only when a STALE slug/key alias was used) is the canonical
+//     current URL to 301 to — but ONLY after the caller is proven to be a member.
+//   - "opaque" = an unguessable fb_ handle under a slug → tenant-bound to that slug's account
+//     (finding 7), then the route may apply the normal share/teaser policy.
 export type WorkspaceTicketResolution =
-  | { id: string; projectId: string }
-  | { redirect: string }
+  | { kind: "pretty"; id: string; projectId: string; redirectTo?: string }
+  | { kind: "opaque"; id: string; projectId: string }
   | null
+
+// Current slug of an account (or null). Used to build canonical redirect targets + tenant-bind opaque.
+async function currentSlugForAccount(accountId: string): Promise<string | null> {
+  const r = await db!.execute({ sql: "SELECT slug FROM accounts WHERE id=? AND slug IS NOT NULL LIMIT 1", args: [accountId] })
+  return r.rows.length ? String((r.rows[0] as any).slug) : null
+}
+// Map a slug segment (current OR a historical alias) to the OWNING account id. Historical slugs are
+// globally reserved to their original owner, so this can never resolve a different tenant.
+async function accountForSlugSegment(rawSlug: string): Promise<string | null> {
+  const cur = await accountBySlug(rawSlug)
+  if (cur) return cur.id
+  const ar = await db!.execute({
+    sql: "SELECT account_id FROM alias_redirects WHERE kind='slug' AND old_value=? LIMIT 1",
+    args: [rawSlug],
+  }).catch(() => ({ rows: [] as any[] }))
+  return (ar.rows && ar.rows.length) ? String((ar.rows[0] as any).account_id) : null
+}
 
 export async function resolveWorkspaceTicket(slug: string, ref: string): Promise<WorkspaceTicketResolution> {
   const rawSlug = String(slug || "").toLowerCase()
   const rawRef = String(ref || "").trim()
-  // Opaque fb_ fallback works under any slug segment (item 4: /<slug>/t/<opaqueFbShort>).
+
+  // Opaque fb_ handle under a slug — tenant-bind to the slug's account (finding 7) so a member of
+  // workspace B can't serve B's ticket under workspace A's slug.
   if (/^fb_/i.test(rawRef)) {
-    return await resolveFeedbackRef(rawRef)
+    const resolved = await resolveFeedbackRef(rawRef)
+    if (!resolved) return null
+    const slugAccount = await accountForSlugSegment(rawSlug)
+    if (!slugAccount) return null
+    const ticketAccount = await accountIdForProject(resolved.projectId)
+    if (!ticketAccount || ticketAccount !== slugAccount) return null // cross-tenant → 404, no leak
+    return { kind: "opaque", id: resolved.id, projectId: resolved.projectId }
   }
+
   const m = rawRef.match(/^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/)
   if (!m) return null
   const key = m[1].toUpperCase()
   const seq = Number(m[2])
   if (!Number.isSafeInteger(seq) || seq < 1) return null
 
-  // Layer 1/2: resolve account by slug, else consult slug redirect map.
-  let acct = await accountBySlug(rawSlug)
-  if (!acct) {
+  // 1) Account: current slug, else a historical slug alias → the ORIGINAL owner (never another tenant).
+  const current = await accountBySlug(rawSlug)
+  let accountId: string
+  let viaSlugAlias = false
+  if (current) {
+    accountId = current.id
+  } else {
     const ar = await db!.execute({
       sql: "SELECT account_id FROM alias_redirects WHERE kind='slug' AND old_value=? LIMIT 1",
       args: [rawSlug],
     })
     if (!ar.rows.length) return null
-    const accountId = String((ar.rows[0] as any).account_id)
-    const cur = await db!.execute({ sql: "SELECT slug FROM accounts WHERE id=? AND slug IS NOT NULL LIMIT 1", args: [accountId] })
-    if (!cur.rows.length) return null
-    const curSlug = String((cur.rows[0] as any).slug)
-    return { redirect: `/${curSlug}/t/${key}-${seq}` }
+    accountId = String((ar.rows[0] as any).account_id)
+    viaSlugAlias = true
   }
 
-  // Resolve project by (account_id, key), else consult key redirect map (scoped to this account).
-  let proj = await db!.execute({
-    sql: "SELECT id, ticket_key FROM projects WHERE account_id=? AND ticket_key=? LIMIT 1",
-    args: [acct.id, key],
+  // 2) Project within THAT account: current key, else a key alias scoped to the SAME account.
+  let projectId: string
+  let viaKeyAlias = false
+  const proj = await db!.execute({
+    sql: "SELECT id FROM projects WHERE account_id=? AND ticket_key=? LIMIT 1",
+    args: [accountId, key],
   })
-  if (!proj.rows.length) {
+  if (proj.rows.length) {
+    projectId = String((proj.rows[0] as any).id)
+  } else {
     const ar = await db!.execute({
       sql: "SELECT project_id FROM alias_redirects WHERE kind='key' AND old_value=? AND account_id=? LIMIT 1",
-      args: [key, acct.id],
+      args: [key, accountId],
     })
     if (!ar.rows.length) return null
-    const projectId = String((ar.rows[0] as any).project_id)
-    const cur = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? AND ticket_key IS NOT NULL LIMIT 1", args: [projectId] })
-    if (!cur.rows.length) return null
-    const curKey = String((cur.rows[0] as any).ticket_key)
-    return { redirect: `/${acct.slug}/t/${curKey}-${seq}` }
+    projectId = String((ar.rows[0] as any).project_id)
+    viaKeyAlias = true
   }
-  const projectId = String((proj.rows[0] as any).id)
 
-  // Layer 1 final hop: feedback by (project_id, seq_num).
+  // 3) Existence: the ticket MUST exist. NEVER return a redirect for a nonexistent (project_id, seq)
+  //    — that is the anti-enumeration guarantee (finding 2).
   const fb = await db!.execute({
     sql: "SELECT id FROM feedback WHERE project_id=? AND seq_num=? LIMIT 1",
     args: [projectId, seq],
   })
   if (!fb.rows.length) return null
-  return { id: String((fb.rows[0] as any).id), projectId }
+  const id = String((fb.rows[0] as any).id)
+
+  // 4) Canonical redirect target — only when a STALE alias was used, and only built from the ORIGINAL
+  //    owner's CURRENT slug + the project's CURRENT key. The route emits the 301 ONLY after proving
+  //    the caller is a member.
+  let redirectTo: string | undefined
+  if (viaSlugAlias || viaKeyAlias) {
+    const curSlug = await currentSlugForAccount(accountId)
+    const kr = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? AND ticket_key IS NOT NULL LIMIT 1", args: [projectId] })
+    const curKey = kr.rows.length ? String((kr.rows[0] as any).ticket_key) : null
+    if (curSlug && curKey) redirectTo = `/${curSlug}/t/${curKey}-${seq}`
+  }
+  return { kind: "pretty", id, projectId, redirectTo }
 }
 
 // One-time, gated backfill (design §8): assign slugs to existing accounts, ticket_keys to existing
@@ -6567,31 +6725,21 @@ export async function backfillWorkspaceAlias(c: Client): Promise<{ slugs: number
   const already = await c.execute({ sql: "SELECT key FROM schema_migrations WHERE key=?", args: [migKey] }).catch(() => ({ rows: [] as any[] }))
   if (already.rows && already.rows.length) return { slugs: 0, keys: 0 }
 
-  // 1. Slugs — oldest accounts first so the incumbent gets the "best" (unsuffixed) slug.
+  // 1. Slugs — oldest accounts first so the incumbent gets the "best" (unsuffixed) slug. Uses the
+  //    race-safe claim helper (retry-on-conflict) so a transient collision never leaves a NULL slug.
   let slugs = 0
   const accts = await c.execute({ sql: "SELECT id, name FROM accounts WHERE slug IS NULL ORDER BY created_at ASC, id ASC" }).catch(() => ({ rows: [] as any[] }))
   for (const row of (accts.rows as any[])) {
-    const id = String(row.id)
-    const slug = await generateUniqueSlug(String(row.name || ""), { seedId: id })
-    const r = await c.execute({
-      sql: "UPDATE accounts SET slug=?, display_slug=?, slug_updated_at=? WHERE id=? AND slug IS NULL",
-      args: [slug, slug, Date.now(), id],
-    }).catch((e: any) => { console.warn("backfill slug skipped:", e?.message || e); return { rowsAffected: 0 } as any })
-    slugs += Number((r as any).rowsAffected || 0)
+    const claimed = await claimAccountSlug(String(row.id), String(row.name || "")).catch(() => null)
+    if (claimed) slugs++
   }
 
-  // 2. Ticket keys — unique within each account.
+  // 2. Ticket keys — unique within each account (race-safe claim).
   let keys = 0
   const projs = await c.execute({ sql: "SELECT id, account_id, name FROM projects WHERE ticket_key IS NULL ORDER BY created_at ASC, id ASC" }).catch(() => ({ rows: [] as any[] }))
   for (const row of (projs.rows as any[])) {
-    const id = String(row.id)
-    const accountId = String(row.account_id)
-    const key = await generateUniqueTicketKey(accountId, String(row.name || "Project"), id)
-    const r = await c.execute({
-      sql: "UPDATE projects SET ticket_key=? WHERE id=? AND ticket_key IS NULL",
-      args: [key, id],
-    }).catch((e: any) => { console.warn("backfill key skipped:", e?.message || e); return { rowsAffected: 0 } as any })
-    keys += Number((r as any).rowsAffected || 0)
+    const claimed = await claimProjectKey(String(row.account_id), String(row.id), String(row.name || "Project")).catch(() => null)
+    if (claimed) keys++
   }
 
   // 3. Seed the atomic counter to the current max seq_num per project so new allocations continue.
@@ -6599,7 +6747,17 @@ export async function backfillWorkspaceAlias(c: Client): Promise<{ slugs: number
        (SELECT MAX(seq_num) FROM feedback WHERE feedback.project_id = projects.id), 0)
      WHERE ticket_seq = 0`).catch((e: any) => console.warn("backfill ticket_seq seed skipped:", e?.message || e))
 
-  await c.execute({ sql: "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)", args: [migKey, Date.now()] }).catch(() => {})
+  // QA #728 finding 6: only mark the migration COMPLETE when it actually finished — otherwise a
+  // transient failure would permanently no-op on the next boot with rows still NULL. If anything is
+  // still un-assigned, leave the gate UNSET so the next boot retries (this run is naturally idempotent).
+  const leftoverSlug = await c.execute("SELECT COUNT(*) AS n FROM accounts WHERE slug IS NULL").catch(() => ({ rows: [{ n: 1 }] as any[] }))
+  const leftoverKey = await c.execute("SELECT COUNT(*) AS n FROM projects WHERE ticket_key IS NULL").catch(() => ({ rows: [{ n: 1 }] as any[] }))
+  const remaining = Number((leftoverSlug.rows[0] as any).n || 0) + Number((leftoverKey.rows[0] as any).n || 0)
+  if (remaining === 0) {
+    await c.execute({ sql: "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)", args: [migKey, Date.now()] }).catch(() => {})
+  } else {
+    console.warn(`[backfillWorkspaceAlias] ${remaining} row(s) still un-assigned — leaving gate UNSET for retry next boot`)
+  }
   if (slugs || keys) console.log(`[backfillWorkspaceAlias] assigned ${slugs} slug(s), ${keys} ticket key(s)`)
   return { slugs, keys }
 }

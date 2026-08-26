@@ -32,6 +32,18 @@ const FID = `fb_${crypto.randomUUID()}` // must be a real fb_<uuid> so the opaqu
 const SLUG = `acme-${RUN}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-{2,}/g, "-").slice(0, 38)
 const KEY = "KLAV"
 const NOW = Date.now()
+// Second project in the SAME account with the DEFAULT share_mode ('teaser') — the enumerable pretty
+// path must STILL be strict member-only here (QA finding 1: default-mode is the case that was masked).
+const PROJ_T = `proj_wsat_${RUN}`
+const KEY_T = "TEASE"
+const FID_T = `fb_${crypto.randomUUID()}`
+// A stale-slug alias to prove the redirect is auth-gated (QA finding 2).
+const OLD_SLUG = `old-${RUN}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-{2,}/g, "-").slice(0, 38)
+// A SEPARATE tenant to prove opaque-under-slug is tenant-bound (QA finding 7).
+const ACCT_B = `acct_wsab_${RUN}`
+const SLUG_B = `globex-${RUN}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-{2,}/g, "-").slice(0, 38)
+const PROJ_B = `proj_wsab_${RUN}`
+const FID_B = `fb_${crypto.randomUUID()}`
 
 let proc: ReturnType<typeof Bun.spawn>
 let BASE = ""
@@ -69,6 +81,16 @@ beforeAll(async () => {
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_${RUN}`, PROJ, OWNER, "admin", null, NOW])
   await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_m_${RUN}`, PROJ, MEMBER, "member", null, NOW])
   await exec("INSERT INTO feedback (id, project_id, observation, priority, status, seq_num, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [FID, PROJ, "Payment fails on mobile Safari", "high", "open", 1, NOW])
+  // Default-teaser project (NO share_mode column value → defaults to 'teaser'), keyed TEASE.
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, ticket_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_T, ACCT, "Teaser Proj", "active", "auto", 200, "named", KEY_T, NOW, NOW])
+  await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_t_${RUN}`, PROJ_T, OWNER, "admin", null, NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, seq_num, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [FID_T, PROJ_T, "Teaser ticket", "low", "open", 1, NOW])
+  // Stale slug alias → OLD_SLUG now points at ACCT (whose CURRENT slug is SLUG).
+  await exec("INSERT INTO alias_redirects (id, kind, old_value, account_id, project_id, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`alr_${RUN}`, "slug", OLD_SLUG, ACCT, null, NOW])
+  // Separate tenant B with its own slug + ticket (for tenant-binding test).
+  await exec("INSERT INTO accounts (id, name, owner_email, slug, display_slug, created_at) VALUES (?, ?, ?, ?, ?, ?)", [ACCT_B, "Globex", `b-${RUN}@test.local`, SLUG_B, SLUG_B, NOW])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, ticket_key, share_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_B, ACCT_B, "Globex Proj", "active", "auto", 200, "named", "GLOB", "off", NOW, NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, seq_num, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [FID_B, PROJ_B, "Globex secret", "high", "open", 1, NOW])
 })
 
 afterAll(() => { proc?.kill(); raw.close(); rmDb() })
@@ -93,12 +115,26 @@ test("member: pretty permalink serves the fast member ticket page (200 + noindex
   expect(html).toContain(PROJ)
 })
 
-test("parity with /t/:ref: each persona gets the SAME status from pretty and opaque routes", async () => {
-  for (const sid of [SID, MEMBER_SID, OUTSIDE_SID, undefined]) {
-    const pretty = await get(PRETTY, sid)
-    const opaque = await get(OPAQUE, sid)
-    expect(pretty.status).toBe(opaque.status) // proves the pretty route reuses the /t auth gate
-  }
+test("[finding 1] member of the teaser-project also serves the fast member page (200)", async () => {
+  const r = await get(`/${SLUG}/t/${KEY_T}-1`, SID)
+  expect(r.status).toBe(200)
+  expect(await r.text()).toContain(FID_T)
+})
+
+test("[finding 1] enumerable pretty path is STRICT member-only even with share_mode='teaser' (default)", async () => {
+  // The DEFAULT-teaser opaque /t/:ref would 200-serve a teaser to a non-member/anon — but the
+  // ENUMERABLE pretty key path must NOT, or every ticket teaser is enumerable. Signed-in non-member
+  // → 403; anon → login gate. Never 200 teaser.
+  const teaserPretty = `/${SLUG}/t/${KEY_T}-1`
+  const nonMember = await get(teaserPretty, OUTSIDE_SID)
+  expect(nonMember.status).toBe(403)
+  const anon = await get(teaserPretty)
+  expect([301, 302, 303, 307, 308]).toContain(anon.status)
+  expect(anon.headers.get("location") || "").toContain("/login")
+  // Control: the UNGUESSABLE opaque handle for the SAME teaser ticket still shows the teaser (200)
+  // to a non-member — proving the distinction is by handle type, not a blanket lockout.
+  const opaqueTeaser = await get(`/t/${FID_T}`, OUTSIDE_SID)
+  expect(opaqueTeaser.status).toBe(200)
 })
 
 test("anon is login-gated (redirect to /login), not served the ticket", async () => {
@@ -107,9 +143,9 @@ test("anon is login-gated (redirect to /login), not served the ticket", async ()
   expect(r.headers.get("location") || "").toContain("/login")
 })
 
-test("signed-in non-member gets 404 (no membership leak), same as /t/:ref", async () => {
+test("[finding 1] signed-in non-member gets 403 on the enumerable pretty path (no teaser leak)", async () => {
   const r = await get(PRETTY, OUTSIDE_SID)
-  expect(r.status).toBe(404)
+  expect(r.status).toBe(403)
 })
 
 test("opaque fallback under a slug segment still resolves: /<slug>/t/<fb_id>", async () => {
@@ -135,4 +171,32 @@ test("reserved slug does NOT shadow: /dashboard/t/KLAV-1 is never served as our 
 test("unknown seq under a valid slug/key → 404 (not another ticket)", async () => {
   const r = await get(`/${SLUG}/t/${KEY}-999`, SID)
   expect(r.status).toBe(404)
+})
+
+test("[finding 2] stale-slug 301 is emitted ONLY to a member; non-member/anon get 403/login not 301", async () => {
+  const staleMember = await get(`/${OLD_SLUG}/t/${KEY}-1`, SID)
+  expect(staleMember.status).toBe(301)
+  expect(staleMember.headers.get("location") || "").toBe(`/${SLUG}/t/${KEY}-1`)
+  // A non-member must NOT receive the 301 (that would confirm the alias exists) — gets 403.
+  const staleNonMember = await get(`/${OLD_SLUG}/t/${KEY}-1`, OUTSIDE_SID)
+  expect(staleNonMember.status).toBe(403)
+  // Anon → login gate, not a 301.
+  const staleAnon = await get(`/${OLD_SLUG}/t/${KEY}-1`)
+  expect(staleAnon.status).not.toBe(301)
+  expect([301, 302, 303, 307, 308]).toContain(staleAnon.status)
+  expect(staleAnon.headers.get("location") || "").toContain("/login")
+})
+
+test("[finding 2] a NONEXISTENT ticket under a stale slug → 404, never a 301 (no alias oracle)", async () => {
+  const member = await get(`/${OLD_SLUG}/t/${KEY}-999`, SID)
+  expect(member.status).toBe(404)
+  // Even anon must not get a 301 for a nonexistent handle.
+  const anon = await get(`/${OLD_SLUG}/t/${KEY}-999`)
+  expect(anon.status).not.toBe(301)
+})
+
+test("[finding 7] opaque /<slug>/t/<fb_id> is tenant-bound: B's ticket under A's slug → 404", async () => {
+  // Under B's own slug the opaque handle resolves; under A's slug it must 404 (no cross-tenant serve).
+  const underA = await get(`/${SLUG}/t/${FID_B}`, SID)
+  expect(underA.status).toBe(404)
 })

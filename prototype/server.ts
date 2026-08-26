@@ -7861,22 +7861,46 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       })
     }
 
-    // ── GET /<workspaceSlug>/t/<KEY>-<n> — #728 collision-safe pretty permalink ──
+    // ── GET /<workspaceSlug>/t/<ref> — #728 collision-safe pretty permalink ──
     // klavity.in/acme/t/KLAV-111. The workspace slug is the globally-unique namespace; <KEY>-<n> is
-    // unique only within it. Additive: reuses the EXACT /t/:ref auth model (resolveWorkspaceTicket
-    // returns the same { id, projectId } shape → member serves ticket.html, teaser/non-member serves
-    // teaser, anon → login gate). Three-layer resolve (pretty → alias_redirects 301 → opaque fb_
-    // fallback). Placed AFTER every real top-level route and gated on !isReservedSlug so it can never
-    // shadow /t, /api, /dashboard, /s, /opsadmin, widget.js, etc. Opaque /<slug>/t/<fb_id> also works.
+    // unique only within it. resolveWorkspaceTicket ALWAYS returns an existence-checked ticket (never
+    // a redirect for a nonexistent handle) tagged with `kind`, so this route — not the resolver —
+    // owns auth. SECURITY (QA #728 findings 1,2): the ENUMERABLE <KEY>-<n> path is STRICT member-only
+    // (403 non-member, login-gate anon, NEVER teaser) because sequential keys are guessable; and any
+    // stale-alias 301 is emitted ONLY after the caller is proven to be a member (no alias enumeration
+    // oracle). The UNGUESSABLE opaque fb_ handle keeps the normal share/teaser policy but is tenant-
+    // bound to the slug's account (finding 7). Placed AFTER real routes + gated on !isReservedSlug.
     const prettyTicketMatch = path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/)
     if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
-      // Renamed slug/key → 301 to the current canonical pretty URL (never-404 contract).
-      if (res && "redirect" in res) {
-        return new Response(null, { status: 301, headers: { location: res.redirect + url.search, "x-robots-tag": "noindex, nofollow" } })
-      }
       if (!res) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
+      const serveTicket = async () => {
+        const pagePath = PUB + "/ticket.html"
+        if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+        let _tHtml = await Bun.file(pagePath).text()
+        _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
+        return new Response(_tHtml, {
+          headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
+        })
+      }
+      if (res.kind === "pretty") {
+        // STRICT member-only gate — enumerable key path. No teaser, ever.
+        const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
+        if (!memberAcc) {
+          // Non-member and anon get IDENTICAL treatment whether or not the handle was a stale alias,
+          // so a 301 can never confirm an alias/slug/key exists. Signed-in non-member → 403; anon → login.
+          return me
+            ? new Response("Forbidden", { status: 403, headers: { "x-robots-tag": "noindex, nofollow" } })
+            : loginGate(path, url.search)
+        }
+        // Member: honor the stale-alias canonical 301 now (auth-gated), else serve the fast page.
+        if (res.redirectTo) {
+          return new Response(null, { status: 301, headers: { location: res.redirectTo + url.search, "x-robots-tag": "noindex, nofollow" } })
+        }
+        return await serveTicket()
+      }
+      // Opaque fb_ handle (unguessable, tenant-bound): normal share/teaser policy, same as /t/:ref.
       const access = await ticketViewAccess(res.id, me)
       if (access === "login") {
         return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
