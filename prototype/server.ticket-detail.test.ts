@@ -266,3 +266,28 @@ test("PATCH priority persists, reflects in a fresh GET, and lands in the timelin
   const bad = await req("PATCH", `/api/feedback/${FID}`, { priority: "sky-high" })
   expect(bad.status).toBe(400)
 })
+
+// #653: the ticket description (observation column) is now editable via the same PATCH.
+test("PATCH observation edits the description, persists, and round-trips on a fresh GET (#653)", async () => {
+  const next = "1. Open checkout\n2. Tap Pay now\n3. Nothing happens"
+  const p = await req("PATCH", `/api/feedback/${FID}`, { observation: next })
+  expect(p.status).toBe(200)
+  expect((await p.json()).ok).toBe(true)
+
+  const fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.observation).toBe(next)
+
+  // The `description` alias is accepted too (the client may send either key).
+  const alias = await req("PATCH", `/api/feedback/${FID}`, { description: "Single-line description" })
+  expect(alias.status).toBe(200)
+  const fresh2 = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh2.report.observation).toBe("Single-line description")
+
+  // A non-string (and non-null) description is rejected.
+  const badType = await req("PATCH", `/api/feedback/${FID}`, { observation: 42 })
+  expect(badType.status).toBe(400)
+
+  // Outsiders can't edit the description (same 404 as any other read/write on a foreign ticket).
+  const blocked = await req("PATCH", `/api/feedback/${FID}`, { observation: "hax" }, OUTSIDE_SID)
+  expect(blocked.status).toBe(404)
+})

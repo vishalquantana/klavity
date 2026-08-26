@@ -5853,7 +5853,7 @@ export async function resumePausedExportOutbox(connectorId: string, now = Date.n
 export async function updateFeedbackMeta(
   projectId: string,
   feedbackId: string,
-  meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null }>
+  meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null; observation: string | null }>
 ): Promise<boolean> {
   const now = Date.now()
   const sets: string[] = ["updated_at=?"]
@@ -5865,6 +5865,8 @@ export async function updateFeedbackMeta(
   if ("assignee" in meta) { sets.push("assignee=?"); args.push(meta.assignee ?? null) }
   if ("notes" in meta) { sets.push("notes=?"); args.push(meta.notes ?? null) }
   if ("priority" in meta) { sets.push("priority=?"); args.push(meta.priority ?? null) }
+  // #653: editable ticket description — persists into the `observation` column (the reporter's body).
+  if ("observation" in meta) { sets.push("observation=?"); args.push(meta.observation ?? null) }
   args.push(projectId, feedbackId)
   const r = await db!.execute({
     sql: `UPDATE feedback SET ${sets.join(",")} WHERE project_id=? AND id=?`,

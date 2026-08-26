@@ -975,6 +975,60 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .seg button.active{background:var(--indigo);color:#fff}
 [data-theme="dark"] .seg button.active{color:#0c0a08}
 .seg button:not(.active):hover{background:var(--ink-3)}
+/* #653: redesigned single-ticket properties — tight left-aligned key→value list (label + control) */
+.tkt-props{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 14px;align-items:center;margin:2px 0}
+.tkt-prop-lb{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
+.tkt-prop-vv{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.prop-dot{width:8px;height:8px;border-radius:50%;flex:none}
+.prop-dot.ds-new{background:#e11d63}.prop-dot.ds-open{background:var(--amber)}.prop-dot.ds-in_progress{background:var(--indigo)}.prop-dot.ds-done{background:var(--green)}.prop-dot.ds-dismissed{background:var(--paper-faint)}
+.prop-sq{width:9px;height:9px;border-radius:2px;flex:none}
+.prop-sq.dp-low{background:#94a3b8}.prop-sq.dp-medium{background:#eab308}.prop-sq.dp-high{background:#f97316}.prop-sq.dp-urgent{background:#dc2626}
+/* compact assignee control (avatar + email) → click reveals the edit row */
+.tkt-assignee-ctrl-wrap{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:100%}
+.tkt-assignee-ctrl{display:inline-flex;align-items:center;gap:7px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-family:var(--body);font-size:13px;font-weight:600;color:var(--paper);cursor:pointer;max-width:100%;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.tkt-assignee-ctrl:hover{border-color:var(--indigo);transform:var(--mi-lift)}
+.tkt-assignee-ctrl:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+.tkt-assignee-ctrl.empty{color:var(--paper-faint);font-weight:500}
+.tkt-assignee-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tkt-av{width:22px;height:22px;border-radius:50%;background:var(--indigo);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none}
+.tkt-av.empty{background:var(--ink-3);color:var(--paper-faint)}
+.prop-caret{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid var(--paper-faint);flex:none;margin-left:1px}
+.tkt-assignee-edit{display:flex;align-items:center;gap:6px}
+.tkt-assignee-edit.hide{display:none}
+/* labels folded into the props grid */
+.tkt-props .tkt-lbl-row{margin-top:0;flex-direction:row;flex-wrap:wrap;align-items:center}
+.tkt-lbl-empty-add{background:transparent;border:1px dashed var(--line);border-radius:999px;padding:3px 10px;font-family:var(--body);font-size:12px;font-weight:600;color:var(--indigo);cursor:pointer;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.tkt-lbl-empty-add:hover{border-color:var(--indigo);transform:var(--mi-lift)}
+.tkt-lbl-empty-add.hide{display:none}
+/* collapsible internal notes (team-only) */
+.tkt-notes{margin-top:2px}
+.tkt-notes>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);padding:3px 0}
+.tkt-notes>summary::-webkit-details-marker{display:none}
+.tkt-notes>summary:hover{color:var(--paper-dim)}
+.tkt-notes>summary .icon,.tkt-notes>summary svg{color:var(--paper-faint)}
+.tkt-notes-body{margin-top:7px}
+.tkt-notes-body .notes-ta{width:100%;box-sizing:border-box;background:var(--ink-2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;resize:vertical;min-height:52px;transition:border-color .15s}
+.tkt-notes-body .notes-ta:focus{border-color:var(--indigo)}
+/* Save reveals only when a property actually changed (dirty state) */
+.tkt-save-grp{display:none;align-items:center;gap:6px}
+.tkt-save-grp.dirty-show{display:inline-flex}
+.tkt-save-grp .save-meta-btn{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.tkt-act-grp{display:inline-flex;align-items:center;gap:6px}
+/* editable description (click-to-edit / pencil → textarea + Save/Cancel) */
+.tkt-desc-head{display:flex;align-items:center;gap:8px}
+.tkt-desc-head .tkt-desc-label{margin-bottom:0}
+.tkt-desc-edit{background:none;border:none;padding:2px;line-height:0;color:var(--paper-faint);cursor:pointer;border-radius:6px;opacity:0;transition:opacity .15s,color .15s,transform var(--mi-dur) var(--mi-ease)}
+.tkt-desc:hover .tkt-desc-edit,.tkt-desc-edit:focus-visible{opacity:1}
+.tkt-desc-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
+.tkt-obs{cursor:text}
+.tkt-desc-editing .tkt-obs,.tkt-desc-editing .tkt-desc-edit{display:none}
+.tkt-desc-ta{width:100%;box-sizing:border-box;background:var(--ink-2);border:1px solid var(--indigo);border-radius:9px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;outline:none;resize:vertical;min-height:80px}
+.tkt-desc-edit-row{display:flex;align-items:center;gap:8px;margin-top:7px}
+/* reusable (i) info tooltip — no emoji, plain letter in a ring */
+.info{position:relative;display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--paper-faint);color:var(--paper-faint);font-size:10px;font-weight:700;font-style:normal;line-height:1;font-family:var(--body);cursor:help;flex:none}
+.info:hover,.info:focus-visible{color:var(--indigo);border-color:var(--indigo);outline:none}
+.info .tip{position:absolute;bottom:135%;left:50%;transform:translate(-50%,6px);background:var(--ink-3);color:var(--paper);border:1px solid var(--line);font-size:11.5px;font-weight:500;line-height:1.4;letter-spacing:0;text-transform:none;padding:8px 10px;border-radius:8px;width:196px;opacity:0;pointer-events:none;transition:opacity .16s var(--mi-ease),transform .16s var(--mi-ease);z-index:20;box-shadow:0 12px 30px -10px rgba(0,0,0,.5)}
+.info:hover .tip,.info:focus-visible .tip{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 /* Tickets kanban board */
 /* #636: Jira-style horizontal scroll — columns keep a fixed width and the board scrolls sideways
    instead of every column squishing when many statuses are present. */
@@ -5813,9 +5867,22 @@ function assigneePickerHtml(t, compact = false) {
       : ""
     return `<div class="kb-card-assign">${reassignBtn}${editRow}</div>`
   }
-  return `<div class="tkt-assignee-row">
-    <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="${placeholder}" value="${esc(current)}" autocomplete="off" />
-    <button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>
+  // #653 (detail view): a COMPACT control — avatar (first initial) + email — that reveals the edit row
+  // on click, instead of a big always-open free-text input. Unassigned shows a muted '?' + 'Unassigned'.
+  // The .assignee-inp / .tkt-assignee-clear / Save wiring is preserved (input just starts hidden).
+  const em = String(current || "").trim()
+  const initial = em ? esc(em[0].toUpperCase()) : "?"
+  const label = em ? esc(em) : "Unassigned"
+  return `<div class="tkt-assignee-ctrl-wrap">
+    <button type="button" class="tkt-assignee-ctrl${em ? "" : " empty"}" title="Change assignee">
+      <span class="tkt-av${em ? "" : " empty"}">${initial}</span>
+      <span class="tkt-assignee-email">${label}</span>
+      <span class="prop-caret" aria-hidden="true"></span>
+    </button>
+    <div class="tkt-assignee-edit hide">
+      <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="name@company.com" value="${esc(current)}" autocomplete="off" />
+      <button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>
+    </div>
   </div>`
 }
 
@@ -5879,7 +5946,14 @@ function descriptionBlockHtml(text) {
   const raw = String(text == null ? "" : text)
   const isSteps = /(^|\n)\s*(\d+[.)]\s|[-*•]\s|step\s*\d+\b)/i.test(raw)
   const label = isSteps ? "Steps to reproduce" : "Description"
-  return `<div class="tkt-desc"><div class="tkt-desc-label">${label}</div><div class="tkt-obs">${esc(raw)}</div></div>`
+  // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
+  return `<div class="tkt-desc">
+    <div class="tkt-desc-head">
+      <div class="tkt-desc-label">${label}</div>
+      <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil',{size:13})}</button>
+    </div>
+    <div class="tkt-obs" title="Click to edit">${esc(raw)}</div>
+  </div>`
 }
 // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
 function recTimeFmt(sec) {
@@ -6044,39 +6118,43 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const priOpts = ["urgent","high","medium","low"].map(p =>
       `<option value="${p}"${p===curPri?" selected":""}>${p}</option>`
     ).join("")
+    // #653: reusable (i) info tooltip for the genuinely-unclear controls. Text is trusted/static; esc anyway.
+    const infoTip = (msg) => `<span class="info" tabindex="0" role="note" aria-label="${esc(msg)}">i<span class="tip">${esc(msg)}</span></span>`
+    // #653: PROPERTIES as a tight left-aligned key→value list. Status keeps its <select> wiring but gains a
+    // colored status dot; Priority keeps its <select> with a colored severity square; Assignee is a compact
+    // avatar+email control; Labels get chips + a clean "+ Add label" empty state. Notes collapse below.
     const _bodyHtml = `
-      <div class="tkt-status-row">
-        <span class="tkt-status-lbl">Status</span>
-        <select class="tkt-status-sel seg-like">${statusOpts}</select>
+      <div class="tkt-props">
+        <span class="tkt-prop-lb">Status</span>
+        <span class="tkt-prop-vv"><span class="prop-dot ds-${esc(curStatus)}"></span><select class="tkt-status-sel seg-like">${statusOpts}</select></span>
+        <span class="tkt-prop-lb">Priority</span>
+        <span class="tkt-prop-vv"><span class="prop-sq dp-${esc(curPri)}"></span><select class="tkt-pri-sel seg-like">${priOpts}</select></span>
+        <span class="tkt-prop-lb">Assignee</span>
+        <span class="tkt-prop-vv">${assigneePickerHtml(t, false)}</span>
+        <span class="tkt-prop-lb">Labels</span>
+        <span class="tkt-prop-vv">
+          <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
+            <div class="tkt-lbl-controls">
+              <div class="lbl-chips tkt-lbl-chips"></div>
+              <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
+              <button class="tkt-lbl-empty-add hide" type="button">+ Add label</button>
+            </div>
+            <div class="lbl-ghost-chips tkt-lbl-ghost-chips"></div>
+          </div>
+        </span>
       </div>
-      <div class="tkt-status-row tkt-pri-row">
-        <span class="tkt-status-lbl">Priority</span>
-        <select class="tkt-pri-sel seg-like">${priOpts}</select>
-      </div>
-      <div class="tkt-fields">
-        <div class="tkt-field">
-          <label>Assignee</label>
-          ${assigneePickerHtml(t, false)}
+      <details class="tkt-notes">
+        <summary>${kicon('plus',{size:12})} Internal notes</summary>
+        <div class="tkt-notes-body">
+          <textarea class="notes-ta" placeholder="No notes yet — visible to your team only.">${esc(t.notes||"")}</textarea>
         </div>
-        <div class="tkt-field" style="flex:2;min-width:200px">
-          <label>Notes</label>
-          <textarea class="notes-ta" placeholder="management notes…">${esc(t.notes||"")}</textarea>
-        </div>
-      </div>
-      <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
-        <label>Labels</label>
-        <div class="tkt-lbl-controls">
-          <div class="lbl-chips tkt-lbl-chips"></div>
-          <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
-        </div>
-        <div class="lbl-ghost-chips tkt-lbl-ghost-chips"></div>
-      </div>
+      </details>
       <div class="tkt-actions">
         <div class="tkt-badges">${badgesHtml}</div>
         ${t.hasReplay ? `<button class="btn btn-ghost btn-sm replay-btn" type="button">${kicon('play')} Session replay</button>` : ""}
-        <button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">${kicon('sparkles')} Copy to AI</button>
-        <button class="btn btn-ghost btn-sm save-meta-btn">Save</button>
-        ${curStatus === "done" ? `<button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>` : ""}
+        <span class="tkt-act-grp"><button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">${kicon('sparkles')} Copy to AI</button>${infoTip("Copies the bug + context, formatted to paste into an AI coding assistant.")}</span>
+        <span class="tkt-save-grp"><button class="btn btn-ghost btn-sm save-meta-btn">Save</button>${infoTip("Appears only when a property changed. Saves the assignee & internal notes.")}</span>
+        ${curStatus === "done" ? `<span class="tkt-act-grp"><button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>${infoTip("Turns this fix into an enforceable guard so the bug can't silently come back.")}</span>` : ""}
         ${(curStatus === "done" && t.guardCaught) ? `<button class="btn btn-ghost btn-sm regr-receipt-btn${t.receiptSent ? " btn-indigo" : ""}" type="button" title="Email the original reporter a forwardable 'caught & fixed before it reached your users' receipt"${t.receiptSent ? " disabled" : ""}>${kicon('mail-check')} ${t.receiptSent ? "Receipt sent" : "Send regression-caught receipt"}</button>` : ""}
       </div>
       ${pendingReqHtml}
@@ -6089,6 +6167,48 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_bodyHtml}</div>`
       : `${_contextHtml}${_recHtml}${_bodyHtml}`
     wireRecordingSeek(detailEl)
+
+    // #653: dirty-only Save — the Save button/group stays hidden until the assignee OR notes actually
+    // change from their saved values, then reveals; it hides again after a successful save.
+    const _saveGrpEl = detailEl.querySelector(".tkt-save-grp")
+    const _assigneeInpEl = detailEl.querySelector(".assignee-inp")
+    const _notesTaEl = detailEl.querySelector(".notes-ta")
+    let _savedAssignee = _assigneeInpEl ? _assigneeInpEl.value.trim() : ""
+    let _savedNotes = _notesTaEl ? _notesTaEl.value.trim() : ""
+    const _refreshDirty = () => {
+      if (!_saveGrpEl) return
+      const dirty = (!!_assigneeInpEl && _assigneeInpEl.value.trim() !== _savedAssignee)
+        || (!!_notesTaEl && _notesTaEl.value.trim() !== _savedNotes)
+      _saveGrpEl.classList.toggle("dirty-show", dirty)
+    }
+    if (_assigneeInpEl) _assigneeInpEl.addEventListener("input", _refreshDirty)
+    if (_notesTaEl) _notesTaEl.addEventListener("input", _refreshDirty)
+    // Reflect the compact assignee display (avatar initial + email) after a save; collapse the edit row.
+    const _paintAssigneeDisplay = (emailVal) => {
+      const em = String(emailVal || "").trim()
+      const ctrl = detailEl.querySelector(".tkt-assignee-ctrl")
+      if (ctrl) {
+        ctrl.classList.toggle("empty", !em)
+        const av = ctrl.querySelector(".tkt-av")
+        if (av) { av.textContent = em ? em[0].toUpperCase() : "?"; av.classList.toggle("empty", !em) }
+        const emEl = ctrl.querySelector(".tkt-assignee-email")
+        if (emEl) emEl.textContent = em || "Unassigned"
+      }
+      const editRow = detailEl.querySelector(".tkt-assignee-edit")
+      if (editRow) editRow.classList.add("hide")
+    }
+    // Assignee compact control: click to reveal/hide the edit row (input + Clear).
+    const _assigneeCtrlBtn = detailEl.querySelector(".tkt-assignee-ctrl")
+    const _assigneeEditRow = detailEl.querySelector(".tkt-assignee-edit")
+    if (_assigneeCtrlBtn && _assigneeEditRow) {
+      _assigneeCtrlBtn.addEventListener("click", ev => {
+        ev.stopPropagation()
+        _assigneeEditRow.classList.toggle("hide")
+        if (!_assigneeEditRow.classList.contains("hide")) {
+          const inp = _assigneeEditRow.querySelector(".assignee-inp"); if (inp) inp.focus()
+        }
+      })
+    }
 
     // #630(a): Wire up the status <select> (was 5 seg buttons). Same PATCH + optimistic-state logic;
     // a single change handler replaces the per-pill click handlers.
@@ -6114,6 +6234,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         } finally { window.__klavMutating--; statusSelEl.disabled = false; statusSelEl.removeAttribute("aria-busy") }
         if (d.ok) {
           _prevStatus = newStatus
+          // #653: repaint the status dot to the new state color.
+          const _dot = detailEl.querySelector(".prop-dot")
+          if (_dot) _dot.className = "prop-dot ds-" + newStatus
           // Update state
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.status = newStatus
@@ -6156,6 +6279,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.priority = newPri
           recordLocalEdit(ticketId, { priority: newPri })   // #532
+          // #653: repaint the priority severity square.
+          const _sq = detailEl.querySelector(".prop-sq")
+          if (_sq) _sq.className = "prop-sq dp-" + (newPri || "medium")
           // Update the severity rail class on the detail's parent card / row
           const parentRow = detailEl.closest(".row-tkt, .kb-card, #ticketSingle")
           if (parentRow) {
@@ -6199,6 +6325,11 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         recordLocalEdit(ticketId, { assignee: assignee || null, notes: notes || null })   // #532
         setTicketAssigneeLocal(ticketId, assignee || null)
         if (onChange) onChange("assignee", assignee || null)
+        // #653: reset the dirty baseline (hides Save) and repaint the compact assignee control.
+        _savedAssignee = assignee || ""
+        _savedNotes = notes || ""
+        _refreshDirty()
+        _paintAssigneeDisplay(assignee)
         // JTBD 2.15: warn inline when the notification email was silently skipped server-side.
         if (assignee && d.assigneeEmailSent === false) showTktMsg(detailEl, "Saved, but the notification email could not be sent.", true)
         else showTktMsg(detailEl, "Saved.", false)
@@ -6227,6 +6358,73 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const copyClaudeBtn = detailEl.querySelector(".copy-claude-btn")
     if (copyClaudeBtn) {
       copyClaudeBtn.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, copyClaudeBtn, detailEl) })
+    }
+
+    // #653: EDITABLE DESCRIPTION — the pencil (or clicking the body text) swaps the description for a
+    // textarea + Save/Cancel. Save PATCHes { observation } (optimistic local update, revert on failure)
+    // and re-derives the "Steps to reproduce" vs "Description" label. Works in both the slide-over panel
+    // and the full-page route (both build detail via buildTktDetail).
+    const descEl = detailEl.querySelector(".tkt-desc")
+    if (descEl) {
+      const descEditBtn = descEl.querySelector(".tkt-desc-edit")
+      const obsEl = descEl.querySelector(".tkt-obs")
+      const enterDescEdit = () => {
+        if (descEl.classList.contains("tkt-desc-editing")) return
+        const cur = t.observation != null ? String(t.observation) : ""
+        descEl.classList.add("tkt-desc-editing")
+        const editWrap = document.createElement("div")
+        editWrap.className = "tkt-desc-edit-wrap"
+        const ta = document.createElement("textarea")
+        ta.className = "tkt-desc-ta"; ta.value = cur; ta.setAttribute("aria-label", "Edit description")
+        const row = document.createElement("div")
+        row.className = "tkt-desc-edit-row"
+        const saveB = document.createElement("button")
+        saveB.type = "button"; saveB.className = "btn btn-indigo btn-sm tkt-desc-save"; saveB.textContent = "Save"
+        const cancelB = document.createElement("button")
+        cancelB.type = "button"; cancelB.className = "btn btn-ghost btn-sm tkt-desc-cancel"; cancelB.textContent = "Cancel"
+        row.appendChild(saveB); row.appendChild(cancelB)
+        editWrap.appendChild(ta); editWrap.appendChild(row)
+        descEl.appendChild(editWrap)
+        try { ta.focus() } catch (e) {}
+        const teardown = () => { descEl.classList.remove("tkt-desc-editing"); editWrap.remove() }
+        cancelB.addEventListener("click", ev => { ev.stopPropagation(); teardown() })
+        saveB.addEventListener("click", async ev => {
+          ev.stopPropagation()
+          const next = ta.value
+          const prev = t.observation != null ? String(t.observation) : ""
+          if (next === prev) { teardown(); return }
+          saveB.disabled = true; cancelB.disabled = true
+          window.__klavMutating++   // #532: suppress the liveness poll during the in-flight save
+          let d = {}
+          try {
+            const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+              method: "PATCH", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ observation: next })
+            }).catch(() => null)
+            d = r ? await r.json().catch(() => ({})) : {}
+          } finally { window.__klavMutating-- }
+          if (d.ok) {
+            // Optimistic local update + overlay so the 25s poll can't repaint the stale body.
+            t.observation = next
+            const tkt = (state.tickets || []).find(x => x.id === ticketId)
+            if (tkt) tkt.observation = next
+            recordLocalEdit(ticketId, { observation: next })
+            // Re-derive the Steps-vs-Description label + repaint the shown text.
+            const isSteps = /(^|\n)\s*(\d+[.)]\s|[-*•]\s|step\s*\d+\b)/i.test(next)
+            const lblEl = descEl.querySelector(".tkt-desc-label")
+            if (lblEl) lblEl.textContent = isSteps ? "Steps to reproduce" : "Description"
+            if (obsEl) obsEl.textContent = next
+            teardown()
+            if (onChange) onChange("observation", next)
+            showTktMsg(detailEl, "Description saved.", false)
+          } else {
+            saveB.disabled = false; cancelB.disabled = false
+            showTktMsg(detailEl, d.error || "Couldn't save description.", true)
+          }
+        })
+      }
+      if (descEditBtn) descEditBtn.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
+      if (obsEl) obsEl.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
     }
 
     // KLA-242: Wire up "Guard this fix" — creates an expectation from the resolved ticket.
@@ -6448,6 +6646,15 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           })
         })
       }
+      // #653: clean empty state — when there are NO project labels at all, hide the empty select and
+      // show a "+ Add label" affordance that opens the manage-labels modal (so a first label can be made).
+      const emptyAddBtn = detailEl.querySelector(".tkt-lbl-empty-add")
+      if (emptyAddBtn) {
+        emptyAddBtn.addEventListener("click", ev => {
+          ev.stopPropagation()
+          if (typeof openManageLabels === "function") openManageLabels()
+        })
+      }
       const populateSel = () => {
         const projectLabels = state._labels || []
         const attached = new Set(ticketLabels.map(l => l.id))
@@ -6455,6 +6662,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         lblSel.innerHTML = '<option value="">+ Add label…</option>' +
           available.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
         lblSel.style.display = available.length ? "" : "none"
+        // Fall back to the "+ Add label" button only when the project has no labels to attach at all
+        // (an existing project WITH labels, all already attached, just hides the select — no dead button).
+        if (emptyAddBtn) emptyAddBtn.classList.toggle("hide", projectLabels.length > 0)
       }
 
       // KLA-175: ghost chips — AI-suggested labels; one-click to accept
@@ -6712,6 +6922,7 @@ function buildOccurrenceTimeline(ticketId) {
   wrap.innerHTML = `<div class="tkt-occ-hd">
       <span class="tkt-occ-title">Occurrence timeline</span>
       <span class="tkt-occ-count"></span>
+      <span class="info" tabindex="0" role="note" aria-label="How many times this exact issue has recurred. Only shown when it has come back (2+ times).">i<span class="tip">How many times this exact issue has recurred. Only shown when it has come back.</span></span>
       <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
     </div>
     <div class="tkt-occ-list"></div>
@@ -6750,7 +6961,9 @@ function buildOccurrenceTimeline(ticketId) {
           .filter(o => (o.observation || "").trim())
         if (occ.length < 2) { wrap.classList.add("hide"); return }  // single occurrence: nothing worth a timeline
         wrap.classList.remove("hide")
-        countEl.textContent = occ.length + " reports"
+        // #653: only render the count pill when recurrence >= 2 (the wrap itself hides at 0/1, so the
+        // pill is never shown empty). Compact "×N" reads as a recurrence multiplier.
+        countEl.textContent = "×" + occ.length
         listEl.innerHTML = ""
         occ.forEach(o => {
           const item = document.createElement("div")

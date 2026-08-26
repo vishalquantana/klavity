@@ -212,8 +212,12 @@ test("single-ticket view keeps title/source in the header and operational detail
   expect(buildTktDetailSrc).toContain("const _showBugTitle")
   expect(buildTktDetailSrc).toContain("const _showBugBody")
   expect(buildTktDetailSrc).toContain("const _showBug =")
+  // #653: operational details render as a tight key→value properties list (Status/Priority/Assignee/
+  // Labels) with collapsible team-only Internal notes — the panel still owns the operational controls.
+  expect(buildTktDetailSrc).toContain('class="tkt-props"')
   expect(buildTktDetailSrc).toContain("Status</span>")
-  expect(buildTktDetailSrc).toContain("Notes</label>")
+  expect(buildTktDetailSrc).toContain("Internal notes")
+  expect(buildTktDetailSrc).toContain('class="notes-ta"')
 })
 
 test("Sims page leads with Sims feed; Live/Observability are collapsible in Sims+Settings views", () => {

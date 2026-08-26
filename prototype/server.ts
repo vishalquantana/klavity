@@ -10898,8 +10898,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (body.priority !== undefined && body.priority !== null && !VALID_PRI.includes(body.priority)) {
             return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
           }
-          const meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null }> = {}
+          const meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null; observation: string | null }> = {}
           if (body.status !== undefined) meta.status = body.status
+          // #653: editable description — accept `observation` (or the `description` alias). A string
+          // (capped) sets the body; null/"" clears it. Any project member who can PATCH may edit it.
+          if (body.observation !== undefined || body.description !== undefined) {
+            const rawDesc = body.observation !== undefined ? body.observation : body.description
+            if (rawDesc !== null && typeof rawDesc !== "string") {
+              return json({ error: "description must be a string or null." }, 400)
+            }
+            meta.observation = rawDesc == null ? null : String(rawDesc).slice(0, 20000)
+          }
           if (body.assignee !== undefined) {
             const assignee = normalizeAssigneeEmail(body.assignee)
             if (assignee === "") return json({ error: "assignee must be a valid email address." }, 400)
