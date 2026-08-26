@@ -35,7 +35,11 @@ a{color:inherit;text-decoration:none}
 .bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
 .bar-in{margin-left:214px;padding:0 30px;height:60px;display:flex;align-items:center;gap:14px;transition:margin-left .2s ease}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.02em}
-.brand .spark{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:15px;color:#fff;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
+/* #719: the brand mark is the REAL Klavity logo (favicon.svg dot-grid), not the letter "K".
+   The svg fills the rounded badge so both expanded + collapsed states show the actual icon. */
+.brand .spark{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,var(--indigo-deep),#a78bfa)}
+.brand .spark svg{width:28px;height:28px;display:block;border-radius:8px}
+.brand-word{display:inline}
 .bar-brand{display:none;font-size:18px}
 .ws{font-size:14px;color:var(--paper-dim);font-weight:600}
 .right{margin-left:auto;display:flex;align-items:center;gap:14px}
@@ -66,13 +70,17 @@ a{color:inherit;text-decoration:none}
 .side-collapse-btn:active{transform:var(--mi-press)}
 .side-collapse-btn .chev{transition:transform .2s ease}
 body.side-collapsed .side-collapse-btn .chev{transform:rotate(180deg)}
-/* #677: collapsed = icon rail. Shrink the rail to icons only and reclaim the width for the content grid.
-   Nav labels/counts/pills are clipped (the bare text nodes can't be display:none'd) by overflow:hidden. */
+/* #677/#719: collapsed = a clean icon rail. Shrink the rail to icons only and reclaim the width for
+   the content grid. The wordmark + every nav LABEL are hidden ENTIRELY (font-size:0 collapses the bare
+   text node — no cut-off sliver), leaving only the centered logo + nav icons. */
 body.side-collapsed .side{width:60px;padding-left:8px;padding-right:8px}
 body.side-collapsed .bar-in,body.side-collapsed .wrap{margin-left:60px}
 body.side-collapsed .side .brand,body.side-collapsed .side .nv{overflow:hidden;white-space:nowrap}
-body.side-collapsed .side .nv{padding-left:9px;padding-right:9px}
-body.side-collapsed .side .brand{width:44px}
+body.side-collapsed .side .brand{width:44px;justify-content:center;gap:0;padding-left:0;padding-right:0}
+body.side-collapsed .side .brand-word{display:none}
+body.side-collapsed .side .nv{padding-left:0;padding-right:0;gap:0;justify-content:center;font-size:0}
+body.side-collapsed .side .nv .ct,body.side-collapsed .side .nv .cl-path-tag{display:none}
+body.side-collapsed .side .nv .ic{width:auto;font-size:0}
 body.side-collapsed .side-plan-pill,body.side-collapsed .side-version{display:none}
 body.side-collapsed .side-collapse-btn{position:static;margin:0 auto 6px}
 .content{flex:1 1 auto;min-width:0;position:relative}
@@ -1986,7 +1994,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <body data-view="overview">
 <div class="bar"><div class="bar-in">
   <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
-  <div class="brand bar-brand"><span class="spark">K</span>Klavity</div>
+  <div class="brand bar-brand"><span class="spark"><svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="48" height="48" rx="11" fill="#1a1023"/><g fill="white"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g><g stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.35"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg></span><span class="brand-word">Klavity</span></div>
   <span class="ws hide" id="wsName"></span>
   <!-- Snap shortcut — report widget install, always visible so new users see it immediately -->
   <button type="button" class="nav-snap mi" id="snapNavBtn" aria-label="Install the report widget on your site (Snap)" title="Add the Klavity report widget to your site" onclick="if(typeof setView==='function')setView('snap')"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="nav-snap-lbl">Report widget</span></button>
@@ -2020,7 +2028,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <div class="wrap">
   <aside class="side" aria-label="Dashboard sections">
     <!-- Brand at the very top of the sidebar -->
-    <div class="brand"><span class="spark">K</span>Klavity</div>
+    <div class="brand"><span class="spark"><svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="48" height="48" rx="11" fill="#1a1023"/><g fill="white"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g><g stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.35"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg></span><span class="brand-word">Klavity</span></div>
     <!-- #677: collapse/expand the rail to an icon-only rail; preference persists in localStorage -->
     <button type="button" class="side-collapse-btn" id="sideCollapseBtn" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"><svg class="chev" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg></button>
     <!-- P0 upgrade surface: shown only for free accounts (wired by _wirePlan) — opens Plan & billing -->
@@ -8538,22 +8546,41 @@ async function fetchAndRenderTktList() {
   const listEl = document.getElementById("tktListView")
   if (!listEl) return
   if (_tktListState.loading) return
-  _tktListState.loading = true
-  listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
 
   const projId = state && state.active && state.active.id
-  if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktListState.loading = false; return }
+  if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; return }
 
   const sp = ticketQueryParams("list", _tktListState.page, 50)
+  // #720: SWR key encodes project + every filter + the page, so cached rows always match the exact
+  // query on screen (sorting/filtering stays correct — a different filter/page is a different key).
+  const cacheKey = "tktlist:" + projId + ":" + sp.toString()
 
+  // #720: paint the last-cached rows IMMEDIATELY (no 'Loading…' flash), then revalidate below.
+  let paintedFromCache = false
+  const cached = swrRead(cacheKey)
+  if (cached && Array.isArray(cached.tickets)) {
+    _tktListState.totalPages = cached.totalPages || 1
+    renderTktList(listEl, cached.tickets, cached.total || 0)
+    paintedFromCache = true
+  } else {
+    listEl.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+  }
+
+  _tktListState.loading = true
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
     if (!res.ok) throw new Error("HTTP " + res.status)
     const data = await res.json()
     _tktListState.totalPages = data.totalPages || 1
+    // Keep the SWR snapshot fresh regardless of whether we re-paint the DOM this pass.
+    swrWrite(cacheKey, { tickets: data.tickets || [], total: data.total || 0, totalPages: data.totalPages || 1 })
+    // #720: preserve the __klavMutating poll-pause guard — if an optimistic mutation is in flight, a
+    // lagging revalidation must NOT clobber the (already painted) optimistic DOM. The cache is still
+    // updated above, so the next open reconciles to server truth.
+    if (window.__klavMutating > 0 && paintedFromCache) return
     renderTktList(listEl, data.tickets || [], data.total || 0)
   } catch (e) {
-    listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+    if (!paintedFromCache) listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
   } finally {
     _tktListState.loading = false
   }
@@ -8952,7 +8979,8 @@ function renderTktList(listEl, tickets, total) {
   const listDiv = document.createElement("div")
   listDiv.className = "tkt-list"
 
-  filtered.forEach(t => {
+  // #720: build ONE row. Rows are appended in batches (below) so a big list never blocks the open.
+  function makeTktListRow(t) {
     const row = document.createElement("div")
     row.className = "tkt-list-row" + (_bulkSelected.has(t.id) ? " tl-selected" : "")
     row.setAttribute("data-id", t.id)
@@ -8996,9 +9024,38 @@ function renderTktList(listEl, tickets, total) {
     row.addEventListener("click", () => openSingleTicket(t.id))
     // Inject ticket into state.tickets if not already there (so detail view works)
     if (state.tickets && !state.tickets.find(x => x.id === t.id)) state.tickets.push(t)
-    listDiv.appendChild(row)
-  })
+    return row
+  }
+
+  // #720: lazy render — paint the first screenful immediately, append the rest in batches as the
+  // sentinel scrolls into view (IntersectionObserver), so a long page never blocks. Sorting/filtering
+  // is unchanged (server-ordered `filtered`); this only controls how many rows are in the DOM.
+  const LAZY_BATCH = 20
+  let _lazyCursor = 0
+  function appendLazyBatch() {
+    const end = Math.min(_lazyCursor + LAZY_BATCH, filtered.length)
+    const frag = document.createDocumentFragment()
+    for (; _lazyCursor < end; _lazyCursor++) frag.appendChild(makeTktListRow(filtered[_lazyCursor]))
+    listDiv.appendChild(frag)
+  }
+  appendLazyBatch()                 // first screenful — synchronous, instant
   wrap.appendChild(listDiv)
+  if (_lazyCursor < filtered.length) {
+    const sentinel = document.createElement("div")
+    sentinel.className = "tkt-list-sentinel"; sentinel.setAttribute("aria-hidden", "true")
+    wrap.appendChild(sentinel)
+    if (typeof IntersectionObserver === "function") {
+      const io = new IntersectionObserver(entries => {
+        if (!entries.some(e => e.isIntersecting)) return
+        appendLazyBatch()
+        if (_lazyCursor >= filtered.length) { io.disconnect(); sentinel.remove() }
+      }, { rootMargin: "400px" })
+      io.observe(sentinel)
+    } else {
+      while (_lazyCursor < filtered.length) appendLazyBatch()   // no IO support → render the rest now
+      sentinel.remove()
+    }
+  }
 
   // Pagination
   if (_tktListState.totalPages > 1) {
