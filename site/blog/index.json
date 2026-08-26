@@ -453,5 +453,12 @@
     "excerpt": "A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template.",
     "category": "Guides",
     "date": "2026-08-25"
+  },
+  {
+    "slug": "get-useful-bug-reports-from-non-technical-users",
+    "title": "How to Get Useful Bug Reports From Non-Technical Users",
+    "excerpt": "Non-technical users can't describe console errors or network calls, so capture them automatically. Here's how to design intake for reproducible reports.",
+    "category": "Guides",
+    "date": "2026-08-26"
   }
 ]
