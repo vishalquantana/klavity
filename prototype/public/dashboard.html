@@ -985,12 +985,16 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .prop-sq.dp-low{background:#94a3b8}.prop-sq.dp-medium{background:#eab308}.prop-sq.dp-high{background:#f97316}.prop-sq.dp-urgent{background:#dc2626}
 /* compact assignee control (avatar + email) → click reveals the edit row */
 .tkt-assignee-ctrl-wrap{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:100%}
-.tkt-assignee-ctrl{display:inline-flex;align-items:center;gap:7px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-family:var(--body);font-size:13px;font-weight:600;color:var(--paper);cursor:pointer;max-width:100%;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+/* #679a: match the Status/Priority <select> row height (min-height:30px) so the three property
+   controls sit on one baseline, and keep the control tight (no excess vertical padding). */
+.tkt-assignee-ctrl{display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;min-height:30px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-family:var(--body);font-size:13px;font-weight:600;color:var(--paper);cursor:pointer;max-width:100%;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
 .tkt-assignee-ctrl:hover{border-color:var(--indigo);transform:var(--mi-lift)}
 .tkt-assignee-ctrl:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
 .tkt-assignee-ctrl.empty{color:var(--paper-faint);font-weight:500}
 .tkt-assignee-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.tkt-av{width:22px;height:22px;border-radius:50%;background:var(--indigo);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:700;flex:none}
+/* #679a: force a perfect circle — equal w/h + aspect-ratio + flex:none so no flex context can
+   stretch it into an oval, box-sizing so a future border can't distort it. */
+.tkt-av{width:20px;height:20px;min-width:20px;aspect-ratio:1/1;box-sizing:border-box;border-radius:50%;background:var(--indigo);color:#fff;display:grid;place-items:center;font-size:10.5px;line-height:1;font-weight:700;flex:none}
 .tkt-av.empty{background:var(--ink-3);color:var(--paper-faint)}
 .prop-caret{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid var(--paper-faint);flex:none;margin-left:1px}
 .tkt-assignee-edit{display:flex;align-items:center;gap:6px}
@@ -1022,7 +1026,10 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-desc-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
 .tkt-obs{cursor:text}
 .tkt-desc-editing .tkt-obs,.tkt-desc-editing .tkt-desc-edit{display:none}
-.tkt-desc-ta{width:100%;box-sizing:border-box;background:var(--ink-2);border:1px solid var(--indigo);border-radius:9px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;outline:none;resize:vertical;min-height:80px}
+/* #679/#681 edit-mode: the textarea sits as its own block BELOW the section label (never overlapping
+   it), with a clear top gap. block display + full width guarantees clean stacking under .tkt-desc-head. */
+.tkt-desc-edit-wrap{display:block;margin-top:8px}
+.tkt-desc-ta{display:block;width:100%;box-sizing:border-box;background:var(--ink-2);border:1px solid var(--indigo);border-radius:9px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;outline:none;resize:vertical;min-height:104px;max-height:360px;overflow:auto}
 .tkt-desc-edit-row{display:flex;align-items:center;gap:8px;margin-top:7px}
 /* reusable (i) info tooltip — no emoji, plain letter in a ring */
 .info{position:relative;display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--paper-faint);color:var(--paper-faint);font-size:10px;font-weight:700;font-style:normal;line-height:1;font-family:var(--body);cursor:help;flex:none}
@@ -1104,6 +1111,9 @@ body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
    mounted behind it; the page renders directly from a single-ticket fetch. Centered card, max 1180px. */
 body.tkt-page-open #ticketsKanban,body.tkt-page-open #tktListView,body.tkt-page-open .kb-toolbar,
 body.tkt-page-open #tktQuickChips,body.tkt-page-open #tktFilterBar,
+/* #681: the board's page heading ("Tickets" + tagline) must not leak above the single ticket —
+   the dedicated page shows ONLY the ticket, with its own compact header row. */
+body.tkt-page-open .content>.head,
 /* The dedicated ticket page shows ONLY the ticket — Project settings belongs to the board view, not here. */
 body.tkt-page-open #settingsDrawer{display:none!important}
 #ticketSingle.tkt-page{max-width:1180px;margin:0 auto}
@@ -1113,10 +1123,18 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .tkt-crumb-link:hover{color:var(--indigo);text-decoration:underline}
 .tkt-crumb-sep{color:var(--paper-faint);opacity:.7}
 .tkt-crumb-cur{color:var(--paper);font-weight:600;font-family:var(--mono);font-size:12px}
-.tkt-page-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+/* #681: ONE compact top row (← All Tickets · project · #ref · status) — reduced vertical padding so
+   the ticket content is above the fold sooner. Replaces the old breadcrumb + duplicate key row. */
+.tkt-page-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:10px;margin:2px 0 14px;border-bottom:1px solid var(--line)}
 .tkt-page-type{display:inline-flex;align-items:center;color:var(--paper-dim)}
 .tkt-page-key{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--paper)}
 .tkt-page-head .tph-sp{flex:1;min-width:8px}
+/* compact "← All Tickets" back link — text link styling (not a heavy button) */
+.tkt-back-link{display:inline-flex;align-items:center;gap:4px;background:none;border:none;padding:0;margin-right:2px;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-dim);cursor:pointer;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.tkt-back-link:hover{color:var(--indigo);transform:var(--mi-lift)}
+.tkt-back-link:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+.tkt-page-proj{font-size:12.5px;color:var(--paper-dim);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tkt-page-sep{color:var(--paper-faint);opacity:.7;font-size:12px}
 /* min 28px hit target for icon-only buttons (a11y §10) */
 .tkt-icon-btn{display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:28px;width:30px;height:30px;background:var(--ink);border:1px solid var(--line);border-radius:8px;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
 .tkt-icon-btn:hover:not(:disabled){border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
@@ -1174,7 +1192,8 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .tkt-field input,.tkt-field textarea{background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--paper);font-family:var(--body);font-size:13px;outline:none;resize:vertical}
 .tkt-field input:focus,.tkt-field textarea:focus{border-color:var(--indigo)}
 .tkt-field textarea{min-height:60px}
-.tkt-assignee-row{display:flex;align-items:center;gap:6px}
+/* #679b: the legacy .tkt-assignee-row (open email input + Clear) is gone from the ticket detail —
+   both routes now use only the redesigned avatar assignee control (assigneePickerHtml). */
 .tkt-assignee-input{min-width:0;flex:1}
 .tkt-assignee-clear{white-space:nowrap}
 .kb-card-assign{display:flex;align-items:center;gap:6px;margin-top:8px}
@@ -7422,25 +7441,18 @@ function _renderSingleTicket(id) {
     hidePanelScrim()
     ensureTicketPageEsc()
     const projName = (state.active && state.active.name) || "Project"
-    const crumb = document.createElement("nav"); crumb.className = "tkt-crumb"; crumb.setAttribute("aria-label", "Breadcrumb")
-    crumb.innerHTML = `<button type="button" class="tkt-crumb-link" data-crumb="1">${esc(projName)}</button>`
-      + `<span class="tkt-crumb-sep" aria-hidden="true">›</span>`
-      + `<button type="button" class="tkt-crumb-link" data-crumb="1">Tickets</button>`
-      + `<span class="tkt-crumb-sep" aria-hidden="true">›</span>`
-      + `<span class="tkt-crumb-cur" aria-current="page">${esc(key)}</span>`
-    crumb.querySelectorAll(".tkt-crumb-link").forEach(a => a.addEventListener("click", closeSingleTicket))
-    single.appendChild(crumb)
-
-    const backLbl = _tktView === "board" ? "← Back to board" : "← Back to list"
+    // #681: ONE compact header row — "← All Tickets" back link + project name + #ref · status pill on a
+    // single line (no separate breadcrumb, no duplicate key row). Copy-link + prev/next stay on the right.
     const ids = _tktOrderedVisibleIds()
     const cur = ids.indexOf(String(id))
     const hasPrev = cur > 0, hasNext = cur >= 0 && cur < ids.length - 1
     const ph = document.createElement("div"); ph.className = "tkt-page-head"
-    ph.innerHTML = `<span class="tkt-page-type" aria-hidden="true">${kicon('bug',{size:16})}</span>`
+    ph.innerHTML = `<button class="tkt-back-link" data-act="back" type="button" aria-label="Back to all tickets (Esc)">${kicon('chevron-left',{size:14})} All Tickets</button>`
+      + `<span class="tkt-page-proj">${esc(projName)}</span>`
+      + `<span class="tkt-page-sep" aria-hidden="true">›</span>`
       + `<span class="tkt-page-key">${esc(key)}</span>`
       + statusPillHtml(t.status)
       + `<span class="tph-sp"></span>`
-      + `<button class="tkt-panel-btn" data-act="back" type="button" aria-label="Back to board (Esc)">${esc(backLbl)}</button>`
       + `<button class="tkt-panel-btn" data-act="copy" type="button" aria-label="Copy link to this ticket">${kicon('link',{size:13})} Copy link</button>`
       + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left',{size:15})}</button>`
       + `<button class="tkt-icon-btn" data-act="next" type="button" aria-label="Next ticket"${hasNext ? "" : " disabled"}>${kicon('chevron-right',{size:15})}</button>`

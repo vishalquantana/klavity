@@ -59,27 +59,30 @@ test("the shareable canonical URL is the adaptive share link /t/<id>", () => {
   expect(fn).not.toContain('u.hash = "tickets/"')
 })
 
-// ── §6.6: breadcrumb + header (type · key · status pill · back · copy · prev/next) ─────────────────
-test("dedicated page renders a Project › Tickets › KEY breadcrumb wired back to the board", () => {
+// ── #681: ONE compact header row (← All Tickets · project · #ref · status · copy · prev/next) ───────
+test("dedicated page collapses the breadcrumb into a single compact header row (no separate breadcrumb)", () => {
   const fn = extractFn(HTML, "function _renderSingleTicket(id)")
-  expect(fn).toContain('crumb.className = "tkt-crumb"')
-  expect(fn).toContain('crumb.setAttribute("aria-label", "Breadcrumb")')
-  expect(fn).toContain('class="tkt-crumb-cur" aria-current="page"')
-  // breadcrumb links go back to the board (exact state preserved in-memory)
-  expect(fn).toContain('crumb.querySelectorAll(".tkt-crumb-link").forEach(a => a.addEventListener("click", closeSingleTicket))')
+  // #681: the tall Project › Tickets › KEY breadcrumb + duplicate key row are gone — one compact row only.
+  expect(fn).not.toContain('crumb.className = "tkt-crumb"')
+  expect(fn).not.toContain('crumb.setAttribute("aria-label", "Breadcrumb")')
+  // project name is shown inline on the single header row instead of a breadcrumb crumb
+  expect(fn).toContain('class="tkt-page-proj"')
+  // the "← All Tickets" back link returns to the board (state preserved in-memory)
+  expect(fn).toContain('ph.querySelector(\'[data-act="back"]\').addEventListener("click", closeSingleTicket)')
 })
 
-test("header row has type · key · status pill · Back to board · Copy link · prev/next", () => {
+test("compact header row has back link + project + key · status pill · Copy link · prev/next", () => {
   const fn = extractFn(HTML, "function _renderSingleTicket(id)")
   expect(fn).toContain('ph.className = "tkt-page-head"')
-  expect(fn).toContain('class="tkt-page-key"')
+  expect(fn).toContain('class="tkt-back-link"')               // "← All Tickets" back link
+  expect(fn).toContain("All Tickets")
+  expect(fn).toContain('class="tkt-page-proj"')               // project name inline
+  expect(fn).toContain('class="tkt-page-key"')                // single #ref (no duplicate)
   expect(fn).toContain("statusPillHtml(t.status)")            // status pill (dot + text, never color-only)
   expect(fn).toContain('data-act="back"')
   expect(fn).toContain('data-act="copy"')
   expect(fn).toContain('data-act="prev"')
   expect(fn).toContain('data-act="next"')
-  // back-to-board label reflects the active board/list view
-  expect(fn).toContain('const backLbl = _tktView === "board" ? "← Back to board" : "← Back to list"')
 })
 
 test("prev/next steps through the board's filtered+ordered ids, disabled at the ends", () => {
@@ -129,7 +132,7 @@ test("icon/action buttons carry aria-labels; panel is role=dialog with focus man
   expect(fn).toContain('aria-label="Copy link to this ticket"')
   expect(fn).toContain('aria-label="Close ticket detail"')
   expect(fn).toContain('aria-label="Expand to full, shareable page"')
-  expect(fn).toContain('aria-label="Back to board (Esc)"')
+  expect(fn).toContain('aria-label="Back to all tickets (Esc)"')
   // panel dialog semantics + focus moves in on open
   expect(fn).toContain('single.setAttribute("role", "dialog"); single.setAttribute("aria-modal", "true")')
   expect(fn).toContain("single.__focusTarget")
@@ -142,6 +145,49 @@ test("icon/action buttons carry aria-labels; panel is role=dialog with focus man
 test("min 28px hit target for icon-only buttons (CSS)", () => {
   expect(HTML).toContain(".tkt-icon-btn{")
   expect(HTML).toContain("min-width:28px;min-height:28px")
+})
+
+// ── #681: the board's "Tickets" page heading must be hidden on the dedicated ticket page ────────────
+test("the Tickets page heading (.content>.head) is hidden on the dedicated ticket page", () => {
+  // the greeting/title block (#hello + #lead) lives in .content>.head; it must not leak above the ticket
+  expect(HTML).toContain("body.tkt-page-open .content>.head")
+})
+
+// ── #679b: exactly ONE assignee control (redesigned avatar picker) — no legacy open input/Clear row ──
+test("ticket detail renders only the redesigned avatar assignee control (no legacy .tkt-assignee-row)", () => {
+  const picker = extractFn(HTML, "function assigneePickerHtml(t, compact = false)")
+  // the redesigned control: avatar + email, edit row starts hidden and reveals on click
+  expect(picker).toContain('class="tkt-assignee-ctrl-wrap"')
+  expect(picker).toContain('class="tkt-assignee-edit hide"')
+  // the legacy always-open assignee row was removed from the markup entirely
+  expect(HTML).not.toContain('class="tkt-assignee-row"')
+  expect(HTML).not.toContain(".tkt-assignee-row{")
+  // both routes build the detail via the SAME buildTktDetail (single assignee UI everywhere)
+  const detail = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
+  expect(detail).toContain("assigneePickerHtml(t, false)")
+})
+
+// ── #679a: the assignee avatar is a fixed circle (never a stretched oval) ───────────────────────────
+test("assignee avatar (.tkt-av) is locked to a circular aspect (equal w/h + aspect-ratio + flex:none)", () => {
+  const i = HTML.indexOf(".tkt-av{")
+  expect(i).toBeGreaterThan(-1)
+  const rule = HTML.slice(i, HTML.indexOf("}", i) + 1)
+  expect(rule).toContain("aspect-ratio:1/1")
+  expect(rule).toContain("flex:none")
+  expect(rule).toContain("border-radius:50%")
+  // equal explicit width & height (both 20px)
+  expect(rule).toContain("width:20px")
+  expect(rule).toContain("height:20px")
+})
+
+// ── #679 edit-mode: the description textarea sits BELOW the label with a gap (no overlap/clip) ──────
+test("editable-description textarea has its own block wrapper spaced below the section label", () => {
+  expect(HTML).toContain(".tkt-desc-edit-wrap{display:block;margin-top:8px}")
+  const i = HTML.indexOf(".tkt-desc-ta{")
+  const rule = HTML.slice(i, HTML.indexOf("}", i) + 1)
+  expect(rule).toContain("display:block")
+  expect(rule).toContain("min-height:104px")
+  expect(rule).toContain("overflow:auto")   // long text scrolls instead of clipping
 })
 
 // ── deep-link preservation (KLA-553/560): one-shot open, no reopen on poll/focus ──────────────────
