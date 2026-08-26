@@ -6117,6 +6117,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // the caller can always request the thumb and still get a valid image. Thumbs are stored PRIVATE
         // (their own object) regardless of the full image's acl, so they always go through a presigned GET.
         const wantThumb = url.searchParams.get("thumb") === "1" && !!shot.thumbKey
+        // #743: same-origin BYTE PROXY. Canvas uses (the annotate editor + the "Full size" flatten export)
+        // must READ the image pixels, but the screenshot lives on Vultr object storage which returns no
+        // Access-Control-Allow-Origin header → a cross-origin <img> canvas-TAINTS/blocks and the annotate
+        // canvas paints BLANK. ?proxy=1 streams the bytes THROUGH this same-origin endpoint (already
+        // session + project-membership gated above, so no cross-tenant leak) so the browser sees a
+        // same-origin image the canvas can read. Mirrors the /img permalink stream (no full-object buffer).
+        if (url.searchParams.get("proxy") === "1") {
+          try {
+            const streamKey = wantThumb ? shot.thumbKey! : shot.s3Key
+            const { stream, contentType, size } = await getObjectStream(streamKey)
+            if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: shot.bytes ?? size ?? 0, meta: { via: "canvas-proxy" } })
+            const ct = shot.contentType || contentType || "image/png"
+            return new Response(stream, { headers: { "content-type": ct, "cache-control": "private, max-age=300" } })
+          } catch (e: any) { return json(oops(e, "proxyshot"), 500) }
+        }
         try {
           if (!wantThumb && shot.acl === "public-read") {
             const pub = `${(process.env.S3_ENDPOINT || "").replace(/\/+$/, "")}/${shot.bucket}/${shot.s3Key}`

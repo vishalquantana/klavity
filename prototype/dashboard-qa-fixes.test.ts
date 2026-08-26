@@ -100,8 +100,48 @@ test("KLA-197: icon copy variant shows a toast", () => {
 // ── KLAVITYKLA-518 · thumb-first ticket screenshot ─────────────────────────────
 test("KLA-518: ticket detail requests ?thumb=1 first, then upgrades to full", () => {
   const i = HTML.indexOf("async function loadTktShot(")
-  const region = HTML.slice(i, i + 2400)
+  const region = HTML.slice(i, i + 2800)
   expect(region).toContain('?thumb=1')
   // lazily upgrades to the full-resolution image afterwards
   expect(region).toContain("Lazily upgrade to the full image")
+})
+
+// ── #743 · evidence screenshot preload + no-blank annotate (CORS/same-origin) ──
+// Bug: clicking the evidence screenshot opened the annotate modal, but its canvas drew a cross-origin
+// Vultr presigned URL (no Access-Control-Allow-Origin) → the canvas TAINTED and painted BLANK. Fix:
+// route the canvas source through a same-origin byte proxy, preload it on card open, and never show a
+// blank canvas (spinner until the fully-decoded bitmap is ready). Each assertion pins one leg of the fix.
+const SERVER = await Bun.file(import.meta.dir + "/server.ts").text()
+
+test("#743: server streams screenshot bytes same-origin via ?proxy=1 (gated, no canvas taint)", () => {
+  // the proxy branch lives INSIDE the already session+membership-gated /api/screenshots/:id handler
+  const h = SERVER.indexOf('path.match(/^\\/api\\/screenshots\\/([^/]+)$/')
+  expect(h).toBeGreaterThan(-1)
+  const region = SERVER.slice(h, h + 2200)
+  expect(region).toContain('url.searchParams.get("proxy") === "1"')
+  // streams bytes (mirrors the /img permalink) rather than returning the cross-origin presigned JSON
+  expect(region).toContain("getObjectStream(streamKey)")
+  expect(region).toContain('via: "canvas-proxy"')
+})
+
+test("#743: canvas source is the same-origin proxy, not the raw presigned URL", () => {
+  expect(HTML).toContain('function shotProxyUrl(id) { return id ? "/api/screenshots/" + encodeURIComponent(String(id)) + "?proxy=1" : null }')
+  // the annotate editor sizes/mounts from the proxy URL
+  expect(HTML).toContain('const canvasUrl = shotProxyUrl(box && box.getAttribute && box.getAttribute("data-shot")) || imageUrl')
+  expect(HTML).toContain("new DashAnnotator(canvas, canvasUrl)")
+})
+
+test("#743: full-res image is preloaded on card open + reused (no re-fetch on click)", () => {
+  expect(HTML).toContain("function preloadShot(url)")
+  expect(HTML).toContain("if (id) preloadShot(shotProxyUrl(id))")
+  // the annotator reuses the preloaded, decoded bitmap
+  expect(HTML).toContain("whenShotReady(preloadShot(canvasUrl))")
+})
+
+test("#743: annotate modal shows a spinner (never a blank canvas) until the image decodes", () => {
+  expect(HTML).toContain('spin.className = "evann-loading"')
+  expect(HTML).toContain('canvas.style.visibility = "hidden"')
+  // canvas is seeded from the FULLY-DECODED bitmap (whenShotReady awaits decode) then revealed
+  expect(HTML).toContain("annotator.baseImg = ready; annotator.redraw()")
+  expect(HTML).toContain(".evann-spinner{")
 })

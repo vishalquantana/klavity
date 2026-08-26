@@ -9767,6 +9767,8 @@ async function loadTktShot(detailEl, annotations) {
   if (!box || box.getAttribute("data-loaded")) return
   box.setAttribute("data-loaded", "1")
   const id = box.getAttribute("data-shot")
+  // #743: warm the SAME-ORIGIN full-res image (byte proxy) on card open so the annotate editor is instant + CORS-clean.
+  if (id) preloadShot(shotProxyUrl(id))
   const hasAnn = annotations && Array.isArray(annotations.shapes) && annotations.shapes.length
   const paint = (url) => {
     const img = document.createElement("img")
@@ -9944,7 +9946,10 @@ function mountAnnotationOverlay(box, img, ann, url) {
   // the raw URL if compositing fails (e.g. a cross-origin taint blocks canvas export).
   op.addEventListener("click", async e => {
     e.stopPropagation()
-    const full = img.getAttribute("data-full") || url
+    // #743: flatten from the SAME-ORIGIN byte proxy so the canvas can read the pixels (the raw Vultr URL
+    // taints the canvas → exportAnnotatedShot returns null → we'd lose the baked markup). Falls back to the
+    // presigned URL for the plain window.open() if the composite fails.
+    const full = shotProxyUrl(box && box.getAttribute && box.getAttribute("data-shot")) || img.getAttribute("data-full") || url
     let opened = false
     try {
       const data = await exportAnnotatedShot(full, ann)
@@ -10125,6 +10130,49 @@ class DashAnnotator {
   }
 }
 
+// #743: full-res evidence image preloader. When a ticket/report card opens (loadTktShot) we kick off
+// loading the FULL-resolution screenshot in the background with crossOrigin="anonymous" — the SAME
+// attribute the annotate editor + the flattened export use — so the identical decoded bitmap is reused
+// on click (neither re-fetches). This fixes the blank-on-click: the annotator previously created a
+// fresh crossOrigin image only when clicked, a second network round-trip that left the canvas blank for
+// seconds. Keyed by URL with a small LRU cap so we hold only the current card's evidence, never leaking.
+const _shotPreload = new Map() // url -> HTMLImageElement (crossOrigin="anonymous")
+const _SHOT_PRELOAD_MAX = 6
+// #743: SAME-ORIGIN byte-proxy URL for a screenshot id. The canvas (annotate editor + flatten export)
+// MUST read pixels, but screenshots live on Vultr object storage which sends no Access-Control-Allow-
+// Origin header — a cross-origin <img> canvas-taints and paints BLANK. Routing the canvas source through
+// /api/screenshots/<id>?proxy=1 makes the browser see a same-origin image it can read. (The display
+// <img> keeps using the presigned URL — plain display never taints, so it needs no proxy.)
+function shotProxyUrl(id) { return id ? "/api/screenshots/" + encodeURIComponent(String(id)) + "?proxy=1" : null }
+function preloadShot(url) {
+  if (!url || typeof url !== "string") return null
+  let img = _shotPreload.get(url)
+  if (img) { _shotPreload.delete(url); _shotPreload.set(url, img); return img } // LRU touch
+  img = new Image(); img.crossOrigin = "anonymous"; img.decoding = "async"
+  _shotPreload.set(url, img)
+  img.src = url
+  // Warm the decode so the first paint on click is instant (best-effort; ignore CORS taint / errors).
+  if (img.decode) img.decode().catch(() => {})
+  // Cap memory: evict + release the oldest decoded bitmap(s) once we exceed the current-card budget.
+  while (_shotPreload.size > _SHOT_PRELOAD_MAX) {
+    const oldest = _shotPreload.keys().next().value
+    const ev = _shotPreload.get(oldest); _shotPreload.delete(oldest)
+    if (ev) { try { ev.src = "" } catch (e) {} }
+  }
+  return img
+}
+// Resolve once a preloaded image is fully decoded and paintable (or reject on load error) — so the
+// annotator canvas is seeded from a complete bitmap and is never drawn blank/partial.
+function whenShotReady(img) {
+  return new Promise((resolve, reject) => {
+    if (!img) return reject(new Error("no-image"))
+    const ok = () => { if (img.decode) img.decode().then(() => resolve(img)).catch(() => resolve(img)); else resolve(img) }
+    if (img.complete && img.naturalWidth) return ok()
+    img.addEventListener("load", ok, { once: true })
+    img.addEventListener("error", () => reject(new Error("load-error")), { once: true })
+  })
+}
+
 let _evAnnOpen = false
 function _ensureEvAnnCss() {
   if (document.getElementById("evann-css")) return
@@ -10145,6 +10193,10 @@ function _ensureEvAnnCss() {
     ".evann-stage{position:relative;max-width:96vw;max-height:76vh;overflow:auto;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);background:#0b0b12;line-height:0}",
     ".evann-stage canvas{display:block;max-width:96vw;max-height:76vh;cursor:crosshair;touch-action:none}",
     ".evann-textin{position:fixed;z-index:2147483001;background:rgba(0,0,0,.35);color:#fff;border:1px dashed #fff;border-radius:4px;padding:1px 4px;font-weight:700;outline:none;min-width:40px}",
+    ".evann-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-width:280px;min-height:200px;color:#cdd6f4;line-height:normal}",
+    ".evann-spinner{width:34px;height:34px;border-radius:50%;border:3px solid rgba(205,214,244,.25);border-top-color:#7c3aed;animation:evann-spin .8s linear infinite}",
+    ".evann-loadtxt{font-size:12px;opacity:.75}",
+    "@keyframes evann-spin{to{transform:rotate(360deg)}}",
   ].join("")
   document.head.appendChild(st)
 }
@@ -10165,18 +10217,32 @@ function openEvidenceAnnotator(box, imageUrl, priorAnn) {
   const canvas = document.createElement("canvas")
   stage.appendChild(canvas)
   const close = () => { _evAnnOpen = false; try { back.remove() } catch (e) {} document.removeEventListener("keydown", onKey) }
-  // Load the clean image to size the canvas to natural pixels (annotation coords are natural-image coords,
-  // matching the composer + stored payload), then mount the annotator on it.
-  const sizer = new Image(); sizer.crossOrigin = "anonymous"
   let annotator = null, activeTool = "pen", activeColor = "#ef4444", textSize = 26, textOutline = "black"
-  sizer.onload = () => {
-    canvas.width = sizer.naturalWidth || 1000; canvas.height = sizer.naturalHeight || 700
-    annotator = new DashAnnotator(canvas, imageUrl)
+  // #743: the canvas MUST read from the SAME-ORIGIN byte proxy, not the raw Vultr presigned URL (which is
+  // cross-origin with no ACAO header → the canvas taints and paints blank). Fall back to the passed-in URL
+  // only if we somehow can't resolve the screenshot id.
+  const canvasUrl = shotProxyUrl(box && box.getAttribute && box.getAttribute("data-shot")) || imageUrl
+  // Never show a blank canvas. Reuse the full-res image preloaded when the card opened — instant if it's
+  // already decoded — else show a spinner skeleton and mount the annotator the moment the decode completes.
+  // The canvas (sized to natural pixels, matching the composer + stored payload coords) is seeded from the
+  // FULLY-DECODED bitmap, so it's never drawn blank/partial; preloadShot reuses the exact same-origin
+  // bitmap the card warmed, so this click triggers no second network fetch.
+  const spin = document.createElement("div"); spin.className = "evann-loading"
+  const _sp = document.createElement("div"); _sp.className = "evann-spinner"
+  const _st = document.createElement("div"); _st.className = "evann-loadtxt"; _st.textContent = "Loading screenshot…"
+  spin.appendChild(_sp); spin.appendChild(_st); stage.appendChild(spin)
+  canvas.style.visibility = "hidden"
+  whenShotReady(preloadShot(canvasUrl)).then((ready) => {
+    canvas.width = ready.naturalWidth || 1000; canvas.height = ready.naturalHeight || 700
+    annotator = new DashAnnotator(canvas, canvasUrl)
     if (priorAnn && Array.isArray(priorAnn.shapes)) priorAnn.shapes.forEach(s => annotator.shapes.push(Object.assign({}, s)))
-    annotator.baseImg = sizer; annotator.redraw()
-  }
-  sizer.onerror = () => { _evAnnOpen = false; try { back.remove() } catch (e) {}; if (detailEl) showTktMsg(detailEl, "Couldn’t load the screenshot to annotate.", true) }
-  sizer.src = imageUrl
+    annotator.baseImg = ready; annotator.redraw()
+    try { spin.remove() } catch (e) {}
+    canvas.style.visibility = ""
+  }).catch(() => {
+    _evAnnOpen = false; try { back.remove() } catch (e) {}
+    if (detailEl) showTktMsg(detailEl, "Couldn’t load the screenshot to annotate.", true)
+  })
 
   // Toolbar — same tool set as the composer's hero editor (packages/core/src/modal.ts heroToolbarHtml).
   const g = (inner) => '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + "</svg>"
