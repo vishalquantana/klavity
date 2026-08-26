@@ -3097,7 +3097,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
 
     if (req.method === "GET" && path === "/api/health") {
-      return json({ ok: true, db: !!db })
+      // #703: surface whether the Klavity dogfood intake project is configured. When false, Klavity-
+      // targeted reports have no destination and hit the export-suppressed fail-safe (see boot warning).
+      const klavityIntakeConfigured = !!(process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
+      return json({ ok: true, db: !!db, klavityIntakeConfigured })
     }
 
     // KLAVITYKLA-346 — busy-check for the zero-downtime autodeploy drain step. The deploy polls this on
@@ -5205,6 +5208,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // we do NOT drop or leak the report — we keep the origin project and tag it clearly, and warn.
             const wantsKlavityIntake = String(form.get("feedback_target") || "").toLowerCase() === "klavity"
             let klavityRerouteNote: string | null = null
+            // #703 (security/data-hygiene): true ONLY when a Klavity-targeted report hit the FAIL-SAFE
+            // branch below (intake project unset/invalid/same-as-origin) and was therefore kept in the
+            // ORIGIN customer's project. Such a report must NEVER auto-export to that customer's connector/
+            // tracker — it was meant for Klavity, and leaking it into a customer's Jira is a data breach.
+            // (5 Klavity bug reports leaked into customers' Jira as PX4D-*/SIM-1520 when the env was unset.)
+            let klavityFailsafeToOrigin = false
             if (resolved && wantsKlavityIntake) {
               const originProject = resolved
               const intakeId = (process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
@@ -5220,8 +5229,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               } else {
                 // FAIL SAFE — intake project not configured / not found / same as origin. Keep the report in
                 // the origin project, tag it so it's never silently mis-filed, and log a warning for the founder.
-                console.warn(`[submit-target] KLAVITY_INTAKE_PROJECT_ID ${intakeId ? `("${intakeId}") is invalid or not found` : "is unset"} — filing Klavity-targeted report into ${originCtx}`)
+                console.warn(`[submit-target] KLAVITY_INTAKE_PROJECT_ID ${intakeId ? `("${intakeId}") is invalid or not found` : "is unset"} — filing Klavity-targeted report into ${originCtx} (connector export SUPPRESSED — #703)`)
                 klavityRerouteNote = `(intended for Klavity — intake project not configured; filed to ${originProject.name || originProject.id})`
+                // #703: keep the report in the origin project (as before) but flag it so the autofile/
+                // auto-copy export path below skips the customer's connector — no external leak.
+                klavityFailsafeToOrigin = true
               }
             }
             if (resolved) {
@@ -5588,7 +5600,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // lands in the New-Reports triage inbox (the spam/bot safety net). `!feedbackSourceTag`
                 // additionally excludes host-detected Studio-demo quarantine rows. Reuses the hoisted
                 // `trustedProvenance` (Fix 1/2) — one definition for the whole handler.
-                const willAutofile = isHumanSnap && !feedbackSourceTag
+                // #703: when the Klavity fail-safe fired (intake project unset/invalid → report kept in the
+                // ORIGIN customer's project), NEVER auto-export it to that customer's connector/tracker. The
+                // report was targeted at Klavity; leaking it into a customer's Jira is a data breach. It still
+                // persists in the origin project (with the reroute note) for manual handling.
+                const willAutofile = isHumanSnap && !feedbackSourceTag && !klavityFailsafeToOrigin
 
                 void (async () => {
                   // Title FIRST (bounded) so the export below re-reads the AI title, not the fallback.
@@ -13436,6 +13452,20 @@ Bun.serve({
 
 console.log(`\n⚡ Klavity app → ${BASE}`)
 console.log(`   model: ${MODEL} · auth: ${db ? "Turso OTP" : "DISABLED (no Turso)"} · dev-otp: ${DEV_SHOW_OTP}\n`)
+
+// #703 (data-hygiene): loud boot warning when KLAVITY_INTAKE_PROJECT_ID is unset. Without a configured
+// intake project, a report the reporter targeted at "Klavity — problem with this tool" has no real
+// destination and hits the fail-safe (kept in the ORIGIN customer's project). We now SUPPRESS the
+// connector export on that path so nothing leaks into a customer's tracker, but a missing env still
+// means Klavity-targeted reports never reach the Klavity board — so surface it loudly at boot so it
+// can't silently regress. Quiet when the env is set (it is on prod → Klavity Dogfood).
+if (!(process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()) {
+  console.warn(
+    "⚠️  [submit-target] KLAVITY_INTAKE_PROJECT_ID is UNSET — Klavity-targeted reports have no intake " +
+    "destination. They will be kept in the origin customer's project (connector export suppressed, #703) " +
+    "but will NOT reach the Klavity board. Set KLAVITY_INTAKE_PROJECT_ID to route dogfood reports.",
+  )
+}
 
 // C1: data-retention TTL sweep. Run once shortly after boot, then every 6h. GUARDED so it never fires
 // under tests (NODE_ENV==='test', which spawned-server tests inherit) — keeps the suite deterministic

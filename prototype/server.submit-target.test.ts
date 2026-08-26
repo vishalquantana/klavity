@@ -41,6 +41,14 @@ await rawExec(`CREATE INDEX IF NOT EXISTS idx_fb_proj ON feedback(project_id)`)
 await rawExec(`INSERT OR IGNORE INTO accounts (id, name, owner_email, created_at) VALUES (?,?,?,?)`, ["acct_st", "Submit Target", "owner@test.local", NOW])
 await rawExec(`INSERT OR IGNORE INTO projects (id, account_id, name, created_at, updated_at) VALUES (?,?,?,?,?)`, [CUSTOMER_ID, "acct_st", "PX4 Project", NOW, NOW])
 await rawExec(`INSERT OR IGNORE INTO projects (id, account_id, name, created_at, updated_at) VALUES (?,?,?,?,?)`, [INTAKE_ID, "acct_st", "Klavity Dogfood", NOW, NOW])
+// #703: give the CUSTOMER project an enabled auto-copy connector so autofile WOULD export a human Snap
+// to the customer's own tracker. The URL is non-routable — the export attempt still writes a
+// ticket_exports row (success OR failed), which is all we assert on: a row present = export happened.
+const CUSTOMER_CONNECTOR_ID = `conn_${ts}`
+await rawExec(
+  `INSERT OR IGNORE INTO connectors (id, project_id, type, name, config, auto_copy, enabled, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+  [CUSTOMER_CONNECTOR_ID, CUSTOMER_ID, "webhook", "Customer Jira (webhook)", JSON.stringify({ url: "https://webhook.invalid/hook" }), 1, 1, NOW],
+)
 
 let procConfigured: ReturnType<typeof Bun.spawn>
 let procUnset: ReturnType<typeof Bun.spawn>
@@ -107,6 +115,21 @@ async function rowById(id: string) {
   return res.rows[0] as any
 }
 
+async function exportCount(feedbackId: string) {
+  const res = await rawClient.execute({ sql: "SELECT COUNT(*) AS n FROM ticket_exports WHERE feedback_id=?", args: [feedbackId] })
+  return Number((res.rows[0] as any).n)
+}
+
+// Autofile export is async fire-and-forget (title job THEN export). Poll a bit for a row to appear.
+async function waitForExport(feedbackId: string, timeoutMs = 4000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await exportCount(feedbackId) > 0) return true
+    await Bun.sleep(150)
+  }
+  return false
+}
+
 // ── 1. feedback_target=klavity files into KLAVITY_INTAKE_PROJECT_ID, origin context preserved ──
 test("feedback_target=klavity routes to the configured intake project and preserves origin context", async () => {
   const j = await submit(BASE_CFG, { target: "klavity", desc: "the Klavity widget itself is broken on our checkout", url: "https://shop.px4.example/checkout" })
@@ -149,3 +172,36 @@ test("unset KLAVITY_INTAKE_PROJECT_ID fails safe: filed in origin project with a
   expect(String(row.observation)).toContain("intended for Klavity") // clearly tagged
   expect(String(row.observation)).toContain("widget broken but intake unconfigured")
 })
+
+// ── 5. #703 SECURITY: a Klavity-targeted fail-safe report must NOT export to the customer's connector ──
+// The customer project has an enabled auto-copy webhook connector. A normal human Snap on that project DOES
+// export (control). But a report targeted at Klavity that fell back to the origin project (intake unset)
+// must be SUPPRESSED — it was meant for Klavity, so leaking it into the customer's tracker is a breach.
+test("#703: control — a normal report on a connector-backed project DOES auto-export", async () => {
+  const j = await submit(BASE_UNSET, { desc: "our checkout is broken and needs a ticket", url: "https://shop.px4.example/checkout" })
+  expect(j.saved).toBe(true)
+  expect((await rowById(String(j.id))).project_id).toBe(CUSTOMER_ID)
+  expect(await waitForExport(String(j.id))).toBe(true) // exported to the customer's own connector
+}, 20000)
+
+test("#703: a Klavity-targeted report on the fail-safe path does NOT export to the customer connector, but persists", async () => {
+  const j = await submit(BASE_UNSET, { target: "klavity", desc: "klavity widget broke, intake unset, must not leak", url: "https://shop.px4.example/pay" })
+  expect(j.saved).toBe(true)                                   // persisted, not dropped
+  const row = await rowById(String(j.id))
+  expect(row.project_id).toBe(CUSTOMER_ID)                     // kept in origin project
+  expect(String(row.observation)).toContain("intended for Klavity")
+  // Give the async autofile job the SAME budget as the control's successful export, then assert none fired.
+  expect(await waitForExport(String(j.id))).toBe(false)        // NO leak into the customer's tracker
+  expect(await exportCount(String(j.id))).toBe(0)
+}, 20000)
+
+// ── 6. Happy path unchanged: intake SET → routes to intake project, no customer-connector export ──
+test("#703: with intake SET the report routes to the intake project (happy path unchanged)", async () => {
+  const j = await submit(BASE_CFG, { target: "klavity", desc: "routed to klavity dogfood as normal", url: "https://shop.px4.example/x" })
+  expect(j.saved).toBe(true)
+  const row = await rowById(String(j.id))
+  expect(row.project_id).toBe(INTAKE_ID)                       // rerouted to the intake project
+  // The intake project has no connector, so nothing exports to the customer either.
+  expect(await waitForExport(String(j.id))).toBe(false)
+  expect(await exportCount(String(j.id))).toBe(0)
+}, 20000)
