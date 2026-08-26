@@ -4301,7 +4301,7 @@ function renderTriageList(host, items) {
       <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image',{size:16})}</div></div>` : ""}
       <div class="tg-b">
-        <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
+        <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
         <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, {badge:true})}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
       </div>
@@ -4334,7 +4334,7 @@ function buildReportCard(t) {
   const meta = `${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${dupAckHtml(t, {badge:true})}${tgRoutingAffordance(t)}`
   card.innerHTML = `
     <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
-    <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+    <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
     ${sub ? `<div class="kb-card-d">${sub}</div>` : ""}
     ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image',{size:16})}</div></div>` : ""}
     ${quote}
@@ -8182,10 +8182,15 @@ let _tktBoardReturnUrl = null
 function ensureTktCleanUrlPopstate() {
   if (window.__klavTktPopBound) return
   window.__klavTktPopBound = true
-  window.addEventListener("popstate", () => {
+  window.addEventListener("popstate", (ev) => {
     const single = $("ticketSingle")
+    // #745: the pushed history entry carries { tkt: id } in its state, so the exact ticket re-opens
+    // even when the address bar shows the pretty /<slug>/<KEY>-<n> form (which the /t/ regex misses).
+    const stateId = (ev && ev.state && ev.state.tkt) ? String(ev.state.tkt) : null
     const m = (location.pathname || "").match(/^\/t\/([^/?#]+)\/?$/)
-    if (m) {
+    if (stateId) {
+      try { openSingleTicket(stateId, "full") } catch (e) {}
+    } else if (m) {
       // Back/Forward landed on a clean ticket URL in-session → make sure that ticket is open.
       try { openSingleTicket(decodeURIComponent(m[1]), "full") } catch (e) {}
     } else if (document.body.classList.contains("tkt-page-open")) {
@@ -8225,9 +8230,17 @@ async function openSingleTicket(id, mode) {
 // number (#123), falls back to the short quotable ref, then the id prefix. Status stays color+text.
 function ticketKeyLabel(t) {
   if (!t) return ""
+  // #745: prefer the Jira-clean human key (KLAV-94) when the project has a ticket_key; else the bare
+  // sequence (#94), then the short quotable ref, then the id prefix.
+  if (t.ticketKey && (t.seqNum != null)) return String(t.ticketKey) + "-" + t.seqNum
   if (t.seqNum) return "#" + t.seqNum
   if (t.ref) return String(t.ref)
   return String(t.id || "").slice(0, 8)
+}
+// #745: the short pill text on cards / title heads — "KLAV-94" when a ticket_key exists, else "#94".
+function seqPillText(t) {
+  if (!t || t.seqNum == null) return ""
+  return (t.ticketKey ? String(t.ticketKey) + "-" + t.seqNum : "#" + t.seqNum)
 }
 // KLA-563: the ordered list of ticket ids the board would currently show (same filter predicate +
 // column order the kanban uses), so the dedicated page's prev/next steps through the exact board
@@ -8248,6 +8261,26 @@ function ticketPageUrl(id) {
   try { return new URL("/t/" + encodeURIComponent(String(id)), location.origin).toString() }
   catch (e) { return location.origin + "/t/" + encodeURIComponent(String(id)) }
 }
+// #745: look up a ticket object from the in-memory board cache by id (for the id-only callers).
+function tktById(id) {
+  return (Array.isArray(state.tickets) ? state.tickets.find(x => String(x.id) === String(id)) : null) || null
+}
+// #745: the Jira-clean PRETTY permalink PATH `/<slug>/<KEY>-<n>` for a ticket, or null when the
+// workspace slug / project key / seq isn't present (un-backfilled) — caller falls back to /t/<id>.
+function prettyTicketPathFor(t) {
+  if (t && t.slug && t.ticketKey && (t.seqNum != null)) {
+    return "/" + encodeURIComponent(String(t.slug)) + "/" + encodeURIComponent(String(t.ticketKey)) + "-" + t.seqNum
+  }
+  return null
+}
+// #745: the full shareable pretty URL for a ticket object; falls back to the opaque /t/<fb_id> form.
+function prettyTicketUrl(t) {
+  const p = prettyTicketPathFor(t)
+  if (p) { try { return new URL(p, location.origin).toString() } catch (e) { return location.origin + p } }
+  return ticketPageUrl(t && t.id ? t.id : t)
+}
+// #745: id-only convenience — resolves the ticket from the board cache, else opaque fallback.
+function prettyTicketUrlById(id) { return prettyTicketUrl(tktById(id) || { id: id }) }
 // #735: make the "#<seq>" ticket-key pill (the dedicated-page header .tkt-page-key AND the panel/cockpit
 // title .tkt-seq) a click-to-copy control for the CLEAN, shareable permalink /t/<id> — NOT the ugly
 // dashboard?project=…#tickets/fb_… hash. Shows a brief "Copied" confirmation (pill text swap + toast).
@@ -8262,7 +8295,7 @@ function wireTktKeyCopy(el, id) {
     if (ev) { ev.preventDefault(); ev.stopPropagation() }
     const orig = el.textContent
     let ok = false
-    try { ok = await copyText(ticketPageUrl(id)) } catch (e) {}
+    try { ok = await copyText(prettyTicketUrlById(id)) } catch (e) {}
     if (typeof klavToast === "function") klavToast(ok ? "Ticket link copied" : "Couldn’t copy the ticket link", !ok)
     if (ok) { el.textContent = "Copied"; setTimeout(() => { el.textContent = orig }, 1400) }
   }
@@ -8382,7 +8415,7 @@ function _renderSingleTicket(id) {
     ph.querySelector('[data-act="back"]').addEventListener("click", closeSingleTicket)
     const copyBtn = ph.querySelector('[data-act="copy"]')
     copyBtn.addEventListener("click", async () => {
-      const ok = await copyText(ticketPageUrl(id))
+      const ok = await copyText(prettyTicketUrlById(id))
       const orig = copyBtn.innerHTML
       copyBtn.innerHTML = ok ? (kicon('check', { size: 13 }) + " Copied") : (kicon('x', { size: 13 }) + " Copy failed")
       setTimeout(() => { copyBtn.innerHTML = orig }, 1800)
@@ -8398,7 +8431,7 @@ function _renderSingleTicket(id) {
   const renderHead = () => {
     head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
-        <div class="single-title">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+        <div class="single-title">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot',{size:11}) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
         ${regrBannerHtml(t)}
       </div>`
@@ -8479,15 +8512,20 @@ function _renderSingleTicket(id) {
       // #736: dedicated page reflects a CLEAN, shareable, reloadable /t/<id> URL in the address bar —
       // not the old dashboard?project=…#tickets/<id> hash the owner flagged as "very bad". We remember the
       // board URL to restore on Close/Back, then push /t/<id> (a re-render for the SAME id replaces it).
-      const cleanPath = "/t/" + encodeURIComponent(String(id))
+      // #745: prefer the Jira-clean /<slug>/<KEY>-<n> path when the ticket carries slug+key+seq; else
+      // the opaque /t/<id>. history.state still carries { tkt: id } so popstate re-opens the exact
+      // ticket regardless of which path form is in the bar.
+      const cleanPath = prettyTicketPathFor(tktById(id)) || ("/t/" + encodeURIComponent(String(id)))
       const already = location.pathname === cleanPath
       if (already) {
         history.replaceState({ tkt: String(id) }, "", location.origin + cleanPath)
       } else {
         // Only capture the board URL when we're arriving FROM the board (not stepping ticket→ticket).
-        // Sanitize any ?ticket=/#tickets/<id> deep-link surface (e.g. when expanding from the panel) so
-        // the restored board URL is the plain board, never one that re-opens a ticket on reload.
-        if (!/^\/t\//.test(location.pathname)) {
+        // #745: a captured board return URL means we're already viewing a ticket page (its path may be
+        // the pretty /<slug>/<KEY>-<n> form, which /^\/t\// wouldn't catch), so gate on that flag — not
+        // a path regex — to avoid clobbering the board URL with a ticket URL when stepping ticket→ticket.
+        // Sanitize any ?ticket=/#tickets/<id> deep-link surface (e.g. when expanding from the panel).
+        if (_tktBoardReturnUrl == null) {
           try {
             const bu = new URL(location.href)
             bu.searchParams.delete("ticket")
@@ -8540,9 +8578,11 @@ function closeSingleTicket() {
   // KLA-200 / KLA-563: clear BOTH deep-link surfaces when closing — the ?ticket= overlay param and the
   // #tickets/<id> dedicated-page hash — so a later reload / the ~25s poll can't drag the user back.
   try {
-    if (/^\/t\//.test(location.pathname) && _tktBoardReturnUrl) {
-      // #736: leaving a clean /t/<id> page → restore the exact board URL (project + #tickets hash) so a
-      // reload lands on the board, not a bare ticket path. replaceState keeps the Back button trap-free.
+    if (_tktBoardReturnUrl) {
+      // #736/#745: leaving a clean ticket page (opaque /t/<id> OR pretty /<slug>/<KEY>-<n>) → restore
+      // the exact board URL (project + #tickets hash) so a reload lands on the board, not a bare ticket
+      // path. Gate on the stored board URL (set only for the dedicated page) rather than a /t/ path
+      // regex, which wouldn't recognise the pretty form. replaceState keeps the Back button trap-free.
       history.replaceState(null, "", _tktBoardReturnUrl)
     } else {
       const u = new URL(location.href)
@@ -9686,7 +9726,7 @@ function renderTicketsKanban(boardTickets) {
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
-        <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+        <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
         <div class="kb-card-d">${sub}</div>
         <div class="kb-card-meta"></div>`
       renderCard()

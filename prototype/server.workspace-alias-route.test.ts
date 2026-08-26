@@ -176,7 +176,8 @@ test("unknown seq under a valid slug/key → 404 (not another ticket)", async ()
 test("[finding 2] stale-slug 301 is emitted ONLY to a member; non-member/anon get 403/login not 301", async () => {
   const staleMember = await get(`/${OLD_SLUG}/t/${KEY}-1`, SID)
   expect(staleMember.status).toBe(301)
-  expect(staleMember.headers.get("location") || "").toBe(`/${SLUG}/t/${KEY}-1`)
+  // #745: canonical target is the Jira-clean KEYLESS form /<slug>/<KEY>-<n> (no /t/ segment).
+  expect(staleMember.headers.get("location") || "").toBe(`/${SLUG}/${KEY}-1`)
   // A non-member must NOT receive the 301 (that would confirm the alias exists) — gets 403.
   const staleNonMember = await get(`/${OLD_SLUG}/t/${KEY}-1`, OUTSIDE_SID)
   expect(staleNonMember.status).toBe(403)
@@ -199,4 +200,43 @@ test("[finding 7] opaque /<slug>/t/<fb_id> is tenant-bound: B's ticket under A's
   // Under B's own slug the opaque handle resolves; under A's slug it must 404 (no cross-tenant serve).
   const underA = await get(`/${SLUG}/t/${FID_B}`, SID)
   expect(underA.status).toBe(404)
+})
+
+// ── #745: the Jira-clean KEYLESS form /<slug>/<KEY>-<n> (no /t/) ─────────────────────────────────
+const KEYLESS = `/${SLUG}/${KEY}-1`
+
+test("[#745] KEYLESS pretty permalink /<slug>/<KEY>-<n> serves the fast member page (200 + noindex)", async () => {
+  const r = await get(KEYLESS, SID)
+  expect(r.status).toBe(200)
+  expect(r.headers.get("x-robots-tag")).toBe("noindex, nofollow")
+  const html = await r.text()
+  expect(html).toContain(FID)
+  expect(html).toContain(PROJ)
+})
+
+test("[#745] KEYLESS path is STRICT member-only: non-member → 403, anon → login (same gate as /t/ form)", async () => {
+  const nonMember = await get(KEYLESS, OUTSIDE_SID)
+  expect(nonMember.status).toBe(403)
+  const anon = await get(KEYLESS)
+  expect([301, 302, 303, 307, 308]).toContain(anon.status)
+  expect(anon.headers.get("location") || "").toContain("/login")
+})
+
+test("[#745] a same-slug NON-ticket path (/<slug>/settings) is NOT captured as a ticket", async () => {
+  // 'settings' has no <KEY>-<n> shape → the keyless matcher must not fire; the request falls through
+  // to the real router / 404 and must NEVER serve our ticket.html (no page/route shadowing).
+  const r = await get(`/${SLUG}/settings`, SID)
+  const body = r.status === 200 ? await r.text() : ""
+  expect(body.includes(FID)).toBe(false)
+})
+
+test("[#745] a key-shaped but NONEXISTENT keyless path → 404 (never another ticket, no enumeration)", async () => {
+  const r = await get(`/${SLUG}/${KEY}-999`, SID)
+  expect(r.status).toBe(404)
+})
+
+test("[#745] reserved slug never shadows the keyless form either: /dashboard/KLAV-1 not our ticket", async () => {
+  const r = await get(`/dashboard/${KEY}-1`, SID)
+  const body = r.status === 200 ? await r.text() : ""
+  expect(body.includes(FID)).toBe(false)
 })

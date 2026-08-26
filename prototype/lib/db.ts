@@ -3654,7 +3654,8 @@ export type FeedbackRow = {
   suggestedBug: any | null; sourceQuote: string | null; citedTraitIds: any | null; sourceDate: number | null
   planeIssueKey: string | null; planeIssueUrl: string | null; annotations: any | null
   reportIp: string | null; reportUrl: string | null; reportGeo: any | null
-  reportEnv: string | null; reportOrg: string | null; reportServer: string | null; createdAt: number
+  reportEnv: string | null; reportOrg: string | null; reportServer: string | null
+  seqNum: number | null; createdAt: number
 }
 function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
 function rowToFeedback(x: any): FeedbackRow {
@@ -3687,6 +3688,8 @@ function rowToFeedback(x: any): FeedbackRow {
     reportEnv: x.report_env != null ? String(x.report_env) : null,
     reportOrg: x.report_org != null ? String(x.report_org) : null,
     reportServer: x.report_server != null ? String(x.report_server) : null,
+    // #745: per-project human sequence (KLA-200). Powers the pretty <KEY>-<n> permalink on the board.
+    seqNum: x.seq_num != null ? Number(x.seq_num) : null,
     createdAt: Number(x.created_at),
   }
 }
@@ -6711,9 +6714,57 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
     const curSlug = await currentSlugForAccount(accountId)
     const kr = await db!.execute({ sql: "SELECT ticket_key FROM projects WHERE id=? AND ticket_key IS NOT NULL LIMIT 1", args: [projectId] })
     const curKey = kr.rows.length ? String((kr.rows[0] as any).ticket_key) : null
-    if (curSlug && curKey) redirectTo = `/${curSlug}/t/${curKey}-${seq}`
+    if (curSlug && curKey) redirectTo = `/${curSlug}/${curKey}-${seq}`
   }
   return { kind: "pretty", id, projectId, redirectTo }
+}
+
+// ── Phase 2 (#745): build the PRETTY permalink from a project/feedback context ──
+// projectAliasInfo(projectId) → the workspace slug (globally-unique namespace) + project ticket_key
+// (unique-in-account) for a project, or nulls when either is missing/un-backfilled. The dashboard/
+// ticket API attaches these (plus the already-present seqNum) to each ticket so the CLIENT can build
+// `/<slug>/t/<KEY>-<n>`. Additive, member-gated by the caller; leaks nothing (slug is the public
+// namespace anyway, key is not secret). Callers dedupe by projectId to avoid N queries per list.
+export async function projectAliasInfo(projectId: string): Promise<{ slug: string | null; ticketKey: string | null }> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT a.slug AS slug, p.ticket_key AS ticket_key
+              FROM projects p LEFT JOIN accounts a ON a.id = p.account_id
+             WHERE p.id = ? LIMIT 1`,
+      args: [projectId],
+    })
+    if (!r.rows.length) return { slug: null, ticketKey: null }
+    const row = r.rows[0] as any
+    return {
+      slug: row.slug != null ? String(row.slug) : null,
+      ticketKey: row.ticket_key != null ? String(row.ticket_key) : null,
+    }
+  } catch {
+    return { slug: null, ticketKey: null }
+  }
+}
+
+// prettyTicketPath(feedbackRow-or-ids) → the canonical pretty PATH `/<slug>/<KEY>-<n>` (Jira-clean,
+// slug (account) + ticket_key (project) + seq_num. Falls back to the never-404 opaque `/t/<fb_id>`
+// when the slug OR key OR seq is missing/un-backfilled — so every deep link stays valid even before
+// backfill. Path only (no origin); callers prefix BASE. Used server-side to UPGRADE the widget-submit
+// issue_url, reporter-fix + assignment email links, and lead alerts (#727) to the pretty form.
+export async function prettyTicketPath(
+  input: { id: string; projectId: string; seqNum?: number | null },
+): Promise<string> {
+  const opaque = `/t/${input.id}`
+  try {
+    if (!input.id || !input.projectId) return opaque
+    let seq = input.seqNum
+    if (seq == null) {
+      const fr = await db!.execute({ sql: "SELECT seq_num FROM feedback WHERE id=? LIMIT 1", args: [input.id] })
+      seq = fr.rows.length && (fr.rows[0] as any).seq_num != null ? Number((fr.rows[0] as any).seq_num) : null
+    }
+    if (seq == null || !Number.isSafeInteger(seq) || seq < 1) return opaque
+    const info = await projectAliasInfo(input.projectId)
+    if (info.slug && info.ticketKey) return `/${info.slug}/${info.ticketKey}-${seq}`
+  } catch { /* fall through to opaque */ }
+  return opaque
 }
 
 // One-time, gated backfill (design §8): assign slugs to existing accounts, ticket_keys to existing

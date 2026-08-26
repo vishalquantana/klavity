@@ -21,6 +21,7 @@ const {
   resolveWorkspaceTicket, resolveFeedbackRef, accountBySlug,
   recordSlugAlias, recordKeyAlias, backfillWorkspaceAlias,
   dedupeAndIndexFeedbackSeq, claimAccountSlug, claimProjectKey,
+  prettyTicketPath, projectAliasInfo,
 } = m as any
 
 // Fresh-DB apply + idempotency: applySchema/migrateV2 twice must not throw.
@@ -180,10 +181,10 @@ test("resolve layer 2: renamed slug/key resolves the REAL ticket + canonical red
   await recordKeyAlias("OLDKEY", acc, "proj_" + acc)
   // Old slug → resolves the real ticket AND provides the canonical redirect (route gates before 301).
   expect(await resolveWorkspaceTicket("old-workspace-name", `${curKey}-1`))
-    .toEqual({ kind: "pretty", id: fid, projectId: "proj_" + acc, redirectTo: `/${curSlug}/t/${curKey}-1` })
+    .toEqual({ kind: "pretty", id: fid, projectId: "proj_" + acc, redirectTo: `/${curSlug}/${curKey}-1` })
   // Old key under the current slug → resolves + redirects to current key.
   expect(await resolveWorkspaceTicket(curSlug, "OLDKEY-1"))
-    .toEqual({ kind: "pretty", id: fid, projectId: "proj_" + acc, redirectTo: `/${curSlug}/t/${curKey}-1` })
+    .toEqual({ kind: "pretty", id: fid, projectId: "proj_" + acc, redirectTo: `/${curSlug}/${curKey}-1` })
   // QA finding 2: a stale alias with a NONEXISTENT seq must return null — NEVER a redirect (no oracle).
   expect(await resolveWorkspaceTicket("old-workspace-name", `${curKey}-999`)).toBeNull()
   expect(await resolveWorkspaceTicket(curSlug, "OLDKEY-999")).toBeNull()
@@ -259,7 +260,7 @@ test("[finding 3] a freed slug is GLOBALLY reserved — a different tenant can n
 
   // The old link resolves ONLY to A's ticket (redirect to A's current slug), never to B.
   const r = await resolveWorkspaceTicket("reclaim-a", `${keyA}-1`)
-  expect(r).toEqual({ kind: "pretty", id: fbA, projectId: "proj_" + A, redirectTo: `/reclaim-a-new/t/${keyA}-1` })
+  expect(r).toEqual({ kind: "pretty", id: fbA, projectId: "proj_" + A, redirectTo: `/reclaim-a-new/${keyA}-1` })
 })
 
 test("[finding 3] a freed ticket key is reserved within the account — sibling can't reclaim/shadow it", async () => {
@@ -277,7 +278,7 @@ test("[finding 3] a freed ticket key is reserved within the account — sibling 
   expect(k2).not.toBe("LEGACY")
   // Old key resolves ONLY P1 (redirect to P1's current key), never the sibling.
   const r = await resolveWorkspaceTicket(slug, "LEGACY-1")
-  expect(r).toEqual({ kind: "pretty", id: fb1, projectId: P1, redirectTo: `/${slug}/t/PAY-1` })
+  expect(r).toEqual({ kind: "pretty", id: fb1, projectId: P1, redirectTo: `/${slug}/PAY-1` })
 })
 
 test("[finding 7] opaque /<slug>/t/<fb_id> is tenant-bound — B's ticket under A's slug → null", async () => {
@@ -348,4 +349,28 @@ test("[finding 9] claim helpers are idempotent and always leave a non-null slug/
   const k = await keyOf(P)
   expect(isValidTicketKey(k)).toBe(true)
   expect(await claimProjectKey(acc, P, "Claim Proj")).toBe(k) // idempotent
+})
+
+test("[#745] prettyTicketPath builds the Jira-clean /<slug>/<KEY>-<n> and falls back to /t/<id> when un-backfilled", async () => {
+  const acc = (await ensureAccount("prettypath@test.local"))[0].workspaceId
+  const slug = String(((await db!.execute({ sql: "SELECT slug FROM accounts WHERE id=?", args: [acc] })).rows[0] as any).slug)
+  const P = (await createProject(acc, "Pretty Path Proj")).id
+  await db!.execute({ sql: "UPDATE projects SET ticket_key='PPP' WHERE id=?", args: [P] })
+  const fid = await insertFeedback({ projectId: P, observation: "pretty path ticket" })
+  const seq = Number(((await db!.execute({ sql: "SELECT seq_num FROM feedback WHERE id=?", args: [fid] })).rows[0] as any).seq_num)
+
+  // projectAliasInfo surfaces the slug + key for the client.
+  expect(await projectAliasInfo(P)).toEqual({ slug, ticketKey: "PPP" })
+
+  // seq passed in — no extra fetch needed. KEYLESS canonical form, no /t/ segment.
+  expect(await prettyTicketPath({ id: fid, projectId: P, seqNum: seq })).toBe(`/${slug}/PPP-${seq}`)
+  // seq omitted — resolver fetches seq_num itself.
+  expect(await prettyTicketPath({ id: fid, projectId: P })).toBe(`/${slug}/PPP-${seq}`)
+
+  // No ticket_key yet → falls back to the never-404 opaque /t/<fb_id>.
+  const P2 = (await createProject(acc, "No Key Proj")).id
+  await db!.execute({ sql: "UPDATE projects SET ticket_key=NULL WHERE id=?", args: [P2] })
+  const fid2 = await insertFeedback({ projectId: P2, observation: "no key ticket" })
+  expect(await prettyTicketPath({ id: fid2, projectId: P2 })).toBe(`/t/${fid2}`)
+  expect(await projectAliasInfo(P2)).toEqual({ slug, ticketKey: null })
 })

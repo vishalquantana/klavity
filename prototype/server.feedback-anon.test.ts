@@ -145,8 +145,21 @@ test("#651: anonymous cross-origin submit returns the single-ticket deep-link is
   expect(r.status).toBe(200)
   const j = await r.json()
   expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
-  // Fast single-ticket permalink. dashBase = KLAV_BASE_URL; the project is resolved server-side.
-  expect(j.issue_url).toBe(`${BASE}/t/${j.id}`)
+  // #745: the deep link is now the Jira-clean pretty permalink /<slug>/<KEY>-<n> once the workspace
+  // slug + project ticket_key are backfilled (the server backfills existing accounts/projects on boot),
+  // and falls back to the fast opaque /t/<id> otherwise. Compute the expected form from the DB so the
+  // assertion is exact either way. dashBase = KLAV_BASE_URL; the project is resolved server-side.
+  const meta = await rawClient.execute({
+    sql: `SELECT a.slug AS slug, p.ticket_key AS key, f.seq_num AS seq
+            FROM feedback f JOIN projects p ON p.id = f.project_id
+            LEFT JOIN accounts a ON a.id = p.account_id WHERE f.id = ?`,
+    args: [j.id],
+  })
+  const row = meta.rows[0] as any
+  const expected = (row && row.slug && row.key && row.seq != null)
+    ? `${BASE}/${row.slug}/${row.key}-${row.seq}`
+    : `${BASE}/t/${j.id}`
+  expect(j.issue_url).toBe(expected)
 })
 
 // ── Test 2b (JTBD 1.7): an EXPLICIT 'email' gate (p2) still rejects a submit with no email (400) ──

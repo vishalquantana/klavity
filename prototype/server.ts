@@ -10,7 +10,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -336,6 +336,24 @@ function ticketDeepLinkUrl(feedbackId: string): string {
   return `${BASE.replace(/\/+$/, "")}/t/${encodeURIComponent(feedbackId)}`
 }
 
+// #745 Phase 2: the PRETTY (Jira-clean) form of the deep link — `${BASE}/<slug>/<KEY>-<n>` — used for
+// the widget "Open in Klavity" (issue_url), reporter-fix + assignment + comment emails, and lead
+// alerts. Resolves slug/key/seq via prettyTicketPath and falls back to the never-404 opaque `/t/<id>`
+// whenever the workspace slug or project key is missing/un-backfilled, so a link is ALWAYS valid.
+// Origin defaults to BASE; pass `origin` (e.g. the request origin on the widget path) to override.
+async function prettyDeepLinkUrl(
+  feedbackId: string,
+  projectId?: string | null,
+  opts?: { seqNum?: number | null; origin?: string | null },
+): Promise<string> {
+  const base = (opts?.origin || BASE).replace(/\/+$/, "")
+  let path = `/t/${encodeURIComponent(feedbackId)}`
+  if (projectId) {
+    try { path = await prettyTicketPath({ id: feedbackId, projectId, seqNum: opts?.seqNum ?? null }) } catch { /* keep opaque */ }
+  }
+  return `${base}${path}`
+}
+
 // JTBD 2.15: the post-login invite redirect carries the assigned ticket forward so first login
 // lands directly on it. The stored feedbackId is threaded through so the login flow can preserve it.
 function ticketInviteUrl(projectId: string, email: string, feedbackId?: string | null): string {
@@ -358,7 +376,7 @@ async function notifyTicketAssignee(input: { projectId: string; feedbackId: stri
         ticketTitle: input.ticketTitle,
         projectName: input.projectName ?? null,
         assignedBy: input.assignedBy ?? null,
-        ticketUrl: ticketDeepLinkUrl(input.feedbackId),
+        ticketUrl: await prettyDeepLinkUrl(input.feedbackId, input.projectId),
         joinUrl: ticketInviteUrl(input.projectId, input.assignee, input.feedbackId),
       }).catch((e: any) => console.warn("ticket assignment invite email skipped:", e?.message || e))
     }
@@ -370,7 +388,7 @@ async function notifyTicketAssignee(input: { projectId: string; feedbackId: stri
       ticketTitle: input.ticketTitle,
       projectName: input.projectName ?? null,
       assignedBy: input.assignedBy ?? null,
-      ticketUrl: ticketDeepLinkUrl(input.feedbackId),
+      ticketUrl: await prettyDeepLinkUrl(input.feedbackId, input.projectId),
     }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
   }
   return { emailSent: canEmail }
@@ -2138,7 +2156,7 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
     try {
       const pid = String(fb.projectId || project.id)
       const withReplay = await feedbackIdsWithReplay(pid, [String(fb.id)])
-      if (withReplay.has(String(fb.id))) lines.push(`Session replay: ${ticketDeepLinkUrl(String(fb.id))}`)
+      if (withReplay.has(String(fb.id))) lines.push(`Session replay: ${await prettyDeepLinkUrl(String(fb.id), pid, { seqNum: fb.seqNum ?? null })}`)
     } catch (e: any) { console.warn("replay link for export skipped (non-fatal):", e?.message || e) }
   }
   lines.push("Filed by Klavity")
@@ -3591,9 +3609,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // submit; fall back to the value posted with the lead.
             referrer: fb?.sourceReferrer || leadReferrer || "",
             projectName: proj?.name || projectId,
-            // #727: link straight to the FAST single-ticket page (/t/<id>) rather than booting the
-            // whole dashboard SPA just to focus this one lead's report.
-            feedbackUrl: ticketDeepLinkUrl(feedbackId),
+            // #727/#745: link straight to the FAST single-ticket page (pretty /<slug>/<KEY>-<n> when
+            // backfilled, else /t/<id>) rather than booting the whole dashboard SPA for one lead.
+            feedbackUrl: await prettyDeepLinkUrl(feedbackId, projectId, { seqNum: fb?.seqNum ?? null }),
           })
         } catch (e: any) { console.error("lead alert (non-fatal):", e?.message || e) }
       })().catch(() => {})
@@ -4092,8 +4110,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           nextStatus: newStatus,
           title: beforeFeedback ? effectiveTicketTitle(beforeFeedback) : "Bug report",
           projectName: proj?.name ?? "your project",
-          // #727: fast single-ticket permalink, not the heavy dashboard board.
-          ticketUrl: ticketDeepLinkUrl(exportRow.feedbackId),
+          // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
+          ticketUrl: await prettyDeepLinkUrl(exportRow.feedbackId, exportRow.projectId),
         })
       }
       return json({ ok: true, status: newStatus })
@@ -5193,6 +5211,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let citation: Awaited<ReturnType<typeof resolveCitations>> | null = null
         let recurrenceMem: any = null // populated on dedup hits so callers know the issue recurred
         let knownDuplicate = false
+        // #745: the resolved (possibly intake-swapped) project id lifted to this outer scope so the
+        // success-exit can build the pretty /<slug>/<KEY>-<n> issue_url. The inner `projectId` is
+        // block-scoped and not visible at the exit. Null-safe: prettyDeepLinkUrl falls back to /t/<id>.
+        let submitProjectId: string | null = null
         if (db) {
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
@@ -5251,6 +5273,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             if (resolved) {
               const projectId = resolved.id
+              submitProjectId = projectId // #745: carry to the success-exit for the pretty issue_url
               // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
               // attachments + recordings), now that the project is resolved. Fire-and-forget.
               {
@@ -5705,8 +5728,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // member-gated server-side (resolveFeedbackRef + ticketViewAccess): a member gets the full
         // ticket, a non-member gets the redacted teaser / login gate → no data leak.
         const dashBase = baseOrigin || reqOrigin
+        // #745: prefer the pretty /<slug>/<KEY>-<n> form (resolved server-side); prettyDeepLinkUrl
+        // falls back to /t/<id> when the workspace slug / project key isn't backfilled yet. Keep the
+        // request/base origin (customer sites embed cross-origin) rather than forcing BASE.
         const issueUrl = (feedbackId && dashBase)
-          ? `${dashBase.replace(/\/+$/, "")}/t/${encodeURIComponent(feedbackId)}`
+          ? await prettyDeepLinkUrl(feedbackId, submitProjectId, { origin: dashBase })
           : ""
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
       } catch (e: any) {
@@ -7876,16 +7902,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       })
     }
 
-    // ── GET /<workspaceSlug>/t/<ref> — #728 collision-safe pretty permalink ──
-    // klavity.in/acme/t/KLAV-111. The workspace slug is the globally-unique namespace; <KEY>-<n> is
-    // unique only within it. resolveWorkspaceTicket ALWAYS returns an existence-checked ticket (never
-    // a redirect for a nonexistent handle) tagged with `kind`, so this route — not the resolver —
-    // owns auth. SECURITY (QA #728 findings 1,2): the ENUMERABLE <KEY>-<n> path is STRICT member-only
-    // (403 non-member, login-gate anon, NEVER teaser) because sequential keys are guessable; and any
-    // stale-alias 301 is emitted ONLY after the caller is proven to be a member (no alias enumeration
-    // oracle). The UNGUESSABLE opaque fb_ handle keeps the normal share/teaser policy but is tenant-
-    // bound to the slug's account (finding 7). Placed AFTER real routes + gated on !isReservedSlug.
-    const prettyTicketMatch = path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/)
+    // ── GET /<workspaceSlug>/<KEY>-<n>  (Jira-clean canonical, #745)  +  /<workspaceSlug>/t/<ref> (compat) ──
+    // klavity.in/quantana/SIM-1520 is the canonical pretty permalink; the slug is the globally-unique
+    // namespace and <KEY>-<n> is unique only within it. The legacy /<slug>/t/<ref> form (opaque fb_ AND
+    // old KEY-n) still resolves for backward compat. resolveWorkspaceTicket ALWAYS returns an existence-
+    // checked ticket (never a redirect for a nonexistent handle) tagged with `kind`, so this route — not
+    // the resolver — owns auth. SECURITY (QA #728 findings 1,2): the ENUMERABLE <KEY>-<n> path is STRICT
+    // member-only (403 non-member, login-gate anon, NEVER teaser) because sequential keys are guessable;
+    // any stale-alias 301 is emitted ONLY after the caller is proven to be a member (no alias enumeration
+    // oracle). The UNGUESSABLE opaque fb_ handle keeps the normal share/teaser policy but is tenant-bound
+    // to the slug's account (finding 7).
+    // DISAMBIGUATION (#745): the keyless /<slug>/<second> form matches a TICKET only when <second> fits the
+    // strict key shape ^[A-Za-z][A-Za-z0-9]{1,9}-\d+$ (SIM-1520, KLAV-94). Any other /<slug>/<something>
+    // (settings, static, real routes) can NEVER be captured as a ticket. Placed AFTER every real route +
+    // gated on !isReservedSlug, so a page/route is never shadowed; a non-existent key-shaped path 404s.
+    const prettyTicketMatch =
+      path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/t\/([A-Za-z0-9_-]{1,80})$/) ||
+      path.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/([A-Za-z][A-Za-z0-9]{1,9}-\d+)$/)
     if (req.method === "GET" && prettyTicketMatch && !isReservedSlug(prettyTicketMatch[1])) {
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
@@ -10174,6 +10207,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 })
               : Promise.resolve({} as Record<string, { status: string; assignee: string | null; notes: string | null; recurrence: number; recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number }>),
           ])
+          // #745: workspace slug + project key are constant for this project-scoped board — resolve
+          // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
+          // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
+          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null }))
           const tickets = feedbackTickets.map(f => {
             const p = f.simId ? personaById.get(f.simId) : null
             const meta = ticketMetaRows[f.id] ?? { status: "open", assignee: null, notes: null, recurrence: 1, recurrenceDatesJson: null, lastSeenAt: null, resolvedAt: null, createdAt: f.createdAt }
@@ -10195,6 +10232,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             return {
               id: f.id, simName: p?.name ?? null,
+              // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
+              seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
               // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
               // otherwise fall back to the historical observation-derived title (back-compat).
               title: (f.title && f.title.trim()) ? f.title : f.observation, priority: f.priority,
@@ -10939,7 +10978,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               ticketTitle: effectiveTicketTitle(fbRow),
               projectName: projName,
               commentBody: text,
-              ticketUrl: ticketDeepLinkUrl(fid),
+              ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
               author: me,
               assignee: fbRow.assignee,
               contactEmail: fbRow.contactEmail,
@@ -11084,6 +11123,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
             // KLA-200: human-readable sequential number
             seqNum: fbRow.seqNum ?? null,
+            // #745: workspace slug + project ticket_key so the client can build the pretty
+            // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
+            ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null }))),
             // KLA-603: server-side "AI summary from walkthrough" (post-transcription enrichment). Null when
             // the report had no transcribed video or the reporter's description was already substantial.
             aiWalkthrough: fbRow.aiWalkthrough ?? null,
@@ -11199,8 +11241,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               nextStatus: meta.status,
               title: effectiveTicketTitle(fbRow),
               projectName: proj?.name ?? "your project",
-              // #727: fast single-ticket permalink, not the heavy dashboard board.
-              ticketUrl: ticketDeepLinkUrl(fid),
+              // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
+              ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
             })
           }
           // ── Triage-gated auto-copy (KLA-282) ─────────────────────────────────────────────────────
@@ -12869,8 +12911,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   nextStatus: meta.status,
                   title: effectiveTicketTitle(row),
                   projectName: proj.name,
-                  // #727: fast single-ticket permalink, not the heavy dashboard board.
-                  ticketUrl: ticketDeepLinkUrl(tid),
+                  // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
+                  ticketUrl: await prettyDeepLinkUrl(tid, proj.id, { seqNum: row.seqNum ?? null }),
                 })
               }
               autoCopyOnTriageAccept(tid, proj.id, row.status, meta.status, hasPriority ? meta.priority : row.priority, me)

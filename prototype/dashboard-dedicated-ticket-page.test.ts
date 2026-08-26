@@ -98,9 +98,11 @@ test("prev/next steps through the board's filtered+ordered ids, disabled at the 
   expect(ord).toContain("KANBAN_COLS")
 })
 
-test("Copy link copies the canonical hash URL", () => {
+test("Copy link copies the pretty ticket permalink (#745)", () => {
+  // #745: the Copy-link button now copies the Jira-clean /<slug>/<KEY>-<n> permalink (via
+  // prettyTicketUrlById, which falls back to the opaque /t/<id> when the workspace isn't backfilled).
   const fn = extractFn(HTML, "function _renderSingleTicket(id)")
-  expect(fn).toContain("await copyText(ticketPageUrl(id))")
+  expect(fn).toContain("await copyText(prettyTicketUrlById(id))")
 })
 
 // ── panel ⤢ expand navigates to this dedicated route ──────────────────────────────────────────────

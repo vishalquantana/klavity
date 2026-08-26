@@ -108,13 +108,15 @@ test("#734: description read view uses linkifyDescription (formatted); EDIT mode
 })
 
 // ── #735: the #<seq> key pill copies the clean /t/<id> permalink ─────────────────────────────────────
-test("#735: wireTktKeyCopy copies the clean /t/<id> permalink from the key pill", () => {
+test("#735: wireTktKeyCopy copies the pretty ticket permalink from the key pill (#745)", () => {
   const fn = extractFn(HTML, "function wireTktKeyCopy(el, id)")
-  expect(fn).toContain("copyText(ticketPageUrl(id))")
+  // #745: the key pill now copies the Jira-clean /<slug>/<KEY>-<n> permalink (prettyTicketUrlById),
+  // which falls back to the fast /t/<id> route when the workspace slug/key isn't backfilled.
+  expect(fn).toContain("copyText(prettyTicketUrlById(id))")
   expect(fn).toContain('el.setAttribute("title", "Copy ticket link")')
   expect(fn).toContain('el.classList.add("tkt-key-copy")')
   expect(fn).toContain('el.addEventListener("click", doCopy)')
-  // ticketPageUrl is the fast /t/<id> route (not the ugly dashboard hash)
+  // the opaque fallback /t/<id> route is still the base of prettyTicketUrl
   const url = extractFn(HTML, "function ticketPageUrl(id)")
   expect(url).toContain('"/t/" + encodeURIComponent(String(id))')
   // wired on the page header pill AND the panel/cockpit title pill
@@ -125,9 +127,11 @@ test("#735: wireTktKeyCopy copies the clean /t/<id> permalink from the key pill"
 })
 
 // ── #736: clean /t/<id> URL on dedicated-page open + restore/popstate ───────────────────────────────
-test("#736: opening the dedicated page pushes a clean /t/<id> URL, not the #tickets/<id> hash", () => {
+test("#736/#745: opening the dedicated page pushes the pretty /<slug>/<KEY>-<n> URL (opaque /t/<id> fallback)", () => {
   const fn = extractFn(HTML, "function _renderSingleTicket(id)")
-  expect(fn).toContain('const cleanPath = "/t/" + encodeURIComponent(String(id))')
+  // #745: the pushed clean path is the Jira-clean pretty form when the ticket carries slug+key+seq,
+  // else the opaque /t/<id> fallback — history.state still carries { tkt: id } so popstate re-opens it.
+  expect(fn).toContain('const cleanPath = prettyTicketPathFor(tktById(id)) || ("/t/" + encodeURIComponent(String(id)))')
   expect(fn).toContain('history.pushState({ tkt: String(id) }, "", location.origin + cleanPath)')
   // a re-render for the SAME id replaces (no new history entry)
   expect(fn).toContain('history.replaceState({ tkt: String(id) }, "", location.origin + cleanPath)')
@@ -135,15 +139,20 @@ test("#736: opening the dedicated page pushes a clean /t/<id> URL, not the #tick
   expect(fn).not.toContain('const target = "tickets/" + encodeURIComponent(String(id))')
 })
 
-test("#736: close restores the board URL; a popstate handler keeps Back/Forward honest", () => {
+test("#736/#745: close restores the board URL; popstate re-opens via history.state (pretty-path safe)", () => {
   const close = extractFn(HTML, "function closeSingleTicket()")
-  expect(close).toContain("if (/^\\/t\\//.test(location.pathname) && _tktBoardReturnUrl)")
+  // #745: gate the board-URL restore on the stored return URL (set for the dedicated page), not a
+  // /^\/t\// path regex — which wouldn't recognise the pretty /<slug>/<KEY>-<n> form.
+  expect(close).toContain("if (_tktBoardReturnUrl)")
   expect(close).toContain('history.replaceState(null, "", _tktBoardReturnUrl)')
   // the legacy hash cleanup path is still present (guarded elsewhere)
   expect(close).toContain('u.hash = "tickets"')
   const pop = extractFn(HTML, "function ensureTktCleanUrlPopstate()")
   expect(pop).toContain('window.addEventListener("popstate"')
+  // #745: prefer history.state.tkt (works even when the bar shows the pretty path), then the /t/<id> regex.
+  expect(pop).toContain("(ev && ev.state && ev.state.tkt) ? String(ev.state.tkt) : null")
   expect(pop).toContain("/^\\/t\\/([^/?#]+)\\/?$/")
+  expect(pop).toContain('openSingleTicket(stateId, "full")')
   expect(pop).toContain('openSingleTicket(decodeURIComponent(m[1]), "full")')
   expect(pop).toContain('closeSingleTicket()')
   expect(HTML).toContain("ensureTktCleanUrlPopstate()")
