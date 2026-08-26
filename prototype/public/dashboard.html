@@ -3252,9 +3252,14 @@ async function load() {
     }
     return
   }
-  // SWR step 3 — swap in fresh data, re-render (with sub-loaders), and re-cache.
+  // SWR step 3 — swap in fresh data, re-render, and re-cache.
   state = data
   render()
+  // #654/#655: hydrate whatever view is currently shown (usually overview → the trend chart). The
+  // boot-time setView() ran before state existed (loadViewData no-ops without state), so this is the
+  // first chance to lazily load the initial view's on-demand data. Settings data still waits for a
+  // real Settings navigation.
+  if (typeof loadViewData === "function") loadViewData(document.body.getAttribute("data-view") || "overview")
   mountReportWidget()
   if (data.active && data.active.id) {
     swrWrite(dashCacheKey(data.active.id), data)
@@ -3291,8 +3296,10 @@ function mountReportWidget() {
   document.body.appendChild(s)
 }
 
-// Re-fetch /api/dashboard and re-render — used after triage accept/dismiss so counts + banner + kanban update.
-async function refreshAll() {
+// Re-fetch /api/dashboard and re-render — used after triage accept/dismiss so counts + banner + kanban
+// update. `isPoll` (passed only by the ~25s liveness tick / focus refresh) scopes the re-render to the
+// active view (#658); mutation-driven callers pass nothing → a full render.
+async function refreshAll(isPoll) {
   let data
   const fetchStart = Date.now()   // #532: anything saved after this the poll must not overwrite
   kbar.start()
@@ -3310,7 +3317,7 @@ async function refreshAll() {
   // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
   mergeLocalEdits(data, fetchStart)
   state = data
-  render()
+  render(false, isPoll === true)   // #658: poll → scoped to the active view; mutation refresh → full
   if (data.active && data.active.id) {                                       // keep cache fresh after triage actions
     swrWrite(dashCacheKey(data.active.id), data)
     try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) {}
@@ -3375,7 +3382,7 @@ function dashLiveBusy() {
 }
 function dashLiveTick() {
   if (!state || dashLiveBusy()) return
-  refreshAll()
+  refreshAll(true)   // #658: background poll → scoped re-render of the active view only
   // Keep the New reports queue current too when that view is the one showing.
   if (document.body.getAttribute("data-view") === "triage" && typeof renderTriage === "function") renderTriage()
 }
@@ -3968,11 +3975,10 @@ async function renderSimMatches() {
   const pid = curProjId(); if (!pid) return
   const section = $("simMatchSection"); const listEl = $("simMatchList"); const cntEl = $("simMatchCount")
   if (!section || !listEl) return
-  try {
-    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/sim-matches")
-    if (!r.ok) return
-    const d = await r.json()
-    const items = Array.isArray(d.matches) ? d.matches : []
+  // #660: paint the last-cached matches instantly (SWR), then revalidate — no 'Loading…'/blank flash
+  // when New reports is re-entered on a reload. apply() also runs on the fresh network payload below.
+  const apply = (d) => {
+    const items = Array.isArray(d && d.matches) ? d.matches : []
     if (!items.length) { section.classList.add("hide"); return }
     section.classList.remove("hide")
     if (cntEl) cntEl.textContent = String(items.length)
@@ -4010,6 +4016,16 @@ async function renderSimMatches() {
         renderSimMatches()
       })
     })
+  }
+  // SWR: paint the cached snapshot first (instant, no flash), then revalidate from the network.
+  const cached = swrRead("sim-matches:" + pid)
+  if (cached != null) { try { apply(cached) } catch (e) {} }
+  try {
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/sim-matches")
+    if (!r.ok) return
+    const d = await r.json()
+    apply(d)
+    swrWrite("sim-matches:" + pid, d)
   } catch (e) { /* non-fatal */ }
 }
 
@@ -4300,10 +4316,80 @@ function applyViewHeader(v) {
 }
 window.applyViewHeader = applyViewHeader
 
-// render(fromCache): when painting the instant cache snapshot we skip the network
-// sub-loaders (connectors/appearance/live/obs) — they fire once on the fresh render
-// so we never double-fetch them or flicker the progress bar on a cache hit.
-function render(fromCache) {
+// #658: always-visible sidebar counts. Cheap state→textContent writes so the sidebar nav (via the
+// mirror() MutationObserver) stays live even on a poll that skipped the card whose renderer normally
+// sets them. Mirrors the exact formulas in renderStats/renderMembers/renderTickets/renderActivity.
+function syncSidebarCounts() {
+  if (!state) return
+  const ins = (state && state.insights) || {}
+  const need = ins.needsTriage || 0
+  const tc = $("triageCount"); if (tc) tc.textContent = String(need)
+  const banner = $("triageBanner"); if (banner) banner.classList.toggle("hide", need === 0)
+  const members = state.members || []
+  const mc = $("memCount"); if (mc) mc.textContent = members.length ? members.length : ""
+  const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
+  const tkc = $("ticketCount"); if (tkc) tkc.textContent = tickets.length ? tickets.length : ""
+  const acts = state.activity || []
+  const ac = $("actCount"); if (ac) ac.textContent = acts.length ? acts.length : ""
+}
+
+// ── #654/#655: lazy, once-only view sub-loaders ────────────────────────────────────────────────────
+// The Settings/Sims drawers + the overview trend chart are hydrated by network sub-loaders that used
+// to fire eagerly inside render() (and thus re-fire on every ~25s poll and every window focus). They
+// now load ON DEMAND when their host view is first shown, each behind a 'loaded' guard so re-entry (or
+// a second view that shares a drawer) never refetches. A project switch is a full page navigation
+// (location.href = /dashboard?project=…), so these guards reset naturally with the fresh page.
+window.__klavSubLoaded = window.__klavSubLoaded || {}
+function _subOnce(key, fn) {
+  if (window.__klavSubLoaded[key]) return
+  window.__klavSubLoaded[key] = true
+  try { fn() } catch (e) {}
+}
+function loadViewData(view) {
+  if (!state || !state.active) return
+  const admin = state.active.role === "admin"
+  // settingsDrawer (connectors + label-rules + labels) is shown in BOTH tickets and settings views.
+  const loadConnGroup = () => {
+    _subOnce("connectors", () => loadConnectors(admin))
+    _subOnce("labelRules", () => loadLabelRules(admin))
+    _subOnce("labels", () => loadLabels(admin))
+  }
+  // live/obs drawers are shown in BOTH sims and settings (admin-only).
+  const loadLiveObs = () => {
+    if (!admin) return
+    _subOnce("live", () => loadLive())
+    _subOnce("obs", () => loadObs())
+  }
+  if (view === "overview") {
+    _subOnce("trends", () => { wireTrends(); loadTrends() })
+  } else if (view === "tickets") {
+    loadConnGroup()
+  } else if (view === "sims") {
+    loadLiveObs()
+  } else if (view === "settings") {
+    loadConnGroup()
+    _subOnce("appearance", () => loadAppearance())
+    loadLiveObs()
+    if (admin) {
+      _subOnce("tacc", () => taccRender())
+      _subOnce("ci", () => { if (typeof ciRender === "function") ciRender() })
+      _subOnce("trailsAutofile", () => loadTrailsAutofile())
+    }
+  }
+}
+window.loadViewData = loadViewData
+
+// render(fromCache, poll):
+//  • #654/#655: render() no longer fires the Settings/Sims/trend sub-loaders at all. Those network
+//    hydrators now load lazily, once, when their host view is first shown (loadViewData in setView) —
+//    so the ~25s liveness poll AND window-focus refresh never re-fire ~12 background requests, and
+//    they no longer fetch eagerly on first paint for a Settings drawer the user may never open.
+//  • #658: when `poll` is true (the background liveness refresh) we only re-render the sections
+//    VISIBLE in the current view plus always-visible chrome (+ sidebar counts) — rebuilding every
+//    hidden view's innerHTML each poll churned the main thread and re-created offscreen thumbnails.
+//    A full render (first paint / cache paint / mutation refresh) still renders every section so a
+//    view is always correct the first time it is shown.
+function render(fromCache, poll) {
   const active = state.active
   const role = active ? active.role : "user"
   const admin = role === "admin"
@@ -4344,19 +4430,29 @@ function render(fromCache) {
   // abort the rest — otherwise one broken section stalls every later section's skeleton AND skips
   // mountReportWidget()/the cache write back in load(). Each runs independently; clearStuckSkeletons()
   // below is the backstop that resolves the skeleton of whichever renderer did throw.
-  safeRender("switcher", renderSwitcher)
-  safeRender("checklist", renderChecklist)
-  safeRender("firstReport", renderFirstReport)
-  safeRender("stats", renderStats)
-  safeRender("saying", renderSaying)
-  safeRender("sims", () => renderSims(admin))
-  safeRender("simsFeed", renderSimsFeed)
-  safeRender("members", () => renderMembers(admin))
-  safeRender("tickets", renderTickets)
-  safeRender("activity", renderActivity)
-  safeRender("linkProjects", linkProjects)
+  // #658: on the background poll, only re-render the sections whose output is visible in the current
+  // view (each renderer is tagged with the view[s] it paints). Always-visible chrome (project switcher,
+  // /app links) and the sidebar counts run every time. On a full render `poll` is falsy → want() is
+  // always true, so every section still paints (first-shown correctness preserved).
+  const _view = document.body.getAttribute("data-view") || "overview"
+  const want = (views) => poll !== true || views.indexOf(_view) >= 0
+  safeRender("switcher", renderSwitcher)                                          // chrome — always
+  if (want(["overview"]))            safeRender("checklist", renderChecklist)
+  if (want(["overview"]))            safeRender("firstReport", renderFirstReport)
+  if (want(["overview"]))            safeRender("stats", renderStats)
+  if (want(["overview"]))            safeRender("saying", renderSaying)
+  if (want(["overview"]))            safeRender("sims", () => renderSims(admin))
+  if (want(["sims"]))                safeRender("simsFeed", renderSimsFeed)
+  if (want(["team"]))                safeRender("members", () => renderMembers(admin))
+  if (want(["overview", "tickets"])) safeRender("tickets", renderTickets)
+  if (want(["overview"]))            safeRender("activity", renderActivity)
+  safeRender("linkProjects", linkProjects)                                        // chrome — always
   // Backstop: if any renderer above threw, its skeleton is still up — resolve it gracefully.
   clearStuckSkeletons()
+  // #658: the sidebar counts are always-visible chrome — keep them live on every poll even when the
+  // card whose renderer normally writes them was skipped this pass (its view is hidden). Cheap
+  // textContent writes; the mirror() MutationObserver propagates them into the sidebar nav.
+  safeRender("counts", syncSidebarCounts)
 
   // role-gated controls
   $("newSimBtn").classList.toggle("hide", !admin)
@@ -4393,16 +4489,11 @@ function render(fromCache) {
   // have changed — _wirePlan's refresh() owns the pill's fetch+render.
   if (typeof window.refreshPlan === "function") window.refreshPlan()
 
-  // Network sub-loaders — skipped on the instant cache paint, run once on fresh data.
-  if (!fromCache) {
-    loadConnectors(admin)
-    loadLabelRules(admin)
-    loadAppearance()
-    loadLabels(admin)
-    wireTrends()
-    loadTrends()
-    if (admin) { loadLive(); loadObs(); taccRender(); if (typeof ciRender === "function") ciRender(); loadTrailsAutofile() }
-  }
+  // #654/#655: the network sub-loaders that used to run here (connectors/labels/label-rules/appearance/
+  // trends/live/observability/test-accounts/CI/trails-autofile) are gone from render(). They now load
+  // lazily + once per host view via loadViewData() (called from setView on nav, and from load() for the
+  // first-shown view). This is the fix: the poll/focus refresh re-renders only, and Settings data isn't
+  // fetched until the user actually opens Settings.
 
   // Deep link: extension's "Analyze this page" with 0 Sims (and any ?create-sim=1) lands here.
   if (window.maybeOpenCreateSim) window.maybeOpenCreateSim()
@@ -4410,6 +4501,12 @@ function render(fromCache) {
   // First-run guided tour: auto-starts once per browser on a genuinely fresh project (see tour script).
   if (window.maybeStartTour) window.maybeStartTour()
 }
+
+// #658: repaint ONLY the active view's sections from the current state (scoped render). setView() calls
+// this on entry so a view the background poll had been skipping (because it was hidden) shows fresh data
+// the moment it's shown again — not a stale snapshot from the last time it was the active view. Defined
+// here (not in the setView IIFE) so `state` + `render` are in lexical scope.
+window.klavRerenderActiveView = function () { if (state) render(false, true) }
 
 // ── KLAVITYKLA-225 (JTBD 7.11): dashboard trend chart + drill-down ────────────────────────────
 // Renders reports/findings/regressions over the last 30/90 days as an accessible inline SVG.
@@ -7898,7 +7995,18 @@ async function fetchAndRenderTktBoard() {
   // project). Re-fetches that back a filter/Clear/drag reconcile keep the current board in place.
   const projId = state && state.active && state.active.id
   const warmCache = projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length
-  if (!warmCache) board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
+  // #660: SWR cold-load paint — on a reload / first entry the in-memory board cache is empty, which
+  // used to flash 'Loading…'. Paint the last-cached board from localStorage instantly (same
+  // "tickets:"+pid key the #652 prefetch writes) so it never flashes, then revalidate below.
+  let paintedFromCache = false
+  if (!warmCache && projId) {
+    const cached = swrRead("tickets:" + projId)
+    if (Array.isArray(cached) && cached.length) {
+      _tktBoardTickets = cached; _tktBoardProjId = projId
+      renderTicketsKanban(_tktBoardTickets); paintedFromCache = true
+    }
+  }
+  if (!warmCache && !paintedFromCache) board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
 
   if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
 
@@ -7916,8 +8024,9 @@ async function fetchAndRenderTktBoard() {
     _tktBoardTickets = data.tickets || []
     _tktBoardProjId = projId
     renderTicketsKanban(_tktBoardTickets)
+    swrWrite("tickets:" + projId, _tktBoardTickets)   // #660: keep the SWR snapshot (+ #652 marker) fresh
   } catch (e) {
-    if (!warmCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+    if (!warmCache && !paintedFromCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
   } finally {
     _tktBoardState.loading = false
   }
@@ -10942,12 +11051,11 @@ async function loadReportedPages(){
   var host = document.getElementById("pbPagesList")
   var dl = document.getElementById("pbPages")
   if (!pid || !host) return
-  host.innerHTML = '<div class="tkt-list-empty">Loading pages…</div>'
-  try {
-    var res = await fetch("/api/projects/" + encodeURIComponent(pid) + "/reported-pages")
-    if (!res.ok) throw new Error("HTTP " + res.status)
-    var data = await res.json()
-    var pages = (data && data.pages) || []
+  // #660: paint the last-cached reported-pages list instantly (SWR) so entry/reload doesn't flash
+  // 'Loading pages…', then revalidate. applyPages() runs on both the cached snapshot and fresh data.
+  var ck = "reported-pages:" + pid
+  var applyPages = function(pages){
+    pages = pages || []
     if (dl) dl.innerHTML = pages.map(function(p){ return '<option value="' + esc(p.url) + '"></option>' }).join("")
     if (!pages.length){ host.innerHTML = '<div class="tkt-list-empty">No reported pages yet. Reports filed from your site will show up here.</div>'; return }
     host.innerHTML = pages.map(function(p){
@@ -10962,7 +11070,18 @@ async function loadReportedPages(){
         loadPageBugs(u)
       })
     })
-  } catch(e){ host.innerHTML = '<div class="tkt-list-empty">Could not load reported pages.</div>' }
+  }
+  var cached = swrRead(ck)
+  if (cached != null) { try { applyPages(cached) } catch(e){} }
+  else host.innerHTML = '<div class="tkt-list-empty">Loading pages…</div>'
+  try {
+    var res = await fetch("/api/projects/" + encodeURIComponent(pid) + "/reported-pages")
+    if (!res.ok) throw new Error("HTTP " + res.status)
+    var data = await res.json()
+    var pages = (data && data.pages) || []
+    applyPages(pages)
+    swrWrite(ck, pages)
+  } catch(e){ if (cached == null) host.innerHTML = '<div class="tkt-list-empty">Could not load reported pages.</div>' }
 }
 
 async function loadPageBugs(rawUrl){
@@ -11150,6 +11269,11 @@ load()
     }
     if(v==='guards'){if(typeof window.loadExpectations==='function')window.loadExpectations();}
     if(v==='pagebugs'){if(typeof window.renderPageBugsView==='function')window.renderPageBugsView();}
+    // #658: repaint the just-entered view from current state (scoped → only this view's sections),
+    // so returning to a view the poll had been skipping shows fresh data immediately.
+    if(typeof window.klavRerenderActiveView==='function')window.klavRerenderActiveView();
+    // #654/#655: lazily hydrate this view's drawers/trend chart (once-guarded) on navigation.
+    if(typeof window.loadViewData==='function')window.loadViewData(v);
     // #652: after the just-selected view kicked off its own render, warm the likely-next views on idle.
     if(typeof window.klavSchedulePrefetch==='function')window.klavSchedulePrefetch();
   }
@@ -12996,9 +13120,15 @@ load()
     }catch(e){return null}
   }
   async function load(){
+    // #660: SWR — paint the last-cached AutoSims dashboard instantly so first entry / reload doesn't
+    // sit on the "Loading…" health headline, then revalidate from the network.
+    var pid=projParam();var ck="trails-dash:"+(pid||"")
+    var cached=swrRead(ck)
+    if(cached!=null){try{await render(cached)}catch(e){}}
     var d=await loadData()
-    if(!d){var lEl=$("asLead");if(lEl)lEl.textContent=((typeof window!=="undefined"&&window.KLAV_AUTOSIMS_COPY&&window.KLAV_AUTOSIMS_COPY.loadError))||"Couldn't load AutoSims.";return}
+    if(!d){ if(cached!=null)return; var lEl=$("asLead");if(lEl)lEl.textContent=((typeof window!=="undefined"&&window.KLAV_AUTOSIMS_COPY&&window.KLAV_AUTOSIMS_COPY.loadError))||"Couldn't load AutoSims.";return}
     await render(d)
+    swrWrite(ck,d)
   }
   // ── Health board helpers (KLA-268) ─────────────────────────────────────────
   function buildHealthSummary(trails, recentWalks){
@@ -13541,10 +13671,15 @@ load()
   }
   async function loadExpectations(){
     var pid=projParam();var qs=pid?"?project="+encodeURIComponent(pid):""
+    // #660: paint the last-cached guards board instantly (SWR) so entry/reload doesn't flash empty
+    // 'Loading' columns, then revalidate from the network.
+    var ck="expectations:"+(pid||"")
+    var cached=swrRead(ck)
+    if(cached!=null){try{renderExpectations(cached)}catch(e){}}
     try{
       var r=await fetch("/api/expectations"+qs)
       if(r.status===401){location.href="/login";return}
-      if(!r.ok)return;var d=await r.json();renderExpectations(d.expectations||[])
+      if(!r.ok)return;var d=await r.json();var exps=d.expectations||[];renderExpectations(exps);swrWrite(ck,exps)
     }catch(e){}
   }
 
