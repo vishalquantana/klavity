@@ -42,18 +42,31 @@ describe("upload pill states", () => {
     document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
   })
 
-  it("flips to success with ref + Open-in-Klavity link and auto-dismisses ~4s (hover pauses)", async () => {
+  it("flips to success (Option D: thumbnail + 'Report sent' + ref chip + Open-in-Klavity) and auto-dismisses ~4s (hover pauses)", async () => {
     vi.useFakeTimers()
-    const p = createUploadPill({ label: "screenshot" })
+    // #651: pass the report's own captured screenshot → rendered as the success toast's thumbnail.
+    const shot = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCA0AAAAA"
+    const p = createUploadPill({ label: "screenshot", thumbnail: shot })
     p.success("fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9", "https://klavity.in/dashboard#tickets")
     const el = pillEl()
     expect(el.classList.contains("ok")).toBe(true)
     expect(el.textContent).toContain("Report sent")
+    expect(el.textContent).toContain("Filed as")
     expect(el.textContent).toContain("fb_1a2b3c4d")
     expect(el.textContent).not.toContain("5e6f-4a81") // shortened, quotable ref only
-    const a = el.querySelector("a") as HTMLAnchorElement
+    // Thumbnail = the captured screenshot; green 'sent' check badge overlaps it.
+    const thumb = el.querySelector("img.thumb") as HTMLImageElement
+    expect(thumb).not.toBeNull()
+    expect(thumb.src).toBe(shot)
+    expect(el.querySelector(".thumbwrap .badge svg")).not.toBeNull()
+    // Ref is a mono chip; indigo 'K' logo chip precedes the title.
+    expect(el.querySelector(".refc")?.textContent).toBe("fb_1a2b3c4d")
+    expect(el.querySelector(".klogo")?.textContent).toBe("K")
+    const a = el.querySelector("a.open") as HTMLAnchorElement
     expect(a.href).toBe("https://klavity.in/dashboard#tickets")
     expect(a.target).toBe("_blank")
+    expect(a.rel).toBe("noopener")
+    expect(a.textContent).toContain("Open in Klavity")
 
     // Hover pauses the countdown; leaving resumes it.
     await vi.advanceTimersByTimeAsync(2000)
@@ -65,6 +78,17 @@ describe("upload pill states", () => {
     await vi.advanceTimersByTimeAsync(300) // fade-out removal
     expect(document.querySelector('[data-klavity-ui="upload-pill"]')).toBeNull()
     vi.useRealTimers()
+  })
+
+  it("#651: success falls back to the Klavity 'K' mark tile when no screenshot is available", () => {
+    const p = createUploadPill({ label: "screenshot" }) // no thumbnail
+    p.success("fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9", "https://klavity.in/dashboard#tickets")
+    const el = pillEl()
+    expect(el.querySelector("img.thumb")).toBeNull()
+    const kmark = el.querySelector(".thumb.kmark") as HTMLElement
+    expect(kmark).not.toBeNull()
+    expect(kmark.textContent).toBe("K")
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
   })
 
   it("failure → Retry re-sends the SAME retained payload without re-capturing, then succeeds", async () => {

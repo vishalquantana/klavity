@@ -5619,15 +5619,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // not here — there is no longer any inline external filing on this endpoint (KLAVITYKLA-288),
         // so this is the ONE exit for a successful submission.
         //
-        // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
-        // get a dashboard URL — anonymous widget end-users on a customer's site have no dashboard
-        // access, so handing them a link would be useless (and leak our app structure). They get
-        // just the reference id to quote to support. Deep-link straight to the newly-created single
-        // ticket (#tickets/<feedbackId>) so "Open in Klavity" lands on the report itself, not the
-        // whole board (KLA-632).
+        // Success-screen deep link: deep-link straight to the newly-created single ticket
+        // (#tickets/<feedbackId>) so "Open in Klavity" lands on the report itself, not the whole
+        // board (KLA-632). #651: this link is now returned for EVERY widget submit — including
+        // anonymous / cross-origin end-users on a customer's site — not just authed reporters.
+        // The /dashboard route is itself auth-gated, so opening the link still requires a Klavity
+        // login → no data leak; it just guarantees the reporter always has a way back to the ticket.
         const dashBase = baseOrigin || reqOrigin
         const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
-        const issueUrl = (!anonActor && feedbackId && dashBase)
+        const issueUrl = (feedbackId && dashBase)
           ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets/${encodeURIComponent(feedbackId)}`
           : ""
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })

@@ -1438,7 +1438,9 @@ async function mount() {
         // The modal already closed (backgroundUpload). Drive the upload in a bottom-right pill and NEVER
         // reject — a failure becomes a retryable pill state, not a modal error.
         if (!useInteractiveSuccess) {
-          const pill = createUploadPill({ totalBytesHint: estimatePayloadBytes(uploadPayload), label: describePayloadParts(uploadPayload) })
+          // #651: hand the pill the report's OWN first captured screenshot (raw data URL, pre-compression) so
+          // the "Report sent" success toast shows it as a thumbnail; falls back to the 'K' mark when absent.
+          const pill = createUploadPill({ totalBytesHint: estimatePayloadBytes(uploadPayload), label: describePayloadParts(uploadPayload), thumbnail: uploadPayload.screenshots?.[0] })
           const attempt = () => {
             pill.uploading()
             submitFeedback(uploadCfg, uploadPayload, (pct, loaded, total) => pill.progress(pct, loaded, total))
@@ -2164,6 +2166,14 @@ function pillSafeHttpUrl(u: string | null | undefined): string {
   if (!u) return ""
   try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:" ? p.href : "" } catch { return "" }
 }
+// #651: sanitise the thumbnail source for the success toast — only a data:image/* URL (the composer's own
+// captured screenshot) or an http(s) image URL is allowed; everything else yields "" → 'K' mark fallback.
+// Prevents an attacker-supplied javascript:/other-scheme string from ever landing in an <img src>.
+function pillSafeImageSrc(u: string | null | undefined): string {
+  if (!u) return ""
+  if (/^data:image\//i.test(u)) return u
+  try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:" ? p.href : "" } catch { return "" }
+}
 function fmtMB(bytes: number): string { return (bytes / 1048576).toFixed(1) }
 
 // A rough total-bytes estimate from the retained payload, used for the pill's initial "0 / N MB"
@@ -2193,7 +2203,7 @@ export interface UploadPill {
   dismiss: () => void
 }
 
-export function createUploadPill(opts: { totalBytesHint?: number; label?: string } = {}): UploadPill {
+export function createUploadPill(opts: { totalBytesHint?: number; label?: string; thumbnail?: string } = {}): UploadPill {
   const host = document.createElement("div")
   host.setAttribute("data-klavity-ui", "upload-pill")
   // #475: register in the shared slot stack (takes the lowest free slot, reflows the rest on removal) so a
@@ -2219,12 +2229,28 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     .x:hover{opacity:1}
     .prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18);border-radius:0 0 12px 12px;overflow:hidden}
     .prog>i{display:block;height:100%;background:#6366f1;width:0;transition:width .2s ease}
-    .pill.ok{background:#123f2a}.pill.ok .prog>i{background:#16a34a}
     .pill.err{background:#4a1620}
     a{color:#c7d2fe;text-decoration:none;font-weight:600}
-    .pill.ok a{color:#a7f3d0}
     a:hover{text-decoration:underline}
-    @media (prefers-reduced-motion: reduce){.pill,.spin,.prog>i{animation:none!important;transition:none!important}}
+    /* #651 — SUCCESS "Report sent" = Option D (warm cream card + screenshot thumbnail, text-link flavour). */
+    .pill.ok{background:linear-gradient(180deg,#fbf7f0,#f2ece1);color:#2a2119;border:1px solid #e4dccd;border-radius:16px;padding:14px;box-shadow:0 22px 46px -16px rgba(40,30,20,.55);align-items:center;gap:13px;max-width:360px}
+    .pill.ok .thumbwrap{position:relative;flex:0 0 auto;display:block}
+    .pill.ok .thumb{display:block;width:60px;height:46px;border-radius:9px;object-fit:cover;object-position:top left;border:1px solid #d9cfbc;background:#e9e1d2;box-shadow:0 2px 6px -2px rgba(40,30,20,.3)}
+    .pill.ok .thumb.kmark{display:grid;place-items:center;font-weight:800;color:#6366f1;background:#eef0ff;font-size:22px;line-height:1}
+    .pill.ok .badge{position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:#16a34a;color:#fff;display:grid;place-items:center;border:2px solid #f7f2ea;box-shadow:0 1px 3px rgba(40,30,20,.35);animation:klp-pop .5s cubic-bezier(.16,1,.3,1) .12s both}
+    .pill.ok .badge svg{width:12px;height:12px;stroke:currentColor;stroke-width:2.4;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .pill.ok .tx b{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:visible}
+    .pill.ok .klogo{width:19px;height:19px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
+    .pill.ok .tx .sub{opacity:1;color:#6b5f4e;font-size:12.5px;white-space:normal;margin-top:3px}
+    .pill.ok .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e}
+    .pill.ok a.open{color:#6366f1;font-weight:700}
+    .pill.ok .x{color:#a89a84;align-self:flex-start}
+    .pill.ok .x:hover{color:#5a4f3e}
+    .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:0 0 16px 16px}
+    .pill.ok .prog>i{background:linear-gradient(90deg,#6366f1,#818cf8)}
+    @keyframes klp-pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+    @keyframes klp-shrink{from{width:100%}to{width:0}}
+    @media (prefers-reduced-motion: reduce){.pill,.spin,.prog>i,.pill.ok .badge{animation:none!important;transition:none!important}}
   `
   root.appendChild(style)
 
@@ -2242,6 +2268,9 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
   let totalBytes = opts.totalBytesHint || 0
   const label = opts.label || "report"
+  // #651: the report's own captured screenshot (raw data URL), rendered as the success toast's thumbnail.
+  // Only http(s)/data image URLs are honoured; anything else falls back to the Klavity 'K' mark tile.
+  const thumbnail = pillSafeImageSrc(opts.thumbnail)
   let dismissTimer: ReturnType<typeof setTimeout> | null = null
   let armed = false
 
@@ -2275,24 +2304,50 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
   const success = (issueKey: string, issueUrl: string) => {
     pill.classList.remove("err"); pill.classList.add("ok")
-    setIcon("check-circle")
-    title.textContent = "Report sent"
+    // #651 Option D: replace the leading status icon with the captured-screenshot thumbnail (green 'sent'
+    // check badge overlapping it). If no shot is available, fall back to the Klavity 'K' mark tile.
+    const thumbWrap = document.createElement("span"); thumbWrap.className = "thumbwrap"
+    let thumbEl: HTMLElement
+    if (thumbnail) {
+      const img = document.createElement("img"); img.className = "thumb"; img.src = thumbnail; img.alt = ""
+      thumbEl = img
+    } else {
+      const t = document.createElement("span"); t.className = "thumb kmark"; t.textContent = "K"; thumbEl = t
+    }
+    const badge = document.createElement("span"); badge.className = "badge"
+    // static check glyph (no user data) — inline SVG, no emoji (CI emoji guard)
+    badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+    thumbWrap.append(thumbEl, badge)
+    pill.replaceChild(thumbWrap, ic)
+
+    // Title: indigo 'K' logo chip + "Report sent".
+    title.textContent = ""
+    const logo = document.createElement("span"); logo.className = "klogo"; logo.textContent = "K"
+    title.append(logo, document.createTextNode("Report sent"))
+
+    // Sub: "Filed as <ref-mono-chip> · <Open in Klavity ↗>" — graceful "We filed it." when neither exists.
     progFill.style.width = "100%"
     sub.textContent = ""
     const ref = pillDisplayRef(issueKey)
-    if (ref) { const r = document.createElement("span"); r.textContent = ref; sub.appendChild(r) }
     const linkUrl = pillSafeHttpUrl(issueUrl)
+    if (ref) {
+      sub.appendChild(document.createTextNode("Filed as "))
+      const r = document.createElement("span"); r.className = "refc"; r.textContent = ref; sub.appendChild(r)
+    }
     if (linkUrl) {
       if (ref) sub.appendChild(document.createTextNode(" · "))
-      const a = document.createElement("a"); a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Klavity ↗"
+      const a = document.createElement("a"); a.className = "open"; a.href = linkUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Klavity ↗"
       sub.appendChild(a)
     }
     if (!ref && !linkUrl) sub.textContent = "We filed it."
+
+    // Slim indigo auto-dismiss bar: countdown-shrink over ~4s, paused/resumed in lockstep with the timer.
+    progFill.style.animation = `klp-shrink ${PILL_AUTODISMISS_MS}ms linear forwards`
     // Auto-dismiss ~4s; hover/focus pauses and resumes with only the remaining time.
     let remaining = PILL_AUTODISMISS_MS
     let started = 0
-    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining) }
-    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)) }
+    const arm = () => { if (armed) return; armed = true; started = Date.now(); dismissTimer = setTimeout(remove, remaining); progFill.style.animationPlayState = "running" }
+    const pause = () => { if (!dismissTimer) return; clearTimeout(dismissTimer); dismissTimer = null; armed = false; remaining = Math.max(0, remaining - (Date.now() - started)); progFill.style.animationPlayState = "paused" }
     pill.addEventListener("mouseenter", pause)
     pill.addEventListener("mouseleave", arm)
     pill.addEventListener("focusin", pause)
@@ -2407,8 +2462,8 @@ export async function submitFeedback(
         if (xhr.status < 200 || xhr.status >= 300) { reject(new Error("submit failed: " + xhr.status)); return }
         try {
           const j = JSON.parse(xhr.responseText)
-          // issue_url is only returned for AUTHED reporters (the server withholds it on anonymous
-          // widget submissions — no dashboard access → no dashboard link on the success screen).
+          // #651: issue_url is now returned for every widget submit (incl. anonymous/cross-origin) —
+          // the deep link's /dashboard route is auth-gated, so opening it still requires login (no leak).
           resolve({ issueKey: String(j.jira_key || j.id || ""), issueUrl: String(j.issue_url || "") })
         } catch { reject(new Error("submit failed: invalid response")) }
       }
@@ -2428,7 +2483,7 @@ export async function submitFeedback(
   const r = await fetch(cfg.backendUrl + "/api/feedback", init)
   if (!r.ok) throw new Error("submit failed: " + r.status)
   const j = await r.json()
-  // Same contract as the XHR path above: issue_url only present for authed reporters.
+  // Same contract as the XHR path above: issue_url is returned for widget submits (auth-gated link).
   return { issueKey: String(j.jira_key || j.id || ""), issueUrl: String(j.issue_url || "") }
 }
 
