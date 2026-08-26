@@ -1265,10 +1265,8 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .t3-shotmeta a{color:var(--indigo);text-decoration:none}.t3-shotmeta a:hover{text-decoration:underline}
 .t3-desctools{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0 0}
 .t3-hr{border:0;border-top:1px solid var(--line);margin:20px 0 14px}
-/* borderless Plane-style right column: the assignee control loses its heavy box (owner: "ugly/too
-   visible") and reads as a clean hover row like Status/Priority. */
-.t3-right .tkt-assignee-ctrl{background:transparent;border:1px solid transparent;padding:3px 6px;margin-left:-6px}
-.t3-right .tkt-assignee-ctrl:hover{background:var(--ink-3);border-color:transparent;transform:none}
+/* #716: on the dedicated page keep Assignee IDENTICAL to Status/Priority (same -8px pull + padding) so
+   all three value controls stay on one column edge — the base .tkt-assignee-ctrl is already borderless. */
 .t3-right .tkt-props{gap:12px 12px}
 /* comment @mention: teammate dropdown + highlighted mention token in posted comments */
 #ticketSingle .tkt-comment-form{position:relative}
