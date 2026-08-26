@@ -295,6 +295,10 @@ async function verifyNow() {
   if (verifying) return
   const code = $("code").value.trim()
   if (code.length !== 6) { msg("codeMsg", "Enter the 6-digit code."); return }
+  // Sims jump/anticipate for EVERY submit path that reaches verification — including the most
+  // common one, paste / OTP auto-complete, which fires the helper's onComplete straight into
+  // verifyNow (bypassing the button/Enter click handlers). Guarded so it can never affect verify.
+  try { if (typeof window.simEvent === "function") window.simEvent("submit") } catch (e) {}
   verifying = true
   $("verifyBtn").disabled = true; $("verifyBtn").textContent = "Verifying…"; msg("codeMsg", "Verifying…", true)
   try {
