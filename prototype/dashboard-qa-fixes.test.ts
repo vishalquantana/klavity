@@ -70,7 +70,8 @@ test("KLA-514: greeting is scoped per view (applyViewHeader)", () => {
 // ── KLAVITYKLA-515 · merge always available ────────────────────────────────────
 test("KLA-515: merge control moved out of the occurrence timeline", () => {
   expect(HTML).toContain("function buildMergeControl(")
-  expect(HTML).toContain("single.appendChild(buildMergeControl(t.id))")
+  // #718: the occurrence timeline + merge control are now grouped into one coherent footer.
+  expect(HTML).toContain("_footer.appendChild(buildMergeControl(t.id))")
   // the old prompt()-based merge button is gone from the occurrence timeline
   expect(HTML).not.toContain('class="btn btn-ghost btn-sm tkt-occ-merge"')
   expect(HTML).not.toContain('window.prompt("Ticket id to merge')

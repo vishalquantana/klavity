@@ -1025,14 +1025,43 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .prop-dot.ds-new{background:#e11d63}.prop-dot.ds-open{background:var(--amber)}.prop-dot.ds-in_progress{background:var(--indigo)}.prop-dot.ds-done{background:var(--green)}.prop-dot.ds-dismissed{background:var(--paper-faint)}
 .prop-sq{width:9px;height:9px;border-radius:2px;flex:none}
 .prop-sq.dp-low{background:#94a3b8}.prop-sq.dp-medium{background:#eab308}.prop-sq.dp-high{background:#f97316}.prop-sq.dp-urgent{background:#dc2626}
-/* compact assignee control (avatar + email) → click reveals the edit row */
-.tkt-assignee-ctrl-wrap{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:100%}
-/* #679a: match the Status/Priority <select> row height (min-height:30px) so the three property
-   controls sit on one baseline, and keep the control tight (no excess vertical padding). */
-.tkt-assignee-ctrl{display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;min-height:30px;background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-family:var(--body);font-size:13px;font-weight:600;color:var(--paper);cursor:pointer;max-width:100%;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
-.tkt-assignee-ctrl:hover{border-color:var(--indigo);transform:var(--mi-lift)}
-.tkt-assignee-ctrl:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+/* compact assignee control (avatar + email) → click opens the assignee picker popover */
+.tkt-assignee-ctrl-wrap{position:relative;display:flex;flex-direction:column;gap:6px;min-width:0;max-width:100%}
+/* #716: Status / Priority / Assignee value controls read as SIBLINGS — borderless by default with a
+   subtle hover bg + caret, and a defined box + indigo ring only when open/focused (nothing boxed while
+   another is bare). #679a: min-height:30px keeps all three on one baseline. margin-left:-8px pulls each
+   control so its icon (dot / square / avatar) aligns to the SAME value-column left edge. */
+.tkt-props .prop-ctl{display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;min-height:30px;max-width:100%;padding:3px 8px;margin-left:-8px;border:1px solid transparent;border-radius:8px;background:transparent;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+.tkt-props .prop-ctl:hover{background:var(--ink-3)}
+.tkt-props .prop-ctl:focus-within{background:var(--ink-2);border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.14)}
+.tkt-props .prop-sel{appearance:none;-webkit-appearance:none;background:transparent;border:none;outline:none;color:var(--paper);font-family:var(--body);font-size:13px;font-weight:600;padding:0 15px 0 0;margin:0;cursor:pointer;max-width:100%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0 center}
+.tkt-assignee-ctrl{display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;min-height:30px;background:transparent;border:1px solid transparent;border-radius:8px;padding:3px 8px;margin-left:-8px;font-family:var(--body);font-size:13px;font-weight:600;color:var(--paper);cursor:pointer;max-width:100%;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
+.tkt-assignee-ctrl:hover{background:var(--ink-3)}
+.tkt-assignee-ctrl.open{background:var(--ink-2);border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.14)}
+.tkt-assignee-ctrl.open .prop-caret{border-top-color:var(--indigo)}
 .tkt-assignee-ctrl.empty{color:var(--paper-faint);font-weight:500}
+/* #716: Linear/Plane-style assignee picker popover */
+.tkt-assignee-pop{position:absolute;top:calc(100% + 4px);left:-8px;z-index:40;width:264px;max-width:min(300px,82vw);background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:var(--mi-shadow-card);padding:6px}
+.tkt-assignee-pop.hide{display:none}
+.tap-search-row{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:2px 2px 6px;background:var(--ink)}
+.tap-search-row .icon,.tap-search-row svg{color:var(--paper-faint);flex:none}
+.tap-search{border:0;outline:0;background:transparent;font-family:var(--body);font-size:13px;color:var(--paper);width:100%;min-width:0}
+.tap-search::placeholder{color:var(--paper-faint)}
+.tap-list{max-height:196px;overflow-y:auto;display:flex;flex-direction:column}
+.tap-opt{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--paper);font-family:var(--body);font-size:13px;transition:background var(--mi-dur) var(--mi-ease)}
+.tap-opt:hover{background:var(--ink-3)}
+.tap-col{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.tap-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tap-email{font-size:11px;color:var(--paper-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tap-check{margin-left:auto;color:var(--indigo);display:none;flex:none;line-height:0}
+.tap-opt.sel .tap-check{display:inline-flex}
+.tap-div{height:1px;background:var(--line);margin:6px 4px}
+.tap-invite{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--indigo);font-family:var(--body);font-size:12.5px;transition:background var(--mi-dur) var(--mi-ease)}
+.tap-invite:hover{background:var(--ink-3)}
+.tap-invite-av{width:20px;height:20px;border-radius:50%;border:1px dashed var(--indigo);color:var(--indigo);display:grid;place-items:center;flex:none;font-size:14px;line-height:1}
+.tap-invite-row{display:flex;align-items:center;gap:6px;padding:4px 4px 2px;flex-wrap:wrap}
+.tap-invite-row.hide{display:none}
+.tap-empty{padding:10px 8px;font-size:12px;color:var(--paper-faint)}
 .tkt-assignee-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* #679a: force a perfect circle — equal w/h + aspect-ratio + flex:none so no flex context can
    stretch it into an oval, box-sizing so a future border can't distort it. */
@@ -1067,6 +1096,13 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .tkt-desc:hover .tkt-desc-edit,.tkt-desc-edit:focus-visible{opacity:1}
 .tkt-desc-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
 .tkt-obs{cursor:text;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+/* #717: smart-link chips — long UUID URLs pasted into a Description auto-linkify into a compact chip
+   labeled with JUST the hostname (domain-only). Email → mailto chip. Indigo hover; full URL on title. */
+.tkt-smartlink{display:inline-flex;align-items:baseline;gap:4px;max-width:100%;vertical-align:baseline;padding:0 6px;margin:0 1px;border:1px solid var(--line);border-radius:6px;background:var(--ink-2);color:var(--indigo);text-decoration:none;font-size:.94em;line-height:1.4;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease)}
+.tkt-smartlink:hover{background:rgba(99,102,241,.12);border-color:var(--indigo)}
+.tkt-smartlink .sl-host{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.tkt-smartlink .icon,.tkt-smartlink svg{flex:none;opacity:.85;align-self:center}
+.tkt-smartlink .sl-arw{font-size:.85em;opacity:.7;align-self:center}
 .tkt-desc-editing .tkt-obs,.tkt-desc-editing .tkt-desc-edit{display:none}
 /* #679/#681 edit-mode: the textarea sits as its own block BELOW the section label (never overlapping
    it), with a clear top gap. block display + full width guarantees clean stacking under .tkt-desc-head. */
@@ -1327,7 +1363,32 @@ body.tkt-page-open #settingsDrawer{display:none!important}
 .tkt-occ-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tkt-occ-hd .tkt-occ-title{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint)}
 .tkt-occ-count{font-family:var(--mono);font-size:9px;color:var(--amber);background:rgba(217,131,36,.12);border:1px solid rgba(217,131,36,.25);padding:2px 8px;border-radius:20px}
+/* #718: Copy timeline stays inline (right-aligned) in the header row; disabled when there's nothing to
+   copy (single occurrence). The empty line replaces the old dead-space self-hide. */
 .tkt-occ-copy{margin-left:auto}
+.tkt-occ-copy:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}
+.tkt-occ-empty{font-size:12.5px;color:var(--paper-faint);padding:2px 0}
+.tkt-occ-empty.hide,.tkt-occ-list.hide{display:none}
+/* #718: group the secondary/utility footer actions (occurrence timeline + merge) into one coherent
+   block so the merge control no longer floats alone under whitespace. */
+.tkt-detail-footer{display:flex;flex-direction:column;gap:0;max-width:900px}
+.tkt-detail-footer .tkt-merge-wrap{margin-top:14px}
+/* #718: merge-a-ticket combobox — tidy label + input + Merge/Cancel, and a results dropdown that shows
+   each candidate as #key · title · status (was a blank native datalist line). */
+.tkt-merge-wrap{max-width:900px}
+.tkt-merge-hd{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;margin:8px 0;color:var(--paper)}
+.tkt-merge-combo{position:relative;margin-bottom:8px}
+.tkt-merge-input{width:100%;box-sizing:border-box;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:var(--ink-2);color:var(--paper);font-family:var(--body);font-size:13px;outline:none;transition:border-color .15s}
+.tkt-merge-input:focus{border-color:var(--indigo)}
+.tkt-merge-results{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;max-height:244px;overflow-y:auto;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;box-shadow:var(--mi-shadow-card);padding:4px}
+.tkt-merge-results.hide{display:none}
+.tkt-merge-cand{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:none;border-radius:7px;padding:7px 9px;cursor:pointer;color:var(--paper);font-family:var(--body);font-size:13px;transition:background var(--mi-dur) var(--mi-ease)}
+.tkt-merge-cand:hover,.tkt-merge-cand.on{background:var(--ink-3)}
+.tkt-merge-cand .mc-key{font-family:var(--mono);font-size:11px;color:var(--paper-faint);flex:none}
+.tkt-merge-cand .mc-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tkt-merge-cand .mc-st{flex:none;font-size:10px}
+.tkt-merge-empty{padding:9px;font-size:12px;color:var(--paper-faint)}
+.tkt-merge-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tkt-occ-list{display:flex;flex-direction:column;gap:0}
 .tkt-occ-item{display:flex;gap:12px;padding:10px 0;position:relative;border-top:1px solid var(--line)}
 .tkt-occ-item:first-child{border-top:none}
@@ -6105,15 +6166,27 @@ function assigneePickerHtml(t) {
   const em = String(current || "").trim()
   const initial = em ? esc(em[0].toUpperCase()) : "?"
   const label = em ? esc(em) : "Unassigned"
+  // #716: Linear/Plane-style picker — the compact avatar+email control opens a popover with a search box,
+  // a scrollable member list (avatar · name · email, current checked), an Unassigned option, and an
+  // "Invite by email…" affordance. The hidden `.assignee-inp` (+ Clear) is PRESERVED as the model the
+  // Save/dirty wiring reads and as the email-invite fallback (datalist path still works).
   return `<div class="tkt-assignee-ctrl-wrap">
-    <button type="button" class="tkt-assignee-ctrl${em ? "" : " empty"}" title="Change assignee">
+    <button type="button" class="tkt-assignee-ctrl${em ? "" : " empty"}" title="Change assignee" aria-haspopup="dialog">
       <span class="tkt-av${em ? "" : " empty"}">${initial}</span>
       <span class="tkt-assignee-email">${label}</span>
       <span class="prop-caret" aria-hidden="true"></span>
     </button>
-    <div class="tkt-assignee-edit hide">
-      <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="name@company.com" value="${esc(current)}" autocomplete="off" />
-      <button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>
+    <div class="tkt-assignee-pop hide" role="dialog" aria-label="Assign ticket">
+      <div class="tap-search-row">${kicon('search',{size:13})}<input type="text" class="tap-search" placeholder="Assign to…" autocomplete="off" /></div>
+      <div class="tap-list" role="listbox"></div>
+      <div class="tap-div"></div>
+      <button type="button" class="tap-opt tap-unassigned${em ? "" : " sel"}"><span class="tkt-av empty">?</span><span class="tap-col"><span class="tap-name">Unassigned</span></span><span class="tap-check">${kicon('check',{size:13})}</span></button>
+      <button type="button" class="tap-invite"><span class="tap-invite-av" aria-hidden="true">+</span><span class="tap-invite-lbl">Invite by email…</span></button>
+      <div class="tap-invite-row hide">
+        <input type="email" list="tktAssigneeOptions" class="assignee-inp tkt-assignee-input" placeholder="name@company.com" value="${esc(current)}" autocomplete="off" />
+        <button class="btn btn-ghost btn-sm tap-invite-go" type="button">Assign</button>
+        <button class="btn btn-ghost btn-sm tkt-assignee-clear" type="button">Clear</button>
+      </div>
     </div>
   </div>`
 }
@@ -6127,16 +6200,66 @@ function assigneePickerHtml(t) {
 // "Description" (free text) — we no longer sniff the body for reproduction steps and relabel it
 // "Steps to reproduce" (that branching mislabeled ordinary descriptions). The .tkt-obs child is
 // white-space:pre-wrap so multi-line content keeps its line breaks.
+// #717: smart-link label — collapse a URL to JUST the hostname, as short as possible (strip a leading
+// "www.", no path/query). e.g. https://charantraqa.quantana.top/admin/investees/2a6c… → charantraqa.quantana.top
+// Pure + total: any unparsable input falls back to the raw string so the linkifier can still escape it.
+function smartLinkLabel(url) {
+  try {
+    const u = new URL(String(url))
+    const h = (u.hostname || "").replace(/^www\./i, "")
+    return h || String(url)
+  } catch (e) { return String(url) }
+}
+// #717: XSS-safe auto-linkifier for the ticket description. We TOKENIZE the RAW text and esc() every
+// non-URL segment, so raw user text is never injected as HTML. Detected http(s) URLs / emails become
+// compact "smart link" chips; hrefs are restricted to http/https/mailto (a javascript:/data: paste can
+// never become a clickable chip — it's escaped as plain text). Returns an HTML string.
+function linkifyDescription(raw) {
+  const text = String(raw == null ? "" : raw)
+  // A URL or an email. URLs greedily grab non-space; trailing punctuation is peeled off below.
+  const re = /(https?:\/\/[^\s<>"'`]+)|([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})/g
+  const ARROW = '<span class="sl-arw" aria-hidden="true">↗</span>'   // U+2197 (allowed arrow range, not emoji)
+  let out = "", last = 0, m
+  while ((m = re.exec(text))) {
+    const start = m.index
+    let token = m[0], trail = ""
+    // Peel trailing punctuation that's almost never part of the link (., ) ] ! ? : ; , " ').
+    const tm = token.match(/[.,;:!?)\]'"]+$/)
+    if (tm) { trail = tm[0]; token = token.slice(0, token.length - trail.length) }
+    out += esc(text.slice(last, start))
+    const isEmail = m[2] != null && !/^https?:/i.test(token)
+    const href = isEmail ? ("mailto:" + token) : token
+    // Scheme allow-list: only http(s) and mailto ever become a live href.
+    if (!/^(https?:|mailto:)/i.test(href)) {
+      out += esc(token)
+    } else if (isEmail) {
+      out += '<a class="tkt-smartlink mail" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer" title="' + esc(token) + '">'
+        + kicon('user', { size: 12 }) + '<span class="sl-host">' + esc(token) + '</span></a>'
+    } else {
+      out += '<a class="tkt-smartlink" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer" title="' + esc(token) + '">'
+        + kicon('link', { size: 12 }) + '<span class="sl-host">' + esc(smartLinkLabel(token)) + '</span>' + ARROW + '</a>'
+    }
+    out += esc(trail)
+    last = re.lastIndex
+  }
+  out += esc(text.slice(last))
+  return out
+}
+// #717: repaint the read-view description with smart-link chips (used on first render + after each save).
+function renderDescObs(obsEl, text) {
+  if (obsEl) obsEl.innerHTML = linkifyDescription(text)
+}
 function descriptionBlockHtml(text) {
   const raw = String(text == null ? "" : text)
   const label = "Description"
   // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
+  // #717: the read view is auto-linkified (display-only); editing still shows the RAW url text.
   return `<div class="tkt-desc">
     <div class="tkt-desc-head">
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil',{size:13})}</button>
     </div>
-    <div class="tkt-obs" title="Click to edit">${esc(raw)}</div>
+    <div class="tkt-obs" title="Click to edit">${linkifyDescription(raw)}</div>
   </div>`
 }
 // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -6342,9 +6465,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const _bodyHtml = `
       <div class="tkt-props">
         <span class="tkt-prop-lb">Status</span>
-        <span class="tkt-prop-vv"><span class="prop-dot ds-${esc(curStatus)}"></span><select class="tkt-status-sel seg-like">${statusOpts}</select></span>
+        <span class="tkt-prop-vv"><label class="prop-ctl"><span class="prop-dot ds-${esc(curStatus)}"></span><select class="tkt-status-sel seg-like prop-sel" aria-label="Status">${statusOpts}</select></label></span>
         <span class="tkt-prop-lb">Priority</span>
-        <span class="tkt-prop-vv"><span class="prop-sq dp-${esc(curPri)}"></span><select class="tkt-pri-sel seg-like">${priOpts}</select></span>
+        <span class="tkt-prop-vv"><label class="prop-ctl"><span class="prop-sq dp-${esc(curPri)}"></span><select class="tkt-pri-sel seg-like prop-sel" aria-label="Priority">${priOpts}</select></label></span>
         <span class="tkt-prop-lb">Assignee</span>
         <span class="tkt-prop-vv">${assigneePickerHtml(t)}</span>
         <span class="tkt-prop-lb">Labels</span>
@@ -6421,7 +6544,8 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     }
     if (_assigneeInpEl) _assigneeInpEl.addEventListener("input", _refreshDirty)
     if (_notesTaEl) _notesTaEl.addEventListener("input", _refreshDirty)
-    // Reflect the compact assignee display (avatar initial + email) after a save; collapse the edit row.
+    // Reflect the compact assignee display (avatar initial + email) after a save; refresh the popover's
+    // checked row + Unassigned selection so the picker mirrors the current value.
     const _paintAssigneeDisplay = (emailVal) => {
       const em = String(emailVal || "").trim()
       const ctrl = detailEl.querySelector(".tkt-assignee-ctrl")
@@ -6432,20 +6556,127 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         const emEl = ctrl.querySelector(".tkt-assignee-email")
         if (emEl) emEl.textContent = em || "Unassigned"
       }
-      const editRow = detailEl.querySelector(".tkt-assignee-edit")
-      if (editRow) editRow.classList.add("hide")
+      const unassignedOpt = detailEl.querySelector(".tap-unassigned")
+      if (unassignedOpt) unassignedOpt.classList.toggle("sel", !em)
     }
-    // Assignee compact control: click to reveal/hide the edit row (input + Clear).
+    // #716: Linear/Plane-style assignee picker popover — search box + member list + Unassigned + invite.
+    const _aWrap = detailEl.querySelector(".tkt-assignee-ctrl-wrap")
     const _assigneeCtrlBtn = detailEl.querySelector(".tkt-assignee-ctrl")
-    const _assigneeEditRow = detailEl.querySelector(".tkt-assignee-edit")
-    if (_assigneeCtrlBtn && _assigneeEditRow) {
+    const _aPop = detailEl.querySelector(".tkt-assignee-pop")
+    const _aSearch = _aPop ? _aPop.querySelector(".tap-search") : null
+    const _aList = _aPop ? _aPop.querySelector(".tap-list") : null
+    const _aInviteBtn = _aPop ? _aPop.querySelector(".tap-invite") : null
+    const _aInviteRow = _aPop ? _aPop.querySelector(".tap-invite-row") : null
+    const _aInviteGo = _aPop ? _aPop.querySelector(".tap-invite-go") : null
+    const _aUnassigned = _aPop ? _aPop.querySelector(".tap-unassigned") : null
+    let _aDocHandler = null
+    // Optimistic assign (feedback_optimistic_saves): update the UI + local state NOW, PATCH in the
+    // background behind the __klavMutating liveness-poll guard, revert on failure.
+    const _assignSelect = async (emailVal) => {
+      const val = String(emailVal || "").trim()
+      const prev = _savedAssignee
+      if (val === prev) { _closeAssigneePop(); return }
+      if (_assigneeInpEl) _assigneeInpEl.value = val
+      _paintAssigneeDisplay(val)
+      _savedAssignee = val; _refreshDirty()
+      setTicketAssigneeLocal(ticketId, val || null)
+      if (onChange) onChange("assignee", val || null)
+      _closeAssigneePop()
+      window.__klavMutating++
+      let d = {}
+      try {
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ assignee: val || null })
+        }).catch(() => null)
+        d = r ? await r.json().catch(() => ({})) : {}
+      } finally { window.__klavMutating-- }
+      if (!d.ok) {
+        // Revert the optimistic change.
+        if (_assigneeInpEl) _assigneeInpEl.value = prev
+        _paintAssigneeDisplay(prev)
+        _savedAssignee = prev; _refreshDirty()
+        setTicketAssigneeLocal(ticketId, prev || null)
+        if (onChange) onChange("assignee", prev || null)
+        showTktMsg(detailEl, (d && d.error) || "Couldn't assign — reverted.", true)
+      } else if (val && d.assigneeEmailSent === false) {
+        showTktMsg(detailEl, "Assigned, but the notification email could not be sent.", false)
+      }
+    }
+    const _renderAssigneeMembers = (filter) => {
+      if (!_aList) return
+      const f = String(filter || "").trim().toLowerCase()
+      const cur = (_assigneeInpEl ? _assigneeInpEl.value : "").trim().toLowerCase()
+      const members = ((state && state.members) || []).filter(m => m && m.email)
+      const rows = members.filter(m => !f || String(m.email).toLowerCase().includes(f) || String(m.name || "").toLowerCase().includes(f))
+      _aList.innerHTML = ""
+      if (!rows.length) {
+        _aList.innerHTML = '<div class="tap-empty">' + (f ? "No teammates match." : "No teammates yet — invite one below.") + "</div>"
+        return
+      }
+      rows.forEach(m => {
+        const email = String(m.email)
+        const sel = email.toLowerCase() === cur
+        const row = document.createElement("button")
+        row.type = "button"
+        row.className = "tap-opt tap-mem" + (sel ? " sel" : "")
+        row.innerHTML = '<span class="tkt-av" style="background:' + col(email) + '">' + esc(initials(email)) + "</span>"
+          + '<span class="tap-col"><span class="tap-name">' + esc(m.name || email) + "</span>"
+          + (m.name ? '<span class="tap-email">' + esc(email) + "</span>" : "") + "</span>"
+          + '<span class="tap-check">' + kicon("check", { size: 13 }) + "</span>"
+        row.addEventListener("click", ev => { ev.stopPropagation(); _assignSelect(email) })
+        _aList.appendChild(row)
+      })
+    }
+    function _closeAssigneePop() {
+      if (!_aPop) return
+      _aPop.classList.add("hide")
+      if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
+      if (_aInviteRow) _aInviteRow.classList.add("hide")
+      if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }
+    }
+    function _openAssigneePop() {
+      if (!_aPop) return
+      _aPop.classList.remove("hide")
+      if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.add("open")
+      if (_aSearch) _aSearch.value = ""
+      _renderAssigneeMembers("")
+      setTimeout(() => { try { if (_aSearch) _aSearch.focus() } catch (e) {} }, 20)
+      _aDocHandler = ev => { if (!ev.target.closest(".tkt-assignee-ctrl-wrap")) _closeAssigneePop() }
+      setTimeout(() => document.addEventListener("click", _aDocHandler), 0)
+    }
+    if (_assigneeCtrlBtn && _aPop) {
       _assigneeCtrlBtn.addEventListener("click", ev => {
         ev.stopPropagation()
-        _assigneeEditRow.classList.toggle("hide")
-        if (!_assigneeEditRow.classList.contains("hide")) {
-          const inp = _assigneeEditRow.querySelector(".assignee-inp"); if (inp) inp.focus()
-        }
+        if (_aPop.classList.contains("hide")) _openAssigneePop(); else _closeAssigneePop()
       })
+      if (_aSearch) {
+        _aSearch.addEventListener("input", () => {
+          _renderAssigneeMembers(_aSearch.value)
+          const q = _aSearch.value.trim()
+          const lbl = _aPop.querySelector(".tap-invite-lbl")
+          if (lbl) lbl.textContent = (q && q.includes("@")) ? ("Invite “" + q + "”") : "Invite by email…"
+        })
+        _aSearch.addEventListener("keydown", ev => {
+          if (ev.key === "Enter") {
+            const q = _aSearch.value.trim()
+            if (q.includes("@")) { ev.preventDefault(); _assignSelect(q) }
+          } else if (ev.key === "Escape") { ev.preventDefault(); _closeAssigneePop() }
+        })
+      }
+      if (_aUnassigned) _aUnassigned.addEventListener("click", ev => { ev.stopPropagation(); _assignSelect("") })
+      if (_aInviteBtn && _aInviteRow) {
+        _aInviteBtn.addEventListener("click", ev => {
+          ev.stopPropagation()
+          _aInviteRow.classList.remove("hide")
+          const q = _aSearch ? _aSearch.value.trim() : ""
+          if (q && q.includes("@") && _assigneeInpEl) _assigneeInpEl.value = q
+          if (_assigneeInpEl) { try { _assigneeInpEl.focus() } catch (e) {} }
+        })
+      }
+      if (_aInviteGo && _assigneeInpEl) {
+        _aInviteGo.addEventListener("click", ev => { ev.stopPropagation(); _assignSelect(_assigneeInpEl.value) })
+      }
     }
 
     // #630(a): Wire up the status <select> (was 5 seg buttons). Same PATCH + optimistic-state logic;
@@ -6577,13 +6808,8 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     })
     const clearAssigneeBtn = detailEl.querySelector(".tkt-assignee-clear")
     if (clearAssigneeBtn) {
-      clearAssigneeBtn.addEventListener("click", ev => {
-        ev.stopPropagation()
-        const inp = detailEl.querySelector(".assignee-inp")
-        if (inp) inp.value = ""
-        const save = detailEl.querySelector(".save-meta-btn")
-        if (save) save.click()
-      })
+      // #716: Clear → optimistically unassign (same path as the popover's Unassigned option).
+      clearAssigneeBtn.addEventListener("click", ev => { ev.stopPropagation(); _assignSelect("") })
     }
 
     // Wire up the G1 session-replay button (only present when t.hasReplay)
@@ -6643,7 +6869,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.observation = next
           recordLocalEdit(ticketId, { observation: next })
-          if (obsEl) obsEl.textContent = next
+          renderDescObs(obsEl, next)   // #717: re-render smart-link chips from the new raw text
           if (onChange) onChange("observation", next)
           ;(async () => {
             window.__klavMutating++   // #532: suppress the liveness poll during the in-flight save
@@ -6660,7 +6886,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
               t.observation = prev
               if (tkt) tkt.observation = prev
               recordLocalEdit(ticketId, { observation: prev })
-              if (obsEl) obsEl.textContent = prev
+              renderDescObs(obsEl, prev)   // #717: revert re-renders chips from the restored raw text
               if (onChange) onChange("observation", prev)
               showTktMsg(detailEl, d.error || "Couldn't save description — reverted.", true)
             }
@@ -6676,7 +6902,8 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         saveB.addEventListener("mousedown", ev => { ev.preventDefault(); ev.stopPropagation(); commit() })
       }
       if (descEditBtn) descEditBtn.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
-      if (obsEl) obsEl.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
+      // #717: clicking a smart-link opens the link (don't hijack it into edit mode); clicking the text edits.
+      if (obsEl) obsEl.addEventListener("click", ev => { if (ev.target.closest("a.tkt-smartlink")) return; ev.stopPropagation(); enterDescEdit() })
     }
 
     // KLA-242: Wire up "Guard this fix" — creates an expectation from the resolved ticket.
@@ -7297,19 +7524,36 @@ function buildTimelineSection(ticketId, report) {
 // nothing to show (single occurrence) so the caller can skip appending it.
 function buildOccurrenceTimeline(ticketId) {
   const wrap = document.createElement("div")
-  wrap.className = "tkt-occ-wrap hide"
+  // #718: the section now ALWAYS renders (no more self-hiding into dead space). When there are no repeat
+  // occurrences it shows a subtle empty line and DISABLES "Copy timeline" (nothing to copy).
+  wrap.className = "tkt-occ-wrap"
   wrap.innerHTML = `<div class="tkt-occ-hd">
       <span class="tkt-occ-title">Occurrence timeline</span>
       <span class="tkt-occ-count"></span>
       <span class="info" tabindex="0" role="note" aria-label="How many times this exact issue has recurred. Only shown when it has come back (2+ times).">i<span class="tip">How many times this exact issue has recurred. Only shown when it has come back.</span></span>
-      <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
+      <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" disabled title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
     </div>
-    <div class="tkt-occ-list"></div>
+    <div class="tkt-occ-empty muted">Reported once — no repeat occurrences yet.</div>
+    <div class="tkt-occ-list hide"></div>
     <div class="tkt-occ-msg muted" style="font-size:12px"></div>`
   const listEl = wrap.querySelector(".tkt-occ-list")
   const countEl = wrap.querySelector(".tkt-occ-count")
   const copyBtn = wrap.querySelector(".tkt-occ-copy")
+  const emptyEl = wrap.querySelector(".tkt-occ-empty")
   const msgEl = wrap.querySelector(".tkt-occ-msg")
+  // #718: toggle between the empty state (copy disabled) and a populated timeline (copy enabled).
+  const showEmpty = () => {
+    if (emptyEl) emptyEl.classList.remove("hide")
+    if (listEl) { listEl.classList.add("hide"); listEl.innerHTML = "" }
+    if (countEl) countEl.textContent = ""
+    if (copyBtn) copyBtn.disabled = true
+  }
+  const showTimeline = (n) => {
+    if (emptyEl) emptyEl.classList.add("hide")
+    if (listEl) listEl.classList.remove("hide")
+    if (countEl) countEl.textContent = "×" + n
+    if (copyBtn) copyBtn.disabled = false
+  }
 
   const day = ms => { try { return new Date(Number(ms)).toISOString().slice(0, 10) } catch (e) { return "" } }
   const setMsg = (t, isErr) => { if (msgEl) { msgEl.textContent = t || ""; msgEl.style.color = isErr ? "var(--danger, #c0392b)" : "" } }
@@ -7338,11 +7582,9 @@ function buildOccurrenceTimeline(ticketId) {
         const mem = d && d.memory
         const occ = (mem && Array.isArray(mem.occurrences) ? mem.occurrences : [])
           .filter(o => (o.observation || "").trim())
-        if (occ.length < 2) { wrap.classList.add("hide"); return }  // single occurrence: nothing worth a timeline
-        wrap.classList.remove("hide")
-        // #653: only render the count pill when recurrence >= 2 (the wrap itself hides at 0/1, so the
-        // pill is never shown empty). Compact "×N" reads as a recurrence multiplier.
-        countEl.textContent = "×" + occ.length
+        if (occ.length < 2) { showEmpty(); return }  // single occurrence: empty state, copy disabled
+        // #718: real timeline → reveal the list, set the ×N pill, enable Copy timeline.
+        showTimeline(occ.length)
         listEl.innerHTML = ""
         occ.forEach(o => {
           const item = document.createElement("div")
@@ -7362,8 +7604,9 @@ function buildOccurrenceTimeline(ticketId) {
           loadOccShot(item)
         })
       })
-      .catch(() => { /* 404 = no recurrence memory (single report): leave hidden */ })
+      .catch(() => { showEmpty() /* 404 = no recurrence memory (single report): show the empty state */ })
   }
+  showEmpty()   // #718: sensible default before the fetch resolves (no dead space, copy disabled)
   load()
 
   // Copy timeline text for client conversations — plain, quotable receipts.
@@ -7396,16 +7639,18 @@ function buildMergeControl(ticketId) {
   // label → id map so the free-text/datalist value resolves back to a ticket id.
   const byLabel = {}
   cands.forEach(x => { byLabel[mergeCandLabel(x)] = String(x.id) })
-  const opts = cands.map(x => `<option value="${esc(mergeCandLabel(x))}"></option>`).join("")
-  // #630(b): progressive disclosure — the always-visible large search box was clutter. Start collapsed
-  // behind a small "Merge another ticket" toggle; the search input + Merge action only appear on click.
+  // #718: a proper searchable combobox — the results dropdown shows each candidate as `#key · title ·
+   // status` (was a blank datalist line) so the user can pick confidently. label → id map still resolves
+   // a free-typed value; a selected row wins.
   wrap.innerHTML = `
     <button class="btn btn-ghost btn-sm tkt-merge-toggle" type="button" style="display:inline-flex;align-items:center;gap:6px">${kicon('link',{size:13})} Merge another ticket</button>
-    <div class="tkt-merge-body hide" style="margin-top:8px">
-      <div class="tkt-merge-hd" style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;margin-bottom:6px">${kicon('link',{size:14})} Merge another ticket into this one</div>
-      <div class="tkt-merge-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input class="tkt-merge-input seg-like" list="${esc(listId)}" placeholder="Search a ticket by # or title…" autocomplete="off" style="flex:1;min-width:220px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--ink-2);color:inherit;font-family:inherit;font-size:13px">
-        <datalist id="${esc(listId)}">${opts}</datalist>
+    <div class="tkt-merge-body hide">
+      <div class="tkt-merge-hd">${kicon('link',{size:14})} Merge another ticket into this one</div>
+      <div class="tkt-merge-combo">
+        <input class="tkt-merge-input seg-like" placeholder="Search a ticket by # or title…" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list">
+        <div class="tkt-merge-results hide" role="listbox"></div>
+      </div>
+      <div class="tkt-merge-row">
         <button class="btn btn-ghost btn-sm tkt-merge-go" type="button">${kicon('link',{size:13})} Merge</button>
         <button class="btn btn-ghost btn-sm tkt-merge-cancel" type="button">Cancel</button>
       </div>
@@ -7414,19 +7659,57 @@ function buildMergeControl(ticketId) {
   const toggleBtn = wrap.querySelector(".tkt-merge-toggle")
   const bodyEl = wrap.querySelector(".tkt-merge-body")
   const input = wrap.querySelector(".tkt-merge-input")
+  const resultsEl = wrap.querySelector(".tkt-merge-results")
   const goBtn = wrap.querySelector(".tkt-merge-go")
   const cancelBtn = wrap.querySelector(".tkt-merge-cancel")
   const msgEl = wrap.querySelector(".tkt-merge-msg")
+  let selectedId = ""
+  const stLabel = (s) => STATUS_LABELS[s] || s || "new"
+  const renderResults = (q) => {
+    if (!resultsEl) return
+    const f = String(q || "").trim().toLowerCase()
+    const rows = cands.filter(x => !f || mergeCandLabel(x).toLowerCase().includes(f) || String(x.seqNum || "").includes(f)).slice(0, 8)
+    if (!rows.length) {
+      resultsEl.innerHTML = '<div class="tkt-merge-empty">' + (f ? "No open tickets match." : "No other tickets to merge.") + "</div>"
+      resultsEl.classList.remove("hide"); input.setAttribute("aria-expanded", "true")
+      return
+    }
+    resultsEl.innerHTML = rows.map(x => {
+      const st = x.status || "new"
+      return '<button type="button" class="tkt-merge-cand" role="option" data-id="' + esc(String(x.id)) + '">'
+        + '<span class="mc-key">#' + esc(String(x.seqNum || "?")) + "</span>"
+        + '<span class="mc-title">' + esc(x.title || "Untitled report") + "</span>"
+        + '<span class="chip kb-st-' + esc(st) + ' mc-st">' + esc(stLabel(st)) + "</span></button>"
+    }).join("")
+    resultsEl.classList.remove("hide"); input.setAttribute("aria-expanded", "true")
+    resultsEl.querySelectorAll(".tkt-merge-cand").forEach(b => {
+      b.addEventListener("click", () => {
+        selectedId = b.getAttribute("data-id")
+        input.value = b.querySelector(".mc-key").textContent + " " + b.querySelector(".mc-title").textContent
+        resultsEl.classList.add("hide"); input.setAttribute("aria-expanded", "false")
+      })
+    })
+  }
   if (toggleBtn && bodyEl) {
     toggleBtn.addEventListener("click", () => {
       bodyEl.classList.remove("hide")
       toggleBtn.classList.add("hide")
-      if (input) input.focus()
+      if (input) { input.focus(); renderResults("") }
     })
   }
+  if (input) {
+    input.addEventListener("input", () => { selectedId = ""; renderResults(input.value) })
+    input.addEventListener("focus", () => renderResults(input.value))
+  }
+  // Close the results dropdown on an outside click.
+  wrap.addEventListener("click", ev => { ev.stopPropagation() })
+  const _mergeDocClose = ev => { if (!ev.target.closest(".tkt-merge-combo") && resultsEl) { resultsEl.classList.add("hide") } }
+  document.addEventListener("click", _mergeDocClose)
   if (cancelBtn && bodyEl && toggleBtn) {
     cancelBtn.addEventListener("click", () => {
       if (input) input.value = ""
+      selectedId = ""
+      if (resultsEl) resultsEl.classList.add("hide")
       if (msgEl) msgEl.textContent = ""
       bodyEl.classList.add("hide")
       toggleBtn.classList.remove("hide")
@@ -7435,9 +7718,9 @@ function buildMergeControl(ticketId) {
   const setMsg = (t, isErr) => { if (msgEl) { msgEl.textContent = t || ""; msgEl.style.color = isErr ? "var(--rose)" : "" } }
   goBtn.addEventListener("click", async () => {
     const val = (input.value || "").trim()
-    if (!val) { setMsg("Pick a ticket to merge in.", true); return }
-    // Resolve the typed/selected label to an id; fall back to treating the raw input as an id.
-    const mergeId = byLabel[val] || val
+    if (!selectedId && !val) { setMsg("Pick a ticket to merge in.", true); return }
+    // A selected row wins; else resolve the typed label to an id; else treat raw input as an id.
+    const mergeId = selectedId || byLabel[val] || val
     goBtn.disabled = true; setMsg("Merging…", false)
     window.__klavMutating++
     let d = {}
@@ -7761,10 +8044,14 @@ function _renderSingleTicket(id) {
   // BEFORE loadTktShot streams the real image into the same box (panel keeps the compact shot).
   if (!panel && t.screenshotId) wrapScreenshotChrome(detailEl, t)
   loadTktShot(detailEl, t.annotations)
-  // A.8: per-ticket occurrence timeline (receipts) — self-hides for single-occurrence reports.
-  single.appendChild(buildOccurrenceTimeline(t.id))
-  // KLAVITYKLA-515: always-available merge control (works even for single-occurrence tickets).
-  single.appendChild(buildMergeControl(t.id))
+  // #718: group the secondary/utility actions into one coherent footer so the merge control no longer
+  // floats alone under whitespace. A.8: occurrence timeline (receipts) always renders now, with a subtle
+  // empty state when there are no repeats. KLAVITYKLA-515: merge works even for single-occurrence tickets.
+  const _footer = document.createElement("div")
+  _footer.className = "tkt-detail-footer"
+  _footer.appendChild(buildOccurrenceTimeline(t.id))
+  _footer.appendChild(buildMergeControl(t.id))
+  single.appendChild(_footer)
   // KLA-171: activity timeline + comment composer (KLAVITYKLA-516 passes `t` so the timeline can
   // synthesize its virtual first "report received" row). #707: on the 3-col page it mounts INTO the
   // middle column; the panel/legacy layout appends it below the detail.

@@ -228,9 +228,11 @@ test("ticket detail renders only the redesigned avatar assignee control (no lega
   // #678: assigneePickerHtml is now single-purpose (the detail-panel avatar control) — the on-card
   // `compact` variant was removed, so the signature is assigneePickerHtml(t).
   const picker = extractFn(HTML, "function assigneePickerHtml(t)")
-  // the redesigned control: avatar + email, edit row starts hidden and reveals on click
+  // #716: the redesigned control — avatar + email opens a Linear/Plane-style picker popover (search +
+  // member list + Unassigned + Invite). The hidden `.assignee-inp` model + Clear are preserved.
   expect(picker).toContain('class="tkt-assignee-ctrl-wrap"')
-  expect(picker).toContain('class="tkt-assignee-edit hide"')
+  expect(picker).toContain('class="tkt-assignee-pop hide"')
+  expect(picker).toContain('class="assignee-inp tkt-assignee-input"')
   // the legacy always-open assignee row was removed from the markup entirely
   expect(HTML).not.toContain('class="tkt-assignee-row"')
   expect(HTML).not.toContain(".tkt-assignee-row{")
