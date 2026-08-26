@@ -35,27 +35,89 @@ export interface CapResult {
   trimmed: boolean        // true when events were dropped to fit
 }
 
+// rrweb EventType numeric tags (kept local so the trim logic has no rrweb import dependency).
+const EVENT_FULL_SNAPSHOT = 2
+const EVENT_META = 4
+
+function eventType(e: ReplayEvent): number | undefined {
+  return e && typeof e === "object" ? (e as { type?: number }).type : undefined
+}
+
 /**
- * Ensure the encoded payload fits under `capBytes`, dropping the OLDEST events first.
- * rrweb is incremental-snapshot based; we never drop below the most recent full snapshot's worth in
- * practice because the tail is kept and rrweb-player tolerates a leading partial. A simple, robust
- * shrink loop (binary-search the keep-count) keeps this allocation-light and easy to reason about.
+ * Ensure the encoded payload fits under `capBytes` — dropping OLDEST events first, but SNAPSHOT-AWARE
+ * so the retained list is always PLAYABLE (#729).
+ *
+ * rrweb replays are reconstructed from a single FullSnapshot (type 2) plus the Meta (type 4) rrweb
+ * emits right before it; the incremental events (type 3, etc.) after the snapshot only make sense when
+ * applied on top of that base. A naive "keep the largest trailing slice" trim can drop the snapshot
+ * that lives near the START of a long buffer, leaving the player only orphan incrementals → a BLANK
+ * (unplayable) replay. This is the storage-side twin of the client ring-buffer bug (#715).
+ *
+ * We mirror the SDK's ReplayRingBuffer.snapshot(): keep the most-recent Meta+FullSnapshot OUTSIDE the
+ * trimmable window and RE-EMIT them at the HEAD, then fit as many of the most-recent post-snapshot
+ * incrementals under the cap as will fit. The kept list therefore ALWAYS begins with [Meta, Full, …].
  */
 export function capReplayEvents(events: ReplayEvent[], capBytes = DEFAULT_REPLAY_CAP_BYTES): CapResult {
   if (!events.length) return { events: [], encoded: "", trimmed: false }
-  let encoded = encodeReplay(events)
+  const encoded = encodeReplay(events)
   if (encoded.length <= capBytes) return { events, encoded, trimmed: false }
 
-  // Binary-search the largest tail slice whose encoding fits. keep ∈ [1, events.length).
-  let lo = 1, hi = events.length, best = 1, bestEncoded = encodeReplay(events.slice(-1))
+  // Locate the most-recent FullSnapshot and the Meta at/before it (rrweb emits Meta just before Full).
+  let fullIdx = -1
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (eventType(events[i]) === EVENT_FULL_SNAPSHOT) { fullIdx = i; break }
+  }
+
+  // No FullSnapshot anywhere — nothing we can do to guarantee a base; fall back to the largest tail
+  // slice that fits (best-effort, marked trimmed). rrweb-player will show whatever it can.
+  if (fullIdx === -1) {
+    return { ...largestTail(events, capBytes), trimmed: true }
+  }
+
+  let metaIdx = -1
+  for (let i = fullIdx; i >= 0; i--) {
+    if (eventType(events[i]) === EVENT_META) { metaIdx = i; break }
+  }
+
+  // The base that MUST survive: [Meta?, FullSnapshot]. The incrementals we can trim: everything after.
+  const base: ReplayEvent[] = metaIdx >= 0 ? [events[metaIdx], events[fullIdx]] : [events[fullIdx]]
+  const post = events.slice(fullIdx + 1)
+
+  // Degenerate: the base ALONE already exceeds the cap (a single huge snapshot). Keep it anyway — a
+  // static frame is strictly better than a blank replay — and log it.
+  const baseEncoded = encodeReplay(base)
+  if (baseEncoded.length > capBytes) {
+    console.warn(
+      `[feedback-replay] Meta+FullSnapshot alone (${baseEncoded.length}B) exceeds cap ${capBytes}B; ` +
+      `keeping a static frame (no incrementals) to avoid a blank replay (#729).`,
+    )
+    return { events: base, encoded: baseEncoded, trimmed: true }
+  }
+
+  // Binary-search the largest number of the MOST-RECENT post-snapshot incrementals that still fit when
+  // prepended with the base. keep ∈ [0, post.length]. keep=0 ⇒ [Meta, Full] (playable static frame).
+  let lo = 0, hi = post.length, best = 0, bestEncoded = baseEncoded
   while (lo <= hi) {
     const mid = (lo + hi) >> 1
-    const slice = events.slice(events.length - mid)
-    const enc = encodeReplay(slice)
+    const candidate = [...base, ...post.slice(post.length - mid)]
+    const enc = encodeReplay(candidate)
     if (enc.length <= capBytes) { best = mid; bestEncoded = enc; lo = mid + 1 }
     else { hi = mid - 1 }
   }
-  return { events: events.slice(events.length - best), encoded: bestEncoded, trimmed: true }
+  return { events: [...base, ...post.slice(post.length - best)], encoded: bestEncoded, trimmed: true }
+}
+
+/** Best-effort fallback: the largest trailing slice whose encoding fits (used only when there is no
+ *  FullSnapshot to anchor on). keep ∈ [1, events.length]. */
+function largestTail(events: ReplayEvent[], capBytes: number): { events: ReplayEvent[]; encoded: string } {
+  let lo = 1, hi = events.length, best = 1, bestEncoded = encodeReplay(events.slice(-1))
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const enc = encodeReplay(events.slice(events.length - mid))
+    if (enc.length <= capBytes) { best = mid; bestEncoded = enc; lo = mid + 1 }
+    else { hi = mid - 1 }
+  }
+  return { events: events.slice(events.length - best), encoded: bestEncoded }
 }
 
 // ── storage ─────────────────────────────────────────────────────────────────────────

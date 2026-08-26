@@ -76,6 +76,91 @@ test("capReplayEvents trims OLDEST events first when the encoded payload exceeds
   expect((trimmed[0] as any).data.seq).toBeGreaterThan(0)
 })
 
+// ── snapshot-aware trim (#729): the retained list must ALWAYS start with a playable base ──────────
+// Build a realistic rrweb buffer: Meta(4) + FullSnapshot(2) at the START, then a long tail of fat
+// incremental(3) events. The OLD tail-only trim would drop the Meta+Full at the head and keep only
+// orphan incrementals → a BLANK replay. The new code must re-anchor the base at the head.
+function snapshotBuffer(nIncrementals: number) {
+  return [
+    { type: 4, timestamp: 0, data: { href: "https://app.example/x", width: 1440, height: 900 } },
+    { type: 2, timestamp: 1, data: { node: { id: 1, type: 0, marker: "FULL_SNAPSHOT" } } },
+    ...Array.from({ length: nIncrementals }, (_, i) => ({
+      type: 3, timestamp: 100 + i, data: { source: 2, blob: deterministicNoise(400, i + 1), seq: i },
+    })),
+  ]
+}
+
+test("capReplayEvents keeps Meta+FullSnapshot at the head even when they start the over-cap buffer (#729)", () => {
+  const events = snapshotBuffer(5000)
+  const cap = 50_000
+  expect(R.encodeReplay(events).length).toBeGreaterThan(cap) // precondition: must trim
+  const { events: kept, encoded, trimmed } = R.capReplayEvents(events, cap)
+  expect(trimmed).toBe(true)
+  expect(encoded.length).toBeLessThanOrEqual(cap)
+  // Head is a playable base: [Meta(4), FullSnapshot(2), …]
+  expect((kept[0] as any).type).toBe(4)
+  expect((kept[1] as any).type).toBe(2)
+  // A FullSnapshot survives somewhere (it must, for the player to reconstruct the DOM)
+  expect(kept.some((e: any) => e.type === 2)).toBe(true)
+  // The trimmed-away middle means we kept the MOST-RECENT incrementals (newest seq present)
+  expect(kept.some((e: any) => e.type === 3 && e.data.seq === 4999)).toBe(true)
+  // …and did NOT keep the whole buffer
+  expect(kept.length).toBeLessThan(events.length)
+})
+
+test("NEGATIVE CONTROL: the old tail-only trim would have dropped the snapshot (#729)", () => {
+  // Reproduce exactly what the OLD capReplayEvents did: binary-search the largest trailing slice.
+  const events = snapshotBuffer(5000)
+  const cap = 50_000
+  const oldTailOnly = (evs: any[], capBytes: number) => {
+    let lo = 1, hi = evs.length, best = 1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (R.encodeReplay(evs.slice(evs.length - mid)).length <= capBytes) { best = mid; lo = mid + 1 }
+      else { hi = mid - 1 }
+    }
+    return evs.slice(evs.length - best)
+  }
+  const oldKept = oldTailOnly(events, cap)
+  // Proof the old behavior was blank-prone: NO FullSnapshot in the retained tail.
+  expect(oldKept.some((e: any) => e.type === 2)).toBe(false)
+  expect(oldKept.some((e: any) => e.type === 4)).toBe(false)
+
+  // New code on the SAME input keeps the snapshot → not blank.
+  const newKept = R.capReplayEvents(events, cap).events
+  expect(newKept.some((e: any) => e.type === 2)).toBe(true)
+  expect(newKept.some((e: any) => e.type === 4)).toBe(true)
+})
+
+test("capReplayEvents doesn't crash when there is no FullSnapshot at all (#729)", () => {
+  const events = Array.from({ length: 5000 }, (_, i) => fatEvent(i)) // all type 3, no snapshot
+  const { events: kept, encoded, trimmed } = R.capReplayEvents(events, 50_000)
+  expect(trimmed).toBe(true)
+  expect(encoded.length).toBeLessThanOrEqual(50_000)
+  expect(kept.length).toBeGreaterThan(0)
+  expect(kept.length).toBeLessThan(events.length)
+  // Best-effort tail: newest event preserved.
+  expect((kept[kept.length - 1] as any).data.seq).toBe(4999)
+})
+
+test("capReplayEvents keeps at least Meta+Full for a degenerate huge single snapshot (#729)", () => {
+  // A single FullSnapshot alone larger than the cap; Meta+Full must still survive (static frame > blank).
+  const events = [
+    { type: 4, timestamp: 0, data: { width: 1440, height: 900 } },
+    { type: 2, timestamp: 1, data: { node: { html: deterministicNoise(200_000, 7) } } },
+    { type: 3, timestamp: 2, data: { source: 2, blob: deterministicNoise(200, 1), seq: 0 } },
+  ]
+  const cap = 10_000 // far below the snapshot's encoded size
+  expect(R.encodeReplay([events[0], events[1]]).length).toBeGreaterThan(cap) // base alone over cap
+  const { events: kept, encoded, trimmed } = R.capReplayEvents(events, cap)
+  expect(trimmed).toBe(true)
+  // Keep exactly Meta+Full (a static frame), never blank.
+  expect((kept[0] as any).type).toBe(4)
+  expect((kept[1] as any).type).toBe(2)
+  expect(kept.length).toBe(2)
+  expect(encoded.length).toBeGreaterThan(0)
+})
+
 test("capReplayEvents leaves a small buffer untouched", () => {
   const events = Array.from({ length: 10 }, (_, i) => ({ type: 3, timestamp: i }))
   const { events: trimmed, trimmed: didTrim, encoded } = R.capReplayEvents(events, 1_000_000)
