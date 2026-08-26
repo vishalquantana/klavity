@@ -1409,7 +1409,7 @@ export function buildModal(
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
         ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
-        <button id="klavity-full" title="Full Page — instant, but re-renders the page (may miss cross-origin images or embedded frames). Use Screen for a pixel-perfect shot."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
+        <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
              image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
         <button id="klavity-upload" title="${fileAttachEnabled ? 'Add a screenshot, video, or file (images, MP4, PDF, .log, .har, ...)' : 'Upload a screenshot'}"><span class="kl-cap-ic">${icon(fileAttachEnabled ? 'paperclip' : 'image')}</span><span class="kl-upload-label">${fileAttachEnabled ? 'Attach' : 'Upload'}</span></button>
@@ -2989,6 +2989,16 @@ export function buildModal(
   const fullBtn = modal.querySelector('#klavity-full') as HTMLButtonElement
   fullBtn.addEventListener('click', async () => {
     if (busy) return
+    // Owner directive (2026-08-26): "Full Page" now captures via real tab-share (getDisplayMedia) so it works
+    // on cross-origin pages — embedded frames / cross-origin images no longer render as a blank-white DOM shot
+    // (hit live on PX4). runScreenCapture fires getDisplayMedia as its FIRST step so THIS click's user gesture
+    // is preserved. It falls back (returns false) ONLY when Screen capture is unavailable (iOS Safari, no
+    // onCaptureSharp) or the user declines / loses the share gesture — in which case we drop to the fast DOM
+    // render below so the user still gets a shot (with the usual suggestSharp nudge).
+    if (callbacks.onCaptureSharp) {
+      const added = await runScreenCapture()
+      if (added) return
+    }
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
     try {
