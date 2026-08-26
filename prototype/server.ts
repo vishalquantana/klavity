@@ -1179,7 +1179,12 @@ function file(path: string) { return new Response(Bun.file(path)) }
 // so we never hardcode it. Read+patched once and cached; the prod box restarts on deploy,
 // so the cached value refreshes once per release.
 let DASHBOARD_HTML: string | null = null
-async function dashboardPage(): Promise<Response> {
+// #657: memoise the FULLY-BUILT shell (POSTHOG_REPLAY + Founding placeholders substituted) so the
+// ~930KB body isn't re-generated from the template on every /dashboard poll. Keyed by the only two
+// inputs that vary within a release; carries a content-hash ETag so the browser can revalidate with
+// a cheap 304 instead of re-downloading the whole shell every navigation.
+let _dashRendered: { key: string; body: string; etag: string } | null = null
+async function dashboardPage(req?: Request): Promise<Response> {
   if (DASHBOARD_HTML === null) {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
@@ -1188,11 +1193,32 @@ async function dashboardPage(): Promise<Response> {
     // per-response below so the session-replay gate re-evaluates as the user count grows.
     DASHBOARD_HTML = raw.replaceAll("__APP_VERSION__", version).replaceAll("__POSTHOG_KEY__", _PH_KEY)
   }
-  let body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", await posthogReplayFlag())
-  // KLAVITYKLA-366: the in-app Founding ribbon must respect the same sold-out state as the website
-  // — the app may never keep promoting an offer we have publicly closed.
-  if (body.includes("__FOUNDING_STATE__")) body = await substituteFoundingPlaceholders(body)
-  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } })
+  const replay = await posthogReplayFlag()
+  // Founding placeholders vary only with the (≤60s-cached) spot count. Fold both varying inputs into
+  // one cache key so we rebuild the big body only when one actually changes, not per request.
+  const hasFounding = DASHBOARD_HTML.includes("__FOUNDING_STATE__")
+  const spots = hasFounding ? await getFoundingSpots(countFoundingAccounts) : null
+  const key = replay + "|" + (spots ? `${spots.known}:${spots.taken}:${spots.remaining}:${spots.soldOut}` : "-")
+  if (!_dashRendered || _dashRendered.key !== key) {
+    let body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", replay)
+    // KLAVITYKLA-366: the in-app Founding ribbon must respect the same sold-out state as the website
+    // — the app may never keep promoting an offer we have publicly closed.
+    if (hasFounding) body = await substituteFoundingPlaceholders(body)
+    // Weak validator (content hash). Bun.hash (wyhash) — deliberately NOT node:crypto createHash,
+    // whose shim is absent in some runtimes here; a hash collision only risks a stale 304, never data.
+    const etag = `W/"${Bun.hash(body).toString(36)}"`
+    _dashRendered = { key, body, etag }
+  }
+  const { body, etag } = _dashRendered
+  // Auth-gated shell that changes per deploy → a validator with revalidate-always, never a long
+  // immutable max-age (would pin a stale build after a deploy). The ETag lets the browser get a cheap
+  // 304 instead of re-downloading ~930KB every navigation. Compression is delegated to Caddy on-box
+  // (deploy/Caddyfile: `encode zstd gzip`) — do NOT app-gzip here or it would double-encode.
+  const cacheHeaders = { "cache-control": "private, max-age=0, must-revalidate", "etag": etag, "vary": "Cookie" }
+  if (req && req.headers.get("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers: cacheHeaders })
+  }
+  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8", ...cacheHeaders } })
 }
 // Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var and
 // __CAL_BOOKING_URL__ from CAL_BOOKING_URL (KLAVITYKLA-331 — founder booking CTA).
@@ -7496,7 +7522,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
     if (req.method === "GET" && path === "/dashboard") {
-      if (me) return await dashboardPage()
+      if (me) return await dashboardPage(req)
       // A member's own address-bar deep link (?ticket=<id>) must work for a colleague: send an
       // unauthenticated visitor to the adaptive /t/:ref so they get the teaser, not a login wall.
       const _tkt = url.searchParams.get("ticket")
@@ -7505,7 +7531,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
-    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : loginGate(path, url.search)
+    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage(req) : loginGate(path, url.search)
     if (req.method === "GET" && path === "/trails") {
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
@@ -8586,20 +8612,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const projE = await resolveProject(meE, url.searchParams.get("project"))
       if (!projE) return json({ error: "no project" }, 404)
 
+      // #661: one shared per-request memo for the feedback row behind each expectation. The enrich
+      // stage (title/urlPath/groundedQuote) and the oracle stage (sim_id → persona) both need the
+      // SAME feedback row; previously each row triggered three separate feedback reads — feedbackById,
+      // a redundant `SELECT source_quote`, and a redundant `SELECT sim_id`. feedbackById is `SELECT *`
+      // and already returns sourceQuote AND simId, so we dedupe to one read per id. Caching the Promise
+      // (not the value) also collapses the concurrent Promise.all fan-out across the two stages.
+      const feedbackMemo = new Map<string, Promise<any | null>>()
+      const feedbackByIdMemo = (id: string): Promise<any | null> => {
+        let p = feedbackMemo.get(id)
+        if (!p) { p = feedbackById(projE.id, id); feedbackMemo.set(id, p) }
+        return p
+      }
+
       // B.10 (KLA-250): shared source/step lookups for enrichExpectation, used by BOTH the list and
       // the single-row GET so cards render Trail name + step position (not raw ts_ UUIDs) and — for
       // Seen-once rows — a progress hint. Every lookup is best-effort (returns null on any error).
       const expEnrichLookups = {
         getReport: async (id: string) => {
           try {
-            const fb = await feedbackById(projE.id, id)
+            const fb = await feedbackByIdMemo(id)
             if (!fb) return null
-            // feedbackById doesn't carry the grounded quote — fetch it directly (best-effort).
-            let groundedQuote: string | null = null
-            try {
-              const q = await db!.execute({ sql: "SELECT source_quote FROM feedback WHERE project_id=? AND id=?", args: [projE.id, id] })
-              if (q.rows.length) groundedQuote = (q.rows[0] as any).source_quote != null ? String((q.rows[0] as any).source_quote) : null
-            } catch { /* column/table absent — no quote */ }
+            // feedbackById already carries the grounded quote (source_quote) — no extra read needed.
+            const groundedQuote: string | null = fb.sourceQuote ?? null
             // #543 straggler (Codex re-review): resolve the card title via the shared resolver
             // (explicit Title → suggestedBug.title → observation) instead of the raw observation.
             return { title: effectiveTicketTitle(fb), urlPath: fb.urlPath ?? null, groundedQuote }
@@ -8635,8 +8670,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (simRefCache.has(feedbackId)) return simRefCache.get(feedbackId)!
         let out: SimIdentity | null = null
         try {
-          const fb = await db!.execute({ sql: "SELECT sim_id FROM feedback WHERE project_id=? AND id=?", args: [projE.id, feedbackId] })
-          const simId = fb.rows.length ? (fb.rows[0] as any).sim_id : null
+          // #661: reuse the shared feedback memo — feedbackById already loaded sim_id for this row in
+          // the enrich stage; no need for a separate `SELECT sim_id` round-trip.
+          const fb = await feedbackByIdMemo(feedbackId)
+          const simId = fb?.simId ?? null
           if (simId) {
             const p = await db!.execute({ sql: "SELECT name, role FROM personas WHERE id=? AND project_id=?", args: [String(simId), projE.id] })
             const row = p.rows.length ? (p.rows[0] as any) : null
@@ -9914,7 +9951,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // Non-admins see only their own activity (own-rows-only); admins see all.
             listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
             // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.
-            listFeedback(projectId, { simOnly: true, limit: 100 }),
+            // #661: the dashboard only renders the latest observation per Sim inline (+ a count badge)
+            // and slices `saying` to 12; the rest link out to Triage. Shipping 100 rows every poll was
+            // pure payload waste. 36 keeps a few Sims' recent history for the badge while cutting the
+            // observations payload ~64%. hasSimReaction (>0) and the `saying` feed are unaffected.
+            listFeedback(projectId, { simOnly: true, limit: 36 }),
           ])
 
           // Index personas for name/role/accent lookups by sim_id.
@@ -11284,11 +11325,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // List the caller's projects.
       if (req.method === "GET" && path === "/api/projects") {
         const projects = await listProjects(me)
-        const out = []
-        for (const p of projects) {
-          const access = await projectAccess(me, p.id)
-          out.push({ id: p.id, name: p.name, accountId: p.accountId, status: p.status, role: access })
-        }
+        // #661: resolve per-project role CONCURRENTLY. Sequentially awaiting projectAccess (≈2-3
+        // queries each) made this an N+1 that scaled linearly with project count; Promise.all fans
+        // the lookups out so total latency ≈ one round-trip. Same fix already applied to /api/inbox.
+        const roles = await Promise.all(projects.map((p) => projectAccess(me, p.id)))
+        const out = projects.map((p, i) => ({ id: p.id, name: p.name, accountId: p.accountId, status: p.status, role: roles[i] }))
         return json({ projects: out })
       }
       // Create a project (account owner/admin only).
