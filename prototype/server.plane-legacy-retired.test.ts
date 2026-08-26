@@ -126,11 +126,11 @@ test("POST /api/feedback never pushes to Plane inline, even with forwarded creds
 
   // The discriminating assertion. Forwarded creds used to flip the handler onto the inline-push
   // branch, whose response was the Plane ticket (jira_key + a tracker issue_url) and never the
-  // dashboard deep link. Now creds are inert, so an authed reporter ALWAYS gets the deep link back
-  // to our own Tickets board and never an external key.
+  // in-app deep link. Now creds are inert, so an authed reporter ALWAYS gets the fast single-ticket
+  // permalink (/t/<id>, #727) back to our own Klavity ticket and never an external key.
   expect(j.jira_key).toBeUndefined()
   expect(typeof j.issue_url).toBe("string")
-  expect(String(j.issue_url).startsWith(`${BASE}/dashboard`)).toBe(true)
+  expect(String(j.issue_url).startsWith(`${BASE}/t/`)).toBe(true)
   expect(String(j.issue_url)).not.toContain(PLANE_URL)
 
   // Give a fire-and-forget push time to land before asserting it never happened.

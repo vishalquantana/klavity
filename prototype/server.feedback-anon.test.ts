@@ -132,11 +132,12 @@ test("default-anonymous cross-origin submit with NO email is accepted (200) and 
   expect(row.rows[0].contact_email).toBeNull()
 })
 
-// ── #651: an ANONYMOUS cross-origin widget submit still gets the single-ticket deep link ──
+// ── #651/#727: an ANONYMOUS cross-origin widget submit still gets the single-ticket deep link ──
 // Previously issue_url was withheld for anonymous submitters (#632). Now the server returns the
-// auth-gated #tickets/<id> deep link regardless of reporter auth so the "Report sent" toast always
-// has an "Open in Klavity" link — opening it still requires login (the /dashboard route is gated),
-// so there is no data leak.
+// FAST single-ticket permalink /t/<id> (#727 — was the heavy /dashboard…#tickets/<id> SPA boot)
+// regardless of reporter auth, so the "Report sent" toast always has an "Open in Klavity" link.
+// /t/:ref is member-gated server-side (a non-member gets the redacted teaser / login), so there
+// is no data leak.
 test("#651: anonymous cross-origin submit returns the single-ticket deep-link issue_url", async () => {
   const fd = new FormData()
   fd.set("description", "anon needs a link back"); fd.set("project_id", "p1")
@@ -144,8 +145,8 @@ test("#651: anonymous cross-origin submit returns the single-ticket deep-link is
   expect(r.status).toBe(200)
   const j = await r.json()
   expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
-  // Deep link points at the newly-created single ticket, scoped to the project. dashBase = KLAV_BASE_URL.
-  expect(j.issue_url).toBe(`${BASE}/dashboard?project=p1#tickets/${j.id}`)
+  // Fast single-ticket permalink. dashBase = KLAV_BASE_URL; the project is resolved server-side.
+  expect(j.issue_url).toBe(`${BASE}/t/${j.id}`)
 })
 
 // ── Test 2b (JTBD 1.7): an EXPLICIT 'email' gate (p2) still rejects a submit with no email (400) ──
