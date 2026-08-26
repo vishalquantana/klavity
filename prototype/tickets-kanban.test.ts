@@ -114,7 +114,8 @@ test("Tickets list exposes multi-select and bulk actions", () => {
 
 test("JTBD 2.14: bulk mutations are guarded by an undo toast that restores prior values", () => {
   // Every bulk action shows a result toast with an Undo affordance...
-  expect(html).toContain("function applyBulkAction(projId, body, onDone)")
+  // #704: signature gained an optional `optimistic` handler for the instant board path.
+  expect(html).toContain("async function applyBulkAction(projId, body, onDone, optimistic)")
   expect(html).toContain("function bulkResultToast(")
   expect(html).toContain('class="tg-toast-undo"')
   // ...and undo replays the API's per-ticket `prior` values (grouped by value) rather than guessing.
@@ -148,6 +149,48 @@ test("JTBD 2.14: kanban board supports card multi-select feeding the shared bulk
   expect(html).toContain("const applyRangeTo = (target, on)")
   expect(html).toContain("ev.shiftKey")
   // ...and the same buildBulkBar drives the board via an onDone/onClear re-render.
-  expect(html).toContain("buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard })")
+  // #704: the board also passes an `optimistic` handler so bulk changes apply instantly.
+  expect(html).toContain("buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard, optimistic: boardBulkOptimistic })")
   expect(html).toContain("syncKbSelectionUi = ()")
+})
+
+test("#704: board bulk actions are OPTIMISTIC — apply locally + PATCH in the background, no blocking await", () => {
+  // The optimistic handler mutates local state + the DOM and returns a revert closure...
+  expect(html).toContain("function boardBulkOptimistic(body, ids)")
+  // ...status changes MOVE the card to the target column, priority swaps the sev rail, and the shared
+  // card-meta builder repaints the badges — all without a full board rebuild.
+  expect(html).toContain("function kbCardMetaHtml(t)")
+  expect(html).toContain("function kbSyncColumnCounts()")
+  expect(html).toContain("targetList.appendChild(card)")
+  expect(html).toContain("meta.innerHTML = kbCardMetaHtml(t)")
+  // The PATCH fires in the background (not awaited before the UI updates) and reverts on hard failure.
+  expect(html).toContain("async function bulkPatchRequest(projId, ids, body)")
+  expect(html).toContain("applied.revertLocal(); klavToast(\"Couldn't update — reverted.\", true)")
+  // The optimistic toast keeps the Undo affordance (local revert + background PATCH of prior values).
+  expect(html).toContain("function bulkOptimisticToast(count, label, applied, projId)")
+  expect(html).toContain("await bulkUndo(projId, priorObjs, applied.field)")
+  // The liveness-poll guard (#510) still brackets the in-flight request.
+  expect(html).toContain("window.__klavMutating++")
+})
+
+test("#690: the description label is ALWAYS 'Description' — never relabeled 'Steps to reproduce'", () => {
+  // descriptionBlockHtml no longer sniffs the body for steps; the label is a constant.
+  expect(html).toContain('const label = "Description"')
+  expect(html).not.toContain('const label = isSteps ? "Steps to reproduce" : "Description"')
+  // The inline editor's save path no longer re-derives a Steps-vs-Description label either.
+  expect(html).not.toContain('lblEl.textContent = isSteps ? "Steps to reproduce" : "Description"')
+})
+
+test("#705: inline description editor auto-grows with the same typography (no fixed 'tiny box')", () => {
+  // The textarea grows to its content on input and has no shrinking max-height / fixed min-height.
+  expect(html).toContain('ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"')
+  expect(html).toContain('ta.addEventListener("input", autoGrow)')
+  expect(html).not.toContain("min-height:104px;max-height:360px")
+  // Same read-view typography: 14px / 1.5 line-height, pre-wrap, transparent (no reflow on edit).
+  expect(html).toContain(".tkt-desc-ta{display:block;width:100%;box-sizing:border-box;background:transparent")
+  expect(html).toContain("resize:none;min-height:0;height:auto;overflow:hidden")
+  // Optimistic save on blur / Cmd+Enter, Esc cancels.
+  expect(html).toContain('ta.addEventListener("blur", () => { if (!done) commit() })')
+  expect(html).toContain('ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)')
+  expect(html).toContain('if (ev.key === "Escape")')
 })

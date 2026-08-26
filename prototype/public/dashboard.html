@@ -1028,9 +1028,16 @@ details.drawer .drawer-in{padding:0 22px 22px}
 .tkt-desc-editing .tkt-obs,.tkt-desc-editing .tkt-desc-edit{display:none}
 /* #679/#681 edit-mode: the textarea sits as its own block BELOW the section label (never overlapping
    it), with a clear top gap. block display + full width guarantees clean stacking under .tkt-desc-head. */
-.tkt-desc-edit-wrap{display:block;margin-top:8px}
-.tkt-desc-ta{display:block;width:100%;box-sizing:border-box;background:var(--ink-2);border:1px solid var(--indigo);border-radius:9px;padding:9px 11px;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;outline:none;resize:vertical;min-height:104px;max-height:360px;overflow:auto}
-.tkt-desc-edit-row{display:flex;align-items:center;gap:8px;margin-top:7px}
+.tkt-desc-edit-wrap{display:block;margin-top:2px}
+/* #705: Plane-style inline editor. SAME typography/width/color as the read view (.tkt-obs: 14px/1.5,
+   var(--paper), pre-wrap) so clicking Edit doesn't reflow or shrink the block. Auto-grows via JS
+   (height set to scrollHeight on input): height:auto + overflow:hidden + resize:none, with NO fixed
+   min/max-height that could shrink long text into a scroll box. A subtle focus ring (box-shadow, which
+   doesn't take layout space) marks edit mode without pushing the text around. */
+.tkt-desc-ta{display:block;width:100%;box-sizing:border-box;background:transparent;border:none;border-radius:7px;padding:0;margin:0;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;white-space:pre-wrap;outline:none;resize:none;min-height:0;height:auto;overflow:hidden;box-shadow:0 0 0 4px rgba(139,139,245,.08)}
+.tkt-desc-ta:focus{box-shadow:0 0 0 4px rgba(139,139,245,.16)}
+.tkt-desc-edit-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+.tkt-desc-hint{font-size:11px}
 /* reusable (i) info tooltip — no emoji, plain letter in a ring */
 .info{position:relative;display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--paper-faint);color:var(--paper-faint);font-size:10px;font-weight:700;font-style:normal;line-height:1;font-family:var(--body);cursor:help;flex:none}
 .info:hover,.info:focus-visible{color:var(--indigo);border-color:var(--indigo);outline:none}
@@ -6091,13 +6098,13 @@ function wireCardAssign(cardEl, t, ticketId, renderCard) {
 // its own summary element. Returns the wired detailEl.
 // isSingle=true: called from the single-ticket view, which already renders title/severity/sim/url·date
 // in its .single-head — so skip those from .tkt-context to avoid duplication.
-// #538: render the reporter's observation as an explicitly labeled block. When the body reads like
-// reproduction steps (numbered / bulleted / "step N" lines) label it "Steps to reproduce", otherwise
-// "Description". The .tkt-obs child is white-space:pre-wrap so multi-line steps keep their line breaks.
+// #538: render the reporter's observation as an explicitly labeled block. #690: the label is ALWAYS
+// "Description" (free text) — we no longer sniff the body for reproduction steps and relabel it
+// "Steps to reproduce" (that branching mislabeled ordinary descriptions). The .tkt-obs child is
+// white-space:pre-wrap so multi-line content keeps its line breaks.
 function descriptionBlockHtml(text) {
   const raw = String(text == null ? "" : text)
-  const isSteps = /(^|\n)\s*(\d+[.)]\s|[-*•]\s|step\s*\d+\b)/i.test(raw)
-  const label = isSteps ? "Steps to reproduce" : "Description"
+  const label = "Description"
   // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
   return `<div class="tkt-desc">
     <div class="tkt-desc-head">
@@ -6512,10 +6519,12 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       copyClaudeBtn.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, copyClaudeBtn, detailEl) })
     }
 
-    // #653: EDITABLE DESCRIPTION — the pencil (or clicking the body text) swaps the description for a
-    // textarea + Save/Cancel. Save PATCHes { observation } (optimistic local update, revert on failure)
-    // and re-derives the "Steps to reproduce" vs "Description" label. Works in both the slide-over panel
-    // and the full-page route (both build detail via buildTktDetail).
+    // #653/#705: EDITABLE DESCRIPTION — the pencil (or clicking the body text) swaps the read view for a
+    // Plane-style inline editor: an auto-growing textarea that KEEPS the exact same typography/width as
+    // the read view, so clicking Edit doesn't reflow or shrink anything — the caret just appears and the
+    // block grows with content (never the old fixed 104px "tiny box"). Save is OPTIMISTIC: the UI updates
+    // instantly on blur / Cmd+Enter, the PATCH { observation } fires in the background, and a failure
+    // reverts the text. Esc cancels. Works in both the slide-over panel and the full-page route.
     const descEl = detailEl.querySelector(".tkt-desc")
     if (descEl) {
       const descEditBtn = descEl.querySelector(".tkt-desc-edit")
@@ -6528,52 +6537,64 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         editWrap.className = "tkt-desc-edit-wrap"
         const ta = document.createElement("textarea")
         ta.className = "tkt-desc-ta"; ta.value = cur; ta.setAttribute("aria-label", "Edit description")
+        // #705: auto-grow — the field is height:auto/overflow:hidden in CSS; we size it to its content
+        // on every input so long text never collapses into a scroll box and short text never balloons.
+        const autoGrow = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px" }
         const row = document.createElement("div")
         row.className = "tkt-desc-edit-row"
         const saveB = document.createElement("button")
-        saveB.type = "button"; saveB.className = "btn btn-indigo btn-sm tkt-desc-save"; saveB.textContent = "Save"
-        const cancelB = document.createElement("button")
-        cancelB.type = "button"; cancelB.className = "btn btn-ghost btn-sm tkt-desc-cancel"; cancelB.textContent = "Cancel"
-        row.appendChild(saveB); row.appendChild(cancelB)
+        saveB.type = "button"; saveB.className = "btn btn-ghost btn-sm tkt-desc-save"; saveB.textContent = "Save"
+        const hint = document.createElement("span")
+        hint.className = "tkt-desc-hint muted"; hint.textContent = "Enter saves · Esc cancels"
+        row.appendChild(saveB); row.appendChild(hint)
         editWrap.appendChild(ta); editWrap.appendChild(row)
         descEl.appendChild(editWrap)
-        try { ta.focus() } catch (e) {}
-        const teardown = () => { descEl.classList.remove("tkt-desc-editing"); editWrap.remove() }
-        cancelB.addEventListener("click", ev => { ev.stopPropagation(); teardown() })
-        saveB.addEventListener("click", async ev => {
-          ev.stopPropagation()
+        autoGrow()
+        try { ta.focus(); const n = ta.value.length; ta.setSelectionRange(n, n) } catch (e) {}
+        let done = false
+        const teardown = () => { if (done) return; done = true; descEl.classList.remove("tkt-desc-editing"); editWrap.remove() }
+        const commit = () => {
+          if (done) return
           const next = ta.value
           const prev = t.observation != null ? String(t.observation) : ""
-          if (next === prev) { teardown(); return }
-          saveB.disabled = true; cancelB.disabled = true
-          window.__klavMutating++   // #532: suppress the liveness poll during the in-flight save
-          let d = {}
-          try {
-            const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
-              method: "PATCH", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ observation: next })
-            }).catch(() => null)
-            d = r ? await r.json().catch(() => ({})) : {}
-          } finally { window.__klavMutating-- }
-          if (d.ok) {
-            // Optimistic local update + overlay so the 25s poll can't repaint the stale body.
-            t.observation = next
-            const tkt = (state.tickets || []).find(x => x.id === ticketId)
-            if (tkt) tkt.observation = next
-            recordLocalEdit(ticketId, { observation: next })
-            // Re-derive the Steps-vs-Description label + repaint the shown text.
-            const isSteps = /(^|\n)\s*(\d+[.)]\s|[-*•]\s|step\s*\d+\b)/i.test(next)
-            const lblEl = descEl.querySelector(".tkt-desc-label")
-            if (lblEl) lblEl.textContent = isSteps ? "Steps to reproduce" : "Description"
-            if (obsEl) obsEl.textContent = next
-            teardown()
-            if (onChange) onChange("observation", next)
-            showTktMsg(detailEl, "Description saved.", false)
-          } else {
-            saveB.disabled = false; cancelB.disabled = false
-            showTktMsg(detailEl, d.error || "Couldn't save description.", true)
-          }
+          teardown()
+          if (next === prev) return
+          // OPTIMISTIC: apply locally + repaint the read view immediately; PATCH in the background.
+          t.observation = next
+          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          if (tkt) tkt.observation = next
+          recordLocalEdit(ticketId, { observation: next })
+          if (obsEl) obsEl.textContent = next
+          if (onChange) onChange("observation", next)
+          ;(async () => {
+            window.__klavMutating++   // #532: suppress the liveness poll during the in-flight save
+            let d = {}
+            try {
+              const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+                method: "PATCH", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ observation: next })
+              }).catch(() => null)
+              d = r ? await r.json().catch(() => ({})) : {}
+            } finally { window.__klavMutating-- }
+            if (!d.ok) {
+              // Revert the optimistic local update on failure.
+              t.observation = prev
+              if (tkt) tkt.observation = prev
+              recordLocalEdit(ticketId, { observation: prev })
+              if (obsEl) obsEl.textContent = prev
+              if (onChange) onChange("observation", prev)
+              showTktMsg(detailEl, d.error || "Couldn't save description — reverted.", true)
+            }
+          })()
+        }
+        ta.addEventListener("input", autoGrow)
+        ta.addEventListener("keydown", ev => {
+          if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); teardown() }
+          else if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit() }
         })
+        // Auto-save on blur (the subtle Plane behavior). mousedown on Save commits before its own blur.
+        ta.addEventListener("blur", () => { if (!done) commit() })
+        saveB.addEventListener("mousedown", ev => { ev.preventDefault(); ev.stopPropagation(); commit() })
       }
       if (descEditBtn) descEditBtn.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
       if (obsEl) obsEl.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
@@ -8180,11 +8201,45 @@ function assignEmailWarnToast(msg) {
   toast.classList.add("show")
   _assignWarnTimer = setTimeout(() => { toast.classList.remove("show") }, 9000)
 }
-// Run one bulk mutation over the current selection. onDone re-renders the affected view.
-async function applyBulkAction(projId, body, onDone) {
+// Fire the bulk PATCH. Returns { ok, data }. Guarded by __klavMutating so the liveness poll can't
+// clobber the optimistic local state while the request is in flight (#510 pattern).
+async function bulkPatchRequest(projId, ids, body) {
+  window.__klavMutating++
+  try {
+    const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, ticketIds: ids })
+    }).catch(() => null)
+    const data = r ? await r.json().catch(() => ({})) : {}
+    const ok = !!r && (r.ok || r.status === 207)
+    return { ok, data }
+  } finally { window.__klavMutating-- }
+}
+// #704: OPTIMISTIC bulk mutation. When `optimistic` is provided (board view), the selected cards are
+// updated LOCALLY + in the DOM immediately (move to the target column, update badges/counts) and the
+// selection cleared — WITHOUT awaiting the network. The PATCH then fires in the background; a hard
+// failure reverts the local change. Undo reverts locally + PATCHes the prior values back. Falls back to
+// the original blocking path when no optimistic handler applies (e.g. label add/remove, list view).
+async function applyBulkAction(projId, body, onDone, optimistic) {
   const ids = [..._bulkSelected]
   if (!ids.length) return
   const label = bulkActionLabel(body)
+  // ── #704 optimistic path (board status/priority/assignee) ─────────────────────────────────────
+  if (typeof optimistic === "function") {
+    const applied = optimistic(body, ids)   // mutate local + DOM now, clear selection; null → decline
+    if (applied) {
+      // Show the same "N tickets — <label> · Undo" toast right away — no await.
+      bulkOptimisticToast(ids.length, label, applied, projId)
+      // Background PATCH; revert the optimistic change on a hard failure.
+      ;(async () => {
+        const { ok, data } = await bulkPatchRequest(projId, ids, body)
+        if (!ok) { applied.revertLocal(); klavToast("Couldn't update — reverted.", true) }
+        else if (body.assignee && data.assigneeEmailSent === false) assignEmailWarnToast("Assigned, but the notification email could not be sent.")
+      })()
+      return
+    }
+    // optimistic declined → fall through to the blocking path below.
+  }
+  // ── original blocking path (list view, label ops) ─────────────────────────────────────────────
   const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
     method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, ticketIds: ids })
   }).catch(() => null)
@@ -8200,6 +8255,72 @@ async function applyBulkAction(projId, body, onDone) {
   bulkResultToast(ids.length, label, failures, undoFields, projId, prior, onDone)
   // JTBD 2.15: a bulk-assign whose notification email(s) were silently skipped gets a visible warning.
   if (body.assignee && data.assigneeEmailSent === false) assignEmailWarnToast("Assigned, but the notification email could not be sent.")
+}
+// #704: apply a bulk status/priority/assignee change to the board LOCALLY + in the DOM, with no full
+// rebuild and no network. Returns { field, prior, revertLocal } for the toast's Undo + failure revert,
+// or null when the change isn't board-optimizable (label ops fall back to the blocking path).
+function boardBulkOptimistic(body, ids) {
+  const field = body.status !== undefined ? "status"
+    : body.priority !== undefined ? "priority"
+    : body.assignee !== undefined ? "assignee" : null
+  if (!field) return null
+  const kanban = $("ticketsKanban"); if (!kanban) return null
+  const newVal = body[field]
+  const idStrs = ids.map(String)
+  const boardT = (id) => (_tktBoardTickets || []).find(x => String(x.id) === String(id))
+  const cardById = (id) => [...kanban.querySelectorAll(".kb-card")].find(c => c.getAttribute("data-id") === String(id))
+  // Capture prior local values (per ticket) for revert + undo.
+  const prior = idStrs.map(id => { const t = boardT(id); return { ticketId: id, value: t ? (t[field] == null ? null : t[field]) : null } })
+  const setLocal = (id, val) => {
+    ;[_tktBoardTickets, state.tickets].forEach(arr => {
+      if (!Array.isArray(arr)) return
+      const t = arr.find(x => String(x.id) === String(id)); if (t) t[field] = val
+    })
+  }
+  // Mutate local data, then the DOM in place.
+  idStrs.forEach(id => {
+    setLocal(id, newVal)
+    const card = cardById(id); if (!card) return
+    const t = boardT(id)
+    if (field === "status") {
+      const targetKey = kanbanKeyForStatus(newVal)
+      const targetList = kanban.querySelector(`.kb-list[data-key="${targetKey}"]`)
+      if (targetList) { const ph = targetList.querySelector(".kb-empty"); if (ph) ph.remove(); targetList.appendChild(card); card.setAttribute("data-status-key", targetKey) }
+    } else if (field === "priority") {
+      card.className = (card.className.replace(/\bsevrail-\S+/g, "").replace(/\s+/g, " ").trim()) + " " + sevRailClass(newVal)
+    }
+    const meta = card.querySelector(".kb-card-meta"); if (meta && t) meta.innerHTML = kbCardMetaHtml(t)
+    card.classList.remove("kb-selected")
+    const cb = card.querySelector(".kb-card-cb"); if (cb) cb.checked = false
+  })
+  kbSyncColumnCounts()                                  // refresh column counts + empty placeholders
+  _bulkSelected.clear()
+  const bar = kanban.querySelector("#tktBulkBar"); if (bar) bar.classList.remove("show")
+  const revertLocal = () => { prior.forEach(p => setLocal(p.ticketId, p.value)); renderTicketsKanban(_tktBoardTickets) }
+  return { field, prior, revertLocal }
+}
+// #704: toast for the optimistic bulk path — "N tickets — <label>" + Undo. Undo reverts the board
+// locally (rare path → full rebuild is fine) and PATCHes the prior values back in the background.
+function bulkOptimisticToast(count, label, applied, projId) {
+  let toast = $("bulkToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "bulkToast"; toast.className = "tg-toast"; document.body.appendChild(toast) }
+  if (_bulkToastTimer) { clearTimeout(_bulkToastTimer); _bulkToastTimer = null }
+  toast.className = "tg-toast"
+  const msg = `${count} ticket${count === 1 ? "" : "s"} — ${esc(label)}`
+  toast.innerHTML = `<div class="tg-toast-row" style="display:flex;align-items:center;gap:14px">`
+    + `<span class="tg-toast-msg">${kicon('check-circle',{size:15})} ${msg}</span>`
+    + `<button class="tg-toast-undo" type="button">${kicon('refresh-cw',{size:13})} Undo</button></div>`
+  toast.classList.add("show")
+  const undoBtn = toast.querySelector(".tg-toast-undo")
+  if (undoBtn) undoBtn.addEventListener("click", async () => {
+    undoBtn.disabled = true
+    applied.revertLocal()                                // restore the board locally, right away
+    const priorObjs = (applied.prior || []).map(p => ({ ticketId: p.ticketId, [applied.field]: p.value }))
+    toast.classList.remove("show")
+    if (_bulkToastTimer) { clearTimeout(_bulkToastTimer); _bulkToastTimer = null }
+    await bulkUndo(projId, priorObjs, applied.field)     // background PATCH of the prior values
+  })
+  _bulkToastTimer = setTimeout(() => { toast.classList.remove("show") }, 9000)
 }
 
 // KLA-178: build the bulk-action toolbar HTML and wire its handlers
@@ -8245,7 +8366,8 @@ function buildBulkBar(listEl, projId, opts) {
       const n = _bulkSelected.size
       if (!confirm(`${bulkActionLabel(body)} on ${n} ticket${n === 1 ? "" : "s"}?`)) return
     }
-    await applyBulkAction(projId, body, onDone)
+    // #704: label ops always take the blocking path (boardBulkOptimistic returns null for them).
+    await applyBulkAction(projId, body, onDone, opts && opts.optimistic)
   }
 
   bar.querySelector("#bulkClear").addEventListener("click", () => {
@@ -8460,6 +8582,28 @@ async function moveTicketColumn(ticketId, fromKey, toKey) {
     renderTicketsKanban(_tktBoardTickets)
   }
 }
+// #704: shared builder for a kanban card's meta row (status/priority/source/assignee/recur/labels).
+// Used by renderCard AND the optimistic bulk-action DOM update so both stay in lockstep.
+function kbCardMetaHtml(t) {
+  const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
+  const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
+  const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
+  const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
+  return `${stChip}${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
+}
+// #704: after moving cards between columns, recompute each column's count badge + restore the "—"
+// empty placeholder (or drop it) — cheaply, without a full board rebuild.
+function kbSyncColumnCounts() {
+  const kanban = $("ticketsKanban"); if (!kanban) return
+  kanban.querySelectorAll(".kb-col").forEach(col => {
+    const list = col.querySelector(".kb-list"); if (!list) return
+    const n = list.querySelectorAll(".kb-card").length
+    const nEl = col.querySelector(".kb-n"); if (nEl) nEl.textContent = n
+    const empty = list.querySelector(".kb-empty")
+    if (n === 0 && !empty) { const e = document.createElement("div"); e.className = "kb-empty muted"; e.textContent = "—"; list.appendChild(e) }
+    else if (n > 0 && empty) empty.remove()
+  })
+}
 function renderTicketsKanban(boardTickets) {
   const board = $("ticketsKanban")
   if (!board) return
@@ -8563,13 +8707,7 @@ function renderTicketsKanban(boardTickets) {
         boardEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
       })
       const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
-      const renderCard = () => {
-        const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
-        const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
-        const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
-        const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
-        cardEl.querySelector(".kb-card-meta").innerHTML = `${stChip}${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
-      }
+      const renderCard = () => { cardEl.querySelector(".kb-card-meta").innerHTML = kbCardMetaHtml(t) }
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
@@ -8634,7 +8772,9 @@ function renderTicketsKanban(boardTickets) {
   board.innerHTML = ""
   // JTBD 2.14: shared bulk bar above the board — same controls/undo/failures as the list view.
   const rerenderBoard = () => renderTicketsKanban(_tktBoardTickets)
-  const bulkBar = buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard })
+  // #704: pass an optimistic handler so status/priority/assignee bulk changes apply instantly (local +
+  // DOM) and PATCH in the background, instead of blocking ~5s on the network before the board updates.
+  const bulkBar = buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard, optimistic: boardBulkOptimistic })
   board.appendChild(bulkBar)
   board.appendChild(boardEl)
   // Live count/visibility sync when selection changes via checkbox or shift-click (no full rebuild).

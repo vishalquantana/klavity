@@ -180,14 +180,21 @@ test("assignee avatar (.tkt-av) is locked to a circular aspect (equal w/h + aspe
   expect(rule).toContain("height:20px")
 })
 
-// ── #679 edit-mode: the description textarea sits BELOW the label with a gap (no overlap/clip) ──────
-test("editable-description textarea has its own block wrapper spaced below the section label", () => {
-  expect(HTML).toContain(".tkt-desc-edit-wrap{display:block;margin-top:8px}")
+// ── #679/#705 edit-mode: the description textarea sits BELOW the label and AUTO-GROWS with content ──
+test("editable-description textarea is a same-typography auto-grow field (no fixed 'tiny box')", () => {
+  expect(HTML).toContain(".tkt-desc-edit-wrap{display:block;margin-top:2px}")
   const i = HTML.indexOf(".tkt-desc-ta{")
   const rule = HTML.slice(i, HTML.indexOf("}", i) + 1)
   expect(rule).toContain("display:block")
-  expect(rule).toContain("min-height:104px")
-  expect(rule).toContain("overflow:auto")   // long text scrolls instead of clipping
+  // #705: grows to fit content (JS sets height=scrollHeight) — no fixed min/max that shrinks text.
+  expect(rule).toContain("min-height:0")
+  expect(rule).toContain("height:auto")
+  expect(rule).toContain("overflow:hidden")
+  expect(rule).not.toContain("min-height:104px")
+  expect(rule).not.toContain("max-height:360px")
+  // Same read-view typography so clicking Edit doesn't reflow the block.
+  expect(rule).toContain("font-size:14px")
+  expect(rule).toContain("line-height:1.5")
 })
 
 // ── deep-link preservation (KLA-553/560): one-shot open, no reopen on poll/focus ──────────────────
