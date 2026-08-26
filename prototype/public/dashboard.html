@@ -56,6 +56,9 @@ a{color:inherit;text-decoration:none}
 .side .nv.active{background:var(--ink-3);color:var(--paper);border-color:var(--line)}
 .side .nv .ic{font-size:16px;width:20px;text-align:center;flex:none}
 .side .nv .ct{margin-left:auto;font-size:11px;color:var(--paper-faint);font-family:var(--mono)}
+/* #740: thin divider that clusters the nav into three groups (setup · testing · admin) */
+.side .nv-sep{height:1px;margin:9px 9px;background:var(--line);border:0;flex:none}
+body.side-collapsed .side .nv-sep{margin:9px 6px}
 /* app version pinned to the sidebar footer (bottom-left); margin-top:auto pushes it below the nav */
 .side-version{margin-top:auto;padding:12px 11px 2px;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--paper-faint);user-select:text}
 /* compact upgrade pill for free accounts — sits under the brand, opens the Plan & billing drawer */
@@ -1163,6 +1166,23 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .kb-card-t{font-size:13px;font-weight:600;line-height:1.3}
 .kb-card-d{font-size:11px;color:var(--paper-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kb-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+/* #739: Sim Reports board reuses the ticket kanban card look. Priority-keyed column dots + the
+   report-card extras (quote line, thumbnail, card actions, always-reachable select checkbox). */
+.kb-dot-urgent{background:#dc2626}.kb-dot-high{background:var(--rose)}.kb-dot-medium{background:var(--amber)}.kb-dot-low{background:var(--paper-faint)}
+.kb-card .tg-cb-wrap{position:absolute;top:8px;left:8px;margin:0;z-index:2;opacity:0;transition:opacity var(--mi-dur) var(--mi-ease)}
+.kb-card:hover .tg-cb-wrap,.kb-card.tg-selected .tg-cb-wrap{opacity:1}
+.kb-card.tg-selected{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo-soft)}
+.kb-card.has-cb .kb-card-t{padding-left:20px}
+.kb-card .tg-cb{width:16px;height:16px;cursor:pointer}
+.kb-card .tg-shot{width:100%;height:96px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--ink);margin:8px 0 2px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.kb-card .tg-shot img{width:100%;height:100%;object-fit:cover}
+.kb-card-q{font-size:12px;color:var(--paper-dim);margin-top:5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.kb-card-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}
+.kb-card-actions .tg-pri{font-size:11px;padding:3px 6px;border-radius:8px;background:var(--ink);border:1px solid var(--line);color:var(--paper)}
+/* #741: tighten the header→board gap and let the board fill the full width (no right-side gutter)
+   on the two board views (Tickets + Sim Reports). */
+body[data-view="tickets"] .head,body[data-view="triage"] .head{margin-bottom:16px}
+body[data-view="tickets"] .wrap,body[data-view="triage"] .wrap{max-width:none}
 /* graft: severity rail (scannable spine) + status pill + search toolbar */
 .sevrail-urgent{box-shadow:inset 3px 0 0 #dc2626}
 .sevrail-high{box-shadow:inset 3px 0 0 var(--rose)}
@@ -2122,10 +2142,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
          iframe so the whole capability is reachable from the sidebar without leaving the shell. -->
     <button class="nv" data-go="autosims"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" /><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" /><path d="M16 17h4" /><path d="M4 13h4" /></svg></span>AutoSims</button>
     <button class="nv" data-go="tickets"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20v-9" /> <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" /> <path d="M14.12 3.88 16 2" /> <path d="M21 21a4 4 0 0 0-3.81-4" /> <path d="M21 5a4 4 0 0 1-3.55 3.97" /> <path d="M22 13h-4" /> <path d="M3 21a4 4 0 0 1 3.81-4" /> <path d="M3 5a4 4 0 0 0 3.55 3.97" /> <path d="M6 13H2" /> <path d="m8 2 1.88 1.88" /> <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" /></svg></span>Tickets <span class="ct" id="navTicketCount"></span></button>
-    <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>New reports <span class="ct" id="navTriageCount"></span></button>
+    <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>Sim Reports <span class="ct" id="navTriageCount"></span></button>
     <!-- Bugs by page: the in-app equivalent of QA mode for teammates who don't use the extension —
          pick a reported page, see its bugs grouped with status + counts, mark them working & close. -->
-    <button class="nv" data-go="pagebugs"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M9 13h6" /><path d="M9 17h3" /></svg></span>Sim Reports</button>
+    <button class="nv" data-go="pagebugs"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M9 13h6" /><path d="M9 17h3" /></svg></span>Reports</button>
     <button class="nv" data-go="recurring"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg></span>Recurring <span class="ct" id="navRecurringCount"></span></button>
     <!-- Guards (B.10): the "things Klavity re-checks forever because they broke once" board, promoted
          out of AutoSims to its own top-level view so a Snap-only customer can reach it directly. -->
@@ -2240,7 +2260,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <li id="clFirstReport">
         <div>
           <div class="cl-step-t">File your first bug report</div>
-          <div class="cl-step-d">Click the widget button on your site — or try it right here, the widget is live on this page. Your report lands in <a href="#triage" onclick="setView('triage');return false">New reports</a>, ready to accept as a bug or dismiss.</div>
+          <div class="cl-step-d">Click the widget button on your site — or try it right here, the widget is live on this page. Your report lands in <a href="#triage" onclick="setView('triage');return false">Sim Reports</a>, ready to accept as a bug or dismiss.</div>
           <div class="cl-step-d" style="margin-top:8px"><button class="btn btn-indigo btn-sm" id="clTestReportBtn" type="button">Send a test report now</button></div>
         </div>
       </li>
@@ -2268,7 +2288,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <!-- First-catch celebration — one-time dismissible callout when the first Sim reaction / finding appears -->
   <div class="first-report hide" id="firstReportCallout" data-view="overview" role="status">
     <span class="fr-ic" data-ki="sparkles"></span>
-    <span class="fr-txt"><b>A customer just found something before your users would.</b> Review it in <a href="#triage" onclick="setView('triage');return false">New reports</a> — accept it as a bug or dismiss it.</span>
+    <span class="fr-txt"><b>A customer just found something before your users would.</b> Review it in <a href="#triage" onclick="setView('triage');return false">Sim Reports</a> — accept it as a bug or dismiss it.</span>
     <button class="fr-x" id="firstReportDismiss" type="button" aria-label="Dismiss first-report celebration"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
   </div>
 
@@ -2286,7 +2306,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="snap-hero-steps">
       <div class="snap-hero-step"><div class="sh-n">Step 1</div><h4>Copy the snippet</h4><p>One script tag goes just before <code style="font-family:var(--mono);font-size:10.5px">&lt;/body&gt;</code> on every page. Works on any platform.</p></div>
       <div class="snap-hero-step"><div class="sh-n">Step 2</div><h4>Paste and publish</h4><p>Visitors see a discreet report button. One click opens a pre-filled bug composer — no sign-in needed.</p></div>
-      <div class="snap-hero-step"><div class="sh-n">Step 3</div><h4>Triage in New reports</h4><p>Every submission lands in <button style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-family:inherit;font-size:inherit" onclick="setView('triage')">New reports</button> — accept as a ticket or dismiss with one click.</p></div>
+      <div class="snap-hero-step"><div class="sh-n">Step 3</div><h4>Triage in Sim Reports</h4><p>Every submission lands in <button style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-family:inherit;font-size:inherit" onclick="setView('triage')">Sim Reports</button> — accept as a ticket or dismiss with one click.</p></div>
     </div>
     <div class="snap-embed-card">
       <h3><span class="sec">Embed snippet</span></h3>
@@ -2307,7 +2327,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <a class="btn btn-indigo" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener">Get the extension →</a>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
-      <button class="btn btn-indigo btn-sm" onclick="setView('triage')"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> View New reports</button>
+      <button class="btn btn-indigo btn-sm" onclick="setView('triage')"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> View Sim Reports</button>
       <button class="btn btn-ghost btn-sm" onclick="setView('settings')">Widget appearance &amp; settings →</button>
     </div>
   </div>
@@ -2369,7 +2389,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
     <!-- Triage inbox -->
     <div class="card full" data-view="triage">
-      <h2 style="display:flex;align-items:center;gap:8px"><span data-ki="bell"></span> New reports <span class="h-tag">accept as a bug or dismiss</span></h2>
+      <div class="kb-toolbar">
+        <h2 style="display:flex;align-items:center;gap:8px"><span data-ki="bell"></span> Sim Reports <span class="h-tag">accept as a bug or dismiss</span></h2>
+        <div class="tkt-view-toggle"><button class="tkt-vbtn" id="tgListBtn" type="button" title="List view">&#9776; List</button><button class="tkt-vbtn active" id="tgBoardBtn" type="button" title="Board view">&#8862; Board</button></div>
+      </div>
       <div class="tg-filters" id="triageFilters"></div>
       <div id="triageList"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
       <!-- KLA-255: Pending Sim Matches — fuzzy/ambiguous persona matches from transcript ingestion -->
@@ -2468,7 +2491,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <span id="supSpinMsg">Your Sims are opening the page…</span>
       </div>
       <div id="supResults" class="sup-results"></div>
-      <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">New reports</a> or the full <a href="/sim-runs" id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
+      <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs" id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
     </div>
 
     <!-- Sims tab: compact, dismissible live-trigger guidance — kept for onboarding, no longer the hero -->
@@ -2476,7 +2499,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="sim-live-intro">
         <div class="sim-live-copy">
           <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" /> <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" /> <circle cx="12" cy="9" r="2" /> <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" /> <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" /> <path d="M9.5 18h5" /> <path d="m8 22 4-11 4 11" /></svg> Sims — live on your product</h2>
-          <p class="muted">Your Sims can react to the exact page you're viewing, on demand. Use the extension to ask them for a live review; observations land above and in New reports.</p>
+          <p class="muted">Your Sims can react to the exact page you're viewing, on demand. Use the extension to ask them for a live review; observations land above and in Sim Reports.</p>
           <div class="sim-live-steps">
             <div class="sim-live-step"><span class="sim-live-n">1</span><div><b>Browse</b><div class="muted">Open the product page.</div></div></div>
             <div class="sim-live-step"><span class="sim-live-n">2</span><div><b>Trigger</b><div class="muted">Right-click or open the extension.</div><div class="sim-live-pill"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /><path d="m14 8-1.5-1.5" /><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /><path d="m16.5 10.5 1 1" /><path d="m17 6-2.891-2.891" /><path d="M2 15c6.667-6 13.333 0 20-6" /><path d="m20 9 .891.891" /><path d="M3.109 14.109 4 15" /><path d="m6.5 12.5 1 1" /><path d="m7 18 2.891 2.891" /><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Ask Sims to review this</div></div></div>
@@ -2612,11 +2635,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="muted" style="font-size:12.5px;margin-bottom:8px">Choose what happens to a bug your users report once a tracker (like Jira) is connected. Sim / AutoSim reports keep their own auto-copy behavior.</div>
           <label class="snap-route-opt" style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer">
             <input type="radio" name="snapRouting" value="autofile" style="margin-top:2px">
-            <span><b>File directly into your tracker</b> <span class="chip" style="background:var(--green);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px">DEFAULT</span><br><span class="muted" style="font-size:12px">Every human Snap becomes a tracker ticket the moment it's submitted — screenshots, repro steps &amp; console logs attached. It still appears in New reports for reference, showing its tracker key.</span></span>
+            <span><b>File directly into your tracker</b> <span class="chip" style="background:var(--green);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px">DEFAULT</span><br><span class="muted" style="font-size:12px">Every human Snap becomes a tracker ticket the moment it's submitted — screenshots, repro steps &amp; console logs attached. It still appears in Sim Reports for reference, showing its tracker key.</span></span>
           </label>
           <label class="snap-route-opt" style="display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:8px;cursor:pointer">
             <input type="radio" name="snapRouting" value="review" style="margin-top:2px">
-            <span><b>Review in Klavity first, then transfer</b><br><span class="muted" style="font-size:12px">New Snaps land in New reports only. You review them and manually send the ones you want to Jira — nothing auto-pushes.</span></span>
+            <span><b>Review in Klavity first, then transfer</b><br><span class="muted" style="font-size:12px">New Snaps land in Sim Reports only. You review them and manually send the ones you want to Jira — nothing auto-pushes.</span></span>
           </label>
           <span class="msg" id="snapRoutingMsg" style="margin-top:4px;display:inline-block"></span>
         </div>
@@ -3161,7 +3184,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="card full" data-view="pagebugs">
       <h2 style="display:flex;align-items:center;gap:8px">
         <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M9 13h6" /><path d="M9 17h3" /></svg>
-        Sim Reports
+        Reports
       </h2>
       <p class="pb-desc">The pages your users reported bugs on — no extension needed. Pick a page (or paste its URL) to see every report on it, then mark each one <b>working &amp; closed</b> once it is fixed.</p>
       <div class="pb-controls">
@@ -3736,6 +3759,8 @@ function maybeOpenDeepLinkTicket() {
 let _triageItems = []
 let _triageSentiment = "all"
 let _triageSim = "all"   // JTBD 3.10: filter New reports by originating Sim ("all" | sim name | "__direct__")
+// #739: Sim Reports parity — "board" (kanban card look, default, mirrors Tickets) | "list" (the row list).
+let _tgView = "board"
 const TG_SENTIMENTS = [["all", "All"], ["frustrated", "Frustrated"], ["confused", "Confused"], ["satisfied", "Satisfied"], ["neutral", "Neutral"]]
 // JTBD 3.10 (triage hygiene): "critical" collapses the actionable-negative reactions so a reviewer
 // can hide the non-actionable positive/neutral observations a continuous-watch session floods in.
@@ -4055,8 +4080,22 @@ async function tgToggleExpand(row, t) {
 // JTBD 3.10: render the whole New-reports view — the sentiment + Sim filter bar, then the rows that
 // pass both filters. Called on load and after every filter change so the two stay in lockstep.
 function renderTriageView() {
+  bindTgViewToggle()
   renderTriageFilters()
   renderTriageItems(tgVisibleItems())
+}
+// #739: wire the List/Board toggle (mirrors the Tickets .tkt-view-toggle). Bound once; keeps the two
+// buttons' active state in sync with _tgView and re-renders the queue on switch.
+let _tgViewToggleBound = false
+function bindTgViewToggle() {
+  const lb = $("tgListBtn"), bb = $("tgBoardBtn")
+  if (!lb || !bb) return
+  const sync = () => { lb.classList.toggle("active", _tgView === "list"); bb.classList.toggle("active", _tgView === "board") }
+  sync()
+  if (_tgViewToggleBound) return
+  _tgViewToggleBound = true
+  lb.addEventListener("click", () => { if (_tgView === "list") return; _tgView = "list"; sync(); renderTriageItems(tgVisibleItems()) })
+  bb.addEventListener("click", () => { if (_tgView === "board") return; _tgView = "board"; sync(); renderTriageItems(tgVisibleItems()) })
 }
 // JTBD 3.10: sentiment filter (Critical / positive / all …) + bulk-dismiss-by-Sim. Both live in the
 // #triageFilters bar above the list so a reviewer can hide non-actionable positives or clear a noisy
@@ -4152,7 +4191,7 @@ function renderTriageBulkBar() {
   bar.querySelector("#tgBulkDismiss").addEventListener("click", (ev) => tgDismiss([..._tgSelected], ev.currentTarget))
   bar.querySelector("#tgBulkClear").addEventListener("click", () => {
     _tgSelected.clear()
-    if (host) host.querySelectorAll(".tg-row").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
+    if (host) host.querySelectorAll(".tg-item").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
     renderTriageBulkBar()
   })
 }
@@ -4189,19 +4228,74 @@ function renderTriageItems(items) {
   const present = new Set(items.map(t => String(t.id)))
   _tgSelected = new Set([..._tgSelected].filter(id => present.has(id)))
   if (_tgFocus && !present.has(_tgFocus)) _tgFocus = null
+  // #739: parity with Tickets — a Board of kanban-style report cards (default) or the row List. Both open
+  // a report in the SAME single-ticket cockpit (openReportCockpit → openSingleTicket → buildTktDetail).
+  if (_tgView === "board") renderTriageBoard(host, items)
+  else renderTriageList(host, items)
+  loadTriageShots(host)
+  // JTBD 3.8: deep-link from a Sim-run observation → open that report in the cockpit (falls back to
+  // scroll+highlight if the row/card is present but the ticket surface isn't reachable).
+  if (window._pendingTriageFocus) {
+    const fid = window._pendingTriageFocus; window._pendingTriageFocus = null
+    const t = (items).find(x => String(x.id) === String(fid))
+    if (t && typeof openSingleTicket === "function") openReportCockpit(String(fid), t)
+    else focusTriageRow(fid)
+  }
+}
+// #739: shared per-item wiring for BOTH the list rows and the board cards — accept / dismiss / send /
+// bulk-select checkbox, plus "click the body opens the report in the ticket cockpit".
+function wireTriageItem(el, id, t) {
+  const acc = el.querySelector(".tg-accept")
+  if (acc) acc.addEventListener("click", (ev) => { ev.stopPropagation(); const p = el.querySelector(".tg-pri"); tgAccept([id], p ? p.value : (t.priority || "medium"), ev.currentTarget) })
+  const dis = el.querySelector(".tg-dismiss")
+  if (dis) dis.addEventListener("click", (ev) => { ev.stopPropagation(); tgDismiss([id], ev.currentTarget) })
+  const sendBtn = el.querySelector(".tg-send-jira")
+  if (sendBtn) sendBtn.addEventListener("click", (ev) => { ev.stopPropagation(); tgSendToTracker([id]) })
+  const pri = el.querySelector(".tg-pri")
+  if (pri) pri.addEventListener("click", (ev) => ev.stopPropagation())
+  const cb = el.querySelector(".tg-cb")
+  if (cb) {
+    cb.addEventListener("click", (ev) => ev.stopPropagation())
+    cb.addEventListener("change", () => {
+      if (cb.checked) _tgSelected.add(id); else _tgSelected.delete(id)
+      el.classList.toggle("tg-selected", cb.checked)
+      renderTriageBulkBar()
+    })
+  }
+  el.addEventListener("click", (ev) => {
+    // Clicking the body (but never a control/thumbnail) opens the single-report cockpit.
+    if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) return
+    openReportCockpit(id, t)
+  })
+}
+// #739: a report IS a feedback row, so it renders in the exact single-ticket cockpit. openSingleTicket
+// looks the record up in state.tickets (and _renderSingleTicket early-returns if it's missing, since the
+// post-fetch re-render is skipped while the panel is still hidden) — so seed the report first, then open.
+// This REUSES openSingleTicket / buildTktDetail unchanged (the #726 3-col cockpit: evidence-left,
+// description-mid, properties-right); the report's screenshot / observation / sentiment / source / sim
+// map straight onto the same fields buildTktDetail reads.
+function openReportCockpit(id, t) {
+  if (typeof openSingleTicket !== "function") return
+  if (!Array.isArray(state.tickets)) state.tickets = []
+  const ix = state.tickets.findIndex(x => String(x.id) === String(id))
+  if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...t }
+  else state.tickets.push({ ...t })
+  openSingleTicket(String(id), "panel")
+}
+// #739: the row List (kept for parity's List/Board toggle) — same data as before minus the inline
+// Evidence expand, which is replaced by opening the full cockpit on click.
+function renderTriageList(host, items) {
   host.innerHTML = items.map(t => {
     const id = String(t.id)
     const sel = _tgSelected.has(id)
     return `
-    <div class="tg-row ${sevRailClass(t.priority)}${sel ? " tg-selected" : ""}${_tgFocus === id ? " tg-focus" : ""}" data-id="${esc(id)}" tabindex="-1">
+    <div class="tg-row tg-item ${sevRailClass(t.priority)}${sel ? " tg-selected" : ""}${_tgFocus === id ? " tg-focus" : ""}" data-id="${esc(id)}" tabindex="-1">
       <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image',{size:16})}</div></div>` : ""}
       <div class="tg-b">
         <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
         <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot',{size:14})} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, {badge:true})}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
-        <button class="tg-expand-btn" type="button" aria-expanded="false" title="Show full evidence">${kicon('chevron-right',{size:14})} <span class="tg-expand-lbl">Evidence</span></button>
-        <div class="tg-evidence hide" data-loaded=""></div>
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
@@ -4214,34 +4308,67 @@ function renderTriageItems(items) {
   host.querySelectorAll(".tg-row").forEach(row => {
     const id = row.getAttribute("data-id")
     const t = (items).find(x => String(x.id) === id)
-    row.querySelector(".tg-accept").addEventListener("click", (ev) => tgAccept([id], row.querySelector(".tg-pri").value, ev.currentTarget))
-    row.querySelector(".tg-dismiss").addEventListener("click", (ev) => tgDismiss([id], ev.currentTarget))
-    const sendBtn = row.querySelector(".tg-send-jira")
-    if (sendBtn) sendBtn.addEventListener("click", () => tgSendToTracker([id]))
-    const cb = row.querySelector(".tg-cb")
-    cb.addEventListener("change", () => {
-      if (cb.checked) _tgSelected.add(id); else _tgSelected.delete(id)
-      row.classList.toggle("tg-selected", cb.checked)
-      renderTriageBulkBar()
-    })
-    const exp = row.querySelector(".tg-expand-btn")
-    exp.addEventListener("click", () => tgToggleExpand(row, t))
-    row.addEventListener("click", (ev) => {
-      // Clicking anywhere on the row (but not its controls) focuses it for keyboard nav.
-      if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-expand-btn, .tg-evidence, .tg-shot")) return
-      tgSetFocus(id, false)
-    })
+    wireTriageItem(row, id, t)
   })
-  loadTriageShots(host)
-  // JTBD 3.8: deep-link from a Sim-run observation → scroll to + highlight its feedback row.
-  if (window._pendingTriageFocus) { focusTriageRow(window._pendingTriageFocus); window._pendingTriageFocus = null }
+}
+// #739: the Board — report cards in the exact ticket-kanban look (.kanban/.kb-col/.kb-card), grouped
+// into priority columns (Urgent · High · Medium · Low) since every new report shares the 'new' status.
+const TG_PRI_COLS = [["urgent", "Urgent"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]]
+function buildReportCard(t) {
+  const id = String(t.id)
+  const sel = _tgSelected.has(id)
+  const card = document.createElement("div")
+  card.className = "kb-card tg-item has-cb " + sevRailClass(t.priority) + (sel ? " tg-selected" : "")
+  card.setAttribute("data-id", id)
+  card.setAttribute("tabindex", "-1")
+  const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? t.urlPath : "", ago(t.createdAt)].filter(Boolean).map(esc).join(" · ")
+  const quote = t.sourceQuote ? `<div class="kb-card-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="kb-card-q">${esc(t.observation)}</div>` : "")
+  const meta = `${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${dupAckHtml(t, {badge:true})}${tgRoutingAffordance(t)}`
+  card.innerHTML = `
+    <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
+    <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">#${t.seqNum}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+    ${sub ? `<div class="kb-card-d">${sub}</div>` : ""}
+    ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image',{size:16})}</div></div>` : ""}
+    ${quote}
+    ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
+    <div class="tg-actions kb-card-actions">
+      <select class="tg-pri" aria-label="Priority">${["urgent","high","medium","low"].map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${s}</option>`).join("")}</select>
+      <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
+      <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
+    </div>`
+  wireTriageItem(card, id, t)
+  return card
+}
+function renderTriageBoard(host, items) {
+  const groups = { urgent: [], high: [], medium: [], low: [] }
+  items.forEach(t => { const p = ["urgent","high","medium","low"].includes(t.priority) ? t.priority : "medium"; groups[p].push(t) })
+  const board = document.createElement("div")
+  board.className = "kanban"
+  TG_PRI_COLS.forEach(([key, label]) => {
+    const list = groups[key]
+    const col = document.createElement("div")
+    col.className = "kb-col"
+    col.setAttribute("data-key", key)
+    const head = document.createElement("div")
+    head.className = "kb-head"
+    head.innerHTML = `<span class="kb-dot kb-dot-${key}"></span><span class="kb-title">${label}</span><span class="kb-n">${list.length}</span>`
+    col.appendChild(head)
+    const listEl = document.createElement("div")
+    listEl.className = "kb-list"
+    if (!list.length) { const e = document.createElement("div"); e.className = "kb-empty muted"; e.textContent = "—"; listEl.appendChild(e) }
+    list.forEach(t => listEl.appendChild(buildReportCard(t)))
+    col.appendChild(listEl)
+    board.appendChild(col)
+  })
+  host.innerHTML = ""
+  host.appendChild(board)
 }
 
 // Scroll to a feedback row (by id) in New reports and pulse it so the deep-link lands somewhere obvious.
 function focusTriageRow(fid) {
   if (!fid) return
   const host = $("triageList"); if (!host) return
-  const row = host.querySelector('.tg-row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(fid) : fid) + '"]')
+  const row = host.querySelector('.tg-item[data-id="' + (window.CSS && CSS.escape ? CSS.escape(fid) : fid) + '"]')
   if (!row) return
   row.scrollIntoView({ behavior: "smooth", block: "center" })
   row.classList.add("tg-focus")
@@ -4564,7 +4691,7 @@ function loadTriageShots(host) {
 // poll can't clobber the current view's title back to "Welcome back").
 const VIEW_TITLES = {
   snap:      ["Report widget", "Add the Klavity report widget to your site."],
-  triage:    ["New reports", "Fresh submissions waiting to be triaged."],
+  triage:    ["Sim Reports", "Fresh submissions waiting to be triaged."],
   sims:      ["Sims", "The AI users reacting to your product."],
   autosims:  ["AutoSims", "Critical paths Klavity re-runs on every deploy."],
   tickets:   ["Tickets", "Everything filed, triaged, and tracked."],
@@ -4572,7 +4699,7 @@ const VIEW_TITLES = {
   settings:  ["Settings", "Project, widget, plan, and integration settings."],
   recurring: ["Recurring issues", "Problems that keep coming back."],
   guards:    ["Guards", "Expectations enforced across runs."],
-  pagebugs:  ["Sim Reports", "Per-page reports of the issues found on your pages."],
+  pagebugs:  ["Reports", "Per-page reports of the issues found on your pages."],
 }
 function applyViewHeader(v) {
   const hello = $("hello"), lead = $("lead")
@@ -5140,7 +5267,7 @@ function maybeCelebrateFirstReport() {
   if (!genuine || !hasFeedback) return
   try { if (localStorage.getItem("klavFirstReportToast:" + pid) === "1") return } catch (e) { return }
   try { localStorage.setItem("klavFirstReportToast:" + pid, "1") } catch (e) {}
-  klavToast('First report received from <b>' + esc(host) + '</b> — it\'s in <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">New reports</a>')
+  klavToast('First report received from <b>' + esc(host) + '</b> — it\'s in <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">Sim Reports</a>')
 }
 
 // ── Live "Widget detected" flip — polls GET /api/projects/:id/widget-status (~3s, one indexed row
@@ -5300,7 +5427,7 @@ $("clTestReportBtn") && ($("clTestReportBtn").onclick = () => {
     if (!window.__klavTestReportWired && typeof window.Klavity.on === "function") {
       window.__klavTestReportWired = true
       window.Klavity.on("submit", () => {
-        klavToast('Test report received — <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">review it in New reports</a>')
+        klavToast('Test report received — <a href="#triage" style="color:var(--indigo)" onclick="setView(\'triage\');return false">review it in Sim Reports</a>')
         // KLAVITYKLA-511: the new report must show up in New reports immediately. refreshAll() alone
         // updates counts/banner but renderTriage() would re-paint the STALE "triage:"+pid SWR snapshot,
         // so bust that cache entry and re-render the queue too.
@@ -5990,7 +6117,7 @@ function renderSimsFeed() {
           if (o.createdAt) meta.push(ago(o.createdAt))
           const moreLink = obs.length > 1
             ? `<a class="sf-triage" href="#triage" onclick="setView('triage')">See ${obs.length - 1} more →</a>`
-            : `<a class="sf-triage" href="#triage" onclick="setView('triage')">View in New reports →</a>`
+            : `<a class="sf-triage" href="#triage" onclick="setView('triage')">View in Sim Reports →</a>`
           meta.push(moreLink)
           return `<div class="sf-obs"><div class="sf-ob">
             ${tags.length ? `<div class="sf-ob-tags">${tags.join("")}</div>` : ""}
@@ -12545,8 +12672,15 @@ load()
 <script>
 // ===== sidebar view switching =====
 (function(){
-  // #710: Tickets promoted directly after 'triage' (New reports). #713: 'getting-started' dropped from the sidebar.
-  var VIEWS=['overview','snap','triage','tickets','sims','autosims','team','settings','recurring','guards','pagebugs'];
+  // #740: sidebar clustered into three separator-divided groups (owner request):
+  //   Group 1 (setup):    overview · snap · tickets
+  //   Group 2 (testing):  sims · autosims · triage("Sim Reports") · recurring · guards
+  //   Group 3 (admin):    settings · team · pagebugs("Reports")
+  // recurring + guards stay in Group 2 so they remain reachable (setView() redirects any view NOT in
+  // this array to 'overview'). #713: 'getting-started' dropped from the sidebar.
+  var VIEWS=['overview','snap','tickets','sims','autosims','triage','recurring','guards','settings','team','pagebugs'];
+  // A thin divider is injected AFTER each of these keys to visually cluster the three groups.
+  var SEP_AFTER={tickets:1,guards:1};
   function sidebarNavs(){
     return [].slice.call(document.querySelectorAll('.side .nv'));
   }
@@ -12557,10 +12691,20 @@ load()
       if(!key||seen[key]){b.remove();return;}
       seen[key]=b;
     });
+    // Rebuild separators from scratch each pass so this stays idempotent (no growing dividers).
+    [].slice.call(document.querySelectorAll('.side .nv-sep')).forEach(function(s){s.remove();});
     var version=document.querySelector('.side .side-version');
+    if(!version)return;
     VIEWS.forEach(function(v){
       var b=seen[v];
-      if(b&&version&&b.nextSibling!==version)version.parentNode.insertBefore(b,version);
+      if(!b)return;
+      if(b.nextSibling!==version)version.parentNode.insertBefore(b,version);
+      if(SEP_AFTER[v]){
+        var sep=document.createElement('div');
+        sep.className='nv-sep';
+        sep.setAttribute('aria-hidden','true');
+        version.parentNode.insertBefore(sep,version);
+      }
     });
   }
   function setView(v){
