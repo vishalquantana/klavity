@@ -184,6 +184,9 @@ export async function applySchema(c: Client) {
     // Partial index for the "Tickets filed" count — only rows that reached the tracker, so the
     // dashboardCounts tickets COUNT is an index range-scan over a small subset, not the full table.
     `CREATE INDEX IF NOT EXISTS fb_proj_plane_idx ON feedback (project_id) WHERE plane_issue_key IS NOT NULL`,
+    // #722 (P2.1): the status-filtered composite index fb_proj_status_idx is created in the MIGRATION path
+    // (after the `status` column is added via ALTER) — the base feedback table has no `status` column, so
+    // referencing it here in the initial schema batch would fail on a fresh DB. See ensureSchema below.
     `CREATE TABLE IF NOT EXISTS activity_events (
        id TEXT PRIMARY KEY,
        project_id TEXT NOT NULL,
@@ -199,6 +202,11 @@ export async function applySchema(c: Client) {
     )`,
     `CREATE INDEX IF NOT EXISTS evt_proj_idx ON activity_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS evt_actor_idx ON activity_events (project_id, actor_email, created_at)`,
+    // #722 (P1): per-ticket timeline — ticketActivityTimeline runs
+    // `WHERE project_id=? AND feedback_id=? ORDER BY created_at ASC, id ASC`. No index covered feedback_id,
+    // so every ticket-open scanned the whole (high-write) project event partition. This composite turns it
+    // into an O(events-for-this-ticket) range-scan already ordered by created_at.
+    `CREATE INDEX IF NOT EXISTS evt_proj_fb_idx ON activity_events (project_id, feedback_id, created_at)`,
     // GTM funnel — KLAVITYKLA-327: check_started → check_completed → lead_captured → app_connected → continuous_enabled
     `CREATE TABLE IF NOT EXISTS funnel_events (
        id TEXT PRIMARY KEY,
@@ -641,7 +649,9 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL,
        updated_at INTEGER NOT NULL
      )`,
-    `CREATE INDEX IF NOT EXISTS finding_dedup_idx ON findings(project_id, dedup_key)`,
+    // #722 (P2.4): finding_dedup_idx removed — it duplicated the UNIQUE finding_dedup_uq (created in the
+    // migration path) on identical columns findings(project_id, dedup_key). Keeping the CREATE here would
+    // flap against the migration DROP on every boot. The UNIQUE index serves every read + enforces dedup.
     // ── Klavity OS Trails (Plan E2): walk_replays — gzipped rrweb session-replay segments per Walk. ──
     // segments_gz is base64(gzip(JSON.stringify(ReplaySegment[]))); one row per saved replay (opt-in
     // capture). Project-scoped; the route reads the latest row for a (project_id, run_id).
@@ -1136,6 +1146,14 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_sig_idx ON feedback (project_id, signature)`)
     .catch((e: any) => console.warn("feedback_sig_idx skipped:", e?.message || e))
+  // #722 (P2.1): status-filtered reads — triage inbox (listTriageFeedback WHERE project_id=? AND status='new')
+  // and the dashboard-insights counts (computeDashboardInsights: status='new' / status IN ('open','in_progress')
+  // / status!='dismissed'). Only fb_proj_idx (project_id, created_at) existed, so those scanned the whole
+  // project partition and filtered status in memory; this composite lets the planner range-scan by
+  // (project_id, status) and stay ordered by created_at. Created here (not in the base batch) because the
+  // `status` column is added by the feedbackAlters ALTER above and does not exist on the base table.
+  await c.execute(`CREATE INDEX IF NOT EXISTS fb_proj_status_idx ON feedback (project_id, status, created_at)`)
+    .catch((e: any) => console.warn("fb_proj_status_idx skipped:", e?.message || e))
 
   // ── widget-config columns (leadgen integration task-1) ──
   if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
@@ -1228,6 +1246,12 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("findings dedup pre-collapse skipped:", e?.message || e))
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
     .catch((e: any) => console.warn("finding_dedup_uq skipped:", e?.message || e))
+  // #722 (P2.4): finding_dedup_idx (non-unique, db.ts schema) covers the IDENTICAL columns
+  // findings(project_id, dedup_key) as the UNIQUE finding_dedup_uq above — pure write amplification / index
+  // bloat on a table written on every AutoSim finding, with zero read benefit (the UNIQUE index serves every
+  // read the non-unique one would). Drop it AFTER the UNIQUE one is guaranteed to exist.
+  await c.execute("DROP INDEX IF EXISTS finding_dedup_idx")
+    .catch((e: any) => console.warn("finding_dedup_idx drop skipped:", e?.message || e))
   // KLA-73: persona-judged walks — which persona judges this Trail's results.
   if (needCol("trails", "judge_persona_id")) await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
     console.warn("trails.judge_persona_id ALTER skipped:", e?.message || e))
@@ -3369,6 +3393,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
     ) WHERE id = ? AND seq_num IS NULL`,
     args: [f.projectId, now, now, id, id],
   }).catch((e: any) => console.warn("seq_num assign skipped:", e?.message || e))
+  invalidateDashboardCache(f.projectId) // #722 (P2.2): new report changes counts/insights
   return id
 }
 
@@ -3408,6 +3433,7 @@ export async function advanceFeedbackToOpenIfNew(feedbackId: string, projectId: 
     sql: "UPDATE feedback SET status='open' WHERE id=? AND project_id=? AND status='new'",
     args: [feedbackId, projectId],
   })
+  if ((r.rowsAffected ?? 0) > 0) invalidateDashboardCache(projectId) // #722 (P2.2): status new→open
   return (r.rowsAffected ?? 0) > 0
 }
 
@@ -3424,6 +3450,7 @@ export async function insertActivity(a: ActivityInsert): Promise<string> {
     args: [id, a.projectId, a.type, a.actorEmail ?? null, a.simId ?? null, a.urlHost ?? null, a.urlPath ?? null,
            a.feedbackId ?? null, a.screenshotId ?? null, a.meta != null ? JSON.stringify(a.meta) : null, Date.now()],
   })
+  invalidateDashboardCache(a.projectId) // #722 (P2.2): new activity event changes the activity count
   return id
 }
 
@@ -3758,7 +3785,7 @@ export async function findFeedbackBySignature(projectId: string, signature: stri
 export const NON_HUMAN_FEEDBACK_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
 
 export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { allowPromote?: boolean }): Promise<void> {
-  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id FROM feedback WHERE id=?", args: [id] })
+  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id, project_id FROM feedback WHERE id=?", args: [id] })
   if (!r.rows.length) return
   const row = r.rows[0] as any
   const count = Number(row.recurrence_count ?? 1) + 1
@@ -3793,6 +3820,7 @@ export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { 
       : "UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=?",
     args: [count, JSON.stringify(dates), atMs, id],
   })
+  if (row.project_id) invalidateDashboardCache(String(row.project_id)) // #722 (P2.2): recurrence/promotion changes recurring + counts
 }
 
 // ── A.8 occurrence receipts ──
@@ -4041,6 +4069,28 @@ export async function splitOccurrenceToNewTicket(
   return { newFeedbackId: newId, sourceRecurrenceCount: remainingCount }
 }
 
+// #722 (P2.2): in-process TTL cache over the /api/dashboard aggregate fan-out. Every dashboard poll
+// (SWR polls frequently, per viewer) otherwise reruns ~10 uncached full-partition aggregate scans
+// (dashboardCounts 3× + computeDashboardInsights 7×). These numbers change slowly, so we memoize the
+// PROJECT-LEVEL aggregate results (never any per-user/private data) keyed strictly by projectId for a
+// short TTL. Correctness: TTL is short (20s) so any missed invalidation self-heals within one window,
+// and the feedback write paths (insertFeedback / status+field updates / recurrence bumps) call
+// invalidateDashboardCache(projectId) so a mutation is reflected immediately. Only successful results
+// are cached — error/empty fallbacks are not stored, so a transient DB blip can't pin a bad value.
+const DASH_CACHE_TTL_MS = 20_000
+type DashCacheEntry<T> = { at: number; value: T }
+const dashCountsCache = new Map<string, DashCacheEntry<{ feedback: number | null; tickets: number | null; activity: number | null }>>()
+const dashInsightsCache = new Map<string, DashCacheEntry<any>>()
+// Bust both aggregate caches for one project. Called by feedback mutations so counts/insights refresh
+// on the next read instead of waiting out the TTL. Scoped by projectId — never touches other projects.
+export function invalidateDashboardCache(projectId: string): void {
+  dashCountsCache.delete(projectId)
+  dashInsightsCache.delete(projectId)
+}
+// Guard against unbounded growth if many distinct projects are polled: drop the whole cache when it
+// gets large (cheap — it just forces recompute). Bounded by TTL churn in practice.
+function dashCachePrune(m: Map<string, any>): void { if (m.size > 500) m.clear() }
+
 // Cheap headline counts for the dashboard (indexed scans).
 // Overview metric counts. All three are indexed COUNT(*)s scoped to one project:
 //   feedback → fb_proj_idx(project_id,…); tickets → fb_proj_plane_idx (partial, plane_issue_key
@@ -4048,6 +4098,9 @@ export async function splitOccurrenceToNewTicket(
 //   count resolves to `null` (rendered as "—" client-side) instead of rejecting and taking the
 //   whole /api/dashboard payload down with it — a decorative number must never break the page.
 export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null }> {
+  // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
+  const cached = dashCountsCache.get(projectId)
+  if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
   const q = (sql: string) => db!.execute({ sql, args: [projectId] })
   const settled = await Promise.allSettled([
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=?"),
@@ -4056,7 +4109,14 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
-  return { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
+  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
+  // Only cache a fully-successful read; a partial/failed count (any null) is left uncached so it
+  // retries next poll rather than pinning a "—" for the whole TTL.
+  if (result.feedback !== null && result.tickets !== null && result.activity !== null) {
+    dashCachePrune(dashCountsCache)
+    dashCountsCache.set(projectId, { at: Date.now(), value: result })
+  }
+  return result
 }
 
 // ── AI-call ledger (/opsadmin) ── one row per OpenRouter call; reads are global (not project-scoped).
@@ -5872,6 +5932,7 @@ export async function updateFeedbackMeta(
     sql: `UPDATE feedback SET ${sets.join(",")} WHERE project_id=? AND id=?`,
     args,
   })
+  if (Number(r.rowsAffected) > 0) invalidateDashboardCache(projectId) // #722 (P2.2): status/priority triage edit
   return Number(r.rowsAffected) > 0
 }
 
@@ -6379,6 +6440,9 @@ export async function computeDashboardInsights(projectId: string) {
     opened7d: 0, resolved7d: 0,
   }
   if (!db) return empty
+  // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
+  const cached = dashInsightsCache.get(projectId)
+  if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
   try {
     const now = Date.now()
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000
@@ -6402,6 +6466,10 @@ export async function computeDashboardInsights(projectId: string) {
     const todayIdx = Math.floor(now / 86400000)
     for (let i = 6; i >= 0; i--) out.volume7d.push(byDay[todayIdx - i] || 0)
     for (const r of throughputRows.rows) { const k = String((r as any).k); if (k === "resolved") out.resolved7d = Number((r as any).n); else out.opened7d = Number((r as any).n) }
+    // Only successful computations are cached; the catch below returns `empty` WITHOUT caching so a
+    // transient DB error never pins zeros for the whole TTL.
+    dashCachePrune(dashInsightsCache)
+    dashInsightsCache.set(projectId, { at: Date.now(), value: out })
     return out
   } catch { return empty }
 }
