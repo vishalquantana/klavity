@@ -1036,7 +1036,7 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .tkt-assignee-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* #679a: force a perfect circle — equal w/h + aspect-ratio + flex:none so no flex context can
    stretch it into an oval, box-sizing so a future border can't distort it. */
-.tkt-av{width:20px;height:20px;min-width:20px;aspect-ratio:1/1;box-sizing:border-box;border-radius:50%;background:var(--indigo);color:#fff;display:grid;place-items:center;font-size:10.5px;line-height:1;font-weight:700;flex:none}
+.tkt-av{width:20px!important;height:20px!important;min-width:20px!important;max-width:20px!important;min-height:20px!important;max-height:20px!important;aspect-ratio:1/1;box-sizing:border-box;border-radius:50%;background:var(--indigo);color:#fff;display:grid;place-items:center;font-size:10.5px;line-height:1;font-weight:700;flex:none;align-self:center;padding:0;overflow:hidden}
 .tkt-av.empty{background:var(--ink-3);color:var(--paper-faint)}
 .prop-caret{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid var(--paper-faint);flex:none;margin-left:1px}
 .tkt-assignee-edit{display:flex;align-items:center;gap:6px}
