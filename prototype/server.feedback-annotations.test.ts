@@ -286,3 +286,70 @@ test("KLA-605: a `redact`-aliased shape also survives intake and covers", async 
   const { buildRedactionSvg } = (await loadRedactBuilders())(document)
   expect(buildRedactionSvg(stored)).not.toBeNull()
 })
+
+// ── #738: POST /api/feedback/:id/annotations — a project member re-annotates the evidence screenshot in
+// the dashboard cockpit and saves. Stores VECTOR shapes (clean original screenshot untouched), member-gated,
+// sanitized with the SAME allowlist as intake, and records a "ticket_screenshot_annotated" activity event.
+async function seedFeedbackRow(id: string, annotations: any | null) {
+  const now2 = Date.now()
+  await rawExec(
+    `INSERT INTO feedback (id, project_id, actor_email, url_host, url_path, observation, status, screenshot_id, annotations_json, created_at)
+     VALUES (?, 'p1', 'reporter@test.local', 'klavity.in', '/snap', 'evidence', 'open', 'shot_seed_1', ?, ?)`,
+    [id, annotations == null ? null : JSON.stringify(annotations), now2],
+  )
+}
+async function makeSession(email: string): Promise<string> {
+  await rawExec(`INSERT OR IGNORE INTO users (email, name, created_at) VALUES (?, ?, ?)`, [email, email, Date.now()])
+  await rawExec(`INSERT OR IGNORE INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, 'a1', ?, 'member', ?)`, ["am_" + email, email, Date.now()])
+  await rawExec(`INSERT OR IGNORE INTO project_members (id, project_id, email, project_role, created_at) VALUES (?, 'p1', ?, 'admin', ?)`, ["pm_" + email, email, Date.now()])
+  const sid = "sess_" + Math.random().toString(36).slice(2)
+  await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [sid, email, Date.now(), Date.now() + 864e5])
+  return sid
+}
+async function postAnn(fid: string, annotations: any, cookie?: string) {
+  return fetch(`${BASE}/api/feedback/${fid}/annotations`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cookie ? { cookie: `klav_session=${cookie}` } : {}) },
+    body: JSON.stringify({ annotations }),
+  })
+}
+
+test("#738: a project member saves re-annotated markup — persisted, sanitized, activity event recorded", async () => {
+  const fid = "fb_annedit_" + Math.random().toString(36).slice(2)
+  await seedFeedbackRow(fid, { w: 800, h: 600, shapes: [{ type: "rect", x: 1, y: 1, w: 2, h: 2, color: "#ef4444" }] })
+  const sid = await makeSession("member738@test.local")
+  const r = await postAnn(fid, {
+    w: 800, h: 600,
+    shapes: [
+      { type: "arrow", x1: 10, y1: 10, x2: 90, y2: 90, color: "#3b82f6" },
+      { type: "text", x: 40, y: 40, text: "look here", color: "#111827", size: 26, outline: "black" },
+      { type: "pixelate", x: 200, y: 100, w: 120, h: 40 },
+      { type: "script", x: 0, y: 0 } as any,             // disallowed → stripped
+    ],
+  }, sid)
+  expect(r.status).toBe(200)
+  const j = await r.json()
+  expect(j.ok).toBe(true)
+  // Stored annotations replaced the reporter's markup with the triager's, sanitized (script dropped).
+  const row = await rawClient.execute({ sql: "SELECT annotations_json FROM feedback WHERE id=?", args: [fid] })
+  const stored = JSON.parse(String(row.rows[0].annotations_json))
+  expect(stored.shapes.map((s: any) => s.type).sort()).toEqual(["arrow", "pixelate", "text"])
+  expect(stored.shapes.find((s: any) => s.type === "text").text).toBe("look here")
+  // The activity event was recorded, archiving the PRIOR markup for recovery.
+  const act = await rawClient.execute({ sql: "SELECT type, meta_json FROM activity_events WHERE feedback_id=? AND type='ticket_screenshot_annotated'", args: [fid] })
+  expect(act.rows.length).toBe(1)
+  const meta = JSON.parse(String(act.rows[0].meta_json))
+  expect(meta.shapes).toBe(3)
+  expect(JSON.parse(meta.priorAnnotations).shapes[0].type).toBe("rect")  // original preserved in the audit trail
+})
+
+test("#738: unauthenticated caller cannot save annotations (member-gated)", async () => {
+  const fid = "fb_annedit_noauth_" + Math.random().toString(36).slice(2)
+  await seedFeedbackRow(fid, null)
+  const r = await postAnn(fid, { w: 100, h: 100, shapes: [{ type: "rect", x: 0, y: 0, w: 5, h: 5 }] })
+  expect(r.status).toBeGreaterThanOrEqual(401)
+  expect(r.status).toBeLessThan(404)
+  // The row's annotations stay null — the unauthenticated write was rejected.
+  const row = await rawClient.execute({ sql: "SELECT annotations_json FROM feedback WHERE id=?", args: [fid] })
+  expect(row.rows[0].annotations_json).toBeNull()
+})

@@ -128,7 +128,7 @@ import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
 import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
 import { extractKeyframes } from "./lib/keyframes"
-import { updateFeedbackTitle } from "./lib/db"
+import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, activeTranscribeModel } from "./lib/transcribe"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
@@ -10833,7 +10833,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
         const fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
@@ -10850,6 +10850,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const isMerge = feedbackSubroute === "/merge"
         const isSplit = feedbackSubroute === "/split"
         const isRegressionReceipt = feedbackSubroute === "/regression-receipt"
+        const isAnnotations = feedbackSubroute === "/annotations"
 
         // Resolve which project this feedback belongs to and check the caller has access.
         let fbRow: any = null
@@ -10932,6 +10933,55 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })().catch((e: any) => console.warn("[notify] comment notification failed:", e?.message || e))
 
           return json({ comment }, 201)
+        }
+
+        // #738: POST /api/feedback/:id/annotations — persist a re-annotated evidence screenshot's markup.
+        // A triager clicks the ticket's evidence screenshot in the cockpit, marks it up with the SAME
+        // annotator/tools as the report composer, and saves. We store VECTOR shapes (not a baked image):
+        // the clean original screenshot S3 object is never touched, so nothing is lost and the existing
+        // read pipeline (buildAnnotationSvg / mountAnnotationOverlay / applyPixelateToCanvas) re-composites
+        // the markup over the clean image on every view. Member-gated (must be a project member/admin —
+        // a shared-ticket viewer, whose fbAccess is null, is rejected). The prior markup is archived on the
+        // activity event's meta so a bad edit is recoverable.
+        if (req.method === "POST" && isAnnotations) {
+          if (!fbAccess) return json({ error: "Only project members can edit annotations." }, 403)
+          const body = await req.json().catch(() => ({}))
+          const ann = body && typeof body === "object" ? (body as any).annotations : null
+          if (!ann || typeof ann !== "object") return json({ error: "annotations object is required." }, 400)
+          // Sanitize with the SAME Shape allowlist + coordinate coercion as the intake path
+          // (POST /api/feedback), so dashboard-authored markup and reporter markup are byte-identical in
+          // shape and both survive the read renderer. Keep this in lockstep with that block + types.ts.
+          const num = (v: any) => (typeof v === "number" && isFinite(v)) ? v : 0
+          const okTypes = new Set(["rect", "arrow", "circle", "pen", "line", "text", "count", "pin", "pixelate", "redact"])
+          const shapes = Array.isArray(ann.shapes) ? ann.shapes.slice(0, 50).filter((s: any) => s && okTypes.has(s.type)).map((s: any) => {
+            const o: any = { type: String(s.type) }
+            for (const k of ["x", "y", "w", "h", "x1", "y1", "x2", "y2", "rx", "ry", "n"]) if (s[k] != null) o[k] = num(s[k])
+            if (s.color != null) o.color = String(s.color).slice(0, 24)
+            if (s.label != null) o.label = String(s.label).slice(0, 200)
+            if (s.type === "text") o.text = String(s.text ?? "").slice(0, 200)
+            if (s.outline != null) o.outline = String(s.outline).slice(0, 8)
+            if (s.size != null) o.size = num(s.size)
+            if (Array.isArray(s.points)) o.points = s.points.slice(0, 400).map((p: any) => ({ x: num(p?.x), y: num(p?.y) }))
+            return o
+          }) : []
+          const entry: any = { w: num(ann.w) || 0, h: num(ann.h) || 0, shapes }
+          // Preserve the reporter's pinned selector (KLA-228) if the client round-tripped it.
+          if (typeof ann.selector === "string" && ann.selector.trim()) entry.selector = ann.selector.trim().slice(0, 300)
+          const annJson = JSON.stringify(entry)
+          if (annJson.length > 500_000) return json({ error: "Annotations are too large." }, 413)
+          const res = await updateFeedbackAnnotations(fid, fbRow.projectId, annJson)
+          if (!res) return json({ error: "Feedback not found or not accessible." }, 404)
+          // Best-effort activity event — never blocks the response. Archives the PRIOR markup so the edit
+          // is auditable/recoverable, and records the mark count for the timeline label.
+          void insertActivity({
+            projectId: fbRow.projectId,
+            type: "ticket_screenshot_annotated",
+            actorEmail: me,
+            feedbackId: fid,
+            screenshotId: fbRow.screenshotId ?? null,
+            meta: { shapes: shapes.length, priorAnnotations: res.prior },
+          }).catch((e: any) => console.warn("screenshot-annotate activity skipped:", e?.message || e))
+          return json({ ok: true, annotations: entry })
         }
 
         if (req.method === "GET" && isTimeline) {

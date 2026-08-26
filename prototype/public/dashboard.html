@@ -7435,6 +7435,7 @@ const TL_ACTIVITY_LABELS = {
   ticket_status_changed: (m) => `Status → ${m && m.to ? STATUS_LABELS[m.to] || m.to : ""}`,
   ticket_priority_changed: (m) => `Priority → ${m && m.to ? m.to : ""}`,
   ticket_assignee_changed: (m) => m && m.to ? `Assigned to ${m.to}` : "Assignment cleared",
+  ticket_screenshot_annotated: (m) => { const n = m && typeof m.shapes === "number" ? m.shapes : null; return "Annotated the screenshot" + (n != null ? " · " + n + " mark" + (n === 1 ? "" : "s") : "") },
   connector_export: (m) => `Exported to ${m && m.connectorType ? m.connectorType : "external tracker"}${m && m.externalKey ? " · " + m.externalKey : ""}`,
   // KLAVITYKLA-516: the very first fact — the report/Snap arriving — was never written to
   // activity_events, so the timeline showed "No activity yet" and recurrence read 0. Synthesized
@@ -9640,7 +9641,10 @@ async function loadTktShot(detailEl, annotations) {
       // so it scales correctly over the thumbnail AND the full image alike.
       mountAnnotationOverlay(box, img, annotations, url)
     } else {
-      img.addEventListener("click", () => window.open(img.getAttribute("data-full") || url, "_blank", "noopener"))
+      // #738: click the evidence screenshot → open the markup/annotate modal (owner ask). The clean
+      // full-res URL (data-full once it streams in, else the current url) is loaded into the annotator.
+      img.style.cursor = "cell"; img.title = "Click to annotate this screenshot"
+      img.addEventListener("click", () => openEvidenceAnnotator(box, img.getAttribute("data-full") || url, { w: img.naturalWidth || 0, h: img.naturalHeight || 0, shapes: [] }))
       box.innerHTML = ""; box.appendChild(img)
     }
     // KLAVITYKLA-228: surface the element the reporter pinned via the on-page picker. Stored on
@@ -9819,10 +9823,19 @@ function mountAnnotationOverlay(box, img, ann, url) {
     } catch (_) {}
     if (!opened) window.open(full, "_blank", "noopener")
   })
-  bar.appendChild(tg); bar.appendChild(op)
+  // #738: primary affordance — clicking the screenshot opens the markup/annotate editor (seeded with the
+  // ticket's CURRENT shapes over the clean image). Zoom becomes an explicit secondary button so the click
+  // gesture is dedicated to annotate, per the owner ask.
+  const ed = document.createElement("button"); ed.type = "button"; ed.className = "tkt-ann-btn"; ed.textContent = "Annotate"
+  const openEd = (e) => { if (e) e.stopPropagation(); openEvidenceAnnotator(box, img.getAttribute("data-full") || url, ann) }
+  ed.addEventListener("click", openEd)
+  const zm = document.createElement("button"); zm.type = "button"; zm.className = "tkt-ann-btn"; zm.textContent = "⤢ Zoom"
+  zm.addEventListener("click", e => { e.stopPropagation(); box.classList.toggle("zoomed") })
+  bar.appendChild(ed); bar.appendChild(zm); bar.appendChild(tg); bar.appendChild(op)
   box.classList.add("tkt-shotwrap")
   box.innerHTML = ""; box.appendChild(inner); box.appendChild(bar)
-  box.addEventListener("click", e => { if (e.target.closest(".tkt-ann-btn")) return; box.classList.toggle("zoomed") })
+  inner.style.cursor = "cell"; inner.title = "Click to annotate this screenshot"
+  box.addEventListener("click", e => { if (e.target.closest(".tkt-ann-btn")) return; openEd(e) })
 }
 // #530: draw the screenshot + annotation shapes onto a canvas and return a PNG data URL, so "Full
 // size"/export carries the markup. Loads the base image cross-origin; returns null on ANY failure
@@ -9869,6 +9882,304 @@ function mountPinnedSelector(box, annotations) {
   code.textContent = sel; code.title = sel
   row.appendChild(lbl); row.appendChild(code)
   box.appendChild(row)
+}
+
+// ── #738: Evidence-screenshot annotate modal ────────────────────────────────────────────────────
+// Clicking a ticket's evidence screenshot opens a modal that hosts the SAME markup editor the report
+// composer uses. Because dashboard.html has no bundler, DashAnnotator below is a VERBATIM PORT of the
+// rendering engine in packages/core/src/annotator.ts (the composer's `Annotator`) — same drawShape /
+// halo / pixelate math, so a triager's marks render byte-identically to a reporter's. The toolbar +
+// pointer wiring mirror packages/core/src/modal.ts `mountHeroAnnotator`. On Save we persist VECTOR
+// shapes (POST /api/feedback/:id/annotations); the clean original screenshot is never overwritten, so
+// nothing is lost and the existing read pipeline (mountAnnotationOverlay) re-composites the markup.
+class DashAnnotator {
+  constructor(canvas, imageUrl) {
+    this.canvas = canvas; this.imageUrl = imageUrl; this.shapes = []
+    this.strokeScale = 1; this.baseImg = null
+  }
+  computeLineWidth() { return Math.max(3, this.canvas.width / 400) * this.strokeScale }
+  computeFontSize() { return Math.max(16, this.canvas.width / 60) }
+  addShape(s) { this.shapes.push(s); this.redraw() }
+  undo() { this.shapes.pop(); this.redraw() }
+  clearAll() { this.shapes.length = 0; this.redraw() }
+  luminance(color) {
+    const c = (color || "").trim().replace(/^#/, "")
+    let r, g, b
+    if (/^[0-9a-fA-F]{3}$/.test(c)) { r = parseInt(c[0] + c[0], 16); g = parseInt(c[1] + c[1], 16); b = parseInt(c[2] + c[2], 16) }
+    else if (/^[0-9a-fA-F]{6}$/.test(c)) { r = parseInt(c.slice(0, 2), 16); g = parseInt(c.slice(2, 4), 16); b = parseInt(c.slice(4, 6), 16) }
+    else return 0
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+  }
+  haloColor(color) { return this.luminance(color) > 0.55 ? "rgba(17,17,17,0.92)" : "rgba(255,255,255,0.92)" }
+  haloPad(lw) { return Math.max(3, lw * 0.55) }
+  redraw() {
+    const ctx = this.canvas.getContext("2d"); if (!ctx) return
+    if (this.baseImg && this.baseImg.complete && this.baseImg.naturalWidth) { this._paint(ctx, this.baseImg); return }
+    const img = new Image(); img.crossOrigin = "anonymous"
+    img.onload = () => { this.baseImg = img; this._paint(ctx, img) }
+    img.src = this.imageUrl
+  }
+  drawPreview(preview) {
+    const ctx = this.canvas.getContext("2d"); if (!ctx) return
+    if (this.baseImg && this.baseImg.complete && this.baseImg.naturalWidth) this._paint(ctx, this.baseImg, preview)
+    else this.redraw()
+  }
+  _paint(ctx, img, preview) {
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    ctx.drawImage(img, 0, 0)
+    this.shapes.forEach(s => this._drawShape(ctx, s))
+    if (preview) this._drawShape(ctx, preview)
+  }
+  _strokeWithHalo(ctx, color, lineWidth, buildPath) {
+    ctx.lineWidth = lineWidth + this.haloPad(lineWidth); ctx.strokeStyle = this.haloColor(color); buildPath(); ctx.stroke()
+    ctx.lineWidth = lineWidth; ctx.strokeStyle = color; buildPath(); ctx.stroke()
+  }
+  _drawShape(ctx, shape) {
+    ctx.strokeStyle = shape.color; ctx.fillStyle = shape.color; ctx.lineWidth = this.computeLineWidth()
+    ctx.lineCap = "round"; ctx.lineJoin = "round"
+    if (shape.type === "pen") {
+      const base = this.computeLineWidth()
+      this._strokeWithHalo(ctx, shape.color, base, () => { ctx.beginPath(); (shape.points || []).forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)) })
+    } else if (shape.type === "rect") {
+      const base = this.computeLineWidth()
+      ctx.lineWidth = base + this.haloPad(base); ctx.strokeStyle = this.haloColor(shape.color); ctx.strokeRect(shape.x, shape.y, shape.w, shape.h)
+      ctx.lineWidth = base; ctx.strokeStyle = shape.color; ctx.strokeRect(shape.x, shape.y, shape.w, shape.h)
+    } else if (shape.type === "arrow") {
+      const lw = this.computeLineWidth() * 1.7, angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1), headLen = Math.max(16, lw * 4)
+      this._strokeWithHalo(ctx, shape.color, lw, () => {
+        ctx.beginPath(); ctx.moveTo(shape.x1, shape.y1); ctx.lineTo(shape.x2, shape.y2)
+        ctx.lineTo(shape.x2 - headLen * Math.cos(angle - Math.PI / 6), shape.y2 - headLen * Math.sin(angle - Math.PI / 6))
+        ctx.moveTo(shape.x2, shape.y2); ctx.lineTo(shape.x2 - headLen * Math.cos(angle + Math.PI / 6), shape.y2 - headLen * Math.sin(angle + Math.PI / 6))
+      })
+    } else if (shape.type === "line") {
+      const lw = this.computeLineWidth() * 1.7
+      this._strokeWithHalo(ctx, shape.color, lw, () => { ctx.beginPath(); ctx.moveTo(shape.x1, shape.y1); ctx.lineTo(shape.x2, shape.y2) })
+    } else if (shape.type === "circle") {
+      const base = this.computeLineWidth()
+      this._strokeWithHalo(ctx, shape.color, base, () => { ctx.beginPath(); ctx.ellipse(shape.x, shape.y, Math.abs(shape.rx), Math.abs(shape.ry), 0, 0, Math.PI * 2) })
+    } else if (shape.type === "count") {
+      const r = Math.max(13, this.computeFontSize())
+      ctx.beginPath(); ctx.arc(shape.x, shape.y, r, 0, Math.PI * 2); ctx.fill()
+      ctx.lineWidth = this.haloPad(this.computeLineWidth()); ctx.strokeStyle = this.haloColor(shape.color); ctx.stroke()
+      ctx.fillStyle = "#fff"; ctx.font = "bold " + Math.round(r * 1.05) + "px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"
+      ctx.fillText(String(shape.n), shape.x, shape.y); ctx.textAlign = "start"; ctx.textBaseline = "alphabetic"
+    } else if (shape.type === "text") {
+      const size = shape.size != null ? shape.size : this.computeFontSize()
+      ctx.font = "bold " + size + "px sans-serif"; ctx.textBaseline = "top"
+      const outline = shape.outline || "none"
+      if (outline !== "none") { ctx.lineJoin = "round"; ctx.lineWidth = Math.max(3, size * 0.18); ctx.strokeStyle = outline === "white" ? "#ffffff" : "#111111"; ctx.strokeText(shape.text, shape.x, shape.y); ctx.fillStyle = shape.color }
+      ctx.fillText(shape.text, shape.x, shape.y); ctx.textBaseline = "alphabetic"
+    } else if (shape.type === "pixelate" || shape.type === "redact") {
+      this._drawPixelate(ctx, shape)
+    }
+  }
+  _drawPixelate(ctx, shape) {
+    const x = Math.max(0, Math.floor(Math.min(shape.x, shape.x + shape.w))), y = Math.max(0, Math.floor(Math.min(shape.y, shape.y + shape.h)))
+    const w = Math.min(this.canvas.width - x, Math.ceil(Math.abs(shape.w))), h = Math.min(this.canvas.height - y, Math.ceil(Math.abs(shape.h)))
+    if (w <= 0 || h <= 0) return
+    const block = Math.max(8, Math.round(this.canvas.width / 90))
+    let data; try { data = ctx.getImageData(x, y, w, h) } catch { data = null }
+    if (!data || !data.data) { ctx.fillStyle = "rgba(30,30,40,1)"; ctx.fillRect(x, y, w, h); return }
+    const px = data.data
+    for (let by = 0; by < h; by += block) for (let bx = 0; bx < w; bx += block) {
+      let r = 0, g = 0, b = 0, count = 0; const maxY = Math.min(by + block, h), maxX = Math.min(bx + block, w)
+      for (let yy = by; yy < maxY; yy++) for (let xx = bx; xx < maxX; xx++) { const i = (yy * w + xx) * 4; r += px[i]; g += px[i + 1]; b += px[i + 2]; count++ }
+      if (!count) continue
+      ctx.fillStyle = "rgb(" + Math.round(r / count) + "," + Math.round(g / count) + "," + Math.round(b / count) + ")"; ctx.fillRect(x + bx, y + by, maxX - bx, maxY - by)
+    }
+  }
+}
+
+let _evAnnOpen = false
+function _ensureEvAnnCss() {
+  if (document.getElementById("evann-css")) return
+  const st = document.createElement("style"); st.id = "evann-css"
+  st.textContent = [
+    ".evann-back{position:fixed;inset:0;z-index:2147483000;background:rgba(10,10,16,.72);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;gap:12px}",
+    ".evann-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#1e1e2e;color:#cdd6f4;border-radius:12px;padding:8px 10px;box-shadow:0 8px 30px rgba(0,0,0,.4);max-width:96vw}",
+    ".evann-bar .evann-sep{width:1px;align-self:stretch;background:rgba(205,214,244,.18);margin:0 3px}",
+    ".evann-tool,.evann-opt,.evann-act{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:8px;background:#313244;color:#cdd6f4;padding:6px 9px;font-size:12px;font-weight:600;cursor:pointer;transition:transform .12s ease,background .12s ease}",
+    ".evann-tool:hover,.evann-opt:hover,.evann-act:hover{transform:scale(1.03);background:#3b3b52}",
+    ".evann-tool:active,.evann-opt:active,.evann-act:active{transform:scale(.97)}",
+    ".evann-tool.on,.evann-opt.on{background:#7c3aed;color:#fff}",
+    ".evann-color{width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,.25);cursor:pointer;padding:0;transition:transform .12s ease}",
+    ".evann-color:hover{transform:scale(1.12)}",
+    ".evann-color.on{border-color:#fff;box-shadow:0 0 0 2px #7c3aed}",
+    ".evann-lbl{font-size:11px;opacity:.7;margin:0 2px}",
+    ".evann-act.save{background:#7c3aed;color:#fff}.evann-act.save:hover{background:#8b46f0}",
+    ".evann-stage{position:relative;max-width:96vw;max-height:76vh;overflow:auto;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);background:#0b0b12;line-height:0}",
+    ".evann-stage canvas{display:block;max-width:96vw;max-height:76vh;cursor:crosshair;touch-action:none}",
+    ".evann-textin{position:fixed;z-index:2147483001;background:rgba(0,0,0,.35);color:#fff;border:1px dashed #fff;border-radius:4px;padding:1px 4px;font-weight:700;outline:none;min-width:40px}",
+  ].join("")
+  document.head.appendChild(st)
+}
+
+// Open the annotate editor for a ticket's evidence screenshot. box = the .tkt-shot element (used to find
+// the feedback id via [data-id] and to refresh after save). imageUrl = the CLEAN full-res screenshot URL.
+// priorAnn = the ticket's current { w, h, shapes, selector } (may be null/empty for un-annotated shots).
+function openEvidenceAnnotator(box, imageUrl, priorAnn) {
+  if (_evAnnOpen || !imageUrl) return
+  const detailEl = box.closest("[data-id]")
+  const fid = detailEl && detailEl.getAttribute("data-id")
+  if (!fid) return
+  _evAnnOpen = true
+  _ensureEvAnnCss()
+  const back = document.createElement("div"); back.className = "evann-back"
+  const bar = document.createElement("div"); bar.className = "evann-bar"
+  const stage = document.createElement("div"); stage.className = "evann-stage"
+  const canvas = document.createElement("canvas")
+  stage.appendChild(canvas)
+  const close = () => { _evAnnOpen = false; try { back.remove() } catch (e) {} document.removeEventListener("keydown", onKey) }
+  // Load the clean image to size the canvas to natural pixels (annotation coords are natural-image coords,
+  // matching the composer + stored payload), then mount the annotator on it.
+  const sizer = new Image(); sizer.crossOrigin = "anonymous"
+  let annotator = null, activeTool = "pen", activeColor = "#ef4444", textSize = 26, textOutline = "black"
+  sizer.onload = () => {
+    canvas.width = sizer.naturalWidth || 1000; canvas.height = sizer.naturalHeight || 700
+    annotator = new DashAnnotator(canvas, imageUrl)
+    if (priorAnn && Array.isArray(priorAnn.shapes)) priorAnn.shapes.forEach(s => annotator.shapes.push(Object.assign({}, s)))
+    annotator.baseImg = sizer; annotator.redraw()
+  }
+  sizer.onerror = () => { _evAnnOpen = false; try { back.remove() } catch (e) {}; if (detailEl) showTktMsg(detailEl, "Couldn’t load the screenshot to annotate.", true) }
+  sizer.src = imageUrl
+
+  // Toolbar — same tool set as the composer's hero editor (packages/core/src/modal.ts heroToolbarHtml).
+  const g = (inner) => '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + "</svg>"
+  const tools = [
+    ["pen", "Pen", g('<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>')],
+    ["line", "Line", g('<line x1="5" y1="19" x2="19" y2="5"/>')],
+    ["rect", "Rectangle", g('<rect x="3" y="3" width="18" height="18" rx="2"/>')],
+    ["circle", "Circle", g('<circle cx="12" cy="12" r="9"/>')],
+    ["arrow", "Arrow", g('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>')],
+    ["text", "Text", g('<path d="M5 6h14M12 6v13M9 19h6"/>')],
+    ["count", "Numbers", g('<circle cx="12" cy="12" r="9"/>')],
+    ["pixelate", "Redact", g('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>')],
+  ]
+  const mkBtn = (cls, html, title) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.innerHTML = html; if (title) b.title = title; return b }
+  const toolBtns = {}
+  tools.forEach(([name, label, glyph]) => {
+    const b = mkBtn("evann-tool" + (name === activeTool ? " on" : ""), glyph, label)
+    b.addEventListener("click", () => { activeTool = name; Object.keys(toolBtns).forEach(k => toolBtns[k].classList.toggle("on", k === name)) })
+    toolBtns[name] = b; bar.appendChild(b)
+  })
+  const sep = () => { const s = document.createElement("span"); s.className = "evann-sep"; bar.appendChild(s) }
+  sep()
+  const colorBtns = []
+  const setColor = (col) => { activeColor = col; colorBtns.forEach(cb => cb.classList.toggle("on", cb.dataset.col === col)) }
+  ;["#ef4444", "#f97316", "#16a34a", "#3b82f6", "#ffffff", "#111827"].forEach(col => {
+    const b = mkBtn("evann-color" + (col === activeColor ? " on" : ""), "", col); b.dataset.col = col; b.style.background = col
+    b.addEventListener("click", () => setColor(col)); colorBtns.push(b); bar.appendChild(b)
+  })
+  const custom = document.createElement("input"); custom.type = "color"; custom.value = "#ef4444"; custom.title = "Custom colour"
+  custom.style.cssText = "width:24px;height:24px;padding:0;border:0;background:none;cursor:pointer"
+  custom.addEventListener("input", () => setColor(custom.value)); bar.appendChild(custom)
+  sep()
+  const lbl = (t) => { const s = document.createElement("span"); s.className = "evann-lbl"; s.textContent = t; return s }
+  bar.appendChild(lbl("Stroke"))
+  const strokeBtns = []
+  ;[["S", 0.6], ["M", 1], ["L", 1.8], ["XL", 2.8]].forEach(([t, v]) => {
+    const b = mkBtn("evann-opt" + (v === 1 ? " on" : ""), t, t + " stroke")
+    b.addEventListener("click", () => { if (annotator) { annotator.strokeScale = v; annotator.redraw() } strokeBtns.forEach(x => x.classList.toggle("on", x === b)) })
+    strokeBtns.push(b); bar.appendChild(b)
+  })
+  sep()
+  const undoB = mkBtn("evann-act", "↶ Undo", "Undo"); undoB.addEventListener("click", () => annotator && annotator.undo())
+  const clearB = mkBtn("evann-act", "Clear", "Clear all"); clearB.addEventListener("click", () => annotator && annotator.clearAll())
+  bar.appendChild(undoB); bar.appendChild(clearB)
+  sep()
+  const cancelB = mkBtn("evann-act", "Cancel"); cancelB.addEventListener("click", close)
+  const saveB = mkBtn("evann-act save", "Save markup")
+  bar.appendChild(cancelB); bar.appendChild(saveB)
+
+  // ── pointer wiring (adapted from packages/core/src/modal.ts mountHeroAnnotator) ──
+  const toImg = (e) => { const r = canvas.getBoundingClientRect(); const s = canvas.width / r.width; return { x: (e.clientX - r.left) / s, y: (e.clientY - r.top) / s } }
+  let drawing = false, startX = 0, startY = 0, penPoints = [], activeTextIn = null
+  const commitText = (val, ix, iy) => { if (val && val.trim() && annotator) annotator.addShape({ type: "text", color: activeColor, x: ix, y: iy, text: val.trim(), size: textSize, outline: textOutline }) }
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!annotator) return
+    const pt = toImg(e)
+    if (activeTool === "text") {
+      if (activeTextIn) { activeTextIn.blur() }
+      const input = document.createElement("input"); input.className = "evann-textin"
+      input.style.left = e.clientX + "px"; input.style.top = e.clientY + "px"; input.style.color = activeColor; input.style.fontSize = "16px"
+      document.body.appendChild(input); input.focus(); activeTextIn = input
+      const ix = pt.x, iy = pt.y
+      input.addEventListener("keydown", (ke) => { if (ke.key === "Enter") { ke.preventDefault(); input.blur() } if (ke.key === "Escape") { input.value = ""; input.blur() } })
+      input.addEventListener("blur", () => { commitText(input.value, ix, iy); activeTextIn = null; try { input.remove() } catch (x) {} }, { once: true })
+      return
+    }
+    if (activeTool === "count") {
+      const n = annotator.shapes.reduce((m, s) => s.type === "count" ? Math.max(m, s.n || 0) : m, 0) + 1
+      annotator.addShape({ type: "count", color: activeColor, x: pt.x, y: pt.y, n }); return
+    }
+    drawing = true; startX = pt.x; startY = pt.y; penPoints = [pt]
+    try { canvas.setPointerCapture(e.pointerId) } catch (x) {}
+  })
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drawing || !annotator) return
+    const pt = toImg(e)
+    if (activeTool === "pen") { penPoints.push(pt); if (penPoints.length > 1) annotator.drawPreview({ type: "pen", color: activeColor, points: penPoints }); return }
+    let prov = null
+    if (activeTool === "line") prov = { type: "line", color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y }
+    else if (activeTool === "arrow") prov = { type: "arrow", color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y }
+    else if (activeTool === "rect") prov = { type: "rect", color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) }
+    else if (activeTool === "circle") prov = { type: "circle", color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 }
+    else if (activeTool === "pixelate") prov = { type: "pixelate", x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) }
+    if (prov) annotator.drawPreview(prov)
+  })
+  canvas.addEventListener("pointerup", (e) => {
+    if (!drawing || !annotator) return
+    drawing = false; const pt = toImg(e)
+    if (activeTool === "pen" && penPoints.length > 1) annotator.addShape({ type: "pen", color: activeColor, points: penPoints })
+    else if (activeTool === "line") annotator.addShape({ type: "line", color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+    else if (activeTool === "rect" && Math.abs(pt.x - startX) > 2) annotator.addShape({ type: "rect", color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
+    else if (activeTool === "circle" && Math.abs(pt.x - startX) > 2) annotator.addShape({ type: "circle", color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
+    else if (activeTool === "arrow") annotator.addShape({ type: "arrow", color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+    else if (activeTool === "pixelate" && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4) annotator.addShape({ type: "pixelate", x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
+    else annotator.redraw()
+  })
+  const onKey = (e) => {
+    if (activeTextIn) return
+    if (e.key === "Escape") { close(); return }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); annotator && annotator.undo(); return }
+    const map = { p: "pen", l: "line", r: "rect", o: "circle", a: "arrow", t: "text", c: "count", b: "pixelate" }
+    const nm = map[e.key.toLowerCase()]
+    if (nm) { activeTool = nm; Object.keys(toolBtns).forEach(k => toolBtns[k].classList.toggle("on", k === nm)) }
+  }
+  document.addEventListener("keydown", onKey)
+
+  saveB.addEventListener("click", async () => {
+    if (!annotator) return
+    saveB.disabled = true; saveB.textContent = "Saving…"
+    const payload = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => Object.assign({}, s)) }
+    if (priorAnn && typeof priorAnn.selector === "string") payload.selector = priorAnn.selector
+    try {
+      const r = await fetch("/api/feedback/" + encodeURIComponent(fid) + "/annotations", {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ annotations: payload }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { saveB.disabled = false; saveB.textContent = "Save markup"; if (detailEl) showTktMsg(detailEl, (d && d.error) || "Couldn’t save the markup.", true); return }
+      close()
+      // Optimistic + persisted: re-mount the evidence shot with the freshly saved markup.
+      _reloadTktShot(detailEl, d.annotations || payload)
+      if (detailEl) showTktMsg(detailEl, "Screenshot markup saved.", false)
+    } catch (e) { saveB.disabled = false; saveB.textContent = "Save markup"; if (detailEl) showTktMsg(detailEl, "Network error saving markup.", true) }
+  })
+
+  back.addEventListener("click", (e) => { if (e.target === back) close() })
+  back.appendChild(bar); back.appendChild(stage)
+  document.body.appendChild(back)
+}
+
+// Re-render a ticket's evidence screenshot after its markup changed. Clears loadTktShot's one-shot guard
+// so the box repaints (clean image + the new overlay) via the normal read pipeline.
+function _reloadTktShot(detailEl, ann) {
+  if (!detailEl) return
+  const box = detailEl.querySelector(".tkt-shot")
+  if (!box) return
+  box.removeAttribute("data-loaded"); box.classList.remove("tkt-shotwrap", "zoomed"); box.innerHTML = ""
+  loadTktShot(detailEl, ann)
 }
 
 function showTktMsg(detailEl, msg, isErr) {
