@@ -44,22 +44,82 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.32em;text-alig
 .hide{display:none}
 .back{display:inline-flex;gap:7px;font-size:13px;color:var(--paper-faint);text-decoration:none;margin-bottom:20px}.back:hover{color:var(--paper-dim)}
 
-/* ── Sim greeter ── */
-.login-sim{position:fixed;bottom:84px;left:46px;z-index:3;display:flex;flex-direction:column;align-items:center;animation:simbob 3s ease-in-out infinite}
-@keyframes simbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-.login-sim .ls-bubble{position:absolute;bottom:64px;left:50%;transform:translateX(-28px);width:206px;background:var(--ink-2);border:1px solid var(--line);border-radius:13px;padding:10px 13px;font-family:var(--display);font-style:italic;font-size:13.5px;line-height:1.45;color:var(--paper);box-shadow:0 14px 36px rgba(0,0,0,.55);transition:opacity .4s}
-.login-sim .ls-bubble::after{content:"";position:absolute;bottom:-7px;left:28px;border:6px solid transparent;border-top-color:var(--ink-2);border-bottom:none}
-.login-sim .ls-tag{font-family:var(--mono);font-style:normal;font-size:9px;letter-spacing:.07em;color:var(--indigo);margin-bottom:5px}
-.ls-head{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 6px 18px rgba(0,0,0,.4);position:relative;z-index:2;transition:background .4s}
-.ls-eyes{position:absolute;bottom:11px;display:flex;gap:5px}
-.ls-eye{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.92);position:relative}
-.ls-eye::after{content:"";position:absolute;width:2px;height:2px;border-radius:50%;background:rgba(0,0,0,.55);top:1px;left:1px;animation:look 4s ease-in-out infinite}
-@keyframes look{0%,40%,100%{transform:translate(0,0)}55%,75%{transform:translate(1px,-1px)}}
-.ls-legs{display:flex;gap:6px;margin-top:3px}
-.ls-leg{width:6px;height:15px;border-radius:3px;background:#4f46e5;transition:background .4s}
-.ls-arm{position:absolute;top:13px;right:34px;width:24px;height:6px;border-radius:3px;background:#4f46e5;transform-origin:right center;animation:wave 2.6s ease-in-out infinite;transition:background .4s}
-@keyframes wave{0%,100%{transform:rotate(-28deg)}50%{transform:rotate(-52deg)}}
-.ls-arm .ls-fin{position:absolute;left:-6px;top:-8px;font-size:15px}
+/* ── Reactive Sims cluster (KLA #724) — homepage-style Sims that react to the sign-in ── */
+.sim-stage{position:fixed;left:0;top:0;bottom:0;width:min(46vw,560px);z-index:1;pointer-events:none;display:flex;align-items:center;justify-content:center;--spring:cubic-bezier(.16,1,.3,1);--pose:.5s var(--spring)}
+.sim-stage .stage-inner{position:relative;width:340px;height:320px}
+.sim-stage .floor{position:absolute;left:6%;right:6%;bottom:20%;height:38px;background:radial-gradient(60% 100% at 50% 0%,rgba(99,102,241,.20),transparent 70%);border-radius:50%}
+.sim-stage .sim-tag{position:absolute;top:6px;left:0;right:0;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--indigo);opacity:.9}
+.cluster{position:absolute;left:0;right:0;bottom:24%;height:150px}
+.sim{position:absolute;bottom:0;width:84px;transform-origin:50% 100%}
+.sim.loop{animation:simfloat 3.4s ease-in-out infinite;animation-delay:var(--bd,0s)}
+@keyframes simfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.sim .body{position:relative;width:84px;height:84px;transform-origin:50% 100%;transition:transform var(--pose);transition-delay:var(--sd,0s);will-change:transform}
+.sim .legs{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);display:flex;gap:6px;z-index:1}
+.sim .leg{width:6px;height:16px;border-radius:3px;background:var(--legc);transform-origin:top center;transition:transform var(--pose)}
+.sim.walk .leg:nth-child(1){animation:legA .34s ease-in-out infinite alternate}
+.sim.walk .leg:nth-child(2){animation:legB .34s ease-in-out infinite alternate}
+@keyframes legA{from{transform:rotate(-24deg)}to{transform:rotate(24deg)}}
+@keyframes legB{from{transform:rotate(24deg)}to{transform:rotate(-24deg)}}
+.sim .head{position:absolute;left:6px;top:0;width:72px;height:72px;border-radius:50%;background:var(--grad);box-shadow:0 12px 26px rgba(0,0,0,.30),inset 0 -8px 16px rgba(0,0,0,.14),inset 0 7px 12px rgba(255,255,255,.28);transition:transform var(--pose),border-radius var(--pose);transition-delay:var(--sd,0s);z-index:2}
+.sim .face{position:absolute;inset:0;z-index:3;transition:opacity .35s var(--spring),transform var(--pose);transition-delay:var(--sd,0s)}
+.sim .eyes{position:absolute;top:28px;left:50%;transform:translateX(-50%);display:flex;gap:14px}
+.sim .eye{width:14px;height:13px;border-radius:50%;background:#fff;position:relative;box-shadow:inset 0 1px 2px rgba(0,0,0,.2);transition:height .28s var(--spring),transform .3s var(--spring),background .25s var(--spring),box-shadow .25s var(--spring);transition-delay:var(--sd,0s)}
+.sim .pupil{position:absolute;width:7px;height:7px;border-radius:50%;background:#241d17;left:50%;top:50%;transition:opacity .2s;transform:translate(calc(-50% + var(--px,0px)),calc(-50% + var(--py,0px)))}
+.sim .sparkle{position:absolute;width:3px;height:3px;border-radius:50%;background:#fff;top:1px;right:1px;opacity:.9}
+.sim .lid{position:absolute;left:50%;top:50%;width:16px;height:9px;transform:translate(-50%,-50%);opacity:0;overflow:visible;pointer-events:none;transition:opacity .25s var(--spring),transform .3s var(--spring);transition-delay:var(--sd,0s)}
+.sim .lid path{fill:none;stroke:#241d17;stroke-width:2.4;stroke-linecap:round}
+.sim .mouth{position:absolute;top:47px;left:50%;transform:translateX(-50%);width:15px;height:9px;border:2.4px solid transparent;border-bottom-color:#241d17;border-radius:50%;transition:all .3s var(--spring);transition-delay:var(--sd,0s)}
+.sim .cheek{position:absolute;top:42px;width:9px;height:6px;border-radius:50%;background:rgba(225,29,72,.30);opacity:0;transition:opacity .35s var(--spring)}
+.sim .cheek.l{left:16px} .sim .cheek.r{right:16px}
+.sim .arm{position:absolute;top:30px;width:30px;height:8px;border-radius:5px;background:var(--legc);opacity:0;z-index:1;transition:transform var(--pose),opacity .3s var(--spring);transition-delay:var(--sd,0s)}
+.sim .arm.l{left:2px;transform-origin:26px 50%;transform:rotate(20deg)}
+.sim .arm.r{right:2px;transform-origin:4px 50%;transform:rotate(-20deg)}
+.sim .fin{position:absolute;top:-4px;width:15px;height:15px;border-radius:50%;background:var(--legc)}
+.sim .arm.l .fin{left:-7px} .sim .arm.r .fin{right:-7px}
+.sim .emote{position:absolute;top:-18px;left:50%;transform:translateX(-50%);opacity:0;transition:opacity .3s;z-index:4;line-height:0}
+/* ── reaction states (driven by .sim-stage[data-sim]) ── */
+.sim-stage[data-sim="email"] .cluster{transform:translateX(16px);transition:transform .6s var(--spring)}
+.sim-stage[data-sim="email"] .body{transform:rotate(5deg)}
+.sim-stage[data-sim="email"] .eye{height:16px}
+.sim-stage[data-sim="email"] .mouth{width:11px;height:7px}
+.sim-stage[data-sim="email"] #sim2 .arm.r{opacity:1;transform:rotate(26deg)}
+.sim-stage[data-sim="email"] #sim4 .arm.r{opacity:1;transform:rotate(16deg)}
+.sim-stage[data-sim="secret"] .eye,.sim-stage[data-sim="success"] .eye,.sim-stage[data-sim="error"] .eye{background:transparent;box-shadow:none}
+.sim-stage[data-sim="secret"] .pupil,.sim-stage[data-sim="secret"] .sparkle,.sim-stage[data-sim="success"] .pupil,.sim-stage[data-sim="success"] .sparkle,.sim-stage[data-sim="error"] .pupil,.sim-stage[data-sim="error"] .sparkle{opacity:0}
+.sim-stage[data-sim="secret"] .lid,.sim-stage[data-sim="success"] .lid,.sim-stage[data-sim="error"] .lid{opacity:1}
+.sim-stage[data-sim="secret"] .lid,.sim-stage[data-sim="error"] .lid{transform:translate(-50%,-50%) scaleY(-1)}
+.sim-stage[data-sim="secret"] .arm.l{opacity:1;transform:rotate(-56deg)}
+.sim-stage[data-sim="secret"] .arm.r{opacity:1;transform:rotate(56deg)}
+.sim-stage[data-sim="secret"] .mouth{width:9px;height:6px}
+.sim-stage[data-sim="secret"] #sim3 .head{transform:scaleX(-1) rotate(-8deg)}
+.sim-stage[data-sim="secret"] #sim3 .face{opacity:.18}
+.sim-stage[data-sim="submit"] .body{transform:translateY(-4px)}
+.sim-stage[data-sim="submit"] .arm.l{opacity:1;transform:rotate(-138deg)}
+.sim-stage[data-sim="submit"] .arm.r{opacity:1;transform:rotate(138deg)}
+.sim-stage[data-sim="submit"] .eye{height:15px}
+.sim-stage[data-sim="submit"] .mouth{width:11px;height:11px;border:2.4px solid #241d17;border-radius:50%}
+.sim-stage[data-sim="success"] .arm.l{opacity:1;animation:clapL .32s var(--spring) infinite alternate;animation-delay:var(--sd,0s)}
+.sim-stage[data-sim="success"] .arm.r{opacity:1;animation:clapR .32s var(--spring) infinite alternate;animation-delay:var(--sd,0s)}
+.sim-stage[data-sim="success"] .mouth{width:22px;height:13px}
+.sim-stage[data-sim="success"] .cheek{opacity:1}
+.sim-stage[data-sim="success"] .emote.joy{opacity:1;animation:floatup 1.1s ease-out infinite}
+@keyframes clapL{from{transform:rotate(72deg)}to{transform:rotate(112deg)}}
+@keyframes clapR{from{transform:rotate(-72deg)}to{transform:rotate(-112deg)}}
+@keyframes floatup{0%{transform:translateX(-50%) translateY(0);opacity:1}100%{transform:translateX(-50%) translateY(-42px);opacity:0}}
+.sim-stage[data-sim="error"] .head{transform:translateY(4px) scaleY(.96)}
+.sim-stage[data-sim="error"] #sim1 .body{transform:translateY(8px) rotate(-5deg)}
+.sim-stage[data-sim="error"] #sim2 .body{transform:translateY(9px) rotate(4deg)}
+.sim-stage[data-sim="error"] #sim3 .body{transform:translateY(8px) rotate(-3deg)}
+.sim-stage[data-sim="error"] #sim4 .body{transform:translateY(10px) rotate(4deg)}
+.sim-stage[data-sim="error"] .arm.l{opacity:1;transform:rotate(52deg)}
+.sim-stage[data-sim="error"] .arm.r{opacity:1;transform:rotate(-52deg)}
+.sim-stage[data-sim="error"] .mouth{width:14px;height:8px;top:52px;border-bottom-color:transparent;border-top-color:#241d17}
+.sim-stage[data-sim="error"] .emote.sad{opacity:1}
+.sim-stage[data-sim="submit"] .sim.loop{animation:simjump .5s var(--spring) infinite alternate;animation-delay:var(--bd,0s)}
+.sim-stage[data-sim="success"] .sim.loop{animation:simcheer .42s var(--spring) infinite alternate;animation-delay:var(--bd,0s)}
+.sim-stage[data-sim="secret"] .sim.loop,.sim-stage[data-sim="error"] .sim.loop{animation:none}
+@keyframes simjump{0%{transform:translateY(0)}100%{transform:translateY(-24px)}}
+@keyframes simcheer{0%{transform:translateY(0) rotate(-3deg)}100%{transform:translateY(-30px) rotate(3deg)}}
 
 /* ── customer quote marquee ── */
 .q-marquee{position:fixed;bottom:0;left:0;right:0;z-index:2;border-top:1px solid var(--line);background:var(--ink-2);backdrop-filter:blur(10px);padding:13px 0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
@@ -67,8 +127,8 @@ input.code{font-family:var(--mono);font-size:24px;letter-spacing:.32em;text-alig
 .q-item{display:flex;align-items:baseline;gap:11px;white-space:nowrap;font-family:var(--display);font-style:italic;font-size:16px;color:var(--paper-dim)}
 .q-item .q-who{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--paper-faint)}
 @keyframes qscroll{to{transform:translateX(-50%)}}
-@media(max-width:920px){.login-sim{display:none}}
-@media (prefers-reduced-motion: reduce){.login-sim,.q-track,.ls-arm,.ls-eye::after{animation:none}}
+@media(max-width:920px){.sim-stage{display:none}}
+@media (prefers-reduced-motion: reduce){.q-track,.sim.loop,.sim .arm,.sim .leg{animation:none!important}}
 
 /* ── a11y: visible focus + reduced-motion (a11y audit fix) ── */
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--indigo);outline-offset:2px;border-radius:5px}
@@ -113,12 +173,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 </div>
 
-<div class="login-sim" aria-hidden="true">
-  <div class="ls-bubble"><div class="ls-tag" id="lsTag">SARAH CHEN · CFO</div><span id="lsText">“Your Sims are ready when you are.”</span></div>
-  <div style="position:relative;display:flex;flex-direction:column;align-items:center">
-    <div class="ls-arm"><span class="ls-fin"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" /> <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" /> <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" /> <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></svg></span></div>
-    <div class="ls-head" id="lsHead"><span id="lsInit">SC</span><div class="ls-eyes"><span class="ls-eye"></span><span class="ls-eye"></span></div></div>
-    <div class="ls-legs"><span class="ls-leg"></span><span class="ls-leg"></span></div>
+<div class="sim-stage" id="simStage" data-sim="idle" aria-hidden="true">
+  <div class="stage-inner">
+    <div class="sim-tag">Klavity Sims</div>
+    <div class="floor"></div>
+    <div class="cluster" id="cluster"></div>
   </div>
 </div>
 
@@ -186,27 +245,8 @@ try {
   }
 } catch (e) {}
 
-// seamless quote marquee + rotating Sim greeter
+// seamless quote marquee (the reactive Sims cluster is wired up in its own script below)
 const qt = $("qTrack"); if (qt) qt.innerHTML += qt.innerHTML
-const QUIPS = [
-  { who: "SARAH CHEN · CFO", init: "SC", bg: "linear-gradient(135deg,#6366f1,#8b5cf6)", leg: "#4f46e5", text: "“Your Sims are ready when you are.”" },
-  { who: "JAMES MOORE · FINANCE LEAD", init: "JM", bg: "linear-gradient(135deg,#e8a24a,#ef4444)", leg: "#b45309", text: "“Sign in — I've got notes on your latest build.”" },
-  { who: "ANIKA KUMAR · OPERATIONS", init: "AK", bg: "linear-gradient(135deg,#10b981,#06b6d4)", leg: "#0e7490", text: "“Welcome back. Let's go look at something.”" },
-  { who: "PRIYA RAO · DESIGNER", init: "PR", bg: "linear-gradient(135deg,#ec4899,#8b5cf6)", leg: "#be185d", text: "“I spotted three things since you were gone.”" },
-]
-let qi = 0
-setInterval(() => {
-  qi = (qi + 1) % QUIPS.length
-  const q = QUIPS[qi], b = document.querySelector(".ls-bubble")
-  if (!b) return
-  b.style.opacity = "0"
-  setTimeout(() => {
-    $("lsTag").textContent = q.who; $("lsText").textContent = q.text; $("lsInit").textContent = q.init
-    $("lsHead").style.background = q.bg
-    document.querySelectorAll(".ls-leg, .ls-arm").forEach((el) => (el.style.background = q.leg))
-    b.style.opacity = "1"
-  }, 400)
-}, 4200)
 
 async function post(url, body) {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(window.KlavAttr && body && typeof body === 'object' ? window.KlavAttr.attach(body) : body) })
@@ -266,6 +306,9 @@ async function verifyNow() {
       try { window.gtag && gtag('event','sign_up',{ method:'otp' }) } catch (e) {}
       try { window.posthog && posthog.capture('sign_up',{ method:'otp' }) } catch (e) {}
     }
+    // Verify OK — let the Sims smile + clap before we navigate away (purely visual, additive).
+    try { window.simEvent && window.simEvent("success") } catch (e) {}
+    try { if (window.__simCelebrateMs) await new Promise(function (r) { setTimeout(r, window.__simCelebrateMs) }) } catch (e) {}
     try { sessionStorage.removeItem("klavResumeNext") } catch (e) {}
     location.href = d.redirect || "/dashboard"
   } catch (e) {
@@ -295,6 +338,170 @@ $("verifyBtn").onclick = verifyNow
 $("email").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendBtn").click() })
 // Use a different email: go back to the email step.
 $("changeEmail").onclick = (e) => { e.preventDefault(); otp.stopResendCooldown(); show("email"); $("email").focus() }
+</script>
+
+<script>
+// ── Reactive Sims (KLA #724) — homepage-style Sims that react to the real email/OTP flow. ──
+// Purely additive + visual: it wires NO auth logic, only reads existing ids and reacts to their
+// events. States: idle -> email (typing) -> secret (code is the secret, eyes covered) ->
+// submit (jump) -> success (clap) / error (gentle sad slump).
+(function () {
+  var stage = document.getElementById("simStage")
+  var cluster = document.getElementById("cluster")
+  if (!stage || !cluster) return
+  var reduce = false
+  try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches } catch (e) {}
+
+  // Exact homepage REVIEWERS palette (indigo->violet / amber->red / emerald->cyan / pink->violet).
+  var SIMS = [
+    { id: "sim1", grad: "linear-gradient(135deg,#6366f1,#8b5cf6)", leg: "#5a5ad6", x: "18%", s: 0.94, sd: 0,    bd: 0 },
+    { id: "sim2", grad: "linear-gradient(135deg,#e8a24a,#ef4444)", leg: "#b45309", x: "40%", s: 1.06, sd: 0.06, bd: 0.4 },
+    { id: "sim3", grad: "linear-gradient(135deg,#10b981,#06b6d4)", leg: "#0e7490", x: "60%", s: 1.0,  sd: 0.12, bd: 0.8 },
+    { id: "sim4", grad: "linear-gradient(135deg,#ec4899,#8b5cf6)", leg: "#be185d", x: "80%", s: 0.88, sd: 0.18, bd: 1.2 }
+  ]
+  var lid = '<svg class="lid" viewBox="0 0 16 9"><path d="M1.6 3 Q8 8.4 14.4 3"/></svg>'
+  var heart = '<svg class="emote joy" width="18" height="18" viewBox="0 0 24 24" fill="#e8517a" aria-hidden="true"><path d="M12 21s-7.5-4.7-10-9.3C.6 8.9 2 5.5 5.2 5.1 7 4.9 8.7 5.9 12 8.7c3.3-2.8 5-3.8 6.8-3.6 3.2.4 4.6 3.8 3.2 6.6C19.5 16.3 12 21 12 21Z"/></svg>'
+  var drop = '<svg class="emote sad" width="12" height="15" viewBox="0 0 12 15" fill="#6aa8e8" aria-hidden="true"><path d="M6 0C6 0 0 7 0 10.2A6 6 0 0 0 12 10.2C12 7 6 0 6 0Z"/></svg>'
+  SIMS.forEach(function (c) {
+    var el = document.createElement("div")
+    el.className = "sim loop"; el.id = c.id
+    el.style.left = c.x; el.style.transform = "scale(" + c.s + ")"
+    el.style.setProperty("--grad", c.grad)
+    el.style.setProperty("--legc", c.leg)
+    el.style.setProperty("--sd", c.sd + "s")
+    el.style.setProperty("--bd", c.bd + "s")
+    el.innerHTML =
+      '<div class="body">' +
+        '<div class="legs"><span class="leg"></span><span class="leg"></span></div>' +
+        '<div class="arm l"><span class="fin"></span></div>' +
+        '<div class="arm r"><span class="fin"></span></div>' +
+        '<div class="head"><div class="face">' +
+          '<span class="cheek l"></span><span class="cheek r"></span>' +
+          '<div class="eyes">' +
+            '<div class="eye l"><span class="pupil"></span><span class="sparkle"></span>' + lid + '</div>' +
+            '<div class="eye r"><span class="pupil"></span><span class="sparkle"></span>' + lid + '</div>' +
+          '</div><div class="mouth"></div>' +
+        '</div></div>' +
+        heart + drop +
+      '</div>'
+    cluster.appendChild(el)
+  })
+
+  var sims = [].slice.call(cluster.querySelectorAll(".sim"))
+  var emailInput = document.getElementById("email")
+  var codeInput = document.getElementById("code")
+  var stepCode = document.getElementById("step-code")
+  var emailMsg = document.getElementById("emailMsg")
+  var codeMsg = document.getElementById("codeMsg")
+
+  function codeVisible() { return !!stepCode && !stepCode.classList.contains("hide") }
+  function errShowing(el) { return !!el && /(^|\s)err(\s|$)/.test(el.className) && el.textContent.trim() !== "" }
+  function anyError() { return errShowing(emailMsg) || errShowing(codeMsg) }
+  function contextual() {
+    if (codeVisible()) return "secret"
+    if (document.activeElement === emailInput) return "email"
+    return "idle"
+  }
+  function setState(s) {
+    stage.dataset.sim = s
+    sims.forEach(function (el) { el.classList.toggle("walk", s === "email" && !reduce) })
+  }
+  // Success hook called from verifyNow just before the redirect.
+  window.simEvent = function (s) { setState(s) }
+  window.__simCelebrateMs = reduce ? 0 : 700
+
+  // prefers-reduced-motion: static friendly Sims, no walking / clap / tracking.
+  if (reduce) { setState("idle"); return }
+
+  var reconcileTimer = null
+  function reconcile() { setState(anyError() ? "error" : contextual()) }
+  function pulseSubmit() {
+    setState("submit")
+    if (reconcileTimer) clearTimeout(reconcileTimer)
+    reconcileTimer = setTimeout(reconcile, 850)
+  }
+
+  // ── pupil tracking: ease toward a per-frame target (cursor / caret / up / down). ──
+  var eyeState = sims.map(function (el) { return { el: el, cur: { x: 0, y: 0 }, tgt: { x: 0, y: 0 } } })
+  var mouse = { x: window.innerWidth * 0.3, y: window.innerHeight * 0.5 }
+  window.addEventListener("mousemove", function (e) { mouse.x = e.clientX; mouse.y = e.clientY }, { passive: true })
+  function aimAt(px, py) {
+    eyeState.forEach(function (o) {
+      var r = o.el.getBoundingClientRect()
+      var cx = r.left + r.width / 2, cy = r.top + r.height * 0.34
+      var dx = px - cx, dy = py - cy, ang = Math.atan2(dy, dx), dist = Math.min(4, Math.hypot(dx, dy) / 60)
+      o.tgt.x = Math.cos(ang) * dist; o.tgt.y = Math.sin(ang) * dist
+    })
+  }
+  function trackCaret() {
+    if (!emailInput) return aimAt(mouse.x, mouse.y)
+    var r = emailInput.getBoundingClientRect()
+    var approx = Math.min(r.width - 16, emailInput.value.length * 8.2)
+    aimAt(r.left + 12 + approx, r.top + r.height / 2)
+  }
+  function computeTargets() {
+    var st = stage.dataset.sim
+    if (st === "secret") return                                  // eyes covered — do not track
+    if (st === "email") { trackCaret(); return }                 // follow the caret / field
+    if (st === "error") { eyeState.forEach(function (o) { o.tgt.x = 0; o.tgt.y = 4 }); return }  // look down
+    if (st === "success") { eyeState.forEach(function (o) { o.tgt.x = 0; o.tgt.y = -4 }); return } // look up
+    aimAt(mouse.x, mouse.y)                                       // idle / hover / submit -> cursor
+  }
+  function lerpLoop() {
+    computeTargets()
+    eyeState.forEach(function (o) {
+      o.cur.x += (o.tgt.x - o.cur.x) * 0.16
+      o.cur.y += (o.tgt.y - o.cur.y) * 0.16
+      o.el.querySelectorAll(".pupil").forEach(function (p) {
+        p.style.setProperty("--px", o.cur.x.toFixed(2) + "px")
+        p.style.setProperty("--py", o.cur.y.toFixed(2) + "px")
+      })
+    })
+    requestAnimationFrame(lerpLoop)
+  }
+  requestAnimationFrame(lerpLoop)
+
+  // ── occasional blink (skip while poses hold the eyes) ──
+  setInterval(function () {
+    var st = stage.dataset.sim
+    if (["secret", "success", "error", "submit"].indexOf(st) >= 0) return
+    cluster.querySelectorAll(".eye").forEach(function (e) {
+      var h = e.style.height || ""
+      e.style.height = "3px"; setTimeout(function () { e.style.height = h }, 120)
+    })
+  }, 3600)
+
+  // ── wire reactions to the REAL email/OTP flow ──
+  if (emailInput) {
+    emailInput.addEventListener("focus", function () { if (!anyError()) setState("email") })
+    emailInput.addEventListener("input", function () { setState("email") })
+    emailInput.addEventListener("blur", function () {
+      setTimeout(function () { if (document.activeElement !== emailInput) reconcile() }, 160)
+    })
+    emailInput.addEventListener("keydown", function (e) { if (e.key === "Enter") pulseSubmit() })
+  }
+  if (codeInput) {
+    codeInput.addEventListener("focus", function () { if (!anyError()) setState("secret") })
+    codeInput.addEventListener("input", function () { setState(contextual()) })   // editing again clears the slump
+    codeInput.addEventListener("keydown", function (e) { if (e.key === "Enter") pulseSubmit() })
+  }
+  var sendBtn = document.getElementById("sendBtn")
+  var verifyBtn = document.getElementById("verifyBtn")
+  if (sendBtn) sendBtn.addEventListener("click", pulseSubmit)     // request-code -> jump
+  if (verifyBtn) verifyBtn.addEventListener("click", pulseSubmit) // verify -> jump
+
+  // code step becoming visible -> cover eyes for the secret 6-digit code
+  var stepObs = new MutationObserver(function () { if (codeVisible() && !anyError()) setState("secret") })
+  if (stepCode) stepObs.observe(stepCode, { attributes: true, attributeFilter: ["class"] })
+
+  // any error message (invalid code, email not allowed, rate-limited...) -> gentle sad slump
+  var msgObs = new MutationObserver(function () { if (anyError()) setState("error") })
+  var moOpts = { attributes: true, childList: true, characterData: true, subtree: true }
+  if (emailMsg) msgObs.observe(emailMsg, moOpts)
+  if (codeMsg) msgObs.observe(codeMsg, moOpts)
+
+  setState(codeVisible() ? "secret" : "idle")
+})()
 </script>
 </body>
 </html>
