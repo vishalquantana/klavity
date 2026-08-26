@@ -289,6 +289,22 @@ async function extensionProjectConfig(email: string): Promise<ExtProjectConfig[]
   return out
 }
 
+// #700: classify a browser-reported error message as a BENIGN, environmental network/abort failure
+// rather than a real application bug. A transient `fetch()` rejection — a network blip, an endpoint
+// briefly down, or an in-flight request ABORTED because the user navigated away / closed the tab —
+// surfaces as an unhandled rejection and, before this guard, was paged as a P1 "Frontend error".
+// These are not actionable and must NOT page. Matched conservatively against the well-known browser
+// strings (cross-engine: Chrome/Firefox/Safari all differ) so genuine app errors keep their severity.
+const TRANSIENT_CLIENT_ERROR_RE =
+  /(failed to fetch|networkerror when attempting to fetch|load failed|the network connection was lost|the operation (?:couldn.t be completed|was aborted)|fetch aborted|aborterror|the user aborted a request|signal is aborted|network request failed|err_network|err_internet_disconnected|err_connection|net::err_)/i
+function isBenignTransientClientError(message: string): boolean {
+  const m = String(message || "").trim()
+  if (!m) return false
+  // AbortError name shows up either as the bare name or embedded in the message.
+  if (/^aborterror\b/i.test(m)) return true
+  return TRANSIENT_CLIENT_ERROR_RE.test(m)
+}
+
 function normalizeAssigneeEmail(value: unknown): string | null {
   if (value === null || value === undefined) return null
   const email = String(value).trim().toLowerCase()
@@ -3625,6 +3641,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const url = String(b.url || "").trim().slice(0, 300)
       const stack = b.stack ? String(b.stack).slice(0, 1_500) : undefined
       const traceId = b.traceId ? String(b.traceId).slice(0, 40) : undefined
+      // #700: transient/environmental network errors (a fetch that failed because of a network blip,
+      // a downed endpoint, or an in-flight request ABORTED when the user navigated away / closed the
+      // tab) are benign — they are NOT app bugs and must never page as a P1 "Frontend error". Drop them
+      // here: no Slack alert, no auto-ticket. Genuine app errors (TypeErrors in our code, ReferenceError,
+      // etc.) still flow through at their real severity.
+      if (isBenignTransientClientError(message)) {
+        return json({ ok: true, dropped: "transient-network" })
+      }
       // fire-and-forget — never blocks the browser
       void reportError({ where: "frontend", message, route: url || undefined, traceId, stack })
       void autoTicketError({ where: "frontend", message, route: url || undefined, traceId, stack }).catch(() => {})

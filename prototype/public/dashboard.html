@@ -3169,6 +3169,24 @@ function fetchWithTimeout(url, opts, timeoutMs) {
   return fetch(url, Object.assign({}, opts || {}, { signal: ctrl.signal })).finally(() => clearTimeout(t))
 }
 
+// #700: network-resilient fetch for view-data loaders. A raw `await fetch(...)` REJECTS on a transient
+// network failure (a blip, a downed endpoint) or when the request is ABORTED because the user navigated
+// away / closed the tab. In a view renderer that rejection escapes render()/refreshAll()/the _subOnce
+// sub-loader dispatch uncaught, gets reported to /api/client-error, and pages as a P1 "Frontend error"
+// for an environmental non-bug. safeFetch swallows exactly those failures and returns null so the caller
+// can degrade gracefully (keep cached content / show an inline "couldn't load") instead of throwing.
+// A genuine HTTP error (4xx/5xx) is NOT hidden — it resolves normally and the caller inspects r.ok.
+function safeFetch(url, opts) {
+  return fetch(url, opts).catch(function (e) {
+    // AbortError (user navigated) is a silent no-op; other network errors are logged but non-fatal.
+    if (!(e && (e.name === "AbortError" || e.code === 20))) {
+      try { console.warn("safeFetch: network error for " + url, e && e.message ? e.message : e) } catch (_) {}
+    }
+    return null
+  })
+}
+window.safeFetch = safeFetch
+
 // Generic SWR section runner: paint cached data instantly (if any), then revalidate
 // with the progress bar showing, applying + re-caching fresh data when it lands.
 // `fetcher` returns the payload (or null to skip caching); `apply` renders it.
@@ -3344,7 +3362,9 @@ async function refreshAll(isPoll) {
   // KLA-200: open deep-linked ticket if present in ?ticket= param, after data has loaded
   maybeOpenDeepLinkTicket()
   // B.6: surface the unified regression alarm banner (best-effort — never blocks the dashboard).
-  if (typeof renderRegressionBanner === "function") renderRegressionBanner()
+  // #700: it's async — swallow any rejection so a network blip in the banner load can't escape as an
+  // uncaught P1.
+  if (typeof renderRegressionBanner === "function") { try { const _rb = renderRegressionBanner(); if (_rb && _rb.catch) _rb.catch(() => {}) } catch (e) {} }
 }
 
 // ── KLAVITYKLA-510: dashboard liveness ─────────────────────────────────────────
@@ -3521,7 +3541,7 @@ async function renderTriage() {
   // renderer (the old renderTriageFilters()/renderTriageList() names never existed).
   await swrSection(
     "triage:" + pid,
-    async () => { const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/triage"); if (!r.ok) return null; return await r.json() },
+    async () => { const r = await safeFetch("/api/projects/" + encodeURIComponent(pid) + "/triage"); if (!r || !r.ok) return null; return await r.json() },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
     (d) => { _triageItems = (d && d.triage) || []; renderTriageView() },
     "triageList",
   )
@@ -4362,7 +4382,23 @@ window.__klavSubLoaded = window.__klavSubLoaded || {}
 function _subOnce(key, fn) {
   if (window.__klavSubLoaded[key]) return
   window.__klavSubLoaded[key] = true
-  try { fn() } catch (e) {}
+  // #700: the sub-loaders are async — `fn()` returns a Promise. A synchronous try/catch CANNOT catch a
+  // later Promise rejection, so an unguarded `await fetch` inside a sub-loader (e.g. taccRender on a
+  // network blip / aborted request) escaped here as an unhandled rejection and paged as a P1. Catch both
+  // the sync throw AND the async rejection, and DON'T mark the key as loaded on failure so a later
+  // navigation can retry the load rather than being stuck on a permanently-empty section.
+  try {
+    var ret = fn()
+    if (ret && typeof ret.then === "function") {
+      ret.catch(function (e) {
+        window.__klavSubLoaded[key] = false
+        try { console.warn("sub-loader failed: " + key, e && e.message ? e.message : e) } catch (_) {}
+      })
+    }
+  } catch (e) {
+    window.__klavSubLoaded[key] = false
+    try { console.warn("sub-loader failed: " + key, e && e.message ? e.message : e) } catch (_) {}
+  }
 }
 function loadViewData(view) {
   if (!state || !state.active) return
@@ -10370,7 +10406,18 @@ function renderWidgetStatus(s) {
 async function taccRender() {
   var pid = curProjId(); if (!pid) return
   var list = $("taccList"); if (!list) return
-  var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts")
+  // #700: use safeFetch so a transient network failure / aborted request degrades gracefully (inline
+  // "couldn't load", drawer stays usable) instead of throwing an uncaught rejection that pages as a P1.
+  var r = await safeFetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts")
+  if (r === null) {
+    // network error / aborted (user navigated away) — leave any existing list in place and surface a
+    // quiet inline hint only if the list is still empty. Never throw.
+    if (!list.children.length) {
+      var m0 = $("taccMsg")
+      if (m0) { m0.style.color = "var(--muted)"; m0.textContent = "Couldn't load test accounts — check your connection." }
+    }
+    return
+  }
   if (!r.ok) {
     // 403 = not authorized — hide the whole drawer; other errors show inline so the drawer
     // stays open and the user gets actionable feedback rather than a silent disappearance.
