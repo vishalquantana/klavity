@@ -1104,6 +1104,13 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .tkt-desc:hover .tkt-desc-edit,.tkt-desc-edit:focus-visible{opacity:1}
 .tkt-desc-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
 .tkt-obs{cursor:text;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+/* #734: inline markdown-lite in the description read view (WhatsApp-style *bold* _italic_ `code`). */
+.tkt-obs strong{font-weight:700}
+.tkt-obs em{font-style:italic}
+.tkt-obs code{font-family:var(--mono);font-size:.9em;background:var(--ink-3);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+/* #735: the #<seq> ticket-key pill is a click-to-copy control for the clean /t/<id> permalink. */
+.tkt-key-copy{cursor:pointer;transition:color .15s}
+.tkt-key-copy:hover{color:var(--indigo)}
 /* #717: smart-link chips — long UUID URLs pasted into a Description auto-linkify into a compact chip
    labeled with JUST the hostname (domain-only). Email → mailto chip. Indigo hover; full URL on title. */
 .tkt-smartlink{display:inline-flex;align-items:baseline;gap:4px;max-width:100%;vertical-align:baseline;padding:0 6px;margin:0 1px;border:1px solid var(--line);border-radius:6px;background:var(--ink-2);color:var(--indigo);text-decoration:none;font-size:.94em;line-height:1.4;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease)}
@@ -1193,9 +1200,15 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* KLA-562 Stage 2: single ticket as a Jira-style right-side sliding panel (board/list stays behind) */
 #tktPanelScrim{position:fixed;inset:0;background:rgba(25,20,15,.30);opacity:0;pointer-events:none;transition:opacity .18s;z-index:60}
 body.tkt-panel-open #tktPanelScrim{opacity:1;pointer-events:auto}
-#ticketSingle.tkt-panel{position:fixed;top:0;right:0;bottom:0;width:50vw;min-width:440px;max-width:94vw;z-index:61;background:var(--ink-2);border-left:1px solid var(--line);box-shadow:-18px 0 48px rgba(25,20,15,.22);overflow-y:auto;padding:0 24px 44px;transform:translateX(102%);transition:transform .22s ease}
+#ticketSingle.tkt-panel{position:fixed;top:0;right:0;bottom:0;width:50vw;min-width:440px;max-width:94vw;z-index:61;background:var(--ink-2);border-left:1px solid var(--line);box-shadow:-18px 0 48px rgba(25,20,15,.22);overflow-y:auto;overflow-x:hidden;padding:0 24px 44px;transform:translateX(102%);transition:transform .22s ease}
 body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
 #ticketSingle.tkt-panel .tkt-detail,#ticketSingle.tkt-panel .single-head{max-width:none}
+/* #733: fluid, no-overflow panel — every column/child may shrink (min-width:0) so a fixed px column,
+   a long unbroken URL, or a wide screenshot can never force a horizontal scrollbar / left-clip. If a
+   3-col cockpit grid ever renders in the panel it STACKS (single column) instead of the fixed layout. */
+#ticketSingle.tkt-panel .tkt-detail,#ticketSingle.tkt-panel .tkt-right-body,#ticketSingle.tkt-panel .single-head,#ticketSingle.tkt-panel .single-h-b,#ticketSingle.tkt-panel .t3-col,#ticketSingle.tkt-panel .t3-mid,#ticketSingle.tkt-panel .t3-cols{min-width:0;max-width:100%}
+#ticketSingle.tkt-panel .t3-cols{display:block}
+#ticketSingle.tkt-panel .t3-gutter{display:none}
 .tkt-panel-head{position:sticky;top:0;z-index:2;background:var(--ink-2);display:flex;align-items:center;gap:8px;padding:15px 0 12px;border-bottom:1px solid var(--line);margin-bottom:18px}
 .tkt-panel-head .tph-sp{flex:1}
 .tkt-panel-btn{display:inline-flex;align-items:center;gap:6px;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
@@ -1269,7 +1282,11 @@ body.tkt-page-open .wrap{max-width:none}
 /* #725b: default the screenshot column (col1) WIDE so the report's image is shown as big as possible
    on the reclaimed page width. The user can still drag it larger/smaller (clamp raised to 760, see
    wireT3Resize). The image is width:100% so a wider column = a bigger image. */
-.t3-cols{display:grid;grid-template-columns:var(--t3c1,480px) 8px minmax(0,1fr) 8px var(--t3c3,280px)}
+/* #733: the cockpit's FIXED 3-column grid (480 + 280 + gutters) is PAGE-ONLY. In the ~50vw slide-over
+   panel those fixed px columns overflowed the panel width → horizontal scroll + a left-clipped edge
+   ("#94"→"94"). Scoping the fixed grid to #ticketSingle.tkt-page means the panel can never inherit it;
+   the belt-and-suspenders rules below force any .t3-cols that ever renders inside the panel to stack. */
+#ticketSingle.tkt-page .t3-cols{display:grid;grid-template-columns:var(--t3c1,480px) 8px minmax(0,1fr) 8px var(--t3c3,280px)}
 .t3-col{padding:16px 22px;min-width:0;border-top:1px solid var(--line)}
 .t3-gutter{cursor:col-resize;background:transparent;position:relative;border-top:1px solid var(--line);touch-action:none;user-select:none}
 .t3-gutter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
@@ -1278,8 +1295,10 @@ body.tkt-page-open .wrap{max-width:none}
 .t3-noshot{font-size:12.5px;color:var(--paper-faint);border:1px dashed var(--line);border-radius:11px;padding:22px 12px;text-align:center}
 .t3-shotmeta{font-size:11.5px;color:var(--paper-faint);margin-top:9px;word-break:break-word}
 .t3-shotmeta a{color:var(--indigo);text-decoration:none}.t3-shotmeta a:hover{text-decoration:underline}
-.t3-desctools{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0 0}
-.t3-hr{border:0;border-top:1px solid var(--line);margin:20px 0 14px}
+/* #737: tighten the middle-column vertical rhythm — the toolbar sits close under the description and the
+   divider is a slim separator (was 14px+gap above / 20px+14px around → sprawling empty gaps). */
+.t3-desctools{display:flex;gap:9px;flex-wrap:wrap;margin:2px 0 0}
+.t3-hr{border:0;border-top:1px solid var(--line);margin:6px 0 6px}
 /* #716: on the dedicated page keep Assignee IDENTICAL to Status/Priority (same -8px pull + padding) so
    all three value controls stay on one column edge — the base .tkt-assignee-ctrl is already borderless. */
 .t3-right .tkt-props{gap:12px 12px}
@@ -1308,7 +1327,7 @@ body.tkt-page-open .wrap{max-width:none}
 /* the grid runs clean to the card top now that the editorial title lives IN the middle column */
 #ticketSingle.tkt-page .t3-col{border-top:none;padding:22px 24px}
 #ticketSingle.tkt-page .t3-left{background:rgba(120,120,120,.022);display:flex;flex-direction:column;gap:18px}
-#ticketSingle.tkt-page .t3-mid{display:flex;flex-direction:column;gap:20px}
+#ticketSingle.tkt-page .t3-mid{display:flex;flex-direction:column;gap:13px}
 #ticketSingle.tkt-page .t3-right{background:rgba(120,120,120,.022);display:flex;flex-direction:column;gap:18px}
 #ticketSingle.tkt-page .t3-colh{margin:0}
 /* editorial headline relocated into the middle column */
@@ -6280,6 +6299,20 @@ function smartLinkLabel(url) {
 // non-URL segment, so raw user text is never injected as HTML. Detected http(s) URLs / emails become
 // compact "smart link" chips; hrefs are restricted to http/https/mailto (a javascript:/data: paste can
 // never become a clickable chip — it's escaped as plain text). Returns an HTML string.
+// #734: render the description's WhatsApp/markdown-lite formatting. The "Enhance with AI" draft emits
+// *bold*, _italic_ and `code` (single-delimiter, via renderDraftToWhatsApp) — the dashboard used to show
+// those raw asterisks. This turns them into <strong>/<em>/<code>.
+// XSS-SAFE BY CONSTRUCTION: this ALWAYS runs on ALREADY-ESCAPED text (esc() has neutralized & < > " into
+// entities first), so no unescaped angle bracket survives to open a tag — we only convert the leftover
+// *_` delimiter characters. Restricted to these three inline formats; there is NO raw-HTML passthrough.
+// e.g. `*<script>*` → esc → `*&lt;script&gt;*` → `<strong>&lt;script&gt;</strong>` (bold literal text,
+// nothing executes). Code is converted first so a * or _ inside a code span isn't also formatted.
+function fmtInlineMd(escaped) {
+  return String(escaped == null ? "" : escaped)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+}
 function linkifyDescription(raw) {
   const text = String(raw == null ? "" : raw)
   // A URL or an email. URLs greedily grab non-space; trailing punctuation is peeled off below.
@@ -6292,7 +6325,8 @@ function linkifyDescription(raw) {
     // Peel trailing punctuation that's almost never part of the link (., ) ] ! ? : ; , " ').
     const tm = token.match(/[.,;:!?)\]'"]+$/)
     if (tm) { trail = tm[0]; token = token.slice(0, token.length - trail.length) }
-    out += esc(text.slice(last, start))
+    // #734: non-URL text segments get the inline-markdown pass (applied to the ESCAPED string → safe).
+    out += fmtInlineMd(esc(text.slice(last, start)))
     const isEmail = m[2] != null && !/^https?:/i.test(token)
     const href = isEmail ? ("mailto:" + token) : token
     // Scheme allow-list: only http(s) and mailto ever become a live href.
@@ -6308,7 +6342,7 @@ function linkifyDescription(raw) {
     out += esc(trail)
     last = re.lastIndex
   }
-  out += esc(text.slice(last))
+  out += fmtInlineMd(esc(text.slice(last)))
   return out
 }
 // #717: repaint the read-view description with smart-link chips (used on first render + after each save).
@@ -8003,6 +8037,27 @@ const KANBAN_COLS = [
 // (?ticket= on load) and the panel's "Full page" button render in-place ("full" mode), which is the
 // deep-linkable/shareable surface. `mode` defaults to "panel"; maybeOpenDeepLinkTicket passes "full".
 let _tktSingleMode = "panel"
+// #736: when the dedicated full page opens we push a CLEAN /t/<id> URL to the address bar; this remembers
+// the board URL (…/dashboard?project=…#tickets) to restore when the page closes or the user hits Back.
+let _tktBoardReturnUrl = null
+// #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
+// path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
+// the in-app history story — a FRESH load of /t/<id> is still served by the server route (ticket.html).
+function ensureTktCleanUrlPopstate() {
+  if (window.__klavTktPopBound) return
+  window.__klavTktPopBound = true
+  window.addEventListener("popstate", () => {
+    const single = $("ticketSingle")
+    const m = (location.pathname || "").match(/^\/t\/([^/?#]+)\/?$/)
+    if (m) {
+      // Back/Forward landed on a clean ticket URL in-session → make sure that ticket is open.
+      try { openSingleTicket(decodeURIComponent(m[1]), "full") } catch (e) {}
+    } else if (document.body.classList.contains("tkt-page-open")) {
+      // Back navigated off the ticket page (URL is already the board URL) → close, restore the board.
+      try { closeSingleTicket() } catch (e) {}
+    }
+  })
+}
 async function openSingleTicket(id, mode) {
   if (mode === "panel" || mode === "full") _tktSingleMode = mode
   // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
@@ -8056,6 +8111,27 @@ function _tktOrderedVisibleIds() {
 function ticketPageUrl(id) {
   try { return new URL("/t/" + encodeURIComponent(String(id)), location.origin).toString() }
   catch (e) { return location.origin + "/t/" + encodeURIComponent(String(id)) }
+}
+// #735: make the "#<seq>" ticket-key pill (the dedicated-page header .tkt-page-key AND the panel/cockpit
+// title .tkt-seq) a click-to-copy control for the CLEAN, shareable permalink /t/<id> — NOT the ugly
+// dashboard?project=…#tickets/fb_… hash. Shows a brief "Copied" confirmation (pill text swap + toast).
+function wireTktKeyCopy(el, id) {
+  if (!el || el.__keyCopyWired) return
+  el.__keyCopyWired = true
+  el.classList.add("tkt-key-copy")
+  el.setAttribute("title", "Copy ticket link")
+  el.setAttribute("role", "button")
+  el.setAttribute("tabindex", "0")
+  const doCopy = async (ev) => {
+    if (ev) { ev.preventDefault(); ev.stopPropagation() }
+    const orig = el.textContent
+    let ok = false
+    try { ok = await copyText(ticketPageUrl(id)) } catch (e) {}
+    if (typeof klavToast === "function") klavToast(ok ? "Ticket link copied" : "Couldn’t copy the ticket link", !ok)
+    if (ok) { el.textContent = "Copied"; setTimeout(() => { el.textContent = orig }, 1400) }
+  }
+  el.addEventListener("click", doCopy)
+  el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") doCopy(e) })
 }
 // KLA-563 §6.7: wrap the detail screenshot in fake-browser chrome (traffic lights + URL pill) and paint
 // an immediate placeholder (skeleton + red "Reported here" box) so it's never a bare "Loading…" state.
@@ -8150,6 +8226,7 @@ function _renderSingleTicket(id) {
     document.body.classList.remove("tkt-panel-open")
     hidePanelScrim()
     ensureTicketPageEsc()
+    ensureTktCleanUrlPopstate()   // #736: wire Back/Forward across the clean /t/<id> URL
     const projName = (state.active && state.active.name) || "Project"
     // #681: ONE compact header row — "← All Tickets" back link + project name + #ref · status pill on a
     // single line (no separate breadcrumb, no duplicate key row). Copy-link + prev/next stay on the right.
@@ -8176,6 +8253,8 @@ function _renderSingleTicket(id) {
     })
     if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full"))
     if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full"))
+    // #735: the compact-header "#<key>" pill also copies the clean /t/<id> permalink.
+    try { wireTktKeyCopy(ph.querySelector(".tkt-page-key"), id) } catch (e) {}
     single.appendChild(ph)
     single.__focusTarget = ph.querySelector('[data-act="back"]')
   }
@@ -8187,6 +8266,8 @@ function _renderSingleTicket(id) {
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot',{size:11}) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
         ${regrBannerHtml(t)}
       </div>`
+    // #735: the "#<seq>" title pill copies the clean /t/<id> permalink (re-wired after every renderHead).
+    try { wireTktKeyCopy(head.querySelector(".tkt-seq"), t.id) } catch (e) {}
   }
   renderHead()
   const detailEl = buildTktDetail(t, admin, () => { renderHead(); renderTicketsKanban() }, true)
@@ -8259,13 +8340,27 @@ function _renderSingleTicket(id) {
       if (already) history.replaceState(null, "", u.toString())
       else history.pushState(null, "", u.toString())
     } else {
-      const u = new URL(location.href)
-      u.searchParams.delete("ticket")
-      const target = "tickets/" + encodeURIComponent(String(id))
-      const already = (u.hash || "").replace(/^#/, "") === target
-      u.hash = target
-      if (already) history.replaceState(null, "", u.toString())
-      else history.pushState(null, "", u.toString())
+      // #736: dedicated page reflects a CLEAN, shareable, reloadable /t/<id> URL in the address bar —
+      // not the old dashboard?project=…#tickets/<id> hash the owner flagged as "very bad". We remember the
+      // board URL to restore on Close/Back, then push /t/<id> (a re-render for the SAME id replaces it).
+      const cleanPath = "/t/" + encodeURIComponent(String(id))
+      const already = location.pathname === cleanPath
+      if (already) {
+        history.replaceState({ tkt: String(id) }, "", location.origin + cleanPath)
+      } else {
+        // Only capture the board URL when we're arriving FROM the board (not stepping ticket→ticket).
+        // Sanitize any ?ticket=/#tickets/<id> deep-link surface (e.g. when expanding from the panel) so
+        // the restored board URL is the plain board, never one that re-opens a ticket on reload.
+        if (!/^\/t\//.test(location.pathname)) {
+          try {
+            const bu = new URL(location.href)
+            bu.searchParams.delete("ticket")
+            if (/^#?tickets\//.test(bu.hash || "")) bu.hash = "tickets"
+            _tktBoardReturnUrl = bu.pathname + bu.search + bu.hash
+          } catch (e) { _tktBoardReturnUrl = location.pathname + location.search + location.hash }
+        }
+        history.pushState({ tkt: String(id) }, "", location.origin + cleanPath)
+      }
     }
   } catch (e) {}
   // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
@@ -8309,10 +8404,17 @@ function closeSingleTicket() {
   // KLA-200 / KLA-563: clear BOTH deep-link surfaces when closing — the ?ticket= overlay param and the
   // #tickets/<id> dedicated-page hash — so a later reload / the ~25s poll can't drag the user back.
   try {
-    const u = new URL(location.href)
-    u.searchParams.delete("ticket")
-    if (/^#?tickets\//.test(u.hash || "")) u.hash = "tickets"   // back to the board hash, not a ticket
-    history.replaceState(null, "", u.toString())
+    if (/^\/t\//.test(location.pathname) && _tktBoardReturnUrl) {
+      // #736: leaving a clean /t/<id> page → restore the exact board URL (project + #tickets hash) so a
+      // reload lands on the board, not a bare ticket path. replaceState keeps the Back button trap-free.
+      history.replaceState(null, "", _tktBoardReturnUrl)
+    } else {
+      const u = new URL(location.href)
+      u.searchParams.delete("ticket")
+      if (/^#?tickets\//.test(u.hash || "")) u.hash = "tickets"   // back to the board hash, not a ticket
+      history.replaceState(null, "", u.toString())
+    }
+    _tktBoardReturnUrl = null
   } catch (e) {}
   // Reset to panel mode for the next plain open. In panel mode the board/list were never hidden and
   // the ~25s liveness poll is suppressed while a ticket is open (dashLiveBusy checks #ticketSingle),

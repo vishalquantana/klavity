@@ -23,10 +23,13 @@ function extractFn(src: string, startSig: string): string {
 const esc = (s: any) => String(s == null ? "" : s).replace(/[&<>"]/g, c => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" } as any)[c]))
 const kicon = () => "<svg></svg>"
 
-const bundle = extractFn(HTML, "function smartLinkLabel(") + "\n" + extractFn(HTML, "function linkifyDescription(")
-const { smartLinkLabel, linkifyDescription } = new Function("esc", "kicon", bundle + "\nreturn { smartLinkLabel, linkifyDescription }")(esc, kicon) as {
+// #734: linkifyDescription now runs each non-URL segment through fmtInlineMd (markdown-lite), so the
+// harness must include it too or the extracted linkifier throws a ReferenceError.
+const bundle = extractFn(HTML, "function smartLinkLabel(") + "\n" + extractFn(HTML, "function fmtInlineMd(") + "\n" + extractFn(HTML, "function linkifyDescription(")
+const { smartLinkLabel, linkifyDescription, fmtInlineMd } = new Function("esc", "kicon", bundle + "\nreturn { smartLinkLabel, linkifyDescription, fmtInlineMd }")(esc, kicon) as {
   smartLinkLabel: (u: string) => string
   linkifyDescription: (s: string) => string
+  fmtInlineMd: (s: string) => string
 }
 
 test("smartLinkLabel returns just the hostname (domain-only, no path/query)", () => {
