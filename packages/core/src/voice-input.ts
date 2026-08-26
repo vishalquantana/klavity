@@ -333,6 +333,241 @@ export class LiveDictation {
   }
 }
 
+// ── #647: LIVE STREAMING dictation over a WebSocket ─────────────────────────────────────────────────
+// LiveDictation (above) records 5s SEGMENTS and POSTs each to the batch STT endpoint — text only lands
+// every ~5s. StreamingDictation instead opens a WebSocket to the server's /api/voice/stream relay and
+// streams the mic CONTINUOUSLY (MediaRecorder timeslice → binary frames), so interim + final transcripts
+// arrive in near real-time. It mirrors LiveDictation's callback shape (so the composer wires it the same
+// way) and ADDS onInterim for live partials.
+//
+// Fallback contract (identical spirit to LiveDictation): if the socket can't connect, is rejected (401/
+// 404/501), or produces no server message before a short timeout, it fires onUnavailable() so the host
+// can transparently drop to LiveDictation (batch) and then VoiceInput (Web Speech). A mid-session drop
+// (after it WAS connected) auto-reconnects with bounded backoff rather than giving up.
+export type StreamMsg = { type: 'interim' | 'final' | 'ready' | 'error' | 'timeout'; text?: string; message?: string }
+
+export interface StreamingDeps {
+  getUserMedia: (constraints: any) => Promise<any>
+  MediaRecorder: any
+  isTypeSupported: (mime: string) => boolean
+  WebSocket: any
+  setTimeout: (cb: () => void, ms: number) => any
+  clearTimeout: (id: any) => void
+}
+
+export function defaultStreamingDeps(): StreamingDeps {
+  const g: any = globalThis as any
+  const MR = g.MediaRecorder
+  return {
+    getUserMedia: (c: any) => (navigator as any).mediaDevices.getUserMedia(c),
+    MediaRecorder: MR,
+    isTypeSupported: (m: string) => !!(MR && MR.isTypeSupported && MR.isTypeSupported(m)),
+    WebSocket: g.WebSocket,
+    setTimeout: (cb, ms) => setTimeout(cb, ms),
+    clearTimeout: (id) => clearTimeout(id),
+  }
+}
+
+export class StreamingDictation {
+  // FINAL committed text (appended by the host, exactly like LiveDictation.onTranscript).
+  onTranscript = (_text: string) => {}
+  // Live partial — the host shows this as a transient preview, replaced on each interim, dropped on final.
+  onInterim = (_text: string) => {}
+  onError = (_type: string, _message: string) => {}
+  onStatus = (_type: 'retrying' | 'idle', _message: string) => {}
+  onStop = () => {}
+  // Fired (instead of onStop) when the socket never connected / was rejected — host falls back to batch.
+  onUnavailable = () => {}
+
+  static MAX_SESSION_MS = 180000
+  static TIMESLICE_MS = 250
+  // If no server message (ready/interim/final) lands within this window after open, treat as unavailable.
+  static CONNECT_TIMEOUT_MS = 4000
+  static MAX_RECONNECTS = 3
+  static BASE_BACKOFF_MS = 500
+  static MAX_BACKOFF_MS = 4000
+
+  private _url: string
+  private _deps: StreamingDeps
+  private _recording = false
+  private _stream: any = null
+  private _recorder: any = null
+  private _ws: any = null
+  private _mime: string | null = null
+  private _connected = false          // received at least one server message this connection
+  private _everConnected = false      // connected at least once this whole session
+  private _connectTimer: any = null
+  private _sessTimer: any = null
+  private _reconnects = 0
+  private _stopped = false
+
+  constructor(opts: { url: string; deps?: Partial<StreamingDeps> }) {
+    this._url = opts.url
+    this._deps = { ...defaultStreamingDeps(), ...(opts.deps || {}) }
+  }
+
+  // Feature-detect: WebSocket + MediaRecorder + getUserMedia. False on anything missing one.
+  static isSupported(deps: Partial<StreamingDeps> = {}): boolean {
+    const g: any = globalThis as any
+    const md = (typeof navigator !== 'undefined' ? (navigator as any).mediaDevices : undefined)
+    const hasGUM = !!(deps.getUserMedia || (md && typeof md.getUserMedia === 'function'))
+    const MR = (deps as any).MediaRecorder ?? g.MediaRecorder
+    const WS = (deps as any).WebSocket ?? g.WebSocket
+    return hasGUM && typeof MR !== 'undefined' && typeof WS !== 'undefined'
+  }
+
+  async start(): Promise<void> {
+    if (this._recording) return
+    this._recording = true
+    this._stopped = false
+    this._everConnected = false
+    this._reconnects = 0
+    let stream: any
+    try {
+      stream = await this._deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+    } catch (e: any) {
+      this._recording = false
+      const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
+      this.onError(denied ? 'not-allowed' : 'mic-error', denied ? 'Microphone access was denied' : 'Could not access the microphone')
+      this.onStop()
+      return
+    }
+    // stop() during the async permission prompt → release the late-granted mic (mirror LiveDictation).
+    if (!this._recording) {
+      try { stream?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ }
+      return
+    }
+    this._stream = stream
+    this._mime = pickDictationMime(this._deps)
+    // Overall session cap spans reconnects — set once, cleared on stop.
+    this._sessTimer = this._deps.setTimeout(() => this.stop(), StreamingDictation.MAX_SESSION_MS)
+    this._openSocket()
+  }
+
+  private _openSocket(): void {
+    if (!this._recording) return
+    this._connected = false
+    let ws: any
+    try {
+      ws = new this._deps.WebSocket(this._url)
+    } catch {
+      this._onDrop()
+      return
+    }
+    this._ws = ws
+    try { ws.binaryType = 'arraybuffer' } catch { /* not all impls expose it */ }
+    // Connect timeout: if the socket opens but the server never speaks (or never opens), close it — the
+    // onclose handler funnels into _onDrop (which, having never connected, fires onUnavailable). We do NOT
+    // call _onDrop directly here, so it runs exactly once.
+    this._connectTimer = this._deps.setTimeout(() => {
+      if (!this._connected) { try { ws.close() } catch { this._onDrop() } }
+    }, StreamingDictation.CONNECT_TIMEOUT_MS)
+
+    ws.onopen = () => { this._startRecorder() }
+    ws.onmessage = (ev: any) => {
+      let msg: StreamMsg | null = null
+      try { msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : null } catch { msg = null }
+      if (!msg) return
+      // First server message this connection = healthy. Clear connect timeout + reconnect budget + status.
+      if (!this._connected) {
+        this._connected = true
+        this._everConnected = true
+        this._reconnects = 0
+        this._clearConnectTimer()
+        if (this._statusShown) { this._statusShown = false; this.onStatus('idle', '') }
+      }
+      if (msg.type === 'interim') { if (msg.text) this.onInterim(msg.text) }
+      else if (msg.type === 'final') { const t = (msg.text || '').trim(); if (t) this.onTranscript(t) }
+      else if (msg.type === 'error') { /* server relay error → let onclose handle recovery/fallback */ }
+      // 'ready' / 'timeout' need no client action beyond the healthy-connection bookkeeping above.
+    }
+    ws.onerror = () => { /* onclose always follows — funnel recovery there (mirrors VoiceInput) */ }
+    ws.onclose = () => {
+      this._clearConnectTimer()
+      this._ws = null
+      this._onDrop()
+    }
+  }
+
+  private _statusShown = false
+
+  // A socket closed/failed. If we were mid-session and had connected at least once, reconnect with backoff;
+  // if we never connected at all → onUnavailable so the host falls back to batch dictation.
+  private _onDrop(): void {
+    if (this._stopped || !this._recording) { this._finishStop(); return }
+    if (!this._everConnected) {
+      // Never got a single message — the endpoint is unreachable/unsupported. Hand off to the fallback.
+      this._teardown(false)
+      this.onUnavailable()
+      return
+    }
+    if (this._reconnects >= StreamingDictation.MAX_RECONNECTS) {
+      this.onError('network', 'Voice disconnected — tap Voice to try again')
+      this._teardown(true)
+      return
+    }
+    this._reconnects++
+    if (!this._statusShown) { this._statusShown = true; this.onStatus('retrying', 'Reconnecting dictation…') }
+    const delay = Math.min(StreamingDictation.MAX_BACKOFF_MS, StreamingDictation.BASE_BACKOFF_MS * 2 ** (this._reconnects - 1))
+    this._stopRecorder()
+    this._deps.setTimeout(() => { if (this._recording) this._openSocket() }, delay)
+  }
+
+  private _startRecorder(): void {
+    if (!this._recording || !this._ws) return
+    // A reconnect reuses the same mic stream; only build the recorder once.
+    if (this._recorder) { try { if (this._recorder.state === 'inactive') this._recorder.start(StreamingDictation.TIMESLICE_MS) } catch { /* no-op */ } ; return }
+    try {
+      this._recorder = this._mime
+        ? new this._deps.MediaRecorder(this._stream, { mimeType: this._mime })
+        : new this._deps.MediaRecorder(this._stream)
+    } catch {
+      try { this._recorder = new this._deps.MediaRecorder(this._stream) } catch { this._teardown(true); this.onError('mic-error', 'Recording is not supported here'); return }
+    }
+    this._recorder.ondataavailable = (ev: any) => {
+      const data = ev?.data
+      if (data && data.size && this._ws) { try { this._ws.send(data) } catch { /* no-op */ } }
+    }
+    try { this._recorder.start(StreamingDictation.TIMESLICE_MS) } catch { /* already recording — ignore */ }
+  }
+
+  private _stopRecorder(): void {
+    try { if (this._recorder && this._recorder.state !== 'inactive') this._recorder.stop() } catch { /* no-op */ }
+  }
+
+  stop(): void {
+    if (!this._recording) { if (!this._stopped) { this._stopped = true } return }
+    this._recording = false
+    this._stopped = true
+    // Ask the server to flush the final transcript, then close.
+    try { this._ws?.send?.(JSON.stringify({ type: 'stop' })) } catch { /* no-op */ }
+    this._teardown(true)
+  }
+
+  private _teardown(fireStop: boolean): void {
+    this._recording = false
+    this._clearConnectTimer()
+    if (this._sessTimer != null) { this._deps.clearTimeout(this._sessTimer); this._sessTimer = null }
+    this._stopRecorder()
+    if (this._recorder) { this._recorder.ondataavailable = null; this._recorder = null }
+    try { this._stream?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ }
+    this._stream = null
+    if (this._ws) { try { this._ws.onclose = null; this._ws.onmessage = null; this._ws.onerror = null; this._ws.close() } catch { /* no-op */ } ; this._ws = null }
+    if (fireStop) this._finishStop()
+  }
+
+  private _stopFired = false
+  private _finishStop(): void {
+    if (this._stopFired) return
+    this._stopFired = true
+    this.onStop()
+  }
+
+  private _clearConnectTimer(): void {
+    if (this._connectTimer != null) { this._deps.clearTimeout(this._connectTimer); this._connectTimer = null }
+  }
+}
+
 // Pure engine-selection: prefer the server dictation endpoint when the host wired it AND MediaRecorder is
 // available; else the Web Speech backend; else nothing (button hidden). Kept pure so the composer + tests
 // share one source of truth. `hasEndpoint` = the host provided an onDictate callback.

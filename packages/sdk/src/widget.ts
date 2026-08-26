@@ -1348,6 +1348,17 @@ async function mount() {
           return (data && typeof data.text === 'string') ? { text: data.text } : null
         } catch { return null }
       },
+      // #647: LIVE STREAMING dictation URL. Derive ws(s):// from backendUrl (http→ws, https→wss) and point
+      // at the /api/voice/stream relay, carrying the project. The composer PREFERS this WebSocket path for
+      // real-time interim+final transcripts and falls back to the batch onDictate above on any failure.
+      dictationStreamUrl: (() => {
+        try {
+          const u = new URL(cfg.backendUrl + '/api/voice/stream')
+          u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+          u.searchParams.set('project', cfg.projectId)
+          return u.toString()
+        } catch { return undefined }
+      })(),
       // KLA-612: a guest/anon reporter who hits a cap (e.g. an over-cap file) can REQUEST an upgrade instead of
       // being asked to pay. The composer's "Request upgrade" button calls this; we POST an attributed request to
       // the server, which notifies the workspace owner/admins (Slack + email, KLA-608 dispatch). Best-effort:

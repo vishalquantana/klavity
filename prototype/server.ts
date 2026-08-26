@@ -130,6 +130,7 @@ import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, build
 import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle } from "./lib/db"
 import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, activeTranscribeModel } from "./lib/transcribe"
+import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { findKnownIssue } from "./lib/known-issue"
@@ -13233,14 +13234,80 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     return new Response("Not found", { status: 404 })
 }
 
+// #647 — cost ledger for a LIVE STREAMING dictation session. Mirrors the batch /api/voice/transcribe
+// ledger: log the streamed-audio COGS (Deepgram bills by audio-seconds) to ai_calls and meter one soft
+// "voice" credit. Best-effort — a ledger miss must never affect the (already-closed) socket.
+async function recordVoiceStreamCost(projectId: string, seconds: number): Promise<void> {
+  try {
+    const cost = deepgramCostUsd(seconds)
+    await recordAiCall({
+      type: "transcribe",
+      model: activeTranscribeModel(),
+      projectId,
+      feature: "voice-dictation-stream",
+      costUsd: cost,
+      ok: seconds > 0,
+    }).catch(() => null)
+    const wsId = await accountIdForAiCall(projectId, null, null)
+    if (wsId) {
+      const rv = await reserveCredits(wsId, "voice", { plan: await accountPlan(wsId), units: 1 })
+      if (rv.wouldBlock) console.log(`[credits] voice-stream wouldBlock ws=${wsId} (soft)`)
+      await rv.settle({ ok: seconds > 0, aiCallId: null })
+    }
+  } catch (e: any) {
+    console.warn("[voice-stream] cost ledger skipped (non-fatal):", e?.message || e)
+  }
+}
+
+// #647 — Bun `websocket` handlers for GET /api/voice/stream (upgraded in fetch below). The relay + cost
+// wiring lives in deepgram-stream.ts; here we inject the REAL Deepgram WebSocket ctor + the real ledger.
+const voiceStreamWs = createVoiceStreamWsHandlers({
+  makeRelay: (hooks) => new DeepgramRelay(hooks),
+  recordCost: (projectId, seconds) => { void recordVoiceStreamCost(projectId, seconds) },
+  maxSessionMs: VOICE_STREAM_MAX_SESSION_MS,
+})
+
+// #647 — decide + perform the WebSocket upgrade for live streaming dictation. Runs in `fetch` (only there
+// does `server.upgrade` exist). Returns undefined when the socket was upgraded (Bun contract: the fetch
+// handler must return undefined), else a Response to send WITHOUT upgrading. Auth mirrors the batch route
+// exactly: anonymous + project-scoped (a real project must exist) + per-IP rate limit; refuse (501) when
+// Deepgram isn't configured so the client falls back to batch dictation.
+async function handleVoiceStreamUpgrade(
+  req: Request,
+  server: { requestIP?: (r: Request) => { address?: string } | null; upgrade: (r: Request, opts?: any) => boolean },
+): Promise<Response | undefined> {
+  const url = new URL(req.url)
+  const ip = clientIp(req, server)
+  const projectId = url.searchParams.get("project") || url.searchParams.get("projectId") || ""
+  const rateOk = rlAllow(`voicestream:ip:${ip}`, VOICE_TRANSCRIBE_PER_IP, 60_000)
+  // Only hit the DB for project existence once the cheap guards (rate + presence) pass.
+  const projectExists = rateOk && !!projectId ? (db ? !!(await projectById(projectId)) : false) : false
+  const decision = evaluateVoiceStreamUpgrade({ projectId, rateOk, projectExists, configured: deepgramConfigured() })
+  if (!decision.ok) return wjson(decision.body, decision.status)
+
+  const data: VoiceStreamData = { ip, projectId, startedAt: Date.now(), relay: null, timer: null }
+  const upgraded = server.upgrade(req, { data })
+  if (upgraded) return undefined // handed off to the websocket handler
+  return wjson({ error: "upgrade failed" }, 400)
+}
+
 Bun.serve({
   port: PORT,
   idleTimeout: 180,
+  websocket: voiceStreamWs,
   // SECURITY (KLA-559): bound the buffered request body. Without this Bun's default lets a body grow
   // unbounded; a no-Origin `curl -F files=@big.mp4` loop would spike heap on the 1GB prod box. Bun
   // rejects an over-cap body with a 413 before our handler runs. Kept >120MB attachment budget + overhead.
   maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
   async fetch(req, server) {
+    // #647 — live streaming dictation WS upgrade. Must run here (server.upgrade only exists in fetch).
+    // On a successful upgrade we MUST return undefined (Bun contract); otherwise fall through with the
+    // rejection Response (security headers applied, CORS reflected for the cross-origin widget).
+    if (req.method === "GET" && new URL(req.url).pathname === "/api/voice/stream") {
+      const upgradeResp = await handleVoiceStreamUpgrade(req, server as any)
+      if (upgradeResp === undefined) return undefined
+      return withWidgetCors(req, withSecurityHeaders(upgradeResp))
+    }
     // Establish per-request context (for F5 token-project binding) and apply security headers to every
     // response from a single chokepoint.
     return reqCtx.run({}, async () => withWidgetCors(req, withSecurityHeaders(await handle(req, server))))

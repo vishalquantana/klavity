@@ -2,7 +2,7 @@ import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shap
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
-import { VoiceInput, LiveDictation, pickDictationMode } from './voice-input'
+import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
@@ -422,6 +422,11 @@ export interface ModalCallbacks {
   // resolves the recognized text. Resolve null on any failure (endpoint down / STT unconfigured / rate-limit)
   // — the composer transparently falls back to Web Speech. Absent → Voice uses Web Speech exactly as before.
   onDictate?: (audio: Blob) => Promise<{ text: string } | null>
+  // #647: LIVE STREAMING dictation WebSocket URL (ws(s)://…/api/voice/stream?project=…). When provided AND
+  // WebSocket+MediaRecorder are available, the composer PREFERS this over the 5s-batch onDictate path:
+  // interim partials show live (greyed preview) and finals commit into the description in near real-time.
+  // On any connect failure the composer transparently falls back to onDictate (batch) then Web Speech.
+  dictationStreamUrl?: string
   // Optional image pre-processor called immediately when a screenshot is added (e.g. PNG→JPEG
   // compression). By submit time the promise is already resolved, so the upload starts with zero
   // compression delay. The host passes compressScreenshot here; the extension omits it (its SW
@@ -2684,8 +2689,12 @@ export function buildModal(
     // KLA-505: the Voice button drives a dictation ENGINE — either the server STT endpoint (LiveDictation,
     // preferred) or the Web Speech backend (VoiceInput). Both expose the same callback shape; `voice` is
     // mutable so a LiveDictation onUnavailable can transparently swap in Web Speech mid-session.
-    interface DictationEngine { start(): void | Promise<void>; stop(): void; onTranscript: (t: string) => void; onStatus: (type: 'retrying' | 'idle', m: string) => void; onError: (type: string, m: string) => void; onStop: () => void; onUnavailable?: () => void }
+    interface DictationEngine { start(): void | Promise<void>; stop(): void; onTranscript: (t: string) => void; onStatus: (type: 'retrying' | 'idle', m: string) => void; onError: (type: string, m: string) => void; onStop: () => void; onUnavailable?: () => void; onInterim?: (t: string) => void }
     let voice: DictationEngine
+    // #647 STREAMING: the durable text captured at session start; finals append to it, interims render as a
+    // transient preview past it (a textarea can't style substrings, so the live partial is a plain preview
+    // that is replaced on each interim and dropped if it never finalizes).
+    let streamBase = ''
 
     const startRing = () => {
       startTime = Date.now()
@@ -2774,30 +2783,59 @@ export function buildModal(
     // Build the Web Speech engine (fallback / primary when no server endpoint).
     const makeWebSpeech = (): DictationEngine => { const v = new VoiceInput(); wire(v); return v }
 
-    // Build the active engine for this session. In 'server' mode we PREFER the STT endpoint and, if it's
-    // unreachable on the first segment, transparently fall back to Web Speech WITHOUT interrupting the ring
-    // or asking the user to click again.
-    const makeEngine = (): DictationEngine => {
-      if (voiceMode === 'server' && callbacks.onDictate) {
-        const d = new LiveDictation({ transcribe: (blob: Blob) => callbacks.onDictate!(blob) })
-        wire(d)
-        d.onUnavailable = () => {
-          // The user may have already pressed Stop before the first server segment came back unavailable —
-          // don't resurrect a recording they ended. Just settle the UI.
-          if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
-          if (VoiceInput.isSupported()) {
-            // Endpoint down → seamlessly continue with Web Speech (keep recording + ring running).
-            voice = makeWebSpeech()
-            setVoiceStatus('info', 'Reconnecting dictation…')
-            void voice.start()
-          } else {
-            voiceRecording = false; setVoiceBtnMode(false); stopRing()
-            setVoiceStatus('err', 'Voice dictation is unavailable right now', 4000)
-          }
-        }
-        return d
+    // Drop to Web Speech (or a terminal error) — shared by both server engines' onUnavailable.
+    const fallbackToWebSpeech = () => {
+      // The user may have pressed Stop before the server came back unavailable — don't resurrect it.
+      if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
+      if (VoiceInput.isSupported()) {
+        voice = makeWebSpeech()
+        setVoiceStatus('info', 'Reconnecting dictation…')
+        void voice.start()
+      } else {
+        voiceRecording = false; setVoiceBtnMode(false); stopRing()
+        setVoiceStatus('err', 'Voice dictation is unavailable right now', 4000)
       }
-      return makeWebSpeech()
+    }
+
+    // Build the 5s-BATCH server engine (LiveDictation → onDictate). Falls back to Web Speech if unreachable.
+    const makeBatchServer = (): DictationEngine | null => {
+      if (!(voiceMode === 'server' && callbacks.onDictate)) return null
+      const d = new LiveDictation({ transcribe: (blob: Blob) => callbacks.onDictate!(blob) })
+      wire(d)
+      d.onUnavailable = fallbackToWebSpeech
+      return d
+    }
+
+    // #647: wire the STREAMING engine — finals commit into the description, interims render as a live
+    // preview (replaced each interim, dropped on stop). onUnavailable cascades to batch, then Web Speech.
+    const wireStreaming = (s: StreamingDictation) => {
+      const sep = () => (streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : '')
+      s.onTranscript = (text) => { streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
+      s.onInterim = (text) => { desc.value = streamBase + sep() + text; refreshSubmit() }
+      s.onStatus = (type, message) => { if (type === 'idle') clearInfoStatus(); else setVoiceStatus('info', message) }
+      s.onError = (_, message) => { if (message) setVoiceStatus('err', message, 4000) }
+      s.onStop = () => {
+        desc.value = streamBase // drop any uncommitted interim preview
+        voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
+      }
+      s.onUnavailable = () => {
+        desc.value = streamBase // clear the interim preview before another engine takes over
+        if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
+        const batch = makeBatchServer()
+        if (batch) { voice = batch; setVoiceStatus('info', 'Reconnecting dictation…'); void voice.start(); return }
+        fallbackToWebSpeech()
+      }
+    }
+
+    // Build the active engine for this session. Preference: STREAMING (real-time) → BATCH → Web Speech.
+    // Each degrades transparently to the next WITHOUT interrupting the ring or asking the user to re-click.
+    const makeEngine = (): DictationEngine => {
+      if (voiceMode === 'server' && callbacks.dictationStreamUrl && StreamingDictation.isSupported()) {
+        const s = new StreamingDictation({ url: callbacks.dictationStreamUrl })
+        wireStreaming(s)
+        return s
+      }
+      return makeBatchServer() ?? makeWebSpeech()
     }
 
     voice = makeEngine()
@@ -2805,6 +2843,7 @@ export function buildModal(
     voiceBtn.addEventListener('click', () => {
       if (!voiceRecording) {
         clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
+        streamBase = desc.value // #647: capture the durable text streaming finals/interims build on
         voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
         voiceRecording = true
         setVoiceBtnMode(true) // instant, obvious feedback AT the control: red glow + stop-square glyph (KLA-613)
