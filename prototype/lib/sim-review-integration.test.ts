@@ -706,3 +706,86 @@ test("(i) description fallback: Sim WITH existing traits → NOT overridden", ()
   expect(syntheticInsights).toBe(insightsWithMemory)
   expect(syntheticInsights[0].traitId).toBe("t1")
 })
+
+// ── (h) roam grounding: severity + target locator (KLA-721) ───────────────────
+//
+// Roaming Sims (extension) need (1) a normalized banana severity and (2) a
+// deterministic element locator, so they stop falling back to fuzzy quote-text
+// matching + heuristic severity. severityFromPriority() maps the free-form bug
+// priority → C1|C2|C3; parseTarget() sanitizes the model's structured target
+// (with a fallback to the legacy free-text targetDescription).
+
+import { severityFromPriority, parseTarget, type ObsTarget } from "./sim-review-pure"
+
+test("(h) severityFromPriority: priority → C1|C2|C3 mapping", () => {
+  expect(severityFromPriority("urgent")).toBe("C1")
+  expect(severityFromPriority("high")).toBe("C1")
+  expect(severityFromPriority("medium")).toBe("C2")
+  expect(severityFromPriority("low")).toBe("C3")
+})
+
+test("(h) severityFromPriority: case-insensitive + synonyms", () => {
+  expect(severityFromPriority("HIGH")).toBe("C1")
+  expect(severityFromPriority("Critical")).toBe("C1")
+  expect(severityFromPriority("med")).toBe("C2")
+  expect(severityFromPriority("minor")).toBe("C3")
+})
+
+test("(h) severityFromPriority: already-normalized C values pass through", () => {
+  expect(severityFromPriority("C1")).toBe("C1")
+  expect(severityFromPriority("c2")).toBe("C2")
+  expect(severityFromPriority("C3")).toBe("C3")
+})
+
+test("(h) severityFromPriority: null/empty/unknown → null (no banana)", () => {
+  expect(severityFromPriority(null)).toBeNull()
+  expect(severityFromPriority(undefined)).toBeNull()
+  expect(severityFromPriority("")).toBeNull()
+  expect(severityFromPriority("whatever")).toBeNull()
+})
+
+test("(h) parseTarget: structured target sanitized + trimmed", () => {
+  const t = parseTarget({ text: "  Sign up  ", selector: "button.signup", role: "button", name: "Sign up" })
+  expect(t).toEqual({ text: "Sign up", selector: "button.signup", role: "button", name: "Sign up" })
+})
+
+test("(h) parseTarget: falls back to legacy targetDescription as text", () => {
+  const t = parseTarget(null, "the greyed-out Continue button")
+  expect(t).toEqual({ text: "the greyed-out Continue button" })
+})
+
+test("(h) parseTarget: structured text wins over fallback", () => {
+  const t = parseTarget({ text: "Continue" }, "some prose description")
+  expect(t).toEqual({ text: "Continue" })
+})
+
+test("(h) parseTarget: empty/blank inputs → null", () => {
+  expect(parseTarget(null)).toBeNull()
+  expect(parseTarget({})).toBeNull()
+  expect(parseTarget({ text: "   ", selector: "" })).toBeNull()
+  expect(parseTarget("not an object")).toBeNull()
+})
+
+test("(h) parseTarget: partial target keeps only present fields", () => {
+  const t = parseTarget({ selector: ".cta", role: "link" }) as ObsTarget
+  expect(t).toEqual({ selector: ".cta", role: "link" })
+  expect(t.text).toBeUndefined()
+})
+
+test("(h) SimObservation carries optional severity + target (roam grounding)", () => {
+  const obs: SimObservation = {
+    observation: "The Buy button is disabled and I can't check out",
+    sentiment: "frustrated",
+    priority: "high",
+    quote: null,
+    hash: hashObservation("buy button disabled"),
+    region: parseRegion({ x: 0.4, y: 0.8, w: 0.2, h: 0.06 }),
+    severity: severityFromPriority("high"),
+    target: parseTarget({ text: "Buy now", selector: "button.buy" }),
+    suggestedBug: { title: "Buy button disabled", body: "", priority: "high" },
+    deduped: false,
+  }
+  expect(obs.severity).toBe("C1")
+  expect(obs.target).toEqual({ text: "Buy now", selector: "button.buy" })
+  expect(obs.region).not.toBeNull()
+})

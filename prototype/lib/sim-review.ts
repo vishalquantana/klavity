@@ -23,13 +23,13 @@ import { buildRecurrenceMemory } from "./recurrence-memory"
 // Re-export everything from the pure module so callers only need one import path.
 export {
   hashObservation, decodeDataUrl, splitUrl, buildSimRunSummary, diffSimRuns,
-  activeReviewIndexes, obsIsNearDup, obsPassesMode, parseRegion,
+  activeReviewIndexes, obsIsNearDup, obsPassesMode, parseRegion, parseTarget, severityFromPriority,
   sessionCallCapped, sessionObsCapped, sessionCallCount, sessionObsCount,
   sessionSeenTexts, sessionBumpCall, sessionBumpObs,
   SESSION_CALL_CEIL, SESSION_OBS_CEIL, NEAR_DUP_THRESHOLD, SESSION_TTL_MS,
-  type SimFeedbackMode, type ObsRegion, type SimObservation, type SimReview,
+  type SimFeedbackMode, type ObsRegion, type ObsTarget, type ObsSeverity, type SimObservation, type SimReview,
 } from "./sim-review-pure"
-import { hashObservation, obsIsNearDup, obsPassesMode, parseRegion, sessionCallCapped, sessionObsCapped, sessionObsCount, sessionBumpCall, sessionBumpObs, sessionSeenTexts, SESSION_CALL_CEIL, SESSION_OBS_CEIL } from "./sim-review-pure"
+import { hashObservation, obsIsNearDup, obsPassesMode, parseRegion, parseTarget, severityFromPriority, sessionCallCapped, sessionObsCapped, sessionObsCount, sessionBumpCall, sessionBumpObs, sessionSeenTexts, SESSION_CALL_CEIL, SESSION_OBS_CEIL } from "./sim-review-pure"
 import type { SimFeedbackMode, SimObservation, SimReview } from "./sim-review-pure"
 
 export type SimReactFn = (
@@ -367,6 +367,13 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         hash,
         // region: parse model output; accept both "region" (new) and "box" (legacy field name).
         region: parseRegion(r?.region ?? r?.box),
+        // KLA-721 (roam grounding): normalized banana severity derived from the (possibly
+        // heuristic-elevated) bug priority. null when there's no bug → no banana.
+        severity: severityFromPriority(bug?.priority),
+        // KLA-721 (roam grounding): deterministic element locator forwarded to the client so the
+        // roaming Sim lands on the EXACT element. Falls back to the model's free-text
+        // targetDescription (previously DROPPED) when no structured target was emitted.
+        target: parseTarget(r?.target, r?.targetDescription),
         suggestedBug: bug ?? null,
         feedbackId,
         deduped,

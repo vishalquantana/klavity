@@ -431,15 +431,23 @@ const REACT_SYS =
   "temperament in every observation. If a core is present, it — not generic UX opinion — drives what you notice.\n\n" +
   "ADAPT TO simClass:\n" +
   "- simClass \"user\": you OPERATE the product hands-on. React to concrete UI and interaction friction — " +
-  "specific elements, labels, controls, layout, latency you can see. Point at the exact thing (set region).\n" +
+  "specific elements, labels, controls, layout, latency you can see. Point at the exact thing (set BOTH region AND target).\n" +
   "- simClass \"client\": you judge OUTCOMES, not buttons. React at the outcome level — does this page deliver the " +
   "business result you care about, seen through your goals + watchFor? Do NOT nitpick individual controls or pixels; " +
-  "region will usually be null because your reaction is page/outcome-level, not element-level.\n" +
+  "region and target will usually be null because your reaction is page/outcome-level, not element-level.\n" +
   "When simClass is absent, default to hands-on user behaviour.\n\n" +
-  "Give 1-3 reactions, most important first. For each reaction, set \"region\" to the normalised 0..1 bounding box " +
-  "of the specific element or area you are reacting to (x,y = top-left corner; w,h = size; all values 0..1), " +
-  "or null for page-level/general observations where no single element is the focus (clients usually null). " +
-  "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null. " +
+  "GROUND EVERY ELEMENT-LEVEL REACTION. Whenever your reaction is about a specific element or area (any hands-on/user " +
+  "reaction, and any reaction that names a control, label, field, link, or piece of text), you MUST locate it TWO ways " +
+  "so the client can land on the exact element:\n" +
+  "  1. \"region\": the normalised 0..1 bounding box of that element (x,y = top-left corner; w,h = size; all values 0..1).\n" +
+  "  2. \"target\": a locator object — set \"text\" to the EXACT visible text on or immediately labelling the element, " +
+  "copied VERBATIM character-for-character from the screenshot (this is the most reliable anchor, always provide it for " +
+  "element-level reactions); set \"selector\" to a short CSS selector only if you can confidently infer one (else omit); " +
+  "set \"role\" and \"name\" to the element's ARIA role and accessible name when evident (else omit).\n" +
+  "Set region AND target to null ONLY for genuinely page-level/outcome-level observations where no single element is the " +
+  "focus (clients usually null). Do not invent coordinates or text you cannot actually see. " +
+  "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null; set its \"priority\" " +
+  "honestly (urgent/high = blocker or serious, medium = has a workaround, low = cosmetic) — it drives the finding's severity. " +
   "Stay in character and be specific to what you actually see.\n\n" +
   "The persona's insights each carry a stable \"traitId\". For every reaction, set citedTraitIds to the list of traitIds " +
   "of the persona's documented traits that actually drove that reaction (the pains/wants/loves it stems from). " +
@@ -451,7 +459,9 @@ const REACT_SYS =
   "a frequently-reinforced trait that was never resolved does not warrant disappointment.\n\n" +
   "Respond with ONLY a JSON object, no prose, in exactly this shape:\n" +
   '{"reactions":[{"observation":string(<=240 chars, first person),"sentiment":"frustrated"|"confused"|"satisfied"|"delighted"|"neutral",' +
-  '"emoji":string,"targetDescription":string,"region":{"x":number,"y":number,"w":number,"h":number}|null,' +
+  '"emoji":string,"targetDescription":string,' +
+  '"target":{"text":string,"selector":string,"role":string,"name":string}|null,' +
+  '"region":{"x":number,"y":number,"w":number,"h":number}|null,' +
   '"citedTraitIds":string[],' +
   '"suggestedBug":{"title":string,"body":string,"priority":"urgent"|"high"|"medium"|"low"}|null}]}'
 

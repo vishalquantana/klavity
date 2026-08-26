@@ -213,3 +213,75 @@ test("runSimReviews: one Sim's reactFn throwing does NOT prevent other Sims from
   expect(names).toEqual(["Alice", "Carol"])
   expect(reviews).toHaveLength(2)
 })
+
+// ── KLA-721 roam grounding: severity + target flow through runSimReviews ──────
+
+test("runSimReviews forwards normalized severity + target locator per reaction", async () => {
+  const reviews = await baseRun({
+    targetSims: [{
+      id: `sim_ground_${Date.now()}`,
+      name: "Grounded Gwen",
+      role: "Shopper",
+      summary: "Tries to check out.",
+      insights: [],
+      initials: "GG",
+      accent: "#6366f1",
+    }],
+    seenKeys: ["ground-key"],
+    reactFn: async () => ({
+      data: {
+        reactions: [{
+          observation: "The Buy button is disabled so I can't complete my purchase.",
+          sentiment: "frustrated",
+          targetDescription: "the disabled Buy button",
+          target: { text: "Buy now", selector: "button.buy", role: "button", name: "Buy now" },
+          region: { x: 0.4, y: 0.82, w: 0.2, h: 0.06 },
+          suggestedBug: { title: "Buy button disabled", body: "Cannot check out", priority: "high" },
+        }],
+      },
+    }),
+  })
+
+  expect(reviews).toHaveLength(1)
+  const obs = reviews[0].observations[0]
+  // Severity: mapped from bug priority "high" → C1 (3 bananas).
+  expect(obs.severity).toBe("C1")
+  // Grounding: structured target forwarded (not dropped).
+  expect(obs.target).toEqual({ text: "Buy now", selector: "button.buy", role: "button", name: "Buy now" })
+  // Region still forwarded alongside target.
+  expect(obs.region).toEqual({ x: 0.4, y: 0.82, w: 0.2, h: 0.06 })
+})
+
+test("runSimReviews: page-level positive reaction → null severity + falls back to targetDescription", async () => {
+  const reviews = await baseRun({
+    targetSims: [{
+      id: `sim_pagelevel_${Date.now()}`,
+      name: "Pagey Pat",
+      role: "Visitor",
+      summary: "Skims the page.",
+      insights: [],
+      initials: "PP",
+      accent: "#8b5cf6",
+    }],
+    seenKeys: ["pagelevel-key"],
+    reactFn: async () => ({
+      data: {
+        reactions: [{
+          observation: "The hero copy clearly explains the value.",
+          sentiment: "positive",
+          targetDescription: "the hero headline",
+          region: null,
+          // no structured target, no suggestedBug
+        }],
+      },
+    }),
+  })
+
+  expect(reviews).toHaveLength(1)
+  const obs = reviews[0].observations[0]
+  // No bug → no severity (no banana).
+  expect(obs.severity ?? null).toBeNull()
+  // Legacy free-text targetDescription is salvaged into target.text.
+  expect(obs.target).toEqual({ text: "the hero headline" })
+  expect(obs.region).toBeNull()
+})

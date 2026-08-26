@@ -59,6 +59,87 @@ export function parseRegion(raw: any): ObsRegion | null {
   return { x, y, w, h }
 }
 
+/**
+ * Normalized severity for a Sim reaction — the SINGLE banana source for roaming Sims
+ * (KLA-721). Maps 1:1 to the QA severity taxonomy ([[klavity_severity_taxonomy]]):
+ *   C1 = critical / release-blocker  → 3 🍌
+ *   C2 = bug with a workaround       → 2 🍌
+ *   C3 = cosmetic                    → 1 🍌
+ * null when the reaction is a positive/neutral non-bug observation (no banana).
+ */
+export type ObsSeverity = "C1" | "C2" | "C3"
+
+/**
+ * Deterministically map the model's free-form bug `priority` (urgent|high|medium|low)
+ * to a normalized C1|C2|C3 severity. This is the banana source for roaming Sims — the
+ * extension no longer has to re-derive severity heuristically.
+ *
+ * Mapping (documented in KLA-721):
+ *   urgent, high → C1   (top banana tier: blockers / serious)
+ *   medium       → C2   (bug with a workaround)
+ *   low          → C3   (cosmetic)
+ * Already-normalized C1/C2/C3 inputs pass through. Anything else (null/unknown) → null,
+ * which the client treats as "no banana" (positive/neutral non-bug reactions).
+ */
+export function severityFromPriority(priority: any): ObsSeverity | null {
+  const p = String(priority ?? "").trim().toLowerCase()
+  if (!p) return null
+  if (p === "c1" || p === "c2" || p === "c3") return p.toUpperCase() as ObsSeverity
+  switch (p) {
+    case "urgent":
+    case "critical":
+    case "high":
+      return "C1"
+    case "medium":
+    case "med":
+      return "C2"
+    case "low":
+    case "minor":
+    case "trivial":
+      return "C3"
+    default:
+      return null
+  }
+}
+
+/**
+ * A deterministic locator the client can walk to in order to land a roaming Sim on the
+ * EXACT flagged element (KLA-721). Every field is optional — the client uses whatever is
+ * present, most-specific first (selector → role+name → verbatim text). null when the
+ * reaction is page-level and there is no single element to point at.
+ */
+export interface ObsTarget {
+  text?: string       // verbatim visible text on/near the element (copy from the screenshot)
+  selector?: string   // short CSS selector hint, when the model can infer one
+  role?: string       // ARIA role of the element
+  name?: string       // accessible name of the element
+}
+
+/**
+ * Parse + sanitize a `target` locator from raw model output. Accepts the structured
+ * `target` object; falls back to the legacy free-text `targetDescription` as target.text
+ * so grounding still works for reactions the model only described in prose.
+ * Trims + length-caps each string; returns null when nothing usable remains.
+ */
+export function parseTarget(raw: any, fallbackText?: any): ObsTarget | null {
+  const str = (v: any, cap: number): string | undefined => {
+    if (typeof v !== "string") return undefined
+    const s = v.trim().slice(0, cap)
+    return s.length ? s : undefined
+  }
+  const src = raw && typeof raw === "object" ? raw : {}
+  const text = str(src.text, 240) ?? str(fallbackText, 240)
+  const selector = str(src.selector, 300)
+  const role = str(src.role, 80)
+  const name = str(src.name, 200)
+  const out: ObsTarget = {}
+  if (text) out.text = text
+  if (selector) out.selector = selector
+  if (role) out.role = role
+  if (name) out.name = name
+  return Object.keys(out).length ? out : null
+}
+
 /** One Sim's reaction to a page, enriched with dedup + recurrence context. */
 export interface SimObservation {
   observation: string           // the observation text (matches client renderFeedback contract)
@@ -71,6 +152,14 @@ export interface SimObservation {
   sourceTimeKind: "meeting" | "upload" // "meeting" when sourceTime is set, else "upload"
   hash: string                  // sha256 slice-16 dedup token — stable within a session
   region: ObsRegion | null      // normalised 0..1 bbox of the targeted element; null = page-level
+  // KLA-721 (roam grounding): normalized banana severity (C1|C2|C3), derived from the bug
+  // priority. null for positive/neutral non-bug reactions (no banana). ADDITIVE + OPTIONAL —
+  // legacy consumers (and constructors) that ignore it are unaffected.
+  severity?: ObsSeverity | null
+  // KLA-721 (roam grounding): deterministic element locator so the extension can land a
+  // roaming Sim on the EXACT flagged element (selector → role+name → verbatim text), instead
+  // of falling back to fuzzy quote-text matching. null for page-level reactions. ADDITIVE + OPTIONAL.
+  target?: ObsTarget | null
   suggestedBug?: any | null
   feedbackId?: string
   deduped?: boolean             // true when matched an existing feedback row
