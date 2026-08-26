@@ -1066,7 +1066,7 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .tkt-desc-edit{background:none;border:none;padding:2px;line-height:0;color:var(--paper-faint);cursor:pointer;border-radius:6px;opacity:0;transition:opacity .15s,color .15s,transform var(--mi-dur) var(--mi-ease)}
 .tkt-desc:hover .tkt-desc-edit,.tkt-desc-edit:focus-visible{opacity:1}
 .tkt-desc-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
-.tkt-obs{cursor:text}
+.tkt-obs{cursor:text;overflow-wrap:anywhere;word-break:break-word;min-width:0}
 .tkt-desc-editing .tkt-obs,.tkt-desc-editing .tkt-desc-edit{display:none}
 /* #679/#681 edit-mode: the textarea sits as its own block BELOW the section label (never overlapping
    it), with a clear top gap. block display + full width guarantees clean stacking under .tkt-desc-head. */
