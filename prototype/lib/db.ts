@@ -1246,12 +1246,22 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("findings dedup pre-collapse skipped:", e?.message || e))
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS finding_dedup_uq ON findings(project_id, dedup_key)")
     .catch((e: any) => console.warn("finding_dedup_uq skipped:", e?.message || e))
-  // #722 (P2.4): finding_dedup_idx (non-unique, db.ts schema) covers the IDENTICAL columns
-  // findings(project_id, dedup_key) as the UNIQUE finding_dedup_uq above — pure write amplification / index
-  // bloat on a table written on every AutoSim finding, with zero read benefit (the UNIQUE index serves every
-  // read the non-unique one would). Drop it AFTER the UNIQUE one is guaranteed to exist.
-  await c.execute("DROP INDEX IF EXISTS finding_dedup_idx")
-    .catch((e: any) => console.warn("finding_dedup_idx drop skipped:", e?.message || e))
+  // #722 (P2.4) + #722-fix (Codex QA, Finding 4): finding_dedup_idx (non-unique) covers the IDENTICAL
+  // columns findings(project_id, dedup_key) as the UNIQUE finding_dedup_uq above — pure write amplification
+  // with zero read benefit once the UNIQUE index exists. BUT the CREATE above is best-effort (its error is
+  // swallowed), so we must NOT drop the only backing index unconditionally: if the UNIQUE create failed,
+  // dropping finding_dedup_idx would leave recordFinding's `ON CONFLICT(project_id,dedup_key)` (trails.ts)
+  // and every dedup lookup with NO index at all. Verify finding_dedup_uq is actually present first, and
+  // only then drop the redundant one.
+  const uqPresent = await c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='finding_dedup_uq' LIMIT 1")
+    .then((r: any) => (r.rows?.length ?? 0) > 0)
+    .catch(() => false)
+  if (uqPresent) {
+    await c.execute("DROP INDEX IF EXISTS finding_dedup_idx")
+      .catch((e: any) => console.warn("finding_dedup_idx drop skipped:", e?.message || e))
+  } else {
+    console.warn("finding_dedup_idx drop SKIPPED — finding_dedup_uq not present; keeping the non-unique index as the backing lookup for dedup ON CONFLICT")
+  }
   // KLA-73: persona-judged walks — which persona judges this Trail's results.
   if (needCol("trails", "judge_persona_id")) await c.execute("ALTER TABLE trails ADD COLUMN judge_persona_id TEXT").catch((e: any) =>
     console.warn("trails.judge_persona_id ALTER skipped:", e?.message || e))
@@ -3414,10 +3424,16 @@ export async function updateFeedbackEvidenceDropped(id: string, count: number): 
 
 // Record the downstream tracker issue on a feedback row after it is filed (tracker is optional/best-effort).
 export async function updateFeedbackTracker(id: string, planeIssueKey: string | null, planeIssueUrl: string | null) {
-  await db!.execute({
-    sql: "UPDATE feedback SET plane_issue_key=?, plane_issue_url=? WHERE id=?",
+  // #722-fix (Codex QA, Finding 1): dashboardCounts.tickets counts `plane_issue_key IS NOT NULL`, so
+  // writing plane_issue_key here changes that aggregate — but this row-only UPDATE (WHERE id=?) carried
+  // no projectId and did not bust the cache, leaving the cached ticket count stale (0) after a real file.
+  // RETURNING project_id gets the owning project in the same round-trip so we can invalidate it.
+  const r = await db!.execute({
+    sql: "UPDATE feedback SET plane_issue_key=?, plane_issue_url=? WHERE id=? RETURNING project_id",
     args: [planeIssueKey, planeIssueUrl, id],
   })
+  const pid = r.rows?.[0] ? (r.rows[0] as any).project_id : null
+  if (pid) invalidateDashboardCache(String(pid))
 }
 
 // KLAVITYKLA-524: advance an autofiled human Snap from 'new' → 'open' once its external ticket
@@ -3994,6 +4010,10 @@ export async function mergeFeedbackClusters(
     }).catch((e: any) => console.warn("merge expectation repoint skipped:", e?.message || e))
   }
 
+  // #722-fix (Codex QA, Finding 2): a merge deletes the merged head row (changes feedback + tickets +
+  // insight counts) and rewrites the survivor's recurrence. Invalidate DIRECTLY at this mutation boundary
+  // rather than relying on the caller's later best-effort activity insert (which can race or fail).
+  invalidateDashboardCache(projectId)
   return { survivorId, recurrenceCount: combinedCount, contactEmails: [...emails] }
 }
 
@@ -4066,6 +4086,9 @@ export async function splitOccurrenceToNewTicket(
   // Record the manual "distinct issues" decision so intake dedup won't lexically re-merge the pair.
   await addDedupExclusion(projectId, headId, newId, { reason: "manual-split", createdBy: actor ?? null })
 
+  // #722-fix (Codex QA, Finding 2): a split INSERTs a new feedback row (feedback count +1) and rewrites
+  // the head's recurrence. Invalidate directly at the mutation boundary, not via a later activity insert.
+  invalidateDashboardCache(projectId)
   return { newFeedbackId: newId, sourceRecurrenceCount: remainingCount }
 }
 
@@ -4081,11 +4104,30 @@ const DASH_CACHE_TTL_MS = 20_000
 type DashCacheEntry<T> = { at: number; value: T }
 const dashCountsCache = new Map<string, DashCacheEntry<{ feedback: number | null; tickets: number | null; activity: number | null }>>()
 const dashInsightsCache = new Map<string, DashCacheEntry<any>>()
-// Bust both aggregate caches for one project. Called by feedback mutations so counts/insights refresh
-// on the next read instead of waiting out the TTL. Scoped by projectId — never touches other projects.
+// #722-fix (Codex QA, Finding 3): per-project generation counter. Bumped on EVERY invalidate so a read
+// that STARTED before a mutation cannot repopulate the cache with now-stale data. Each aggregate read
+// captures the project's gen BEFORE it queries, and only stores its result if the gen is UNCHANGED when
+// the query completes (see dashGen usage in dashboardCounts / computeDashboardInsights). Without this,
+// a read whose queries began pre-mutation could `.set(...)` its stale result AFTER invalidate ran and
+// pin it for the whole TTL. Deleting the entry alone (below) does not close that race.
+const dashCacheGen = new Map<string, number>()
+function dashGen(projectId: string): number { return dashCacheGen.get(projectId) ?? 0 }
+// Bust both aggregate caches for one project AND advance its generation. Called by feedback mutations so
+// counts/insights refresh on the next read instead of waiting out the TTL. Scoped by projectId — never
+// touches other projects.
 export function invalidateDashboardCache(projectId: string): void {
   dashCountsCache.delete(projectId)
   dashInsightsCache.delete(projectId)
+  dashCacheGen.set(projectId, dashGen(projectId) + 1)
+  // Keep the generation map from growing without bound across a long-lived process (one small int per
+  // project ever mutated). Clearing it is safe: it only resets counters to 0, and any in-flight read that
+  // captured a now-cleared higher gen simply fails its equality check and declines to cache — never stale.
+  if (dashCacheGen.size > 5000) { const keep = dashGen(projectId); dashCacheGen.clear(); dashCacheGen.set(projectId, keep) }
+}
+// Invalidate several projects at once (e.g. a GDPR erase that spans multiple projects, Finding 2).
+export function invalidateDashboardCaches(projectIds: Iterable<string>): void {
+  const seen = new Set<string>()
+  for (const pid of projectIds) { if (pid && !seen.has(pid)) { seen.add(pid); invalidateDashboardCache(pid) } }
 }
 // Guard against unbounded growth if many distinct projects are polled: drop the whole cache when it
 // gets large (cheap — it just forces recompute). Bounded by TTL churn in practice.
@@ -4101,6 +4143,7 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashCountsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
+  const genAtStart = dashGen(projectId) // Finding 3: capture BEFORE querying so a racing invalidate is detectable
   const q = (sql: string) => db!.execute({ sql, args: [projectId] })
   const settled = await Promise.allSettled([
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=?"),
@@ -4111,8 +4154,10 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
   const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
   // Only cache a fully-successful read; a partial/failed count (any null) is left uncached so it
-  // retries next poll rather than pinning a "—" for the whole TTL.
-  if (result.feedback !== null && result.tickets !== null && result.activity !== null) {
+  // retries next poll rather than pinning a "—" for the whole TTL. AND only if no invalidation raced in
+  // while we were querying (Finding 3) — otherwise we'd pin a value that predates the mutation.
+  if (result.feedback !== null && result.tickets !== null && result.activity !== null
+      && dashGen(projectId) === genAtStart) {
     dashCachePrune(dashCountsCache)
     dashCountsCache.set(projectId, { at: Date.now(), value: result })
   }
@@ -6409,6 +6454,11 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
   const e = email.toLowerCase()
   const shots = await db!.execute({ sql: "SELECT s3_key FROM screenshots WHERE owner_email=?", args: [e] })
   const s3Keys = shots.rows.map((r: any) => String(r.s3_key))
+  // #722-fix (Codex QA, Finding 2): a GDPR erase deletes this user's feedback which may span MULTIPLE
+  // projects — capture the distinct affected project_ids BEFORE the delete so we can bust each project's
+  // dashboard cache afterward (previously erase did no invalidation at all → stale counts for the TTL).
+  const affected = await db!.execute({ sql: "SELECT DISTINCT project_id FROM feedback WHERE actor_email=?", args: [e] })
+  const affectedProjectIds = affected.rows.map((r: any) => String(r.project_id)).filter(Boolean)
   // ticket_exports of feedback this user authored (FK-less, so clean up explicitly).
   await db!.execute({ sql: "DELETE FROM ticket_exports WHERE feedback_id IN (SELECT id FROM feedback WHERE actor_email=?)", args: [e] })
   await db!.execute({ sql: "DELETE FROM feedback WHERE actor_email=?", args: [e] })
@@ -6421,6 +6471,8 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
   await db!.execute({ sql: "DELETE FROM login_otps WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM sessions WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM users WHERE email=?", args: [e] })
+  // #722-fix (Codex QA, Finding 2): bust every touched project's dashboard cache now that the rows are gone.
+  invalidateDashboardCaches(affectedProjectIds)
   return { s3Keys }
 }
 
@@ -6443,6 +6495,7 @@ export async function computeDashboardInsights(projectId: string) {
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashInsightsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
+  const genAtStart = dashGen(projectId) // Finding 3: capture BEFORE querying so a racing invalidate is detectable
   try {
     const now = Date.now()
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000
@@ -6467,9 +6520,12 @@ export async function computeDashboardInsights(projectId: string) {
     for (let i = 6; i >= 0; i--) out.volume7d.push(byDay[todayIdx - i] || 0)
     for (const r of throughputRows.rows) { const k = String((r as any).k); if (k === "resolved") out.resolved7d = Number((r as any).n); else out.opened7d = Number((r as any).n) }
     // Only successful computations are cached; the catch below returns `empty` WITHOUT caching so a
-    // transient DB error never pins zeros for the whole TTL.
-    dashCachePrune(dashInsightsCache)
-    dashInsightsCache.set(projectId, { at: Date.now(), value: out })
+    // transient DB error never pins zeros for the whole TTL. AND only if no invalidation raced in while
+    // we were querying (Finding 3) — otherwise we'd pin insights that predate the mutation.
+    if (dashGen(projectId) === genAtStart) {
+      dashCachePrune(dashInsightsCache)
+      dashInsightsCache.set(projectId, { at: Date.now(), value: out })
+    }
     return out
   } catch { return empty }
 }
