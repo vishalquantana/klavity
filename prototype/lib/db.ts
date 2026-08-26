@@ -7680,6 +7680,32 @@ export async function updateFeedbackTitle(feedbackId: string, projectId: string,
   return Number(r.rowsAffected) > 0
 }
 
+// #738: overwrite a ticket's markup layer (annotations_json) after a triager re-annotates the evidence
+// screenshot in the dashboard. Project-scoped. The CLEAN original screenshot S3 object is never touched —
+// this only rewrites the vector shapes the read pipeline (buildAnnotationSvg / mountAnnotationOverlay)
+// composites over it, so nothing is lost and re-editing keeps working. Returns the PRIOR annotations_json
+// (raw string, or null) so the caller can archive it on the activity event for audit/recovery. `annJson`
+// is the already-sanitized `{w,h,shapes,selector?}` payload string (server sanitizes with the SAME Shape
+// allowlist as intake). Returns undefined when the row/project doesn't match (caller treats as not-found).
+export async function updateFeedbackAnnotations(
+  feedbackId: string,
+  projectId: string,
+  annJson: string,
+): Promise<{ prior: string | null } | undefined> {
+  const sel = await db!.execute({
+    sql: "SELECT annotations_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  if (!sel.rows.length) return undefined
+  const prior = (sel.rows[0] as any).annotations_json
+  const r = await db!.execute({
+    sql: "UPDATE feedback SET annotations_json=? WHERE id=? AND project_id=?",
+    args: [annJson, feedbackId, projectId],
+  })
+  if (Number(r.rowsAffected) < 1) return undefined
+  return { prior: prior != null ? String(prior) : null }
+}
+
 // KLAVITYKLA-438 "Record me" (Phase 2): update ONE recording's transcript fields in-place inside the
 // row's recordings_json array, keyed by the recording's stable `id`. We extend the recording objects
 // (rather than add a sibling column) so the transcript travels with the clip it belongs to and the GET
