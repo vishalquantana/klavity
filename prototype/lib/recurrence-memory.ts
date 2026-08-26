@@ -163,12 +163,21 @@ export async function listProjectRecurringIssues(
     groups.set(key, rows)
   }
 
+  // #656: build every group's memory CONCURRENTLY (was a serial per-group await → N+1).
+  // The libsql Client pipelines independent statements, so firing these without
+  // inter-await serialization removes the round-trip stacking. Order is preserved by
+  // keeping the groups' insertion order and assembling `out` from the resolved array.
+  const groupRowsList = [...groups.values()]
+  const memories = await Promise.all(
+    groupRowsList.map((rows) => memoryFromRows(c, projectId, rows)),
+  )
+
   const out: ProjectRecurringIssue[] = []
-  for (const rows of groups.values()) {
-    const memory = await memoryFromRows(c, projectId, rows)
+  for (let i = 0; i < groupRowsList.length; i++) {
+    const memory = memories[i]
     if (!memory) continue
     if (memory.count <= 1 && !memory.regressed) continue
-    const first = rows[0] as any
+    const first = groupRowsList[i][0] as any
     out.push({
       ...memory,
       title: titleFromRow(first),
@@ -242,10 +251,18 @@ async function memoryFromRows(
   const issueKey: string | null = first.issue_key != null ? String(first.issue_key) : null
   const simId: string | null = first.sim_id != null ? String(first.sim_id) : null
 
+  // #656: fetch every row's stored receipts CONCURRENTLY (was one serial await per row
+  // inside the loop → N+1). The Client pipelines independent statements; the resolved
+  // array is indexed by row position so each row still gets exactly its own receipts.
+  const receiptsByRow = await Promise.all(
+    rows.map((row) => occurrenceReceipts(c, String(row.id))),
+  )
+
   const occurrences: RecurrenceOccurrence[] = []
   let count = 0
   let resolvedAt: number | null = null
-  for (const row of rows) {
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri]
     const rowCount = Math.max(1, Number(row.recurrence_count ?? 1))
     count += rowCount
     const rowDates = datesFromRow(row)
@@ -265,7 +282,7 @@ async function memoryFromRows(
 
     // A.8: stored per-occurrence receipts for repeat reports (2..N) — each keeps its OWN verbatim
     // description + screenshot + quote. Present only for clusters that recurred after A.8 shipped.
-    const receipts = await occurrenceReceipts(c, String(row.id))
+    const receipts = receiptsByRow[ri]
     const receiptSeenAts = new Set(receipts.map((o) => o.seenAt))
 
     // Original report → one occurrence from the head row's created_at, carrying the head fields.
