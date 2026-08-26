@@ -87,6 +87,37 @@ describe('startReplayRecording — rrweb option forwarding', () => {
     expect(opts.collectFonts).toBe(false)
   })
 
+  it('sets inlineStylesheet=true so same-origin CSS is captured (styled replay, not blank/unstyled)', () => {
+    const spy = makeRecordSpy()
+    startReplayRecording(spy.recordFn)
+    const opts = spy.recordFn.mock.calls[0][0]
+    expect(opts.inlineStylesheet).toBe(true)
+  })
+
+  // #715 — the blank/white replay fix. rrweb must be told to re-checkout a fresh FullSnapshot so the
+  // retained snapshot reflects the live (hydrated) DOM rather than the initial blank SPA shell.
+  it('passes checkoutEveryNms derived from windowMs (~half the window) so a fresh full snapshot stays in the window', () => {
+    const spy = makeRecordSpy()
+    startReplayRecording(spy.recordFn, { windowMs: 60_000 })
+    const opts = spy.recordFn.mock.calls[0][0]
+    expect(opts.checkoutEveryNms).toBe(30_000)      // half of 60s
+    expect(opts.checkoutEveryNms).toBeLessThanOrEqual(60_000) // always ≤ windowMs old
+  })
+
+  it('defaults checkoutEveryNms to 30_000 when windowMs is not given (60s default window)', () => {
+    const spy = makeRecordSpy()
+    startReplayRecording(spy.recordFn)
+    const opts = spy.recordFn.mock.calls[0][0]
+    expect(opts.checkoutEveryNms).toBe(30_000)
+  })
+
+  it('clamps checkoutEveryNms to a 15s floor for very short windows (no thrashing)', () => {
+    const spy = makeRecordSpy()
+    startReplayRecording(spy.recordFn, { windowMs: 10_000 })
+    const opts = spy.recordFn.mock.calls[0][0]
+    expect(opts.checkoutEveryNms).toBe(15_000)   // max(15_000, round(10_000/2)=5_000)
+  })
+
   it('opts.maskAllInputs=false and opts.maskText=false are respected when caller overrides', () => {
     const spy = makeRecordSpy()
     startReplayRecording(spy.recordFn, { maskAllInputs: false, maskText: false })
@@ -265,5 +296,58 @@ describe('ReplayRingBuffer — second full-snapshot resets the incremental tail'
 
     buf.push({ type: 3, timestamp: 400 })   // add one incremental
     expect(buf.isPlayable()).toBe(true)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// #715 — blank/white replay: a periodic checkout FullSnapshot rescues the buffer
+// from the stale initial blank-shell snapshot on an SPA.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('#715 — periodic checkout keeps the replay from going blank', () => {
+  it('simulates blank initial snapshot + 60s of incrementals + a checkout full snapshot', () => {
+    const spy = makeRecordSpy()
+    // 60s window → checkout every 30s. The scenario emulates what rrweb does at record start on an
+    // SPA: a FullSnapshot of the pre-hydration BLANK shell, then a stream of incremental DOM edits
+    // that build the real UI, then (thanks to checkoutEveryNms) a FRESH FullSnapshot of the live DOM.
+    const ctrl = startReplayRecording(spy.recordFn, { windowMs: 60_000 })
+
+    const BLANK_MARK = { blank: true }
+    const LIVE_MARK = { blank: false }
+
+    // t=0: initial FullSnapshot — the blank SPA shell.
+    spy.emit({ type: 4, timestamp: 0, data: {} })                     // meta
+    spy.emit({ type: 2, timestamp: 0, data: BLANK_MARK })            // full (blank)
+
+    // t=1s..29s: incremental DOM-building events (these build the real UI).
+    for (let t = 1_000; t <= 29_000; t += 1_000) spy.emit({ type: 3, timestamp: t, data: {} })
+
+    // t=30s: rrweb's checkout fires → a FRESH FullSnapshot of the actual rendered DOM.
+    spy.emit({ type: 4, timestamp: 30_000, data: {} })              // meta (checkout)
+    spy.emit({ type: 2, timestamp: 30_000, data: LIVE_MARK })       // full (live DOM)
+
+    // t=31s..90s: more incrementals — the original blank snapshot + early incrementals age out.
+    for (let t = 31_000; t <= 90_000; t += 1_000) spy.emit({ type: 3, timestamp: t, data: {} })
+
+    const snap = ctrl.getEvents()
+
+    // The buffer must be playable and anchored on the LIVE checkout snapshot, NOT the stale blank one.
+    expect(ctrl.hasRecording()).toBe(true)
+    const fulls = snap.filter(e => e.type === 2)
+    expect(fulls.length).toBeGreaterThanOrEqual(1)
+    // The retained full snapshot is the live one — the blank shell has been superseded/cleared.
+    expect(fulls.every(e => (e.data as any)?.blank === false)).toBe(true)
+    expect(snap.some(e => (e.data as any)?.blank === true)).toBe(false)
+
+    // A playable sequence: Meta then FullSnapshot then trailing incrementals.
+    const firstMeta = snap.findIndex(e => e.type === 4)
+    const firstFull = snap.findIndex(e => e.type === 2)
+    const firstIncr = snap.findIndex(e => e.type === 3)
+    expect(firstMeta).toBeGreaterThanOrEqual(0)
+    expect(firstFull).toBeGreaterThan(firstMeta)
+    expect(firstIncr).toBeGreaterThan(firstFull)
+
+    // And the most-recent incremental (t=90s) survived — the tail is live, not stale.
+    expect(snap[snap.length - 1].timestamp).toBe(90_000)
   })
 })

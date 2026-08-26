@@ -8,6 +8,12 @@
 // ring buffer keeps only the trailing window so we never ship a user's whole session — just the
 // seconds leading up to the bug.
 //
+// BLANK-REPLAY GUARD (#715): rrweb emits a single FullSnapshot at record start. On an SPA that first
+// snapshot is often the blank pre-hydration shell, and the incremental events that build the real UI
+// age out of the rolling window — so the player rebuilds from a stale/blank snapshot (white replay).
+// We pass `checkoutEveryNms` (~half the window) so rrweb re-emits a FRESH FullSnapshot of the live
+// DOM periodically; the ring buffer always holds a real full snapshot ≤ windowMs old.
+//
 // This file's ReplayRingBuffer is pure/deterministic and unit-tested; the rrweb wiring
 // (startReplayRecording) is a thin DOM shim documented for manual verification.
 
@@ -63,23 +69,31 @@ export class ReplayRingBuffer {
     }
   }
 
-  /** A playable, head-anchored copy: [meta?, fullSnapshot, ...trailing incrementals]. */
+  /** A playable, head-anchored copy: [meta, fullSnapshot, ...trailing incrementals]. */
   snapshot(): TimedEvent[] {
     const head: TimedEvent[] = []
-    // Only prepend the retained snapshot/meta if they aren't already at the head of the tail.
     const hasFullInTail = this.events.some(e => e.type === EVENT_FULL_SNAPSHOT)
+    const hasMetaInTail = this.events.some(e => e.type === EVENT_META)
     if (!hasFullInTail && this.lastFull) {
+      // The full snapshot aged out of the tail (time/window prune) — re-emit meta+full at the head.
       if (this.lastMeta) head.push(this.lastMeta)
       head.push(this.lastFull)
+    } else if (hasFullInTail && !hasMetaInTail && this.lastMeta) {
+      // A checkout FullSnapshot sits at the head of the tail, but its Meta was dropped when the new
+      // full reset the incremental tail (rrweb emits Meta right BEFORE the checkout full). rrweb-player
+      // needs the Meta (viewport dims) before the FullSnapshot, so re-emit it at the head (#715).
+      head.push(this.lastMeta)
     }
     return [...head, ...this.events]
   }
 
-  /** True when the buffer can produce a scrubbable replay (a full snapshot + at least one more event). */
+  /** True when the buffer can produce a scrubbable replay: a full snapshot + at least one event to
+   *  play beyond the meta+full pair (a lone meta+full renders a single static frame, not a replay). */
   isPlayable(): boolean {
     const snap = this.snapshot()
     const hasFull = snap.some(e => e.type === EVENT_FULL_SNAPSHOT)
-    return hasFull && snap.length >= 2
+    const hasTimeline = snap.some(e => e.type !== EVENT_FULL_SNAPSHOT && e.type !== EVENT_META)
+    return hasFull && hasTimeline
   }
 
   clear(): void {
@@ -120,20 +134,35 @@ export function startReplayRecording(
   recordFn: (opts: any) => (() => void) | undefined,
   opts: StartReplayOptions = {},
 ): ReplayController {
+  const windowMs = opts.windowMs ?? 60_000
   const buf = new ReplayRingBuffer({
-    windowMs: opts.windowMs ?? 60_000,
+    windowMs,
     maxEvents: opts.maxEvents ?? 2000,
   })
   const maskAllInputs = opts.maskAllInputs !== false
   const maskText = opts.maskText !== false
 
+  // Periodic FullSnapshot checkout. rrweb emits ONE FullSnapshot at record start — on an SPA that's
+  // usually the blank pre-hydration shell, and the incremental DOM-building events that follow age
+  // out of the rolling window, leaving the player to reconstruct from a stale/blank snapshot (WHITE
+  // replay, #715). Ask rrweb to re-checkout a FRESH FullSnapshot of the *actual* rendered DOM at
+  // roughly half the window, so a real full snapshot always lives ≤ windowMs old inside the buffer.
+  // Derived from windowMs (not a magic constant) and clamped to a sane floor so we don't thrash on
+  // very short windows.
+  const checkoutEveryNms = Math.max(15_000, Math.round(windowMs / 2))
+
   let stopFn: (() => void) | undefined
   try {
     stopFn = recordFn({
       emit(e: TimedEvent) { try { buf.push(e) } catch { /* never let recording break the page */ } },
+      // Fresh full snapshot every ~half-window so the retained snapshot reflects the live DOM.
+      checkoutEveryNms,
       maskAllInputs,
       // Mask every text node by default. rrweb calls maskTextFn(text) per node; '*' keeps layout.
       maskTextFn: maskText ? (text: string) => '*'.repeat(text.length) : undefined,
+      // Capture same-origin CSS inline so the replay renders styled (rrweb default; set explicitly so
+      // a blank/unstyled replay can't regress silently). Privacy masking above is unaffected.
+      inlineStylesheet: true,
       // Don't record <script>/<noscript> contents and obvious secrets.
       blockClass: 'klavity-no-record',
       ignoreClass: 'klavity-no-record',
