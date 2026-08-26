@@ -2102,9 +2102,11 @@ function klavQaShowDoneCard(bug: QaBug): void {
 
 function klavQaOpenInKlavity(bug: QaBug, comment = false): void {
   const base = (klavConfig?.backendUrl || 'https://klavity.in').replace(/\/+$/, '')
-  const pid = klavQaProjectId || ''
-  let url = `${base}/dashboard?project=${encodeURIComponent(pid)}&bug=${encodeURIComponent(bug.id)}`
-  if (comment) url += '&comment=1'
+  // #727: open the FAST single-ticket page (/t/<id>) rather than cold-booting the dashboard SPA.
+  // /t/:ref resolves the project from the feedback row + member-gates server-side, so no project
+  // param is needed. The comments live on that same page, so the "reply" variant lands there too.
+  let url = `${base}/t/${encodeURIComponent(bug.id)}`
+  if (comment) url += '#comments'
   try { window.open(url, '_blank', 'noopener,noreferrer') } catch { /* popup blocked */ }
 }
 

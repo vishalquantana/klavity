@@ -3591,7 +3591,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // submit; fall back to the value posted with the lead.
             referrer: fb?.sourceReferrer || leadReferrer || "",
             projectName: proj?.name || projectId,
-            feedbackUrl: `${BASE}/dashboard?project=${encodeURIComponent(projectId)}`,
+            // #727: link straight to the FAST single-ticket page (/t/<id>) rather than booting the
+            // whole dashboard SPA just to focus this one lead's report.
+            feedbackUrl: ticketDeepLinkUrl(feedbackId),
           })
         } catch (e: any) { console.error("lead alert (non-fatal):", e?.message || e) }
       })().catch(() => {})
@@ -4090,7 +4092,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           nextStatus: newStatus,
           title: beforeFeedback ? effectiveTicketTitle(beforeFeedback) : "Bug report",
           projectName: proj?.name ?? "your project",
-          ticketUrl: ticketDashboardUrl(exportRow.projectId),
+          // #727: fast single-ticket permalink, not the heavy dashboard board.
+          ticketUrl: ticketDeepLinkUrl(exportRow.feedbackId),
         })
       }
       return json({ ok: true, status: newStatus })
@@ -5695,16 +5698,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // not here — there is no longer any inline external filing on this endpoint (KLAVITYKLA-288),
         // so this is the ONE exit for a successful submission.
         //
-        // Success-screen deep link: deep-link straight to the newly-created single ticket
-        // (#tickets/<feedbackId>) so "Open in Klavity" lands on the report itself, not the whole
-        // board (KLA-632). #651: this link is now returned for EVERY widget submit — including
-        // anonymous / cross-origin end-users on a customer's site — not just authed reporters.
-        // The /dashboard route is itself auth-gated, so opening the link still requires a Klavity
-        // login → no data leak; it just guarantees the reporter always has a way back to the ticket.
+        // Success-screen deep link: point straight at the FAST single-ticket page (/t/<feedbackId>)
+        // so "Open in Klavity" renders just this report instead of cold-booting the whole dashboard
+        // SPA (#727 — Raghu flagged the ~15s board load). #651: this link is returned for EVERY widget
+        // submit — including anonymous / cross-origin end-users on a customer's site. /t/:ref is
+        // member-gated server-side (resolveFeedbackRef + ticketViewAccess): a member gets the full
+        // ticket, a non-member gets the redacted teaser / login gate → no data leak.
         const dashBase = baseOrigin || reqOrigin
-        const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
         const issueUrl = (feedbackId && dashBase)
-          ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets/${encodeURIComponent(feedbackId)}`
+          ? `${dashBase.replace(/\/+$/, "")}/t/${encodeURIComponent(feedbackId)}`
           : ""
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
       } catch (e: any) {
@@ -11078,7 +11080,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               nextStatus: meta.status,
               title: effectiveTicketTitle(fbRow),
               projectName: proj?.name ?? "your project",
-              ticketUrl: ticketDashboardUrl(fbRow.projectId),
+              // #727: fast single-ticket permalink, not the heavy dashboard board.
+              ticketUrl: ticketDeepLinkUrl(fid),
             })
           }
           // ── Triage-gated auto-copy (KLA-282) ─────────────────────────────────────────────────────
@@ -12747,7 +12750,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   nextStatus: meta.status,
                   title: effectiveTicketTitle(row),
                   projectName: proj.name,
-                  ticketUrl: ticketDashboardUrl(proj.id),
+                  // #727: fast single-ticket permalink, not the heavy dashboard board.
+                  ticketUrl: ticketDeepLinkUrl(tid),
                 })
               }
               autoCopyOnTriageAccept(tid, proj.id, row.status, meta.status, hasPriority ? meta.priority : row.priority, me)
