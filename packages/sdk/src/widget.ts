@@ -2227,8 +2227,8 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     .tx .sub{opacity:.72;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
     .x{opacity:.6;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;flex:0 0 auto;user-select:none}
     .x:hover{opacity:1}
-    .prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.18);border-radius:0 0 12px 12px;overflow:hidden}
-    .prog>i{display:block;height:100%;background:#6366f1;width:0;transition:width .2s ease}
+    .prog{position:absolute;left:10px;right:10px;bottom:5px;height:3px;background:rgba(255,255,255,.18);border-radius:999px;overflow:hidden}
+    .prog>i{display:block;height:100%;background:#6366f1;width:0;border-radius:999px;transition:width .2s ease}
     .pill.err{background:#4a1620}
     a{color:#c7d2fe;text-decoration:none;font-weight:600}
     a:hover{text-decoration:underline}
@@ -2246,7 +2246,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     .pill.ok a.open{color:#6366f1;font-weight:700}
     .pill.ok .x{color:#a89a84;align-self:flex-start}
     .pill.ok .x:hover{color:#5a4f3e}
-    .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:0 0 16px 16px}
+    .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:999px}
     .pill.ok .prog>i{background:linear-gradient(90deg,#6366f1,#818cf8)}
     @keyframes klp-pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
     @keyframes klp-shrink{from{width:100%}to{width:0}}

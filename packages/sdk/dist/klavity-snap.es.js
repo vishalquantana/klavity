@@ -1513,7 +1513,7 @@ const uh = {
 function dh(e) {
   return e.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function X(e, t = {}) {
+function J(e, t = {}) {
   const r = uh[e];
   if (!r)
     return console.warn("[Klavity] unknown icon: " + e), "";
@@ -3045,10 +3045,8 @@ function mf(e, t, r = {}) {
     .klavity-clarity .kl-clr-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
     .klavity-clarity .kl-clr-chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--kl-border);color:var(--kl-muted);display:inline-flex;align-items:center;gap:4px;background:var(--kl-chip);}
     .klavity-clarity .kl-clr-chip.done{color:var(--kl-ok,#16a34a);border-color:color-mix(in srgb,var(--kl-ok,#16a34a) 40%,transparent);background:color-mix(in srgb,var(--kl-ok,#16a34a) 8%,transparent);}
-    .klavity-clarity .kl-clr-tip{margin-top:9px;font-size:12px;background:color-mix(in srgb,var(--kl-accent) 6%,var(--kl-input-bg));border:1px solid color-mix(in srgb,var(--kl-accent) 25%,transparent);border-radius:9px;padding:8px 10px;display:flex;gap:7px;line-height:1.45;color:var(--kl-fg);}
-    .klavity-clarity .kl-clr-tip[hidden]{display:none;}
-    .klavity-clarity .kl-clr-tip .kl-clr-ai{flex:0 0 auto;color:var(--kl-accent);margin-top:1px;}
-    .klavity-clarity .kl-clr-tip .kl-clr-aitag{font-size:9px;font-weight:800;color:var(--kl-on-accent);background:var(--kl-accent);padding:1px 5px;border-radius:999px;margin-left:4px;vertical-align:middle;}
+    /* #731: the standalone clarity-coach "AI" tip message was removed (owner: not needed now).
+       The coverage pills + score above stay; only the LLM tip row and its CSS are gone. */
     /* Soft pre-submit nudge (mockup panel D). Shown ONLY when the reporter hits Submit on a still-weak
        report. "Submit anyway" always proceeds — never a hard block. */
     .klavity-nudge{margin:0 0 12px;border:1px solid var(--kl-warn,#d97706);background:color-mix(in srgb,var(--kl-warn,#d97706) 8%,var(--kl-input-bg));border-radius:10px;padding:11px;}
@@ -3290,11 +3288,11 @@ function mf(e, t, r = {}) {
   const ne = document.createElement("div");
   ne.className = "klavity-modal", ne.innerHTML = `
     ${m ? '<button class="klavity-min" id="klavity-min" type="button" aria-label="Minimize" title="Minimize (keeps your evidence)"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>' : ""}
-    <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${X("x", { size: 16 })}</button>
+    <button class="klavity-x" id="klavity-x" type="button" aria-label="Close" title="Close (Esc)">${J("x", { size: 16 })}</button>
     <div class="kl-hero" id="klavity-hero">
       <div class="kl-hero-tools" id="klavity-hero-tools"></div>
       <div class="kl-hero-stage" id="klavity-hero-stage">
-        <div class="kl-hero-empty" id="klavity-hero-empty">${X("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
+        <div class="kl-hero-empty" id="klavity-hero-empty">${J("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
       </div>
       <div class="klavity-strip" id="klavity-strip"></div>
       ${t.onCaptureSharp ? '<div class="klavity-sharphint" id="klavity-sharphint" role="status" aria-live="polite" hidden></div>' : ""}
@@ -3302,19 +3300,19 @@ function mf(e, t, r = {}) {
     <div class="kl-side" id="klavity-side">
       ${t.showTitleField ? '<label class="klavity-title-label" for="klavity-title">Title<input type="text" class="klavity-title" id="klavity-title" maxlength="200" placeholder="One line summarising the issue"></label>' : ""}
       ${Fe ? `<div class="klavity-types" id="klavity-types" role="radiogroup" aria-label="Issue type">${Fe.map((b) => `<button type="button" class="kl-type-chip${b.value === e ? " active" : ""}" data-kind="${ht(b.value)}" role="radio" aria-checked="${b.value === e ? "true" : "false"}">${ht(b.label)}${b.mappingLabel ? `<span class="kl-type-map">${ht(b.mappingLabel)}</span>` : ""}</button>`).join("")}</div>` : `<div class="klavity-toggle">
-        <button class="bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${X("bug")}</span>Bug</button>
-        <button class="feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${X("lightbulb")}</span>Feature</button>
+        <button class="bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${J("bug")}</span>Bug</button>
+        <button class="feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${J("lightbulb")}</span>Feature</button>
       </div>`}
       
       
       <div class="klavity-actions">
-        ${t.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${X("app-window")}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ""}
-        <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${X("camera")}</span><span class="kl-full-label">Full Page</span></button>
+        ${t.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${J("app-window")}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ""}
+        <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${J("camera")}</span><span class="kl-full-label">Full Page</span></button>
         
-        <button id="klavity-upload" title="${y ? "Add a screenshot, video, or file (images, MP4, PDF, .log, .har, ...)" : "Upload a screenshot"}"><span class="kl-cap-ic">${X(y ? "paperclip" : "image")}</span><span class="kl-upload-label">${y ? "Attach" : "Upload"}</span></button>
-        ${N ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${X("monitor")}</span><span class="kl-record-label">Record me</span></button>` : ""}
-        ${t.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${X("scissors")}</span><span class="kl-region-label">Region</span></button>` : ""}
-        ${t.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${X("mouse-pointer-2")}</span><span class="kl-pick-label">Pick element</span></button>` : ""}
+        <button id="klavity-upload" title="${y ? "Add a screenshot, video, or file (images, MP4, PDF, .log, .har, ...)" : "Upload a screenshot"}"><span class="kl-cap-ic">${J(y ? "paperclip" : "image")}</span><span class="kl-upload-label">${y ? "Attach" : "Upload"}</span></button>
+        ${N ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${J("monitor")}</span><span class="kl-record-label">Record me</span></button>` : ""}
+        ${t.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${J("scissors")}</span><span class="kl-region-label">Region</span></button>` : ""}
+        ${t.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${J("mouse-pointer-2")}</span><span class="kl-pick-label">Pick element</span></button>` : ""}
       </div>
       ${t.onPickElement ? '<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>' : ""}
       
@@ -3324,18 +3322,18 @@ function mf(e, t, r = {}) {
       
       <div class="klavity-descbar">
         <div class="klavity-counter" id="klavity-counter" hidden>0/${f} images</div>
-        ${Y ? `<button id="klavity-voice" class="kl-voice-circle" type="button" title="Voice dictation" aria-label="Voice dictation" aria-pressed="false"><span class="kl-cap-ic">${X("mic")}<span class="kl-vdot"></span><span class="kl-vstop" aria-hidden="true"></span></span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ""}
+        ${Y ? `<button id="klavity-voice" class="kl-voice-circle" type="button" title="Voice dictation" aria-label="Voice dictation" aria-pressed="false"><span class="kl-cap-ic">${J("mic")}<span class="kl-vdot"></span><span class="kl-vstop" aria-hidden="true"></span></span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ""}
       </div>
       ${y ? '<div class="klavity-capmsg" id="klavity-capmsg" role="alert" hidden></div>' : ""}
       ${y ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ""}
       
       <div class="klavity-error" id="klavity-err"></div>
       <div class="klavity-desc" id="klavity-desc" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Description" data-ph="${e === "feature" ? "Describe the feature you'd like..." : "Describe the bug..."}"></div>
-      <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${X("sparkles", { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${J("sparkles", { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
       ${t.onEnhance ? `<div class="klavity-enhance-row" id="klavity-enhance-row">
-        <button type="button" class="klavity-enhance-btn" id="klavity-enhance">${X("sparkles", { size: 14 })}<span>Enhance with AI</span></button>
-        <button type="button" class="klavity-enhance-undo" id="klavity-enhance-undo" hidden>${X("rotate-cw", { size: 13 })}<span>Undo</span></button>
-        <button type="button" class="klavity-enhance-regen" id="klavity-enhance-regen" hidden>${X("refresh-cw", { size: 13 })}<span>Regenerate</span></button>
+        <button type="button" class="klavity-enhance-btn" id="klavity-enhance">${J("sparkles", { size: 14 })}<span>Enhance with AI</span></button>
+        <button type="button" class="klavity-enhance-undo" id="klavity-enhance-undo" hidden>${J("rotate-cw", { size: 13 })}<span>Undo</span></button>
+        <button type="button" class="klavity-enhance-regen" id="klavity-enhance-regen" hidden>${J("refresh-cw", { size: 13 })}<span>Regenerate</span></button>
       </div>
       <div class="klavity-enhance-spin" id="klavity-enhance-spin" hidden><span class="kl-enh-loader"></span><span>Drafting from your screenshot…</span></div>` : ""}
       ${Y ? '<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>' : ""}
@@ -3347,7 +3345,6 @@ function mf(e, t, r = {}) {
           <span class="kl-clr-chip" id="klavity-clarity-expected"><span class="kl-clr-mark">○</span> What you expected</span>
           <span class="kl-clr-chip" id="klavity-clarity-repro"><span class="kl-clr-mark">○</span> How to reproduce</span>
         </div>
-        <div class="kl-clr-tip" id="klavity-clarity-tip" hidden><span class="kl-clr-ai">${X("lightbulb", { size: 14 })}</span><span id="klavity-clarity-tip-text"></span></div>
       </div>` : ""}
       ${t.onCheckKnown ? '<div class="klavity-known" id="klavity-known" role="status" aria-live="polite" hidden></div>' : ""}
       ${t.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ""}
@@ -3365,7 +3362,7 @@ function mf(e, t, r = {}) {
       </div>` : ""}
       ${t.consoleAttachToggle ? `<div class="klavity-conlog" id="klavity-conlog">
         <label class="kl-conlog-lbl" title="Attach this page's captured console logs to the report">
-          <input type="checkbox" id="klavity-conlog-cb">${X("file-text", { size: 14 })}<span>Attach console logs</span>
+          <input type="checkbox" id="klavity-conlog-cb">${J("file-text", { size: 14 })}<span>Attach console logs</span>
         </label>
       </div>` : ""}
       <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
@@ -3403,7 +3400,7 @@ function mf(e, t, r = {}) {
     if (lo || !ke || Ne) return;
     lo = !0;
     const b = document.createElement("div");
-    b.className = "kl-float-tip kl-nudge", b.setAttribute("role", "status"), b.setAttribute("aria-live", "polite"), b.innerHTML = `<div class="kl-nudge-row"><span><b>Get pixel-perfect screenshots by sharing</b> — try it now.</span><button type="button" class="kl-nudge-x" aria-label="Dismiss">${X("x", { size: 13 })}</button></div>`, l.appendChild(b), Pr = b;
+    b.className = "kl-float-tip kl-nudge", b.setAttribute("role", "status"), b.setAttribute("aria-live", "polite"), b.innerHTML = `<div class="kl-nudge-row"><span><b>Get pixel-perfect screenshots by sharing</b> — try it now.</span><button type="button" class="kl-nudge-x" aria-label="Dismiss">${J("x", { size: 13 })}</button></div>`, l.appendChild(b), Pr = b;
     const R = ke.getBoundingClientRect(), C = Math.min(228, window.innerWidth - 16), E = 8, A = window.innerWidth, T = window.innerHeight;
     b.style.left = Math.max(E, Math.min(R.left + R.width / 2 - C / 2, A - C - E)) + "px", b.style.top = "-9999px", b.style.visibility = "hidden", b.style.display = "block";
     const L = b.offsetHeight;
@@ -3454,7 +3451,7 @@ function mf(e, t, r = {}) {
         ae = E, Q = null, ve = null, xe();
       });
       const L = document.createElement("button");
-      L.className = "klavity-rm", L.innerHTML = X("x", { size: 13 }), L.title = "Remove", L.addEventListener("click", (F) => {
+      L.className = "klavity-rm", L.innerHTML = J("x", { size: 13 }), L.title = "Remove", L.addEventListener("click", (F) => {
         var B;
         F.stopPropagation(), c.splice(E, 1), p.splice(E, 1), s.splice(E, 1), h.splice(E, 1), d.splice(E, 1);
         try {
@@ -3472,15 +3469,15 @@ function mf(e, t, r = {}) {
         c.length === 0 && Et(null), xe();
       });
       const z = document.createElement("button");
-      z.className = "klavity-mk", z.innerHTML = X("pencil", { size: 13 }), z.title = "Mark up", z.addEventListener("click", (F) => {
+      z.className = "klavity-mk", z.innerHTML = J("pencil", { size: 13 }), z.title = "Mark up", z.addEventListener("click", (F) => {
         F.stopPropagation(), Gu(E);
       }), A.append(T, L, z);
       const $ = s[E];
       if ($) {
         const F = lf[$], B = document.createElement("span");
-        if (B.className = "klavity-qb kl-q-" + $, B.title = $ === "real-pixel" ? "Pixel-perfect capture (every image included)" : $ === "wireframe" ? "Wireframe fallback — layout only, images not captured. Retake for a sharp shot." : "Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.", B.innerHTML = X(F.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + ht(F.label) + "</span>", A.appendChild(B), F.degraded && t.onRetakeSharp) {
+        if (B.className = "klavity-qb kl-q-" + $, B.title = $ === "real-pixel" ? "Pixel-perfect capture (every image included)" : $ === "wireframe" ? "Wireframe fallback — layout only, images not captured. Retake for a sharp shot." : "Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.", B.innerHTML = J(F.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + ht(F.label) + "</span>", A.appendChild(B), F.degraded && t.onRetakeSharp) {
           const q = document.createElement("button");
-          q.type = "button", q.className = "klavity-retake", q.innerHTML = X("zap", { size: 11 }) + "<span>Retake sharp</span>", q.title = "Recapture this shot at full pixel quality", q.addEventListener("click", (j) => {
+          q.type = "button", q.className = "klavity-retake", q.innerHTML = J("zap", { size: 11 }) + "<span>Retake sharp</span>", q.title = "Recapture this shot at full pixel quality", q.addEventListener("click", (j) => {
             j.stopPropagation(), $u(E, q);
           }), A.appendChild(q);
         }
@@ -3497,13 +3494,13 @@ function mf(e, t, r = {}) {
       const T = document.createElement("video");
       T.src = C.dataUrl, T.muted = !0, T.preload = "metadata", T.setAttribute("playsinline", ""), T.tabIndex = -1;
       const L = document.createElement("span");
-      L.className = "kl-video-play", L.setAttribute("aria-hidden", "true"), L.innerHTML = X("play", { size: 16 });
+      L.className = "kl-video-play", L.setAttribute("aria-hidden", "true"), L.innerHTML = J("play", { size: 16 });
       const z = document.createElement("span");
-      z.className = "kl-video-badge", z.innerHTML = X("play", { size: 9 }) + "<span>Video</span>", A.title = "Click to play " + C.name, A.addEventListener("click", () => {
+      z.className = "kl-video-badge", z.innerHTML = J("play", { size: 9 }) + "<span>Video</span>", A.title = "Click to play " + C.name, A.addEventListener("click", () => {
         Q = E, ve = null, xe();
       });
       const $ = document.createElement("button");
-      $.className = "klavity-rm", $.innerHTML = X("x", { size: 13 }), $.title = "Remove", $.addEventListener("click", (B) => {
+      $.className = "klavity-rm", $.innerHTML = J("x", { size: 13 }), $.title = "Remove", $.addEventListener("click", (B) => {
         B.stopPropagation(), ho(E);
       }), A.append(T, L, z, $);
       const F = fn(P);
@@ -3520,13 +3517,13 @@ function mf(e, t, r = {}) {
       const T = document.createElement("video");
       T.src = C.dataUrl, T.muted = !0, T.preload = "metadata", T.setAttribute("playsinline", ""), T.tabIndex = -1;
       const L = document.createElement("span");
-      L.className = "kl-video-play", L.setAttribute("aria-hidden", "true"), L.innerHTML = X("play", { size: 16 });
+      L.className = "kl-video-play", L.setAttribute("aria-hidden", "true"), L.innerHTML = J("play", { size: 16 });
       const z = Math.round(C.durationMs / 1e3), $ = document.createElement("span");
-      $.className = "kl-video-badge", $.innerHTML = X("play", { size: 9 }) + `<span>${Math.floor(z / 60)}:${String(z % 60).padStart(2, "0")}${C.screenOnly ? " · screen" : ""}</span>`, A.title = "Click to play your recording", A.addEventListener("click", () => {
+      $.className = "kl-video-badge", $.innerHTML = J("play", { size: 9 }) + `<span>${Math.floor(z / 60)}:${String(z % 60).padStart(2, "0")}${C.screenOnly ? " · screen" : ""}</span>`, A.title = "Click to play your recording", A.addEventListener("click", () => {
         ve = E, Q = null, xe();
       });
       const F = document.createElement("button");
-      F.type = "button", F.className = "kl-rerec", F.innerHTML = X("refresh-cw", { size: 12 }), F.title = "Re-record", F.setAttribute("aria-label", "Re-record"), F.addEventListener("click", (j) => {
+      F.type = "button", F.className = "kl-rerec", F.innerHTML = J("refresh-cw", { size: 12 }), F.title = "Re-record", F.setAttribute("aria-label", "Re-record"), F.addEventListener("click", (j) => {
         var le;
         j.stopPropagation(), Ie.splice(E, 1), ve === E ? ve = null : ve != null && ve > E && (ve -= 1), ai();
         try {
@@ -3535,7 +3532,7 @@ function mf(e, t, r = {}) {
         }
       });
       const B = document.createElement("button");
-      B.className = "klavity-rm", B.innerHTML = X("x", { size: 13 }), B.title = "Remove", B.addEventListener("click", (j) => {
+      B.className = "klavity-rm", B.innerHTML = J("x", { size: 13 }), B.title = "Remove", B.addEventListener("click", (j) => {
         j.stopPropagation(), Ie.splice(E, 1), ve === E ? ve = null : ve != null && ve > E && (ve -= 1), ai();
       }), A.append(T, L, $, F, B);
       const q = fn(P);
@@ -3565,7 +3562,7 @@ function mf(e, t, r = {}) {
       if (!b.dataset.built) {
         b.dataset.built = "1", b.innerHTML = "";
         const E = document.createElement("span");
-        E.className = "kl-sh-ic", E.innerHTML = X("triangle-alert", { size: 15 });
+        E.className = "kl-sh-ic", E.innerHTML = J("triangle-alert", { size: 15 });
         const A = document.createElement("span");
         A.className = "kl-sh-txt", A.textContent = "Some areas can't be captured this way (embedded frames or cross-origin images) - click Snap for a pixel-perfect shot.";
         const T = document.createElement("button");
@@ -3573,7 +3570,7 @@ function mf(e, t, r = {}) {
           u = !0, nn(), ke == null || ke.click();
         });
         const L = document.createElement("button");
-        L.type = "button", L.className = "kl-sh-x", L.setAttribute("aria-label", "Dismiss"), L.title = "Dismiss", L.innerHTML = X("x", { size: 12 }), L.addEventListener("click", () => {
+        L.type = "button", L.className = "kl-sh-x", L.setAttribute("aria-label", "Dismiss"), L.title = "Dismiss", L.innerHTML = J("x", { size: 12 }), L.addEventListener("click", () => {
           u = !0, nn();
         }), b.append(E, A, T, L);
       }
@@ -3658,13 +3655,13 @@ function mf(e, t, r = {}) {
       const A = document.createElement("div");
       A.className = "kl-file-chip";
       const T = document.createElement("span");
-      T.className = "kl-file-ic", T.innerHTML = X("file-text", { size: 14 });
+      T.className = "kl-file-ic", T.innerHTML = J("file-text", { size: 14 });
       const L = document.createElement("span");
       L.className = "kl-file-nm", L.textContent = C.name, L.title = C.name;
       const z = document.createElement("span");
       z.className = "kl-file-sz", z.textContent = C.size < 1024 ? `${C.size} B` : C.size < 1024 * 1024 ? `${Math.round(C.size / 1024)} KB` : `${(C.size / 1024 / 1024).toFixed(1)} MB`;
       const $ = document.createElement("button");
-      $.type = "button", $.className = "kl-file-rm", $.setAttribute("aria-label", `Remove ${C.name}`), $.title = "Remove", $.innerHTML = X("x", { size: 11 }), $.addEventListener("click", () => {
+      $.type = "button", $.className = "kl-file-rm", $.setAttribute("aria-label", `Remove ${C.name}`), $.title = "Remove", $.innerHTML = J("x", { size: 11 }), $.addEventListener("click", () => {
         ho(E);
       }), A.append(T, L, z, $);
       const F = fn(P);
@@ -3701,7 +3698,7 @@ function mf(e, t, r = {}) {
       }
       if (A) {
         const T = document.createElement("span");
-        T.className = "kl-capmsg-sent", T.innerHTML = `<span class="kl-capmsg-sent-ic">${X("check")}</span>Request sent to your team`, C.replaceWith(T);
+        T.className = "kl-capmsg-sent", T.innerHTML = `<span class="kl-capmsg-sent-ic">${J("check")}</span>Request sent to your team`, C.replaceWith(T);
       } else
         C.disabled = !1, C.textContent = E;
     }), C;
@@ -3851,7 +3848,7 @@ function mf(e, t, r = {}) {
         });
     }
   }
-  const te = ne.querySelector("#klavity-desc");
+  const ee = ne.querySelector("#klavity-desc");
   {
     const b = () => {
       try {
@@ -3868,9 +3865,9 @@ function mf(e, t, r = {}) {
       if (!A || !A.rangeCount) return -1;
       try {
         const T = A.getRangeAt(0);
-        if (!te.contains(T.endContainer)) return -1;
+        if (!ee.contains(T.endContainer)) return -1;
         const L = T.cloneRange();
-        return L.selectNodeContents(te), L.setEnd(T.endContainer, T.endOffset), L.toString().length;
+        return L.selectNodeContents(ee), L.setEnd(T.endContainer, T.endOffset), L.toString().length;
       } catch {
         return -1;
       }
@@ -3878,7 +3875,7 @@ function mf(e, t, r = {}) {
       const T = b();
       if (T)
         try {
-          const L = document.createRange(), z = document.createTreeWalker(te, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+          const L = document.createRange(), z = document.createTreeWalker(ee, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
           let $, F = A, B = !1;
           for (; $ = z.nextNode(); ) {
             if ($.nodeName === "BR") {
@@ -3898,37 +3895,37 @@ function mf(e, t, r = {}) {
               F -= q;
             }
           }
-          B ? L.collapse(!0) : (L.selectNodeContents(te), L.collapse(!1)), T.removeAllRanges(), T.addRange(L);
+          B ? L.collapse(!0) : (L.selectNodeContents(ee), L.collapse(!1)), T.removeAllRanges(), T.addRange(L);
         } catch {
         }
     }, E = () => {
-      const A = R(), T = ta(te).replace(/\n$/, "");
-      te.innerHTML = T ? ea(T) : "", A >= 0 && C(A);
+      const A = R(), T = ta(ee).replace(/\n$/, "");
+      ee.innerHTML = T ? ea(T) : "", A >= 0 && C(A);
     };
-    te.addEventListener("input", E), Object.defineProperty(te, "value", {
+    ee.addEventListener("input", E), Object.defineProperty(ee, "value", {
       configurable: !0,
       get() {
-        return ta(te);
+        return ta(ee);
       },
       set(A) {
         const T = String(A ?? "").replace(/\n$/, "");
-        te.innerHTML = T ? ea(T) : "";
+        ee.innerHTML = T ? ea(T) : "";
       }
-    }), Object.defineProperty(te, "disabled", {
+    }), Object.defineProperty(ee, "disabled", {
       configurable: !0,
       get() {
-        return te.getAttribute("contenteditable") === "false";
+        return ee.getAttribute("contenteditable") === "false";
       },
       set(A) {
-        te.setAttribute("contenteditable", A ? "false" : "true"), te.classList.toggle("kl-desc-disabled", !!A);
+        ee.setAttribute("contenteditable", A ? "false" : "true"), ee.classList.toggle("kl-desc-disabled", !!A);
       }
-    }), Object.defineProperty(te, "placeholder", {
+    }), Object.defineProperty(ee, "placeholder", {
       configurable: !0,
       get() {
-        return te.getAttribute("data-ph") || "";
+        return ee.getAttribute("data-ph") || "";
       },
       set(A) {
-        te.setAttribute("data-ph", String(A ?? ""));
+        ee.setAttribute("data-ph", String(A ?? ""));
       }
     });
   }
@@ -3936,22 +3933,22 @@ function mf(e, t, r = {}) {
   Ct && t.prefillEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t.prefillEmail) && (Ct.value = t.prefillEmail);
   const yo = ne.querySelector("#klavity-desc-hint"), Bu = () => !t.requireEmail || !!Ct && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(Ct.value.trim()), bo = () => c.length > 0 || nt || I.length > 0 || Ie.length > 0, qu = () => {
   }, it = () => {
-    const b = te.value.trim() === "";
+    const b = ee.value.trim() === "";
     Gt.disabled = b && !bo() || !Bu(), yo && (yo.hidden = !(b && bo()));
   };
-  if (te.addEventListener("input", qu), te.addEventListener("input", it), Ct == null || Ct.addEventListener("input", it), t.onEnhance) {
+  if (ee.addEventListener("input", qu), ee.addEventListener("input", it), Ct == null || Ct.addEventListener("input", it), t.onEnhance) {
     const b = t.onEnhance, R = ne.querySelector("#klavity-enhance"), C = ne.querySelector("#klavity-enhance-undo"), E = ne.querySelector("#klavity-enhance-regen"), A = ne.querySelector("#klavity-enhance-spin");
     let T = 0, L = null;
     const z = () => c[ae] || c[0] || "", $ = async () => {
       if (ut) return;
-      const F = te.value.trim();
-      L = te.value;
+      const F = ee.value.trim();
+      L = ee.value;
       const B = ++T;
       R && (R.disabled = !0), A && (A.hidden = !1);
       try {
         const q = re ? { selector: re.selector, text: re.text } : null, j = await b(F, { images: c.length, shot: z(), picked: q });
         if (B !== T || !j) return;
-        te.value = sf(j), qe = j.suggestedSeverity || null, wt = j.suggestedPriority || null, te.classList.add("kl-just-enhanced"), setTimeout(() => te.classList.remove("kl-just-enhanced"), 700), C && (C.hidden = !1), E && (E.hidden = !1), it();
+        ee.value = sf(j), ee.dispatchEvent(new Event("input", { bubbles: !0 })), qe = j.suggestedSeverity || null, wt = j.suggestedPriority || null, ee.classList.add("kl-just-enhanced"), setTimeout(() => ee.classList.remove("kl-just-enhanced"), 700), C && (C.hidden = !1), E && (E.hidden = !1), it();
       } catch {
       } finally {
         B === T && (R && (R.disabled = !1), A && (A.hidden = !0));
@@ -3962,7 +3959,7 @@ function mf(e, t, r = {}) {
     }), E == null || E.addEventListener("click", () => {
       $();
     }), C == null || C.addEventListener("click", () => {
-      L !== null && (te.value = L, it()), L = null, qe = null, wt = null, C && (C.hidden = !0), E && (E.hidden = !0);
+      L !== null && (ee.value = L, ee.dispatchEvent(new Event("input", { bubbles: !0 })), it()), L = null, qe = null, wt = null, C && (C.hidden = !0), E && (E.hidden = !0);
     });
   }
   if (t.onCheckKnown) {
@@ -3974,11 +3971,11 @@ function mf(e, t, r = {}) {
       var B;
       if (!b) return;
       const F = $.headline ? ht($.headline) : "Already reported";
-      b.innerHTML = `<span class="kl-known-ic">${X("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${F}</span> — status: <span class="kl-known-status">${ht($.statusLabel)}</span>. We're already tracking "${ht($.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, b.hidden = !1, (B = b.querySelector("#klavity-known-dismiss")) == null || B.addEventListener("click", () => {
-        A = te.value.trim(), T();
+      b.innerHTML = `<span class="kl-known-ic">${J("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${F}</span> — status: <span class="kl-known-status">${ht($.statusLabel)}</span>. We're already tracking "${ht($.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, b.hidden = !1, (B = b.querySelector("#klavity-known-dismiss")) == null || B.addEventListener("click", () => {
+        A = ee.value.trim(), T();
       });
     }, z = async () => {
-      const $ = te.value.trim();
+      const $ = ee.value.trim();
       if ($.length < 12 || $ === A) {
         T();
         return;
@@ -3987,7 +3984,7 @@ function mf(e, t, r = {}) {
       try {
         const B = await R($);
         if (F !== E) return;
-        if (te.value.trim() === A) {
+        if (ee.value.trim() === A) {
           T();
           return;
         }
@@ -3995,8 +3992,8 @@ function mf(e, t, r = {}) {
       } catch {
       }
     };
-    te.addEventListener("input", () => {
-      te.value.trim() !== A && (A = ""), C && clearTimeout(C), C = setTimeout(z, 500);
+    ee.addEventListener("input", () => {
+      ee.value.trim() !== A && (A = ""), C && clearTimeout(C), C = setTimeout(z, 500);
     });
   }
   if (n.reportClarity) {
@@ -4006,44 +4003,44 @@ function mf(e, t, r = {}) {
       repro: ne.querySelector("#klavity-clarity-repro")
     }, E = ne.querySelector("#klavity-clarity-tip"), A = ne.querySelector("#klavity-clarity-tip-text"), T = ne.querySelector("#klavity-nudge"), L = t.onClarityTip, z = /* @__PURE__ */ new Map();
     let $ = null, F = 0;
-    const B = (ee, H, ue) => {
-      if (!ee) return;
-      ee.classList.toggle("done", H);
-      const De = ee.querySelector(".kl-clr-mark");
-      De && (De.innerHTML = H ? X("check", { size: 12 }) : "○"), ee.setAttribute("aria-label", (H ? "covered: " : "missing: ") + ue);
+    const B = (te, H, ue) => {
+      if (!te) return;
+      te.classList.toggle("done", H);
+      const De = te.querySelector(".kl-clr-mark");
+      De && (De.innerHTML = H ? J("check", { size: 12 }) : "○"), te.setAttribute("aria-label", (H ? "covered: " : "missing: ") + ue);
     }, q = () => {
       E && (E.hidden = !0);
-    }, j = (ee) => {
-      !E || !A || jh(ee) || (A.innerHTML = ht(ee) + '<span class="kl-clr-aitag">AI</span>', E.hidden = !1);
+    }, j = (te) => {
+      !E || !A || jh(te) || (A.innerHTML = ht(te) + '<span class="kl-clr-aitag">AI</span>', E.hidden = !1);
     }, le = () => {
-      const ee = te.value, H = pc(ee);
-      b && (b.hidden = ee.trim().length === 0, b.classList.remove("l1", "l2", "l3"), b.classList.add(H.level === "great" ? "l3" : H.level === "good" ? "l2" : "l1")), R && (R.textContent = H.label), B(C.problem, H.coverage.problem, "What's broken"), B(C.expected, H.coverage.expected, "What you expected"), B(C.repro, H.coverage.repro, "How to reproduce"), T && !T.hidden && (T.hidden = !0), H.level === "great" && q();
+      const te = ee.value, H = pc(te);
+      b && (b.hidden = te.trim().length === 0, b.classList.remove("l1", "l2", "l3"), b.classList.add(H.level === "great" ? "l3" : H.level === "good" ? "l2" : "l1")), R && (R.textContent = H.label), B(C.problem, H.coverage.problem, "What's broken"), B(C.expected, H.coverage.expected, "What you expected"), B(C.repro, H.coverage.repro, "How to reproduce"), T && !T.hidden && (T.hidden = !0), H.level === "great" && q();
     }, $e = () => {
       !L || !E || ($ && clearTimeout($), $ = setTimeout(async () => {
-        const ee = te.value.trim();
-        if (!qh(ee)) {
+        const te = ee.value.trim();
+        if (!qh(te)) {
           q();
           return;
         }
-        if (z.has(ee)) {
-          j(z.get(ee));
+        if (z.has(te)) {
+          j(z.get(te));
           return;
         }
         const H = ++F;
         try {
-          const ue = await L(ee, { images: c.length });
-          if (H !== F || te.value.trim() !== ee) return;
-          ue && ue.tip && (z.set(ee, ue.tip), j(ue.tip));
+          const ue = await L(te, { images: c.length });
+          if (H !== F || ee.value.trim() !== te) return;
+          ue && ue.tip && (z.set(te, ue.tip), j(ue.tip));
         } catch {
         }
       }, 1e3));
     };
-    te.addEventListener("input", () => {
+    ee.addEventListener("input", () => {
       le(), $e();
     }), le(), (Mo = ne.querySelector("#klavity-nudge-add")) == null || Mo.addEventListener("click", () => {
       T && (T.hidden = !0);
       try {
-        te.focus();
+        ee.focus();
       } catch {
       }
     }), (Ro = ne.querySelector("#klavity-nudge-anyway")) == null || Ro.addEventListener("click", () => {
@@ -4064,7 +4061,7 @@ function mf(e, t, r = {}) {
   const Ye = (b) => {
     ut = b, vo().forEach((C) => {
       C.disabled = b;
-    }), te.disabled = b;
+    }), ee.disabled = b;
     const R = ne.querySelector("#klavity-voice");
     R && (R.disabled = b), ne.querySelectorAll(".kl-htool,.kl-htbtn,.kl-hopt,.kl-hcolor").forEach((C) => {
       C.disabled = b;
@@ -4098,27 +4095,27 @@ function mf(e, t, r = {}) {
       q && (clearTimeout(q), q = null), B && (B.hidden = !0, B.textContent = "", B.classList.remove("kl-vs-info", "kl-vs-err"));
     }, le = (se, we, de) => {
       !B || !we || (q && (clearTimeout(q), q = null), B.classList.remove("kl-vs-info", "kl-vs-err"), B.classList.add(se === "err" ? "kl-vs-err" : "kl-vs-info"), B.textContent = we, B.hidden = !1, de && (q = setTimeout(j, de)));
-    }, $e = "Recording — tap to stop", ee = () => {
+    }, $e = "Recording — tap to stop", te = () => {
       B && B.classList.contains("kl-vs-info") && j();
     }, H = (se) => {
       Ot.classList.toggle("kl-voice-rec", se), Ot.setAttribute("aria-pressed", se ? "true" : "false"), Ot.setAttribute("aria-label", se ? "Stop recording" : "Voice dictation"), Ot.title = se ? $e : "Voice dictation";
     }, ue = (se) => {
       se.onTranscript = (we) => {
-        const de = te.value;
-        te.value = de + (de.length > 0 && !/\s$/.test(de) ? " " : "") + we, it();
+        const de = ee.value;
+        ee.value = de + (de.length > 0 && !/\s$/.test(de) ? " " : "") + we, it();
       }, se.onStatus = (we, de) => {
-        we === "idle" ? ee() : le("info", de);
+        we === "idle" ? te() : le("info", de);
       }, se.onError = (we, de) => {
         de && le("err", de, 4e3);
       }, se.onStop = () => {
-        T = !1, H(!1), F(), ee();
+        T = !1, H(!1), F(), te();
       };
     }, De = () => {
       const se = new qr();
       return ue(se), se;
     }, We = () => {
       if (!T) {
-        H(!1), F(), ee();
+        H(!1), F(), te();
         return;
       }
       qr.isSupported() ? (L = De(), le("info", "Reconnecting dictation…"), L.start()) : (T = !1, H(!1), F(), le("err", "Voice dictation is unavailable right now", 4e3));
@@ -4129,18 +4126,18 @@ function mf(e, t, r = {}) {
     }, Dt = (se) => {
       const we = () => z.length > 0 && !/\s$/.test(z) ? " " : "";
       se.onTranscript = (de) => {
-        z = z + we() + de, te.value = z, it();
+        z = z + we() + de, ee.value = z, it();
       }, se.onInterim = (de) => {
-        te.value = z + we() + de, it();
-      }, se.onStatus = (de, J) => {
-        de === "idle" ? ee() : le("info", J);
-      }, se.onError = (de, J) => {
-        J && le("err", J, 4e3);
+        ee.value = z + we() + de, it();
+      }, se.onStatus = (de, X) => {
+        de === "idle" ? te() : le("info", X);
+      }, se.onError = (de, X) => {
+        X && le("err", X, 4e3);
       }, se.onStop = () => {
-        te.value = z, T = !1, H(!1), F(), ee(), it();
+        ee.value = z, T = !1, H(!1), F(), te(), it();
       }, se.onUnavailable = () => {
-        if (te.value = z, !T) {
-          H(!1), F(), ee();
+        if (ee.value = z, !T) {
+          H(!1), F(), te();
           return;
         }
         const de = Ge();
@@ -4158,15 +4155,15 @@ function mf(e, t, r = {}) {
       return Ge() ?? De();
     };
     L = Mt(), Ot.addEventListener("click", () => {
-      T ? L.stop() : (j(), z = te.value, L = Mt(), T = !0, H(!0), L.start(), $());
+      T ? L.stop() : (j(), z = ee.value, L = Mt(), T = !0, H(!0), L.start(), $());
     }), Vt = () => {
       T && L.stop();
     };
   }
   Gt.addEventListener("click", async () => {
-    var ee;
+    var te;
     if (ut || Gt.disabled) return;
-    const b = te.value.trim(), R = ne.querySelector("#klavity-title"), C = R ? R.value.trim() : "", E = Re === "feature" ? "feature" : "bug", A = p.slice(), T = _e(), L = I.slice(), z = Ie.slice(), $ = Re, F = (Ct == null ? void 0 : Ct.value.trim()) || void 0;
+    const b = ee.value.trim(), R = ne.querySelector("#klavity-title"), C = R ? R.value.trim() : "", E = Re === "feature" ? "feature" : "bug", A = p.slice(), T = _e(), L = I.slice(), z = Ie.slice(), $ = Re, F = (Ct == null ? void 0 : Ct.value.trim()) || void 0;
     Ye(!0), Gt.textContent = "Uploading…";
     const B = l.getElementById("klavity-err");
     B.style.display = "none";
@@ -4199,7 +4196,7 @@ function mf(e, t, r = {}) {
         ...wt ? { suggestedPriority: wt } : {},
         // #638: only when the toggle was rendered — the reporter's console-logs opt-in (DEFAULT false). Read
         // live from the checkbox so the current state travels; the host attaches console logs only when true.
-        ...t.consoleAttachToggle ? { attachConsole: !!((ee = l.getElementById("klavity-conlog-cb")) != null && ee.checked) } : {}
+        ...t.consoleAttachToggle ? { attachConsole: !!((te = l.getElementById("klavity-conlog-cb")) != null && te.checked) } : {}
       };
       if (t.backgroundUpload) {
         t.onSubmit(ue), dr({ immediate: !0, reason: "submitted" });
@@ -4392,7 +4389,7 @@ function mf(e, t, r = {}) {
     }
     hr.hidden = !1;
     const { text: b } = re, R = b ? `: <span class="kl-pick-txt">${ht(b)}</span>` : "";
-    hr.innerHTML = `<span class="kl-pick-ic">${X("mouse-pointer-2", { size: 13 })}</span><span>Element pinned${R}</span><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`, (C = hr.querySelector("#klavity-pick-clear")) == null || C.addEventListener("click", () => {
+    hr.innerHTML = `<span class="kl-pick-ic">${J("mouse-pointer-2", { size: 13 })}</span><span>Element pinned${R}</span><button type="button" class="kl-pick-clear" id="klavity-pick-clear">Clear</button>`, (C = hr.querySelector("#klavity-pick-clear")) == null || C.addEventListener("click", () => {
       re = null, So();
     });
   };
@@ -4422,12 +4419,12 @@ function mf(e, t, r = {}) {
       // Klavity logo, TOP-LEFT of the editor toolbar. It links to the homepage (UTM-stamped so clicks are
       // attributable to WHICH project/site) — the href is assigned in JS (never innerHTML) per this file's
       // XSS guards. See heroLogoHref + the #kl-hero-logo wiring in mountHeroAnnotator.
-      '<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)"><svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="#818cf8"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g><g stroke="#818cf8" stroke-width="1.6" stroke-linecap="round" opacity="0.4"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg><span class="kl-hlogo-word">Klavity</span></a><span class="kl-hsep"></span>' + R("pen", "Pen", X("pencil", { size: 15 }), "p") + R("line", "Line", dt('<line x1="5" y1="19" x2="19" y2="5"/>'), "l") + R("rect", "Rectangle", X("square", { size: 15 }), "r") + R("circle", "Circle", dt('<circle cx="12" cy="12" r="9"/>'), "o") + R("arrow", "Arrow", dt('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), "a") + R("text", "Text", dt('<path d="M5 6h14M12 6v13M9 19h6"/>'), "t") + R("count", "Numbers", dt('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), "c") + `<span class="kl-hsep"></span><label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${i ? " checked" : ""}>${X("eye-off", { size: 13 })}<span>Mask numbers</span></label>` + R("pixelate", "Redact (pixelate)", dt('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), "b") + R("crop", "Crop", dt('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), "k") + '<span class="kl-hsep"></span><span class="kl-hcolors">' + E("#ef4444") + E("#f97316") + E("#16a34a") + E("#3b82f6") + E("#ffffff") + E("#111827") + // Custom colour picker — a rainbow swatch that opens a native <input type="color">. The chosen colour
+      '<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)"><svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><g fill="#818cf8"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g><g stroke="#818cf8" stroke-width="1.6" stroke-linecap="round" opacity="0.4"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg><span class="kl-hlogo-word">Klavity</span></a><span class="kl-hsep"></span>' + R("pen", "Pen", J("pencil", { size: 15 }), "p") + R("line", "Line", dt('<line x1="5" y1="19" x2="19" y2="5"/>'), "l") + R("rect", "Rectangle", J("square", { size: 15 }), "r") + R("circle", "Circle", dt('<circle cx="12" cy="12" r="9"/>'), "o") + R("arrow", "Arrow", dt('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), "a") + R("text", "Text", dt('<path d="M5 6h14M12 6v13M9 19h6"/>'), "t") + R("count", "Numbers", dt('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), "c") + `<span class="kl-hsep"></span><label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${i ? " checked" : ""}>${J("eye-off", { size: 13 })}<span>Mask numbers</span></label>` + R("pixelate", "Redact (pixelate)", dt('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), "b") + R("crop", "Crop", dt('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), "k") + '<span class="kl-hsep"></span><span class="kl-hcolors">' + E("#ef4444") + E("#f97316") + E("#16a34a") + E("#3b82f6") + E("#ffffff") + E("#111827") + // Custom colour picker — a rainbow swatch that opens a native <input type="color">. The chosen colour
       // becomes the active colour and shows as the selected swatch. Input is visually hidden but focusable
       // via the button (kept inside the shadow root so its styling stays scoped).
       `<span class="kl-hcolor-cwrap"><button type="button" class="kl-hcolor kl-hcolor-custom" title="Custom colour" aria-label="Choose a custom colour"></button><input type="color" class="kl-hcolor-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1"></span></span><span class="kl-hsep"></span><span class="kl-hgroup"><span class="kl-hlabel">Stroke</span><button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button><button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button><button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button><button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button></span><span class="kl-htextopts" id="kl-hero-textopts" hidden><span class="kl-hsep"></span><span class="kl-hlabel">Outline</span><button type="button" class="kl-hopt kl-on" data-outline="black" title="Black outline"><span class="kl-osq" style="background:#111"></span></button><button type="button" class="kl-hopt" data-outline="white" title="White outline"><span class="kl-osq" style="background:#fff;border:1px solid #999"></span></button><button type="button" class="kl-hopt" data-outline="none" title="No outline">None</button><span class="kl-hlabel">Size</span><button type="button" class="kl-hopt" data-size="18" title="Small">S</button><button type="button" class="kl-hopt kl-on" data-size="26" title="Medium">M</button><button type="button" class="kl-hopt" data-size="40" title="Large">L</button></span><span class="kl-hsep"></span><button type="button" class="kl-htbtn" id="kl-hero-undo" title="Undo (Cmd+Z / Ctrl+Z)" aria-label="Undo">${dt('<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>', 14)}</button>` + // #449: explicit "Revert crop" — shown only after a crop on this image (visibility driven by the
       // per-image crop stack). Reverts the most recent crop to its pre-crop image + original markup.
-      (b ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${dt('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : "") + `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${X("trash-2", { size: 14 })}</button><span class="kl-hgrow"></span><span class="kl-hgroup kl-hzoom"><button type="button" class="kl-htbtn" id="kl-hero-zoomout" title="Zoom out (Z toggles fit / 2×)" aria-label="Zoom out">${dt('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/>', 14)}</button><button type="button" class="kl-htbtn" id="kl-hero-zoomin" title="Zoom in (Z toggles fit / 2×)" aria-label="Zoom in">${dt('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/>', 14)}</button></span>`
+      (b ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${dt('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : "") + `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${J("trash-2", { size: 14 })}</button><span class="kl-hgrow"></span><span class="kl-hgroup kl-hzoom"><button type="button" class="kl-htbtn" id="kl-hero-zoomout" title="Zoom out (Z toggles fit / 2×)" aria-label="Zoom out">${dt('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/>', 14)}</button><button type="button" class="kl-htbtn" id="kl-hero-zoomin" title="Zoom in (Z toggles fit / 2×)" aria-label="Zoom in">${dt('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/>', 14)}</button></span>`
     );
   }
   function Dr() {
@@ -4435,7 +4432,7 @@ function mf(e, t, r = {}) {
   }
   function di() {
     const b = l.getElementById("klavity-hero-stage"), R = l.getElementById("klavity-hero-tools");
-    R && (R.innerHTML = ""), b && (b.innerHTML = `<div class="kl-hero-empty">${X("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`), Dr();
+    R && (R.innerHTML = ""), b && (b.innerHTML = `<div class="kl-hero-empty">${J("image", { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`), Dr();
   }
   function Co() {
     var b;
@@ -4500,27 +4497,27 @@ function mf(e, t, r = {}) {
     const A = document.createElement("canvas");
     A.width = 1, A.height = 1, A.style.cssText = "display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;touch-action:none;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);";
     const T = new Ko(A, E), L = ($ = K[b]) == null ? void 0 : $.shapes;
-    Array.isArray(L) && L.forEach((ee) => T.shapes.push({ ...ee })), R.appendChild(A);
+    Array.isArray(L) && L.forEach((te) => T.shapes.push({ ...te })), R.appendChild(A);
     const z = new Image();
     z.onload = () => {
       !document.body.contains(o) || ae !== b || c[b] !== E || (A.width = z.naturalWidth || 1, A.height = z.naturalHeight || 1, T.redraw());
     }, z.src = E, T.redraw();
     {
       C.innerHTML = Hu((((F = me[b]) == null ? void 0 : F.length) ?? 0) > 0);
-      const ee = C.querySelector("#kl-hero-logo");
-      ee && (ee.href = tf(n.projectId));
+      const te = C.querySelector("#kl-hero-logo");
+      te && (te.href = tf(n.projectId));
       let H = "pen", ue = "#ef4444", De = 26, We = "black", Ge = null;
       const Dt = C.querySelector("#kl-hero-textopts"), Mt = () => {
         T.shapes.length ? K[b] = { w: A.width, h: A.height, shapes: T.shapes.map((O) => ({ ...O })) } : delete K[b];
       }, se = (O) => {
         H = O, C.querySelectorAll("[data-tool]").forEach((U) => U.classList.toggle("kl-on", U.dataset.tool === O)), Dt && (Dt.hidden = O !== "text");
-      }, we = C.querySelector(".kl-hcolor-custom"), de = C.querySelector(".kl-hcolor-input"), J = (O, U) => {
+      }, we = C.querySelector(".kl-hcolor-custom"), de = C.querySelector(".kl-hcolor-input"), X = (O, U) => {
         ue = O, C.querySelectorAll("[data-color]").forEach((G) => G.classList.toggle("kl-on", G === U)), we && we.classList.toggle("kl-on", we === U);
       };
-      if (C.querySelectorAll("[data-tool]").forEach((O) => O.addEventListener("click", () => se(O.dataset.tool))), C.querySelectorAll("[data-color]").forEach((O) => O.addEventListener("click", () => J(O.dataset.color, O))), we && de) {
+      if (C.querySelectorAll("[data-tool]").forEach((O) => O.addEventListener("click", () => se(O.dataset.tool))), C.querySelectorAll("[data-color]").forEach((O) => O.addEventListener("click", () => X(O.dataset.color, O))), we && de) {
         we.addEventListener("click", () => de.click());
         const O = () => {
-          we.style.background = de.value, J(de.value, we);
+          we.style.background = de.value, X(de.value, we);
         };
         de.addEventListener("input", O), de.addEventListener("change", O);
       }
@@ -4539,7 +4536,7 @@ function mf(e, t, r = {}) {
         Ou(b);
       }), (j = C.querySelector("#kl-hero-clear")) == null || j.addEventListener("click", () => {
         Pe(b), T.clearAll(), Mt();
-      }), se(H), J(ue, C.querySelector("[data-color]"));
+      }), se(H), X(ue, C.querySelector("[data-color]"));
       const Me = (O) => {
         const U = A.getBoundingClientRect(), G = Math.min(U.width / A.width, U.height / A.height) || 1, pe = A.width * G, he = A.height * G, Be = (U.width - pe) / 2, Rt = (U.height - he) / 2;
         return { x: (O.clientX - U.left - Be) / G, y: (O.clientY - U.top - Rt) / G };
@@ -4775,8 +4772,8 @@ function mf(e, t, r = {}) {
       T.style.cssText = "position:fixed;inset:0;background:#000;z-index:2147483647;display:flex;flex-direction:column;pointer-events:all;";
       const L = document.createElement("div");
       L.className = "kl-edtb", L.style.cssText = "display:flex;align-items:center;gap:8px;padding:8px;background:#1e1e2e;flex-wrap:wrap;", L.innerHTML = `
-        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${X("pencil", { size: 14 })} Pen</button>
-        <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${X("square", { size: 14 })} Rect</button>
+        <button data-tool="pen" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${J("pencil", { size: 14 })} Pen</button>
+        <button data-tool="rect" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${J("square", { size: 14 })} Rect</button>
         <button data-tool="arrow" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">↗ Arrow</button>
         <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
         <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
@@ -4797,77 +4794,77 @@ function mf(e, t, r = {}) {
           <button id="klavity-fit-page" class="kl-zb" title="Fit the whole page" style="font-size:11.5px;">Fit&nbsp;page</button>
         </span>
         <button id="klavity-undo" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;margin-left:auto;">↩ Undo</button>
-        <button id="klavity-clear-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${X("trash-2", { size: 14 })} Clear</button>
-        <button id="klavity-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">${X("check", { label: "Save", size: 14 })} Save</button>
-        <button id="klavity-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${X("x", { size: 14 })}</button>
+        <button id="klavity-clear-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${J("trash-2", { size: 14 })} Clear</button>
+        <button id="klavity-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">${J("check", { label: "Save", size: 14 })} Save</button>
+        <button id="klavity-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${J("x", { size: 14 })}</button>
       `, E.style.cssText = "cursor:crosshair;display:block;margin:12px auto;touch-action:none;background:#fff;border-radius:4px;outline:1px solid rgba(255,255,255,.12);outline-offset:-1px;box-shadow:0 12px 44px rgba(0,0,0,.55);";
       const z = document.createElement("div");
       z.style.cssText = "flex:1;min-height:0;overflow:auto;display:block;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);", z.appendChild(E);
       const $ = document.createElement("style");
       $.textContent = ".kl-edtb button{transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease;will-change:transform;}.kl-edtb button:hover{transform:translateY(-1px) scale(1.02);background:#45475a;}.kl-edtb button[data-color]:hover{transform:scale(1.14);background:initial;}.kl-edtb button:active{transform:scale(.96);}.kl-edtb button:focus-visible{outline:2px solid #89b4fa;outline-offset:2px;}.kl-edtb .kl-zb{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 9px;background:#313244;color:#cdd6f4;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;line-height:1;}.kl-edtb .kl-zb:hover{background:#45475a;}@media (prefers-reduced-motion:reduce){.kl-edtb button{transition:none;}.kl-edtb button:hover,.kl-edtb button:active,.kl-edtb button[data-color]:hover{transform:none;}}", T.append($, L, z), l.appendChild(T), Dr();
       let F = 1;
-      const B = (J) => Math.max(0.05, Math.min(5, J || 1));
-      function q(J) {
-        F = B(J), E.style.width = Math.round(E.width * F) + "px", E.style.height = Math.round(E.height * F) + "px";
+      const B = (X) => Math.max(0.05, Math.min(5, X || 1));
+      function q(X) {
+        F = B(X), E.style.width = Math.round(E.width * F) + "px", E.style.height = Math.round(E.height * F) + "px";
         const ie = L.querySelector("#klavity-zoom-pct");
         ie && (ie.textContent = Math.round(F * 100) + "%");
       }
       const j = () => Math.max(1, z.clientWidth - 24) / E.width, le = () => Math.min(Math.max(1, z.clientWidth - 24) / E.width, Math.max(1, z.clientHeight - 24) / E.height), $e = E.height / E.width > Math.max(1, z.clientHeight) / Math.max(1, z.clientWidth);
       q($e ? j() : le()), L.querySelector("#klavity-zoom-in").addEventListener("click", () => q(F * 1.25)), L.querySelector("#klavity-zoom-out").addEventListener("click", () => q(F / 1.25)), L.querySelector("#klavity-fit-width").addEventListener("click", () => q(j())), L.querySelector("#klavity-fit-page").addEventListener("click", () => q(le()));
-      let ee = "rect", H = "#ef4444", ue = !1, De = [], We = 0, Ge = 0;
-      function Dt(J) {
-        ee = J, L.querySelectorAll("[data-tool]").forEach((ie) => {
-          const Me = ie.dataset.tool === J;
+      let te = "rect", H = "#ef4444", ue = !1, De = [], We = 0, Ge = 0;
+      function Dt(X) {
+        te = X, L.querySelectorAll("[data-tool]").forEach((ie) => {
+          const Me = ie.dataset.tool === X;
           ie.style.background = Me ? "#585b70" : "#313244", ie.style.outline = Me ? "2px solid #89b4fa" : "none";
         });
       }
-      L.querySelectorAll("[data-tool]").forEach((J) => J.addEventListener("click", () => Dt(J.dataset.tool))), L.querySelectorAll("[data-color]").forEach((J) => J.addEventListener("click", () => {
-        H = J.dataset.color;
+      L.querySelectorAll("[data-tool]").forEach((X) => X.addEventListener("click", () => Dt(X.dataset.tool))), L.querySelectorAll("[data-color]").forEach((X) => X.addEventListener("click", () => {
+        H = X.dataset.color;
       }));
       {
-        const J = L.querySelector("#klavity-color-custom"), ie = L.querySelector("#klavity-color-input");
-        if (J && ie) {
-          J.addEventListener("click", () => ie.click());
+        const X = L.querySelector("#klavity-color-custom"), ie = L.querySelector("#klavity-color-input");
+        if (X && ie) {
+          X.addEventListener("click", () => ie.click());
           const Me = () => {
-            J.style.background = ie.value, H = ie.value;
+            X.style.background = ie.value, H = ie.value;
           };
           ie.addEventListener("input", Me), ie.addEventListener("change", Me);
         }
       }
       L.querySelector("#klavity-undo").addEventListener("click", () => A.undo()), L.querySelector("#klavity-clear-ann").addEventListener("click", () => A.clearAll());
       const Mt = { p: "pen", r: "rect", c: "circle", a: "arrow", t: "text" };
-      function se(J) {
-        const ie = J.target;
+      function se(X) {
+        const ie = X.target;
         if (ie && (ie.tagName === "INPUT" || ie.tagName === "TEXTAREA" || ie.isContentEditable)) return;
-        if (J.key === "Escape") {
-          J.stopPropagation(), we();
+        if (X.key === "Escape") {
+          X.stopPropagation(), we();
           return;
         }
-        if ((J.metaKey || J.ctrlKey) && J.key.toLowerCase() === "z") {
-          J.preventDefault(), A.undo();
+        if ((X.metaKey || X.ctrlKey) && X.key.toLowerCase() === "z") {
+          X.preventDefault(), A.undo();
           return;
         }
-        if (J.metaKey || J.ctrlKey || J.altKey) return;
-        const Me = J.key.toLowerCase();
-        Mt[Me] ? (J.preventDefault(), Dt(Mt[Me])) : Me === "u" && (J.preventDefault(), A.undo());
+        if (X.metaKey || X.ctrlKey || X.altKey) return;
+        const Me = X.key.toLowerCase();
+        Mt[Me] ? (X.preventDefault(), Dt(Mt[Me])) : Me === "u" && (X.preventDefault(), A.undo());
       }
       function we() {
         document.removeEventListener("keydown", se, { capture: !0 }), Oe(T), Co();
       }
-      document.addEventListener("keydown", se, { capture: !0 }), Dt(ee), L.querySelector("#klavity-save-ann").addEventListener("click", async () => {
-        Pe(b), A.shapes.length ? K[b] = { w: E.width, h: E.height, shapes: A.shapes.map((J) => ({ ...J })) } : delete K[b], we(), xe();
+      document.addEventListener("keydown", se, { capture: !0 }), Dt(te), L.querySelector("#klavity-save-ann").addEventListener("click", async () => {
+        Pe(b), A.shapes.length ? K[b] = { w: E.width, h: E.height, shapes: A.shapes.map((X) => ({ ...X })) } : delete K[b], we(), xe();
       }), L.querySelector("#klavity-cancel-ann").addEventListener("click", () => we());
-      function de(J) {
+      function de(X) {
         const ie = E.getBoundingClientRect();
-        return { x: (J.clientX - ie.left) / ie.width * E.width, y: (J.clientY - ie.top) / ie.height * E.height };
+        return { x: (X.clientX - ie.left) / ie.width * E.width, y: (X.clientY - ie.top) / ie.height * E.height };
       }
-      E.addEventListener("pointerdown", (J) => {
+      E.addEventListener("pointerdown", (X) => {
         ue = !0;
-        const ie = de(J);
-        if ({ x: We, y: Ge } = ie, ee === "pen" && (De = [ie]), ee === "text") {
+        const ie = de(X);
+        if ({ x: We, y: Ge } = ie, te === "pen" && (De = [ie]), te === "text") {
           ue = !1;
           const Me = document.createElement("input");
-          Me.style.cssText = `position:fixed;left:${J.clientX}px;top:${J.clientY}px;background:transparent;border:1px dashed ${H};color:${H};font-size:16px;outline:none;z-index:9999999;min-width:80px;`, document.body.appendChild(Me), requestAnimationFrame(() => {
+          Me.style.cssText = `position:fixed;left:${X.clientX}px;top:${X.clientY}px;background:transparent;border:1px dashed ${H};color:${H};font-size:16px;outline:none;z-index:9999999;min-width:80px;`, document.body.appendChild(Me), requestAnimationFrame(() => {
             document.body.contains(Me) && Me.focus();
           }), Me.addEventListener("blur", () => {
             Me.value.trim() && A.addShape({ type: "text", color: H, x: We, y: Ge, text: Me.value.trim() }), Oe(Me);
@@ -4875,13 +4872,13 @@ function mf(e, t, r = {}) {
             sn.key === "Enter" && Me.blur(), sn.stopPropagation();
           });
         }
-      }), E.addEventListener("pointermove", (J) => {
-        ue && ee === "pen" && De.push(de(J));
-      }), E.addEventListener("pointerup", (J) => {
+      }), E.addEventListener("pointermove", (X) => {
+        ue && te === "pen" && De.push(de(X));
+      }), E.addEventListener("pointerup", (X) => {
         if (!ue) return;
         ue = !1;
-        const ie = de(J);
-        ee === "pen" && De.length > 1 ? A.addShape({ type: "pen", color: H, points: De }) : ee === "rect" ? A.addShape({ type: "rect", color: H, x: Math.min(We, ie.x), y: Math.min(Ge, ie.y), w: Math.abs(ie.x - We), h: Math.abs(ie.y - Ge) }) : ee === "circle" ? A.addShape({ type: "circle", color: H, x: (We + ie.x) / 2, y: (Ge + ie.y) / 2, rx: Math.abs(ie.x - We) / 2, ry: Math.abs(ie.y - Ge) / 2 }) : ee === "arrow" && A.addShape({ type: "arrow", color: H, x1: We, y1: Ge, x2: ie.x, y2: ie.y });
+        const ie = de(X);
+        te === "pen" && De.length > 1 ? A.addShape({ type: "pen", color: H, points: De }) : te === "rect" ? A.addShape({ type: "rect", color: H, x: Math.min(We, ie.x), y: Math.min(Ge, ie.y), w: Math.abs(ie.x - We), h: Math.abs(ie.y - Ge) }) : te === "circle" ? A.addShape({ type: "circle", color: H, x: (We + ie.x) / 2, y: (Ge + ie.y) / 2, rx: Math.abs(ie.x - We) / 2, ry: Math.abs(ie.y - Ge) / 2 }) : te === "arrow" && A.addShape({ type: "arrow", color: H, x1: We, y1: Ge, x2: ie.x, y2: ie.y });
       });
     }, C.src = R;
   }
@@ -4891,7 +4888,7 @@ function mf(e, t, r = {}) {
     const E = document.createElement("div");
     E.className = "klavity-sent";
     const A = document.createElement("div");
-    A.className = "kl-sent-check", A.innerHTML = X("check", { label: "Sent", size: 22 }), E.appendChild(A);
+    A.className = "kl-sent-check", A.innerHTML = J("check", { label: "Sent", size: 22 }), E.appendChild(A);
     const T = document.createElement("h2");
     T.textContent = "Report sent", E.appendChild(T);
     const L = document.createElement("p");
@@ -4962,8 +4959,8 @@ function mf(e, t, r = {}) {
           j.textContent = "Couldn't save your email — please try again.", j.style.display = "block", B.disabled = !1, B.textContent = "Retry", F.focus();
           return;
         }
-        const ee = document.createElement("div");
-        ee.className = "klavity-thanks", ee.textContent = "Thanks — we'll be in touch.", Oe(j), $.replaceWith(ee), E.showCta || z();
+        const te = document.createElement("div");
+        te.className = "klavity-thanks", te.textContent = "Thanks — we'll be in touch.", Oe(j), $.replaceWith(te), E.showCta || z();
       };
       B.addEventListener("click", le), F.addEventListener("keydown", ($e) => {
         $e.key === "Enter" && le();
@@ -14416,7 +14413,7 @@ function my(e, t = [], r = {}) {
   const p = document.createElement("div");
   p.className = "ksl-title", p.textContent = "Sims feedback";
   const s = document.createElement("button");
-  s.type = "button", s.className = "ksl-icon-btn", s.title = "Minimize", s.setAttribute("aria-label", "Minimize Sims feedback panel"), s.innerHTML = X("x", { size: 15 }), s.addEventListener("click", () => Pl()), a.append(p, s), ir = document.createElement("div"), ir.className = "ksl-count", mt = document.createElement("div"), mt.className = "ksl-chips", c.append(a, ir, mt), Tt = document.createElement("div"), Tt.className = "ksl-list", Tt.setAttribute("role", "list"), yt.append(c, Tt), o.appendChild(yt), document.addEventListener("keydown", (h) => {
+  s.type = "button", s.className = "ksl-icon-btn", s.title = "Minimize", s.setAttribute("aria-label", "Minimize Sims feedback panel"), s.innerHTML = J("x", { size: 15 }), s.addEventListener("click", () => Pl()), a.append(p, s), ir = document.createElement("div"), ir.className = "ksl-count", mt = document.createElement("div"), mt.className = "ksl-chips", c.append(a, ir, mt), Tt = document.createElement("div"), Tt.className = "ksl-list", Tt.setAttribute("role", "list"), yt.append(c, Tt), o.appendChild(yt), document.addEventListener("keydown", (h) => {
     h.key === "Escape" && It && Pl();
   }, { signal: Cr.signal }), fu(!0), Nr();
 }
@@ -14503,12 +14500,12 @@ function vy(e) {
   const s = document.createElement("div");
   s.className = "ksl-r-actions";
   const h = document.createElement("button");
-  h.type = "button", h.className = "ksl-r-act track", h.innerHTML = X("bug", { size: 12 }) + " Track as Bug", h.setAttribute("aria-label", `Track feedback from ${t.name} as a bug`), h.addEventListener("click", () => {
+  h.type = "button", h.className = "ksl-r-act track", h.innerHTML = J("bug", { size: 12 }) + " Track as Bug", h.setAttribute("aria-label", `Track feedback from ${t.name} as a bug`), h.addEventListener("click", () => {
     var m;
     (m = Tn.onTriage) == null || m.call(Tn, r, t.name), $l(e.id);
   });
   const d = document.createElement("button");
-  d.type = "button", d.className = "ksl-r-act jump", d.innerHTML = X("map-pin", { size: 12 }) + " Jump to on page", d.setAttribute("aria-label", `Jump to where ${t.name} flagged this`), d.addEventListener("click", () => {
+  d.type = "button", d.className = "ksl-r-act jump", d.innerHTML = J("map-pin", { size: 12 }) + " Jump to on page", d.setAttribute("aria-label", `Jump to where ${t.name} flagged this`), d.addEventListener("click", () => {
     wy(e.id);
   });
   const u = document.createElement("button");
@@ -14828,8 +14825,8 @@ function Py() {
     e.preventDefault();
     const t = document.createElement("div");
     t.style.cssText = `position:fixed;left:${Math.min(e.clientX, window.innerWidth - 200)}px;top:${Math.min(e.clientY, window.innerHeight - 80)}px;background:#1e1e2e;border:1px solid #45475a;border-radius:8px;padding:4px;z-index:2147483647;box-shadow:0 8px 24px rgba(0,0,0,.4);font-family:system-ui;`, t.innerHTML = `
-      <div data-action="bug" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${X("bug")} Report a Bug</div>
-      <div data-action="feature" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${X("lightbulb")} Request a Feature</div>
+      <div data-action="bug" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${J("bug")} Report a Bug</div>
+      <div data-action="feature" style="padding:8px 16px;cursor:pointer;color:#cdd6f4;font-size:13px;border-radius:4px;">${J("lightbulb")} Request a Feature</div>
     `, document.body.appendChild(t);
     const r = (n) => {
       (!n || !t.contains(n.target)) && (Oe(t), document.removeEventListener("click", r));

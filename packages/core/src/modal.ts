@@ -1157,10 +1157,8 @@ export function buildModal(
     .klavity-clarity .kl-clr-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
     .klavity-clarity .kl-clr-chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--kl-border);color:var(--kl-muted);display:inline-flex;align-items:center;gap:4px;background:var(--kl-chip);}
     .klavity-clarity .kl-clr-chip.done{color:var(--kl-ok,#16a34a);border-color:color-mix(in srgb,var(--kl-ok,#16a34a) 40%,transparent);background:color-mix(in srgb,var(--kl-ok,#16a34a) 8%,transparent);}
-    .klavity-clarity .kl-clr-tip{margin-top:9px;font-size:12px;background:color-mix(in srgb,var(--kl-accent) 6%,var(--kl-input-bg));border:1px solid color-mix(in srgb,var(--kl-accent) 25%,transparent);border-radius:9px;padding:8px 10px;display:flex;gap:7px;line-height:1.45;color:var(--kl-fg);}
-    .klavity-clarity .kl-clr-tip[hidden]{display:none;}
-    .klavity-clarity .kl-clr-tip .kl-clr-ai{flex:0 0 auto;color:var(--kl-accent);margin-top:1px;}
-    .klavity-clarity .kl-clr-tip .kl-clr-aitag{font-size:9px;font-weight:800;color:var(--kl-on-accent);background:var(--kl-accent);padding:1px 5px;border-radius:999px;margin-left:4px;vertical-align:middle;}
+    /* #731: the standalone clarity-coach "AI" tip message was removed (owner: not needed now).
+       The coverage pills + score above stay; only the LLM tip row and its CSS are gone. */
     /* Soft pre-submit nudge (mockup panel D). Shown ONLY when the reporter hits Submit on a still-weak
        report. "Submit anyway" always proceeds — never a hard block. */
     .klavity-nudge{margin:0 0 12px;border:1px solid var(--kl-warn,#d97706);background:color-mix(in srgb,var(--kl-warn,#d97706) 8%,var(--kl-input-bg));border-radius:10px;padding:11px;}
@@ -1477,7 +1475,6 @@ export function buildModal(
           <span class="kl-clr-chip" id="klavity-clarity-expected"><span class="kl-clr-mark">○</span> What you expected</span>
           <span class="kl-clr-chip" id="klavity-clarity-repro"><span class="kl-clr-mark">○</span> How to reproduce</span>
         </div>
-        <div class="kl-clr-tip" id="klavity-clarity-tip" hidden><span class="kl-clr-ai">${icon('lightbulb', { size: 14 })}</span><span id="klavity-clarity-tip-text"></span></div>
       </div>` : ''}
       ${callbacks.onCheckKnown ? `<div class="klavity-known" id="klavity-known" role="status" aria-live="polite" hidden></div>` : ''}
       ${callbacks.requireEmail ? '<input type="email" class="klavity-remail" id="klavity-remail" placeholder="your@email.com" autocomplete="email">' : ''}
@@ -2469,6 +2466,10 @@ export function buildModal(
         if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
         if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
         desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place
+        // #730: a programmatic .value write does NOT fire 'input', so the clarity meter/pills/score,
+        // auto-grow and submit-enable (all bound to 'input') would stay stale until the user typed.
+        // Dispatch a synthetic input event so every input-bound handler recomputes immediately.
+        desc.dispatchEvent(new Event('input', { bubbles: true }))
         enhanceSeverity = draft.suggestedSeverity || null
         enhancePriority = draft.suggestedPriority || null
         desc.classList.add('kl-just-enhanced')
@@ -2484,7 +2485,10 @@ export function buildModal(
     enhanceBtn?.addEventListener('click', () => { void runEnhance() })
     regenBtn?.addEventListener('click', () => { void runEnhance() })
     undoBtn?.addEventListener('click', () => {
-      if (originalText !== null) { desc.value = originalText; refreshSubmit() }
+      // #730: restore the pre-enhance text, then fire a synthetic input event so the clarity
+      // meter/pills/score, auto-grow and submit-enable recompute immediately (a .value write alone
+      // never fires 'input'). Without this the pills stayed stuck until the user typed a space.
+      if (originalText !== null) { desc.value = originalText; desc.dispatchEvent(new Event('input', { bubbles: true })); refreshSubmit() }
       originalText = null                 // next enhance re-captures the (restored) text as the new baseline
       enhanceSeverity = null; enhancePriority = null
       if (undoBtn) undoBtn.hidden = true

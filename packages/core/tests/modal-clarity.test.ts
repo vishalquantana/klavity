@@ -67,81 +67,11 @@ describe('report-clarity helper — instant heuristic meter + chips', () => {
   })
 })
 
-describe('report-clarity helper — debounced AI tip (cached, one call per change)', () => {
-  it('calls onClarityTip once ~1s after typing stops and renders the tip; hides once Great', async () => {
-    vi.useFakeTimers()
-    const onClarityTip = vi.fn(async (_t: string) => ({ tip: "'Not working' is hard to act on - what did you expect instead?" }))
-    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
-    type(ctrl, "the coupon code doesn't apply on mobile cart")
-    expect(onClarityTip).not.toHaveBeenCalled()        // debounced, not immediate
-    await vi.advanceTimersByTimeAsync(1100)
-    expect(onClarityTip).toHaveBeenCalledTimes(1)
-    const tip = q(ctrl, '#klavity-clarity-tip') as HTMLElement
-    expect(tip.hidden).toBe(false)
-    expect(tip.textContent).toContain('hard to act on')
-
-    // Re-typing the SAME trimmed text does not fire a second call (cache).
-    type(ctrl, "the coupon code doesn't apply on mobile cart")
-    await vi.advanceTimersByTimeAsync(1100)
-    expect(onClarityTip).toHaveBeenCalledTimes(1)
-
-    // Once the report becomes Great the tip is hidden (helper gets out of the way).
-    type(ctrl, 'On /checkout I enter SAVE10 and tap Apply. Nothing happens. I expected the total to drop 10%.')
-    await vi.advanceTimersByTimeAsync(1100)
-    expect((q(ctrl, '#klavity-clarity-tip') as HTMLElement).hidden).toBe(true)
-    ctrl.close()
-    vi.useRealTimers()
-  })
-
-  // KLAVITYKLA-492: the modal forwards the already-captured screenshot count to onClarityTip so the host can
-  // send it (+ pageUrl/browser/screen) to the server and the coach never asks for context we already have.
-  it('passes the current screenshot count as ctx.images to onClarityTip', async () => {
-    vi.useFakeTimers()
-    const onClarityTip = vi.fn(async (_t: string, _ctx?: { images?: number }) => ({ tip: 'add a repro step' }))
-    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
-    ctrl.addScreenshot('data:image/png;base64,AAAA')
-    ctrl.addScreenshot('data:image/png;base64,BBBB')
-    type(ctrl, "the coupon code doesn't apply on mobile cart")
-    await vi.advanceTimersByTimeAsync(1100)
-    expect(onClarityTip).toHaveBeenCalledTimes(1)
-    expect(onClarityTip.mock.calls[0][1]).toEqual({ images: 2 })
-    ctrl.close()
-    vi.useRealTimers()
-  })
-
-  // KLAVITYKLA-492 (client-side backstop): a coach tip that ASKS for anything Klavity already captures
-  // automatically (screenshot / URL / browser / screen size) is SUPPRESSED — never rendered to the
-  // reporter. Useful tips still render.
-  it('does NOT render a tip that asks for an auto-captured field (screenshot/URL/browser)', async () => {
-    vi.useFakeTimers()
-    const onClarityTip = vi.fn(async (_t: string, _ctx?: { images?: number }) =>
-      ({ tip: 'Could you attach a screenshot and share the URL of the page?' }))
-    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
-    type(ctrl, "the coupon code doesn't apply on mobile cart")
-    await vi.advanceTimersByTimeAsync(1100)
-    // The endpoint WAS called, but its ask-for-context answer never reaches the reporter.
-    expect(onClarityTip).toHaveBeenCalledTimes(1)
-    expect((q(ctrl, '#klavity-clarity-tip') as HTMLElement).hidden).toBe(true)
-    expect((q(ctrl, '#klavity-clarity-tip-text') as HTMLElement).textContent).not.toContain('screenshot')
-    expect((q(ctrl, '#klavity-clarity-tip-text') as HTMLElement).textContent).toBe('')
-    ctrl.close()
-    vi.useRealTimers()
-  })
-
-  it('still renders a genuinely-useful tip (what was expected / repro step)', async () => {
-    vi.useFakeTimers()
-    const onClarityTip = vi.fn(async (_t: string, _ctx?: { images?: number }) =>
-      ({ tip: 'What did you expect to happen instead?' }))
-    const ctrl = buildModal('bug', { ...base, onClarityTip }, { reportClarity: true } as any)
-    type(ctrl, "the coupon code doesn't apply on mobile cart")
-    await vi.advanceTimersByTimeAsync(1100)
-    expect(onClarityTip).toHaveBeenCalledTimes(1)
-    expect((q(ctrl, '#klavity-clarity-tip') as HTMLElement).hidden).toBe(false)
-    expect((q(ctrl, '#klavity-clarity-tip-text') as HTMLElement).textContent).toContain('expect to happen')
-    ctrl.close()
-    vi.useRealTimers()
-  })
-})
+// #731: the standalone clarity-coach "AI" tip message was removed (owner: not needed now). The tip DOM
+// element (#klavity-clarity-tip) and its debounced /api/report/clarity call are gone; only the coverage
+// pills + score remain. The former "debounced AI tip" test suite was deleted with the feature. The
+// coverage-pill / score behaviour it sat beside is still covered by the "instant heuristic meter" suite
+// above and the pill-refresh assertions in modal-enhance (#730).
 
 describe('report-clarity helper — Submit is NEVER blocked by clarity (#497)', () => {
   it('weak text: Submit submits on the FIRST click — no nudge gate, no second click', async () => {

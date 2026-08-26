@@ -248,6 +248,38 @@ describe('AI Enhance flow', () => {
     expect(payload.suggestedPriority).toBe('P2')
     ctrl.close()
   })
+
+  it('#730: clarity pills + score refresh right after Enhance and after Undo — no typing needed', async () => {
+    const onEnhance = vi.fn(async () => DRAFT)
+    const ctrl = buildModal('bug', { ...base, onEnhance }, { reportClarity: true } as any)
+    const desc = q(ctrl, '#klavity-desc') as any
+    const clarity = q(ctrl, '#klavity-clarity') as HTMLElement
+    const status = q(ctrl, '#klavity-clarity-status') as HTMLElement
+    const problem = q(ctrl, '#klavity-clarity-problem') as HTMLElement
+    const expectedC = q(ctrl, '#klavity-clarity-expected') as HTMLElement
+    const repro = q(ctrl, '#klavity-clarity-repro') as HTMLElement
+    // Seed a WEAK note (as if the reporter typed it) — clarity starts at "Needs detail", pills empty.
+    desc.value = 'broken'
+    desc.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(status.textContent).toBe('Needs detail')
+    expect(clarity.classList.contains('l1')).toBe(true)
+    expect(problem.classList.contains('done')).toBe(false)
+    // Enhance → the handler writes desc.value PROGRAMMATICALLY. The fix dispatches a synthetic 'input',
+    // so the meter/pills/score recompute WITHOUT the user typing a space.
+    ;(q(ctrl, '#klavity-enhance') as HTMLButtonElement).click()
+    await new Promise(r => setTimeout(r, 0))
+    expect(status.textContent).toBe('Great')
+    expect(clarity.classList.contains('l3')).toBe(true)
+    expect(problem.classList.contains('done')).toBe(true)
+    expect(expectedC.classList.contains('done')).toBe(true)
+    expect(repro.classList.contains('done')).toBe(true)
+    // Undo → restores the weak text AND the pills/score fall back immediately (no typing).
+    ;(q(ctrl, '#klavity-enhance-undo') as HTMLButtonElement).click()
+    expect(status.textContent).toBe('Needs detail')
+    expect(clarity.classList.contains('l1')).toBe(true)
+    expect(problem.classList.contains('done')).toBe(false)
+    ctrl.close()
+  })
 })
 
 describe('stray amber bar fix', () => {
