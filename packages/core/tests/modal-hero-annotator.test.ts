@@ -64,6 +64,52 @@ describe('hero inline annotator', () => {
     c.close()
   })
 
+  it('#626: keeps the whole palette on one non-wrapping row', async () => {
+    const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    c.addScreenshot(PNG)
+    await new Promise(r => setTimeout(r, 0))
+    const tools = c.shadowRoot.getElementById('klavity-hero-tools')!
+    const group = tools.querySelector('.kl-hcolors') as HTMLElement
+    expect(group).toBeTruthy()
+    // All six presets + the custom picker live inside the single group span.
+    for (const col of ['#ef4444', '#f97316', '#16a34a', '#3b82f6', '#ffffff', '#111827']) {
+      expect(group.querySelector(`[data-color="${col}"]`)).toBeTruthy()
+    }
+    expect(group.querySelector('.kl-hcolor-custom')).toBeTruthy()
+    c.close()
+  })
+
+  it('#627: replaces the zoom hint text with − / + zoom buttons', async () => {
+    const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    c.addScreenshot(PNG)
+    await new Promise(r => setTimeout(r, 0))
+    const tools = c.shadowRoot.getElementById('klavity-hero-tools')!
+    // Old text hint is gone…
+    expect(tools.querySelector('.kl-hhint')).toBeFalsy()
+    expect(tools.textContent || '').not.toContain('scroll to zoom')
+    // …replaced by two labelled icon buttons.
+    const zin = tools.querySelector('#kl-hero-zoomin') as HTMLElement
+    const zout = tools.querySelector('#kl-hero-zoomout') as HTMLElement
+    expect(zin).toBeTruthy()
+    expect(zout).toBeTruthy()
+    expect(zin.getAttribute('aria-label')).toBe('Zoom in')
+    expect(zout.getAttribute('aria-label')).toBe('Zoom out')
+    c.close()
+  })
+
+  it('#627: bare Z toggles zoom between fit (1×) and 2×', async () => {
+    const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
+    c.addScreenshot(PNG)
+    await new Promise(r => setTimeout(r, 0))
+    const canvas = c.shadowRoot.querySelector('#klavity-hero-stage canvas') as HTMLCanvasElement
+    expect(canvas.style.transform).toBe('') // starts at fit
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }))
+    expect(canvas.style.transform).toContain('scale(2)') // → 2×
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' }))
+    expect(canvas.style.transform).toBe('') // → back to fit
+    c.close()
+  })
+
   it('custom picker adopts the chosen colour as the active swatch', async () => {
     const c = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
     c.addScreenshot(PNG)

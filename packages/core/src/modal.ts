@@ -864,7 +864,9 @@ export function buildModal(
     .kl-hcolor-input{position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;}
     .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
     .kl-hgrow{flex:1;}
-    .kl-hhint{color:#7d879f;font-size:11px;font-weight:600;white-space:nowrap;}
+    /* #626: keep the six preset swatches + custom picker on ONE line as a single unit (never split across
+       two rows at the narrow widget width). Gap matches the toolbar's swatch spacing. */
+    .kl-hcolors{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:6px;flex:none;}
     /* Contextual text options (outline colour + size) — only visible while the Text tool is active. */
     .kl-htextopts{display:inline-flex;align-items:center;gap:5px;}
     .kl-htextopts[hidden]{display:none;}
@@ -894,7 +896,8 @@ export function buildModal(
     .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6c63ff);background:color-mix(in srgb,var(--kl-accent,#6c63ff) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
     .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible,.kl-hlogo:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
-    @media (max-width:760px){.kl-hhint{display:none;}}
+    /* #627: zoom −/+ buttons sit tight together as their own group. */
+    .kl-hzoom{gap:2px;}
     @media (prefers-reduced-motion:reduce){.kl-htool,.kl-htbtn,.kl-hcolor,.kl-hlogo{transition:none;}.kl-htool:hover,.kl-htbtn:hover,.kl-hcolor:hover,.kl-hlogo:hover{transform:none;}}
     .klavity-modal::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(to right,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(to bottom,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px;opacity:.36;}
     .klavity-modal>*{position:relative;z-index:1;}
@@ -3266,13 +3269,18 @@ export function buildModal(
       t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
-      c('#ef4444') + c('#f97316') + c('#16a34a') + c('#3b82f6') + c('#ffffff') + c('#111827') +
-      // Custom colour picker — a rainbow swatch that opens a native <input type="color">. The chosen colour
-      // becomes the active colour and shows as the selected swatch. Input is visually hidden but focusable
-      // via the button (kept inside the shadow root so its styling stays scoped).
-      `<span class="kl-hcolor-cwrap">` +
-        `<button type="button" class="kl-hcolor kl-hcolor-custom" title="Custom colour" aria-label="Choose a custom colour"></button>` +
-        `<input type="color" class="kl-hcolor-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1">` +
+      // #626: the six preset swatches + the custom picker live in ONE non-wrapping group so the whole palette
+      // stays on a single line and moves as a unit — never red/orange/green on one row and blue/white/black on
+      // the next (matches the .kl-hgroup pattern used for the Stroke control).
+      `<span class="kl-hcolors">` +
+        c('#ef4444') + c('#f97316') + c('#16a34a') + c('#3b82f6') + c('#ffffff') + c('#111827') +
+        // Custom colour picker — a rainbow swatch that opens a native <input type="color">. The chosen colour
+        // becomes the active colour and shows as the selected swatch. Input is visually hidden but focusable
+        // via the button (kept inside the shadow root so its styling stays scoped).
+        `<span class="kl-hcolor-cwrap">` +
+          `<button type="button" class="kl-hcolor kl-hcolor-custom" title="Custom colour" aria-label="Choose a custom colour"></button>` +
+          `<input type="color" class="kl-hcolor-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1">` +
+        `</span>` +
       `</span>` +
       // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
       // The "Stroke" label + S/M/L/XL sizes live in ONE non-wrapping group so the label always reads with
@@ -3304,9 +3312,13 @@ export function buildModal(
       (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      // Only the genuinely non-duplicated navigation hints — the per-tool letter keys are already shown
-      // under each tool icon (the .kl-hk labels), so we no longer repeat the tool-name legend here.
-      `<span class="kl-hhint">scroll to zoom · shift-drag to pan</span>`
+      // #627: zoom controls — explicit − / + buttons (plus the Z shortcut) replace the old text hint. They
+      // drive the SAME zoom machinery as scroll-wheel zoom (zoomToward + clampZoom + minimap sync), centred
+      // on the stage. Shift-drag still pans; scroll still zooms toward the cursor.
+      `<span class="kl-hgroup kl-hzoom">` +
+        `<button type="button" class="kl-htbtn" id="kl-hero-zoomout" title="Zoom out (Z toggles fit / 2×)" aria-label="Zoom out">${heroGlyph('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/>', 14)}</button>` +
+        `<button type="button" class="kl-htbtn" id="kl-hero-zoomin" title="Zoom in (Z toggles fit / 2×)" aria-label="Zoom in">${heroGlyph('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/>', 14)}</button>` +
+      `</span>`
     )
   }
 
@@ -3593,6 +3605,14 @@ export function buildModal(
         canvas.style.transition = zoomEase // animate the scale change (elastic/bezier, or quick under reduced-motion)
         applyZoomTransform()
       }
+      // #627: the stage's centre point in client coords — the anchor for toolbar +/− zoom and the Z toggle
+      // (so button/keyboard zoom grows/shrinks around the middle of the view, like a natural pinch).
+      const stageCenter = () => { const r = stage.getBoundingClientRect(); return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 } }
+      // #627: reset to fit (1×), mirroring the double-click behaviour, so button/keyboard reset stays in sync.
+      const resetZoom = () => { zoom = 1; canvas.style.transition = zoomEase; applyZoomTransform() }
+      // #627: toolbar zoom buttons — reuse zoomToward (which clamps + re-syncs the minimap) centred on the stage.
+      tools.querySelector('#kl-hero-zoomin')?.addEventListener('click', () => { const { cx, cy } = stageCenter(); zoomToward(cx, cy, 1.25) })
+      tools.querySelector('#kl-hero-zoomout')?.addEventListener('click', () => { const { cx, cy } = stageCenter(); zoomToward(cx, cy, 0.8) })
       // Jump the main view so an image point lands at the stage centre — powers minimap click + drag.
       const jumpToImagePoint = (ix: number, iy: number) => {
         const h = getHome(); if (!h) return
@@ -3767,6 +3787,14 @@ export function buildModal(
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoShot(index); return }
         if (e.metaKey || e.ctrlKey || e.altKey) return
         const k = e.key.toLowerCase()
+        // #627: bare Z toggles zoom — fit (1×) ⇄ 2× centred on the stage. No modifiers here (Cmd/Ctrl+Z is
+        // handled above as undo; the text-input/textarea guard earlier means it never fires while typing).
+        if (k === 'z') {
+          e.preventDefault()
+          if (zoom > 1) resetZoom()
+          else { const { cx, cy } = stageCenter(); zoomToward(cx, cy, 2) }
+          return
+        }
         if (TOOL_KEYS[k]) { e.preventDefault(); selectTool(TOOL_KEYS[k]) }
       }
       document.addEventListener('keydown', heroKeyHandler, { capture: true })
