@@ -8,6 +8,7 @@ import { cropDataUrl } from '@klavity/core/crop'
 import { captureFullPage } from './fullpage'
 import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, DEBOUNCE_MAX_WAIT_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE, CAPTURE_BACKOFF_MS, CAPTURE_MAX_RETRIES } from './feedback-trigger'
 import { widgetPresent } from './coexist'
+import { roamRoast, stopRoam, type RoamMode } from './roam'
 import { makeCaptureAwaiter } from './capture-bridge'
 import { parseMatchResponse } from './ext-match'
 import {
@@ -912,6 +913,7 @@ document.addEventListener('klavity:widget-ready', () => {
   hideEvDock() // widget owns reporting + its own evidence dock — hide ours so they don't stack
   klavIndicatorEl?.remove(); klavIndicatorEl = null
   klavClearBubbles()
+  stopRoam() // tear down any in-flight Sim Roast overlay/characters (#714)
 })
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1054,6 +1056,26 @@ async function klavFetchServerMatch(url: string): Promise<void> {
 // means enabled, so existing installs keep working until the user explicitly opts out.
 async function klavSimsEnabled(): Promise<boolean> {
   try { const r = await chrome.storage.local.get('klavSimsEnabled'); return r.klavSimsEnabled !== false } catch { return true }
+}
+
+// Sim Roast / cinematic render mode for "Analyse with Sims" (ticket #714).
+// Two named modes, persisted in chrome.storage.local under 'klavRoamMode':
+//   'visual'    — walking characters roam the page (DEFAULT — the main event).
+//   'nonvisual' — no animation; the Banana Scorecard is shown immediately.
+// prefers-reduced-motion forces 'nonvisual' at render time (see roam.ts); the
+// stored preference is untouched so a user's explicit choice survives.
+const KLAV_ROAM_KEY = 'klavRoamMode'
+async function klavRoamModeGet(): Promise<RoamMode> {
+  try { const r = await chrome.storage.local.get(KLAV_ROAM_KEY); return r[KLAV_ROAM_KEY] === 'nonvisual' ? 'nonvisual' : 'visual' } catch { return 'visual' }
+}
+async function klavRoamModeSet(m: RoamMode): Promise<void> {
+  try { await chrome.storage.local.set({ [KLAV_ROAM_KEY]: m }) } catch { /* ignore */ }
+}
+// Build the dashboard deep-link for the roast's "Open in Klavity →" CTA. The Sim
+// flow has no persisted run id, so we key on the project (mirrors klavQaOpenInKlavity).
+function klavRoastDashboardUrl(projectId: string): string {
+  const base = (klavConfig?.backendUrl || 'https://klavity.in').replace(/\/+$/, '')
+  return `${base}/dashboard?project=${encodeURIComponent(projectId || '')}`
 }
 
 function klavSend<T = any>(msg: BackgroundMessage): Promise<T> {
@@ -1340,11 +1362,27 @@ async function klavRunAdhoc(projectId: string): Promise<void> {
   })
   const body = resp?.body || {}
   if (resp?.ok && Array.isArray(body.reviews)) {
-    let n = 0
+    const flat: typeof klavLastReactions = []
     for (const rv of body.reviews) for (const r of (rv.reactions || [])) {
-      klavRenderBubble({ simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, priority: r?.suggestedBug?.priority, citation: r.citation, suggestedBug: r?.suggestedBug }); n++
+      flat.push({ simName: rv.simName, initials: rv.initials, accent: rv.accent, observation: r.observation, priority: r?.suggestedBug?.priority, citation: r.citation, suggestedBug: r?.suggestedBug })
     }
-    if (n === 0) klavNotice('Your Sims had nothing to flag on this page.')
+    if (flat.length === 0) { klavNotice('Your Sims had nothing to flag on this page.'); return }
+    // Explicit "Analyse with Sims" → cinematic Sim Roast (ticket #714). VISUAL by
+    // default: characters roam the page and end at the Banana Scorecard. NON-VISUAL
+    // (or prefers-reduced-motion) shows the scorecard immediately with an "N found"
+    // summary. Both render inside the extension's own shadow-DOM host.
+    klavLastReactions = flat
+    const mode = await klavRoamModeGet()
+    klavClearBubbles()
+    roamRoast({
+      reactions: flat,
+      mode,
+      root: klavGetHost(),
+      dashboardUrl: klavRoastDashboardUrl(projectId),
+      esc: klavEsc,
+      safeColor: klavSafeColor,
+      onSetMode: (m) => { void klavRoamModeSet(m) },
+    })
   } else if (body.reason === 'budgetExhausted') {
     klavNotice("Sims hit today’s review budget — try again tomorrow.")
   } else if (body.reason === 'noConfig') {
@@ -1626,6 +1664,7 @@ function klavOnRouteChange() {
   if (location.href === klavLastUrl) return
   klavLastUrl = location.href
   klavClearBubbles()
+  stopRoam() // #714: SPA pushState/replaceState/poll route change must tear down any active Sim Roast (nodes/timers/listeners)
 
   // Reset per-route state.
   klavLastSentSig = null
