@@ -12,9 +12,9 @@ import { db } from "./db"
 
 export type ReplayEvent = unknown
 
-// Default max size of the stored (base64 gzip) payload. ~600 KB of base64 ≈ ~450 KB gzip ≈ typically
-// many minutes of DOM events. Generous for a "last 30-60s" buffer while bounding worst-case rows.
-export const DEFAULT_REPLAY_CAP_BYTES = 600_000
+// Default max size of the stored base64-gzip payload. A 10 MB ceiling accommodates high-mutation
+// pages during the last 30-60s while still bounding worst-case rows.
+export const DEFAULT_REPLAY_CAP_BYTES = 10_000_000
 
 // ── pure helpers (unit-tested) ────────────────────────────────────────────────────────
 /** JSON → gzip → base64. */
