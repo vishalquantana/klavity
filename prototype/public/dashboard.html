@@ -1269,7 +1269,7 @@ body.tkt-page-open .wrap{max-width:none}
 /* #725b: default the screenshot column (col1) WIDE so the report's image is shown as big as possible
    on the reclaimed page width. The user can still drag it larger/smaller (clamp raised to 760, see
    wireT3Resize). The image is width:100% so a wider column = a bigger image. */
-.t3-cols{display:grid;grid-template-columns:var(--t3c1,460px) 8px minmax(320px,1fr) 8px var(--t3c3,270px)}
+.t3-cols{display:grid;grid-template-columns:var(--t3c1,480px) 8px minmax(0,1fr) 8px var(--t3c3,280px)}
 .t3-col{padding:16px 22px;min-width:0;border-top:1px solid var(--line)}
 .t3-gutter{cursor:col-resize;background:transparent;position:relative;border-top:1px solid var(--line);touch-action:none;user-select:none}
 .t3-gutter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
@@ -1298,6 +1298,45 @@ body.tkt-page-open .wrap{max-width:none}
   #ticketSingle.tkt-page .t3-cols{display:block}
   #ticketSingle.tkt-page .t3-gutter{display:none}
 }
+/* #726: Single Ticket Studio Cockpit — a faithful re-style of the #725 3-col PAGE into an edge-to-edge
+   media cockpit. LEFT = Evidence & Media (big browser stage + thumbnail strip + occurrence receipts);
+   MIDDLE = editorial title + description + activity; RIGHT = borderless Properties rail + Copy prompt +
+   dashed Merge. Uses ONLY the app's own tokens (var(--display)/--body/--mono/--ink*/--paper*/--line/
+   --indigo/--amber/--rose) — no external fonts or images. Scoped to the full page so panel/board are
+   untouched. Additive overrides only (never edits the property-rail / footer rules the guards assert). */
+#ticketSingle.tkt-page .tkt3-card{box-shadow:var(--mi-shadow-card)}
+/* the grid runs clean to the card top now that the editorial title lives IN the middle column */
+#ticketSingle.tkt-page .t3-col{border-top:none;padding:22px 24px}
+#ticketSingle.tkt-page .t3-left{background:rgba(120,120,120,.022);display:flex;flex-direction:column;gap:18px}
+#ticketSingle.tkt-page .t3-mid{display:flex;flex-direction:column;gap:20px}
+#ticketSingle.tkt-page .t3-right{background:rgba(120,120,120,.022);display:flex;flex-direction:column;gap:18px}
+#ticketSingle.tkt-page .t3-colh{margin:0}
+/* editorial headline relocated into the middle column */
+#ticketSingle.tkt-page .t3-mid .single-head{padding:0;margin:0;gap:12px;max-width:none}
+#ticketSingle.tkt-page .t3-mid .single-title{font-size:26px;letter-spacing:-.015em;line-height:1.25}
+#ticketSingle.tkt-page .t3-mid .single-meta{font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);margin-top:6px}
+/* bigger, softer media stage */
+#ticketSingle.tkt-page .t3-left .tkt-browser{border-radius:14px;box-shadow:0 6px 20px rgba(25,20,15,.06);margin:0}
+/* evidence thumbnail strip (screenshot + session replay + recordings) */
+.t3-evidence{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}
+.t3-ev-thumb{position:relative;aspect-ratio:16/10;border-radius:8px;overflow:hidden;border:2px solid transparent;padding:0;cursor:pointer;background:var(--ink-3);transition:transform var(--mi-dur) var(--mi-ease),border-color .15s,box-shadow .15s}
+.t3-ev-thumb:hover{transform:var(--mi-lift);border-color:var(--paper-faint)}
+.t3-ev-thumb.active{border-color:var(--indigo);box-shadow:0 0 0 2px rgba(99,102,241,.3)}
+.t3-ev-thumb:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
+.t3-ev-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.t3-ev-fallback{width:100%;height:100%;display:grid;place-items:center;color:var(--paper-faint)}
+.t3-ev-play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;background:rgba(25,20,15,.35)}
+.t3-ev-badge{position:absolute;bottom:2px;right:3px;font-family:var(--mono);font-size:8.5px;font-weight:700;color:#fff;background:rgba(25,20,15,.78);padding:1px 4px;border-radius:3px;letter-spacing:.02em}
+.t3-ev-badge.vid{background:var(--rose)}
+/* occurrence receipts boxed into the left column */
+#ticketSingle.tkt-page .t3-left .tkt-occ-wrap{border:1px solid var(--line);border-radius:12px;background:var(--ink-2);padding:14px;margin:0}
+/* merge relocated into the right column as a dashed "consolidate" container */
+#ticketSingle.tkt-page .t3-right .tkt-merge-wrap{border:1px dashed var(--line);border-radius:10px;background:var(--ink-2);padding:12px;margin:0}
+/* description reads as an editorial editable block */
+#ticketSingle.tkt-page .t3-mid .tkt-desc .tkt-obs{font-size:14.5px;line-height:1.65}
+/* full-width "Copy prompt to AI" in the properties rail */
+#ticketSingle.tkt-page .t3-right .tkt-actions{flex-direction:column;align-items:stretch;gap:9px}
+#ticketSingle.tkt-page .t3-right .tkt-actions .btn{justify-content:center}
 /* annotation overlay on the ticket screenshot (KLAVITYKLA-1) */
 .tkt-shotwrap{position:relative;max-width:100%;border-radius:10px;overflow:hidden;margin-top:2px}
 .tkt-shotwrap.zoomed{overflow:auto;max-height:72vh}
@@ -6341,6 +6380,50 @@ function wireRecordingSeek(root) {
     })
   })
 }
+// #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
+// ticket's REAL evidence — its screenshot + session replay + any recordings — switching what the strip
+// highlights on click (the screenshot stays in the big stage; replay/recording thumbs open the existing
+// replay viewer / play the paired <video> already rendered in the middle column, so every real handler
+// is preserved). With a single screenshot and no replay/recordings there is nothing to switch between,
+// so no strip renders and the stage stays big — graceful degrade for the common one-shot ticket.
+function _evBadge(txt, isVid) { var b = document.createElement("span"); b.className = "t3-ev-badge" + (isVid ? " vid" : ""); b.textContent = txt; return b }
+function _evFallback() { var d = document.createElement("div"); d.className = "t3-ev-fallback"; d.innerHTML = kicon("image", { size: 18 }); return d }
+function _evPlay() { var d = document.createElement("div"); d.className = "t3-ev-play"; d.innerHTML = kicon("play", { size: 18 }); return d }
+function _evSelect(strip, el) { strip.querySelectorAll(".t3-ev-thumb").forEach(function (n) { n.classList.remove("active") }); el.classList.add("active") }
+function buildEvidenceStrip(t, detailEl) {
+  try {
+    var left = detailEl.querySelector(".t3-left"); if (!left) return
+    var recs = Array.isArray(t.recordings) ? t.recordings : []
+    var items = []
+    if (t.screenshotId) items.push({ kind: "shot" })
+    if (t.hasReplay) items.push({ kind: "replay" })
+    recs.forEach(function (r, i) { items.push({ kind: "rec", idx: i }) })
+    if (items.length < 2) return
+    var strip = document.createElement("div"); strip.className = "t3-evidence"
+    items.forEach(function (it) {
+      var el = document.createElement("button"); el.type = "button"
+      el.className = "t3-ev-thumb" + (it.kind === "shot" ? " active" : "")
+      if (it.kind === "shot") {
+        var img = document.createElement("img"); img.alt = "Screenshot"
+        img.src = "/api/screenshots/" + encodeURIComponent(String(t.screenshotId)) + "?thumb=1"
+        el.appendChild(img); el.appendChild(_evBadge("IMG", false))
+        el.setAttribute("title", "Screenshot")
+        el.addEventListener("click", function () { _evSelect(strip, el); var w = detailEl.querySelector(".tkt-browser") || detailEl.querySelector(".tkt-shot"); if (w) { try { w.scrollIntoView({ behavior: "smooth", block: "nearest" }) } catch (e) {} } })
+      } else if (it.kind === "replay") {
+        el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
+        el.setAttribute("title", "Session replay")
+        el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) {} })
+      } else {
+        el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("VIDEO", true))
+        el.setAttribute("title", "Recording")
+        el.addEventListener("click", function () { _evSelect(strip, el); var vids = detailEl.querySelectorAll("video.tkt-rec-video"); var v = vids[it.idx]; if (v) { try { v.scrollIntoView({ behavior: "smooth", block: "center" }); v.play() } catch (e) {} } })
+      }
+      strip.appendChild(el)
+    })
+    var meta = left.querySelector(".t3-shotmeta")
+    if (meta) left.insertBefore(strip, meta); else left.appendChild(strip)
+  } catch (e) {}
+}
 // #707: pointer-drag resize for the dedicated-page 3-col grid. Two gutters set --t3c1 / --t3c3 CSS
 // vars on the grid, clamped (col1 200–760 — #725b raised the max so the screenshot can go bigger;
 // col3 200–520), and PERSISTED to localStorage instantly
@@ -6545,7 +6628,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles',{size:13})} Enhance with AI</button>
         <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" disabled title="File attachments are coming soon">${kicon('paperclip',{size:13})} Attach</button>
       </div>`
-      const _left = `<div class="t3-col t3-left"><div class="t3-colh">Screenshot</div>${t.screenshotId ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
+      const _left = `<div class="t3-col t3-left"><div class="t3-colh">Evidence &amp; Media</div>${t.screenshotId ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
       // #725c: the redundant "ACTIVITY & COMMENTS" parent heading is gone — the Activity/Comments tab
       // row (built by buildTimelineSection) is the section header now. The <hr> still separates the
       // description/recordings block above from the activity/comments section below.
@@ -8117,6 +8200,10 @@ function _renderSingleTicket(id) {
     card.appendChild(head)
     card.appendChild(detailEl)
     single.appendChild(card)
+    // #726 cockpit: the editorial title/meta belongs INSIDE the middle column (above the description),
+    // not as a full-width band over the grid. Relocate the already-built + wired `head` into .t3-mid.
+    const _midCol = detailEl.querySelector(".t3-mid")
+    if (_midCol) _midCol.insertBefore(head, _midCol.firstChild)
   } else {
     single.appendChild(head)
     single.appendChild(detailEl)
@@ -8132,7 +8219,22 @@ function _renderSingleTicket(id) {
   _footer.className = "tkt-detail-footer"
   _footer.appendChild(buildOccurrenceTimeline(t.id))
   _footer.appendChild(buildMergeControl(t.id))
-  single.appendChild(_footer)
+  // #726 cockpit: on the dedicated PAGE the occurrence receipts live in the LEFT (Evidence) column and
+  // the merge control moves into the RIGHT (Properties) column's dashed "consolidate" slot — matching the
+  // approved mockup. The nodes are the SAME wired elements (built above via _footer, which the guard test
+  // asserts), just re-parented. Panel/board keep the grouped bottom footer. Then build the media strip.
+  const _leftCol = detailEl.querySelector(".t3-left")
+  const _rightCol = detailEl.querySelector(".t3-right")
+  if (!panel && _leftCol && _rightCol) {
+    const _occEl = _footer.querySelector(".tkt-occ-wrap")
+    const _mrgEl = _footer.querySelector(".tkt-merge-wrap")
+    if (_occEl) _leftCol.appendChild(_occEl)
+    if (_mrgEl) _rightCol.appendChild(_mrgEl)
+    if (_footer.children.length) single.appendChild(_footer)
+    buildEvidenceStrip(t, detailEl)
+  } else {
+    single.appendChild(_footer)
+  }
   // KLA-171: activity timeline + comment composer (KLAVITYKLA-516 passes `t` so the timeline can
   // synthesize its virtual first "report received" row). #707: on the 3-col page it mounts INTO the
   // middle column; the panel/legacy layout appends it below the detail.

@@ -203,9 +203,10 @@ test("#725a: the ticket page is uncapped width and widens the outer .wrap when o
   expect(HTML).not.toContain("#ticketSingle.tkt-page{max-width:1180px")
 })
 
-// ── #725b: the screenshot column defaults WIDE so the report image is shown as big as possible ───────
-test("#725b: the 3-col grid defaults col1 (screenshot) to a wide 460px", () => {
-  expect(HTML).toContain("grid-template-columns:var(--t3c1,460px) 8px minmax(320px,1fr) 8px var(--t3c3,270px)")
+// ── #726: the cockpit media column defaults to 480px (LEFT ~480 | MIDDLE 1fr | RIGHT ~280 per the
+//    approved Studio Cockpit mockup — supersedes #725b's 460/270 default; still user-resizable). ───────
+test("#726: the 3-col cockpit grid defaults col1 (evidence) 480px and col3 280px", () => {
+  expect(HTML).toContain("grid-template-columns:var(--t3c1,480px) 8px minmax(0,1fr) 8px var(--t3c3,280px)")
   expect(HTML).not.toContain("var(--t3c1,300px)")
 })
 
