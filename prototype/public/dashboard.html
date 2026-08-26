@@ -2958,6 +2958,94 @@ function swrInvalidate(k) {
   try { localStorage.removeItem(swrKey(k)) } catch (e) {}
 }
 
+// ── #652: idle prefetch of the likely-next views ──────────────────────────────
+// Once the CURRENT view has painted, quietly warm the caches the user's likely-next views read
+// (priority: Tickets → Triage) for the CURRENT project, so switching to them paints instantly with
+// NO skeleton. This never touches the view already on screen and never re-fetches a key that is
+// still fresh in SWR. It runs only when the browser is idle (requestIdleCallback, ~600ms setTimeout
+// fallback) and issues its fetches at low priority so it can never delay/race the active view's own
+// fetch. One AbortController governs every in-flight prefetch and is aborted the instant the user
+// navigates (setView) — a pid re-check before every cache write covers the project-switch case too
+// (project switch is a full page reload, which the browser already aborts for us). One pass per idle
+// window: no loops, no polling.
+//
+// Cache targets (must match EXACTLY what each view reads, or the warm-up is a no-op):
+//   • Triage  → SWR key "triage:"+pid; renderTriage()'s swrSection paints that key on entry.
+//   • Tickets → in-memory board cache (_tktBoardTickets / _tktBoardProjId) that renderTicketsView()
+//               reads to skip the "Loading…" placeholder; a parallel "tickets:"+pid SWR marker is
+//               written purely as this prefetch's own freshness gate.
+//   • Sims    → intentionally omitted: state.sims already ships with /api/dashboard (no fetch/skeleton).
+let _prefetchCtl = null          // AbortController for the current in-flight prefetch pass
+let _prefetchScheduled = null    // pending idle/timeout handle, so a new nav can cancel it
+function _cancelPrefetch() {
+  try { if (_prefetchCtl) _prefetchCtl.abort() } catch (e) {}
+  _prefetchCtl = null
+  try {
+    if (_prefetchScheduled != null) {
+      if (typeof cancelIdleCallback === "function") cancelIdleCallback(_prefetchScheduled)
+      else clearTimeout(_prefetchScheduled)
+    }
+  } catch (e) {}
+  _prefetchScheduled = null
+}
+// Warm one target for `pid`. Returns true iff a network prefetch was actually issued (already-warm /
+// already-fresh keys short-circuit to false — that's the "don't re-fetch a fresh key" guarantee).
+async function _prefetchTarget(target, pid, signal) {
+  if (target === "triage") {
+    if (swrRead("triage:" + pid) != null) return false                    // still fresh → skip
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/triage", { signal })
+    if (!r || !r.ok) return true
+    const d = await r.json()
+    if (curProjId() !== pid) return true                                  // project switched mid-flight → drop
+    if (d != null) swrWrite("triage:" + pid, d)                           // renderTriage() paints this on entry
+    return true
+  }
+  if (target === "tickets") {
+    if (_tktBoardProjId === pid && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) return false  // board already warm
+    if (swrRead("tickets:" + pid) != null) return false                   // prefetched recently & still fresh
+    const sp = new URLSearchParams()
+    sp.set("status", "new,open,in_progress,done,dismissed")
+    sp.set("page", "1"); sp.set("limit", "200")
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets?" + sp.toString(), { signal })
+    if (!r || !r.ok) return true
+    const d = await r.json()
+    if (curProjId() !== pid) return true                                  // project switched mid-flight → drop
+    _tktBoardTickets = (d && d.tickets) || []                             // warm the in-memory board cache
+    _tktBoardProjId = pid
+    swrWrite("tickets:" + pid, _tktBoardTickets)                          // freshness marker for the next idle pass
+    return true
+  }
+  return false
+}
+const _PREFETCH_ORDER = ["tickets", "triage"]   // likely-next views, in priority order
+async function _runPrefetchPass() {
+  _prefetchScheduled = null
+  const pid = curProjId()
+  if (!pid) return                                       // no active project yet
+  if (window.__klavMutating > 0) return                  // an action is in flight → stay out of its way
+  const cur = document.body ? document.body.getAttribute("data-view") : null
+  _prefetchCtl = typeof AbortController === "function" ? new AbortController() : null
+  const signal = _prefetchCtl ? _prefetchCtl.signal : undefined
+  for (const target of _PREFETCH_ORDER) {
+    if (target === cur) continue                         // never prefetch the view already showing
+    if (signal && signal.aborted) return                 // navigation cancelled us
+    if (curProjId() !== pid) return                      // project changed → stop
+    if (window.__klavMutating > 0) return                // a mutation started → yield
+    try { await _prefetchTarget(target, pid, signal) } catch (e) { /* abort / network → non-fatal */ }
+  }
+  _prefetchCtl = null
+}
+// Schedule ONE low-priority prefetch pass after the browser goes idle. Cancels any pending pass +
+// aborts any in-flight one first, so rapid navigation collapses to a single pass.
+function schedulePrefetch() {
+  _cancelPrefetch()
+  const run = () => { _prefetchScheduled = null; _runPrefetchPass() }
+  if (typeof requestIdleCallback === "function") _prefetchScheduled = requestIdleCallback(run, { timeout: 2000 })
+  else _prefetchScheduled = setTimeout(run, 600)
+}
+window.klavSchedulePrefetch = schedulePrefetch
+window.klavCancelPrefetch = _cancelPrefetch
+
 // ── Top progress bar (GitHub/YouTube style) ───────────────────────────────────
 // A thin fixed line at the very top that animates while ANY background refresh is
 // in flight and completes + fades when the last one lands. Ref-counted so several
@@ -3133,6 +3221,10 @@ async function load() {
   // ran from refreshAll(), so reloading a ticket URL dropped the user to the overview. openSingleTicket
   // is idempotent (replaceState when already showing), so this is safe.
   maybeOpenDeepLinkTicket()
+  // #652: the overview has painted and the active project is now known — warm the likely-next views
+  // (Tickets → Triage) on idle. The boot-time setView() ran before this resolved (pid was still null),
+  // so this is what actually kicks off the first prefetch pass.
+  if (typeof schedulePrefetch === "function") schedulePrefetch()
 }
 
 function mountReportWidget() {
@@ -10792,6 +10884,9 @@ load()
     });
   }
   function setView(v){
+    // #652: any navigation instantly aborts an in-flight idle prefetch so it can never race — or
+    // delay — the view we're about to load. A fresh pass is scheduled at the end of this function.
+    if(typeof window.klavCancelPrefetch==='function')window.klavCancelPrefetch();
     // "Getting started" is not a real view — it re-opens the deferred-setup checklist on Overview.
     var reopenFinish=false;
     if(v==='getting-started'){ try{localStorage.removeItem('klav-finish-setup-x');}catch(e){} reopenFinish=true; v='overview'; }
@@ -10842,6 +10937,8 @@ load()
     }
     if(v==='guards'){if(typeof window.loadExpectations==='function')window.loadExpectations();}
     if(v==='pagebugs'){if(typeof window.renderPageBugsView==='function')window.renderPageBugsView();}
+    // #652: after the just-selected view kicked off its own render, warm the likely-next views on idle.
+    if(typeof window.klavSchedulePrefetch==='function')window.klavSchedulePrefetch();
   }
   normalizeSidebar();
   var side=document.querySelector('.side');
