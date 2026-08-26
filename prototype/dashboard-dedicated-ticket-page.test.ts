@@ -124,6 +124,76 @@ test("screenshot block wraps a fake-browser chrome, immediate placeholder and Re
   expect(render).toContain("loadTktShot(detailEl, t.annotations)")
 })
 
+// ── #707: 3-column resizable Plane-style layout on the dedicated page ───────────────────────────────
+test("#707: the dedicated page wraps title+detail in a contained paper card (not naked on the bg)", () => {
+  const fn = extractFn(HTML, "function _renderSingleTicket(id)")
+  // page mode wraps head + detail in a .tkt3-card; the panel keeps appending them straight to `single`.
+  expect(fn).toContain('card.className = "tkt3-card"')
+  expect(fn).toContain("card.appendChild(head)")
+  expect(fn).toContain("card.appendChild(detailEl)")
+  // the paper card uses the app's own white surface token (--ink-2), not a pasted palette.
+  expect(HTML).toContain(".tkt3-card{background:var(--ink-2)")
+  // the image-left grid class is now panel-only (the page uses the 3-col grid instead).
+  expect(fn).toContain('if (t.screenshotId && panel) detailEl.classList.add("single-has-shot")')
+})
+
+test("#707: buildTktDetail renders a 3-col grid (screenshot | description+activity | properties) on the full page only", () => {
+  const fn = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
+  // gated to the full page (isSingle & NOT the slide-over panel) so the panel/board-expand are unchanged.
+  expect(fn).toContain('const _pageThreeCol = isSingle && (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")')
+  expect(fn).toContain('<div class="t3-cols">')
+  expect(fn).toContain('class="t3-col t3-left"')
+  expect(fn).toContain('class="t3-col t3-mid"')
+  expect(fn).toContain('class="t3-col t3-right"')
+  expect(fn).toContain('class="t3-gutter" data-g="1"')
+  expect(fn).toContain('class="t3-gutter" data-g="2"')
+  // the activity/comments mount point in the middle column
+  expect(fn).toContain('class="t3-activity-mount"')
+  // Enhance + Attach tools under the description
+  expect(fn).toContain("t3-enh-btn")
+  expect(fn).toContain("t3-attach-btn")
+  expect(fn).toContain("if (_pageThreeCol) wireT3Resize(detailEl)")
+})
+
+test("#707: the two drag gutters resize + PERSIST both column widths to localStorage (clamped)", () => {
+  const fn = extractFn(HTML, "function wireT3Resize(detailEl)")
+  expect(fn).toContain('"klav:tkt3col:c1"')
+  expect(fn).toContain('"klav:tkt3col:c3"')
+  expect(fn).toContain("--t3c1")
+  expect(fn).toContain("--t3c3")
+  expect(fn).toContain("clamp(startC1 + dx, 200, 560)")
+  expect(fn).toContain("clamp(startC3 - dx, 200, 520)")
+  expect(fn).toContain("pointerdown")
+  expect(fn).toContain("pointermove")
+  // restores persisted widths on open
+  expect(fn).toContain("localStorage.getItem")
+  // below ~900px the grid collapses to a stack and hides the gutters
+  expect(HTML).toContain("#ticketSingle.tkt-page .t3-cols{display:block}")
+  expect(HTML).toContain("#ticketSingle.tkt-page .t3-gutter{display:none}")
+})
+
+test("#707: comment composer supports @mentions (dropdown from projectMemberEmails) + ⌘↵ send", () => {
+  const fn = extractFn(HTML, "function buildTimelineSection(ticketId, report)")
+  expect(fn).toContain('placeholder="Leave a comment… @ to tag"')
+  expect(fn).toContain('class="t3-mention hide"')
+  expect(fn).toContain("projectMemberEmails()")
+  expect(fn).toContain("function pickMention(i)")
+  expect(fn).toContain('const insert = "@" + m.handle + " "')
+  // ⌘↵ / Ctrl↵ submits the comment
+  expect(fn).toContain("ev.metaKey || ev.ctrlKey")
+  // posted mentions render highlighted
+  expect(HTML).toContain("function renderCommentBody(text)")
+  expect(HTML).toContain('<span class="t3-m">@')
+})
+
+test("#707: Enhance-with-AI wires the existing /api/report/enhance endpoint with optimistic apply", () => {
+  const fn = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
+  expect(fn).toContain('fetch("/api/report/enhance"')
+  // optimistic save reuses the same guarded PATCH { observation } path + revert-on-fail
+  expect(fn).toContain("window.__klavMutating++")
+  expect(fn).toContain("Enhanced draft couldn’t be saved — reverted.")
+})
+
 // ── §10: accessibility ────────────────────────────────────────────────────────────────────────────
 test("icon/action buttons carry aria-labels; panel is role=dialog with focus management", () => {
   const fn = extractFn(HTML, "function _renderSingleTicket(id)")

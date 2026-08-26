@@ -83,7 +83,9 @@ test("KLA-516: timeline synthesizes a virtual 'report_received' first row", () =
   expect(HTML).toContain("report_received:")
   expect(HTML).toContain("function synthFirstItem()")
   expect(HTML).toContain("function buildTimelineSection(ticketId, report)")
-  expect(HTML).toContain("single.appendChild(buildTimelineSection(t.id, t))")
+  // #707: on the 3-col page the activity timeline mounts INTO the middle column; the panel/legacy
+  // layout falls back to appending it below the detail (|| single).
+  expect(HTML).toContain("_tlMount.appendChild(buildTimelineSection(t.id, t))")
 })
 
 // ── KLAVITYKLA-197 · icon copy-to-AI confirmation ──────────────────────────────

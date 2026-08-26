@@ -1188,6 +1188,45 @@ body.tkt-page-open #settingsDrawer{display:none!important}
   #ticketSingle .tkt-detail.single-has-shot{grid-template-columns:minmax(0,1fr)}
   #ticketSingle .tkt-detail.single-has-shot .tkt-right-body{grid-column:1}
 }
+/* #707: dedicated ticket PAGE — 3-column resizable Plane-style layout inside a contained paper card.
+   Scope is ONLY #ticketSingle.tkt-page (the full page). The board-expand (.kb-item .tkt-detail) and
+   the slide-over panel keep their existing layouts. Uses the app's own tokens — the "paper" card is
+   --ink-2 (white in light / near-black surface in dark), so the ticket no longer sits naked on the bg. */
+.tkt3-card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-border);overflow:hidden;margin-bottom:16px}
+.tkt3-card .single-head{max-width:none;margin:0;padding:18px 22px 6px;gap:12px}
+#ticketSingle.tkt-page .tkt3-card .tkt-detail{border:none;border-radius:0;max-width:none;padding:0;background:transparent}
+/* the resizable grid: col1 | 8px gutter | middle | 8px gutter | col3 (widths persisted to localStorage) */
+.t3-cols{display:grid;grid-template-columns:var(--t3c1,300px) 8px minmax(320px,1fr) 8px var(--t3c3,270px)}
+.t3-col{padding:16px 22px;min-width:0;border-top:1px solid var(--line)}
+.t3-gutter{cursor:col-resize;background:transparent;position:relative;border-top:1px solid var(--line);touch-action:none;user-select:none}
+.t3-gutter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
+.t3-gutter:hover::after,.t3-gutter.drag::after{background:var(--indigo);width:2px}
+.t3-colh{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--paper-faint);margin:0 0 12px}
+.t3-noshot{font-size:12.5px;color:var(--paper-faint);border:1px dashed var(--line);border-radius:11px;padding:22px 12px;text-align:center}
+.t3-shotmeta{font-size:11.5px;color:var(--paper-faint);margin-top:9px;word-break:break-word}
+.t3-shotmeta a{color:var(--indigo);text-decoration:none}.t3-shotmeta a:hover{text-decoration:underline}
+.t3-desctools{display:flex;gap:9px;flex-wrap:wrap;margin:14px 0 0}
+.t3-hr{border:0;border-top:1px solid var(--line);margin:20px 0 14px}
+/* borderless Plane-style right column: the assignee control loses its heavy box (owner: "ugly/too
+   visible") and reads as a clean hover row like Status/Priority. */
+.t3-right .tkt-assignee-ctrl{background:transparent;border:1px solid transparent;padding:3px 6px;margin-left:-6px}
+.t3-right .tkt-assignee-ctrl:hover{background:var(--ink-3);border-color:transparent;transform:none}
+.t3-right .tkt-props{gap:12px 12px}
+/* comment @mention: teammate dropdown + highlighted mention token in posted comments */
+#ticketSingle .tkt-comment-form{position:relative}
+.t3-mention{position:absolute;left:6px;bottom:100%;margin-bottom:6px;width:240px;max-height:230px;overflow:auto;background:var(--ink-2);border:1px solid var(--line);border-radius:11px;box-shadow:var(--mi-shadow-card);z-index:30}
+.t3-mention.hide{display:none}
+.t3-mention-h{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint);padding:8px 12px;border-bottom:1px solid var(--line)}
+.t3-mrow{display:flex;align-items:center;gap:9px;padding:8px 12px;cursor:pointer;font-size:13px;color:var(--paper)}
+.t3-mrow.on,.t3-mrow:hover{background:rgba(99,102,241,.12)}
+.t3-mav{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;background:var(--indigo)}
+.t3-mem{color:var(--paper-faint);font-size:11px;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:112px}
+.tkt-tl-text .t3-m{color:var(--indigo);font-weight:600;background:rgba(99,102,241,.12);border-radius:4px;padding:0 3px}
+/* below ~900px: collapse to a single-column stack, hide the drag gutters */
+@media(max-width:900px){
+  #ticketSingle.tkt-page .t3-cols{display:block}
+  #ticketSingle.tkt-page .t3-gutter{display:none}
+}
 /* annotation overlay on the ticket screenshot (KLAVITYKLA-1) */
 .tkt-shotwrap{position:relative;max-width:100%;border-radius:10px;overflow:hidden;margin-top:2px}
 .tkt-shotwrap.zoomed{overflow:auto;max-height:72vh}
@@ -6127,6 +6166,38 @@ function wireRecordingSeek(root) {
     })
   })
 }
+// #707: pointer-drag resize for the dedicated-page 3-col grid. Two gutters set --t3c1 / --t3c3 CSS
+// vars on the grid, clamped (col1 200–560, col3 200–520), and PERSISTED to localStorage instantly
+// (optimistic) so the widths are restored on the next open. Mirrors the approved mockup's script.
+function wireT3Resize(detailEl) {
+  const cols = detailEl.querySelector(".t3-cols"); if (!cols) return
+  const KEY1 = "klav:tkt3col:c1", KEY3 = "klav:tkt3col:c3"
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+  // Restore persisted widths (instant, optimistic).
+  try {
+    const s1 = parseFloat(localStorage.getItem(KEY1)); if (!isNaN(s1)) cols.style.setProperty("--t3c1", clamp(s1, 200, 560) + "px")
+    const s3 = parseFloat(localStorage.getItem(KEY3)); if (!isNaN(s3)) cols.style.setProperty("--t3c3", clamp(s3, 200, 520) + "px")
+  } catch (e) {}
+  let drag = null, startX = 0, startC1 = 0, startC3 = 0
+  cols.querySelectorAll(".t3-gutter").forEach(g => {
+    g.addEventListener("pointerdown", e => {
+      drag = g.dataset.g; startX = e.clientX
+      const left = cols.querySelector(".t3-left"), right = cols.querySelector(".t3-right")
+      startC1 = left ? left.getBoundingClientRect().width : 300
+      startC3 = right ? right.getBoundingClientRect().width : 270
+      g.classList.add("drag"); try { g.setPointerCapture(e.pointerId) } catch (_) {}
+      e.preventDefault()
+    })
+    g.addEventListener("pointermove", e => {
+      if (drag !== g.dataset.g) return
+      const dx = e.clientX - startX
+      if (g.dataset.g === "1") { const v = clamp(startC1 + dx, 200, 560); cols.style.setProperty("--t3c1", v + "px"); try { localStorage.setItem(KEY1, String(Math.round(v))) } catch (_) {} }
+      else { const v = clamp(startC3 - dx, 200, 520); cols.style.setProperty("--t3c3", v + "px"); try { localStorage.setItem(KEY3, String(Math.round(v))) } catch (_) {} }
+    })
+    const end = e => { if (drag === g.dataset.g) { drag = null; g.classList.remove("drag"); try { g.releasePointerCapture(e.pointerId) } catch (_) {} } }
+    g.addEventListener("pointerup", end); g.addEventListener("pointercancel", end)
+  })
+}
 function buildTktDetail(t, admin, onChange, isSingle = false) {
   const ticketId = t.id
   const exports = t.exports || []
@@ -6283,10 +6354,32 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       <div class="tkt-msg hide tkt-msg-el"></div>`
     // KLAVITYKLA-438 "Record me" (Phase 2): recording player(s) + transcript panel, between context + body.
     const _recHtml = buildRecordingsHtml(t)
-    detailEl.innerHTML = _isTwoCol
-      ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_bodyHtml}</div>`
-      : `${_contextHtml}${_recHtml}${_bodyHtml}`
+    // #707: the dedicated FULL PAGE (isSingle & not the slide-over panel) renders a 3-column Plane-style
+    // grid — screenshot | description+activity | properties. The panel and the inline board-expand keep
+    // their existing single/two-col layouts. All the same inner fragments (_shotHtml, _contextHtml,
+    // _bodyHtml, _recHtml) are REUSED, just re-laid-out, so every save/wiring handler below still binds.
+    const _pageThreeCol = isSingle && (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")
+    if (_pageThreeCol) {
+      const _mHost = t.urlHost || "", _mPath = t.urlPath || ""
+      const _hostHref = _mHost ? (/^https?:\/\//.test(_mHost) ? _mHost : "https://" + _mHost) : ""
+      const _shotMetaHtml = (t.screenshotId && (_mHost || _mPath || t.createdAt))
+        ? `<div class="t3-shotmeta">${_mPath ? esc(_mPath) : ""}${(_mPath && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}${((_mPath || t.createdAt) && _mHost) ? " · " : ""}${_mHost ? `<a href="${esc(_hostHref)}" target="_blank" rel="noopener">${esc(_mHost)}</a>` : ""}</div>`
+        : ""
+      const _descTools = `<div class="t3-desctools">
+        <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles',{size:13})} Enhance with AI</button>
+        <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" disabled title="File attachments are coming soon">${kicon('paperclip',{size:13})} Attach</button>
+      </div>`
+      const _left = `<div class="t3-col t3-left"><div class="t3-colh">Screenshot</div>${t.screenshotId ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
+      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}<hr class="t3-hr"><div class="t3-colh">Activity &amp; comments</div><div class="t3-activity-mount"></div></div>`
+      const _right = `<div class="t3-col t3-right"><div class="t3-colh">Properties</div>${_bodyHtml}</div>`
+      detailEl.innerHTML = `<div class="t3-cols">${_left}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_mid}<div class="t3-gutter" data-g="2" aria-hidden="true"></div>${_right}</div>`
+    } else {
+      detailEl.innerHTML = _isTwoCol
+        ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_bodyHtml}</div>`
+        : `${_contextHtml}${_recHtml}${_bodyHtml}`
+    }
     wireRecordingSeek(detailEl)
+    if (_pageThreeCol) wireT3Resize(detailEl)
 
     // #653: dirty-only Save — the Save button/group stays hidden until the assignee OR notes actually
     // change from their saved values, then reveals; it hides again after a successful save.
@@ -6866,6 +6959,70 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         .catch(() => null)
     }
 
+    // #707: "Enhance with AI" (dedicated-page middle column) — POST the current description to the
+    // existing KLA-586 /api/report/enhance smart-compose endpoint, compose the returned structured draft
+    // into a clean description, and apply it OPTIMISTICALLY (same PATCH { observation } path as the inline
+    // editor; revert on failure). Degrades gracefully when the project hasn't enabled AI enhance.
+    const enhBtn = detailEl.querySelector(".t3-enh-btn")
+    if (enhBtn) {
+      enhBtn.addEventListener("click", async ev => {
+        ev.stopPropagation()
+        const pid = (typeof projParam === "function" ? projParam() : "") || (state.active && state.active.id) || ""
+        if (!pid) { showTktMsg(detailEl, "No active project.", true); return }
+        const cur = t.observation != null ? String(t.observation) : ""
+        const _orig = enhBtn.innerHTML
+        enhBtn.disabled = true; enhBtn.innerHTML = kicon('sparkles', { size: 13 }) + " Enhancing…"
+        let d = {}
+        try {
+          const r = await fetch("/api/report/enhance", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ project: pid, text: cur })
+          }).catch(() => null)
+          d = r ? await r.json().catch(() => ({})) : {}
+        } finally { enhBtn.disabled = false; enhBtn.innerHTML = _orig }
+        const dr = d && d.draft
+        if (!dr) {
+          showTktMsg(detailEl, d && d.error === "disabled" ? "AI enhance isn’t enabled for this project." : "Couldn’t enhance right now — try again.", true)
+          return
+        }
+        const steps = Array.isArray(dr.stepsToReproduce)
+          ? dr.stepsToReproduce.map((s, i) => (i + 1) + ". " + String(s)).join("\n")
+          : String(dr.stepsToReproduce || "")
+        const parts = []
+        if (dr.summary) parts.push(String(dr.summary))
+        if (steps) parts.push("Steps to reproduce:\n" + steps)
+        if (dr.expectedResult) parts.push("Expected: " + String(dr.expectedResult))
+        if (dr.actualResult) parts.push("Actual: " + String(dr.actualResult))
+        const next = parts.join("\n\n").trim()
+        if (!next || next === cur) { showTktMsg(detailEl, "No changes suggested.", false); return }
+        // OPTIMISTIC apply — repaint read view + local state, then PATCH in the background.
+        t.observation = next
+        const tkt = (state.tickets || []).find(x => x.id === ticketId)
+        if (tkt) tkt.observation = next
+        recordLocalEdit(ticketId, { observation: next })
+        const obsEl2 = detailEl.querySelector(".tkt-obs"); if (obsEl2) obsEl2.textContent = next
+        if (onChange) onChange("observation", next)
+        window.__klavMutating++
+        let d2 = {}
+        try {
+          const r2 = await fetch("/api/feedback/" + encodeURIComponent(ticketId), {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ observation: next })
+          }).catch(() => null)
+          d2 = r2 ? await r2.json().catch(() => ({})) : {}
+        } finally { window.__klavMutating-- }
+        if (!d2.ok) {
+          t.observation = cur; if (tkt) tkt.observation = cur
+          recordLocalEdit(ticketId, { observation: cur })
+          if (obsEl2) obsEl2.textContent = cur
+          if (onChange) onChange("observation", cur)
+          showTktMsg(detailEl, "Enhanced draft couldn’t be saved — reverted.", true)
+        } else {
+          showTktMsg(detailEl, "Description enhanced with AI.", false)
+        }
+      })
+    }
+
     // Prevent detail interactions from collapsing the parent row/card
     detailEl.addEventListener("click", ev => ev.stopPropagation())
 
@@ -6885,6 +7042,11 @@ const TL_ACTIVITY_LABELS = {
   report_received: (m) => `Report received${m && m.urlPath ? " · " + m.urlPath : ""}`,
 }
 
+// #707: escape a comment body, then highlight @handle mentions (see the composer's @-mention picker).
+// Escaping FIRST keeps this XSS-safe; the highlight only wraps the already-escaped @token in a span.
+function renderCommentBody(text) {
+  return esc(String(text == null ? "" : text)).replace(/(^|\s)@([\w.\-]+)/g, (_m, pre, h) => pre + '<span class="t3-m">@' + h + "</span>")
+}
 function renderTimelineItem(item) {
   const el = document.createElement("div")
   el.className = "tkt-tl-item"
@@ -6896,7 +7058,7 @@ function renderTimelineItem(item) {
     dotClass = "tkt-tl-dot-comment"; icon = TL_ICONS.comment
     const author = item.author ? esc(item.author.split("@")[0]) : "Anonymous"
     bodyHtml = `<div class="tkt-tl-author">${author}</div>
-      <div class="tkt-tl-text">${esc(item.body)}</div>
+      <div class="tkt-tl-text">${renderCommentBody(item.body)}</div>
       <div class="tkt-tl-meta">${esc(ago(item.createdAt))}</div>`
   } else if (item.kind === "ticket_export") {
     dotClass = "tkt-tl-dot-export"; icon = TL_ICONS.export
@@ -6924,9 +7086,11 @@ function buildTimelineSection(ticketId, report) {
   wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
     <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
     <div class="tkt-comment-form">
-      <textarea class="tkt-comment-ta" placeholder="Leave a comment…" rows="2"></textarea>
+      <div class="t3-mention hide" role="listbox" aria-label="Tag a teammate"></div>
+      <textarea class="tkt-comment-ta" placeholder="Leave a comment… @ to tag" rows="2"></textarea>
       <div class="tkt-comment-row">
         <button class="btn btn-indigo btn-sm tkt-comment-submit">Comment</button>
+        <span class="tkt-comment-hint muted" style="font-size:11px">@ to mention · ⌘↵ to send</span>
         <span class="tkt-comment-msg" style="color:var(--paper-faint)"></span>
       </div>
     </div>`
@@ -6935,6 +7099,62 @@ function buildTimelineSection(ticketId, report) {
   const ta = wrap.querySelector(".tkt-comment-ta")
   const submitBtn = wrap.querySelector(".tkt-comment-submit")
   const msgEl = wrap.querySelector(".tkt-comment-msg")
+
+  // #707: @-mention teammates. Typing "@" opens a dropdown of workspace members (reusing the same
+  // projectMemberEmails() list the assignee picker uses); Arrow/Enter/Tab or click inserts "@handle".
+  // Posted mentions render highlighted (renderCommentBody). No backend contract change — the mentioned
+  // handles simply ride inside the comment body text. ⌘↵ / Ctrl↵ sends the comment.
+  const menu = wrap.querySelector(".t3-mention")
+  let mentionOpen = false, mentionItems = [], mentionIdx = 0, mentionStart = -1
+  const members = (typeof projectMemberEmails === "function" ? projectMemberEmails() : [])
+    .map(email => ({ email: String(email), handle: String(email).split("@")[0] }))
+  function closeMention() { mentionOpen = false; mentionItems = []; mentionIdx = 0; mentionStart = -1; if (menu) menu.classList.add("hide") }
+  function renderMention() {
+    if (!menu) return
+    if (!mentionItems.length) { closeMention(); return }
+    menu.innerHTML = '<div class="t3-mention-h">Tag a teammate</div>' + mentionItems.map((m, i) =>
+      `<div class="t3-mrow${i === mentionIdx ? " on" : ""}" role="option" data-i="${i}"><span class="t3-mav">${esc((m.handle[0] || "?").toUpperCase())}</span><span>${esc(m.handle)}</span><span class="t3-mem">${esc(m.email)}</span></div>`
+    ).join("")
+    menu.classList.remove("hide"); mentionOpen = true
+    menu.querySelectorAll(".t3-mrow").forEach(row =>
+      row.addEventListener("mousedown", ev => { ev.preventDefault(); pickMention(Number(row.getAttribute("data-i"))) }))
+  }
+  function pickMention(i) {
+    const m = mentionItems[i]; if (!m || mentionStart < 0) return
+    const val = ta.value, caret = ta.selectionStart
+    const before = val.slice(0, mentionStart), after = val.slice(caret)
+    const insert = "@" + m.handle + " "
+    ta.value = before + insert + after
+    const pos = (before + insert).length
+    try { ta.focus(); ta.setSelectionRange(pos, pos) } catch (e) {}
+    closeMention()
+  }
+  function syncMention() {
+    if (!menu) return
+    const caret = ta.selectionStart
+    const m = ta.value.slice(0, caret).match(/(^|\s)@([\w.\-]*)$/)
+    if (!m) { closeMention(); return }
+    mentionStart = caret - m[2].length - 1   // index of the '@'
+    const q = m[2].toLowerCase()
+    mentionItems = members.filter(mm => !q || mm.handle.toLowerCase().includes(q) || mm.email.toLowerCase().includes(q)).slice(0, 6)
+    mentionIdx = 0
+    renderMention()
+  }
+  if (ta) {
+    ta.addEventListener("input", syncMention)
+    ta.addEventListener("click", syncMention)
+    ta.addEventListener("keydown", ev => {
+      if (mentionOpen && mentionItems.length) {
+        if (ev.key === "ArrowDown") { ev.preventDefault(); mentionIdx = (mentionIdx + 1) % mentionItems.length; renderMention() }
+        else if (ev.key === "ArrowUp") { ev.preventDefault(); mentionIdx = (mentionIdx - 1 + mentionItems.length) % mentionItems.length; renderMention() }
+        else if (ev.key === "Enter" || ev.key === "Tab") { ev.preventDefault(); pickMention(mentionIdx) }
+        else if (ev.key === "Escape") { ev.preventDefault(); closeMention() }
+        return
+      }
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); if (submitBtn) submitBtn.click() }
+    })
+    ta.addEventListener("blur", () => setTimeout(closeMention, 120))
+  }
 
   // KLAVITYKLA-516: the report/Snap ingest never writes a "ticket_created"-style activity row, so
   // the timeline showed "No activity yet" (and the count read 0) for fresh reports. Synthesize a
@@ -7497,11 +7717,21 @@ function _renderSingleTicket(id) {
       </div>`
   }
   renderHead()
-  single.appendChild(head)
   const detailEl = buildTktDetail(t, admin, () => { renderHead(); renderTicketsKanban() }, true)
   detailEl.classList.add("show")
-  if (t.screenshotId) detailEl.classList.add("single-has-shot")   // enables the image-left grid
-  single.appendChild(detailEl)
+  // #707: the dedicated PAGE renders the 3-col grid INSIDE detailEl and wraps the title + grid in a
+  // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
+  // PANEL keeps the compact image-left grid (single-has-shot). Board-expand is unaffected (isSingle=false).
+  if (t.screenshotId && panel) detailEl.classList.add("single-has-shot")   // panel: image-left grid
+  if (!panel) {
+    const card = document.createElement("div"); card.className = "tkt3-card"
+    card.appendChild(head)
+    card.appendChild(detailEl)
+    single.appendChild(card)
+  } else {
+    single.appendChild(head)
+    single.appendChild(detailEl)
+  }
   // §6.7: on the dedicated page, dress the screenshot in fake-browser chrome + an immediate placeholder
   // BEFORE loadTktShot streams the real image into the same box (panel keeps the compact shot).
   if (!panel && t.screenshotId) wrapScreenshotChrome(detailEl, t)
@@ -7510,9 +7740,11 @@ function _renderSingleTicket(id) {
   single.appendChild(buildOccurrenceTimeline(t.id))
   // KLAVITYKLA-515: always-available merge control (works even for single-occurrence tickets).
   single.appendChild(buildMergeControl(t.id))
-  // KLA-171: append activity timeline + comment composer (KLAVITYKLA-516 passes `t` so the
-  // timeline can synthesize its virtual first "report received" row).
-  single.appendChild(buildTimelineSection(t.id, t))
+  // KLA-171: activity timeline + comment composer (KLAVITYKLA-516 passes `t` so the timeline can
+  // synthesize its virtual first "report received" row). #707: on the 3-col page it mounts INTO the
+  // middle column; the panel/legacy layout appends it below the detail.
+  const _tlMount = detailEl.querySelector(".t3-activity-mount") || single
+  _tlMount.appendChild(buildTimelineSection(t.id, t))
   if (!panel) {
     // KLA-563 dedicated page: the board was never mounted (renderTicketsView early-returns while
     // __klavTktPageOpen is set), but hide the containers defensively in case a cached board is present.
