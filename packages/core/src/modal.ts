@@ -367,6 +367,10 @@ export interface ModalCallbacks {
     // can seed the ticket's triage. Absent when Enhance wasn't used (or was Undone). Host forwards verbatim.
     suggestedSeverity?: string
     suggestedPriority?: string
+    // #638: whether the reporter opted IN to attaching console logs via the composer toggle. Present only
+    // when callbacks.consoleAttachToggle rendered the control; DEFAULT false. The host attaches the captured
+    // console logs to the report only when this is true (console logs are default-OFF).
+    attachConsole?: boolean
   }) => Promise<{ issueKey: string; issueUrl: string }>
   // ── PX4 enhancements (all optional + additive; absent => the composer is identical to today) ──
   // PX4 #411: show a single-line Title input at the top of the composer. Its trimmed value threads through
@@ -486,6 +490,11 @@ export interface ModalCallbacks {
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
+  // #638: when true, render a small "Attach console logs" toggle just above Submit. It is OFF by default —
+  // console logs are only attached when the reporter explicitly flips it on. The chosen state rides the
+  // submit payload as `attachConsole` (boolean) so the host attaches the captured console logs only then.
+  // Absent/false => no toggle is rendered and attachConsole is omitted from the payload (default-off).
+  consoleAttachToggle?: boolean
 }
 
 export interface ModalController {
@@ -1180,6 +1189,13 @@ export function buildModal(
     /* CSS-drawn check tick (no glyph/emoji) — accent, top-right corner of the selected segment. */
     .kl-tgt-opt.on::after{content:"";position:absolute;top:7px;right:8px;width:5px;height:9px;border:solid var(--kl-accent);border-width:0 2px 2px 0;transform:rotate(45deg);}
     @media (prefers-reduced-motion:reduce){.kl-tgt-opt{transition:background .15s ease,color .15s ease,box-shadow .15s ease;}.kl-tgt-opt.on{transform:none;}.kl-tgt-opt:active{transform:none;}}
+    /* #638: "Attach console logs" toggle — a compact opt-in row just above Submit, OFF by default. Mirrors
+       the mask-numbers checkbox affordance (native checkbox tinted with the accent) so it reads as a control. */
+    .klavity-conlog{display:flex;align-items:center;margin:0 0 12px;}
+    .kl-conlog-lbl{display:inline-flex;align-items:center;gap:7px;color:var(--kl-muted);font-size:12px;font-weight:600;cursor:pointer;user-select:none;line-height:1.3;}
+    .kl-conlog-lbl:hover{color:var(--kl-fg);}
+    .kl-conlog-lbl input{margin:0;width:14px;height:14px;cursor:pointer;accent-color:var(--kl-accent);flex:0 0 auto;}
+    .kl-conlog-lbl svg{flex:0 0 auto;opacity:.8;}
     /* Upload progress under Submit — collapsed until a submit is in flight; the fill is animated toward 90%
        over ~10s and snapped to 100% when the request resolves (fetch can't report real upload %). */
     .klavity-progress{height:5px;border-radius:999px;background:var(--kl-chip);overflow:hidden;opacity:0;max-height:0;margin-top:0;transition:opacity .2s ease,max-height .2s ease,margin-top .2s ease;}
@@ -1471,6 +1487,11 @@ export function buildModal(
           <button type="button" class="kl-tgt-opt on" id="klavity-target-project" role="radio" aria-checked="true" data-target="project">Your team<small>${escHtml(cfg.projectDisplayName || 'your project')}</small></button>
           <button type="button" class="kl-tgt-opt" id="klavity-target-klavity" role="radio" aria-checked="false" data-target="klavity">Klavity<small>problem with this tool</small></button>
         </div>
+      </div>` : ''}
+      ${callbacks.consoleAttachToggle ? `<div class="klavity-conlog" id="klavity-conlog">
+        <label class="kl-conlog-lbl" title="Attach this page's captured console logs to the report">
+          <input type="checkbox" id="klavity-conlog-cb">${icon('file-text', { size: 14 })}<span>Attach console logs</span>
+        </label>
       </div>` : ''}
       <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
@@ -2863,6 +2884,9 @@ export function buildModal(
         // KLA-586: ride the accepted AI-Enhance draft's severity/priority as structured fields (cleared on Undo).
         ...(enhanceSeverity ? { suggestedSeverity: enhanceSeverity } : {}),
         ...(enhancePriority ? { suggestedPriority: enhancePriority } : {}),
+        // #638: only when the toggle was rendered — the reporter's console-logs opt-in (DEFAULT false). Read
+        // live from the checkbox so the current state travels; the host attaches console logs only when true.
+        ...(callbacks.consoleAttachToggle ? { attachConsole: !!(shadowRoot.getElementById('klavity-conlog-cb') as HTMLInputElement | null)?.checked } : {}),
       }
       // NON-BLOCKING default path — hand the fully-built payload to the host (widget) and CLOSE the modal
       // + backdrop immediately. The host shows a bottom-right pill and drives the (possibly 16MB+) upload

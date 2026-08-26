@@ -292,6 +292,14 @@ export function currentReporter(): Reporter | undefined { return _reporter }
 function buildWidgetContext(): ReportContext {
   return buildCaptureContext(_buffers, { identity: _identity, metadata: _metadata })
 }
+// #638: the report context with console logs included only when the reporter opted in via the composer's
+// "Attach console logs" toggle. Default (attachConsole=false) clears consoleErrors so no console output is
+// attached to the report. Everything else (network failures, perf, identity, metadata) is left untouched.
+function consoleContext(attachConsole: boolean): ReportContext {
+  const ctx = buildWidgetContext()
+  if (!attachConsole) ctx.consoleErrors = []
+  return ctx
+}
 
 // ── PX4 #439 async-safe queue (PostHog-style stub) ───────────────────────────────────────────────────
 // The install snippet sets `window.klavity = window.klavity || []` and stubs methods that push
@@ -1030,6 +1038,31 @@ async function mount() {
     let session: EvidenceSession | null = null
     try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
     if (session) evSession = session
+    // #637: an EXPLICIT Report re-trigger on an IN-PROGRESS draft must CAPTURE A NEW screenshot and APPEND it
+    // at the END of the evidence strip — not silently reopen the same draft with no fresh snap (the standup
+    // complaint). A draft is "in progress" when EITHER the composer is already open OR an evidence session
+    // already holds shots. We only do this for a plain Report click (no caller-supplied initialShot — a
+    // right-click region drag brings its own capture and owns its append). The FIRST open (brand-new, empty
+    // session, composer closed) still single-captures via autoCaptureOnOpen, so we never double-capture on the
+    // initial open — only this re-trigger adds an extra shot.
+    const composerHost = composer?.shadowRoot.host as HTMLElement | null
+    const composerLive = !!(composer && composerHost?.isConnected)
+    const hasDraft = composerLive || !!(session && session.shots.length > 0)
+    if (hasDraft && !opts?.initialShot) {
+      let fresh: { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean } | null = null
+      try { fresh = withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })) } catch { fresh = null }
+      if (fresh && fresh.dataUrl) {
+        if (composerLive && composer) {
+          // Composer already open → append straight into it: becomes the active hero at the end of the strip
+          // and persists to the session via onShotAdded, without disturbing the typed description/other shots.
+          composer.addCapturedShot(fresh.dataUrl, fresh.quality, { pageUrl: location.href, pagePath: location.pathname }, fresh.suggestSharp)
+          return
+        }
+        // Composer closed/minimized → reopen seeded with the existing shots, and this fresh capture appended last.
+        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined })
+        return
+      }
+    }
     openReport("bug", session ? { ...opts, evidence: { session } } : opts)
   }
 
@@ -1148,6 +1181,9 @@ async function mount() {
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
       autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
+      // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
+      // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
+      consoleAttachToggle: true,
       // KLA-587 (founder decision, 2026-08-25 — REVERSES the #460/#473 "no auto-prompt" stance): real Screen
       // capture (getDisplayMedia) is the ACTUAL default capture on open. Feature-detected — false on iOS Safari
       // (no getDisplayMedia) so the rendered viewport stays the default there. The composer fires the share
@@ -1359,7 +1395,11 @@ async function mount() {
           // p.kind carries the real value) so the server's report_type + connector issue-type mapping are right.
           type: (p.kind ?? p.type), title: p.title, files: p.files, recordings: p.recordings, description,
           pageUrl: location.href, referrer: document.referrer || "", screenshots: p.screenshots,
-          context: buildWidgetContext(),
+          // #638: console logs are now DEFAULT OFF. The rolling capture buffer keeps running (bounded, cheap),
+          // but the captured console errors ride the report ONLY when the reporter flipped the composer's
+          // "Attach console logs" toggle (p.attachConsole). When off, we strip them from the context so nothing
+          // console-related is sent. Network/perf context and everything else are unaffected.
+          context: consoleContext(p.attachConsole === true),
           // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
           reporter: _reporter, clientInfo: captureClientInfo(),
           replayEvents: replay.snapshot(), annotations: p.annotations,
