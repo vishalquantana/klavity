@@ -628,6 +628,27 @@ async function generateAndSaveTitle(feedbackId: string, observation: string | nu
     console.warn("[auto-title] non-fatal:", e?.message || e)
   }
 }
+// #641 (V1): fixed-cadence "time-interval" keyframe selection. The shipping-small V1 the ticket asks for —
+// one still every KEYFRAME_INTERVAL_SEC seconds, capped to KEYFRAME_MAX_V1 (narration-/click-weighted picks
+// are a later iteration). Pure + bounded: interior offsets only (starts at the first interval, stops before
+// the clip end) so we skip the black first/last frames. Returns [] for unknown/zero duration so the caller
+// can fall back to the transcript-flagged picker. Both knobs are env-tunable for prod without a redeploy.
+const KEYFRAME_INTERVAL_SEC = Math.max(1, Number(process.env.KLAV_KEYFRAME_INTERVAL_SEC) || 5)
+const KEYFRAME_MAX_V1 = Math.max(1, Number(process.env.KLAV_KEYFRAMES_MAX) || 6)
+function pickIntervalKeyframeTimestampsMs(
+  durationMs: number | undefined,
+  everyMs: number = KEYFRAME_INTERVAL_SEC * 1000,
+  cap: number = KEYFRAME_MAX_V1,
+): number[] {
+  if (!durationMs || durationMs <= 0) return []
+  const out: number[] = []
+  const step = Math.max(1000, Math.round(everyMs))
+  for (let t = step; t < durationMs && out.length < cap; t += step) out.push(Math.round(t))
+  // Very short clips (shorter than one interval) still deserve a mid-frame rather than none.
+  if (!out.length) out.push(Math.round(durationMs / 2))
+  return out.slice(0, cap)
+}
+
 // KLA-603: POST-SUBMIT video-transcript enrichment. Runs AFTER the async STT pass (transcribeFeedback*)
 // resolves a video's transcript — see the intake fire-and-forget block. Turns the (already-generated)
 // walkthrough transcript into leverage, all BEST-EFFORT (a failure here NEVER touches the stored report,
@@ -733,7 +754,12 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
       try { if (wsId) kfRv = await reserveCredits(wsId, "keyframes", { plan: creditsPlan, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] keyframes reserve skipped (non-fatal):", e?.message || e) }
       if (kfRv?.wouldBlock) console.log(`[credits] video-enrich keyframes wouldBlock ws=${wsId} (soft)`)
       const { bytes, contentType } = await getObjectBytes(src.key)
-      const timestamps = pickKeyframeTimestampsMs(src.durationMs, src.segments, undefined)
+      // #641 (V1): prefer fixed time-interval keyframes (a still every N seconds, capped). When the clip
+      // duration is unknown we fall back to the transcript-flagged / evenly-spaced picker so we still emit a
+      // couple of stills rather than none. Both paths flow the SAME transcript into the ticket <details> at
+      // export time (feedbackToTicketPayload) — this only governs WHICH frames get grabbed.
+      const intervalTs = pickIntervalKeyframeTimestampsMs(src.durationMs)
+      const timestamps = intervalTs.length ? intervalTs : pickKeyframeTimestampsMs(src.durationMs, src.segments, undefined)
       const frames = await extractKeyframes(bytes, String(src.contentType || contentType || ""), timestamps)
       const newAtts: Array<Record<string, any>> = []
       if (frames.length) {

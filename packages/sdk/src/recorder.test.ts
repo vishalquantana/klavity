@@ -387,6 +387,8 @@ describe('startCameraPreview (KLA-602b camera self-view bubble)', () => {
     const withCam = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
     const p1 = recordMe({ deps: withCam })
     let host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    // #639: camera is OFF by default — explicitly tick the (now-unchecked) camera box to opt in.
+    ;(host.querySelector('#klr-cam') as HTMLInputElement).checked = true
     ;(host.querySelector('#klr-start') as HTMLButtonElement).click()
     await tick()
     expect(host.querySelector('[data-klavity-ui="camera-preview"]')).not.toBeNull()
@@ -403,5 +405,72 @@ describe('startCameraPreview (KLA-602b camera self-view bubble)', () => {
     expect(host.querySelector('[data-klavity-ui="camera-preview"]')).toBeNull()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await p2
+  })
+})
+
+// #639: the webcam camera is OFF by default (opt-in). The engine must NOT request a camera video track unless
+// wantCamera:true is passed, and the consent panel's camera checkbox starts unchecked (unless defaultCamera).
+describe('#639 camera OFF by default (opt-in)', () => {
+  it('startRecording default: does NOT request a camera video track (screen-only + mic narration)', async () => {
+    const deps = makeDeps()
+    const ctrl = await startRecording({}, deps) // no wantCamera → default OFF
+    const gum = deps.mediaDevices.getUserMedia as any
+    expect(gum).toHaveBeenCalled()
+    expect(gum.mock.calls[0][0].video).toBe(false) // camera constraint suppressed by default
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+    rec.pushChunk(500); ctrl.stop()
+    const r = await ctrl.done
+    expect(r.hadCamera).toBe(false) // no PiP self-view by default
+  })
+
+  it('startRecording wantCamera:true still composites the camera (explicit opt-in)', async () => {
+    const deps = makeDeps()
+    const ctrl = await startRecording({ wantCamera: true }, deps)
+    expect((deps.mediaDevices.getUserMedia as any).mock.calls[0][0].video).not.toBe(false)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+    rec.pushChunk(500); ctrl.stop()
+    const r = await ctrl.done
+    expect(r.hadCamera).toBe(true)
+  })
+
+  it('consent panel: camera checkbox is UNCHECKED by default, CHECKED when opts.defaultCamera', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const p = recordMe({ deps })
+    let host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    expect((host.querySelector('#klr-cam') as HTMLInputElement).checked).toBe(false)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p
+
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const p2 = recordMe({ deps: makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) }), defaultCamera: true })
+    host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    expect((host.querySelector('#klr-cam') as HTMLInputElement).checked).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p2
+  })
+})
+
+// #640: nudge the getDisplayMedia picker toward the WHOLE MONITOR so multi-page/tab flows are captured, and
+// surface an inline "choose Entire Screen" tip in the consent panel before the picker opens.
+describe('#640 prefer Entire Screen (tab-switch capture)', () => {
+  it('getDisplayMedia is invoked with displaySurface:monitor + preferCurrentTab:false hints', async () => {
+    const deps = makeDeps()
+    const ctrl = await startRecording({}, deps)
+    const gdm = deps.mediaDevices.getDisplayMedia as any
+    const arg = gdm.mock.calls[0][0]
+    expect(arg.video.displaySurface).toBe('monitor')
+    expect(arg.preferCurrentTab).toBe(false)
+    ctrl.stop(); await ctrl.done
+  })
+
+  it('consent panel shows the Entire Screen guidance tip', async () => {
+    document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
+    const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
+    const p = recordMe({ deps })
+    const host = document.querySelector('[data-klavity-ui="recorder"]') as HTMLElement
+    expect((host.textContent || '')).toContain('Entire Screen')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await p
   })
 })

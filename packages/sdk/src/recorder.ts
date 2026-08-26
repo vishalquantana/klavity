@@ -70,6 +70,7 @@ export interface RecordingResult {
 }
 
 export interface StartRecordingOptions {
+  // #639: OPT-IN. Defaults to false — screen-only is the default capture. Pass true to composite the webcam PiP.
   wantCamera?: boolean
   wantMic?: boolean
   fps?: number
@@ -163,7 +164,11 @@ export async function startRecording(
   deps: RecorderDeps = defaultRecorderDeps(),
 ): Promise<RecordingController> {
   const caps: RecordingCaps = { ...DEFAULT_RECORDING_CAPS, ...(opts.caps || {}) }
-  const wantCamera = opts.wantCamera !== false
+  // #639: the webcam camera is OFF by default — screen-only (+ mic narration) is the default capture path.
+  // Camera is strictly OPT-IN: a caller must pass wantCamera:true (or tick the consent-panel camera box) to
+  // enable the PiP self-view. Mic stays default-ON (narration) unless explicitly disabled. This avoids
+  // surprising reporters with a live webcam and keeps the common bug-repro flow screen-only.
+  const wantCamera = opts.wantCamera === true
   const wantMic = opts.wantMic !== false
   const fps = Math.max(5, Math.min(60, opts.fps ?? 24))
 
@@ -182,7 +187,31 @@ export async function startRecording(
   const setState = (s: RecorderState) => { state = s; try { opts.onState?.(s) } catch { /* listener errors never break capture */ } }
 
   // 1) Screen — required. Throws (caller treats as cancel) if the user dismisses the picker.
-  const screenStream = await deps.mediaDevices.getDisplayMedia({ video: { frameRate: fps }, audio: false, preferCurrentTab: false })
+  // #640: hint the picker toward the WHOLE MONITOR so multi-page/tab flows are actually captured. With a
+  // single-tab share, switching tabs isn't recorded; "Entire Screen" captures everything the reporter does.
+  // We cannot FORCE the browser's choice, but the constraints below nudge it:
+  //   • displaySurface:'monitor'      — advertises "Entire Screen" as the preferred surface (Chromium orders
+  //                                     the monitor option first / preselects it).
+  //   • preferCurrentTab:false        — don't shortcut to a current-tab capture.
+  //   • selfBrowserSurface:'exclude'  — de-emphasise sharing THIS very tab (avoids the trivial current-tab pick).
+  //   • surfaceSwitching:'include'    — lets the reporter switch the shared surface mid-recording without a restart.
+  //   • monitorTypeSurfaces:'include' — ensure monitor surfaces are offered.
+  // Findings (#640c) on "picked Entire Screen but only the current app was captured": this is an OS-level
+  // screen-recording PERMISSION gap, not a constraints bug — on macOS, if the browser lacks Screen Recording
+  // permission (System Settings → Privacy & Security → Screen Recording) getDisplayMedia can hand back a stream
+  // that only paints the browser's own window/app and shows other apps as blank/black until the permission is
+  // granted and the browser is relaunched. Virtual desktops/Spaces and HDR/secondary displays can likewise clip
+  // capture to the active app. The fix is user-side (grant OS permission + relaunch); the constraints here can't
+  // override it, so the consent-panel tip + this note document it. These extra keys are non-standard/advisory and
+  // browsers safely ignore unknown ones, so older engines keep the previous behaviour.
+  const screenStream = await deps.mediaDevices.getDisplayMedia({
+    video: { frameRate: fps, displaySurface: 'monitor' },
+    audio: false,
+    preferCurrentTab: false,
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+  } as any)
 
   // #474 (privacy): once ANY track is acquired, a throw during the REST of init (canvas.captureStream,
   // new MediaStream/MediaRecorder, recorder.start) must never leave live camera/mic/screen tracks running.
@@ -445,6 +474,11 @@ export interface RecordMeOptions {
   // ('preview' is retained in the union for back-compat but is NO LONGER emitted — KLA-602(a) dropped the
   // preview panel; stop auto-attaches.) Best-effort — listener errors never break capture.
   onPhase?: (phase: 'consent' | 'recording' | 'preview') => void
+  // #639: initial state of the consent panel's Camera checkbox. Defaults to FALSE (camera OFF / opt-in) so
+  // screen-only is the default. A host/project that wants camera-on-by-default can pass defaultCamera:true.
+  // (A persistent per-project UI toggle for this belongs in the shared composer settings — see modal.ts
+  // follow-up noted in the ticket report; recordMe only takes the resolved boolean.)
+  defaultCamera?: boolean
 }
 
 export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAttachment | null> {
@@ -524,13 +558,18 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       setChrome('modal'); emitPhase('consent')
       backdropDismiss = true // KLA-620: consent panel is a real modal — click-outside dismisses like Cancel
       card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.setAttribute('aria-label', 'Record a walkthrough')
+      // #639: camera OFF by default (opt-in). The checkbox starts unchecked unless the host opted in via
+      // opts.defaultCamera. #640: an inline tip nudges the reporter to pick "Entire Screen" in the browser's
+      // upcoming share picker so multi-page flows (tab switches) are actually captured.
+      const camChecked = opts.defaultCamera === true ? ' checked' : ''
       card.innerHTML =
         '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Record a walkthrough</div>' +
         '<div style="padding:14px">' +
         '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-screen" checked disabled> Share my <b>screen</b></label>' +
-        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-cam" checked> Camera <span style="font-size:9px;font-weight:800;color:#fff;background:#6366f1;padding:1px 5px;border-radius:999px">optional</span></label>' +
+        `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-cam"${camChecked}> Camera <span style="font-size:9px;font-weight:800;color:#fff;background:#6366f1;padding:1px 5px;border-radius:999px">optional</span></label>` +
         '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-mic" checked> Microphone (narration)</label>' +
         '<div style="display:flex;gap:8px;margin-top:10px"><button id="klr-start" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Start recording</button><button id="klr-cancel" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Cancel</button></div>' +
+        '<p style="font-size:11px;color:#574f45;margin-top:8px;padding:8px;background:#efeadf;border-radius:8px;border:1px solid #e3ddd1">Tip: to capture steps across <b>multiple pages/tabs</b>, choose <b>&quot;Entire Screen&quot;</b> in the next dialog. Sharing a single tab will not follow you when you switch tabs.</p>' +
         `<p style="font-size:11px;color:#574f45;margin-top:8px">Your browser will ask to share a tab/screen. Max ${Math.round(caps.maxDurationMs / 60000)} min. Nothing uploads until you attach it.</p>` +
         '<div id="klr-hint"></div></div>'
       ;(card.querySelector('#klr-cancel') as HTMLButtonElement).onclick = () => finish(null)
