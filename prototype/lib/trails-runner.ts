@@ -22,7 +22,8 @@ import {
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
   resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
 } from "./trails"
-import { touchWalkHeartbeat, db, incrementUsageMeter } from "./db"
+import { touchWalkHeartbeat, db, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
+import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { recordBrowserMinutes } from "./cost-events"
 import { stepCacheKey } from "./trails-crystallize"
@@ -1059,6 +1060,18 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // Reached whether the walk ran green, red, or threw, so it matches "guarded AutoSim flows" 1:1.
     // A browser-launch failure returns early above (before this try), so nothing is metered there.
     void incrementUsageMeter({ metric: "autosim_walk", projectId })
+    // KLAVITY CREDITS (Phase 1, SOFT): meter one "autosim" walk (75cr) alongside the usage meter.
+    // Fire-safe — wrapped so a credits failure never throws into the walk finalizer; soft mode only logs.
+    void (async () => {
+      try {
+        const wsId = await accountIdForAiCall(projectId, null, null)
+        if (wsId) {
+          const rv = await reserveCredits(wsId, "autosim", { plan: await accountPlan(wsId), refRunId: runId ?? null })
+          if (rv.wouldBlock) console.log(`[credits] autosim wouldBlock ws=${wsId} (soft)`)
+          await rv.settle({ ok: true, aiCallId: null })
+        }
+      } catch (e: any) { console.warn("[credits] autosim reserve skipped (non-fatal):", e?.message || e) }
+    })()
     // KLAVITYKLA-486: browser-compute COGS — wall-clock minutes this run held a browser session, tagged
     // by project_id + run_id. Fire-and-forget; measurement only, never blocks the walk.
     void recordBrowserMinutes({ projectId, runId, minutes: (Date.now() - browserStartedAt) / 60000, meta: { browser: bh.kind } })

@@ -287,7 +287,10 @@ async function openComposer(
         else { if (latest) await evClear(evStorage); evSession = null; hideEvDock() }
       })
     },
-  }, config)
+    // KLA submit-target: the "Where should this go? · Your team / Klavity" control is a WIDGET-only
+    // affordance for now — the extension's submitViaSW path doesn't carry the routing flag, so we don't
+    // render a control it can't honor. Explicitly disable it here (default-on everywhere else).
+  }, { ...config, submitTargetToggle: false })
   // Seed the already-persisted session shots first (in order, each tagged with its page), then the
   // region-initial shot as a NEW capture (seed visually AND persist it to the session).
   for (const shot of seedShots) {

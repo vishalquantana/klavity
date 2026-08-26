@@ -413,6 +413,58 @@ test("auto-copy fires exactly once on triage-accept (no double-export, not on ra
   }
 }, 14000)
 
+// ── KLA-603 (PRIVACY): the AI "walkthrough summary" pushed into the tracker body must be URL-redacted ──
+// The model is told to QUOTE the spoken/on-screen transcript, so the summary can carry ?token=…/?api_key=…
+// URLs. The transcript <details> block was redacted but the walkthrough summary line was NOT, leaking
+// secrets into Jira/GitHub/webhook bodies. This drives the REAL auto-copy path: a webhook receiver captures
+// the pushed ticket body and asserts the secret URL param is redacted (raw token absent).
+test("KLA-603: AI walkthrough summary is URL-redacted in the pushed tracker body", async () => {
+  let lastBody: any = null
+  const recv = Bun.serve({
+    port: 0,
+    async fetch(req) { try { lastBody = await req.json() } catch { lastBody = null } return new Response(JSON.stringify({ id: "recv-wt" }), { status: 200, headers: { "content-type": "application/json" } }) },
+  })
+  try {
+    const recvUrl = `http://localhost:${recv.port}/hook`
+    // Hold human Snaps for review so submit doesn't autofile before we set the walkthrough summary.
+    await api("POST", `/api/projects/${PROJECT_ID}/snap-routing`, { snapRouting: "review" }, ADMIN_SID)
+    const cr = await api("POST", `/api/projects/${PROJECT_ID}/connectors`, {
+      type: "webhook", name: "AutoCopy WT Redact", config: { url: recvUrl }, autoCopy: true,
+    }, ADMIN_SID)
+    expect(cr.status).toBe(201)
+    const cid = (await cr.json()).connector.id
+
+    // File a feedback (thin description → the walkthrough summary would be surfaced).
+    const fd = new FormData()
+    fd.set("description", `walkthrough redaction ${ts}`)
+    fd.set("project_id", PROJECT_ID)
+    const fr = await fetch(`${BASE}/api/feedback`, {
+      method: "POST", headers: { Authorization: `Bearer ${ADMIN_SID}`, cookie: authCookie(ADMIN_SID) }, body: fd,
+    })
+    expect(fr.ok).toBe(true)
+    const fid = (await fr.json()).id
+
+    // Seed the AI walkthrough summary with a secret URL (as the post-transcription enrichment pass would).
+    const secretUrl = "https://app.example.com/pay?token=SECRETWT99&x=1"
+    await rawClient.execute({
+      sql: "UPDATE feedback SET ai_walkthrough_json=? WHERE id=?",
+      args: [JSON.stringify({ text: `The failing request is ${secretUrl} — it 500s.` }), fid],
+    })
+
+    // Triage-accept → auto-copy fires and POSTs the ticket body to our receiver.
+    const pr = await api("PATCH", `/api/feedback/${fid}`, { status: "open" }, ADMIN_SID)
+    expect(pr.status).toBe(200)
+    for (let i = 0; i < 100 && !lastBody; i++) await new Promise((r) => setTimeout(r, 50))
+    expect(lastBody).toBeTruthy()
+    const body = String(lastBody?.ticket?.body || "")
+    expect(body).toContain("AI summary from walkthrough")  // the summary made it into the tracker body
+    expect(body).not.toContain("SECRETWT99")               // …but the raw token is redacted out
+    expect(body).toContain("token=REDACTED")               // …replaced by the standard redaction marker
+  } finally {
+    recv.stop(true)
+  }
+}, 14000)
+
 // ── Auto-copy to PLANE writes plane_issue_key/url back onto the feedback row ─────
 // Regression for the pipeline bug: connector auto-copy created the Plane issue + a ticket_exports
 // row, but never called updateFeedbackTracker, so feedback.plane_issue_key stayed NULL and the

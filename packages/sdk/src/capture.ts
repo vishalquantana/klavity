@@ -273,6 +273,43 @@ export async function settleForCapture(root: HTMLElement, budgetMs = SETTLE_BUDG
   } catch { /* settle is best-effort — never block or delay the capture on error */ }
 }
 
+// KLA-587: cross-origin iframes are UNCAPTURABLE by the html-to-image DOM render — their pixels live in a
+// separate origin's document the renderer is not allowed to read (the same reason cross-origin <img> drop to
+// white gaps). Neither the blank NOR the partial check flags this: the SURROUNDING page renders fine, so the
+// PNG is content-rich and non-uniform — the embedded frame just comes back empty. So we detect a RENDERED,
+// reasonably-sized cross-origin iframe up front and let the composer steer the reporter to the real "Screen"
+// capture (getDisplayMedia), which grabs true tab pixels including embedded frames. Kept cheap (a bounded tag
+// scan, no layout thrash beyond offset reads) and conservative — a hidden / 1×1 tracking-pixel frame never
+// counts, so a page whose only iframes are invisible ad/analytics beacons is NOT nudged. Browser-only; returns
+// false in non-DOM envs. Screen capture stays a user-gesture click — this only decides whether to SUGGEST it.
+const MIN_EMBED_AREA_PX = 100 * 100 // ~a 100×100 visible frame; smaller frames are treated as beacons, not content
+export function hasUncapturableEmbeds(): boolean {
+  if (typeof document === "undefined" || typeof location === "undefined") return false
+  let frames: HTMLCollectionOf<HTMLIFrameElement>
+  try { frames = document.getElementsByTagName("iframe") } catch { return false }
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i]
+    if (!f) continue
+    const src = f.getAttribute("src") || ""
+    // about:/data:/blob:/javascript: frames carry no separate origin the renderer can't reach → not relevant.
+    if (!src || /^(?:about:|data:|blob:|javascript:)/i.test(src)) continue
+    let origin: string | null = null
+    try { origin = new URL(src, location.href).origin } catch { continue }
+    if (!origin || origin === location.origin) continue // same-origin frames ARE captured (renderer can read them)
+    // Only count a frame that is actually rendered on the page. offsetWidth/Height (0 for hidden frames) is the
+    // primary signal; fall back to getBoundingClientRect, then the width/height attributes (drives the tests).
+    let w = 0, h = 0
+    try {
+      w = f.offsetWidth || 0; h = f.offsetHeight || 0
+      if (!w || !h) { const r = f.getBoundingClientRect(); w = w || r.width; h = h || r.height }
+    } catch { /* fall through to attribute sizes */ }
+    if (!w) w = parseFloat(f.getAttribute("width") || "0") || 0
+    if (!h) h = parseFloat(f.getAttribute("height") || "0") || 0
+    if (w * h >= MIN_EMBED_AREA_PX) return true
+  }
+  return false
+}
+
 function loadImageBounded(src: string, timeoutMs: number): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     if (typeof Image === "undefined") { resolve(null); return }
@@ -390,6 +427,225 @@ export async function isPartialCapture(dataUrl: string, opts: { skippedImages?: 
   return false
 }
 
+// ────────────────────────────────────────────────────────────────────────────────────────────────────────
+// KLA-592: RENDERED-path font quality. Two founder-reported failure modes on the DOM-render (non-Screen) path:
+//   (A) a non-icon web font falls back to a DIFFERENT face with different metrics → text overlaps neighbours;
+//   (B) an icon font (Material Icons/Symbols, FontAwesome, icomoon, …) can't be embedded, so its LIGATURE
+//       text ("circle_call") leaks as raw fallback glyphs at the wrong width and collides with labels.
+// Fix (A): actually EMBED the page's @font-face bytes into the SVG (buildFontEmbedCss below) so text
+// rasterises in the REAL face. Fix (B): when an icon glyph can't be embedded, BLANK that element's text so
+// the shot shows a clean empty slot instead of overlapping garbage (blankUnrenderableIconGlyphs).
+// ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+// Conservative allow-list of well-known icon-font family names (lowercased; matched as a substring of the
+// computed font-family). These are ligature/PUA fonts whose text is NOT real prose.
+const ICON_FONT_SIGNATURES = [
+  "material icons",
+  "material symbols",
+  "fontawesome",
+  "font awesome",
+  "icomoon",
+  "glyphicons",
+  "ionicons",
+]
+
+// CSS generic/system font keywords — a token that is one of these is never treated as an un-embeddable icon
+// font by the GENERIC heuristic (so we never blank normal text that merely happens to be a single token).
+const GENERIC_FONT_KEYWORDS = new Set([
+  "sans-serif", "serif", "monospace", "system-ui", "cursive", "fantasy",
+  "ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded", "-apple-system", "blinkmacsystemfont",
+])
+
+/** The first declared font-family, lowercased & unquoted — the face the browser actually paints text in. */
+export function primaryFontFamily(fontFamily: string): string {
+  const first = (fontFamily || "").split(",")[0] || ""
+  return first.trim().replace(/^['"]+|['"]+$/g, "").toLowerCase()
+}
+
+/** True when the font-family names a known icon font (ligature-based, not real text). Pure + unit-tested. */
+export function isIconFontFamily(fontFamily: string): boolean {
+  const fam = (fontFamily || "").toLowerCase()
+  return ICON_FONT_SIGNATURES.some((sig) => fam.includes(sig))
+}
+
+// An icon-font ligature token: a single run of letters/digits joined by _ or - with NO spaces
+// (e.g. "circle_call", "check_circle", "arrow-down"). Real prose has spaces/punctuation.
+const LIGATURE_TOKEN = /^[a-z0-9]+(?:[_-][a-z0-9]+)+$/i
+export function isLigatureToken(text: string): boolean {
+  const t = (text || "").trim()
+  if (!t || t.length > 40 || /\s/.test(t)) return false
+  return LIGATURE_TOKEN.test(t)
+}
+
+/**
+ * Decide whether a cloned element's text is an icon-font ligature that CAN'T be embedded — in which case it
+ * would leak as raw fallback glyphs at the wrong width and collide with neighbours, so we blank it. Blanks:
+ *   - a KNOWN icon font (Material Icons/Symbols, FontAwesome, icomoon, Glyphicons, Ionicons…) whose face we
+ *     did NOT successfully embed; OR
+ *   - a GENERIC ligature element: an underscore-joined single token (classic icon ligature, e.g. "circle_call")
+ *     in a NAMED (non-generic) font we couldn't embed.
+ * Never blanks normal, multi-word, or successfully-embedded text. Pure + unit-tested. Conservative by design.
+ */
+export function shouldBlankIconGlyph(opts: { fontFamily: string; text: string; embeddedFamilies?: Set<string> }): boolean {
+  const text = (opts.text || "").trim()
+  if (!text) return false
+  const fam = opts.fontFamily || ""
+  const primary = primaryFontFamily(fam)
+  // If we embedded the face the text paints in, the glyph renders correctly → never blank.
+  if (opts.embeddedFamilies && primary && opts.embeddedFamilies.has(primary)) return false
+  if (isIconFontFamily(fam)) return true
+  // Generic: an underscore-joined ligature token in a NAMED (non-generic) font we didn't embed.
+  if (primary && !GENERIC_FONT_KEYWORDS.has(primary) && text.includes("_") && isLigatureToken(text)) return true
+  return false
+}
+
+/**
+ * onCloneEachNode hook: blank an icon-font ligature on a CLONED element when its face can't be embedded, so
+ * the capture shows a clean empty slot instead of overlapping raw fallback glyphs. Only touches LEAF text
+ * elements (icon fonts wrap a bare ligature text node); containers with child elements are left untouched, as
+ * is any normal text. The renderer has already copied computed styles inline onto the clone, so
+ * `el.style.fontFamily` is authoritative. Never throws — one element must not abort the capture.
+ */
+function blankUnrenderableIconGlyphs(cloned: Node, embeddedFamilies: Set<string>): void {
+  try {
+    if (!cloned || cloned.nodeType !== 1) return
+    const el = cloned as HTMLElement
+    if (el.childElementCount > 0) return // only leaf text nodes (icon glyphs are a single bare text node)
+    const text = el.textContent || ""
+    if (!text.trim()) return
+    const fam = el.style?.fontFamily || ""
+    if (!fam) return
+    if (shouldBlankIconGlyph({ fontFamily: fam, text, embeddedFamilies })) el.textContent = ""
+  } catch { /* a single element must never abort the capture */ }
+}
+
+// ── Font embedding (fix A) ────────────────────────────────────────────────────────────────────────────────
+export type FontEmbed = { cssText: string; embeddedFamilies: Set<string> }
+const EMPTY_FONT_EMBED: FontEmbed = { cssText: "", embeddedFamilies: new Set<string>() }
+const FONT_EMBED_BUDGET_MS = 3_000 // overall wall-clock cap so font prefetch can never stall the capture
+const FONT_FETCH_TIMEOUT_MS = 4_000
+const MAX_FONT_FACES = 24          // bound the work on a page with a huge @font-face table
+const FONT_URL_RE = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g
+
+/** Fetch a font file (same-origin or CORS-permitted) → a `data:` URL, or null on ANY failure. Never throws. */
+async function fetchFontDataUrl(url: string, timeoutMs = FONT_FETCH_TIMEOUT_MS): Promise<string | null> {
+  if (typeof fetch !== "function") return null
+  const controller = typeof AbortController === "function" ? new AbortController() : null
+  const timer = controller ? setTimeout(() => { try { controller.abort() } catch { /* noop */ } }, timeoutMs) : null
+  try {
+    const res = await fetch(url, { signal: controller?.signal, cache: "force-cache", mode: "cors", credentials: "omit" })
+    if (!res || !res.ok) return null
+    const blob = await res.blob()
+    return await new Promise<string | null>((resolve) => {
+      try {
+        const fr = new FileReader()
+        fr.onload = () => resolve(typeof fr.result === "string" ? fr.result : null)
+        fr.onerror = () => resolve(null)
+        fr.readAsDataURL(blob)
+      } catch { resolve(null) }
+    })
+  } catch { return null } // CORS/CSP/network → skip this font, never throw
+  finally { if (timer) clearTimeout(timer) }
+}
+
+/** Collect readable @font-face rules from the document's stylesheets. Cross-origin (unreadable) sheets are skipped. */
+export function collectFontFaceRules(doc: Document): { cssText: string; family: string; src: string }[] {
+  const out: { cssText: string; family: string; src: string }[] = []
+  let sheets: StyleSheetList
+  try { sheets = doc.styleSheets } catch { return out }
+  for (let i = 0; i < sheets.length && out.length < MAX_FONT_FACES; i++) {
+    let rules: CSSRuleList | null = null
+    try { rules = (sheets[i] as CSSStyleSheet).cssRules } catch { continue } // cross-origin sheet → unreadable
+    if (!rules) continue
+    for (let j = 0; j < rules.length && out.length < MAX_FONT_FACES; j++) {
+      const rule = rules[j] as CSSFontFaceRule & { type?: number }
+      const isFace = rule && (rule.constructor?.name === "CSSFontFaceRule" || rule.type === 5)
+      if (!isFace) continue
+      let family = ""; let src = ""
+      try {
+        family = (rule.style?.getPropertyValue("font-family") || "").trim().replace(/^['"]+|['"]+$/g, "")
+        src = rule.style?.getPropertyValue("src") || ""
+      } catch { continue }
+      if (!family || !src) continue
+      out.push({ cssText: rule.cssText, family, src })
+    }
+  }
+  return out
+}
+
+function escapeRegExp(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
+
+/** Replace a raw url() token (quoted or not) in an @font-face cssText with an embedded data: URL. */
+function replaceFontUrl(cssText: string, rawUrl: string, dataUrl: string): string {
+  const re = new RegExp(`url\\(\\s*(['"]?)${escapeRegExp(rawUrl)}\\1\\s*\\)`, "g")
+  return cssText.replace(re, `url("${dataUrl}")`)
+}
+
+/**
+ * Assemble the @font-face CSS with each font's bytes inlined as a data: URL, so modern-screenshot can embed
+ * the REAL face into the SVG (via its `font.cssText` option) instead of the page's fonts falling back to a
+ * different face with different metrics (the overlap bug). Same-origin + CORS-permitted fonts (incl. Google
+ * Fonts, which sends Access-Control-Allow-Origin: *) embed; CORS/CSP-blocked fonts are skipped gracefully
+ * (never thrown). Returns the assembled cssText plus the set of families we actually embedded (lowercased) —
+ * used to decide which icon glyphs are safe to render vs must be blanked. Injectable (`faces`/`fetchAsDataUrl`)
+ * for unit tests. Pure of side effects.
+ */
+export async function buildFontEmbedCss(opts: {
+  doc?: Document | null
+  baseUrl?: string
+  fetchAsDataUrl?: (url: string) => Promise<string | null>
+  faces?: { cssText: string; family: string; src: string }[]
+} = {}): Promise<FontEmbed> {
+  const embeddedFamilies = new Set<string>()
+  const doc = opts.doc ?? (typeof document !== "undefined" ? document : null)
+  const faces = opts.faces ?? (doc ? collectFontFaceRules(doc) : [])
+  if (!faces.length) return { cssText: "", embeddedFamilies }
+  const baseUrl = opts.baseUrl ?? (typeof location !== "undefined" ? location.href : "")
+  const fetchAsDataUrl = opts.fetchAsDataUrl ?? ((u: string) => fetchFontDataUrl(u))
+  const parts: string[] = []
+  for (const face of faces) {
+    const urls: string[] = []
+    FONT_URL_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = FONT_URL_RE.exec(face.src)) !== null) {
+      const u = m[2]
+      if (u && !u.startsWith("data:")) urls.push(u)
+    }
+    if (!urls.length) {
+      // A data:-URL (or pure local()) face — already embeddable as-is.
+      parts.push(face.cssText)
+      embeddedFamilies.add(face.family.toLowerCase())
+      continue
+    }
+    let rewritten = face.cssText
+    let embeddedAny = false
+    // Fetch this face's url()s in parallel (bounded per-fetch); embed each that succeeds.
+    const results = await Promise.all(urls.map(async (rawUrl) => {
+      let abs = rawUrl
+      try { abs = new URL(rawUrl, baseUrl).href } catch { /* keep raw */ }
+      return { rawUrl, dataUrl: await fetchAsDataUrl(abs) }
+    }))
+    for (const { rawUrl, dataUrl } of results) {
+      if (dataUrl) { rewritten = replaceFontUrl(rewritten, rawUrl, dataUrl); embeddedAny = true }
+    }
+    if (embeddedAny) {
+      parts.push(rewritten)
+      embeddedFamilies.add(face.family.toLowerCase())
+    }
+  }
+  return { cssText: parts.join("\n"), embeddedFamilies }
+}
+
+// Bounded wrapper: assemble the font-embed CSS but never let it stall the capture past FONT_EMBED_BUDGET_MS.
+async function buildFontEmbedCssBounded(): Promise<FontEmbed> {
+  try {
+    return await Promise.race<FontEmbed>([
+      buildFontEmbedCss({}).catch(() => EMPTY_FONT_EMBED),
+      new Promise<FontEmbed>((resolve) => setTimeout(() => resolve(EMPTY_FONT_EMBED), FONT_EMBED_BUDGET_MS)),
+    ])
+  } catch { return EMPTY_FONT_EMBED }
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`capture timed out after ${timeoutMs}ms`)), timeoutMs)
@@ -434,7 +690,17 @@ export async function safeToPngWithScale(
 ): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality; blank: boolean; partial: boolean; skippedImages: number }> {
   let skipped = 0
   const callerFilter = opts.filter
-  const pixelRatio = opts.pixelRatio ?? 1
+  // KLA-592 (crispness): render at the device pixel ratio (capped at 2) so the fallback/real font isn't soft,
+  // unless the caller pinned a ratio. The fast throwaway viewport preview (skipFonts) stays at 1 for speed;
+  // the tall-page canvas clamp (maximumCanvasSize) still bounds the output either way.
+  const dpr = (typeof window !== "undefined" && Number(window.devicePixelRatio)) || 1
+  const defaultRatio = opts.skipFonts ? 1 : Math.min(Math.max(dpr, 1), 2)
+  const pixelRatio = opts.pixelRatio ?? defaultRatio
+  // KLA-592 (fix A): pre-fetch & assemble the page's @font-face bytes ONCE (cached across the blank-retry
+  // below so fonts are never refetched) so the REAL face embeds into the SVG instead of a mismatched fallback.
+  // Skipped for the fast viewport preview (skipFonts). Bounded — never stalls the capture; CORS-blocked fonts
+  // are dropped gracefully. `embeddedFamilies` tells the icon-glyph blanker which faces render vs must be blanked.
+  const fontEmbed = opts.skipFonts ? EMPTY_FONT_EMBED : await buildFontEmbedCssBounded()
   // Explicit render box (CSS px). When set, modern-screenshot uses these instead of the node's
   // getBoundingClientRect() — which is how the full-page live-review capture forces the WHOLE
   // scrollable document to render instead of only the body's (often viewport-sized) box.
@@ -446,12 +712,24 @@ export async function safeToPngWithScale(
     skipped = 0
     // Renderer: modern-screenshot's domToPng — a maintained, API-compatible fork of html-to-image that is
     // ~1.8× faster on the same DOM (benchmarked KLAVITYKLA-393). Option mapping vs html-to-image:
-    //   pixelRatio → scale · skipFonts:true → font:false · imagePlaceholder → fetch.placeholderImage.
+    //   pixelRatio → scale · imagePlaceholder → fetch.placeholderImage.
     // `maximumCanvasSize` bounds a very tall page's output (parity with html-to-image's implicit clamp).
+    // KLA-592 (font quality — supersedes the KLA-587 `font:false` blanket-skip): fonts break in a DOM
+    // re-render two ways — (1) the render fires before web fonts load → fallback face, and (2) the font bytes
+    // aren't embedded in the SVG → the page's face falls back to a mismatched one → text overlaps.
+    //   (1) is fixed by awaiting document.fonts.ready in settleForCapture() BELOW before the first render.
+    //   (2) is fixed here: `font.cssText` = the @font-face bytes we pre-fetched & inlined (buildFontEmbedCss),
+    //       so text rasterises in the REAL face. Only CORS/CSP-blocked fonts still fall back (unfetchable
+    //       client-side); those + icon-font ligatures that can't embed are blanked via onCloneEachNode so a
+    //       glyph never leaks as overlapping raw text. When nothing could be embedded we pass `font:false`
+    //       (skip the doomed native re-fetch → no CSP spam) and still steer the reporter to Screen for a
+    //       truly pixel-perfect shot. The fast viewport preview (skipFonts) also uses `font:false`.
+    const fontOption = (!opts.skipFonts && fontEmbed.cssText) ? { cssText: fontEmbed.cssText } : false as const
     const out = await withTimeout(domToPng(node, {
       scale: pixelRatio,
       ...(explicitSize ?? {}),
-      font: false,
+      font: fontOption,
+      onCloneEachNode: (cloned: Node) => blankUnrenderableIconGlyphs(cloned, fontEmbed.embeddedFamilies),
       maximumCanvasSize: MAX_CAPTURE_CANVAS_EDGE,
       fetch: { placeholderImage: TRANSPARENT_PIXEL },
       filter: (n: Node) => {
@@ -591,16 +869,27 @@ export function viewportCaptureSize(): { width: number; height: number } {
 
 /**
  * KLAVITYKLA-509 (viewport-first capture): a FAST, above-the-fold render of the page top used as the
- * IMMEDIATE preview while the slower full-page render finishes in the background. Renders document.body
+ * IMMEDIATE preview while the slower full-page render finishes in the background. Renders the page
  * clipped to the viewport box (top slice) with fonts skipped for speed. The top slice is consistent with
- * the full-page render (which also renders document.body from the top), so swapping the preview for the
- * full-page image later is not jarring — the full image simply extends below the fold. Returns the same
- * shape as {@link safeToPngWithQuality} so the composer can badge/normalize it identically.
+ * the full-page render (which also renders from the top), so swapping the preview for the full-page image
+ * later is not jarring — the full image simply extends below the fold. Returns the same shape as
+ * {@link safeToPngWithQuality} so the composer can badge/normalize it identically.
+ *
+ * KLA-BLANK-VIEWPORT (founder P1, PX4): captures document.documentElement (<html>), NOT document.body. On
+ * app-shell / inner-scroller layouts (`display:flex; min-height:100vh` with the real content in a scrolled
+ * INNER child — e.g. PX4, a CodeIgniter app), document.body's own rendered box COLLAPSES to viewport height
+ * and its visible content lives in a scrolled descendant, so a DOM render of BODY sees an essentially empty
+ * box → a pure-white capture. <html> contains the real content on those layouts (same reasoning as
+ * {@link safeToPngFullPage} / KLAVITYKLA-404), and clipping it to the viewport box still yields the
+ * above-the-fold slice on a normal document. If the render STILL comes back blank/near-white (isBlankCapture
+ * after the built-in settle+retry in safeToPngWithScale), the `blank` flag flows out so the widget's
+ * withSharpSuggestion() steers the reporter to the pixel-perfect Screen (getDisplayMedia) capture instead of
+ * silently handing back a white image; the fetch-free wireframe fallback remains the last resort.
  */
 export async function safeToPngViewport(
   opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number } = {},
 ): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean; partial: boolean }> {
-  const node = (typeof document !== "undefined" ? (document.body ?? document.documentElement) : null) as HTMLElement
+  const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
   const { width, height } = viewportCaptureSize()
   const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, { ...opts, width, height, skipFonts: true })
   return { dataUrl, quality, blank, partial }

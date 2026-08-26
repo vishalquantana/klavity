@@ -6,6 +6,7 @@
 import { test, expect, describe } from "bun:test"
 import {
   trimConsoleLines, trimNetworkLines, clientContextLines, clientContextHtml,
+  buildLogAttachmentText, LOG_ATTACHMENT_FILENAME,
   LOG_MAX_CONSOLE_LINES, LOG_MAX_NETWORK_LINES, LOG_MAX_LINE_LEN,
 } from "./feedback"
 
@@ -75,28 +76,68 @@ describe("trimNetworkLines", () => {
   })
 })
 
-describe("renderers stay bounded + note the trim", () => {
+// KLA-582: console/network logs moved OUT of the ticket body and into a file attachment. The body
+// renderers must no longer emit any Console/Network/Performance dump; the file builder carries them.
+describe("KLA-582: console/network logs are OUT of the body, IN a file attachment", () => {
   const ctx = {
+    userAgent: "Mozilla/5.0 test",
+    identity: { email: "user@acme.com" },
     consoleErrors: [
       ...Array.from({ length: 300 }, (_, i) => ({ level: "warn", message: "repeat warn", timestamp: i })),
-      { level: "error", message: "TypeError: real bug", timestamp: 999 },
+      { level: "error", message: "TypeError: real bug", timestamp: 999, stack: "at foo\nat bar" },
     ],
     networkFailures: [
-      ...Array.from({ length: 40 }, (_, i) => ({ method: "GET", url: "https://www.googletagmanager.com/gtm.js", status: 200, timestamp: i })),
-      { method: "POST", url: "https://api.acme.com/save", status: 500, timestamp: 100 },
+      { method: "GET", url: "https://www.googletagmanager.com/gtm.js", status: 200, timestamp: 1 },
+      { method: "POST", url: "https://api.acme.com/save", status: 500, timestamp: 100, durationMs: 42 },
     ],
+    perfEntries: [{ type: "longtask", name: "self", startMs: 0, durationMs: 120 }],
   }
-  test("text lines keep the error + collapse the noise", () => {
-    const lines = clientContextLines(ctx)
-    expect(lines.some(l => l.includes("Console (301):"))).toBe(true) // header shows the FULL captured count
-    expect(lines.some(l => l.includes("TypeError: real bug"))).toBe(true)
-    expect(lines.some(l => l.includes("repeat warn") && l.includes("(x300)"))).toBe(true)
-    // network: the 40 GTM beacons are hidden; the real 500 stays.
-    expect(lines.some(l => l.includes("api.acme.com/save") && l.includes("500"))).toBe(true)
-    expect(lines.some(l => l.includes("analytics/beacon hidden"))).toBe(true)
+
+  test("text body keeps identity/browser but drops the console/network/perf dump", () => {
+    const lines = clientContextLines(ctx).join("\n")
+    expect(lines).toContain("Browser: Mozilla/5.0 test")
+    expect(lines).toContain("email: user@acme.com")
+    expect(lines).not.toContain("Console")
+    expect(lines).not.toContain("Network")
+    expect(lines).not.toContain("Performance")
+    expect(lines).not.toContain("TypeError: real bug")
+    expect(lines).not.toContain("api.acme.com/save")
   })
-  test("html escapes + bounds", () => {
-    const html = clientContextHtml({ consoleErrors: [{ level: "error", message: "<script>alert(1)</script>" }], networkFailures: [] })
+
+  test("html body keeps browser but drops the console/network/perf dump", () => {
+    const html = clientContextHtml(ctx)
+    expect(html).toContain("Mozilla/5.0 test")
+    expect(html).not.toContain("Console (")
+    expect(html).not.toContain("Network (")
+    expect(html).not.toContain("Performance (")
+    expect(html).not.toContain("TypeError: real bug")
+  })
+
+  test("buildLogAttachmentText serializes the FULL console/network/perf capture", () => {
+    const txt = buildLogAttachmentText(ctx)!
+    expect(txt).toBeTruthy()
+    expect(LOG_ATTACHMENT_FILENAME).toBe("console-network-logs.txt")
+    // header + all three sections present
+    expect(txt).toContain("=== Console (301) ===")
+    expect(txt).toContain("=== Network (2) ===")
+    expect(txt).toContain("=== Performance (1) ===")
+    // full fidelity: the real error + its stack, the GTM beacon (NOT dropped in the file), and the 500
+    expect(txt).toContain("[error] TypeError: real bug")
+    expect(txt).toContain("at foo")
+    expect(txt).toContain("googletagmanager.com/gtm.js")
+    expect(txt).toContain("api.acme.com/save → 500 (42ms)")
+    // every one of the 300 repeated warnings is present (no dedupe/cap in the file)
+    expect(txt.split("repeat warn").length - 1).toBe(300)
+  })
+
+  test("buildLogAttachmentText returns null when there is nothing to attach", () => {
+    expect(buildLogAttachmentText({ userAgent: "x", identity: { email: "a@b.com" } })).toBe(null)
+    expect(buildLogAttachmentText(null)).toBe(null)
+    expect(buildLogAttachmentText({ consoleErrors: [], networkFailures: [] })).toBe(null)
+  })
+
+  test("html still escapes any surviving fields", () => {
+    const html = clientContextHtml({ userAgent: "<script>alert(1)</script>", consoleErrors: [], networkFailures: [] })
     expect(html).not.toContain("<script>alert(1)</script>")
     expect(html).toContain("&lt;script&gt;")
   })

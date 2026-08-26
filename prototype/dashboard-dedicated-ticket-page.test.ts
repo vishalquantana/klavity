@@ -51,10 +51,12 @@ test("the boot hash router handles #tickets/<id> and suppresses the board mount"
   expect(HTML).toContain("else if(deepTkt){window.__klavTktPageOpen=true;setView('tickets');}")
 })
 
-test("the shareable canonical URL is the hash route #tickets/<id>", () => {
+test("the shareable canonical URL is the adaptive share link /t/<id>", () => {
   const fn = extractFn(HTML, "function ticketPageUrl(id)")
-  expect(fn).toContain('u.searchParams.delete("ticket")')
-  expect(fn).toContain('u.hash = "tickets/" + encodeURIComponent(String(id))')
+  // Share-viewer onboarding: Copy link now produces the adaptive /t/<id> URL (member → full ticket,
+  // colleague without access → redacted teaser + email unblur), NOT the in-dashboard hash route.
+  expect(fn).toContain('"/t/" + encodeURIComponent(String(id))')
+  expect(fn).not.toContain('u.hash = "tickets/"')
 })
 
 // ── §6.6: breadcrumb + header (type · key · status pill · back · copy · prev/next) ─────────────────

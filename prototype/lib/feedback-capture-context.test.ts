@@ -7,7 +7,7 @@
 // All tests are pure (no server, no DOM, no network).
 
 import { test, expect, describe } from 'bun:test'
-import { sanitizeClientContext, clientContextHtml, clientContextLines } from './feedback'
+import { sanitizeClientContext, clientContextHtml, clientContextLines, buildLogAttachmentText } from './feedback'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // sanitizeClientContext — perfEntries path
@@ -110,99 +110,75 @@ describe('sanitizeClientContext — perfEntries', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// clientContextHtml — perfEntries rendering
+// KLA-582: perfEntries no longer render into the ticket BODY (html/text). The body
+// stays clean; the perf/console/network capture now travels in the log-file attachment.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('clientContextHtml — perfEntries', () => {
-  test('renders a Performance section when perfEntries is present', () => {
-    const ctx = {
-      perfEntries: [
-        { type: 'longtask', name: 'longtask', startMs: 1700000000100, durationMs: 95 },
-        { type: 'resource', name: 'https://cdn.example.com/logo.png', startMs: 1700000000200, durationMs: 32, initiatorType: 'img' },
-      ],
-    }
-    const html = clientContextHtml(ctx)
-    expect(html).toContain('Performance (2)')
-    expect(html).toContain('[longtask]')
-    expect(html).toContain('95ms')
-    expect(html).toContain('[resource]')
-    expect(html).toContain('[img]')
-    expect(html).toContain('logo.png')
-  })
+describe('clientContextHtml/Lines — perfEntries stay OUT of the body (KLA-582)', () => {
+  const ctx = {
+    userAgent: 'Mozilla/5.0',
+    perfEntries: [
+      { type: 'longtask', name: 'longtask', startMs: 1700000000100, durationMs: 95 },
+      { type: 'resource', name: 'https://cdn.example.com/logo.png', startMs: 1700000000200, durationMs: 32, initiatorType: 'img' },
+    ],
+  }
 
-  test('escapes HTML in perfEntry names (XSS guard)', () => {
-    const ctx = {
-      perfEntries: [
-        { type: 'resource', name: 'https://evil.com/<script>alert(1)</script>.png', startMs: 0, durationMs: 10, initiatorType: 'img' },
-      ],
-    }
+  test('html body omits the Performance dump but keeps browser', () => {
     const html = clientContextHtml(ctx)
-    expect(html).not.toContain('<script>')
-    expect(html).toContain('&lt;script&gt;')
-  })
-
-  test('omits the Performance section when perfEntries is absent', () => {
-    const ctx = { userAgent: 'Mozilla/5.0' }
-    const html = clientContextHtml(ctx)
+    expect(html).toContain('Mozilla/5.0')
     expect(html).not.toContain('Performance')
-    expect(html).not.toContain('perfEntries')
+    expect(html).not.toContain('logo.png')
   })
 
-  test('omits duration suffix when durationMs is 0 (paint entries have duration:0)', () => {
-    const ctx = {
-      perfEntries: [{ type: 'paint', name: 'first-paint', startMs: 1700000000300, durationMs: 0 }],
-    }
-    const html = clientContextHtml(ctx)
-    // Should not append "0ms" for zero-duration paint entries
-    expect(html).not.toContain('0ms')
-    expect(html).toContain('first-paint')
+  test('text body omits the Performance dump but keeps browser', () => {
+    const lines = clientContextLines(ctx).join('\n')
+    expect(lines).toContain('Browser: Mozilla/5.0')
+    expect(lines).not.toContain('Performance')
+    expect(lines).not.toContain('logo.png')
   })
 
-  test('returns empty string when ctx is null', () => {
+  test('empty renderers on null ctx (back-compat)', () => {
     expect(clientContextHtml(null)).toBe('')
     expect(clientContextHtml(undefined)).toBe('')
+    expect(clientContextLines(null)).toEqual([])
+    expect(clientContextLines(undefined)).toEqual([])
   })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// clientContextLines — perfEntries plain-text rendering (connectors)
+// buildLogAttachmentText — perfEntries (+ console/network) render into the FILE
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('clientContextLines — perfEntries', () => {
-  test('renders perfEntries as plain-text lines with type, initiatorType, name, duration', () => {
+describe('buildLogAttachmentText — perfEntries in the log file', () => {
+  test('serializes a Performance section with type, initiatorType, name, duration', () => {
     const ctx = {
       perfEntries: [
         { type: 'longtask', name: 'longtask', startMs: 0, durationMs: 110 },
         { type: 'resource', name: 'https://cdn.example.com/font.woff2', startMs: 0, durationMs: 67, initiatorType: 'other' },
       ],
     }
-    const lines = clientContextLines(ctx)
-    expect(lines).toContain('Performance (2):')
-    const longtaskLine = lines.find(l => l.includes('[longtask]'))
+    const txt = buildLogAttachmentText(ctx)!
+    expect(txt).toContain('=== Performance (2) ===')
+    const longtaskLine = txt.split('\n').find(l => l.includes('[longtask]'))
     expect(longtaskLine).toBeTruthy()
     expect(longtaskLine).toContain('110ms')
-    const resourceLine = lines.find(l => l.includes('font.woff2'))
-    expect(resourceLine).toBeTruthy()
+    const resourceLine = txt.split('\n').find(l => l.includes('font.woff2'))
     expect(resourceLine).toContain('[other]')
     expect(resourceLine).toContain('67ms')
   })
 
   test('omits duration suffix when durationMs is 0', () => {
-    const ctx = {
-      perfEntries: [{ type: 'paint', name: 'first-contentful-paint', startMs: 0, durationMs: 0 }],
-    }
-    const lines = clientContextLines(ctx)
-    const paintLine = lines.find(l => l.includes('first-contentful-paint'))
+    const txt = buildLogAttachmentText({ perfEntries: [{ type: 'paint', name: 'first-contentful-paint', startMs: 0, durationMs: 0 }] })!
+    const paintLine = txt.split('\n').find(l => l.includes('first-contentful-paint'))
     expect(paintLine).not.toContain('ms')
   })
 
-  test('returns empty array when ctx is null', () => {
-    expect(clientContextLines(null)).toEqual([])
-    expect(clientContextLines(undefined)).toEqual([])
+  test('null when there is nothing to attach', () => {
+    expect(buildLogAttachmentText(null)).toBe(null)
+    expect(buildLogAttachmentText({ userAgent: 'x' })).toBe(null)
   })
 
-  test('full sanitize → clientContextLines pipeline round-trip', () => {
-    // Simulate the /api/feedback flow: raw payload from browser → sanitize → render.
+  test('full sanitize → buildLogAttachmentText pipeline round-trip', () => {
     const rawContext = {
       userAgent: 'Chrome/125',
       perfEntries: [
@@ -211,9 +187,10 @@ describe('clientContextLines — perfEntries', () => {
         { type: 'resource', name: 'https://cdn.example.com/bundle.js', startMs: 1700000000600, durationMs: 180, initiatorType: 'script' },
       ],
     }
-    const sanitized = sanitizeClientContext(rawContext)
-    const lines = clientContextLines(sanitized)
-    expect(lines.some(l => l.includes('Performance (3):'))).toBe(true)
+    const txt = buildLogAttachmentText(sanitizeClientContext(rawContext))!
+    expect(txt).toContain('=== Performance (3) ===')
+    expect(txt).toContain('Browser: Chrome/125')
+    const lines = txt.split('\n')
     expect(lines.some(l => l.includes('[longtask]') && l.includes('87ms'))).toBe(true)
     expect(lines.some(l => l.includes('[paint]') && l.includes('first-paint'))).toBe(true)
     expect(lines.some(l => l.includes('[script]') && l.includes('bundle.js') && l.includes('180ms'))).toBe(true)

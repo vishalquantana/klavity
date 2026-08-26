@@ -1,5 +1,6 @@
 // Klavity app server (Bun). Marketing on /, demo + dashboard behind email-OTP login.
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
+import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
 import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
@@ -9,7 +10,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -46,10 +47,11 @@ import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtR
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
+import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
 import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
-import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines } from "./lib/feedback"
+import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
@@ -66,7 +68,7 @@ import {
 import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
 // KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
 import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
-import { buildSuperadminPL } from "./lib/superadmin"
+import { buildSuperadminPL, creditsMarginByWorkspace } from "./lib/superadmin"
 import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
@@ -77,7 +79,7 @@ import type { RecurrenceMemory } from "./lib/recurrence-memory"
 import { allow as rlAllow, record as rlRecord, count as rlCount, clear as rlClear, refund as rlRefund } from "./lib/ratelimit"
 import { wrapUntrusted, UNTRUSTED_GUARD } from "./lib/prompt-safety"
 import { notifyNewSignup, geoLookup } from "./lib/signup-alert"
-import { notifyNewReport } from "./lib/report-alert"
+import { notifyNewReport, notifyUpgradeRequest, type UpgradeRequestReason } from "./lib/report-alert"
 import { notifyBudgetResumeRequest } from "./lib/budget-resume-alert"
 import { reportError } from "./lib/error-alert"
 import { autoTicketError } from "./lib/error-autoticket"
@@ -122,8 +124,12 @@ import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
+import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
+// KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
+import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
+import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle } from "./lib/db"
-import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL } from "./lib/transcribe"
+import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, activeTranscribeModel } from "./lib/transcribe"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
 import { findKnownIssue } from "./lib/known-issue"
@@ -178,6 +184,19 @@ const CLARITY_MODEL = process.env.KLAV_CLARITY_MODEL || "google/gemini-3.1-flash
 // only consumed by requests that ACTUALLY spend an LLM call. Overridable for ops.
 const CLARITY_PER_PROJECT_DAY = Number(process.env.KLAV_CLARITY_PROJECT_DAILY || 500)
 const CLARITY_PROJECT_WINDOW = 24 * 60 * 60 * 1000
+// KLA-586 — AI-enhanced bug description ("smart-compose for bug reports"). POST /api/report/enhance turns
+// the reporter's one-liner + the auto-captured SCREENSHOT + URL + picked element into a structured rich
+// draft via a VISION call. The screenshot is a first-class input, so this MUST use a vision-capable model —
+// do NOT reuse CLARITY_MODEL (gemini-3.1-flash-lite, text-only). Default to MODEL (google/gemini-2.5-flash),
+// the same vision model reactToPage already sends images to. Overridable for ops.
+const ENHANCE_MODEL = process.env.KLAV_ENHANCE_MODEL || MODEL
+// Per-PROJECT daily cap for the enhance vision call. Vision tokens cost more than the clarity text tip, so
+// this default (200/day) is TIGHTER than clarity's 500. IP-independent (keyed on projectId), reuses
+// CLARITY_PROJECT_WINDOW (24h). Overridable for ops.
+const ENHANCE_PER_PROJECT_DAY = Number(process.env.KLAV_ENHANCE_PROJECT_DAILY || 200)
+// A dataURL screenshot can be large. Reject/skip the image when it exceeds this base64 cap BEFORE calling
+// chat() — bounds cost + memory, analogous to the voice route's pre-buffer size guard.
+const ENHANCE_MAX_SHOT_BYTES = Number(process.env.KLAV_ENHANCE_MAX_SHOT_BYTES || 8 * 1024 * 1024)
 // KLA-505 — live-dictation STT endpoint (POST /api/voice/transcribe) budget/abuse guards. A voice clip is
 // a few seconds of Opus (tens of KB), so 8MB is a generous hard cap that still bounds cost + memory. The
 // per-IP window and per-project daily cap mirror the clarity route's dual bound (a forged XFF can't buy a
@@ -185,6 +204,47 @@ const CLARITY_PROJECT_WINDOW = 24 * 60 * 60 * 1000
 const VOICE_TRANSCRIBE_MAX_BYTES = Number(process.env.KLAV_VOICE_MAX_BYTES || 8 * 1024 * 1024)
 const VOICE_TRANSCRIBE_PER_IP = Number(process.env.KLAV_VOICE_PER_IP || 30)
 const VOICE_TRANSCRIBE_PER_PROJECT_DAY = Number(process.env.KLAV_VOICE_PROJECT_DAILY || 1000)
+
+// KLA-505 hardening (memory-DoS): a Content-Length guard is trivially bypassed by a chunked
+// transfer-encoding request (which carries no Content-Length header), after which req.formData()
+// buffers the ENTIRE streamed body into RAM before any size check runs. readBodyBounded() reads the
+// request body stream and ABORTS the moment cumulative bytes exceed `maxBytes`, so an attacker can't
+// smuggle a multi-GB chunked body into heap regardless of headers. Returns the buffered bytes on
+// success, or BODY_TOO_LARGE if the stream exceeds the ceiling (caller replies 413 without buffering
+// the whole thing). The bounded buffer can then be parsed safely (e.g. via Response#formData).
+const BODY_TOO_LARGE = Symbol("body-too-large")
+async function readBodyBounded(req: Request, maxBytes: number): Promise<Uint8Array | typeof BODY_TOO_LARGE> {
+  const body = req.body
+  if (!body) {
+    // No stream exposed (already-buffered / bodyless) — fall back to arrayBuffer with a post-hoc cap.
+    const buf = new Uint8Array(await req.arrayBuffer().catch(() => new ArrayBuffer(0)))
+    return buf.byteLength > maxBytes ? BODY_TOO_LARGE : buf
+  }
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value && value.byteLength) {
+        total += value.byteLength
+        if (total > maxBytes) {
+          try { await reader.cancel() } catch {} // stop the client; don't drain the oversized body into RAM
+          return BODY_TOO_LARGE
+        }
+        chunks.push(value)
+      }
+    }
+  } finally {
+    try { reader.releaseLock() } catch {}
+  }
+  const out = new Uint8Array(total)
+  let off = 0
+  for (const c of chunks) { out.set(c, off); off += c.byteLength }
+  return out
+}
+
 const PORT = Number(process.env.PORT || 4317)
 const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
   .replace("klavity.quantana.top", "klavity.in")
@@ -568,6 +628,159 @@ async function generateAndSaveTitle(feedbackId: string, observation: string | nu
     console.warn("[auto-title] non-fatal:", e?.message || e)
   }
 }
+// #641 (V1): fixed-cadence "time-interval" keyframe selection. The shipping-small V1 the ticket asks for —
+// one still every KEYFRAME_INTERVAL_SEC seconds, capped to KEYFRAME_MAX_V1 (narration-/click-weighted picks
+// are a later iteration). Pure + bounded: interior offsets only (starts at the first interval, stops before
+// the clip end) so we skip the black first/last frames. Returns [] for unknown/zero duration so the caller
+// can fall back to the transcript-flagged picker. Both knobs are env-tunable for prod without a redeploy.
+const KEYFRAME_INTERVAL_SEC = Math.max(1, Number(process.env.KLAV_KEYFRAME_INTERVAL_SEC) || 5)
+const KEYFRAME_MAX_V1 = Math.max(1, Number(process.env.KLAV_KEYFRAMES_MAX) || 6)
+function pickIntervalKeyframeTimestampsMs(
+  durationMs: number | undefined,
+  everyMs: number = KEYFRAME_INTERVAL_SEC * 1000,
+  cap: number = KEYFRAME_MAX_V1,
+): number[] {
+  if (!durationMs || durationMs <= 0) return []
+  const out: number[] = []
+  const step = Math.max(1000, Math.round(everyMs))
+  for (let t = step; t < durationMs && out.length < cap; t += step) out.push(Math.round(t))
+  // Very short clips (shorter than one interval) still deserve a mid-frame rather than none.
+  if (!out.length) out.push(Math.round(durationMs / 2))
+  return out.slice(0, cap)
+}
+
+// KLA-603: POST-SUBMIT video-transcript enrichment. Runs AFTER the async STT pass (transcribeFeedback*)
+// resolves a video's transcript — see the intake fire-and-forget block. Turns the (already-generated)
+// walkthrough transcript into leverage, all BEST-EFFORT (a failure here NEVER touches the stored report,
+// its exports, or the transcript itself):
+//   1. AI walkthrough summary — ONLY when the reporter's own description was thin/empty, generate a
+//      structured summary/actual/expected/steps GROUNDED in the transcript + the captured screenshot via
+//      the budget-gated chat() path, and store it in a DEDICATED column (never overwriting observation).
+//   2. Key frames — extract a handful of bounded, downscaled stills at transcript-flagged (or evenly
+//      spaced) moments and append them to the report as image attachments (they flow to the tracker +
+//      dashboard for free).
+// The transcript→tracker-body <details> block is added at EXPORT time in feedbackToTicketPayload (so it
+// always reflects the latest transcript), not here.
+async function enrichReportFromTranscript(opts: { feedbackId: string; projectId: string }): Promise<void> {
+  const { feedbackId, projectId } = opts
+  if (!db) return
+  let fb: any
+  try {
+    fb = await feedbackById(projectId, feedbackId)
+  } catch (e: any) { console.warn("[video-enrich] load failed (non-fatal):", e?.message || e); return }
+  if (!fb) return
+
+  const transcripts = collectVideoTranscripts(fb)
+  if (!transcripts.length) return // nothing transcribed yet → nothing to leverage
+
+  // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet once for this post-submit
+  // enrichment. Best-effort — a miss must NEVER touch the report; soft mode only logs wouldBlock.
+  const wsId = db ? await accountIdForAiCall(projectId, null, fb.actorEmail ?? null) : null
+  const creditsPlan = wsId ? await accountPlan(wsId) : null
+
+  // ── (1) AI walkthrough summary — gated on a THIN reporter description (additive; never clobbers text). ──
+  try {
+    const alreadySummarized = fb.aiWalkthrough && typeof fb.aiWalkthrough === "object"
+    if (KEY && !alreadySummarized && isThinDescription(fb.observation)) {
+      const transcriptText = gatherTranscriptText(transcripts)
+      if (transcriptText) {
+        // Fetch the captured primary screenshot as a dataURL so the summary is grounded in the page too,
+        // exactly like the pre-submit /api/report/enhance vision call. Best-effort — text-only if absent.
+        let shotDataUrl = ""
+        if (fb.screenshotId) {
+          try {
+            const shot = await screenshotById(String(fb.screenshotId))
+            if (shot) {
+              const { bytes, contentType } = await getObjectBytes(shot.s3Key)
+              if (bytes.byteLength <= ENHANCE_MAX_SHOT_BYTES) {
+                shotDataUrl = `data:${contentType || "image/png"};base64,${Buffer.from(bytes).toString("base64")}`
+              }
+            }
+          } catch (e: any) { console.warn("[video-enrich] screenshot fetch skipped (non-fatal):", e?.message || e) }
+        }
+        const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shotDataUrl)
+        // Soft-meter the transcript-enrichment vision call as a "transcript" action, priced per minute.
+        let transcriptMinutes = 1
+        try { const totalMs = transcripts.reduce((s, t) => s + (t.durationMs || 0), 0); if (totalMs > 0) transcriptMinutes = totalMs / 60000 } catch {}
+        let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+        try { if (wsId) rv = await reserveCredits(wsId, "transcript", { plan: creditsPlan, units: transcriptMinutes, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] video-enrich transcript reserve skipped (non-fatal):", e?.message || e) }
+        if (rv?.wouldBlock) console.log(`[credits] video-enrich transcript wouldBlock ws=${wsId} (soft)`)
+        const draft = await generateEnhancedDraft(transcriptText, {
+          llm: async (oneLiner, systemPrompt) => {
+            const userParts: any[] = [{
+              type: "text",
+              // The transcript + reporter note + page URL are UNTRUSTED (a spoken walkthrough is user
+              // content) → fence them so the model treats them as data, never instructions.
+              text: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating the bug):\n" + wrapUntrusted(oneLiner) +
+                    "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(String(fb.observation || "(none)")) +
+                    "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(String(fb.reportUrl || fb.pageUrl || "(unknown)")),
+            }]
+            if (shotOk) userParts.push({ type: "image_url", image_url: { url: shotDataUrl } })
+            const { content } = await chat(
+              [
+                { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+                { role: "user", content: userParts },
+              ],
+              700, true,
+              // feature tag 'video-enrich' → budget-gated + cost-logged like every other LLM call.
+              { type: "video-enrich", feature: "video-enrich", model: ENHANCE_MODEL, projectId, email: fb.actorEmail ?? null, temperature: 0.2 },
+            )
+            return String(content ?? "")
+          },
+        })
+        try { await rv?.settle({ ok: !!draft, aiCallId: null }) } catch {}
+        if (draft) {
+          const text = renderDraftToText(draft)
+          await setFeedbackWalkthroughSummary(feedbackId, projectId, {
+            text, draft, source: transcripts[0].source, at: Date.now(),
+          }).catch((e: any) => console.warn("[video-enrich] store summary failed (non-fatal):", e?.message || e))
+        }
+      }
+    }
+  } catch (e: any) { console.warn("[video-enrich] walkthrough summary failed (non-fatal):", e?.message || e) }
+
+  // ── (2) Key frames — bounded, downscaled stills at transcript-flagged/evenly-spaced moments. ──
+  try {
+    // Don't re-extract if this report already carries keyframes (the pass appends, so it must run once).
+    const existing = Array.isArray(fb.attachments) ? fb.attachments : []
+    const hasKeyframes = existing.some((a: any) => a && a.keyframe === true)
+    // Prefer a source we can actually fetch bytes for; bias to one with narration segments (better picks).
+    const src: VideoTranscript | undefined =
+      transcripts.find(t => t.key && t.segments && t.segments.length) || transcripts.find(t => t.key)
+    if (!hasKeyframes && src && src.key) {
+      // Soft-meter keyframe extraction (flat 2cr). Reserved only here — inside the guard — so a
+      // no-op enrichment never books credits. Settled on whether any keyframe was actually appended.
+      let kfRv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try { if (wsId) kfRv = await reserveCredits(wsId, "keyframes", { plan: creditsPlan, refFeedbackId: feedbackId, actorEmail: fb.actorEmail ?? null }) } catch (e: any) { console.warn("[credits] keyframes reserve skipped (non-fatal):", e?.message || e) }
+      if (kfRv?.wouldBlock) console.log(`[credits] video-enrich keyframes wouldBlock ws=${wsId} (soft)`)
+      const { bytes, contentType } = await getObjectBytes(src.key)
+      // #641 (V1): prefer fixed time-interval keyframes (a still every N seconds, capped). When the clip
+      // duration is unknown we fall back to the transcript-flagged / evenly-spaced picker so we still emit a
+      // couple of stills rather than none. Both paths flow the SAME transcript into the ticket <details> at
+      // export time (feedbackToTicketPayload) — this only governs WHICH frames get grabbed.
+      const intervalTs = pickIntervalKeyframeTimestampsMs(src.durationMs)
+      const timestamps = intervalTs.length ? intervalTs : pickKeyframeTimestampsMs(src.durationMs, src.segments, undefined)
+      const frames = await extractKeyframes(bytes, String(src.contentType || contentType || ""), timestamps)
+      const newAtts: Array<Record<string, any>> = []
+      if (frames.length) {
+        for (let i = 0; i < frames.length; i++) {
+          const f = frames[i]
+          try {
+            const label = `keyframe-${String(i + 1).padStart(2, "0")}-at-${fmtTimestamp(f.atMs / 1000).replace(/:/g, "")}.jpg`
+            const up = await uploadAttachment(f.bytes, label, f.contentType)
+            newAtts.push({ key: up.key, filename: up.filename, contentType: up.contentType, size: f.bytes.byteLength, keyframe: true, atMs: f.atMs })
+          } catch (e: any) { console.warn("[video-enrich] keyframe upload failed (non-fatal):", e?.message || e) }
+        }
+        if (newAtts.length) {
+          await appendFeedbackAttachments(feedbackId, projectId, newAtts)
+            .catch((e: any) => console.warn("[video-enrich] append keyframes failed (non-fatal):", e?.message || e))
+        }
+      }
+      try { await kfRv?.settle({ ok: newAtts.length > 0, aiCallId: null }) } catch {}
+    }
+  } catch (e: any) { console.warn("[video-enrich] keyframe extraction failed (non-fatal):", e?.message || e) }
+}
+
 // parseJSON is imported from ./lib/parse-json (extracted for unit-testability).
 // All callers below use the imported function; behaviour is identical.
 // sanitizeTypedFields: alias for sanitizeInsight (imported from lib/extract-sanitize).
@@ -863,6 +1076,8 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/ping":
     case "/api/widget/lead":
     case "/api/widget/sims":
+    // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
+    case "/api/upgrade-request":
     case "/api/feedback":
     case "/api/errors":
     case "/api/consent":
@@ -1550,6 +1765,113 @@ function v3PersonaFields(body: any): { type: string; simClass: string | null; si
   return { type, simClass, side, core }
 }
 
+// ── #643: Preset Sim library ──────────────────────────────────────────────────────────────────────
+// A starter cast of generic "QA reviewer" Sims so a user gets instant value in Sim Studio and a QA
+// engineer can auto-identify improvement areas without first authoring a persona from scratch. These
+// are served (read-only) by GET /api/personas/presets and one-click added via the normal POST
+// /api/personas choke point, so they flow through the SAME create path (dedup + quota) as any Sim.
+//
+// EDITABLE STARTING POINT: the prompt text lives in each preset's `summary` (the reviewer's brief)
+// and `core.watchFor` (the concrete things it scrutinises on any page) — the exact fields reactToPage
+// serialises into the persona. Product/QA (Raghu) refine these in place; keep them clear and specific.
+// simClass "user" (operates the product hands-on, reacts to UI) + side "internal" (an internal QA
+// reviewer, not a customer) mirrors how a QA engineer evaluates a build.
+type PresetSim = {
+  presetId: string; name: string; role: string; initials: string; accent: string
+  simClass: "user"; side: "internal"; summary: string
+  core: import("./lib/db").PersonaCore; insights: Array<{ kind: string; text: string }>
+}
+const PRESET_SIMS: PresetSim[] = [
+  {
+    presetId: "grammar-spelling", name: "Grammar & Spelling", role: "Copy & language reviewer",
+    initials: "GS", accent: "#6366f1", simClass: "user", side: "internal",
+    summary: "A meticulous copy editor who reads every word on the page. Flags typos, misspellings, missing or double spaces after full stops, inconsistent verb tense, and awkward or ungrammatical phrasing. Quotes the exact offending text and suggests the correction.",
+    core: {
+      goals: ["Catch every typo and spelling error before a user sees it", "Keep tense, tone and punctuation consistent across the page", "Make copy read cleanly and professionally"],
+      expertise: "Professional copy editing, proofreading, English grammar and style conventions",
+      temperament: "Precise, detail-obsessed, calm",
+      voice: "Editorial and specific — always quotes the exact text and offers a fix",
+      watchFor: ["Spelling mistakes and typos", "Missing or double spacing after full stops and other punctuation", "Inconsistent verb tense within a sentence or section", "Grammatical errors and awkward phrasing", "Inconsistent capitalisation and punctuation style"],
+    },
+    insights: [
+      { kind: "pain", text: "Typos and misspelled words that slipped through review" },
+      { kind: "pain", text: "Inconsistent spacing after full stops and mixed tense" },
+      { kind: "want", text: "Clean, consistent, professionally proofread copy" },
+    ],
+  },
+  {
+    presetId: "ui-alignment", name: "UI Alignment & Consistency", role: "Visual layout reviewer",
+    initials: "UA", accent: "#0ea5e9", simClass: "user", side: "internal",
+    summary: "A sharp-eyed UI reviewer who scans for misaligned elements, inconsistent spacing and padding, and broken visual hierarchy. Notices when buttons, inputs, cards or text don't line up on a shared edge or baseline, when gaps are uneven, and when the most important thing on the page isn't the most visually prominent.",
+    core: {
+      goals: ["Every element aligns to a consistent grid and baseline", "Spacing and padding are even and rhythmic", "Visual hierarchy points the eye to what matters most"],
+      expertise: "UI design, layout systems, spacing scales, visual hierarchy and Gestalt principles",
+      temperament: "Exacting, orderly",
+      voice: "Design-critique — names the specific elements that are off and by how much",
+      watchFor: ["Misaligned elements that don't share an edge or baseline", "Inconsistent spacing, padding or margins between similar elements", "Uneven gaps in lists, grids or button rows", "Weak visual hierarchy — the primary element isn't the most prominent", "Inconsistent element sizes, corner radii or border weights"],
+    },
+    insights: [
+      { kind: "pain", text: "Elements that don't line up on a shared edge or baseline" },
+      { kind: "pain", text: "Inconsistent padding and uneven spacing between elements" },
+      { kind: "want", text: "A tidy, grid-aligned layout with clear visual hierarchy" },
+    ],
+  },
+  {
+    presetId: "colour-branding", name: "Colour & Branding Consistency", role: "Brand & semantic-colour reviewer",
+    initials: "CB", accent: "#f59e0b", simClass: "user", side: "internal",
+    summary: "A brand guardian who checks that colour is used consistently and semantically. Flags colours used against convention or the product's own patterns — especially status/progress colours whose meaning contradicts expectation. Real example (Venus Pro): a 100% completed/final state was shown in ORANGE while an 80% partial state was GREEN; the expected convention is that the final/done state is GREEN, not orange. Flag 'orange used for a completed/final state where green is the expected final-state colour' and any similar brand or semantic-colour mismatch.",
+    core: {
+      goals: ["Colour meaning matches convention (green = done/success, red = error, amber = in-progress/warning)", "Brand colours are applied consistently across the page", "Status and progress indicators use the semantically-correct colour"],
+      expertise: "Brand systems, design tokens, semantic colour conventions and accessibility of colour",
+      temperament: "Principled, consistency-driven",
+      voice: "Brand-review — names the element, the colour used, and the colour convention expects",
+      watchFor: ["Orange/amber used for a completed or final (100%) state where green is the expected final-state colour", "A partial or in-progress state shown in green where amber/blue is expected", "Colours used against the product's own established convention or brand palette", "Success shown in red, or error/danger shown in green", "Inconsistent brand colours (off-brand shades) across similar components"],
+    },
+    insights: [
+      { kind: "pain", text: "Orange used for a 100% completed/final state where green is expected (Venus Pro example)" },
+      { kind: "pain", text: "Status colours that contradict their conventional meaning" },
+      { kind: "want", text: "Consistent, semantically-correct, on-brand use of colour" },
+    ],
+  },
+  {
+    presetId: "accessibility", name: "Accessibility", role: "Accessibility & a11y reviewer",
+    initials: "AY", accent: "#10b981", simClass: "user", side: "internal",
+    summary: "An accessibility reviewer who checks the page against common a11y needs. Flags images missing alt text, interactive elements missing hover/title text, low-contrast text or controls, and form fields missing labels. Calls out anything that would block a screen-reader or keyboard user, or a low-vision user.",
+    core: {
+      goals: ["Every image has meaningful alt text", "Every control is labelled and reachable", "Text and controls meet contrast guidelines"],
+      expertise: "WCAG 2.1/2.2, ARIA, screen readers, keyboard navigation and colour contrast",
+      temperament: "Empathetic, thorough, advocacy-minded",
+      voice: "Standards-based — cites the a11y gap and who it excludes",
+      watchFor: ["Images missing alt text", "Buttons, icons or links missing hover/title/aria labels", "Poor colour contrast between text and its background", "Form inputs missing visible or programmatic labels", "Controls that can't be reached or operated by keyboard alone"],
+    },
+    insights: [
+      { kind: "pain", text: "Images with no alt text and controls with no labels" },
+      { kind: "pain", text: "Low-contrast text that low-vision users can't read" },
+      { kind: "want", text: "A page usable by screen-reader, keyboard and low-vision users" },
+    ],
+  },
+  {
+    presetId: "cta-clarity", name: "User-Friendliness & CTA Clarity", role: "UX & CTA clarity reviewer",
+    initials: "UF", accent: "#ec4899", simClass: "user", side: "internal",
+    summary: "A first-time user who judges how obvious and friendly the page is. Checks that the primary call-to-action is evidently visible without hunting or scrolling, that the key information a user needs is surfaced on the right screen, and that the flow is intuitive. Flags buried CTAs, competing buttons, and important info hidden below the fold or behind extra clicks.",
+    core: {
+      goals: ["The primary action is immediately obvious", "The information a user needs is on the screen they need it", "The flow feels intuitive with no dead-ends or guesswork"],
+      expertise: "UX, conversion, information architecture and first-run/onboarding flows",
+      temperament: "Impatient, pragmatic, user-first",
+      voice: "Plain-spoken first-time-user reactions — says what confused them and what they expected",
+      watchFor: ["Primary CTA that's buried, low-contrast, or requires scrolling to find", "Multiple competing CTAs with no clear primary action", "Key information hidden below the fold or behind extra clicks", "Unclear or vague button labels that don't say what happens next", "Non-intuitive flows, dead-ends or missing next-step guidance"],
+    },
+    insights: [
+      { kind: "pain", text: "The main CTA is buried or needs scrolling to find" },
+      { kind: "pain", text: "Key info isn't surfaced on the screen where it's needed" },
+      { kind: "want", text: "An obvious primary action and an intuitive, friendly flow" },
+    ],
+  },
+]
+// Shape a preset into the exact body POST /api/personas accepts (so the UI can add it one-click and
+// the server stamps it as simSource:'preset'). Exposed for tests.
+export function _presetSimsForTest(): PresetSim[] { return PRESET_SIMS }
+
 // ── KLAVITYKLA-461: Convert a Sim → an AutoSim ────────────────────────────────────────────────────
 // Pull the persona's pains (things she watches for) and wants (her goals) from BOTH the insights[]
 // array and the v3 core, so the carried-over chips + objective survive either storage shape.
@@ -1614,6 +1936,19 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
   const title = resolvedTitle && resolvedTitle !== "Untitled report" ? resolvedTitle : "Sim report"
   const lines: string[] = []
   if (fb.observation) lines.push(fb.observation)
+  // KLA-603: "AI summary from walkthrough" — when the reporter leaned on a video (thin/empty typed text),
+  // the post-submit enrichment pass generated a structured summary GROUNDED in the transcript + screenshot.
+  // Surface it prominently (right under the observation) so a dev reads the leverage first. ADDITIVE — this
+  // never replaces the reporter's own words. Tolerant of both the parsed (aiWalkthrough) + raw-row shapes.
+  {
+    let wt: any = (fb as any).aiWalkthrough
+    if (!wt && (fb as any).ai_walkthrough_json) { try { wt = JSON.parse(String((fb as any).ai_walkthrough_json)) } catch { wt = null } }
+    const wtText = wt && typeof wt.text === "string" ? wt.text.trim() : ""
+    // KLA-603 (privacy): the model is instructed to QUOTE the spoken/on-screen transcript, so this
+    // summary can carry `?token=…` / `?api_key=…` URLs verbatim. Redact them before the summary is
+    // externalized into a connector/tracker body — same treatment the transcript <details> block gets.
+    if (wtText) lines.push(`AI summary from walkthrough (generated by Klavity):\n${redactSensitiveUrlsInText(wtText)}`)
+  }
   if (simName) lines.push(`Sim: ${simName}`)
   else if (fb.simId) lines.push(`Sim: ${fb.simId}`)
   // Source site = the embed page (host + path). Prefer the stored host so the external ticket shows
@@ -1705,6 +2040,33 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
         attachments.push({ filename, contentType: String(r.contentType || contentType || "video/webm"), bytes, url })
       } catch (e: any) { console.warn("recording fetch failed for ticket (non-fatal):", e?.message || e) }
     }
+  }
+  // KLA-603 (part 2): push the (timestamped) video walkthrough transcript into the tracker body as a
+  // collapsible <details> block — the SAME markdown-<details> pattern inline-log-fallback uses for logs —
+  // so a dev in Jira/GitHub reads the walkthrough WITHOUT opening Klavity or watching the clip. Redacted
+  // with the same URL-param redactor as the rest of the captured content (a spoken/on-screen ?token=…
+  // never leaks). Best-effort: a build failure must never block the export. Only DONE transcripts appear.
+  try {
+    const transcripts = collectVideoTranscripts(fb)
+    const section = buildTranscriptDetailsSection(transcripts, redactSensitiveUrlsInText)
+    if (section) lines.push(section)
+  } catch (e: any) { console.warn("transcript body block skipped (non-fatal):", e?.message || e) }
+  // KLA-582: console/network logs are no longer dumped into the ticket body (noisy, low-signal inline).
+  // They travel as a single text-file attachment instead, so the exported Jira/Plane/etc. issue AND the
+  // Klavity ticket carry the full capture for a dev to open. Best-effort — never block the export if the
+  // log-file build fails. No S3 round-trip: the bytes are serialized in-memory from the stored context.
+  if (fb.clientContext) {
+    try {
+      const logText = buildLogAttachmentText(fb.clientContext)
+      if (logText) {
+        attachments.push({
+          filename: LOG_ATTACHMENT_FILENAME,
+          contentType: "text/plain",
+          bytes: new TextEncoder().encode(logText),
+          url: "",
+        })
+      }
+    } catch (e: any) { console.warn("console/network log attachment build failed for ticket (non-fatal):", e?.message || e) }
   }
   // A.8: occurrence timeline — when this report recurred, append each occurrence's own verbatim
   // wording + date so the external ticket carries the receipts ("you said X on Y, then Y2, then Y3").
@@ -2333,8 +2695,18 @@ async function reconcileStaleInFlightExportOutbox(): Promise<void> {
   }
 }
 
+// Single-flight gate: the sweep runs on a 60s interval, but ONE sweep can take longer than 60s when a
+// tracker is slow (e.g. Plane timing out at 30s/attempt × up to 25 rows). Without this gate two sweeps
+// overlap and both walk the same due rows — the per-row atomic claim (markExportOutboxInFlight) already
+// stops a double-file, but overlapping sweeps still double the tracker load and can race the stale-
+// in_flight reconciler. This module-level boolean makes the sweep skip if a prior run is still draining.
+let outboxSweepRunning = false
+
 async function runExportOutboxSweep(): Promise<void> {
   if (!db) return
+  if (outboxSweepRunning) return
+  outboxSweepRunning = true
+  try {
   await reconcileStaleInFlightExportOutbox()
   const due = await listDueExportOutbox(25).catch(() => [] as Awaited<ReturnType<typeof listDueExportOutbox>>)
   for (const row of due) {
@@ -2392,6 +2764,9 @@ async function runExportOutboxSweep(): Promise<void> {
       touchConnectorHeartbeat(row.connectorId, { kind: "outbound", success: false, error: e?.message || "retry failed" })
         .catch((err: any) => console.warn("heartbeat record failed (non-fatal):", err?.message || err))
     }
+  }
+  } finally {
+    outboxSweepRunning = false
   }
 }
 
@@ -3134,6 +3509,47 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return wjson({ ok: true })
     }
 
+    // ── KLA-612: upgrade-request nudge ─────────────────────────────────────────────────
+    // A guest/anon reporter who hits a cap (e.g. an over-cap file) can REQUEST an upgrade instead of being
+    // asked to pay. Project-scoped, cross-origin (the widget runs on the customer's site), anon-friendly. We
+    // validate the project exists, rate-limit per (workspace, IP) to prevent spam, then dispatch an ATTRIBUTED
+    // nudge to the workspace owner/admins (Slack + email, reusing the KLA-608 report-alert dispatch). The
+    // notification is fire-and-forget and NEVER blocks the response — the endpoint just returns { ok: true }.
+    if (req.method === "POST" && path === "/api/upgrade-request") {
+      const ip = clientIp(req, server)
+      const parsed = await readJsonLimited(req, 4_096) // small structured payload only
+      if (!parsed.ok) return wjson({ error: parsed.error }, parsed.status)
+      const b = parsed.data as Record<string, unknown>
+      const projectId = String(b.projectId || b.project_id || "")
+      if (!projectId) return wjson({ error: "projectId required" }, 400)
+      const proj = db ? await projectById(projectId).catch(() => null) : null
+      if (!proj) return wjson({ error: "not found" }, 404)
+      // Rate-limit per (workspace, IP): a reporter can nudge a few times an hour, no more (anti-spam).
+      if (!rlAllow(`upgradereq:${projectId}:${ip}`, 3, 60 * 60 * 1000)) return wjson({ error: "rate limited" }, 429)
+      // Coerce the reason to the known set; unknown → "other" (never trust client strings verbatim).
+      const REASONS: UpgradeRequestReason[] = ["storage_over_cap", "credit_wall", "quota_exceeded", "other"]
+      const rawReason = String(b.reason || "")
+      const reason: UpgradeRequestReason = (REASONS as string[]).includes(rawReason) ? (rawReason as UpgradeRequestReason) : "other"
+      // Sanitize attribution context — cap every string; only keep http(s) page URLs.
+      const rawCtx = (b.context && typeof b.context === "object") ? (b.context as Record<string, unknown>) : {}
+      const pageRaw = String(rawCtx.page || "").trim().slice(0, 500)
+      const page = /^https?:\/\//i.test(pageRaw) ? pageRaw : null
+      const fileMeta = (rawCtx.fileMeta && typeof rawCtx.fileMeta === "object") ? (rawCtx.fileMeta as Record<string, unknown>) : {}
+      const fileName = fileMeta.name ? String(fileMeta.name).trim().slice(0, 120) : null
+      const sizeMbNum = Number(fileMeta.sizeMb)
+      const fileSizeMb = isFinite(sizeMbNum) && sizeMbNum > 0 ? Math.round(sizeMbNum * 10) / 10 : null
+      const ticketId = rawCtx.ticketId ? String(rawCtx.ticketId).trim().slice(0, 80) : null
+      const emailRaw = String(b.email || "").trim().toLowerCase()
+      const reporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailRaw) && emailRaw.length <= 200 ? emailRaw : null
+      // fire-and-forget — never blocks / fails the response
+      void notifyUpgradeRequest({
+        projectId, projectName: proj.name, accountId: proj.accountId,
+        reason, context: { page, ticketId, fileName, fileSizeMb },
+        reporterEmail, baseUrl: BASE, at: Date.now(),
+      }).catch((err: any) => console.error("upgrade request (non-fatal):", err?.message || err))
+      return wjson({ ok: true })
+    }
+
     // ── client-error relay: browser posts uncaught JS errors here; we forward to Slack ──
     // Anonymous, no auth required. Rate-limited per-IP (5/min) and body-size-capped.
     // Keeps sensitive internals off the client — we only accept a small structured payload.
@@ -3301,6 +3717,91 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return wjson({ score: h.score, coverage: h.coverage, level: h.level, tip })
     }
 
+    // ── KLA-586: POST /api/report/enhance — anonymous, project-scoped, CORS-gated "smart-compose for bug
+    // reports". Turns a reporter's one-liner + the auto-captured SCREENSHOT + page URL + picked element into
+    // a structured rich draft ({summary, actualResult, expectedResult, stepsToReproduce, suggestedSeverity,
+    // suggestedPriority, confidence}) they can accept/edit before submit. This is the heavier, opt-in rung
+    // above the clarity coach: where clarity only NUDGES the text, enhance WRITES the expected/actual/steps
+    // block from the evidence already on the report. VISION call routed through the shared budget-gated
+    // chat() helper (tenant budget + daily cap + cost-log all automatic). Best-effort: any failure returns
+    // { draft: null } (never 500) so the composer simply no-ops. Auth mirrors /api/report/clarity exactly.
+    if (req.method === "POST" && path === "/api/report/enhance") {
+      // Per-IP abuse cap — TIGHTER than clarity (heavier vision call, invoked on explicit click, not per keystroke).
+      if (!rlAllow(`enhance:ip:${clientIp(req, server)}`, 20, 60_000)) return wjson({ error: "rate limited" }, 429)
+      let body: any = null
+      try { body = await req.json() } catch { return wjson({ error: "invalid" }, 400) }
+      const projectId = String(body?.projectId || body?.project || "")
+      const text = String(body?.text || "").slice(0, 4000)
+      if (!projectId) return wjson({ error: "project required" }, 400)
+      const proj = db ? await projectById(projectId) : null
+      if (!proj) return wjson({ error: "not found" }, 404)
+      // Reuse the SAME per-project toggle as clarity — a disabled project never spends an AI call here.
+      if (!proj.reportClarity) return wjson({ error: "disabled" }, 403)
+      if (!KEY) return wjson({ draft: null })
+
+      // Per-project daily LLM cap (in ADDITION to the per-IP window). Keyed on projectId (not IP) so a
+      // forged/rotated X-Forwarded-For can't buy a fresh budget. Rejected WITHOUT an LLM call when over cap.
+      if (!rlAllow(`enhance:proj:${projectId}`, ENHANCE_PER_PROJECT_DAY, CLARITY_PROJECT_WINDOW)) {
+        return wjson({ error: "daily enhance limit reached", draft: null }, 429)
+      }
+
+      // Assemble VISION input. `shot` is a dataURL from the composer's screenshots[]. URL + picked element
+      // are UNTRUSTED data → coerced + clipped.
+      const shot = String(body?.shot || "")
+      const pageUrl = String(body?.pageUrl || "").slice(0, 300)
+      const picked = (body?.picked && typeof body.picked === "object") ? body.picked : null
+      // KLA-586: the picked element's selector + text are reporter/page-controlled DOM (an attacker
+      // page can set element text to injection strings), exactly like the reporter note and page URL
+      // above — so fence them with the SAME wrapUntrusted delimiters instead of appending raw text.
+      const pickedLine = picked
+        ? "\n\nPICKED ELEMENT (untrusted):\n" + wrapUntrusted(
+            `selector: ${String(picked.selector || "").slice(0, 300)}; label: ${String(picked.text || "").slice(0, 120)}`,
+          )
+        : ""
+      // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
+      const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
+
+      // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet + reserve one "enhance" credit.
+      // Best-effort — a resolution/reserve miss must NEVER block Enhance, and in soft mode an
+      // insufficient balance only LOGS (wouldBlock); the draft still returns. Never gates the report.
+      const wsId = db ? await accountIdForAiCall(projectId, null, null) : null
+      const plan = wsId ? await accountPlan(wsId) : (proj?.plan ?? null)
+      let reservation: Awaited<ReturnType<typeof reserveCredits>> | null = null
+      try {
+        if (db && wsId) reservation = await reserveCredits(wsId, "enhance", { plan, refFeedbackId: null })
+        if (reservation?.wouldBlock) console.log(`[credits] enhance wouldBlock ws=${wsId} (soft)`)
+      } catch (e: any) { console.warn("[credits] enhance reserve skipped (non-fatal):", e?.message || e) }
+
+      try {
+        const draft = await generateEnhancedDraft(text, {
+          llm: async (oneLiner, systemPrompt) => {
+            const userParts: any[] = [{
+              type: "text",
+              text: "REPORTER NOTE:\n" + wrapUntrusted(oneLiner) +
+                    "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)") +
+                    pickedLine,
+            }]
+            if (shotOk) userParts.push({ type: "image_url", image_url: { url: shot } })
+            const { content } = await chat(
+              [
+                { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+                { role: "user", content: userParts },
+              ],
+              700,   // maxTokens — the structured draft is small
+              true,  // jsonMode
+              { type: "report-enhance", feature: "report-enhance", model: ENHANCE_MODEL, projectId, email: null, temperature: 0.2 },
+            )
+            return String(content ?? "")
+          },
+        })
+        try { await reservation?.settle({ ok: !!draft, aiCallId: null }) } catch {}
+        return wjson({ draft }) // draft may be null → client no-ops
+      } catch {
+        try { await reservation?.settle({ ok: false, aiCallId: null }) } catch {}
+        return wjson({ draft: null }) // best-effort; never 500 into the composer
+      }
+    }
+
     // ── KLA-505: POST /api/voice/transcribe — server-side LIVE DICTATION for the composer Voice button.
     // The browser Web Speech API (webkitSpeechRecognition) drops with 'network' errors on injected-widget
     // contexts; this replaces it with a real STT pass. The composer records a short mic clip via
@@ -3317,13 +3818,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const ip = clientIp(req, server)
       // Per-IP abuse cap (short clips, several per minute is plenty for dictation).
       if (!rlAllow(`voice:ip:${ip}`, VOICE_TRANSCRIBE_PER_IP, 60_000)) return wjson({ error: "rate limited" }, 429)
-      // Size guard BEFORE req.formData() buffers the whole body into memory (DoS + cost cap). Reject an
-      // over-large upload up front with 413. Voice clips are a few seconds of Opus → well under this.
+      // Size guard BEFORE the whole body lands in memory (DoS + cost cap). Reject an over-large upload up
+      // front with 413. Voice clips are a few seconds of Opus → well under this. NOTE: a Content-Length
+      // check alone is bypassable by a chunked (no Content-Length) request, and req.formData() would then
+      // buffer the ENTIRE streamed body first. We keep the cheap Content-Length fast-reject AND stream the
+      // body through readBodyBounded(), which aborts once ACTUAL bytes cross the ceiling — bounding heap
+      // regardless of headers. The multipart is parsed only from the already-bounded buffer.
+      const SIZE_CEIL = VOICE_TRANSCRIBE_MAX_BYTES + 64 * 1024 // MAX + multipart framing overhead
       const declaredLen = Number(req.headers.get("content-length") || 0)
-      if (declaredLen > VOICE_TRANSCRIBE_MAX_BYTES + 64 * 1024) return wjson({ error: "payload too large" }, 413)
+      if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large" }, 413)
+
+      const bounded = await readBodyBounded(req, SIZE_CEIL)
+      if (bounded === BODY_TOO_LARGE) return wjson({ error: "payload too large" }, 413)
 
       let form: FormData
-      try { form = await req.formData() } catch { return wjson({ error: "expected multipart form" }, 400) }
+      try {
+        // Reconstruct a Request from the bounded bytes + original Content-Type (carries the multipart
+        // boundary) so Bun's multipart parser runs against a hard-capped buffer, never the raw stream.
+        form = await new Request("http://x/", {
+          method: "POST",
+          headers: { "content-type": req.headers.get("content-type") || "" },
+          body: bounded,
+        }).formData()
+      } catch { return wjson({ error: "expected multipart form" }, 400) }
       const projectId = String(form.get("projectId") || form.get("project") || "")
       if (!projectId) return wjson({ error: "project required" }, 400)
       const proj = db ? await projectById(projectId) : null
@@ -3356,17 +3873,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (outcome.status !== "skipped") {
         await recordAiCall({
           type: "transcribe",
-          model: TRANSCRIBE_MODEL,
+          model: activeTranscribeModel(),
           projectId,
           feature: "voice-dictation",
           costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
           ok: outcome.status === "done",
         }).catch(() => null)
+        // KLAVITY CREDITS (Phase 1, SOFT): meter one "voice" dictation (0.1cr). Best-effort — a
+        // resolution/reserve miss must never affect the returned text; soft mode only logs wouldBlock.
+        try {
+          const wsId = await accountIdForAiCall(projectId, null, null)
+          if (wsId) {
+            const rv = await reserveCredits(wsId, "voice", { plan: await accountPlan(wsId), units: 1 })
+            if (rv.wouldBlock) console.log(`[credits] voice wouldBlock ws=${wsId} (soft)`)
+            await rv.settle({ ok: outcome.status === "done", aiCallId: null })
+          }
+        } catch (e: any) { console.warn("[credits] voice reserve skipped (non-fatal):", e?.message || e) }
       }
 
       if (outcome.status === "done") return wjson({ text: outcome.result.text })
       if (outcome.status === "skipped") return wjson({ error: outcome.reason, text: "" }, 413)
-      return wjson({ error: "transcription failed", reason: outcome.reason, text: "" }, 502)
+      // A backend (Deepgram/OpenRouter) error is a CLEAN, HANDLED failure — return 503 (NOT 502/crash) so
+      // the client shows a graceful message and transparently engages its Web Speech fallback (it treats any
+      // non-ok response as "endpoint unavailable"). fallback:true is advisory for the client.
+      return wjson({ error: "transcription failed", reason: outcome.reason, text: "", fallback: true }, 503)
     }
 
     // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──
@@ -4361,7 +4891,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // hero toolbar exposes (pen/line/rect/circle/arrow/text/count) must survive sanitize, else the
             // reporter's markup is silently dropped. `line` + `count` were missing, so those two tools' output
             // never reached the ticket. `pin` is retained for forward-compat though nothing emits it today.
-            const okTypes = new Set(["rect", "arrow", "circle", "pen", "line", "text", "count", "pin"])
+            // PRIVACY (KLA-605): `pixelate`/`redact` are the reporter's PII-redaction regions — they MUST
+            // survive intake, else the clean stored screenshot ships WITHOUT the cover shapes and the
+            // dashboard/export redaction layer (buildRedactionSvg / applyPixelateToCanvas) has nothing to
+            // cover → reporter-redacted PII renders in the clear. The Pixelate brush emits `pixelate`; the
+            // dashboard renderer also honours a `redact` alias, so allowlist both. Their x/y/w/h survive via
+            // the coordinate loop below (never clamped away).
+            const okTypes = new Set(["rect", "arrow", "circle", "pen", "line", "text", "count", "pin", "pixelate", "redact"])
             // Sanitize a single image's markup entry ({ w, h, shapes, region, selector }) → null when empty.
             const sanitizeEntry = (a: any): any => {
               const shapes = Array.isArray(a?.shapes) ? a.shapes.slice(0, 50).filter((s: any) => s && okTypes.has(s.type)).map((s: any) => {
@@ -4573,6 +5109,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // the project's report gate above (anonWidgetAllowed). no-Origin (curl/script) anonymous
             // calls still never reach projectById — the deferred surface stays closed.
             if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = await projectById(reqProject)
+            // ── KLA submit-target: dogfood intake routing ────────────────────────────────────────────
+            // When the reporter picked "Klavity" in the composer ("problem with this tool"), file the report
+            // into the DESIGNATED Klavity intake project (env KLAVITY_INTAKE_PROJECT_ID) instead of the
+            // customer's project — but resolve the real target SERVER-SIDE: the client only ever sends the
+            // 'klavity' flag, never a project id, so this can't be abused to route into an arbitrary project
+            // (no IDOR). The choice never bypasses the auth/gate/anon-triage checks already run above — a
+            // Klavity-targeted anonymous report is still untrusted intake. Origin context (which customer
+            // site/project + page URL + reporter) is preserved in the observation so Klavity can see exactly
+            // "reported via the widget on <customer site>". FAIL-SAFE: if the intake project is unset/invalid
+            // we do NOT drop or leak the report — we keep the origin project and tag it clearly, and warn.
+            const wantsKlavityIntake = String(form.get("feedback_target") || "").toLowerCase() === "klavity"
+            let klavityRerouteNote: string | null = null
+            if (resolved && wantsKlavityIntake) {
+              const originProject = resolved
+              const intakeId = (process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
+              const intakeProj = intakeId ? await projectById(intakeId).catch(() => null) : null
+              const originCtx = `origin project ${originProject.id} (${originProject.name || "unnamed"})` +
+                (reportUrl ? ` · ${reportUrl}` : "") +
+                (validReporterEmail ? ` · reporter ${reporterEmail}` : "")
+              if (intakeProj && intakeProj.id !== originProject.id) {
+                // Route into the Klavity intake project; carry the full origin context in the body.
+                resolved = intakeProj
+                klavityRerouteNote = `[Reported via the Klavity widget on ${originProject.name || originProject.id}` +
+                  (reportUrl ? ` — ${reportUrl}` : "") + `] — ${originCtx}`
+              } else {
+                // FAIL SAFE — intake project not configured / not found / same as origin. Keep the report in
+                // the origin project, tag it so it's never silently mis-filed, and log a warning for the founder.
+                console.warn(`[submit-target] KLAVITY_INTAKE_PROJECT_ID ${intakeId ? `("${intakeId}") is invalid or not found` : "is unset"} — filing Klavity-targeted report into ${originCtx}`)
+                klavityRerouteNote = `(intended for Klavity — intake project not configured; filed to ${originProject.name || originProject.id})`
+              }
+            }
             if (resolved) {
               const projectId = resolved.id
               // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
@@ -4671,8 +5238,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // post-intake AI drafter (below) refines it in place from the captured page context. Reports
               // that DID carry text keep it verbatim.
               const draftedTitle = !description && !String(form.get("observation") || "") && hasEvidence
-              const observation = String(form.get("observation") || "") || description ||
+              const observationBase = String(form.get("observation") || "") || description ||
                 (draftedTitle ? fallbackDraftTitle({ reportType, pageUrl }) : "")
+              // KLA submit-target: prepend the origin-context banner when this report was (re)routed to (or
+              // intended for) the Klavity intake project, so the reviewer sees WHERE it came from even after
+              // the projectId has been swapped to the intake project.
+              const observation = klavityRerouteNote
+                ? `${klavityRerouteNote}\n\n${observationBase}`
+                : observationBase
               const sentiment = String(form.get("sentiment") || "") || null
               const priority = String(form.get("priority") || "") || null
               let suggestedBug: any = null
@@ -4928,28 +5501,32 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 }
               }
 
-              // KLAVITYKLA-438 (Phase 2): async STT transcription of each "Record me" clip. Fire-and-forget
-              // (mirrors the title/label enrichment above) — fetches the clip bytes from S3, transcribes via
-              // OpenRouter, and stores the transcript back on the recording keyed by its id. Never blocks the
-              // submit; new rows only (a deduped repeat already transcribed on its first submission).
-              if (feedbackId && !dedupedInto && recordingDescs.length) {
-                const fbForRec = feedbackId
-                void transcribeFeedbackRecordings({
-                  feedbackId: fbForRec, projectId,
-                  recordings: recordingDescs.map(r => ({ id: r.id, key: r.key, contentType: r.contentType })),
-                }).catch((err: any) => console.warn("[transcribe] non-fatal:", err?.message || err))
-              }
-
-              // KLAVITYKLA-480: transcribe spoken notes in ANY uploaded video attachment (#425 path), not just
-              // "Record me" clips. Same async fire-and-forget contract — transcribeFeedbackAttachments only
-              // touches video/* uploads (others untouched), applies the 20MB cap, stores the transcript by
-              // key, and logs ai_calls. New rows only (a deduped repeat already transcribed on first submit).
-              if (feedbackId && !dedupedInto && attachmentDescs.some(a => /^video\//i.test(a.contentType || ""))) {
-                const fbForAtt = feedbackId
-                void transcribeFeedbackAttachments({
-                  feedbackId: fbForAtt, projectId,
-                  attachments: attachmentDescs.map(a => ({ key: a.key, filename: a.filename, contentType: a.contentType })),
-                }).catch((err: any) => console.warn("[transcribe] attachment non-fatal:", err?.message || err))
+              // KLAVITYKLA-438 (Phase 2) + KLAVITYKLA-480: async STT transcription of "Record me" clips AND
+              // any uploaded video/* attachment. Fire-and-forget (mirrors the title/label enrichment above) —
+              // fetches each clip's bytes from S3, transcribes via OpenRouter, and stores the transcript back
+              // on the recording (by id) / attachment (by key). Never blocks the submit; new rows only (a
+              // deduped repeat already transcribed on its first submission). KLA-603: once ALL transcription
+              // for this report settles, run the post-submit enrichment pass (walkthrough AI-summary +
+              // keyframe stills) — chained here so it sees the just-stored transcripts. All best-effort.
+              const hasVideoRec = feedbackId && !dedupedInto && recordingDescs.length > 0
+              const hasVideoAtt = feedbackId && !dedupedInto && attachmentDescs.some(a => /^video\//i.test(a.contentType || ""))
+              if (hasVideoRec || hasVideoAtt) {
+                const fbForVideo = feedbackId!
+                void (async () => {
+                  const jobs: Promise<any>[] = []
+                  if (hasVideoRec) jobs.push(transcribeFeedbackRecordings({
+                    feedbackId: fbForVideo, projectId,
+                    recordings: recordingDescs.map(r => ({ id: r.id, key: r.key, contentType: r.contentType })),
+                  }))
+                  if (hasVideoAtt) jobs.push(transcribeFeedbackAttachments({
+                    feedbackId: fbForVideo, projectId,
+                    attachments: attachmentDescs.map(a => ({ key: a.key, filename: a.filename, contentType: a.contentType })),
+                  }))
+                  await Promise.allSettled(jobs)
+                  // KLA-603: transcripts are now stored → enrich (never blocks/affects the transcription above).
+                  await enrichReportFromTranscript({ feedbackId: fbForVideo, projectId })
+                    .catch((err: any) => console.warn("[video-enrich] non-fatal:", err?.message || err))
+                })().catch((err: any) => console.warn("[transcribe/enrich] non-fatal:", err?.message || err))
               }
 
               // ── founder notifications (P0 retention loop): email to account owner/admins
@@ -4998,12 +5575,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Success-screen deep link: ONLY authed reporters (extension Bearer / logged-in session)
         // get a dashboard URL — anonymous widget end-users on a customer's site have no dashboard
         // access, so handing them a link would be useless (and leak our app structure). They get
-        // just the reference id to quote to support. The dashboard has no per-ticket route yet, so
-        // the deepest stable link is the Tickets board of the submitting project.
+        // just the reference id to quote to support. Deep-link straight to the newly-created single
+        // ticket (#tickets/<feedbackId>) so "Open in Klavity" lands on the report itself, not the
+        // whole board (KLA-632).
         const dashBase = baseOrigin || reqOrigin
         const linkProject = String(form.get("project_id") || "") || url.searchParams.get("project") || ""
         const issueUrl = (!anonActor && feedbackId && dashBase)
-          ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets`
+          ? `${dashBase}/dashboard${linkProject ? `?project=${encodeURIComponent(linkProject)}` : ""}#tickets/${encodeURIComponent(feedbackId)}`
           : ""
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
       } catch (e: any) {
@@ -5015,6 +5593,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (path === "/api/personas" || path.startsWith("/api/personas/")) {
       const me2 = (await sessionEmail(req)) || (await bearerEmail(req))
       if (!me2) return wjson({ error: "Sign in to continue." }, 401)
+      // #643: preset Sim library — static starter cast, no project needed to browse. Serve BEFORE
+      // resolveProject (a brand-new account may have no project yet, but should still see presets).
+      // The one-click "Add" then POSTs the chosen preset back through the normal create path below.
+      if (req.method === "GET" && path === "/api/personas/presets") {
+        return wjson({ presets: PRESET_SIMS })
+      }
       const proj2 = await resolveProject(me2, url.searchParams.get("project"))
       if (!proj2) return wjson({ error: "No project." }, 400)
       const wid = proj2.id
@@ -5065,9 +5649,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const id = "sim_" + crypto.randomUUID()
           const v3 = v3PersonaFields(body)
           // KLAVITYKLA-301: stamp the creation path so the checklist can tick honestly.
-          // The client sends simSource: 'describe' | 'from-site' | 'transcript' depending on
-          // which Add-a-Sim modal tab was active. Unknown/missing → null (legacy back-compat).
-          const SIM_SOURCE_VALID = new Set(["describe", "from-site", "transcript"])
+          // The client sends simSource: 'describe' | 'from-site' | 'transcript' | 'preset' depending
+          // on which Add-a-Sim modal tab was active. Unknown/missing → null (legacy back-compat).
+          const SIM_SOURCE_VALID = new Set(["describe", "from-site", "transcript", "preset"])
           const simSource = SIM_SOURCE_VALID.has(String(body.simSource || "")) ? String(body.simSource) : null
           await upsertPersona(id, wid, {
             name: incomingName, role: incomingRole,
@@ -6303,7 +6887,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // reportClarity (per-project, DEFAULT on) tells the widget whether to render the description-clarity
         // helper + wire the debounced /api/report/clarity tip. Threaded top-level (a sibling of modalConfig);
         // the widget merges it into the config it hands to buildModal.
-        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity }, 200, WIDGET_CORS)
+        // projectName (public, project-scoped) drives the "Your team" sub-label of the submit-target
+        // segmented control so the destination reads naturally (e.g. "PX4 Project"). submitTargetToggle
+        // (DEFAULT on) tells the widget whether to render the "Where should this go? · Your team / Klavity"
+        // control — the founder wants it on every widget for now; a project opts out via its modal config.
+        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity, projectName: proj.name }, 200, WIDGET_CORS)
       }
     }
 
@@ -6860,7 +7448,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // KLAVITYKLA-229: GET gates remember the intended destination via ?next= so verify can resume it.
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
-    if (req.method === "GET" && path === "/dashboard") return me ? await dashboardPage() : loginGate(path, url.search)
+    if (req.method === "GET" && path === "/dashboard") {
+      if (me) return await dashboardPage()
+      // A member's own address-bar deep link (?ticket=<id>) must work for a colleague: send an
+      // unauthenticated visitor to the adaptive /t/:ref so they get the teaser, not a login wall.
+      const _tkt = url.searchParams.get("ticket")
+      if (_tkt) return redirect("/t/" + encodeURIComponent(_tkt))
+      return loginGate(path, url.search)
+    }
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
     if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage() : loginGate(path, url.search)
@@ -7123,24 +7718,121 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const ticketRefMatch = path.match(/^\/t\/([A-Za-z0-9_-]{1,80})$/)
     if (req.method === "GET" && ticketRefMatch) {
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
-      if (!me) return loginGate(path, url.search)
       const resolved = await resolveFeedbackRef(ticketRefMatch[1]).catch(() => null)
-      // Unknown/malformed ref → bare 404 (no info leak).
       if (!resolved) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
-      // Real membership gate: resolve project from the ROW, then check the caller belongs to it.
-      const tAccess = await projectAccess(me, resolved.projectId).catch(() => null)
-      if (!tAccess) return json({ error: "You are not a member of this ticket's project." }, 403)
-      // Serve the standalone page with the resolved FULL feedback id + project id injected as JS
-      // string literals (the ref may have been the short form; the page needs the full id for the APIs).
-      const _tPath = PUB + "/ticket.html"
-      if (!(await Bun.file(_tPath).exists())) return new Response("Not found", { status: 404 })
-      let _tHtml = await Bun.file(_tPath).text()
-      _tHtml = _tHtml
-        .replaceAll("__TICKET_ID__", resolved.id)
-        .replaceAll("__PROJECT_ID__", resolved.projectId)
+      const access = await ticketViewAccess(resolved.id, me)
+      if (access === "login") {
+        // share_mode=off — members only. Anon → login gate; signed-in non-member → bare 404 (no leak).
+        return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
+      }
+      const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
+      // Member/admin full → the fast standalone member page (KLA-491, unchanged).
+      const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
+      if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
+      let _tHtml = await Bun.file(pagePath).text()
+      _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
       })
+    }
+
+    // ── GET /api/t/:ref — adaptive ticket JSON for the shared-ticket viewer page. Full payload only
+    // when ticketViewAccess resolves 'full'; otherwise a SERVER-SIDE-REDACTED teaser (title/status/
+    // priority/source/createdAt/commentCount ONLY — never description, screenshot, reporter, comments).
+    const apiTicketMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})$/)
+    if (req.method === "GET" && apiTicketMatch) {
+      if (!rlAllow("apiticket:" + clientIp(req, server), 120, 60_000)) return json({ error: "Rate limited" }, 429)
+      const me = await sessionEmail(req)
+      const resolved = await resolveFeedbackRef(apiTicketMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      const access = await ticketViewAccess(resolved.id, me)
+      if (access === "login") return json({ error: "Not found" }, 404) // share_mode=off — no teaser
+      const fbRow = await feedbackById(resolved.projectId, resolved.id)
+      if (!fbRow) return json({ error: "Not found" }, 404)
+      const comments = await listTicketComments(resolved.id).catch(() => [])
+      const teaser = {
+        ref: String(fbRow.id).split("-")[0],
+        title: effectiveTicketTitle(fbRow),
+        status: fbRow.status ?? null,
+        priority: fbRow.priority ?? null,
+        source: fbRow.source ?? null,
+        createdAt: fbRow.createdAt ?? null,
+        commentCount: comments.length,
+      }
+      if (access !== "full") {
+        // teaser | pending — redacted. No description, no screenshot, no comment bodies.
+        return json({ access, ticket: teaser }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
+      }
+      // full — description, screenshot (HMAC-gated /img/ token), page context, comments.
+      const ticket = {
+        ...teaser,
+        description: fbRow.observation,
+        screenshotUrl: fbRow.screenshotId ? `${BASE}/img/${signImageToken(fbRow.screenshotId)}` : null,
+        pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
+        urlHost: fbRow.urlHost ?? null,
+        comments: comments.map((c: any) => ({ author: c.author, body: c.body, createdAt: c.createdAt })),
+      }
+      return json({ access: "full", ticket }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
+    }
+
+    // ── POST /api/t/:ref/unlock {email} — email-to-unblur step 1. Issue an OTP for this email.
+    // Always responds 200 ("check your email") to avoid account enumeration; rate-limited per IP+ref.
+    const unlockMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})\/unlock$/)
+    if (req.method === "POST" && unlockMatch) {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`viewer:unlock:${ip}:${unlockMatch[1]}`, 5, 15 * 60_000)) {
+        return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "900" })
+      }
+      const resolved = await resolveFeedbackRef(unlockMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      const proj = await projectById(resolved.projectId)
+      if (normalizeShareMode(proj?.shareMode) === "off") return json({ error: "Not found" }, 404)
+      let email = ""
+      try { email = String((await req.json()).email || "").trim().toLowerCase() } catch { return json({ error: "invalid JSON" }, 400) }
+      if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      const code = otp()
+      await createOtp(email, code, Date.now() + 10 * 60 * 1000)
+      try { await sendOtp(email, code) } catch (err: any) { console.error("viewer unlock OTP email failed:", err?.message || err); if (DEV_SHOW_OTP) console.log(`viewer OTP for ${email} → ${code}`) }
+      return json({ ok: true, ...(DEV_SHOW_OTP ? { devCode: code } : {}) })
+    }
+
+    // ── POST /api/t/:ref/verify {email, code} — email-to-unblur step 2. Verify the OTP, mint a normal
+    // klav_session (but NO workspace — a viewer has no account), and grant a per-ticket viewer. Honors
+    // the same test-OTP bypass as /api/auth/verify so CI can drive it with the fixed code.
+    const verifyMatch = path.match(/^\/api\/t\/([A-Za-z0-9_-]{1,80})\/verify$/)
+    if (req.method === "POST" && verifyMatch) {
+      const ip = clientIp(req, server)
+      if (!rlAllow(`viewer:verify:${ip}:${verifyMatch[1]}`, 20, 15 * 60_000)) {
+        return json({ error: "Too many attempts. Please wait and try again." }, 429, { "Retry-After": "900" })
+      }
+      const resolved = await resolveFeedbackRef(verifyMatch[1]).catch(() => null)
+      if (!resolved) return json({ error: "Not found" }, 404)
+      let email = "", code = ""
+      try { const b = await req.json(); email = String(b.email || "").trim().toLowerCase(); code = String(b.code || "").trim() } catch { return json({ error: "invalid JSON" }, 400) }
+      if (!email || !email.includes("@")) return json({ error: "Enter a valid email." }, 400)
+      // Brute-force lockout mirroring /api/auth/verify (H1/A07): the per-(IP,ref) cap above is defeated
+      // by an attacker rotating source IPs / X-Forwarded-For to buy a fresh 20-attempt budget against
+      // one email's 6-digit OTP. This IP-INDEPENDENT per-(email,ref) counter bounds the total wrong
+      // codes for this ticket's unblur regardless of source IP, so the OTP dies after OTP_FAIL_EMAIL_MAX
+      // wrong tries even from a fresh IP. Successful (or test-OTP) verify clears it.
+      const failEmailKey = `viewerfail:e:${email}:${verifyMatch[1]}`
+      if (rlCount(failEmailKey) >= OTP_FAIL_EMAIL_MAX)
+        return json({ error: "Too many attempts. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
+      const testGranted = code === TEST_OTP_CODE ? (await testOtpDecision(email, () => isTestAccountEmail(email))).allowed : false
+      if (!(testGranted || await verifyOtp(email, code))) {
+        rlRecord(failEmailKey, OTP_FAIL_EMAIL_WINDOW)
+        return json({ error: "Invalid or expired code." }, 401)
+      }
+      rlClear(failEmailKey)
+      await upsertUser(email)
+      const proj = await projectById(resolved.projectId)
+      const mode = normalizeShareMode(proj?.shareMode)
+      const status = mode === "approval" ? "pending_approval" : "active"
+      await grantTicketViewer({ feedbackId: resolved.id, projectId: resolved.projectId, email, status, grantedBy: null })
+      const sid = token()
+      await createSession(sid, email, Date.now() + SESSION_DAYS * 86400 * 1000)
+      const access = status === "active" ? "full" : "pending"
+      return json({ ok: true, access }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
     }
 
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
@@ -7244,7 +7936,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!me || !isOpsAdmin(me)) return json({ error: "Forbidden" }, 403)
       try {
         const pl = await buildSuperadminPL()
-        return json(pl, 200, { "cache-control": "no-store" })
+        // KLAVITY CREDITS: fold the per-workspace credit-margin rollup (retail credit value − LLM COGS)
+        // into the P&L payload the /superadmin dashboard renders. Best-effort — never fail the P&L on it.
+        let credits: Awaited<ReturnType<typeof creditsMarginByWorkspace>> = []
+        try { credits = await creditsMarginByWorkspace() } catch (e: any) { console.warn("[credits] margin panel skipped (non-fatal):", e?.message || e) }
+        return json({ ...pl, credits }, 200, { "cache-control": "no-store" })
       } catch (e: any) { return json(oops(e, "superadmin-pl"), 500) }
     }
     // ── Short-links CRUD (OPS_ADMIN-gated). The public redirector /s/:code is UNGATED (above). ──
@@ -8493,10 +9189,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // wizard calls this per attached file, then passes the returned {name,key,filename} into the
       // author-create body. Private S3; 25MB cap. The bytes are only ever fed to a file input.
       if (req.method === "POST" && path === "/api/trails/author/attachments") {
-        const len = Number(req.headers.get("content-length") || 0)
-        if (len > 25 * 1024 * 1024) return json({ error: "file too large (max 25MB)" }, 413)
+        // Memory-DoS hardening (same class as /api/voice/transcribe): a Content-Length guard alone is
+        // bypassed by a chunked transfer-encoding request (no Content-Length header), after which
+        // req.formData() buffers the ENTIRE streamed body into RAM before the size check runs. Keep the
+        // cheap Content-Length fast-reject AND bound the actual byte stream with readBodyBounded(), which
+        // aborts once cumulative bytes cross the ceiling — an oversized chunked body is answered 413
+        // without ever fully landing in heap. The multipart is parsed only from the already-bounded
+        // buffer (the reconstructed Request carries the original Content-Type, i.e. the boundary).
+        const ATTACH_CEIL = 25 * 1024 * 1024 + 64 * 1024 // file cap + multipart framing overhead
+        const declaredLen = Number(req.headers.get("content-length") || 0)
+        if (declaredLen > ATTACH_CEIL) return json({ error: "file too large (max 25MB)" }, 413)
+        const bounded = await readBodyBounded(req, ATTACH_CEIL)
+        if (bounded === BODY_TOO_LARGE) return json({ error: "file too large (max 25MB)" }, 413)
         let form: FormData
-        try { form = await req.formData() } catch { return json({ error: "expected multipart form-data with a 'file' field" }, 400) }
+        try {
+          form = await new Request("http://x/", {
+            method: "POST",
+            headers: { "content-type": req.headers.get("content-type") || "" },
+            body: bounded,
+          }).formData()
+        } catch { return json({ error: "expected multipart form-data with a 'file' field" }, 400) }
         const file = form.get("file")
         if (!(file instanceof File) || file.size === 0) return json({ error: "no file provided" }, 400)
         if (file.size > 25 * 1024 * 1024) return json({ error: "file too large (max 25MB)" }, 413)
@@ -9955,6 +10667,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const row = await feedbackById(p.id, fid)
           if (row) { fbRow = row; fbAccess = a; break }
         }
+        // Shared-ticket viewers: allow the COMMENTS subroute (read+write) for a caller whose access
+        // resolves 'full' via ticketViewAccess (an active per-ticket viewer, not a project member).
+        // Scoped to isComments only — every other subroute (PATCH/export/merge/labels/…) stays
+        // member-gated: a viewer that isn't a member leaves fbRow null and 404s below.
+        if (!fbRow && me && isComments) {
+          const _vres = await resolveFeedbackRef(fid).catch(() => null)
+          if (_vres && (await ticketViewAccess(_vres.id, me)) === "full") {
+            const _vrow = await feedbackById(_vres.projectId, _vres.id)
+            if (_vrow) fbRow = _vrow // fbAccess stays null — viewer is NOT a member/admin
+          }
+        }
         if (!fbRow) return json({ error: "Feedback not found or not accessible." }, 404)
 
         // GET /api/feedback/:id/replay — the stored rrweb session-replay events for a ticket, so the
@@ -10102,6 +10825,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             suggestedLabels: await getSuggestedLabels(fid, fbRow.projectId),
             // KLA-200: human-readable sequential number
             seqNum: fbRow.seqNum ?? null,
+            // KLA-603: server-side "AI summary from walkthrough" (post-transcription enrichment). Null when
+            // the report had no transcribed video or the reporter's description was already substantial.
+            aiWalkthrough: fbRow.aiWalkthrough ?? null,
             // A.8: chronological per-occurrence receipts (own wording + screenshot + date).
             occurrences: occurrenceMemory?.occurrences ?? [],
             // B.7: guard-caught receipt offer state. guardCaught gates the "Send regression-caught
@@ -10475,12 +11201,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const projects = await listProjects(me)
         const projectIds = projects.map((p) => p.id)
         const rows = await listInboxForProjects(projectIds, { windowMs })
-        // Annotate each row with the project name and role for the UI
+        // Annotate each row with the project name and role for the UI.
+        // KLA-634: resolve per-project role CONCURRENTLY. Doing this sequentially was an N+1
+        // (projectAccess ≈ 2-3 queries each) that made /api/inbox scale linearly with project
+        // count — the dominant latency for accounts with many projects (18+). Promise.all fans
+        // the lookups out so total latency ≈ one round-trip, not N.
         const projectMeta: Record<string, { name: string; role: string | null }> = {}
-        for (const p of projects) {
-          const role = await projectAccess(me, p.id)
-          projectMeta[p.id] = { name: p.name, role }
-        }
+        const roles = await Promise.all(projects.map((p) => projectAccess(me, p.id)))
+        projects.forEach((p, i) => {
+          projectMeta[p.id] = { name: p.name, role: roles[i] }
+        })
         const out = rows.map((r) => ({
           projectId: r.projectId,
           projectName: projectMeta[r.projectId]?.name ?? r.projectId,
@@ -11175,6 +11905,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (typeof body.autoCaptureErrors === "boolean") wCfg.autoCaptureErrors = body.autoCaptureErrors
               await setWidgetConfig(pid, wCfg)
             }
+            // ── KLA-608: per-project every-bug notifications. slackWebhookUrl is a SECRET (write-only —
+            // set with a URL, "" to clear, omit to keep). bugNotifyEmails = extra recipient list.
+            // notifyOnEveryBug = master on/off. Admin-gated (already past the access !== "admin" wall).
+            const hasBugNotify = body.slackWebhookUrl !== undefined || body.bugNotifyEmails !== undefined || body.notifyOnEveryBug !== undefined
+            if (hasBugNotify) {
+              const bCfg: { slackWebhookUrl?: string | null; bugNotifyEmails?: string[] | string | null; notifyOnEveryBug?: boolean } = {}
+              if (body.slackWebhookUrl !== undefined) {
+                const swu = String(body.slackWebhookUrl ?? "").trim()
+                if (swu !== "") {
+                  if (!/^https:\/\/hooks\.slack\.com\//.test(swu) || swu.length > 500) {
+                    return json({ error: "slackWebhookUrl must be an https://hooks.slack.com/... URL." }, 400)
+                  }
+                  bCfg.slackWebhookUrl = swu
+                } else {
+                  bCfg.slackWebhookUrl = null // "" → clear
+                }
+              }
+              if (body.bugNotifyEmails !== undefined) bCfg.bugNotifyEmails = body.bugNotifyEmails
+              if (typeof body.notifyOnEveryBug === "boolean") bCfg.notifyOnEveryBug = body.notifyOnEveryBug
+              await setBugNotifyConfig(pid, bCfg)
+            }
             return json({ ok: true, modalConfig: v.config, pro })
           }
           // GET here (session-authed) returns current + pro flag + widget config for the admin UI.
@@ -11186,9 +11937,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             pro: await isAccountPro(proj.accountId),
             widget: await getWidgetConfig(pid),
             widgetStatus: ping ? { host: ping.host, lastSeen: ping.lastSeen, firstSeen: ping.firstSeen, hits: ping.hits } : null,
-            // Report-alert Slack webhook — admin-eyes only (it is a capability URL). The public
-            // (CORS-open) config GET earlier in this file never returns it: resolveModalConfig strips it.
-            ...(access === "admin" ? { slackWebhookUrl: typeof curCfg.slack_webhook_url === "string" ? curCfg.slack_webhook_url : null } : {}),
+            // KLA-608 every-bug notifications (admin-only read-back). SECURITY: the Slack webhook URL is
+            // a secret capability URL and is NEVER returned — only a `slackConfigured` boolean + a legacy
+            // modal_config fallback flag, so the UI can render "configured"/blank without leaking it.
+            ...(access === "admin"
+              ? await (async () => {
+                  const bn = await getBugNotifyConfig(pid)
+                  const legacyHook = typeof curCfg.slack_webhook_url === "string" && curCfg.slack_webhook_url.trim() !== ""
+                  return {
+                    bugNotify: {
+                      notifyOnEveryBug: bn?.notifyOnEveryBug ?? true,
+                      bugNotifyEmails: bn?.bugNotifyEmails ?? [],
+                      slackConfigured: (bn?.slackConfigured ?? false) || legacyHook,
+                    },
+                  }
+                })()
+              : {}),
             // piiMasking (KLAVITYKLA-353): admin-only read-back so the setting is inspectable and a
             // UI can render its state. resolveModalConfig strips it from the public config GET.
             ...(access === "admin" ? { piiMasking: curCfg.piiMasking === true } : {}),
@@ -12496,6 +13260,10 @@ if (db && process.env.NODE_ENV !== "test") {
   // Once shortly after boot, then every 60s (rows carry their own backoff/next_attempt_at).
   setTimeout(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 45_000)
   setInterval(() => { runExportOutboxSweep().catch((e) => console.warn("export outbox sweep failed:", e?.message || e)) }, 60_000)
+  // KLAVITY CREDITS: monthly grant-reset warm-up. Lazy re-grant already covers correctness on first
+  // AI touch; this batch walk re-grants idle wallets on a month rollover. Once after boot, then daily.
+  setTimeout(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 90_000)
+  setInterval(() => { runMonthlyGrantReset().catch((e) => console.warn("credits grant-reset failed:", e?.message || e)) }, 24 * 60 * 60 * 1000)
   // KLA-88: trail cron scheduler — ticks every minute, fires scheduled walks.
   startTrailScheduler()
   // KLA-55: crash reaper — sweeps stale-heartbeat walks/sessions every 60s.

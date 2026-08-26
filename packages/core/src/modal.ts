@@ -7,6 +7,10 @@ import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
+import {
+  clampZoom, wheelZoomFactor, zoomEasing, zoomTowardPan, visibleImageRect,
+  minimapToImage, panForImageCenter, heroLogoHref,
+} from './hero-zoom'
 
 // Re-exported here so the widget + extension can import the shared right-click-drag region gesture from
 // the same module they already use for buildModal (avoids adding a package.json export entry, which the
@@ -32,6 +36,79 @@ export function translateShapes(shapes: Shape[], dx: number, dy: number): Shape[
 /** Escape text for safe interpolation into innerHTML. */
 function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// ── KLA-586: WhatsApp-style live Markdown for the description field ───────────────────────────────────
+// The description is a contenteditable div whose SOURCE OF TRUTH is raw Markdown TEXT (round-trips through
+// the .value accessor untouched). renderInlineMarkdown() paints that raw text for display: it KEEPS the
+// markers ( * _ ~ ` ) visible-but-dimmed and styles the wrapped span, exactly like WhatsApp. It is HTML-safe
+// (escapes first) and pure, so it's unit-testable independent of the DOM. Newlines become <br>.
+export function renderInlineMarkdown(text: string): string {
+  let t = escHtml(String(text ?? ''))
+  // Order matters: code first (so * _ ~ inside `code` aren't re-interpreted), then bold/italic/strike.
+  t = t.replace(/`([^`\n]+)`/g, (_m, x) => `<span class="kl-mk">\`</span><code>${x}</code><span class="kl-mk">\`</span>`)
+  t = t.replace(/\*([^*\n]+)\*/g, (_m, x) => `<span class="kl-mk">*</span><b>${x}</b><span class="kl-mk">*</span>`)
+  t = t.replace(/_([^_\n]+)_/g, (_m, x) => `<span class="kl-mk">_</span><i>${x}</i><span class="kl-mk">_</span>`)
+  t = t.replace(/~([^~\n]+)~/g, (_m, x) => `<span class="kl-mk">~</span><s>${x}</s><span class="kl-mk">~</span>`)
+  t = t.replace(/\n/g, '<br>')
+  return t
+}
+
+// descPlainText: extract the RAW Markdown source from the field's DOM without relying on innerText (jsdom +
+// happy-dom don't implement it). Walks the tree: text nodes contribute their text verbatim, <br> and any
+// block element (a <div>/<p> the browser transiently inserts on Enter, before render() normalises it back to
+// <br>) become a newline. This exactly round-trips the controlled markup renderInlineMarkdown() produces.
+export function descPlainText(root: Node): string {
+  let out = ''
+  const walk = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3) {
+        out += child.textContent || ''
+      } else if (child.nodeName === 'BR') {
+        out += '\n'
+      } else if (child.nodeType === 1) {
+        const el = child as HTMLElement
+        const block = /^(DIV|P)$/.test(el.nodeName)
+        if (block && out && !out.endsWith('\n')) out += '\n'
+        walk(el)
+      }
+    }
+  }
+  walk(root)
+  return out
+}
+
+// A structural bug-draft the Enhance endpoint returns (mirrors prototype/lib/report-enhance.ts EnhancedDraft
+// without importing across the package boundary). Kept loose (severity/priority as strings) so the composer
+// never rejects a shape the server already validated.
+export interface EnhanceDraftLike {
+  summary: string
+  actualResult: string
+  expectedResult: string
+  stepsToReproduce: string[]
+  suggestedSeverity: string
+  suggestedPriority: string
+  confidence?: number
+}
+
+// renderDraftToWhatsApp: compose the field body from an accepted Enhance draft as WhatsApp-style Markdown so
+// it renders formatted LIVE in the field (bold summary + *Actual:* / *Expected:* labels, a numbered Steps
+// block, and a final Severity·Priority line). Pure + exported for tests. Skips empty sections.
+export function renderDraftToWhatsApp(d: EnhanceDraftLike): string {
+  const parts: string[] = []
+  if (d.summary) parts.push(`*${d.summary}*`)
+  const ae: string[] = []
+  if (d.actualResult) ae.push(`*Actual:* ${d.actualResult}`)
+  if (d.expectedResult) ae.push(`*Expected:* ${d.expectedResult}`)
+  if (ae.length) parts.push(ae.join('\n'))
+  if (d.stepsToReproduce && d.stepsToReproduce.length) {
+    const steps = d.stepsToReproduce.map((s, i) => `${i + 1}. ${s}`).join('\n')
+    parts.push(`*Steps to reproduce:*\n${steps}`)
+  }
+  if (d.suggestedSeverity || d.suggestedPriority) {
+    parts.push(`*Severity: ${d.suggestedSeverity}* · Priority: ${d.suggestedPriority}`)
+  }
+  return parts.join('\n\n')
 }
 
 // KLAVITYKLA-493: the reporter-facing "Replay · 60s" chip is intentionally NOT rendered (it read like an
@@ -82,6 +159,46 @@ function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: Captur
   return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: r.suggestSharp }
 }
 
+/**
+ * KLA-587 (founder decision, 2026-08-25): real "Screen" capture (getDisplayMedia) is the ACTUAL DEFAULT
+ * capture fired when the composer opens — this deliberately REVERSES the earlier #460/#473 "never auto-invoke
+ * getDisplayMedia" stance. The founder explicitly wants the share picker on first use and accepts the
+ * one-prompt friction, because Screen is the only path that captures pixel-perfect fidelity AND cross-origin
+ * embedded iframes. A future dev should NOT re-revert this as a regression — see KLA-587.
+ *
+ * The pieces below are PURE (no DOM / no browser API) so the default-capture decision and the decline→fallback
+ * classification are unit-testable independent of getDisplayMedia (which is browser-only).
+ */
+export type DefaultCaptureMode = 'screen' | 'viewport' | 'full' | 'none'
+
+/**
+ * Pick the capture path fired on composer open. Screen is the default when the host wired it AND opted into
+ * the Screen-default (browsers that support getDisplayMedia); it degrades to the rendered viewport capture,
+ * then the full render, then nothing — so the reporter is NEVER left with no way to capture.
+ */
+export function defaultCaptureMode(caps: {
+  screenCaptureDefault?: boolean
+  onCaptureSharp?: unknown
+  onCaptureViewport?: unknown
+  onCaptureFull?: unknown
+}): DefaultCaptureMode {
+  if (caps.screenCaptureDefault && typeof caps.onCaptureSharp === 'function') return 'screen'
+  if (typeof caps.onCaptureViewport === 'function') return 'viewport'
+  if (typeof caps.onCaptureFull === 'function') return 'full'
+  return 'none'
+}
+
+/**
+ * Classify a getDisplayMedia rejection as an EXPECTED decline (user cancelled the picker, or the browser
+ * refused because the user-gesture was already spent) vs a genuine error. In every one of these we silently
+ * fall back to the rendered capture with NO error toast (per the founder decision) — this helper only decides
+ * whether the failure is also worth a dev-console warning.
+ */
+export function isScreenDeclineError(err: unknown): boolean {
+  const name = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : ''
+  return name === 'NotAllowedError' || name === 'AbortError' || name === 'NotFoundError' || name === 'InvalidStateError'
+}
+
 /** JTBD 1.9 badge metadata per capture-quality tag: label + icon + whether "Retake sharp" applies. */
 const QUALITY_META: Record<CaptureQuality, { label: string; iconName: string; degraded: boolean }> = {
   'real-pixel': { label: 'Sharp', iconName: 'check-circle', degraded: false },
@@ -113,6 +230,8 @@ export interface PickedTarget {
   shot?: string
   /** Capture-quality tag for `shot` (drives the thumbnail badge), when the host supplied a crop. */
   shotQuality?: CaptureQuality
+  /** KLA-621: picked element's bounding rect (CSS viewport px) at capture time — lets Retake redo THIS element. */
+  rect?: { x: number; y: number; w: number; h: number }
 }
 
 // KLAVITYKLA-241 (JTBD A.11): a known/recurring issue matched against the reporter's in-progress prose.
@@ -134,6 +253,18 @@ export interface ShotPageMeta {
   label?: string
 }
 
+// KLA-621: per-shot capture PROVENANCE so "Retake" redoes the SAME thing the shot came from instead of
+// collapsing to a full-screen grab. A region shot re-crops its rect; a picked-element shot re-crops that
+// element (re-resolved live from its selector); a viewport/full shot redoes that same sharp mode. Carried
+// index-aligned with screenshots[] and threaded to onRetakeSharp so the host knows exactly what to redo.
+export interface ShotCapture {
+  kind: 'region' | 'element' | 'viewport' | 'full' | 'other'
+  /** Region/element bounding rect in CSS viewport px at capture time (fallback if a selector re-resolve fails). */
+  rect?: { x: number; y: number; w: number; h: number }
+  /** For kind==='element': the CSS selector so Retake can re-resolve a fresh rect after scroll/layout shifts. */
+  selector?: string
+}
+
 export interface ModalCallbacks {
   // Each capture callback may return a raw dataUrl (legacy) or { dataUrl, quality } (JTBD 1.9). The quality
   // tag drives the thumbnail badge + the "Retake sharp" affordance. onCaptureFull is 'rendered'/'wireframe'
@@ -152,11 +283,21 @@ export interface ModalCallbacks {
   // the capture so the composer isn't in the shot. Feature-detected by the host (absent on iOS Safari →
   // button hidden → users fall back to the html-to-image "Full Page").
   onCaptureSharp?: () => Promise<CaptureResult>
+  // KLA composer-polish (viewport-default, founder PX4 repro): the SAME getDisplayMedia real-pixel path as
+  // onCaptureSharp but capturing a SINGLE VISIBLE-VIEWPORT frame (no scroll-stitch → not a tall full-page
+  // image). When wired, the on-open DEFAULT Screen capture uses THIS so the auto shot is viewport-scoped
+  // (what the reporter actually sees). The manual "Screen" button still uses the full-page onCaptureSharp,
+  // and "Full Page" stays an explicit opt-in. Absent → the default falls back to onCaptureSharp (unchanged).
+  onCaptureSharpViewport?: () => Promise<CaptureResult>
   // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
   // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
   // host hides its own UI during the capture (same as the Sharp button). Absent → no retake affordance.
-  onRetakeSharp?: () => Promise<CaptureResult>
+  // KLA-621: Retake now receives the ORIGINAL shot's capture provenance so it can redo the SAME selection —
+  // re-crop the same region rect, or re-crop the same picked element (re-resolved from its selector) — instead
+  // of falling back to a full-viewport grab and losing the selection. Backward compatible: hosts that ignore
+  // the argument keep the old full-frame behaviour. Absent → no retake affordance.
+  onRetakeSharp?: (capture?: ShotCapture) => Promise<CaptureResult>
   // KLAVITYKLA-228/371 (JTBD 1.11): optional on-page element picker. When provided, a "Pick element"
   // button appears in the capture actions row. Clicking it hides the composer and invokes this callback,
   // which lets the reporter click the broken element on the live page; it resolves a PickedTarget
@@ -181,6 +322,17 @@ export interface ModalCallbacks {
   // host can forward it to the clarity endpoint — the coach must never ask the reporter for anything already
   // on the report (URL/screenshot/browser/screen). `images` is the current screenshot count in the composer.
   onClarityTip?: (text: string, ctx?: { images?: number }) => Promise<{ tip: string } | null>
+  // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
+  // AI" button appears under the description; clicking it hands the reporter's current text + the primary
+  // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
+  // a structured developer-ready draft (or null). The composer REPLACES the field content in place with the
+  // draft rendered as WhatsApp Markdown, and offers Undo (restores the reporter's pre-enhance text) +
+  // Regenerate. Stale-guarded (seq) like onClarityTip. On null/failure the composer no-ops (keeps the text).
+  // Widget-only — the extension omits it (no button), preserving parity with onClarityTip/onPickElement.
+  onEnhance?: (
+    text: string,
+    ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null },
+  ) => Promise<EnhanceDraftLike | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -205,6 +357,20 @@ export interface ModalCallbacks {
     // backend as reporter_email, otherwise an "email"-gated project rejects the submit with 400
     // "A valid email is required to submit." Undefined when no email field was shown.
     reporterEmail?: string
+    // KLA submit-target: where the reporter chose to send this report. 'project' (DEFAULT) → the site
+    // owner's project, exactly as today; 'klavity' → the reporter flagged Klavity's own tool/widget as
+    // broken and the SERVER reroutes it into the designated Klavity intake project. Only present when the
+    // host enabled cfg.submitTargetToggle; absent → always treated as 'project' by consumers.
+    feedbackTarget?: 'project' | 'klavity'
+    // KLA-586: when the reporter accepted an AI-Enhance draft, its suggested severity/priority ride the
+    // payload as STRUCTURED fields (in addition to the human-readable line in `description`) so the server
+    // can seed the ticket's triage. Absent when Enhance wasn't used (or was Undone). Host forwards verbatim.
+    suggestedSeverity?: string
+    suggestedPriority?: string
+    // #638: whether the reporter opted IN to attaching console logs via the composer toggle. Present only
+    // when callbacks.consoleAttachToggle rendered the control; DEFAULT false. The host attaches the captured
+    // console logs to the report only when this is true (console logs are default-OFF).
+    attachConsole?: boolean
   }) => Promise<{ issueKey: string; issueUrl: string }>
   // ── PX4 enhancements (all optional + additive; absent => the composer is identical to today) ──
   // PX4 #411: show a single-line Title input at the top of the composer. Its trimmed value threads through
@@ -219,7 +385,24 @@ export interface ModalCallbacks {
   // PX4 #425: allow non-image file attachments (PDF, .log, .har, .txt, ...). When true an "Attach file" button
   // appears in the capture row; selected files show as chips below the evidence strip and thread through
   // onSubmit as `files`. Default false → only images can be attached (upload/paste stay image-only), unchanged.
+  // KLA-591: when true, the single unified attach control accepts images, video AND docs through one input.
   allowFileAttachments?: boolean
+  // KLA-591: per-file size cap (bytes) for the unified attach control. Defaults to DEFAULT_MAX_FILE_BYTES
+  // (100MB). Raise per plan later. When a file exceeds it the composer shows a friendly, role-aware CTA —
+  // it never silently drops the file (enforced per-workspace QUOTA + billing is KLA-594 fast-follow).
+  maxFileBytes?: number
+  // KLA-591: who is filing — drives the over-cap CTA. A member/owner/admin is offered a direct upgrade link;
+  // an anon/guest end-user is never asked to pay. Absent/undefined is treated as 'anon' (the safe default).
+  reporterRole?: ReporterRole
+  // KLA-591: where the "Upgrade for larger uploads" CTA points (workspace members/owners only).
+  upgradeUrl?: string
+  // KLA-612: host callback the "Request upgrade" primitive fires for a guest/anon reporter (who is NEVER
+  // asked to pay). The host POSTs an attributed upgrade REQUEST (POST /api/upgrade-request) so the workspace
+  // owner/admins get a notified nudge (Slack + email, KLA-608 dispatch) with what the reporter hit + the page.
+  // Resolve true when the request landed (client shows "Request sent to your team"), false/throw otherwise
+  // (client re-enables the button so the reporter can retry or just attach a smaller file). Best-effort —
+  // never blocks the composer. Absent (e.g. the extension, for parity) → the guest CTA degrades to a hint.
+  onRequestUpgrade?: (req: { reason: string; context?: Record<string, unknown> }) => Promise<boolean>
   // KLAVITYKLA-438 "Record me" (Phase 1): opt-in composer flag. When true AND onRecord is provided, a
   // "Record me" button appears in the capture row; clicking it invokes onRecord() (the host drives the
   // consent → record → preview flow via the sdk recorder) and the resolved recording is added to the
@@ -265,6 +448,12 @@ export interface ModalCallbacks {
   // When true, onCaptureFull() is called automatically ~200ms after the modal mounts and the
   // result is added to the screenshot strip. Default false — the production widget is unaffected.
   autoCaptureOnOpen?: boolean
+  // KLA-587 (founder decision): when true AND onCaptureSharp is wired, the DEFAULT on-open capture is real
+  // Screen (getDisplayMedia) — the share picker fires as the first-choice capture, chained to the composer's
+  // opening user-gesture. On decline / lost-gesture / failure it silently falls back to the rendered viewport
+  // capture (never an error toast, never a re-prompt loop). Host sets it from a getDisplayMedia feature-detect
+  // (undefined on iOS Safari → the rendered viewport stays the default there). See defaultCaptureMode().
+  screenCaptureDefault?: boolean
   // Called once when the composer closes — via Esc, overlay click, X button, or programmatic close.
   // Used by the widget to fire the public window.Klavity.on('close') event. `reason` is 'submitted'
   // ONLY on the non-blocking background-upload close (see backgroundUpload): the report was handed off
@@ -301,6 +490,11 @@ export interface ModalCallbacks {
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
+  // #638: when true, render a small "Attach console logs" toggle just above Submit. It is OFF by default —
+  // console logs are only attached when the reporter explicitly flips it on. The chosen state rides the
+  // submit payload as `attachConsole` (boolean) so the host attaches the captured console logs only then.
+  // Absent/false => no toggle is rendered and attachConsole is omitted from the payload (default-off).
+  consoleAttachToggle?: boolean
 }
 
 export interface ModalController {
@@ -313,11 +507,23 @@ export interface ModalController {
   // is seeding shots it already tracks. Backward compatible: existing 1/2-arg callers are unaffected.
   // KLAVITYKLA-473: an optional 4th arg flags a seeded shot as blank/partial so the sharp-capture callout
   // shows for it too (e.g. a right-click-drag region shot the host detected was partial). Defaults false.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => void
+  // KLA-621: an optional 5th arg carries the shot's capture provenance (region rect / picked element selector)
+  // so Retake redoes that exact selection instead of a full-frame grab. Backward compatible.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
+  // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
+  // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
+  // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
+  // added to an already-open composer, or seeded as the newest shot when (re)opening — so the composer shows
+  // the fresh capture, not the first seeded one. (addScreenshot leaves activeIndex alone for silent seeds.)
+  addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
   close: () => void
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
   setReplayState: (state: 'attached' | 'unavailable') => void
+  // KLA-591: drive per-attachment upload progress bars while a submit is in flight. Pass the aggregate
+  // upload percent (0..100); every video tile + file chip mirrors it (one request → one % for all). Pass
+  // null to clear the bars (upload done/failed). No-op when the composer already closed.
+  setUploadProgress: (pct: number | null) => void
 }
 
 // video-upload: pure, unit-testable predicates for the "Attach file" ingest path. A video is matched by
@@ -350,6 +556,79 @@ export function videoContentType(name?: string): string {
 // standard `file` cap. Kept pure so ingestAttachments and the tests share one source of truth.
 export function attachmentSizeCap(file: { type?: string; name?: string }, caps: { file: number; video: number }): number {
   return isVideoFile(file) ? caps.video : caps.file
+}
+
+// ── KLA-591: unified attachment gallery ──────────────────────────────────────────────────────────────
+// ONE control replaces the old split Upload (images) + Attach file (video/doc) buttons: a single <input>
+// with a broad accept list ingests images, video, PDFs, and log-style files. Kept as a named const so the
+// markup and the tests agree on exactly what the picker offers.
+export const UNIFIED_ATTACH_ACCEPT = 'image/*,.heic,.heif,video/*,.pdf,.log,.har,.txt,.json,.csv,.zip,.xml,.yml,.yaml'
+
+// KLA-591: the default per-file size cap (100MB). Overridable per plan later — the enforced per-workspace
+// storage QUOTA + billing is KLA-594 (fast-follow); this const is just the per-file ceiling the composer UI
+// warns against. Exposed so the host can raise it for a higher plan without touching the composer.
+export const DEFAULT_MAX_FILE_MB = 100
+export const DEFAULT_MAX_FILE_BYTES = DEFAULT_MAX_FILE_MB * 1024 * 1024
+
+// KLA-591: is this file previewable as an inline image? (mirrors the composer's image predicate, but pure
+// so attachmentKind + tests can share it.) HEIC/HEIF and empty-type images are matched by extension.
+export function isImageLike(file: { type?: string; name?: string }): boolean {
+  return (file.type || '').toLowerCase().startsWith('image/') ||
+    /\.(heic|heif|png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(file.name || '')
+}
+
+// KLA-591: classify an attachment for the unified gallery. 'image' → screenshot strip + annotator; 'video'
+// → poster tile in the strip + inline <video controls> hero; 'file' → the non-previewable file chip.
+export type AttachmentKind = 'image' | 'video' | 'file'
+export function attachmentKind(file: { type?: string; name?: string }): AttachmentKind {
+  if (isVideoFile(file)) return 'video'
+  if (isImageLike(file)) return 'image'
+  return 'file'
+}
+
+// KLA-591: who is filing the report — drives the over-cap CTA. A workspace member/owner/admin can be sent
+// straight to an upgrade; an anonymous/guest end-user on a customer's site is NEVER asked to pay.
+export type ReporterRole = 'owner' | 'admin' | 'member' | 'guest' | 'anon' | undefined
+
+export interface FileCapDecision {
+  overCap: boolean
+  // Friendly, non-blocking message shown inline when the file exceeds the per-file cap. Absent when under.
+  message?: string
+  // Role-aware call to action, rendered by the reusable "Request upgrade" primitive (buildUpgradeControl).
+  // 'upgrade' → a direct upgrade LINK (members/owners, opens `url`); 'ask-team' → a guest/anon REQUEST button
+  // that POSTs an attributed upgrade nudge to the workspace admins (never a payment ask). `reason` tags what
+  // wall was hit (drives the admin notification + future credit walls); `hint` is the secondary "or attach a
+  // smaller file" affordance. Absent when the file is under the cap.
+  cta?: { kind: 'upgrade' | 'ask-team'; label: string; url?: string; reason?: string; hint?: string }
+}
+
+// KLA-591: decide what to do with a file relative to the per-file cap, role-aware. NEVER hard-blocks — the
+// caller shows the message + CTA and lets the reporter pick a smaller file. Kept pure + exported so the
+// composer and the tests share one decision.
+export function evaluateFileCap(
+  file: { size: number; name?: string },
+  opts: { capBytes: number; role?: ReporterRole; upgradeUrl?: string },
+): FileCapDecision {
+  if (file.size <= opts.capBytes) return { overCap: false }
+  const mb = Math.round(opts.capBytes / 1024 / 1024)
+  const canUpgrade = opts.role === 'owner' || opts.role === 'admin' || opts.role === 'member'
+  const name = file.name ? `"${file.name}"` : 'This file'
+  const message = `${name} is over the ${mb}MB limit on your plan.`
+  // KLA-612: both roles now get a real "Request upgrade" ACTION (not advisory text). member/owner → a direct
+  // upgrade link; guest/anon → a button that POSTs an attributed request to the workspace admins. The
+  // secondary hint keeps the always-available escape hatch (attach a smaller file) so we never dead-end.
+  const cta = canUpgrade
+    ? { kind: 'upgrade' as const, label: 'Request upgrade', url: opts.upgradeUrl, reason: 'storage_over_cap', hint: 'or attach a smaller file' }
+    : { kind: 'ask-team' as const, label: 'Request upgrade', reason: 'storage_over_cap', hint: 'or attach a smaller file' }
+  return { overCap: true, message, cta }
+}
+
+// KLA-591: per-attachment upload progress. Every attachment rides ONE upload request, so each mirrors the
+// aggregate upload percent while a submit is in flight. Returns a clamped whole percent, or null when no
+// upload is running (which clears the bars). Pure so the render + tests share the clamp.
+export function attachmentProgressPercent(pct: number | null | undefined): number | null {
+  if (pct == null || typeof pct !== 'number' || !isFinite(pct)) return null
+  return Math.max(0, Math.min(100, Math.round(pct)))
 }
 
 export function buildModal(
@@ -391,6 +670,10 @@ export function buildModal(
   // renderer couldn't inline dropped to white gaps). Drives a non-intrusive callout pointing at the Screen
   // button. Cleared when the shot is retaken sharp / removed. Index-aligned like the quality + page arrays.
   let screenshotSuggestSharp: boolean[] = []
+  // KLA-621: parallel array of per-shot capture provenance — screenshotCapture[i] tells Retake what to redo
+  // for screenshots[i] (region rect / picked element selector / sharp mode). undefined for shots with no known
+  // provenance (uploads / pastes) → Retake keeps its legacy full-frame behaviour. Index-aligned like the rest.
+  let screenshotCapture: (ShotCapture | undefined)[] = []
   // Set once the reporter dismisses the sharp-capture callout so it never nags again this session.
   let sharpHintDismissed = false
   // KLA-412: "session mode" is on whenever the host wired onMinimize — it means this composer is backed
@@ -407,13 +690,19 @@ export function buildModal(
   // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
   const fileAttachEnabled = !!callbacks.allowFileAttachments
   const MAX_FILES = 5
-  // KLAVITYKLA-480 / video-upload: videos are large, so they get their own (higher) per-file cap. The
-  // backend attach path (prototype/server.ts) mirrors this: video/* → ATTACH_VIDEO_MAX_BYTES (100MB),
-  // non-video → SCREENSHOT_MAX_BYTES (8MB), total → ATTACH_TOTAL_MAX_BYTES (120MB). Keep these consistent
-  // with the server so nothing that passes here gets 413'd there.
-  const MAX_VIDEO_BYTES = 100 * 1024 * 1024 // 100 MB per video file
-  const MAX_FILES_TOTAL_BYTES = 120 * 1024 * 1024 // 120 MB across all attached files (holds one video)
+  // KLA-591: the unified per-file cap (100MB default, overridable per plan via callbacks.maxFileBytes). A
+  // file over this isn't silently dropped — the composer shows a friendly, role-aware over-cap CTA. The
+  // backend attach path (prototype/server.ts) mirrors the 100MB video ceiling + 120MB total; the enforced
+  // per-workspace storage QUOTA + billing is KLA-594 (fast-follow).
+  const PER_FILE_MAX_BYTES = callbacks.maxFileBytes && callbacks.maxFileBytes > 0 ? callbacks.maxFileBytes : DEFAULT_MAX_FILE_BYTES
+  // KLA-591: who is filing — drives the over-cap CTA (member/owner → upgrade link; anon/guest → ask-team).
+  const reporterRole: ReporterRole = callbacks.reporterRole ?? 'anon'
+  const upgradeUrl = callbacks.upgradeUrl
+  const MAX_FILES_TOTAL_BYTES = Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
   let attachedFiles: ReportFileAttachment[] = []
+  // KLA-591: current aggregate upload percent while a submit is in flight (null = not uploading). Painted
+  // onto every video tile + file chip so the reporter sees a large video actually uploading.
+  let uploadProgressPct: number | null = null
   // KLAVITYKLA-438: "Record me" recordings. Enabled only when the host opted in AND provided onRecord.
   const recordingEnabled = !!(callbacks.allowRecording && callbacks.onRecord)
   // KLA-505: pick the dictation engine for the Voice button — prefer the server STT endpoint (onDictate +
@@ -459,11 +748,24 @@ export function buildModal(
   // Image-hero: the screenshot currently shown big + live-annotated in the hero pane. Clicking a
   // thumbnail selects it; the inline annotator mounts on it and persists shapes to annotationsByIndex.
   let activeIndex = 0
+  // KLA-591: when non-null, a VIDEO attachment (attachedFiles[activeVideoIndex]) owns the hero — it renders
+  // as an inline <video controls> preview instead of the image annotator. Cleared when an image thumb is
+  // selected, when the video is removed, or when there are no videos.
+  let activeVideoIndex: number | null = null
+  // KLA-602(a): when non-null, a "Record me" recording (recordings[activeRecordingIndex]) owns the hero as an
+  // inline <video controls> preview. Recordings now render as removable video TILES in the gallery strip
+  // (reusing the KLA-591 tile look), no longer as text chips behind a separate Preview→Attach modal. Mutually
+  // exclusive with activeVideoIndex + the image annotator selection.
+  let activeRecordingIndex: number | null = null
   let heroKeyHandler: ((e: KeyboardEvent) => void) | null = null
   // JTBD 1.10: track whether a session-replay buffer is attached — it counts as evidence, so an
   // evidence-only report (replay but no typed prose / screenshot) can still Submit. Seeded from the
   // initial callback state and kept in sync by setReplayState() as rrweb resolves post-mount.
   let replayAttached = callbacks.replayState === 'attached'
+  // KLA-586: severity/priority from the last ACCEPTED AI-Enhance draft (cleared on Undo). Ride the submit
+  // payload as structured fields alongside the human-readable Severity line in the description.
+  let enhanceSeverity: string | null = null
+  let enhancePriority: string | null = null
   let autodismissTimeout: any = null
   // #468: single source of truth for "this modal instance has been torn down". Guards close() against a
   // double-fire (Esc/X/backdrop during a submit + the submit's later resolution both calling close()) and
@@ -543,10 +845,13 @@ export function buildModal(
     .kl-hero-empty{display:flex;flex-direction:column;align-items:center;gap:12px;color:#7d879f;font-size:13.5px;font-weight:500;text-align:center;max-width:260px;line-height:1.5;}
     .kl-hero-empty svg{opacity:.6;}
     .kl-side{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--kl-border);padding:22px 20px;overflow-y:auto;}
-    /* margin-top:auto pins Submit to the bottom when the composer is short; position:sticky keeps it in
-       view when the composer scrolls (long forms / small viewports) so Submit is ALWAYS reachable
-       (KLAVITYKLA-402). The -12px top shadow gutter blends content scrolling up beneath the button. */
-    .kl-side>.klavity-submit{margin-top:auto;position:sticky;bottom:0;box-shadow:0 -12px 14px -8px var(--kl-bg);}
+    /* KLA-586: Submit is pinned to the bottom by the DESCRIPTION field's flex:1 grow (it consumes the free
+       space and pushes the target-toggle + Submit down to sit right beneath it — no awkward gap). We must NOT
+       use margin-top:auto here: an auto margin claims positive free space BEFORE flex-grow, which would steal
+       the space back from the description and reopen the gap ABOVE Submit. position:sticky keeps Submit in
+       view when the panel scrolls (long forms / small viewports) so it's ALWAYS reachable (KLAVITYKLA-402).
+       The -12px top shadow gutter blends content scrolling up beneath the button. */
+    .kl-side>.klavity-submit{position:sticky;bottom:0;box-shadow:0 -12px 14px -8px var(--kl-bg);}
     @media (max-width:760px){.klavity-modal{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;max-height:96vh;width:96vw;}.kl-hero{max-height:44vh;}.kl-side{overflow-y:visible;border-left:none;border-top:1px solid var(--kl-border);}.kl-side>.klavity-submit{position:static;box-shadow:none;}}
     /* Hero annotation toolbar — always-on tools over the image. Tap targets ≥36px for touch. */
     .kl-htool,.kl-htbtn{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:38px;height:38px;padding:0 8px;border:1px solid transparent;border-radius:9px;background:transparent;color:#cfd5ea;cursor:pointer;line-height:1;transition:transform .12s ease,background .12s ease;}
@@ -560,28 +865,56 @@ export function buildModal(
     .kl-hcolor{width:24px;height:24px;border-radius:50%;border:2px solid rgba(255,255,255,.65);cursor:pointer;padding:0;transition:transform .12s ease;}
     .kl-hcolor:hover{transform:scale(1.14);}
     .kl-hcolor.kl-on{outline:2px solid #fff;outline-offset:2px;}
+    /* Light swatches (white/yellow) need a dark inset ring so they read against the toolbar. */
+    .kl-hcolor-light{border-color:rgba(0,0,0,.35);box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);}
+    .kl-hcolor-cwrap{position:relative;display:inline-flex;}
+    /* Rainbow "custom colour" swatch — opens the native picker; its bg is overwritten with the chosen colour. */
+    .kl-hcolor-custom{background:conic-gradient(from 0deg,#ef4444,#f59e0b,#facc15,#16a34a,#3b82f6,#a855f7,#ef4444);}
+    .kl-hcolor-input{position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;}
     .kl-hsep{width:1px;height:24px;background:rgba(255,255,255,.14);margin:0 3px;}
     .kl-hgrow{flex:1;}
-    .kl-hhint{color:#7d879f;font-size:11px;font-weight:600;white-space:nowrap;}
+    /* #626: keep the six preset swatches + custom picker on ONE line as a single unit (never split across
+       two rows at the narrow widget width). Gap matches the toolbar's swatch spacing. */
+    .kl-hcolors{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:6px;flex:none;}
     /* Contextual text options (outline colour + size) — only visible while the Text tool is active. */
     .kl-htextopts{display:inline-flex;align-items:center;gap:5px;}
     .kl-htextopts[hidden]{display:none;}
     .kl-hlabel{color:#7d879f;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:0 1px;}
+    /* Keep the "Stroke" label glued to its S/M/L/XL sizes as one control — never let flex-wrap split the
+       label onto one row and the size buttons onto another at the narrow widget width. */
+    .kl-hgroup{display:inline-flex;align-items:center;gap:5px;flex:none;flex-wrap:nowrap;}
     .kl-hopt{min-width:28px;height:30px;padding:0 8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#cfd5ea;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
     .kl-hopt:hover{background:rgba(255,255,255,.08);}
     .kl-hopt.kl-on{background:var(--kl-accent);color:var(--kl-on-accent);border-color:transparent;}
     .kl-osq{width:13px;height:13px;border-radius:3px;display:inline-block;}
-    .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .kl-hmask{display:inline-flex;align-items:center;gap:5px;height:38px;padding:0 8px;border-radius:9px;color:#cfd5ea;font-size:11px;font-weight:600;cursor:pointer;user-select:none;white-space:nowrap;}
+    .kl-hmask:hover{background:rgba(255,255,255,.08);}
+    .kl-hmask input{cursor:pointer;margin:0;accent-color:var(--kl-accent);}
+    /* Top-left Klavity logo — a link to the (UTM'd) homepage. Sits flush left in the editor toolbar. */
+    .kl-hlogo{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 8px 0 4px;border-radius:9px;text-decoration:none;color:#e6e9f5;font-weight:800;font-size:13px;letter-spacing:-.01em;cursor:pointer;transition:background .12s ease,transform .12s ease;}
+    .kl-hlogo:hover{background:rgba(255,255,255,.08);transform:translateY(-1px);}
+    .kl-hlogo:active{transform:scale(.97);}
+    .kl-hlogo svg{display:block;flex:none;}
+    .kl-hlogo-word{white-space:nowrap;}
+    @media (max-width:520px){.kl-hlogo-word{display:none;}}
+    /* Zoom minimap / navigator — a corner thumbnail shown only while zoomed. The viewport rect dims the
+       off-screen area (the big spread box-shadow) so the visible region reads at a glance. */
+    .kl-minimap{position:absolute;right:12px;bottom:12px;z-index:7;border:1px solid rgba(255,255,255,.4);border-radius:6px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.5);background:#0b0f1c;cursor:crosshair;touch-action:none;}
+    .kl-minimap[hidden]{display:none;}
+    .kl-minimap-img{display:block;width:100%;height:100%;object-fit:fill;opacity:.9;pointer-events:none;user-select:none;-webkit-user-drag:none;}
+    .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6c63ff);background:color-mix(in srgb,var(--kl-accent,#6c63ff) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
+    .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible,.kl-hlogo:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
-    @media (max-width:760px){.kl-hhint{display:none;}}
-    @media (prefers-reduced-motion:reduce){.kl-htool,.kl-htbtn,.kl-hcolor{transition:none;}.kl-htool:hover,.kl-htbtn:hover,.kl-hcolor:hover{transform:none;}}
+    /* #627: zoom −/+ buttons sit tight together as their own group. */
+    .kl-hzoom{gap:2px;}
+    @media (prefers-reduced-motion:reduce){.kl-htool,.kl-htbtn,.kl-hcolor,.kl-hlogo{transition:none;}.kl-htool:hover,.kl-htbtn:hover,.kl-hcolor:hover,.kl-hlogo:hover{transform:none;}}
     .klavity-modal::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(to right,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px,linear-gradient(to bottom,color-mix(in srgb,var(--kl-border) 58%,transparent) 1px,transparent 1px) 0 0/44px 44px;opacity:.36;}
     .klavity-modal>*{position:relative;z-index:1;}
     /* Staggered content reveal — the genie scales the panel in while its rows softly rise + fade so it feels
        alive (not a flat box). Subtle; zeroed under prefers-reduced-motion below. */
     @keyframes kl-rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
-    .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>textarea.klavity-desc,.kl-side>input.klavity-remail,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
-    .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>textarea.klavity-desc{animation-delay:.18s}.kl-side>input.klavity-remail{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
+    .kl-side>.klavity-toggle,.kl-side>.klavity-page,.kl-side>.klavity-proof,.kl-hero>.klavity-strip,.kl-side>.klavity-actions,.kl-side>.klavity-desc,.kl-side>input.klavity-remail,.kl-side>.klavity-submit{animation:kl-rise .5s cubic-bezier(.16,1,.3,1) both;}
+    .kl-side>.klavity-toggle{animation-delay:.05s}.kl-side>.klavity-page{animation-delay:.09s}.kl-side>.klavity-proof{animation-delay:.11s}.kl-hero>.klavity-strip{animation-delay:.12s}.kl-side>.klavity-actions{animation-delay:.15s}.kl-side>.klavity-desc{animation-delay:.18s}.kl-side>input.klavity-remail{animation-delay:.21s}.kl-side>.klavity-submit{animation-delay:.23s}
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
@@ -601,12 +934,54 @@ export function buildModal(
     .kl-type-chip:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     /* PX4 #425: attached non-image file chips (evidence strip). */
     .klavity-files{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;}
+    /* KLA-586 (founder-flagged stray amber bar): these boxes carry the hidden attribute but their author
+       display:flex declaration overrode the UA hidden rule (display:none) — so an EMPTY .klavity-capmsg
+       (amber bg + border + padding) rendered as a stray amber pill between the images-count row and the
+       description. Restore the hidden semantics explicitly so they only take space when they have content. */
+    .klavity-files[hidden]{display:none;}
     .kl-file-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 8px 6px 9px;border-radius:8px;border:1px solid var(--kl-border);background:var(--kl-chip);color:var(--kl-fg);font-size:12px;}
     .kl-file-chip .kl-file-ic{display:inline-flex;flex:none;color:var(--kl-muted);}
     .kl-file-chip .kl-file-nm{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
     .kl-file-chip .kl-file-sz{color:var(--kl-muted);font-variant-numeric:tabular-nums;font-size:11px;}
     .kl-file-rm{flex:none;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:50%;background:color-mix(in srgb,var(--kl-fg) 12%,transparent);color:var(--kl-fg);cursor:pointer;padding:0;}
     .kl-file-rm:hover{background:color-mix(in srgb,var(--kl-fg) 22%,transparent);}
+    /* KLA-591 unified attach: hint line + role-aware over-cap message + video tiles + upload progress. */
+    .klavity-attach-hint{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--kl-muted);margin:-2px 0 10px;}
+    .klavity-attach-hint svg{flex:none;opacity:.8;}
+    .klavity-capmsg{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;line-height:1.4;color:var(--kl-fg);background:color-mix(in srgb,#f59e0b 14%,transparent);border:1px solid color-mix(in srgb,#f59e0b 45%,transparent);border-radius:8px;padding:8px 10px;margin-bottom:10px;}
+    .klavity-capmsg .kl-capmsg-t{font-weight:600;}
+    .klavity-capmsg .kl-capmsg-cta{color:var(--kl-accent);font-weight:700;text-decoration:none;white-space:nowrap;}
+    .klavity-capmsg a.kl-capmsg-cta:hover{text-decoration:underline;}
+    /* KLA-612: the guest "Request upgrade" action is a real button (POSTs an admin nudge). Styled as a compact
+       accent pill so it reads as the primary action in the notice, with the standard hover/press micro-anim. */
+    .klavity-capmsg button.kl-capmsg-req{border:none;cursor:pointer;font-size:12px;line-height:1;padding:6px 11px;border-radius:7px;background:var(--kl-accent);color:var(--kl-on-accent);font-weight:700;transition:transform .15s cubic-bezier(.2,.7,.2,1),filter .15s ease;will-change:transform;}
+    .klavity-capmsg button.kl-capmsg-req:hover{transform:translateY(-1px) scale(1.02);filter:brightness(1.06);text-decoration:none;}
+    .klavity-capmsg button.kl-capmsg-req:active{transform:scale(.97);}
+    .klavity-capmsg button.kl-capmsg-req:disabled{opacity:.6;cursor:default;transform:none;}
+    .klavity-capmsg button.kl-capmsg-req:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    /* Confirmation after the request lands — a check glyph + green tint (no emoji; uses core icon()). */
+    .klavity-capmsg .kl-capmsg-sent{display:inline-flex;align-items:center;gap:5px;font-weight:700;color:#059669;}
+    .klavity-capmsg .kl-capmsg-sent-ic{display:inline-flex;}
+    .klavity-capmsg .kl-capmsg-sent-ic svg{width:14px;height:14px;display:block;}
+    .klavity-capmsg .kl-capmsg-hint{color:var(--kl-muted);}
+    @media (prefers-reduced-motion: reduce){.klavity-capmsg button.kl-capmsg-req{transition:none;}}
+    .klavity-capmsg[hidden]{display:none;}
+    .kl-video-thumb{width:104px;height:72px;border-radius:8px;overflow:hidden;cursor:pointer;background:#000;outline:1px solid var(--kl-img-outline);outline-offset:-1px;}
+    .kl-video-thumb.kl-thumb-active{outline:2px solid var(--kl-accent);outline-offset:1px;}
+    .kl-video-thumb video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;}
+    .kl-video-thumb .kl-video-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:rgba(0,0,0,.28);transition:background .12s;}
+    .kl-video-thumb:hover .kl-video-play{background:rgba(0,0,0,.12);}
+    .kl-video-thumb .kl-video-play svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.6));}
+    .kl-video-thumb .kl-video-badge{position:absolute;left:4px;bottom:4px;display:inline-flex;align-items:center;gap:3px;padding:1px 5px 1px 4px;border-radius:5px;background:rgba(0,0,0,.62);color:#fff;font-size:9px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;}
+    /* KLA-602(a): a "Re-record" action on a recording tile — a small circular control in the top-LEFT corner
+       (Remove is top-right), so a reporter can redo a walkthrough without hunting for the Record button. */
+    .kl-rerec{position:absolute;top:3px;left:3px;z-index:2;width:19px;height:19px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease;}
+    .kl-rerec:hover{transform:scale(1.08);background:var(--kl-accent);}
+    .kl-rerec:active{transform:scale(.94);}
+    .kl-rerec:focus-visible{outline:2px solid var(--kl-accent);outline-offset:1px;}
+    .kl-att-prog{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(0,0,0,.35);overflow:hidden;}
+    .kl-att-prog i{display:block;height:100%;width:0;background:var(--kl-accent);transition:width .2s ease;}
+    .kl-file-chip{position:relative;overflow:hidden;}
     @media (prefers-reduced-motion:reduce){.kl-type-chip{transition:none;}.kl-type-chip:hover{transform:none;}}
     .klavity-page{font-size:12px;color:var(--kl-muted);margin-bottom:12px;}
     /* JTBD 1.8 attached-proof chip: tells the reporter (and later the reviewer, in the drawer) that a
@@ -697,8 +1072,51 @@ export function buildModal(
     .klav-mask-row{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--kl-muted);cursor:pointer;margin-bottom:10px;user-select:none;}
     .klav-mask-row input[type=checkbox]{accent-color:var(--kl-accent);width:13px;height:13px;cursor:pointer;}
     .klav-mask-row:hover{color:var(--kl-fg);}
-    .klavity-counter{font-size:11px;color:var(--kl-muted);margin-bottom:8px;font-variant-numeric:tabular-nums;}
-    textarea.klavity-desc{width:100%;min-height:100px;resize:vertical;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
+    .klavity-counter{font-size:11px;color:var(--kl-muted);font-variant-numeric:tabular-nums;}
+    /* KLA composer-polish: images-count + Voice-mic row (Mevak style). The circular mic sits at the right end;
+       margin-left:auto keeps it pinned right even when the counter is hidden (no images yet). */
+    .klavity-descbar{display:flex;align-items:center;gap:8px;min-height:36px;margin-bottom:8px;}
+    .kl-voice-circle{position:relative;flex:none;margin-left:auto;width:36px;height:36px;min-width:36px;padding:0;border:none;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--kl-chip);color:var(--kl-fg);cursor:pointer;transition:background .15s ease,color .15s ease,transform .12s ease;}
+    .kl-voice-circle .kl-cap-ic{display:inline-flex;align-items:center;justify-content:center;line-height:1;}
+    .kl-voice-circle .kl-cap-ic svg{display:block;width:17px;height:17px;}
+    .kl-voice-circle:hover{color:var(--kl-accent);transform:scale(1.06);}
+    .kl-voice-circle:active{transform:scale(.95);}
+    .kl-voice-circle:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .kl-voice-circle:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+    @media (prefers-reduced-motion: reduce){.kl-voice-circle{transition:none!important;}.kl-voice-circle:hover,.kl-voice-circle:active{transform:none;}}
+    /* KLA-586: the description is a WhatsApp-style Markdown field — a contenteditable that HOLDS raw Markdown
+       (its source of truth is plain text, exposed via a .value accessor so every existing call site is
+       unchanged) but renders bold/italic/strike/mono live as the reporter types, markers kept + dimmed.
+       flex:1 so it GROWS to fill the freed vertical space in the scrollable side panel (founder ask) — the
+       target toggle + Submit sit right below it with no awkward gap. min-height keeps it usable + it stays
+       user-resizable; on short viewports the .kl-side panel scrolls (overflow-y:auto) rather than overflowing. */
+    .klavity-desc{flex:1 1 auto;width:100%;min-height:200px;resize:vertical;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;line-height:1.55;margin-bottom:12px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);outline:none;}
+    /* placeholder — shown only when the field is genuinely empty (render() clears stray <br> so :empty holds). */
+    .klavity-desc:empty:before{content:attr(data-ph);color:var(--kl-muted);opacity:.75;pointer-events:none;}
+    /* WhatsApp live-format: the markers stay in the raw text but render dimmed; the wrapped text is styled. */
+    .klavity-desc .kl-mk{color:var(--kl-muted);opacity:.65;}
+    .klavity-desc b{font-weight:750;}
+    .klavity-desc i{font-style:italic;}
+    .klavity-desc s{text-decoration:line-through;opacity:.85;}
+    .klavity-desc code{background:color-mix(in srgb,var(--kl-fg) 8%,transparent);border-radius:4px;padding:0 3px;font-size:.92em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+    .klavity-desc.kl-desc-disabled{opacity:.6;cursor:not-allowed;}
+    /* brief accent ring right after an AI-enhance replaces the field content, so the change is noticed. */
+    .klavity-desc.kl-just-enhanced{box-shadow:0 0 0 2px color-mix(in srgb,var(--kl-accent) 45%,transparent);transition:box-shadow .5s ease;}
+    /* KLA-586: AI-Enhance affordance — Enhance / Undo / Regenerate row + a drafting spinner, under the field. */
+    .klavity-enhance-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;}
+    .klavity-enhance-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid color-mix(in srgb,var(--kl-accent) 40%,var(--kl-border));background:color-mix(in srgb,var(--kl-accent) 10%,var(--kl-input-bg));color:var(--kl-accent);font-weight:700;font-size:12.5px;border-radius:9px;padding:8px 12px;cursor:pointer;transition:transform .15s cubic-bezier(.2,.7,.2,1),box-shadow .15s ease,filter .15s ease;will-change:transform;}
+    .klavity-enhance-btn:hover{transform:scale(1.02);box-shadow:0 3px 12px color-mix(in srgb,var(--kl-accent) 25%,transparent);}
+    .klavity-enhance-btn:active{transform:scale(.97);}
+    .klavity-enhance-btn:disabled{opacity:.55;cursor:default;transform:none;box-shadow:none;}
+    .klavity-enhance-undo,.klavity-enhance-regen{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--kl-border);background:var(--kl-input-bg);color:var(--kl-muted);font-weight:650;font-size:12px;border-radius:9px;padding:8px 11px;cursor:pointer;transition:background .15s ease,color .15s ease;}
+    .klavity-enhance-regen{margin-left:auto;color:var(--kl-accent);border-color:color-mix(in srgb,var(--kl-accent) 40%,var(--kl-border));}
+    .klavity-enhance-undo:hover,.klavity-enhance-regen:hover{background:color-mix(in srgb,var(--kl-accent) 8%,var(--kl-input-bg));color:var(--kl-accent);}
+    .klavity-enhance-undo[hidden],.klavity-enhance-regen[hidden]{display:none;}
+    .klavity-enhance-spin{display:flex;align-items:center;gap:9px;margin:0 2px 12px;font-size:12px;color:var(--kl-accent);font-weight:600;}
+    .klavity-enhance-spin[hidden]{display:none;}
+    .kl-enh-loader{width:15px;height:15px;border:2.5px solid color-mix(in srgb,var(--kl-accent) 30%,transparent);border-top-color:var(--kl-accent);border-radius:50%;animation:kl-enh-spin .7s linear infinite;}
+    @keyframes kl-enh-spin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion: reduce){.kl-enh-loader{animation-duration:1.4s;}.klavity-enhance-btn{transition:none;}.klavity-enhance-btn:hover{transform:none;}}
     /* JTBD 1.10: hint shown when the reporter has attached a screenshot but typed nothing — Submit is
        enabled and the AI will title the report. Sits just under the textarea; hidden by default. */
     .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
@@ -753,6 +1171,31 @@ export function buildModal(
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     .klavity-submit{width:100%;min-height:40px;padding:12px;background:var(--kl-accent);color:var(--kl-on-accent);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
     .klavity-submit:disabled{opacity:.5;cursor:not-allowed;}
+    /* KLA submit-target: segmented "Where should this go?" control sitting just above Submit. Matches the
+       composer's chip styling and works at the narrow widget width (two flex columns, wrapping sub-labels). */
+    .klavity-target{margin:0 0 12px;}
+    .kl-tgt-label{font-size:11px;font-weight:650;color:var(--kl-muted);margin:0 0 6px 2px;text-transform:uppercase;letter-spacing:.04em;}
+    .kl-tgt-seg{display:flex;background:var(--kl-chip);border-radius:10px;padding:3px;gap:3px;}
+    .kl-tgt-opt{position:relative;flex:1;min-width:0;border:none;background:transparent;border-radius:8px;padding:8px 18px 8px 8px;font-size:12.5px;font-weight:600;color:var(--kl-muted);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;line-height:1.2;text-align:center;transition:background .15s ease,color .15s ease,box-shadow .15s ease,transform .12s ease;}
+    .kl-tgt-opt small{font-weight:500;font-size:10px;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .kl-tgt-opt:hover:not(.on){color:var(--kl-fg);}
+    .kl-tgt-opt:active{transform:scale(.97);}
+    /* Apple-HIG selected state: unmistakable at a glance — accent-tinted fill, a crisp accent ring
+       (inset box-shadow so there's no layout shift vs the borderless unselected segment), higher-contrast
+       bold label, an accent sub-label, a subtle lift shadow, and an accent checkmark tick in the corner.
+       Unselected segments stay muted + flat (rules above). */
+    .kl-tgt-opt.on{background:color-mix(in srgb,var(--kl-accent) 14%,var(--kl-input-bg));color:var(--kl-fg);font-weight:700;transform:translateY(-1px);box-shadow:inset 0 0 0 1.5px var(--kl-accent),0 3px 10px color-mix(in srgb,var(--kl-accent) 28%,transparent);}
+    .kl-tgt-opt.on small{color:var(--kl-accent);opacity:1;font-weight:600;}
+    /* CSS-drawn check tick (no glyph/emoji) — accent, top-right corner of the selected segment. */
+    .kl-tgt-opt.on::after{content:"";position:absolute;top:7px;right:8px;width:5px;height:9px;border:solid var(--kl-accent);border-width:0 2px 2px 0;transform:rotate(45deg);}
+    @media (prefers-reduced-motion:reduce){.kl-tgt-opt{transition:background .15s ease,color .15s ease,box-shadow .15s ease;}.kl-tgt-opt.on{transform:none;}.kl-tgt-opt:active{transform:none;}}
+    /* #638: "Attach console logs" toggle — a compact opt-in row just above Submit, OFF by default. Mirrors
+       the mask-numbers checkbox affordance (native checkbox tinted with the accent) so it reads as a control. */
+    .klavity-conlog{display:flex;align-items:center;margin:0 0 12px;}
+    .kl-conlog-lbl{display:inline-flex;align-items:center;gap:7px;color:var(--kl-muted);font-size:12px;font-weight:600;cursor:pointer;user-select:none;line-height:1.3;}
+    .kl-conlog-lbl:hover{color:var(--kl-fg);}
+    .kl-conlog-lbl input{margin:0;width:14px;height:14px;cursor:pointer;accent-color:var(--kl-accent);flex:0 0 auto;}
+    .kl-conlog-lbl svg{flex:0 0 auto;opacity:.8;}
     /* Upload progress under Submit — collapsed until a submit is in flight; the fill is animated toward 90%
        over ~10s and snapped to 100% when the request resolves (fetch can't report real upload %). */
     .klavity-progress{height:5px;border-radius:999px;background:var(--kl-chip);overflow:hidden;opacity:0;max-height:0;margin-top:0;transition:opacity .2s ease,max-height .2s ease,margin-top .2s ease;}
@@ -796,10 +1239,10 @@ export function buildModal(
        rings. Same feel as the right-click menu + dashboard buttons. Transform amounts are CSS vars so
        prefers-reduced-motion can zero them (below). color-mix degrades gracefully if unsupported. ── */
     .klavity-modal{--kl-lift:translateY(-1px) scale(1.02);--kl-press:scale(.97);--kl-bhover:scale(1.05);--kl-bpress:scale(.97);}
-    .klavity-toggle button,.klavity-actions button,.klavity-submit,.klavity-lead button,.klavity-cta,textarea.klavity-desc,input.klavity-remail,.klavity-lead input{transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,border-color .15s ease,box-shadow .15s ease,color .15s ease,filter .15s ease;will-change:transform;}
+    .klavity-toggle button,.klavity-actions button,.klavity-submit,.klavity-lead button,.klavity-cta,.klavity-desc,input.klavity-remail,.klavity-lead input{transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,border-color .15s ease,box-shadow .15s ease,color .15s ease,filter .15s ease;will-change:transform;}
     .klavity-rm,.klavity-mk{transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,color .15s ease,box-shadow .15s ease;will-change:transform;}
-    textarea.klavity-desc:hover,input.klavity-remail:hover,.klavity-lead input:hover{transform:var(--kl-lift);border-color:var(--kl-accent);box-shadow:0 7px 18px color-mix(in srgb,var(--kl-accent) 16%,transparent),0 0 0 1px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
-    textarea.klavity-desc:focus,input.klavity-remail:focus,.klavity-lead input:focus{outline:none;border-color:var(--kl-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--kl-accent) 20%,transparent),0 8px 20px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
+    .klavity-desc:hover,input.klavity-remail:hover,.klavity-lead input:hover{transform:var(--kl-lift);border-color:var(--kl-accent);box-shadow:0 7px 18px color-mix(in srgb,var(--kl-accent) 16%,transparent),0 0 0 1px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
+    .klavity-desc:focus-within,.klavity-desc:focus,input.klavity-remail:focus,.klavity-lead input:focus{outline:none;border-color:var(--kl-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--kl-accent) 20%,transparent),0 8px 20px color-mix(in srgb,var(--kl-accent) 14%,transparent);}
     /* Bug/Feature toggle — lift + soft accent glow (keeps the active chip's highlight intact) */
     .klavity-toggle button:hover{transform:var(--kl-lift);box-shadow:0 4px 12px color-mix(in srgb,var(--kl-accent) 20%,transparent);}
     .klavity-toggle button:active{transform:var(--kl-press);}
@@ -841,7 +1284,16 @@ export function buildModal(
     .klavity-toggle button:focus-visible,.klavity-actions button:focus-visible,.klavity-submit:focus-visible,.klavity-lead button:focus-visible,.klavity-cta:focus-visible,.klavity-rm:focus-visible,.klavity-mk:focus-visible,.klavity-x:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     /* ── Screen button: the (i) badge is a purely visual affordance nested inside the button.
        Hovering the entire Screen button shows the floating tooltip (KLA-15/KLA-26/KLA-31). ── */
-    #klavity-sharp{flex:1.4;}
+    /* KLA-587: "Snap" is the primary default capture — real tab pixels (every image, embedded frame and web
+       font, no CORS gaps). Style it as the primary/accent button so the reporter's eye + first click land
+       here; Full Page (the DOM re-render) stays the neutral fallback. Snap still requires a user gesture, so
+       "default" = the primary button + steer, NOT an auto-fired permission prompt (see KLAVITYKLA-473).
+       (The stacked "RECOMMENDED" pill was dropped per founder ask — accent styling carries the emphasis.) */
+    #klavity-sharp{flex:1.4;background:var(--kl-accent);color:var(--kl-on-accent);font-weight:600;}
+    #klavity-sharp:hover{filter:brightness(1.06);}
+    #klavity-sharp .kl-cap-main{display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1;}
+    #klavity-sharp .kl-info-badge{opacity:.7;}
+    #klavity-sharp:hover .kl-info-badge,#klavity-sharp:focus-visible .kl-info-badge{opacity:1;}
     /* Faded (i) circle inside the Screen button — lights up on button hover to signal "info here". */
     /* Absolutely-positioned in the button's top-right corner so it never consumes flex-row width and
        can't overflow the button edge (the "Screen (i)" overflow). Button is position:relative. */
@@ -855,6 +1307,19 @@ export function buildModal(
     .kl-float-tip{position:fixed;width:228px;max-width:calc(100vw - 16px);padding:10px 12px;border-radius:10px;background:var(--kl-bg);color:var(--kl-fg);box-shadow:0 0 0 1px var(--kl-border),0 12px 30px rgba(20,16,40,.22);font-size:12px;line-height:1.45;text-align:left;text-wrap:pretty;z-index:2147483647;pointer-events:none;visibility:hidden;opacity:0;transition:opacity .15s ease,visibility .15s step-end;}
     .kl-float-tip.kl-show{visibility:visible;opacity:1;transition:opacity .15s ease;}
     .kl-float-tip b{color:var(--kl-fg);font-weight:600;}
+    /* KLA-601: the Screen-decline NUDGE — an action-oriented callout anchored to the Screen button after the
+       reporter cancels the share picker (we keep the rendered fallback). It reuses the floating-tip shell but
+       is DISMISSIBLE (its own close affordance / auto-hide), captures pointer events, and gets an accent hairline
+       + a small arrow so it reads as a proactive tip, not the passive hover tooltip. Shown at most once/session. */
+    .kl-float-tip.kl-nudge{pointer-events:auto;box-shadow:0 0 0 1.5px var(--kl-accent),0 12px 30px rgba(20,16,40,.26);}
+    .kl-float-tip.kl-nudge .kl-nudge-row{display:flex;align-items:flex-start;gap:8px;}
+    .kl-float-tip.kl-nudge .kl-nudge-x{flex:none;margin:-2px -2px 0 auto;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:6px;background:transparent;color:var(--kl-muted);cursor:pointer;transition:background .15s ease,color .15s ease;}
+    .kl-float-tip.kl-nudge .kl-nudge-x:hover{background:color-mix(in srgb,var(--kl-accent) 14%,transparent);color:var(--kl-accent);}
+    .kl-float-tip.kl-nudge .kl-nudge-x:focus-visible{outline:2px solid var(--kl-accent);outline-offset:1px;}
+    /* Gently pulse the Screen button to draw the eye toward the one-tap retry. */
+    @keyframes kl-screen-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--kl-accent) 60%,transparent);}70%{box-shadow:0 0 0 8px rgba(124,58,237,0);}100%{box-shadow:0 0 0 0 rgba(124,58,237,0);}}
+    #klavity-sharp.kl-pulse{animation:kl-screen-pulse 1.4s cubic-bezier(.4,0,.2,1) 3;}
+    @media (prefers-reduced-motion:reduce){#klavity-sharp.kl-pulse{animation:none;}}
     /* ── Capture-source active/selected indicator (KLA-21) ──────────────────────────────────────
        .kl-active is applied to whichever capture button the user most recently used successfully.
        Uses the same accent palette and transition system as the rest of the modal so it reads as
@@ -867,7 +1332,17 @@ export function buildModal(
       background:color-mix(in srgb,var(--kl-accent) 12%,var(--kl-chip));
       box-shadow:0 0 0 1.5px var(--kl-accent),0 4px 14px color-mix(in srgb,var(--kl-accent) 18%,transparent);
     }
-    .klavity-actions button.kl-active .kl-cap-ic,.klavity-toggle button.active .kl-cap-ic{color:var(--kl-accent);transform:scale(1.08) rotate(3deg);}
+    .klavity-actions button.kl-active .kl-cap-ic{color:var(--kl-accent);transform:scale(1.08) rotate(3deg);}
+    /* KLA-612: the primary Snap button (#klavity-sharp) ALWAYS has a SOLID accent (purple) background — even
+       when it's the .kl-active capture source. The generic .kl-active .kl-cap-ic rule above paints the glyph
+       --kl-accent (purple), which on this button = purple-on-purple → the app-window icon vanishes (same class
+       of bug as the "missing Bug icon"). Pin the Snap icon to on-accent (white) so it stays visible next to the
+       "Snap" label in BOTH rest and active states. ID specificity (1,0,1) beats the .kl-active rule (0,3,1). */
+    #klavity-sharp .kl-cap-ic{color:var(--kl-on-accent);}
+    /* KLA composer-polish: the Bug/Feature toggle's ACTIVE chip has a SOLID accent (purple) background, so
+       the icon must be on-accent (white) — NOT accent, which would paint the glyph the same colour as its
+       background and make it invisible (the "missing Bug icon" report). Inactive chips inherit --kl-fg. */
+    .klavity-toggle button.active .kl-cap-ic{color:var(--kl-on-accent);transform:scale(1.08) rotate(3deg);}
     .klavity-actions button.kl-active::after{
       content:"";position:absolute;top:-4px;right:-4px;
       width:14px;height:14px;border-radius:50%;
@@ -890,10 +1365,22 @@ export function buildModal(
     .kl-vring-bg{stroke:color-mix(in srgb,var(--kl-border) 80%,transparent);}
     .kl-vring-prog{stroke:var(--kl-accent);transition:stroke .3s ease;}
     #klavity-voice.kl-voice-rec .kl-vring{display:block;}
-    #klavity-voice.kl-voice-rec{color:rgb(220 38 38);background:color-mix(in srgb,rgb(220 38 38) 10%,var(--kl-chip));}
+    /* KLA-613: the recording state is unmistakable AT THE CONTROL — a clearly red, GLOWING/PULSING circle with
+       the stop-square glyph — so we no longer need (and no longer render) the disconnected "Recording — tap to
+       stop" text row far below the description. Action + feedback are now co-located where the user clicked. */
+    #klavity-voice.kl-voice-rec{color:rgb(220 38 38);background:color-mix(in srgb,rgb(220 38 38) 16%,var(--kl-chip));box-shadow:0 0 0 2px rgba(220,38,38,.55),0 0 12px 2px rgba(220,38,38,.45);animation:kl-rec-glow 1.4s ease-in-out infinite;}
+    @keyframes kl-rec-glow{0%{box-shadow:0 0 0 0 rgba(220,38,38,.55),0 0 10px 1px rgba(220,38,38,.35);}50%{box-shadow:0 0 0 4px rgba(220,38,38,.28),0 0 18px 5px rgba(220,38,38,.55);}100%{box-shadow:0 0 0 0 rgba(220,38,38,.55),0 0 10px 1px rgba(220,38,38,.35);}}
+    @media (prefers-reduced-motion: reduce){#klavity-voice.kl-voice-rec{animation:none;box-shadow:0 0 0 2px rgba(220,38,38,.6);}}
     #klavity-voice.kl-voice-warn .kl-vring-prog{stroke:#f97316;}
     .kl-vdot{display:none;position:absolute;top:0;right:0;width:6px;height:6px;border-radius:50%;background:rgb(220 38 38);}
     #klavity-voice.kl-voice-rec .kl-vdot{display:block;animation:kl-vdot-pulse 1.2s ease infinite;}
+    @media (prefers-reduced-motion: reduce){#klavity-voice.kl-voice-rec .kl-vdot{animation:none;}}
+    /* KLA voice-fix / KLA-613: an OBVIOUS Stop affordance while recording — the mic icon swaps to a solid red
+       stop square so the user can clearly see it's live and that tapping stops it. This glyph + the red glow ARE
+       the recording feedback now (no separate status text). */
+    .kl-vstop{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:2px;background:rgb(220 38 38);}
+    #klavity-voice.kl-voice-rec .kl-cap-ic>svg{opacity:0;}
+    #klavity-voice.kl-voice-rec .kl-vstop{display:block;}
     @keyframes kl-vdot-pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.7);}}
     /* KLAVITYKLA-495: the voice status/error gets its OWN block row (was dynamically inserted right after
        the textarea, where the Report-clarity bar's negative top margin painted over it). It sits between
@@ -940,25 +1427,42 @@ export function buildModal(
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
-        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" aria-describedby="klavity-sharp-tip"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Screen</span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip">Screen grabs the <b>whole page — every image, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
-        <button id="klavity-full" title="Full Page — instant capture; may miss some cross-origin images"><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
-        <button id="klavity-upload"><span class="kl-cap-ic">${icon('image')}</span><span class="kl-upload-label">Upload</span></button>
-        ${fileAttachEnabled ? `<button id="klavity-attach" title="Attach a video or file (MP4, PDF, .log, .har, ...)"><span class="kl-cap-ic">${icon('paperclip')}</span><span class="kl-attach-label">Attach file</span></button>` : ''}
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
+        ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
+             image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
+        <button id="klavity-upload" title="${fileAttachEnabled ? 'Add a screenshot, video, or file (images, MP4, PDF, .log, .har, ...)' : 'Upload a screenshot'}"><span class="kl-cap-ic">${icon(fileAttachEnabled ? 'paperclip' : 'image')}</span><span class="kl-upload-label">${fileAttachEnabled ? 'Attach' : 'Upload'}</span></button>
         ${recordingEnabled ? `<button id="klavity-record" title="Record your screen, camera and narration"><span class="kl-cap-ic">${icon('monitor')}</span><span class="kl-record-label">Record me</span></button>` : ''}
         ${callbacks.onRegionCapture ? `<button id="klavity-region"><span class="kl-cap-ic">${icon('scissors')}</span><span class="kl-region-label">Region</span></button>` : ''}
         ${callbacks.onPickElement ? `<button id="klavity-pick" title="Pick the exact element that's broken"><span class="kl-cap-ic">${icon('mouse-pointer-2')}</span><span class="kl-pick-label">Pick element</span></button>` : ''}
-        ${voiceSupported ? `<button id="klavity-voice" title="Dictate description"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span></span><span class="kl-voice-label">Voice</span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
       </div>
       ${callbacks.onPickElement ? `<div class="klavity-pickinfo" id="klavity-pickinfo" role="status" aria-live="polite" hidden></div>` : ''}
-      <label class="klav-mask-row"><input type="checkbox" id="klavity-mask-numbers"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>
-      <input type="file" id="klavity-file" accept="image/*,.heic,.heif" multiple style="display:none">
-      ${fileAttachEnabled ? '<input type="file" id="klavity-attach-input" accept="video/*,image/*,.pdf,.log,.har,.txt,.json,.csv,.zip" multiple style="display:none">' : ''}
-      <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
+      ${/* KLA-593: the "Mask numbers" redaction toggle moved to the TOP of the image-editing (hero) toolbar,
+          grouped with the other redaction/editing tools — see heroToolbarHtml. */''}
+      ${/* KLA-591: ONE hidden input drives the unified attach control (broad accept) when file attachments
+           are enabled; the image-only accept is kept for the plain Upload button otherwise. */''}
+      <input type="file" id="klavity-file" accept="${fileAttachEnabled ? UNIFIED_ATTACH_ACCEPT : 'image/*,.heic,.heif'}" multiple style="display:none">
+      ${fileAttachEnabled ? `<div class="klavity-attach-hint" id="klavity-attach-hint"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>Images, video, PDF or logs — up to ${Math.round(PER_FILE_MAX_BYTES / 1024 / 1024)}MB each</span></div>` : ''}
+      ${/* KLA composer-polish: the images-count row now also hosts the Mevak-style circular Voice mic at its
+           right end (replaces the old full-width Voice button in the capture grid). The row always renders when
+           Voice is supported so the mic has a home even before any image is attached (the counter itself stays
+           hidden until there's an image). */''}
+      <div class="klavity-descbar">
+        <div class="klavity-counter" id="klavity-counter" hidden>0/${MAX_IMAGES} images</div>
+        ${voiceSupported ? `<button id="klavity-voice" class="kl-voice-circle" type="button" title="Voice dictation" aria-label="Voice dictation" aria-pressed="false"><span class="kl-cap-ic">${icon('mic')}<span class="kl-vdot"></span><span class="kl-vstop" aria-hidden="true"></span></span><svg class="kl-vring" viewBox="0 0 32 32" aria-hidden="true"><circle class="kl-vring-bg" cx="16" cy="16" r="13" fill="none" stroke-width="2"/><circle class="kl-vring-prog" cx="16" cy="16" r="13" fill="none" stroke-width="2" stroke-dasharray="81.68" stroke-dashoffset="81.68" stroke-linecap="round" transform="rotate(-90 16 16)"/></svg></button>` : ''}
+      </div>
+      ${fileAttachEnabled ? '<div class="klavity-capmsg" id="klavity-capmsg" role="alert" hidden></div>' : ''}
       ${fileAttachEnabled ? '<div class="klavity-files" id="klavity-files" hidden></div>' : ''}
-      ${recordingEnabled ? '<div class="klavity-files klavity-recordings" id="klavity-recordings" hidden></div>' : ''}
+      ${/* KLA-602(a): recordings render as video TILES in the strip (updateStrip), not a separate chip row. */''}
       <div class="klavity-error" id="klavity-err"></div>
-      <textarea class="klavity-desc" id="klavity-desc" placeholder="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></textarea>
+      <div class="klavity-desc" id="klavity-desc" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Description" data-ph="${initialType === 'feature' ? "Describe the feature you'd like..." : 'Describe the bug...'}"></div>
       <div class="klavity-desc-hint" id="klavity-desc-hint" hidden>${icon('sparkles', { size: 13 })}<span>No title needed — we'll auto-generate one for you</span></div>
+      ${callbacks.onEnhance ? `<div class="klavity-enhance-row" id="klavity-enhance-row">
+        <button type="button" class="klavity-enhance-btn" id="klavity-enhance">${icon('sparkles', { size: 14 })}<span>Enhance with AI</span></button>
+        <button type="button" class="klavity-enhance-undo" id="klavity-enhance-undo" hidden>${icon('rotate-cw', { size: 13 })}<span>Undo</span></button>
+        <button type="button" class="klavity-enhance-regen" id="klavity-enhance-regen" hidden>${icon('refresh-cw', { size: 13 })}<span>Regenerate</span></button>
+      </div>
+      <div class="klavity-enhance-spin" id="klavity-enhance-spin" hidden><span class="kl-enh-loader"></span><span>Drafting from your screenshot…</span></div>` : ''}
       ${voiceSupported ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
       ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
         <div class="kl-clr-bar"><i></i><i></i><i></i></div>
@@ -977,6 +1481,18 @@ export function buildModal(
         <div class="kl-nudge-d">Adding what you expected + one step to reproduce gets it fixed faster. Or send it as-is — your call.</div>
         <div class="kl-nudge-row"><button type="button" class="kl-nudge-add" id="klavity-nudge-add">Add detail</button><button type="button" class="kl-nudge-anyway" id="klavity-nudge-anyway">Submit anyway</button></div>
       </div>` : ''}
+      ${cfg.submitTargetToggle !== false ? `<div class="klavity-target" id="klavity-target">
+        <div class="kl-tgt-label">Where should this go?</div>
+        <div class="kl-tgt-seg" role="radiogroup" aria-label="Where should this report go?">
+          <button type="button" class="kl-tgt-opt on" id="klavity-target-project" role="radio" aria-checked="true" data-target="project">Your team<small>${escHtml(cfg.projectDisplayName || 'your project')}</small></button>
+          <button type="button" class="kl-tgt-opt" id="klavity-target-klavity" role="radio" aria-checked="false" data-target="klavity">Klavity<small>problem with this tool</small></button>
+        </div>
+      </div>` : ''}
+      ${callbacks.consoleAttachToggle ? `<div class="klavity-conlog" id="klavity-conlog">
+        <label class="kl-conlog-lbl" title="Attach this page's captured console logs to the report">
+          <input type="checkbox" id="klavity-conlog-cb">${icon('file-text', { size: 14 })}<span>Attach console logs</span>
+        </label>
+      </div>` : ''}
       <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
     </div>
@@ -984,9 +1500,6 @@ export function buildModal(
 
   overlay.appendChild(modal)
   shadowRoot.appendChild(overlay)
-
-  const maskChk = shadowRoot.getElementById('klavity-mask-numbers') as HTMLInputElement | null
-  if (maskChk) maskChk.addEventListener('change', () => { maskOn = maskChk.checked })
 
   // ── Floating info tooltip — lives outside the modal so overflow:hidden never clips it. ──
   // .klavity-info-pop in the markup is the text source; we copy its innerHTML into a shadow-root-level
@@ -1036,6 +1549,52 @@ export function buildModal(
     sharpBtn.addEventListener('blur', hideTip)
   }
 
+  // ── KLA-601: Screen-decline helper NUDGE ──────────────────────────────────────────────────────────────
+  // When the reporter cancels the getDisplayMedia share picker, we KEEP the rendered fallback (never leave
+  // them shot-less) but surface a one-time, dismissible, action-oriented callout anchored to the (recommended)
+  // Screen button — plus a gentle pulse to draw the eye — instead of failing silently. Shown AT MOST ONCE per
+  // composer session (no nagging on every decline) and NEVER when Screen isn't supported (no sharpBtn → iOS
+  // Safari). Reuses the floating-tip shell so it can't be clipped by the modal's overflow:hidden.
+  let screenNudgeShown = false
+  let screenNudgeEl: HTMLElement | null = null
+  function dismissScreenNudge() {
+    try { screenNudgeEl?.remove() } catch { /* no-op */ }
+    screenNudgeEl = null
+    try { sharpBtn?.classList.remove('kl-pulse') } catch { /* no-op */ }
+  }
+  function showScreenNudge() {
+    if (screenNudgeShown || !sharpBtn || _closed) return // once/session + Screen-supported only
+    screenNudgeShown = true
+    const el = document.createElement('div')
+    el.className = 'kl-float-tip kl-nudge'
+    el.setAttribute('role', 'status')
+    el.setAttribute('aria-live', 'polite')
+    el.innerHTML =
+      '<div class="kl-nudge-row"><span><b>Get pixel-perfect screenshots by sharing</b> — try it now.</span>' +
+      `<button type="button" class="kl-nudge-x" aria-label="Dismiss">${icon('x', { size: 13 })}</button></div>`
+    shadowRoot.appendChild(el)
+    screenNudgeEl = el
+    // Position like the hover tip (below the Screen button, flipping above when short on room).
+    const r = sharpBtn.getBoundingClientRect()
+    const TIP_W = Math.min(228, window.innerWidth - 16)
+    const PAD = 8
+    const vw = window.innerWidth, vh = window.innerHeight
+    el.style.left = Math.max(PAD, Math.min((r.left + r.width / 2) - TIP_W / 2, vw - TIP_W - PAD)) + 'px'
+    el.style.top = '-9999px'; el.style.visibility = 'hidden'; el.style.display = 'block'
+    const tipH = el.offsetHeight
+    el.style.display = ''; el.style.visibility = ''
+    let top = r.bottom + 8
+    if (top + tipH + PAD > vh) top = r.top - tipH - 8
+    el.style.top = Math.max(PAD, Math.min(top, vh - tipH - PAD)) + 'px'
+    el.classList.add('kl-show')
+    ;(el.querySelector('.kl-nudge-x') as HTMLButtonElement | null)?.addEventListener('click', dismissScreenNudge)
+    // Pulse the Screen button to steer the eye toward the one-tap manual retry (CSS-gated for reduced-motion).
+    try { sharpBtn.classList.add('kl-pulse') } catch { /* no-op */ }
+    // Auto-dismiss after a while so it never lingers; also drop it the moment the reporter clicks Screen.
+    try { setTimeout(() => dismissScreenNudge(), 9000) } catch { /* no-op */ }
+    sharpBtn.addEventListener('click', dismissScreenNudge, { once: true })
+  }
+
   // JTBD 1.8: mutate the attached-proof chip after mount (rrweb loads async). No-op if no chip exists.
   function setReplayState(state: 'attached' | 'unavailable'): void {
     // JTBD 1.10: a resolved replay buffer is evidence — re-evaluate Submit so a replay-only report enables.
@@ -1056,9 +1615,18 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture),
+    // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
+    addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
     setReplayState,
+    // KLA-591: mirror the aggregate upload percent onto every video tile + file chip while a submit is in
+    // flight. Re-renders the strip + chips so the bars paint; passing null clears them.
+    setUploadProgress: (pct: number | null) => {
+      uploadProgressPct = attachmentProgressPercent(pct)
+      if (_closed) return
+      try { updateStrip(); renderFiles() } catch { /* progress paint is best-effort */ }
+    },
   }
 
   function updateStrip() {
@@ -1077,7 +1645,8 @@ export function buildModal(
         if (img.naturalHeight > img.naturalWidth * 1.4) wrap.classList.add('kl-tall')
       }, { once: true })
       // Image-hero: clicking a thumbnail selects it as the active shot in the big hero annotator.
-      img.addEventListener('click', () => { activeIndex = i; updateStrip() })
+      // KLA-591: also drop any active video hero so the annotator (not the <video>) owns the stage.
+      img.addEventListener('click', () => { activeIndex = i; activeVideoIndex = null; activeRecordingIndex = null; updateStrip() })
       const rm = document.createElement('button')
       rm.className = 'klavity-rm'
       rm.innerHTML = icon('x', { size: 13 })
@@ -1089,6 +1658,7 @@ export function buildModal(
         screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
         screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
         screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
+        screenshotCapture.splice(i, 1) // KLA-621: keep the capture-provenance aligned too
         // KLA-412: tell the host to drop the matching shot from the evidence session (index-aligned).
         try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
@@ -1161,6 +1731,115 @@ export function buildModal(
 
       strip.appendChild(wrap)
     })
+    // KLA-591: unified gallery — render VIDEO attachments as poster tiles in the SAME strip, right after the
+    // image thumbs. Each shows the first frame (the <video> element itself, muted/preload=metadata) under a
+    // play overlay; clicking selects it as the active hero (inline <video controls> preview). Non-video docs
+    // stay as chips (renderFiles). Uses the real attachedFiles index so remove/hero-selection stay aligned.
+    attachedFiles.forEach((f, fi) => {
+      if (attachmentKind(f) !== 'video') return
+      const wrap = document.createElement('div')
+      wrap.className = 'klavity-thumb kl-video-thumb'
+      if (activeVideoIndex === fi) wrap.classList.add('kl-thumb-active')
+      const vid = document.createElement('video')
+      vid.src = f.dataUrl
+      vid.muted = true
+      vid.preload = 'metadata'
+      vid.setAttribute('playsinline', '')
+      vid.tabIndex = -1
+      const play = document.createElement('span')
+      play.className = 'kl-video-play'
+      play.setAttribute('aria-hidden', 'true')
+      play.innerHTML = icon('play', { size: 16 })
+      const label = document.createElement('span')
+      label.className = 'kl-video-badge'
+      label.innerHTML = icon('play', { size: 9 }) + '<span>Video</span>'
+      wrap.title = 'Click to play ' + f.name
+      wrap.addEventListener('click', () => { activeVideoIndex = fi; activeRecordingIndex = null; updateStrip() })
+      const rm = document.createElement('button')
+      rm.className = 'klavity-rm'
+      rm.innerHTML = icon('x', { size: 13 })
+      rm.title = 'Remove'
+      rm.addEventListener('click', (e) => { e.stopPropagation(); removeAttachmentAt(fi) })
+      wrap.append(vid, play, label, rm)
+      // KLA-591: shared upload-progress bar while a submit is in flight (especially a large video).
+      const pct = attachmentProgressPercent(uploadProgressPct)
+      if (pct != null) {
+        const bar = document.createElement('div'); bar.className = 'kl-att-prog'
+        const fillEl = document.createElement('i'); fillEl.style.width = pct + '%'
+        bar.appendChild(fillEl); wrap.appendChild(bar)
+      }
+      strip.appendChild(wrap)
+    })
+    // KLA-602(a): "Record me" recordings render as removable video TILES in the SAME strip (reusing the
+    // KLA-591 video-tile look) — no separate Preview→Attach modal, no text-chip strip. Clicking selects it as
+    // the inline-playable hero; a corner "Re-record" action lets the reporter redo the walkthrough; Remove
+    // deletes it. They live in recordings[] (not attachedFiles) so they still thread through onSubmit as the
+    // dedicated `recordings` field (Phase-2 transcript hook), while looking + behaving like any gallery video.
+    recordings.forEach((rec, ri) => {
+      const wrap = document.createElement('div')
+      wrap.className = 'klavity-thumb kl-video-thumb kl-rec-tile'
+      if (activeRecordingIndex === ri) wrap.classList.add('kl-thumb-active')
+      const vid = document.createElement('video')
+      vid.src = rec.dataUrl
+      vid.muted = true
+      vid.preload = 'metadata'
+      vid.setAttribute('playsinline', '')
+      vid.tabIndex = -1
+      const play = document.createElement('span')
+      play.className = 'kl-video-play'
+      play.setAttribute('aria-hidden', 'true')
+      play.innerHTML = icon('play', { size: 16 })
+      const secs = Math.round(rec.durationMs / 1000)
+      const label = document.createElement('span')
+      label.className = 'kl-video-badge'
+      label.innerHTML = icon('play', { size: 9 }) + `<span>${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${rec.screenOnly ? ' · screen' : ''}</span>`
+      wrap.title = 'Click to play your recording'
+      wrap.addEventListener('click', () => { activeRecordingIndex = ri; activeVideoIndex = null; updateStrip() })
+      // Re-record (top-left): drop this clip + re-open the recorder for a fresh take.
+      const redo = document.createElement('button')
+      redo.type = 'button'
+      redo.className = 'kl-rerec'
+      redo.innerHTML = icon('refresh-cw', { size: 12 })
+      redo.title = 'Re-record'
+      redo.setAttribute('aria-label', 'Re-record')
+      redo.addEventListener('click', (e) => {
+        e.stopPropagation()
+        recordings.splice(ri, 1)
+        if (activeRecordingIndex === ri) activeRecordingIndex = null
+        else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
+        renderRecordings()
+        // Re-open the recorder via the same Record button gesture (kept in-DOM so the click is user-initiated).
+        try { (shadowRoot.getElementById('klavity-record') as HTMLButtonElement | null)?.click() } catch { /* no-op */ }
+      })
+      // Remove (top-right): delete the recording from the gallery.
+      const rm = document.createElement('button')
+      rm.className = 'klavity-rm'
+      rm.innerHTML = icon('x', { size: 13 })
+      rm.title = 'Remove'
+      rm.addEventListener('click', (e) => {
+        e.stopPropagation()
+        recordings.splice(ri, 1)
+        if (activeRecordingIndex === ri) activeRecordingIndex = null
+        else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
+        renderRecordings()
+      })
+      wrap.append(vid, play, label, redo, rm)
+      const rpct = attachmentProgressPercent(uploadProgressPct)
+      if (rpct != null) {
+        const bar = document.createElement('div'); bar.className = 'kl-att-prog'
+        const fillEl = document.createElement('i'); fillEl.style.width = rpct + '%'
+        bar.appendChild(fillEl); wrap.appendChild(bar)
+      }
+      strip.appendChild(wrap)
+    })
+    // Bug 3: keep the active thumbnail in view — when a fresh capture is selected at the END of a long
+    // strip, scroll it into view so the reporter sees the shot that's now in the hero (best-effort).
+    try {
+      const activeWrap = strip.children[activeIndex] as HTMLElement | undefined
+      if (activeWrap && typeof activeWrap.scrollIntoView === 'function') {
+        activeWrap.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
+    } catch { /* scrollIntoView is a nicety — never let it break the strip render */ }
     // KLAVITYKLA-509: while auto-capture is rendering the first shot, show a skeleton tile so the slot isn't
     // blank. Swapped out the instant addScreenshot() runs (which flips `capturing` off + re-renders).
     if (capturing) {
@@ -1202,11 +1881,11 @@ export function buildModal(
         const txt = document.createElement('span')
         txt.className = 'kl-sh-txt'
         // ASCII-only copy, mirroring the approved mockup.
-        txt.textContent = "Some areas didn't capture (cross-origin images render blank) - click Screen for a pixel-perfect shot."
+        txt.textContent = "Some areas can't be captured this way (embedded frames or cross-origin images) - click Snap for a pixel-perfect shot."
         const use = document.createElement('button')
         use.type = 'button'
         use.className = 'kl-sh-use'
-        use.textContent = 'Use Screen'
+        use.textContent = 'Use Snap'
         // Forward the user's click straight to the Screen button so getDisplayMedia keeps its user gesture.
         use.addEventListener('click', () => { sharpHintDismissed = true; updateSharpSuggestion(); sharpBtn?.click() })
         const dismiss = document.createElement('button')
@@ -1240,7 +1919,7 @@ export function buildModal(
   // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
   // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
   // shots it already tracks (no re-persist, explicit page tag carried through).
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
@@ -1250,6 +1929,7 @@ export function buildModal(
     screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
     // KLAVITYKLA-473: a real-pixel shot can never be blank/partial, so never suggest sharp for one.
     screenshotSuggestSharp.push(suggestSharp && quality !== 'real-pixel')
+    screenshotCapture.push(capture) // KLA-621: remember what this shot was (region/element/…) for Retake
     // KLA-412: keep the page-tag array aligned. An interactive session-mode capture with no explicit tag
     // is tagged with the current page; everything else keeps whatever the caller passed (often undefined).
     screenshotPageMeta.push(pageMeta ?? (sessionMode && fireAdded ? currentPageMeta() : undefined))
@@ -1257,7 +1937,8 @@ export function buildModal(
     // call with fireAdded=true) must become the ACTIVE hero image, otherwise the editor keeps showing the
     // first shot while the new one sits at the end of the strip. Only for real captures; the seed path
     // (fireAdded=false, from controller.addScreenshot) leaves activeIndex alone so session restore is undisturbed.
-    if (fireAdded) activeIndex = screenshots.length - 1
+    // A genuine new capture becomes the hero — drop any video/recording hero selection so the fresh image shows.
+    if (fireAdded) { activeIndex = screenshots.length - 1; activeVideoIndex = null; activeRecordingIndex = null }
     updateStrip()
     if (fireAdded) { try { callbacks.onShotAdded?.(dataUrl, quality) } catch { /* host persistence best-effort */ } }
   }
@@ -1274,7 +1955,9 @@ export function buildModal(
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       let result: CaptureResult | undefined
-      try { result = await callbacks.onRetakeSharp() }
+      // KLA-621: hand the ORIGINAL shot's provenance to the host so Retake redoes the SAME region/element
+      // (pixel-perfect from the shared Snap frame) rather than a full-screen grab that loses the selection.
+      try { result = await callbacks.onRetakeSharp(screenshotCapture[index]) }
       finally { restore?.() }
       if (result) {
         const { dataUrl, quality } = normalizeCapture(result)
@@ -1319,14 +2002,17 @@ export function buildModal(
     }
   }
 
-  // ── PX4 #425: non-image file attachments ─────────────────────────────────────────────────────────
-  // Render the attached-file chips (name + size + remove). Hidden when empty so the row takes no space.
+  // ── KLA-591 unified gallery: non-previewable file CHIPS (video attachments render in the strip below) ──
+  // Render chips for non-image, non-video attachments (PDF/log/har/…). Videos live in attachedFiles too but
+  // are rendered as poster tiles inside the thumbnail strip by updateStrip(), not here. Hidden when empty.
   function renderFiles() {
     const box = shadowRoot.getElementById('klavity-files') as HTMLElement | null
     if (!box) return
     box.innerHTML = ''
-    box.hidden = attachedFiles.length === 0
+    const docs = attachedFiles.filter(f => attachmentKind(f) === 'file')
+    box.hidden = docs.length === 0
     attachedFiles.forEach((f, i) => {
+      if (attachmentKind(f) !== 'file') return // videos are rendered in the strip, images in screenshots[]
       const chip = document.createElement('div')
       chip.className = 'kl-file-chip'
       const ic = document.createElement('span')
@@ -1345,25 +2031,119 @@ export function buildModal(
       rm.setAttribute('aria-label', `Remove ${f.name}`)
       rm.title = 'Remove'
       rm.innerHTML = icon('x', { size: 11 })
-      rm.addEventListener('click', () => { attachedFiles.splice(i, 1); renderFiles() })
+      rm.addEventListener('click', () => { removeAttachmentAt(i) })
       chip.append(ic, nm, sz, rm)
+      // KLA-591: paint the shared upload-progress bar on the chip while a submit is in flight.
+      const pct = attachmentProgressPercent(uploadProgressPct)
+      if (pct != null) {
+        const bar = document.createElement('div'); bar.className = 'kl-att-prog'
+        const fillEl = document.createElement('i'); fillEl.style.width = pct + '%'
+        bar.appendChild(fillEl); chip.appendChild(bar)
+      }
       box.appendChild(chip)
     })
     // An attached file is evidence in its own right — re-evaluate Submit (a file-only report is valid).
     refreshSubmit()
   }
 
-  // Ingest non-image files from the "Attach file" picker: enforce count + per-file + total-size caps, and
-  // surface a clear message on any reject. An image dropped here is redirected to the image path so users
-  // aren't penalised for picking the wrong button. Files are read as data URLs and threaded through onSubmit.
+  // KLA-591: remove an attachment (video or doc) by its attachedFiles index, keeping the strip + chips +
+  // active-video hero in sync. If the removed item was the active video hero, drop the hero selection.
+  function removeAttachmentAt(index: number) {
+    const wasVideo = attachedFiles[index] && attachmentKind(attachedFiles[index]) === 'video'
+    attachedFiles.splice(index, 1)
+    if (activeVideoIndex != null) {
+      if (wasVideo && activeVideoIndex === index) activeVideoIndex = null
+      else if (activeVideoIndex > index) activeVideoIndex -= 1
+    }
+    renderFiles()
+    updateStrip()
+  }
+
+  // KLA-612: reusable "Request upgrade" control primitive — the single affordance behind the over-cap file
+  // notice AND (future) credit walls. Role-driven:
+  //   • kind:'upgrade' + url  → a member/owner is sent STRAIGHT to the upgrade page (a normal external link).
+  //   • kind:'ask-team'       → a guest/anon reporter (never asked to pay) gets a BUTTON that POSTs an
+  //                             attributed upgrade REQUEST via callbacks.onRequestUpgrade; on success it swaps
+  //                             to a "Request sent to your team" confirmation. On failure (or no host callback)
+  //                             it degrades gracefully so the reporter is never dead-ended.
+  // `ctx` is forwarded to the host (page/ticket/fileMeta) so the admin notification can be attributed.
+  function buildUpgradeControl(
+    cta: { kind: 'upgrade' | 'ask-team'; label: string; url?: string; reason?: string },
+    ctx?: Record<string, unknown>,
+  ): HTMLElement | null {
+    if (cta.kind === 'upgrade') {
+      if (!cta.url) return null // no destination configured → fall back to the hint alone (no broken link)
+      const a = document.createElement('a')
+      a.className = 'kl-capmsg-cta'; a.href = cta.url; a.target = '_blank'; a.rel = 'noopener noreferrer'
+      a.textContent = cta.label
+      return a
+    }
+    // guest/anon → a real request button. When the host wired no callback (e.g. the extension, for parity)
+    // there's no actionable request, so return null and let the secondary hint carry the escape hatch.
+    if (!callbacks.onRequestUpgrade) return null
+    const btn = document.createElement('button')
+    btn.type = 'button'; btn.className = 'kl-capmsg-cta kl-capmsg-req'; btn.textContent = cta.label
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return
+      const prev = btn.textContent || cta.label
+      btn.disabled = true; btn.textContent = 'Requesting…'
+      let ok = false
+      try { ok = await callbacks.onRequestUpgrade!({ reason: cta.reason || 'upgrade', context: ctx }) } catch { ok = false }
+      if (ok) {
+        const done = document.createElement('span'); done.className = 'kl-capmsg-sent'
+        done.innerHTML = `<span class="kl-capmsg-sent-ic">${icon('check')}</span>Request sent to your team`
+        btn.replaceWith(done)
+      } else {
+        btn.disabled = false; btn.textContent = prev // never dead-end — let them retry
+      }
+    })
+    return btn
+  }
+
+  // KLA-591 / KLA-612: role-aware over-cap notice. Shows a friendly inline message + the reusable "Request
+  // upgrade" control (member/owner → upgrade link; anon/guest → attributed request button) WITHOUT dropping
+  // the file silently and without dead-ending — the secondary hint keeps "attach a smaller file" in view.
+  function showCapMessage(decision: FileCapDecision, ctx?: Record<string, unknown>) {
+    const box = shadowRoot.getElementById('klavity-capmsg') as HTMLElement | null
+    if (!box || !decision.overCap) return
+    box.innerHTML = ''
+    const msg = document.createElement('span'); msg.className = 'kl-capmsg-t'; msg.textContent = decision.message || ''
+    box.appendChild(msg)
+    if (decision.cta) {
+      const ctrl = buildUpgradeControl(decision.cta, ctx)
+      if (ctrl) box.appendChild(ctrl)
+      // Secondary escape hatch, shown alongside the upgrade action (the button/link doesn't repeat it).
+      if (decision.cta.hint) {
+        const hint = document.createElement('span'); hint.className = 'kl-capmsg-hint'; hint.textContent = decision.cta.hint
+        box.appendChild(hint)
+      }
+    }
+    box.hidden = false
+  }
+  function clearCapMessage() {
+    const box = shadowRoot.getElementById('klavity-capmsg') as HTMLElement | null
+    if (box) { box.hidden = true; box.innerHTML = '' }
+  }
+
+  // KLA-591: ingest from the ONE unified picker (or paste). Images fan out to the screenshot path; videos +
+  // docs become attachments. Enforces count + per-file + total-size caps; an over-cap file surfaces a
+  // friendly, role-aware CTA (never a silent drop). Files are read as data URLs and threaded through onSubmit.
   async function ingestAttachments(files: File[]) {
     clearError()
+    clearCapMessage()
     for (const file of files) {
       if (isImageFile(file)) { await ingestFiles([file]); continue } // route images to the screenshot path
       if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); break }
-      // Videos are large — give them the higher MAX_VIDEO_BYTES cap; everything else keeps MAX_FILE_BYTES.
-      const perFileCap = attachmentSizeCap(file, { file: MAX_FILE_BYTES, video: MAX_VIDEO_BYTES })
-      if (file.size > perFileCap) { showError(`"${file.name}" is too large — ${isVideoFile(file) ? 'videos' : 'files'} must be under ${Math.round(perFileCap / 1024 / 1024)} MB.`); continue }
+      // KLA-591: role-aware over-cap decision. Do NOT silently drop — show the message + CTA and move on.
+      const decision = evaluateFileCap(file, { capBytes: PER_FILE_MAX_BYTES, role: reporterRole, upgradeUrl })
+      if (decision.overCap) {
+        // KLA-612: attribute the (guest) upgrade request — what wall + which page + the file that hit it.
+        showCapMessage(decision, {
+          page: (typeof location !== 'undefined' ? location.href : '') || '',
+          fileMeta: { name: file.name, sizeMb: Math.round((file.size / 1024 / 1024) * 10) / 10 },
+        })
+        continue
+      }
       const total = attachedFiles.reduce((n, f) => n + f.size, 0)
       if (total + file.size > MAX_FILES_TOTAL_BYTES) { showError(`Attachments exceed the ${Math.round(MAX_FILES_TOTAL_BYTES / 1024 / 1024)} MB total limit.`); break }
       try {
@@ -1372,49 +2152,25 @@ export function buildModal(
         // the server's content-type-based 100MB video cap agrees with the client (KLA-560 item 6). Non-video
         // or already-typed files keep their reported type.
         const effectiveType = file.type || (isVideoFile(file) ? videoContentType(file.name) : '')
-        attachedFiles.push({ name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) })
+        const idx = attachedFiles.push({ name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) }) - 1
         renderFiles()
+        // KLA-591: a freshly-added video becomes the active hero (inline playable preview) + shows in the strip.
+        if (attachmentKind(attachedFiles[idx]) === 'video') activeVideoIndex = idx
+        updateStrip()
       } catch {
         showError(`Couldn't add "${file.name}". Please try a different file.`)
       }
     }
   }
 
-  // ── KLAVITYKLA-438: "Record me" video chips ───────────────────────────────────────────────────────
-  // Render the attached-recording chips (a video-style chip with duration + size + remove) into the
-  // recordings strip. Hidden when empty so the row takes no space. A recording is evidence in its own
-  // right — re-evaluate Submit so a recording-only report is valid.
+  // ── KLAVITYKLA-438 / KLA-602(a): "Record me" recordings ─────────────────────────────────────────────
+  // Recordings now live as removable video TILES in the unified gallery strip (see updateStrip) — NOT as text
+  // chips behind a separate Preview→Attach modal. This keeps the wiring point (renderRecordings) that the
+  // record handler + tile actions already call; it just repaints the strip and re-evaluates Submit (a
+  // recording-only report is valid evidence).
   function renderRecordings() {
-    const box = shadowRoot.getElementById('klavity-recordings') as HTMLElement | null
-    if (!box) return
-    box.innerHTML = ''
-    box.hidden = recordings.length === 0
-    recordings.forEach((r, i) => {
-      const chip = document.createElement('div')
-      chip.className = 'kl-file-chip kl-rec-chip'
-      chip.setAttribute('data-kind', 'recording')
-      const ic = document.createElement('span')
-      ic.className = 'kl-file-ic'
-      ic.innerHTML = icon('play', { size: 14 })
-      const nm = document.createElement('span')
-      nm.className = 'kl-file-nm'
-      const secs = Math.round(r.durationMs / 1000)
-      const label = `Recording ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}${r.screenOnly ? ' (screen only)' : ''}`
-      nm.textContent = label
-      nm.title = label
-      const sz = document.createElement('span')
-      sz.className = 'kl-file-sz'
-      sz.textContent = r.bytes < 1024 * 1024 ? `${Math.round(r.bytes / 1024)} KB` : `${(r.bytes / 1024 / 1024).toFixed(1)} MB`
-      const rm = document.createElement('button')
-      rm.type = 'button'
-      rm.className = 'kl-file-rm'
-      rm.setAttribute('aria-label', `Remove ${label}`)
-      rm.title = 'Remove'
-      rm.innerHTML = icon('x', { size: 11 })
-      rm.addEventListener('click', () => { recordings.splice(i, 1); renderRecordings() })
-      chip.append(ic, nm, sz, rm)
-      box.appendChild(chip)
-    })
+    if (_closed) return
+    updateStrip()
     refreshSubmit()
   }
 
@@ -1494,7 +2250,10 @@ export function buildModal(
       // 's'/'S' would submit mid-word (eating the character). composedPath()[0] is the real focused
       // element across the shadow boundary (same guard the annotator key handlers below use).
       const el = ((typeof e.composedPath === 'function' && e.composedPath()[0]) || e.target) as HTMLElement | null
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return
+      // KLA-586: the description is now a contenteditable div (not a <textarea>). isContentEditable is the
+      // right check in real browsers, but jsdom doesn't derive it from the attribute — so also accept an
+      // explicit contenteditable attribute so 's'/'S' never submits mid-word while typing in the field.
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable || el.getAttribute?.('contenteditable') === 'true')) return
       if (shadowRoot.querySelector('.kl-edtb')) return // fullscreen markup editor is open
       const btn = shadowRoot.getElementById('klavity-submit') as HTMLButtonElement | null
       if (btn && !btn.disabled) { e.preventDefault(); e.stopPropagation(); btn.click() }
@@ -1550,8 +2309,92 @@ export function buildModal(
     })
   }
 
+  // KLA submit-target: the reporter's destination choice. Defaults to the site's own project so we NEVER
+  // surprise-route to Klavity; only an explicit tap on the "Klavity" segment flips it. Wired only when the
+  // segmented control was rendered (cfg.submitTargetToggle !== false).
+  let submitTarget: 'project' | 'klavity' = 'project'
+  {
+    const tgtSeg = modal.querySelector('#klavity-target') as HTMLElement | null
+    if (tgtSeg) {
+      const opts = Array.from(tgtSeg.querySelectorAll('.kl-tgt-opt')) as HTMLButtonElement[]
+      for (const opt of opts) {
+        opt.addEventListener('click', () => {
+          const t = opt.dataset.target === 'klavity' ? 'klavity' : 'project'
+          submitTarget = t
+          for (const o of opts) {
+            const on = o === opt
+            o.classList.toggle('on', on)
+            o.setAttribute('aria-checked', on ? 'true' : 'false')
+          }
+        })
+      }
+    }
+  }
+
   // Submit
-  const desc = modal.querySelector('#klavity-desc') as HTMLTextAreaElement
+  // KLA-586: the description is a contenteditable WhatsApp-Markdown field (see renderInlineMarkdown). To keep
+  // EVERY existing call site untouched (submit payload, clarity coach, known-check, dictation insert, prefill,
+  // the char/length reads, the submit-lock disable), we expose textarea-shaped accessors on the element:
+  //   .value       raw Markdown text (get = descPlainText; set = render markers live)
+  //   .disabled    contentEditable toggle + a dimmed class (used by lockComposer during submit)
+  //   .placeholder the empty-state prompt (backed by the data-ph attribute + :empty:before)
+  // so `desc` behaves like the old <textarea> to all consumers while rendering formatting inline.
+  const desc = modal.querySelector('#klavity-desc') as HTMLElement & { value: string; disabled: boolean; placeholder: string }
+  {
+    const selection = (): Selection | null => {
+      try { return (shadowRoot as any).getSelection ? (shadowRoot as any).getSelection() : (typeof window !== 'undefined' ? window.getSelection() : null) }
+      catch { try { return typeof window !== 'undefined' ? window.getSelection() : null } catch { return null } }
+    }
+    // caret <-> character offset (counts text + newlines), so a live re-render preserves the caret.
+    const caretOffset = (): number => {
+      const sel = selection(); if (!sel || !sel.rangeCount) return -1
+      try {
+        const r = sel.getRangeAt(0)
+        if (!desc.contains(r.endContainer)) return -1
+        const pre = r.cloneRange(); pre.selectNodeContents(desc); pre.setEnd(r.endContainer, r.endOffset)
+        return pre.toString().length
+      } catch { return -1 }
+    }
+    const setCaret = (off: number): void => {
+      const sel = selection(); if (!sel) return
+      try {
+        const range = document.createRange()
+        const walk = document.createTreeWalker(desc, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT)
+        let n: Node | null, chars = off, done = false
+        while ((n = walk.nextNode())) {
+          if (n.nodeName === 'BR') { if (chars === 0) { range.setStartBefore(n); done = true; break } chars -= 1; continue }
+          if (n.nodeType === 3) { const len = (n.textContent || '').length; if (chars <= len) { range.setStart(n, chars); done = true; break } chars -= len }
+        }
+        if (!done) { range.selectNodeContents(desc); range.collapse(false) } else range.collapse(true)
+        sel.removeAllRanges(); sel.addRange(range)
+      } catch { /* selection APIs vary (jsdom) — caret restore is best-effort */ }
+    }
+    // Live render on user input: keep raw MD text as the source, repaint with markers dimmed, restore caret.
+    const renderLive = (): void => {
+      const off = caretOffset()
+      const text = descPlainText(desc).replace(/\n$/, '')  // drop the browser's trailing bookkeeping newline
+      // Empty → clear so :empty (placeholder) holds; otherwise repaint the formatted markup.
+      desc.innerHTML = text ? renderInlineMarkdown(text) : ''
+      if (off >= 0) setCaret(off)
+    }
+    // Attach FIRST so the DOM is normalised to our controlled markup before refreshSubmit/clarity/known read it.
+    desc.addEventListener('input', renderLive)
+    Object.defineProperty(desc, 'value', {
+      configurable: true,
+      get(): string { return descPlainText(desc) },
+      set(v: string) { const t = String(v ?? '').replace(/\n$/, ''); desc.innerHTML = t ? renderInlineMarkdown(t) : '' },
+    })
+    Object.defineProperty(desc, 'disabled', {
+      configurable: true,
+      get(): boolean { return desc.getAttribute('contenteditable') === 'false' },
+      set(on: boolean) { desc.setAttribute('contenteditable', on ? 'false' : 'true'); desc.classList.toggle('kl-desc-disabled', !!on) },
+    })
+    Object.defineProperty(desc, 'placeholder', {
+      configurable: true,
+      get(): string { return desc.getAttribute('data-ph') || '' },
+      set(v: string) { desc.setAttribute('data-ph', String(v ?? '')) },
+    })
+  }
   const submitBtn = modal.querySelector('#klavity-submit') as HTMLButtonElement
   const remail = modal.querySelector('#klavity-remail') as HTMLInputElement | null
   // PX4 #439: pre-fill the required-email field when the reporter identity is already known (no retyping).
@@ -1571,14 +2414,12 @@ export function buildModal(
   // re-running autosize there would stomp a description the reporter had manually resized. Autosize now
   // fires solely on description/content changes. The prefill path (widget.ts) reuses this single source of
   // truth by dispatching an 'input' event on the textarea rather than duplicating the layout math.
-  const autosizeDesc = () => {
-    desc.style.height = 'auto'
-    // .klavity-desc is box-sizing:border-box with a 1px border; scrollHeight excludes the border, so add
-    // the vertical border delta (offsetHeight−clientHeight) — otherwise a ~2px residual internal scroll
-    // remains and scrollHeight !== clientHeight. Cap at 40vh.
-    const border = desc.offsetHeight - desc.clientHeight
-    desc.style.height = Math.min(desc.scrollHeight + border, Math.round(window.innerHeight * 0.4)) + 'px'
-  }
+  // KLA-586: the description now GROWS via flex:1 to fill the freed vertical space in the side panel (founder
+  // ask), and the contenteditable expands with its own content up to that flex height (then scrolls
+  // internally). So the old explicit-height autosize is a no-op — setting an inline height would fight flex:1
+  // and reintroduce the empty gap. Kept as a named no-op so the prefill path (widget.ts dispatches an 'input'
+  // event) still funnels through refreshSubmit + the live Markdown render without duplicating layout math.
+  const autosizeDesc = () => { /* intentionally empty — flex:1 owns the sizing now */ }
   const refreshSubmit = () => {
     const noDesc = desc.value.trim() === ''
     submitBtn.disabled = (noDesc && !hasEvidence()) || !emailValid()
@@ -1589,6 +2430,62 @@ export function buildModal(
   desc.addEventListener('input', autosizeDesc)
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
+
+  // ── KLA-586: AI "Enhance" — replace the reporter's one-liner IN PLACE with a structured, developer-ready
+  // draft rendered as WhatsApp Markdown, from the auto-captured screenshot + picked element. Opt-in: wired
+  // only when the host supplied onEnhance (widget path; the extension omits it, like onClarityTip). Undo
+  // restores the reporter's pre-enhance text; Regenerate re-drafts. Stale-guarded (seq) like the clarity tip;
+  // a null/failed draft is a silent no-op (the reporter's text is left untouched — no scary error).
+  if (callbacks.onEnhance) {
+    const onEnhance = callbacks.onEnhance
+    const enhanceBtn = modal.querySelector('#klavity-enhance') as HTMLButtonElement | null
+    const undoBtn = modal.querySelector('#klavity-enhance-undo') as HTMLButtonElement | null
+    const regenBtn = modal.querySelector('#klavity-enhance-regen') as HTMLButtonElement | null
+    const spinEl = modal.querySelector('#klavity-enhance-spin') as HTMLElement | null
+    let enhanceSeq = 0            // stale-guard: a slow response is ignored once a newer run started
+    // KLA-586: the Undo restore point. Captured as the field's CURRENT text immediately before EACH
+    // enhance/regenerate — NOT once before the first enhance. Capturing once discarded any edits the
+    // reporter made to an enhanced draft before enhancing again (Undo rolled all the way back to the
+    // pre-first-enhance text). Snapshotting each run means Undo restores exactly what was there just
+    // before the most recent enhance, so edit→re-enhance→Undo returns the edited draft.
+    let originalText: string | null = null
+    // The primary screenshot for grounding: the active hero shot, else the first captured shot.
+    const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
+    const runEnhance = async () => {
+      if (busy) return
+      const text = desc.value.trim()
+      originalText = desc.value   // snapshot the restore point (current field text) before THIS enhance
+      const seq = ++enhanceSeq
+      if (enhanceBtn) enhanceBtn.disabled = true
+      if (spinEl) spinEl.hidden = false
+      try {
+        const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
+        const draft = await onEnhance(text, { images: screenshots.length, shot: primaryShot(), picked })
+        if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
+        if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
+        desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place
+        enhanceSeverity = draft.suggestedSeverity || null
+        enhancePriority = draft.suggestedPriority || null
+        desc.classList.add('kl-just-enhanced')
+        setTimeout(() => desc.classList.remove('kl-just-enhanced'), 700)
+        if (undoBtn) undoBtn.hidden = false
+        if (regenBtn) regenBtn.hidden = false
+        refreshSubmit()
+      } catch { /* best-effort — a failure never disturbs the composer */ }
+      finally {
+        if (seq === enhanceSeq) { if (enhanceBtn) enhanceBtn.disabled = false; if (spinEl) spinEl.hidden = true }
+      }
+    }
+    enhanceBtn?.addEventListener('click', () => { void runEnhance() })
+    regenBtn?.addEventListener('click', () => { void runEnhance() })
+    undoBtn?.addEventListener('click', () => {
+      if (originalText !== null) { desc.value = originalText; refreshSubmit() }
+      originalText = null                 // next enhance re-captures the (restored) text as the new baseline
+      enhanceSeverity = null; enhancePriority = null
+      if (undoBtn) undoBtn.hidden = true
+      if (regenBtn) regenBtn.hidden = true
+    })
+  }
 
   // KLAVITYKLA-241 (JTBD A.11): pre-submit known-issue acknowledgment. As the reporter types, debounce a
   // lookup for a matching known/recurring issue and, on a hit, surface an inline "Already reported —
@@ -1832,6 +2729,22 @@ export function buildModal(
       voiceStatusEl.hidden = false
       if (autoHideMs) voiceStatusHideTimer = setTimeout(clearVoiceStatus, autoHideMs)
     }
+    // KLA-613: the recording affordance is the CONTROL ITSELF — a red, glowing/pulsing circle with a stop-square
+    // glyph, co-located where the user clicked. We deliberately do NOT paint a steady "Recording — tap to stop"
+    // TEXT row below the description anymore (that separated the action from its feedback and read as a cognitive
+    // disconnect). The status row (#klavity-voice-status) is now reserved for TRANSIENT signals only — a soft
+    // reconnect note or a real error — never the steady recording state. The button carries the tooltip + a
+    // proper aria-label/aria-pressed so assistive tech still announces the live toggle.
+    const RECORDING_TITLE = 'Recording — tap to stop'
+    // On stop, clear any INFO-level voice status (a soft reconnect note) but leave a real ERROR row up for its
+    // own auto-hide window so the user still sees why it failed.
+    const clearInfoStatus = () => { if (voiceStatusEl && voiceStatusEl.classList.contains('kl-vs-info')) clearVoiceStatus() }
+    const setVoiceBtnMode = (recording: boolean) => {
+      voiceBtn.classList.toggle('kl-voice-rec', recording)
+      voiceBtn.setAttribute('aria-pressed', recording ? 'true' : 'false')
+      voiceBtn.setAttribute('aria-label', recording ? 'Stop recording' : 'Voice dictation')
+      voiceBtn.title = recording ? RECORDING_TITLE : 'Voice dictation'
+    }
 
     // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
     const wire = (engine: DictationEngine) => {
@@ -1840,9 +2753,10 @@ export function buildModal(
         desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
         refreshSubmit()
       }
-      // Non-alarming reconnect status while an engine auto-retries a transient drop.
+      // Non-alarming reconnect status while an engine auto-retries a transient drop. When it recovers ('idle')
+      // we just clear the transient note — the control's own red glow already signals we're still live (KLA-613).
       engine.onStatus = (type, message) => {
-        if (type === 'idle') clearVoiceStatus()
+        if (type === 'idle') clearInfoStatus()
         else setVoiceStatus('info', message)
       }
       engine.onError = (_, message) => {
@@ -1851,8 +2765,9 @@ export function buildModal(
       }
       engine.onStop = () => {
         voiceRecording = false
-        voiceBtn.classList.remove('kl-voice-rec')
+        setVoiceBtnMode(false)
         stopRing()
+        clearInfoStatus()
       }
     }
 
@@ -1867,13 +2782,16 @@ export function buildModal(
         const d = new LiveDictation({ transcribe: (blob: Blob) => callbacks.onDictate!(blob) })
         wire(d)
         d.onUnavailable = () => {
+          // The user may have already pressed Stop before the first server segment came back unavailable —
+          // don't resurrect a recording they ended. Just settle the UI.
+          if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
           if (VoiceInput.isSupported()) {
             // Endpoint down → seamlessly continue with Web Speech (keep recording + ring running).
             voice = makeWebSpeech()
             setVoiceStatus('info', 'Reconnecting dictation…')
             void voice.start()
           } else {
-            voiceRecording = false; voiceBtn.classList.remove('kl-voice-rec'); stopRing()
+            voiceRecording = false; setVoiceBtnMode(false); stopRing()
             setVoiceStatus('err', 'Voice dictation is unavailable right now', 4000)
           }
         }
@@ -1888,7 +2806,9 @@ export function buildModal(
       if (!voiceRecording) {
         clearVoiceStatus() // fresh start — drop any leftover error/reconnect line
         voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
-        voiceRecording = true; voiceBtn.classList.add('kl-voice-rec'); void voice.start(); startRing()
+        voiceRecording = true
+        setVoiceBtnMode(true) // instant, obvious feedback AT the control: red glow + stop-square glyph (KLA-613)
+        void voice.start(); startRing()
       } else {
         voice.stop()
       }
@@ -1957,6 +2877,16 @@ export function buildModal(
         ...(recordingsSnapshot.length ? { recordings: recordingsSnapshot } : {}),
         annotations: annotationsSnapshot,
         reporterEmail: emailSnapshot,
+        // KLA submit-target: ride the reporter's destination choice through onSubmit. Only present when the
+        // segmented control was rendered (cfg.submitTargetToggle !== false); default 'project' (never surprise-
+        // route to Klavity). The server resolves the real Klavity intake project — the client only says 'klavity'.
+        ...(cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}),
+        // KLA-586: ride the accepted AI-Enhance draft's severity/priority as structured fields (cleared on Undo).
+        ...(enhanceSeverity ? { suggestedSeverity: enhanceSeverity } : {}),
+        ...(enhancePriority ? { suggestedPriority: enhancePriority } : {}),
+        // #638: only when the toggle was rendered — the reporter's console-logs opt-in (DEFAULT false). Read
+        // live from the checkbox so the current state travels; the host attaches console logs only when true.
+        ...(callbacks.consoleAttachToggle ? { attachConsole: !!(shadowRoot.getElementById('klavity-conlog-cb') as HTMLInputElement | null)?.checked } : {}),
       }
       // NON-BLOCKING default path — hand the fully-built payload to the host (widget) and CLOSE the modal
       // + backdrop immediately. The host shows a bottom-right pill and drives the (possibly 16MB+) upload
@@ -2086,6 +3016,16 @@ export function buildModal(
   const fullBtn = modal.querySelector('#klavity-full') as HTMLButtonElement
   fullBtn.addEventListener('click', async () => {
     if (busy) return
+    // Owner directive (2026-08-26): "Full Page" now captures via real tab-share (getDisplayMedia) so it works
+    // on cross-origin pages — embedded frames / cross-origin images no longer render as a blank-white DOM shot
+    // (hit live on PX4). runScreenCapture fires getDisplayMedia as its FIRST step so THIS click's user gesture
+    // is preserved. It falls back (returns false) ONLY when Screen capture is unavailable (iOS Safari, no
+    // onCaptureSharp) or the user declines / loses the share gesture — in which case we drop to the fast DOM
+    // render below so the user still gets a shot (with the usual suggestSharp nudge).
+    if (callbacks.onCaptureSharp) {
+      const added = await runScreenCapture()
+      if (added) return
+    }
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
     try {
@@ -2104,83 +3044,85 @@ export function buildModal(
     catch { /* ignore */ }
     finally { fullBtn.classList.remove('kl-loading'); lockComposer(false) }
   })
-  if (sharpBtn && callbacks.onCaptureSharp) {
-    // The "Sharp" word lives in its own span so the "Capturing…" state never clobbers the icon or the
-    // embedded (i) (setting button.textContent would wipe both).
+  // KLA-587: shared "capture via real Screen (getDisplayMedia)" runner — used by BOTH the Screen button
+  // (manual click) and the on-open DEFAULT capture (founder decision). Hides the composer so it isn't in the
+  // shot, fires onCaptureSharp (which calls getDisplayMedia as its FIRST step so the click's/opening user
+  // gesture is preserved), and adds the resulting real-pixel shot. Returns true when a shot was added; false
+  // on a user DECLINE / lost-gesture / unsupported / empty result so the caller can fall back to a rendered
+  // capture. NEVER surfaces an error for a decline — the fallback is silent (per the founder decision).
+  async function runScreenCapture(opts?: { viewport?: boolean }): Promise<boolean> {
+    // KLA composer-polish: the on-open DEFAULT capture asks for the VIEWPORT-scoped Screen frame (single
+    // visible frame, no scroll-stitch) when the host wired onCaptureSharpViewport; the manual Screen button
+    // asks for the full-page onCaptureSharp. Falls back to onCaptureSharp when the viewport variant isn't
+    // wired (e.g. the extension), so no host regresses.
+    const capFn = (opts?.viewport && callbacks.onCaptureSharpViewport) ? callbacks.onCaptureSharpViewport : callbacks.onCaptureSharp
+    if (busy || !capFn || !sharpBtn) return false // re-entrancy / not wired
+    // The "Screen" word lives in its own span so the "Capturing…" state never clobbers the icon or the (i).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
-    const runSharp = async () => {
-      if (busy) return // re-entrancy: a capture/submit is already running
-      lockComposer(true)
-      sharpBtn.classList.add('kl-loading')
-      // Hide the composer so it isn't in the captured pixels. onCaptureSharp calls getDisplayMedia as its
-      // first step, so the click's user gesture (required by the permission prompt) is preserved.
-      host.style.display = 'none'
-      const target = sharpLabel ?? sharpBtn
-      const orig = target.textContent
-      target.textContent = 'Capturing…'
-      try {
-        const restore = maskOn ? maskNumbers(document.body) : null
-        let shot: CaptureResult | undefined
-        try { shot = await callbacks.onCaptureSharp!() }
-        finally { restore?.() }
-        if (shot) {
-          const { dataUrl, quality } = normalizeCapture(shot)
-          if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel'); setActiveCapture(sharpBtn) }
-        }
-      } catch { /* user cancelled the share prompt, or capture failed — just restore */ }
-      finally {
-        host.style.display = ''
-        target.textContent = orig
-        sharpBtn.classList.remove('kl-loading')
-        lockComposer(false)
+    lockComposer(true)
+    sharpBtn.classList.add('kl-loading')
+    host.style.display = 'none' // keep the composer out of the captured pixels
+    const target = sharpLabel ?? sharpBtn
+    const orig = target.textContent
+    target.textContent = 'Capturing…'
+    let added = false
+    try {
+      const restore = maskOn ? maskNumbers(document.body) : null
+      let shot: CaptureResult | undefined
+      try { shot = await capFn() }
+      finally { restore?.() }
+      if (shot) {
+        const { dataUrl, quality } = normalizeCapture(shot)
+        // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
+        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true }
       }
+    } catch (err) {
+      // A cancelled picker or a spent user-gesture rejects as NotAllowedError|AbortError — an expected outcome
+      // we fall back from SILENTLY (no error toast). A genuine, unexpected failure still falls back, but we
+      // leave a dev-console breadcrumb so it's diagnosable.
+      if (!isScreenDeclineError(err)) { try { console.warn('[Klavity] Screen capture failed; using rendered fallback:', err) } catch {} }
+      else {
+        // KLA-601: the reporter cancelled the share picker. We keep the rendered fallback, but instead of
+        // failing silently, surface a one-time helper nudge on the Screen button so they know the sharper
+        // option is one tap away. Once-per-session + dismissible (see showScreenNudge).
+        try { showScreenNudge() } catch { /* the nudge is a nicety — never let it break the fallback */ }
+      }
+    } finally {
+      host.style.display = ''
+      target.textContent = orig
+      sharpBtn.classList.remove('kl-loading')
+      lockComposer(false)
     }
+    return added
+  }
+  if (sharpBtn && callbacks.onCaptureSharp) {
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
     // handler (preserving the click's user gesture).
-    sharpBtn.addEventListener('click', () => { void runSharp() })
-
+    sharpBtn.addEventListener('click', () => { void runScreenCapture() })
   }
+  // KLA-591: ONE unified attach control. When file attachments are enabled the single button opens one
+  // picker (broad accept) and routes EVERY selection through ingestAttachments — which fans images out to
+  // the screenshot path and keeps videos/docs as attachments. When disabled it stays the image-only Upload.
   const fileInput = modal.querySelector('#klavity-file') as HTMLInputElement
   const uploadBtn = modal.querySelector('#klavity-upload') as HTMLButtonElement
   uploadBtn.addEventListener('click', () => {
-    if (busy || screenshots.length >= MAX_IMAGES) {
-      if (screenshots.length >= MAX_IMAGES) showError(`You can attach up to ${MAX_IMAGES} images.`)
-      return
-    }
+    if (busy) return
+    // The image cap only blocks the picker when file attachments are OFF (image-only mode). With the unified
+    // control, videos/docs may still be addable even when the image slots are full — ingest enforces caps.
+    if (!fileAttachEnabled && screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     fileInput.click()
   })
   fileInput.addEventListener('change', async (e) => {
     const input = e.target as HTMLInputElement
     const files = input.files ? Array.from(input.files) : []
     input.value = '' // reset so re-selecting the SAME file fires change again (and clears stuck state)
-    if (files.length) {
-      const before = screenshots.length
-      await ingestFiles(files) // ingestFiles enforces cap + type + size + failure handling
-      if (screenshots.length > before) setActiveCapture(uploadBtn) // at least one file was accepted
-    }
+    if (!files.length) return
+    const beforeImages = screenshots.length
+    const beforeFiles = attachedFiles.length
+    if (fileAttachEnabled) await ingestAttachments(files) // unified: images→screenshots, video/doc→attachments
+    else await ingestFiles(files)                          // image-only mode: cap + type + size handling
+    if (screenshots.length > beforeImages || attachedFiles.length > beforeFiles) setActiveCapture(uploadBtn)
   })
-
-  // PX4 #425: "Attach file" button + its own (non-image) hidden input — only rendered when the host enabled
-  // allowFileAttachments. Mirrors the Upload button's click→picker→ingest flow, routed to ingestAttachments.
-  const attachBtn = shadowRoot.getElementById('klavity-attach') as HTMLButtonElement | null
-  const attachInput = shadowRoot.getElementById('klavity-attach-input') as HTMLInputElement | null
-  if (attachBtn && attachInput) {
-    attachBtn.addEventListener('click', () => {
-      if (busy) return
-      if (attachedFiles.length >= MAX_FILES) { showError(`You can attach up to ${MAX_FILES} files.`); return }
-      attachInput.click()
-    })
-    attachInput.addEventListener('change', async (e) => {
-      const input = e.target as HTMLInputElement
-      const files = input.files ? Array.from(input.files) : []
-      input.value = '' // reset so re-selecting the SAME file fires change again
-      if (files.length) {
-        const before = attachedFiles.length
-        await ingestAttachments(files)
-        if (attachedFiles.length > before) setActiveCapture(attachBtn)
-      }
-    })
-  }
 
   // KLAVITYKLA-438: "Record me" button — only rendered when the host enabled allowRecording + provided
   // onRecord. Click → onRecord() drives the consent → record → preview flow (sdk recorder); the resolved
@@ -2202,7 +3144,15 @@ export function buildModal(
       }
       try {
         const rec = await callbacks.onRecord!(onPhase)
-        if (rec) { recordings.push(rec); renderRecordings(); setActiveCapture(recordBtn) }
+        // KLA-602(a): a finished recording drops STRAIGHT into the gallery as a selected, removable video tile
+        // (no Preview→Attach modal). Select it as the inline-playable hero, like addCapturedShot does for images.
+        if (rec) {
+          recordings.push(rec)
+          activeRecordingIndex = recordings.length - 1
+          activeVideoIndex = null
+          renderRecordings()
+          setActiveCapture(recordBtn)
+        }
       } catch { /* user cancelled or recorder failed — leave the composer untouched */ }
       finally { host.style.display = ''; recordBtn.classList.remove('kl-loading'); lockComposer(false) }
     })
@@ -2219,6 +3169,10 @@ export function buildModal(
       // cleanup() callback inside mountRegionOverlay (both the cancel and pointerup paths).
       document.removeEventListener('keydown', escHandler, { capture: true })
       host.style.display = 'none'
+      // KLA-621 (latency): the selection overlay is mounted SYNCHRONOUSLY here — there is NO upfront capture /
+      // page render before the selector appears (the old ~3s html-to-image lag). The capture runs only in the
+      // onRect callback below, AFTER the reporter has dragged their rectangle, and is now a fast Snap
+      // frame-grab cropped to the selection. So the overlay paints on the same frame as the click.
       mountRegionOverlay(async (rect) => {
         // Re-register the modal Esc handler now that the overlay is gone (success path).
         document.addEventListener('keydown', escHandler, { capture: true })
@@ -2229,7 +3183,8 @@ export function buildModal(
           finally { restore?.() }
           if (shot) {
             const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
-            if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(regionBtn) }
+            // KLA-621: tag with the region rect so Retake re-crops THIS area from a fresh Snap frame.
+            if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp, { kind: 'region', rect }); setActiveCapture(regionBtn) }
           }
         } finally {
           host.style.display = ''
@@ -2284,7 +3239,9 @@ export function buildModal(
           // KLAVITYKLA-494: if the picker also produced a cropped screenshot of the element's bounding box,
           // add it to the images strip. addScreenshot enforces the MAX_IMAGES cap itself, so a full strip
           // just surfaces the usual "up to N images" notice and the selector/text pin still lands.
-          if (result.shot) addScreenshot(result.shot, result.shotQuality, undefined, true)
+          // KLA-621: tag with the element's selector (+ rect) so Retake re-crops THIS element (re-resolved
+          // live) from a fresh Snap frame instead of grabbing the whole screen.
+          if (result.shot) addScreenshot(result.shot, result.shotQuality, undefined, true, false, { kind: 'element', selector: result.selector, rect: result.rect })
         }
       } catch { /* picker failure must never break the composer */ }
       finally {
@@ -2303,8 +3260,25 @@ export function buildModal(
   function heroToolbarHtml(showRevert: boolean): string {
     const t = (name: string, label: string, glyph: string, key: string) =>
       `<button type="button" class="kl-htool" data-tool="${name}" title="${label} (${key.toUpperCase()})" aria-label="${label}">${glyph}<span class="kl-hk">${key.toUpperCase()}</span></button>`
-    const c = (col: string) => `<button type="button" class="kl-hcolor" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
+    // Light swatches (white/yellow) get a dark inset ring so they're visible against the light-on-dark toolbar.
+    const isLightSwatch = (col: string) => {
+      const h = col.replace('#', '')
+      if (!/^[0-9a-fA-F]{6}$/.test(h)) return false
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.7
+    }
+    const c = (col: string) => `<button type="button" class="kl-hcolor${isLightSwatch(col) ? ' kl-hcolor-light' : ''}" data-color="${col}" style="background:${col}" title="${col}" aria-label="Colour ${col}"></button>`
+    // Klavity brand mark (compact dot-lattice, matches site/logo-source.svg) — lightened for the dark toolbar.
+    const klavityMark =
+      `<svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+      `<g fill="#818cf8"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g>` +
+      `<g stroke="#818cf8" stroke-width="1.6" stroke-linecap="round" opacity="0.4"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg>`
     return (
+      // Klavity logo, TOP-LEFT of the editor toolbar. It links to the homepage (UTM-stamped so clicks are
+      // attributable to WHICH project/site) — the href is assigned in JS (never innerHTML) per this file's
+      // XSS guards. See heroLogoHref + the #kl-hero-logo wiring in mountHeroAnnotator.
+      `<a class="kl-hlogo" id="kl-hero-logo" target="_blank" rel="noopener" title="Powered by Klavity — visit klavity.in" aria-label="Klavity homepage (opens in a new tab)">${klavityMark}<span class="kl-hlogo-word">Klavity</span></a>` +
+      `<span class="kl-hsep"></span>` +
       t('pen', 'Pen', icon('pencil', { size: 15 }), 'p') +
       t('line', 'Line', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/>'), 'l') +
       t('rect', 'Rectangle', icon('square', { size: 15 }), 'r') +
@@ -2312,16 +3286,37 @@ export function buildModal(
       t('arrow', 'Arrow', heroGlyph('<line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/>'), 'a') +
       t('text', 'Text', heroGlyph('<path d="M5 6h14M12 6v13M9 19h6"/>'), 't') +
       t('count', 'Numbers', heroGlyph('<circle cx="12" cy="12" r="9"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none">1</text>'), 'c') +
+      `<span class="kl-hsep"></span>` +
+      // Redaction group: the "Mask numbers" toggle (masks digits in fresh captures) now sits next to the
+      // Pixelate brush + Crop — grouped with the other redact/edit tools so the logo owns the top-left.
+      `<label class="kl-hmask" title="Mask numbers in new screen captures"><input type="checkbox" class="kl-hmask-cb"${maskOn ? ' checked' : ''}>${icon('eye-off', { size: 13 })}<span>Mask numbers</span></label>` +
+      t('pixelate', 'Redact (pixelate)', heroGlyph('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'), 'b') +
       t('crop', 'Crop', heroGlyph('<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>'), 'k') +
       `<span class="kl-hsep"></span>` +
-      c('#ef4444') + c('#f97316') + c('#3b82f6') + c('#111827') +
+      // #626: the six preset swatches + the custom picker live in ONE non-wrapping group so the whole palette
+      // stays on a single line and moves as a unit — never red/orange/green on one row and blue/white/black on
+      // the next (matches the .kl-hgroup pattern used for the Stroke control).
+      `<span class="kl-hcolors">` +
+        c('#ef4444') + c('#f97316') + c('#16a34a') + c('#3b82f6') + c('#ffffff') + c('#111827') +
+        // Custom colour picker — a rainbow swatch that opens a native <input type="color">. The chosen colour
+        // becomes the active colour and shows as the selected swatch. Input is visually hidden but focusable
+        // via the button (kept inside the shadow root so its styling stays scoped).
+        `<span class="kl-hcolor-cwrap">` +
+          `<button type="button" class="kl-hcolor kl-hcolor-custom" title="Custom colour" aria-label="Choose a custom colour"></button>` +
+          `<input type="color" class="kl-hcolor-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1">` +
+        `</span>` +
+      `</span>` +
       // Line-width control (applies to pen/line/rect/circle/arrow strokes via Annotator.strokeScale).
+      // The "Stroke" label + S/M/L/XL sizes live in ONE non-wrapping group so the label always reads with
+      // its options as a single control (never label-here / sizes-on-a-separate-row at the narrow width).
       `<span class="kl-hsep"></span>` +
-      `<span class="kl-hlabel">Stroke</span>` +
-      `<button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button>` +
-      `<button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button>` +
-      `<button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button>` +
-      `<button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button>` +
+      `<span class="kl-hgroup">` +
+        `<span class="kl-hlabel">Stroke</span>` +
+        `<button type="button" class="kl-hopt" data-stroke="0.6" title="Thin stroke" aria-label="Thin stroke">S</button>` +
+        `<button type="button" class="kl-hopt kl-on" data-stroke="1" title="Medium stroke" aria-label="Medium stroke">M</button>` +
+        `<button type="button" class="kl-hopt" data-stroke="1.8" title="Thick stroke" aria-label="Thick stroke">L</button>` +
+        `<button type="button" class="kl-hopt" data-stroke="2.8" title="Extra-thick stroke" aria-label="Extra-thick stroke">XL</button>` +
+      `</span>` +
       // Contextual text options — shown only while the Text tool is active (toggled in selectTool).
       `<span class="kl-htextopts" id="kl-hero-textopts" hidden>` +
         `<span class="kl-hsep"></span>` +
@@ -2341,7 +3336,13 @@ export function buildModal(
       (showRevert ? `<button type="button" class="kl-htbtn kl-hrevert" id="kl-hero-revert" title="Revert crop to original" aria-label="Revert crop">${heroGlyph('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v2"/>', 14)}<span class="kl-hk kl-hrevert-lbl">Revert</span></button>` : '') +
       `<button type="button" class="kl-htbtn" id="kl-hero-clear" title="Clear" aria-label="Clear">${icon('trash-2', { size: 14 })}</button>` +
       `<span class="kl-hgrow"></span>` +
-      `<span class="kl-hhint">P pen · L line · R rect · O circle · T text · C numbers · K crop · scroll to zoom · shift-drag to pan</span>`
+      // #627: zoom controls — explicit − / + buttons (plus the Z shortcut) replace the old text hint. They
+      // drive the SAME zoom machinery as scroll-wheel zoom (zoomToward + clampZoom + minimap sync), centred
+      // on the stage. Shift-drag still pans; scroll still zooms toward the cursor.
+      `<span class="kl-hgroup kl-hzoom">` +
+        `<button type="button" class="kl-htbtn" id="kl-hero-zoomout" title="Zoom out (Z toggles fit / 2×)" aria-label="Zoom out">${heroGlyph('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/>', 14)}</button>` +
+        `<button type="button" class="kl-htbtn" id="kl-hero-zoomin" title="Zoom in (Z toggles fit / 2×)" aria-label="Zoom in">${heroGlyph('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/>', 14)}</button>` +
+      `</span>`
     )
   }
 
@@ -2359,11 +3360,43 @@ export function buildModal(
 
   // Keep the hero pane in sync with the strip: clamp the active index, show the empty state when there
   // are no shots, otherwise mount the inline annotator on the active screenshot.
+  // KLA-591: a selected VIDEO attachment takes priority — it renders as an inline <video controls> preview.
   function syncHero() {
+    // Clear a stale video selection (removed, or no longer a video at that index).
+    if (activeVideoIndex != null && !(attachedFiles[activeVideoIndex] && attachmentKind(attachedFiles[activeVideoIndex]) === 'video')) {
+      activeVideoIndex = null
+    }
+    // KLA-602(a): clear a stale recording selection (removed while it was the hero).
+    if (activeRecordingIndex != null && !recordings[activeRecordingIndex]) {
+      activeRecordingIndex = null
+    }
+    // A selected "Record me" recording takes hero priority (inline <video controls>), same as a video attachment.
+    if (activeRecordingIndex != null) { mountHeroVideoSrc(recordings[activeRecordingIndex].dataUrl); return }
+    if (activeVideoIndex != null) { mountHeroVideoSrc(attachedFiles[activeVideoIndex]?.dataUrl); return }
     if (screenshots.length === 0) { activeIndex = 0; renderHeroEmpty(); return }
     if (activeIndex >= screenshots.length) activeIndex = screenshots.length - 1
     if (activeIndex < 0) activeIndex = 0
     mountHeroAnnotator(activeIndex)
+  }
+
+  // KLA-591/602(a): render an inline, playable video preview in the hero stage (mirrors how an image shot
+  // expands). No annotator toolbar for video — just <video controls>. Shared by video attachments AND "Record
+  // me" recordings. Browser-only; safe no-op in headless test envs.
+  function mountHeroVideoSrc(src: string | undefined) {
+    const stage = shadowRoot.getElementById('klavity-hero-stage')
+    const tools = shadowRoot.getElementById('klavity-hero-tools')
+    if (!stage || !src) { renderHeroEmpty(); return }
+    detachHeroKeys()
+    if (tools) tools.innerHTML = ''
+    stage.innerHTML = ''
+    const video = document.createElement('video')
+    video.src = src
+    video.controls = true
+    video.setAttribute('playsinline', '')
+    video.preload = 'metadata'
+    video.className = 'kl-hero-video'
+    video.style.cssText = 'display:block;max-width:100%;max-height:100%;border-radius:8px;background:#000;box-shadow:0 12px 40px rgba(0,0,0,.5);'
+    stage.appendChild(video)
   }
 
   // #449 — reversible crop: replace screenshots[index] with the selected region of the CLEAN image and
@@ -2435,10 +3468,17 @@ export function buildModal(
 
     {
       tools.innerHTML = heroToolbarHtml((cropStacks[index]?.length ?? 0) > 0)
+      // Top-left logo → UTM'd Klavity homepage. Assigned via .href (not innerHTML) so a hostile embedding
+      // host in utm_source/utm_content can never break out of the attribute (this file's XSS discipline).
+      const logoLink = tools.querySelector('#kl-hero-logo') as HTMLAnchorElement | null
+      if (logoLink) logoLink.href = heroLogoHref(cfg.projectId)
       let activeTool = 'pen'
       let activeColor = '#ef4444'
       let textSize = 26
       let textOutline: 'black' | 'white' | 'none' = 'black'
+      // The currently-open text-annotation <input> (in document.body), or null. The document-level tool-hotkey
+      // handler bails while this is set so letters land as text, not tool switches (KLA-593 BUG 0).
+      let activeTextInput: HTMLInputElement | null = null
       const textOpts = tools.querySelector('#kl-hero-textopts') as HTMLElement | null
       const persist = () => {
         if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
@@ -2449,12 +3489,28 @@ export function buildModal(
         tools.querySelectorAll<HTMLElement>('[data-tool]').forEach(el => el.classList.toggle('kl-on', el.dataset.tool === t))
         if (textOpts) textOpts.hidden = t !== 'text'
       }
+      const customBtn = tools.querySelector('.kl-hcolor-custom') as HTMLElement | null
+      const colorInput = tools.querySelector('.kl-hcolor-input') as HTMLInputElement | null
       const selectColor = (col: string, btn?: HTMLElement) => {
         activeColor = col
         tools.querySelectorAll<HTMLElement>('[data-color]').forEach(el => el.classList.toggle('kl-on', el === btn))
+        // The custom swatch has no [data-color], so toggle its selected state explicitly.
+        if (customBtn) customBtn.classList.toggle('kl-on', customBtn === btn)
       }
       tools.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       tools.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => selectColor((b as HTMLElement).dataset.color!, b as HTMLElement)))
+      // Custom colour picker: clicking the rainbow swatch opens the native <input type="color">; picking a
+      // colour makes it the active colour and paints the swatch so it reads as the current selection.
+      if (customBtn && colorInput) {
+        customBtn.addEventListener('click', () => colorInput.click())
+        const applyCustom = () => { customBtn.style.background = colorInput.value; selectColor(colorInput.value, customBtn) }
+        colorInput.addEventListener('input', applyCustom)
+        colorInput.addEventListener('change', applyCustom)
+      }
+      // Mask-numbers toggle now lives at the top of the editing toolbar (moved from the capture panel). It
+      // drives the same `maskOn` flag consumed by every capture path, so masking behaviour is unchanged.
+      const maskCb = tools.querySelector('.kl-hmask-cb') as HTMLInputElement | null
+      if (maskCb) maskCb.addEventListener('change', () => { maskOn = maskCb.checked })
       tools.querySelectorAll('[data-outline]').forEach(b => b.addEventListener('click', () => {
         textOutline = (b as HTMLElement).dataset.outline as 'black' | 'white' | 'none'
         tools.querySelectorAll<HTMLElement>('[data-outline]').forEach(el => el.classList.toggle('kl-on', el === b))
@@ -2499,39 +3555,120 @@ export function buildModal(
         if (tool === 'arrow') return { type: 'arrow', color, x1: sx, y1: sy, x2: ex, y2: ey }
         if (tool === 'rect') return { type: 'rect', color, x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
         if (tool === 'circle') return { type: 'circle', color, x: (sx + ex) / 2, y: (sy + ey) / 2, rx: Math.abs(ex - sx) / 2, ry: Math.abs(ey - sy) / 2 }
+        if (tool === 'pixelate') return { type: 'pixelate', x: Math.min(sx, ex), y: Math.min(sy, ey), w: Math.abs(ex - sx), h: Math.abs(ey - sy) }
         return null
       }
       // ── Wheel-zoom + Shift-drag pan on the hero image. Zoom is a uniform translate()+scale() transform,
       //    so toImg()'s getBoundingClientRect math keeps annotation coordinates correct at any zoom.
-      //    Scroll to zoom toward the cursor; Shift+drag to pan when zoomed; double-click resets. ──
+      //    Scroll to zoom toward the cursor; Shift+drag to pan when zoomed; double-click resets. The zoom
+      //    step is gentle + eased (see hero-zoom.ts) so it feels smooth, and a corner minimap appears while
+      //    zoomed so you never lose your place. ──
       let zoom = 1, panX = 0, panY = 0, home: DOMRect | null = null
-      const clampZoom = (v: number) => Math.min(6, Math.max(1, v))
+      const reducedMotion = (() => { try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) } catch { return false } })()
+      const zoomEase = zoomEasing(reducedMotion)
+      // The untransformed canvas box (object-fit:contain baseline) — measured lazily by clearing the
+      // transform, reading the rect, then restoring, so cursor/minimap math has a fixed origin at any zoom.
+      const getHome = (): DOMRect | null => {
+        if (home) return home
+        const t = canvas.style.transform; canvas.style.transform = ''
+        home = canvas.getBoundingClientRect(); canvas.style.transform = t
+        return home
+      }
+
+      // ── Zoom minimap / navigator ── a thumbnail of the whole shot with a rectangle marking the current
+      //    viewport; visible only while zoomed (scale>1). Click / drag it to jump the main view. It draws
+      //    the base screenshot into a small <img>; the viewport rect comes from the live pan/scale.
+      const minimap = document.createElement('div')
+      minimap.className = 'kl-minimap'
+      minimap.hidden = true
+      minimap.setAttribute('role', 'navigation')
+      minimap.setAttribute('aria-label', 'Zoom navigator — click or drag to pan the image')
+      const mmImg = document.createElement('img')
+      mmImg.className = 'kl-minimap-img'
+      mmImg.alt = ''
+      mmImg.draggable = false
+      mmImg.src = dataUrl
+      const mmVp = document.createElement('div')
+      mmVp.className = 'kl-minimap-vp'
+      minimap.append(mmImg, mmVp)
+      stage.appendChild(minimap)
+      const updateMinimap = () => {
+        const aw = canvas.width, ah = canvas.height
+        if (zoom <= 1 || aw < 2 || ah < 2) { minimap.hidden = true; return }
+        const h = getHome(); if (!h) { minimap.hidden = true; return }
+        const MAX = 148
+        const m = Math.min(MAX / aw, MAX / ah)
+        const mmW = Math.max(1, Math.round(aw * m)), mmH = Math.max(1, Math.round(ah * m))
+        minimap.style.width = mmW + 'px'; minimap.style.height = mmH + 'px'
+        const sr = stage.getBoundingClientRect()
+        const vis = visibleImageRect(
+          { left: sr.left, top: sr.top, right: sr.right, bottom: sr.bottom },
+          { left: h.left, top: h.top, width: h.width, height: h.height },
+          { panX, panY }, zoom, aw, ah,
+        )
+        mmVp.style.left = (vis.x * m) + 'px'; mmVp.style.top = (vis.y * m) + 'px'
+        mmVp.style.width = Math.max(3, vis.w * m) + 'px'; mmVp.style.height = Math.max(3, vis.h * m) + 'px'
+        minimap.hidden = false
+      }
+
       const applyZoomTransform = () => {
-        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; return }
+        if (zoom === 1) { panX = 0; panY = 0; canvas.style.transform = ''; canvas.style.cursor = 'crosshair'; updateMinimap(); return }
         canvas.style.transformOrigin = '0 0'
         canvas.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`
         canvas.style.cursor = 'grab'
+        updateMinimap()
       }
       const zoomToward = (clientX: number, clientY: number, factor: number) => {
-        // Capture the untransformed "home" rect while at zoom 1 so cursor-anchored math has a fixed origin.
-        if (zoom === 1) { const t = canvas.style.transform; canvas.style.transform = ''; home = canvas.getBoundingClientRect(); canvas.style.transform = t }
-        if (!home) return
+        const h = getHome(); if (!h) return
         const prev = zoom
         zoom = clampZoom(zoom * factor)
         if (zoom === prev) return
-        // Keep the image point under the cursor stationary: solve the new pan from cursor invariance.
-        const lx = (clientX - home.left - panX) / prev
-        const ly = (clientY - home.top - panY) / prev
-        panX = clientX - home.left - zoom * lx
-        panY = clientY - home.top - zoom * ly
+        // Keep the image point under the cursor stationary (cursor-anchored zoom).
+        const p = zoomTowardPan(clientX, clientY, { left: h.left, top: h.top, width: h.width, height: h.height }, prev, zoom, { panX, panY })
+        panX = p.panX; panY = p.panY
+        canvas.style.transition = zoomEase // animate the scale change (elastic/bezier, or quick under reduced-motion)
         applyZoomTransform()
       }
+      // #627: the stage's centre point in client coords — the anchor for toolbar +/− zoom and the Z toggle
+      // (so button/keyboard zoom grows/shrinks around the middle of the view, like a natural pinch).
+      const stageCenter = () => { const r = stage.getBoundingClientRect(); return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 } }
+      // #627: reset to fit (1×), mirroring the double-click behaviour, so button/keyboard reset stays in sync.
+      const resetZoom = () => { zoom = 1; canvas.style.transition = zoomEase; applyZoomTransform() }
+      // #627: toolbar zoom buttons — reuse zoomToward (which clamps + re-syncs the minimap) centred on the stage.
+      tools.querySelector('#kl-hero-zoomin')?.addEventListener('click', () => { const { cx, cy } = stageCenter(); zoomToward(cx, cy, 1.25) })
+      tools.querySelector('#kl-hero-zoomout')?.addEventListener('click', () => { const { cx, cy } = stageCenter(); zoomToward(cx, cy, 0.8) })
+      // Jump the main view so an image point lands at the stage centre — powers minimap click + drag.
+      const jumpToImagePoint = (ix: number, iy: number) => {
+        const h = getHome(); if (!h) return
+        const sr = stage.getBoundingClientRect()
+        const p = panForImageCenter(ix, iy, { left: sr.left, top: sr.top, right: sr.right, bottom: sr.bottom }, { left: h.left, top: h.top, width: h.width, height: h.height }, zoom, canvas.width)
+        panX = p.panX; panY = p.panY
+        canvas.style.transition = zoomEase
+        applyZoomTransform()
+      }
+      let mmDragging = false
+      const mmJumpFromEvent = (clientX: number, clientY: number) => {
+        const r = minimap.getBoundingClientRect()
+        const { ix, iy } = minimapToImage(clientX - r.left, clientY - r.top, r.width, r.height, canvas.width, canvas.height)
+        jumpToImagePoint(ix, iy)
+      }
+      minimap.addEventListener('pointerdown', (e) => {
+        mmDragging = true
+        try { minimap.setPointerCapture(e.pointerId) } catch { /* noop */ }
+        mmJumpFromEvent(e.clientX, e.clientY)
+        e.preventDefault(); e.stopPropagation()
+      })
+      minimap.addEventListener('pointermove', (e) => { if (mmDragging) { mmJumpFromEvent(e.clientX, e.clientY); e.preventDefault() } })
+      const mmEnd = (e: PointerEvent) => { if (mmDragging) { mmDragging = false; try { minimap.releasePointerCapture(e.pointerId) } catch { /* noop */ } } }
+      minimap.addEventListener('pointerup', mmEnd)
+      minimap.addEventListener('pointercancel', mmEnd)
+
       stage.addEventListener('wheel', (e) => {
         if (activeTool === 'crop') return
         e.preventDefault()
-        zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18)
+        zoomToward(e.clientX, e.clientY, wheelZoomFactor(e.deltaY))
       }, { passive: false })
-      stage.addEventListener('dblclick', () => { zoom = 1; applyZoomTransform() })
+      stage.addEventListener('dblclick', () => { zoom = 1; canvas.style.transition = zoomEase; applyZoomTransform() })
       // Numbered-pin counter continues from any pins already on this image.
       let countN = annotator.shapes.reduce((m, s: any) => s.type === 'count' ? Math.max(m, s.n) : m, 0)
       let drawing = false, startX = 0, startY = 0, penPoints: Array<{ x: number; y: number }> = []
@@ -2544,6 +3681,7 @@ export function buildModal(
         // Shift+drag pans the zoomed image instead of drawing.
         if (e.shiftKey && zoom > 1) {
           panning = true; panSX = e.clientX; panSY = e.clientY; panBaseX = panX; panBaseY = panY
+          canvas.style.transition = 'none' // pan must track the pointer 1:1 — no easing lag
           canvas.style.cursor = 'grabbing'; try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
           e.preventDefault(); return
         }
@@ -2569,9 +3707,19 @@ export function buildModal(
           const inputFont = Math.max(6, textSize * s)
           const sz = textSize, ol = textOutline
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:transparent;border:0;color:${activeColor};font-size:${inputFont}px;font-family:sans-serif;font-weight:700;text-shadow:${shadow};outline:1px dashed ${activeColor};z-index:2147483647;min-width:80px;`
-          document.body.appendChild(input); input.focus()
-          input.addEventListener('blur', () => { if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } safeRemove(input) }, { once: true })
-          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
+          document.body.appendChild(input)
+          // Track the live text input so the document-level tool-hotkey handler can bail unconditionally while
+          // it exists (belt-and-suspenders alongside its composedPath guard).
+          activeTextInput = input
+          // KLA-593 BUG 0: focus MUST be deferred to the next frame. Focusing synchronously inside this
+          // pointerdown gets undone by the browser's default mousedown action moving focus to the (unfocusable)
+          // canvas → the empty input is then blurred + removed before a single character can land, so the Text
+          // tool "couldn't type" and letter keys fell through to the tool shortcuts. requestAnimationFrame runs
+          // AFTER that default action, so the caret sticks and every character (incl. t/l/r/o/c/k/p/b) types
+          // into the input rather than triggering a tool shortcut.
+          requestAnimationFrame(() => { if (document.body.contains(input)) input.focus() })
+          input.addEventListener('blur', () => { activeTextInput = null; if (input.value.trim()) { pushUndo(index); annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim(), size: sz, outline: ol }); persist() } safeRemove(input) }, { once: true })
+          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); if (ke.key === 'Escape') { input.value = ''; input.blur() } ke.stopPropagation() })
           return
         }
         if (activeTool === 'count') {
@@ -2587,7 +3735,7 @@ export function buildModal(
         if (activeTool === 'pen') penPoints = [pt]
       })
       canvas.addEventListener('pointermove', (e) => {
-        if (panning) { panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
         if (!drawing) return
         if (activeTool === 'pen') {
           penPoints.push(toImg(e))
@@ -2626,13 +3774,15 @@ export function buildModal(
           return
         }
         // #449: snapshot before adding so this shape becomes one undo step in the unified history.
-        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow'
+        const isPixel = activeTool === 'pixelate' && Math.abs(pt.x - startX) > 4 && Math.abs(pt.y - startY) > 4
+        const willAdd = (activeTool === 'pen' && penPoints.length > 1) || activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow' || isPixel
         if (willAdd) pushUndo(index)
         if (activeTool === 'pen' && penPoints.length > 1) annotator.addShape({ type: 'pen', color: activeColor, points: penPoints })
         else if (activeTool === 'line') annotator.addShape({ type: 'line', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
         else if (activeTool === 'rect') annotator.addShape({ type: 'rect', color: activeColor, x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         else if (activeTool === 'circle') annotator.addShape({ type: 'circle', color: activeColor, x: (startX + pt.x) / 2, y: (startY + pt.y) / 2, rx: Math.abs(pt.x - startX) / 2, ry: Math.abs(pt.y - startY) / 2 })
         else if (activeTool === 'arrow') annotator.addShape({ type: 'arrow', color: activeColor, x1: startX, y1: startY, x2: pt.x, y2: pt.y })
+        else if (isPixel) annotator.addShape({ type: 'pixelate', x: Math.min(startX, pt.x), y: Math.min(startY, pt.y), w: Math.abs(pt.x - startX), h: Math.abs(pt.y - startY) })
         persist()
       })
       // KLAVITYKLA-507: safety net — if the OS cancels the pointer stream (e.g. gesture interrupt), drop any
@@ -2644,9 +3794,12 @@ export function buildModal(
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
-      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', k: 'crop' }
+      const TOOL_KEYS: Record<string, string> = { p: 'pen', l: 'line', r: 'rect', o: 'circle', a: 'arrow', t: 'text', c: 'count', b: 'pixelate', k: 'crop' }
       heroKeyHandler = (e: KeyboardEvent) => {
         if (!document.body.contains(host)) { detachHeroKeys(); return }
+        // KLA-593 BUG 0 (defense-in-depth): if a text-annotation input is open, NEVER treat keys as tool
+        // shortcuts — let every character reach the field. Robust even if focus is momentarily elsewhere.
+        if (activeTextInput && document.body.contains(activeTextInput)) return
         // This is a document-level listener but the modal (Describe textarea, the Text-tool input, etc.)
         // lives in a shadow root — so e.target is RETARGETED to the shadow host (a DIV), not the focused
         // field. Use composedPath()[0] to see the real innermost target, else typing in any field triggers
@@ -2658,6 +3811,14 @@ export function buildModal(
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undoShot(index); return }
         if (e.metaKey || e.ctrlKey || e.altKey) return
         const k = e.key.toLowerCase()
+        // #627: bare Z toggles zoom — fit (1×) ⇄ 2× centred on the stage. No modifiers here (Cmd/Ctrl+Z is
+        // handled above as undo; the text-input/textarea guard earlier means it never fires while typing).
+        if (k === 'z') {
+          e.preventDefault()
+          if (zoom > 1) resetZoom()
+          else { const { cx, cy } = stageCenter(); zoomToward(cx, cy, 2) }
+          return
+        }
         if (TOOL_KEYS[k]) { e.preventDefault(); selectTool(TOOL_KEYS[k]) }
       }
       document.addEventListener('keydown', heroKeyHandler, { capture: true })
@@ -2688,8 +3849,14 @@ export function buildModal(
         <button data-tool="text" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">T Text</button>
         <button data-color="#ef4444" style="background:#ef4444;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#f97316" style="background:#f97316;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#16a34a" style="background:#16a34a;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
         <button data-color="#3b82f6" style="background:#3b82f6;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;"></button>
+        <button data-color="#ffffff" style="background:#ffffff;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35);"></button>
         <button data-color="#111827" style="background:#111827;width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;border:1px solid #555;"></button>
+        <span style="position:relative;display:inline-flex;">
+          <button id="klavity-color-custom" title="Custom colour" aria-label="Choose a custom colour" style="width:24px;height:24px;border:none;border-radius:50%;cursor:pointer;background:conic-gradient(from 0deg,#ef4444,#f59e0b,#facc15,#16a34a,#3b82f6,#a855f7,#ef4444);"></button>
+          <input type="color" id="klavity-color-input" value="#ef4444" aria-label="Custom colour value" tabindex="-1" style="position:absolute;left:0;bottom:-2px;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;pointer-events:none;">
+        </span>
         <span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;">
           <button id="klavity-zoom-out" class="kl-zb" title="Zoom out" aria-label="Zoom out">−</button>
           <span id="klavity-zoom-pct" style="min-width:46px;text-align:center;color:#a6adc8;font-size:12px;font-variant-numeric:tabular-nums;">100%</span>
@@ -2770,6 +3937,17 @@ export function buildModal(
       }
       toolbar.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => selectTool((b as HTMLElement).dataset.tool!)))
       toolbar.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => { activeColor = (b as HTMLElement).dataset.color! }))
+      // Custom colour picker (parity with the hero toolbar): open the native picker and adopt the chosen colour.
+      {
+        const cBtn = toolbar.querySelector('#klavity-color-custom') as HTMLElement | null
+        const cIn = toolbar.querySelector('#klavity-color-input') as HTMLInputElement | null
+        if (cBtn && cIn) {
+          cBtn.addEventListener('click', () => cIn.click())
+          const apply = () => { cBtn.style.background = cIn.value; activeColor = cIn.value }
+          cIn.addEventListener('input', apply)
+          cIn.addEventListener('change', apply)
+        }
+      }
       toolbar.querySelector('#klavity-undo')!.addEventListener('click', () => annotator.undo())
       toolbar.querySelector('#klavity-clear-ann')!.addEventListener('click', () => annotator.clearAll())
 
@@ -2832,12 +4010,14 @@ export function buildModal(
           const input = document.createElement('input')
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:16px;outline:none;z-index:9999999;min-width:80px;`
           document.body.appendChild(input)
-          input.focus()
+          // KLA-593 BUG 0: defer focus to the next frame so the browser's default mousedown focus-shift (to
+          // the unfocusable canvas) doesn't immediately blur + remove this empty input before the user types.
+          requestAnimationFrame(() => { if (document.body.contains(input)) input.focus() })
           input.addEventListener('blur', () => {
             if (input.value.trim()) annotator.addShape({ type: 'text', color: activeColor, x: startX, y: startY, text: input.value.trim() })
             safeRemove(input)
           }, { once: true })
-          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur() })
+          input.addEventListener('keydown', (ke) => { if (ke.key === 'Enter') input.blur(); ke.stopPropagation() })
         }
       })
 
@@ -3068,6 +4248,29 @@ export function buildModal(
       // on resolve so the thumbnail slot is never blank.
       capturing = true
       updateStrip()
+      // KLA-587 (founder decision — REVERSES #460/#473): when Screen-default is on, the on-open DEFAULT capture
+      // is real getDisplayMedia. It MUST run PROMPTLY (NOT via requestIdleCallback — an idle/timer task spends
+      // the transient user-activation the picker needs) so it stays chained to the composer's opening gesture.
+      // Whether the on-open prompt actually fires depends on the gesture surviving the open path; if the
+      // browser refuses (spent gesture → NotAllowedError) OR the user declines, we silently fall back to the
+      // rendered viewport capture, and the primed primary "Screen" button is the one-tap manual retry. We do
+      // NOT re-prompt (no surprise-loop).
+      if (defaultCaptureMode(callbacks) === 'screen') {
+        void (async () => {
+          // KLA composer-polish (founder PX4 repro): the DEFAULT on-open Screen capture is VIEWPORT-scoped —
+          // a single visible frame, NOT the full-page scroll-stitch. The manual Screen button stays full-page.
+          const ok = await runScreenCapture({ viewport: true })
+          if (ok) { capturing = false; updateStrip(); return }
+          if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
+          // Silent fallback → rendered viewport (or full render where no viewport path is wired).
+          capturing = true; updateStrip()
+          if (callbacks.onCaptureViewport) { captureViewportOnly(null).catch(() => { capturing = false; updateStrip() }); return }
+          callbacks.onCaptureFull()
+            .then(shot => { const { dataUrl, quality, suggestSharp } = normalizeCapture(shot); capturing = false; addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn) })
+            .catch(() => { capturing = false; updateStrip() })
+        })()
+        return controller
+      }
       const runCapture = () => {
         // KLA-556: the DEFAULT auto-capture shot is the VIEWPORT only (above-the-fold / what's visible) —
         // it replaces the "Capturing…" skeleton within ~1s and does NOT swap to full-page. Full page stays

@@ -97,6 +97,10 @@ export async function initDb() {
   await backfillOnboardedAt(db)
   await sweepOrphanedWalks(db)
   await sweepOrphanedAuthorSessions(db)
+  // KLAVITY CREDITS: seed the action-cost config table from code defaults (idempotent; only fills
+  // missing rows). Lazy fallback exists in reserveCredits, but seeding at boot keeps the table
+  // browsable/editable centrally.
+  await seedCreditActionCosts().catch(() => {})
   console.log("✓ Turso connected, schema ready")
 }
 
@@ -307,6 +311,16 @@ export async function applySchema(c: Client) {
        project_role TEXT NOT NULL,           -- 'admin' | 'member'
        invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
     `CREATE INDEX IF NOT EXISTS proj_mem_email_idx ON project_members (email)`,
+    // ── Shared-ticket viewers (per-ticket, free & unlimited). A grant unlocks the full ticket +
+    // commenting for `email`. status 'active' = unblurred now; 'pending_approval' = waiting for an
+    // admin (share_mode='approval', Phase 2). UNIQUE(feedback_id,email) makes a grant idempotent.
+    `CREATE TABLE IF NOT EXISTS ticket_viewers (
+       id TEXT PRIMARY KEY, feedback_id TEXT NOT NULL, project_id TEXT NOT NULL,
+       email TEXT NOT NULL,
+       status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'pending_approval'
+       granted_by TEXT, created_at INTEGER NOT NULL, UNIQUE(feedback_id, email))`,
+    `CREATE INDEX IF NOT EXISTS ticket_viewers_feedback_idx ON ticket_viewers (feedback_id)`,
+    `CREATE INDEX IF NOT EXISTS ticket_viewers_email_idx ON ticket_viewers (email)`,
 
     // ── Sims-dashboard P3a (additive): provenance — transcripts + normalized sim_traits + append-only audit. ──
     // No live/consent/extension surface here (that is P3b). project_id is the canonical 'proj_'+account id.
@@ -425,6 +439,40 @@ export async function applySchema(c: Client) {
     `CREATE INDEX IF NOT EXISTS cost_events_proj_idx ON cost_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS cost_events_kind_idx ON cost_events (kind, created_at)`,
     `CREATE INDEX IF NOT EXISTS cost_events_run_idx ON cost_events (run_id) WHERE run_id IS NOT NULL`,
+    // KLAVITY CREDITS (spec 2026-08-25) — config table of action → millicredit cost. Editable
+    // centrally so per-action prices re-tune WITHOUT a code deploy. Seeded from DEFAULT_ACTION_COST_MC
+    // (lib/credits.ts) on boot via seedCreditActionCosts(); only fills missing rows (never clobbers a
+    // hand-edited price). Millicredits: 1 credit = 1000 mc.
+    `CREATE TABLE IF NOT EXISTS credit_action_costs (
+       action TEXT PRIMARY KEY, millicredits INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+    // KLAVITY CREDITS — per-workspace (=account) wallet. granted resets monthly (no rollover);
+    // topup rolls over; spend is grant-first (see lib/credits.ts). grant_period = 'YYYY-MM' of the
+    // active grant; last_grace_period = the period in which the one "last taste" grace was consumed
+    // (spec §6/§12 decision 6). Millicredits (integer).
+    `CREATE TABLE IF NOT EXISTS workspace_credits (
+       workspace_id TEXT PRIMARY KEY,
+       granted_millicredits INTEGER NOT NULL DEFAULT 0,
+       topup_millicredits INTEGER NOT NULL DEFAULT 0,
+       plan_grant_millicredits INTEGER NOT NULL DEFAULT 0,
+       grant_period TEXT NOT NULL,
+       last_grace_period TEXT,
+       updated_at INTEGER NOT NULL)`,
+    // KLAVITY CREDITS — append-only audit ledger. One row per credit movement: grants/top-ups/refunds
+    // are POSITIVE, spends are NEGATIVE (millicredits). Links to the ai_calls row it paid for (ai_call_id)
+    // for the /opsadmin credit-margin panel, and to the feedback/run + actor for the future admin nudge.
+    `CREATE TABLE IF NOT EXISTS credit_ledger (
+       id TEXT PRIMARY KEY,
+       workspace_id TEXT NOT NULL,
+       action TEXT NOT NULL,            -- enhance|transcript|keyframes|voice|sim|autosim|topup|grant|refund
+       millicredits INTEGER NOT NULL,   -- signed: + credits in, − spends
+       ref_feedback_id TEXT,
+       ref_run_id TEXT,
+       actor_email TEXT,
+       is_guest INTEGER NOT NULL DEFAULT 0,
+       ai_call_id TEXT,
+       created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS credit_ledger_ws_idx ON credit_ledger (workspace_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS credit_ledger_action_idx ON credit_ledger (action, created_at)`,
     // PER-TENANT AI BUDGET OVERRIDES (KLAVITYKLA-314) — optional per-account override of the default
     // daily AI budget that lives UNDER the global OPS_DAILY_CAP_USD. One row per account that has a
     // custom budget; accounts WITHOUT a row fall back to the env default (KLAV_TENANT_DAILY_BUDGET_USD).
@@ -1070,6 +1118,13 @@ export async function applySchema(c: Client) {
     // persisted, but this stamp makes the silent evidence loss visible (dashboard render is a follow-up).
     // Null/0 on healthy rows — additive, back-compat.
     ["evidence_dropped",       "INTEGER"],
+    // KLA-603: server-side "AI summary from walkthrough" — when an uploaded/recorded video's transcript
+    // completes and the reporter's own description was thin/empty, a post-transcription enrichment pass
+    // (server.ts enrichReportFromTranscript) generates a structured summary/actual/expected/steps GROUNDED
+    // in the transcript + captured screenshot and stores it here as JSON { text, draft, source, at }. It is
+    // ADDITIVE (never overwrites the reporter's observation) and surfaces in the tracker body + report read.
+    // Null on rows without a video walkthrough — additive, back-compat.
+    ["ai_walkthrough_json",    "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -1086,6 +1141,15 @@ export async function applySchema(c: Client) {
   if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))
   if (needCol("projects", "widget_cta_url")) await c.execute("ALTER TABLE projects ADD COLUMN widget_cta_url TEXT").catch((e) => console.warn("projects.widget_cta_url ALTER skipped:", e?.message || e))
   if (needCol("projects", "widget_notify_email")) await c.execute("ALTER TABLE projects ADD COLUMN widget_notify_email TEXT").catch((e) => console.warn("projects.widget_notify_email ALTER skipped:", e?.message || e))
+  // ── KLA-608: per-project "notify on EVERY new bug" channels (distinct from widget_notify_email,
+  // which is the LEAD-only alert). slack_webhook_url is a secret capability URL — write-only, NEVER
+  // returned to the client (same posture as widget_notify_email). bug_notify_emails is a JSON array /
+  // comma-separated list of extra recipients (falls back to account owner/admins when empty).
+  // notify_on_every_bug is the master on/off — DEFAULT 1 so existing projects keep the founder alert
+  // (lib/report-alert.ts) that shipped before this column; a project turns it OFF as a kill switch. ──
+  if (needCol("projects", "slack_webhook_url")) await c.execute("ALTER TABLE projects ADD COLUMN slack_webhook_url TEXT").catch((e) => console.warn("projects.slack_webhook_url ALTER skipped:", e?.message || e))
+  if (needCol("projects", "bug_notify_emails")) await c.execute("ALTER TABLE projects ADD COLUMN bug_notify_emails TEXT").catch((e) => console.warn("projects.bug_notify_emails ALTER skipped:", e?.message || e))
+  if (needCol("projects", "notify_on_every_bug")) await c.execute("ALTER TABLE projects ADD COLUMN notify_on_every_bug INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.notify_on_every_bug ALTER skipped:", e?.message || e))
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
   // 'anonymous' (default, JTBD 1.7) = open (identity asked post-submit); 'email' = logged-in OR a valid
   // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
@@ -1129,6 +1193,10 @@ export async function applySchema(c: Client) {
   // Report-clarity helper (the "password-strength, for bug reports" composer coach). DEFAULT 1 (ON) — the
   // dashboard settings UI to toggle it is a follow-up; for now every project gets the helper. Additive.
   if (needCol("projects", "report_clarity")) await c.execute("ALTER TABLE projects ADD COLUMN report_clarity INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.report_clarity ALTER skipped:", e?.message || e))
+  // ── Shared-ticket viewer onboarding: per-project share behavior. Default 'teaser' (blurred preview +
+  // email-to-unblur). share_allowlist is an optional JSON email array (approval/allowlist, Phase 2).
+  if (needCol("projects", "share_mode")) await c.execute("ALTER TABLE projects ADD COLUMN share_mode TEXT NOT NULL DEFAULT 'teaser'").catch((e: any) => console.warn("projects.share_mode ALTER skipped:", e?.message || e))
+  if (needCol("projects", "share_allowlist")) await c.execute("ALTER TABLE projects ADD COLUMN share_allowlist TEXT").catch((e: any) => console.warn("projects.share_allowlist ALTER skipped:", e?.message || e))
   // Thumbnail variant key: a small (≤~320px) client-generated JPEG stored alongside the full screenshot
   // so the dashboard list loads a lightweight preview via /api/screenshots/:id?thumb=1 instead of the
   // full-resolution original. Nullable — older rows and Sim/AutoSim screenshots (no client canvas) fall
@@ -1461,6 +1529,14 @@ export async function applySchema(c: Client) {
     .catch((e: any) => console.warn("export_outbox_due_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS export_outbox_proj_idx ON export_outbox (project_id, status)")
     .catch((e: any) => console.warn("export_outbox_proj_idx skipped:", e?.message || e))
+  // P3 (QA): stop two concurrent enqueues from both SELECT-then-INSERTing a duplicate PENDING row for
+  // the same (feedback,connector). A partial UNIQUE index makes "at most one pending row per pair" a DB
+  // invariant so the loser of an INSERT race hits a constraint (enqueueExportOutbox catches it and re-
+  // arms the winner instead). Additive + IF NOT EXISTS; if a prod DB already has duplicate pending rows
+  // the CREATE just skips (caught below) — no double-FILING results anyway (the sweep's atomic claim +
+  // findPriorSuccessfulExport precheck already dedupe at file time), this only tidies the queue forward.
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS export_outbox_pending_uniq ON export_outbox (feedback_id, connector_id) WHERE status='pending'")
+    .catch((e: any) => console.warn("export_outbox_pending_uniq skipped:", e?.message || e))
   // KLAVITYKLA-149: persist the wizard-picked judge/reviewer Sim so it survives a resume and lands on the
   // crystallized Trail. (Relocated to the end of applySchema per the append-only migration rule.)
   if (needCol("author_sessions", "judge_persona_id")) await c.execute("ALTER TABLE author_sessions ADD COLUMN judge_persona_id TEXT")
@@ -1986,6 +2062,12 @@ export type ProjectRow = {
   autosimAuthStatus: string
   createdAt: number; updatedAt: number
   widgetMode: string; widgetCtaUrl: string | null; widgetNotifyEmail: string | null
+  // KLA-608 per-project every-bug notifications. slackWebhookUrl is a SECRET (never serialize to the
+  // client — the /config GET returns only a `slackConfigured` boolean). bugNotifyEmails = extra alert
+  // recipients (empty → fall back to account owner/admins). notifyOnEveryBug = master on/off (default on).
+  slackWebhookUrl: string | null
+  bugNotifyEmails: string[]
+  notifyOnEveryBug: boolean
   widgetReportGate: string
   widgetAutoCaptureErrors: boolean
   instructionsMd?: string | null
@@ -2004,6 +2086,9 @@ export type ProjectRow = {
   planOverride: string | null
   // KLAVITYKLA-441: ordered auto-labeling rules, applied at ingest (first match wins). [] when unset.
   labelRules: LabelRule[]
+  // Shared-ticket viewer onboarding: per-project share behavior + optional allowlist (JSON emails).
+  shareMode: string
+  shareAllowlist: string[] | null
 }
 export const EXPORT_POLICIES = ["admins_only", "members_export", "members_request"] as const
 export type ExportPolicy = (typeof EXPORT_POLICIES)[number]
@@ -2019,6 +2104,15 @@ export function normalizeSnapRouting(v: unknown): SnapRouting {
   const s = String(v ?? "")
   return (SNAP_ROUTINGS as readonly string[]).includes(s) ? (s as SnapRouting) : "autofile"
 }
+// Per-project shared-ticket behavior. 'teaser' (default) = blurred preview + email-to-unblur;
+// 'public' = full ticket to anyone with the link; 'approval'/'auto_join' = Phase 2; 'off' = members
+// only. Unknown/legacy values normalize to the safe default 'teaser'.
+export const SHARE_MODES = ["teaser", "public", "approval", "auto_join", "off"] as const
+export type ShareMode = (typeof SHARE_MODES)[number]
+export function normalizeShareMode(v: unknown): ShareMode {
+  const s = String(v ?? "")
+  return (SHARE_MODES as readonly string[]).includes(s) ? (s as ShareMode) : "teaser"
+}
 function rowToProject(x: any): ProjectRow {
   return {
     id: String(x.id), accountId: String(x.account_id), name: String(x.name),
@@ -2030,6 +2124,10 @@ function rowToProject(x: any): ProjectRow {
     widgetMode: String(x.widget_mode || "support"),
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
+    slackWebhookUrl: x.slack_webhook_url != null ? String(x.slack_webhook_url) : null,
+    bugNotifyEmails: parseEmailList(x.bug_notify_emails),
+    // DEFAULT 1: NULL/undefined (pre-column rows) read as enabled; only an explicit 0 disables.
+    notifyOnEveryBug: x.notify_on_every_bug == null ? true : Number(x.notify_on_every_bug) !== 0,
     widgetReportGate: ["anonymous", "email", "login"].includes(String(x.widget_report_gate)) ? String(x.widget_report_gate) : "anonymous",
     widgetAutoCaptureErrors: Number(x.widget_auto_capture_errors) === 1,
     instructionsMd: x.instructions_md != null ? String(x.instructions_md) : undefined,
@@ -2041,6 +2139,8 @@ function rowToProject(x: any): ProjectRow {
     snapRouting: normalizeSnapRouting(x.snap_routing),
     planOverride: x.plan_override != null ? String(x.plan_override) : null,
     labelRules: sanitizeLabelRules(safeJsonParse(x.label_rules_json)),
+    shareMode: normalizeShareMode(x.share_mode),
+    shareAllowlist: (() => { try { const a = JSON.parse(String(x.share_allowlist ?? "null")); return Array.isArray(a) ? a.map((e: any) => String(e)) : null } catch { return null } })(),
   }
 }
 
@@ -2703,6 +2803,64 @@ export async function getWidgetNotifyEmail(projectId: string): Promise<string | 
   return p?.widgetNotifyEmail || null
 }
 
+// ── KLA-608 per-project every-bug notifications ──
+// Parse a stored recipient list (JSON array OR comma/space/semicolon-separated) into a deduped,
+// per-address-validated, lowercased list. Bad/oversized entries are dropped (never throws); the
+// list is capped so a pathological value can't blow up a fan-out email.
+const BUG_NOTIFY_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+export function parseEmailList(raw: unknown): string[] {
+  if (raw == null) return []
+  let parts: string[]
+  if (Array.isArray(raw)) parts = raw.map((e) => String(e))
+  else {
+    const s = String(raw).trim()
+    if (s.startsWith("[")) { try { const a = JSON.parse(s); parts = Array.isArray(a) ? a.map((e) => String(e)) : [s] } catch { parts = s.split(/[,\s;]+/) } }
+    else parts = s.split(/[,\s;]+/)
+  }
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const p of parts) {
+    const e = p.trim().toLowerCase()
+    if (!e || e.length > 200 || !BUG_NOTIFY_EMAIL_RE.test(e) || seen.has(e)) continue
+    seen.add(e); out.push(e)
+    if (out.length >= 50) break
+  }
+  return out
+}
+
+// Read-side config for the settings UI + intake dispatch. Deliberately returns `slackConfigured`
+// (a boolean) rather than the webhook URL: the secret is write-only and never leaves the server.
+export interface BugNotifyConfig { notifyOnEveryBug: boolean; bugNotifyEmails: string[]; slackConfigured: boolean }
+export async function getBugNotifyConfig(projectId: string): Promise<BugNotifyConfig | null> {
+  const p = await projectById(projectId)
+  if (!p) return null
+  return { notifyOnEveryBug: p.notifyOnEveryBug, bugNotifyEmails: p.bugNotifyEmails, slackConfigured: !!p.slackWebhookUrl }
+}
+
+// The effective per-project Slack webhook, or null. Only https://hooks.slack.com/ URLs are honored
+// (defense in depth; the write path validates too and safeFetch pins the host again at POST time).
+export async function getProjectSlackWebhookUrl(projectId: string): Promise<string | null> {
+  const p = await projectById(projectId)
+  const raw = (p?.slackWebhookUrl || "").trim()
+  return /^https:\/\/hooks\.slack\.com\//.test(raw) && raw.length <= 500 ? raw : null
+}
+
+// Admin-gated write. slackWebhookUrl: pass a URL to set, "" to clear, undefined to keep as-is (the
+// caller must validate the URL shape first — this stores verbatim). bugNotifyEmails is normalized
+// through parseEmailList and stored as a JSON array. notifyOnEveryBug is the master on/off.
+export async function setBugNotifyConfig(
+  projectId: string,
+  cfg: { slackWebhookUrl?: string | null; bugNotifyEmails?: string[] | string | null; notifyOnEveryBug?: boolean },
+): Promise<void> {
+  const sets: string[] = [], args: any[] = []
+  if (cfg.slackWebhookUrl !== undefined) { sets.push("slack_webhook_url=?"); args.push(cfg.slackWebhookUrl ? String(cfg.slackWebhookUrl) : null) }
+  if (cfg.bugNotifyEmails !== undefined) { const list = parseEmailList(cfg.bugNotifyEmails); sets.push("bug_notify_emails=?"); args.push(list.length ? JSON.stringify(list) : null) }
+  if (cfg.notifyOnEveryBug !== undefined) { sets.push("notify_on_every_bug=?"); args.push(cfg.notifyOnEveryBug ? 1 : 0) }
+  if (!sets.length) return
+  sets.push("updated_at=?"); args.push(Date.now()); args.push(projectId)
+  await db!.execute({ sql: `UPDATE projects SET ${sets.join(", ")} WHERE id=?`, args })
+}
+
 export async function setWidgetConfig(projectId: string, cfg: { mode?: string; ctaUrl?: string | null; notifyEmail?: string | null; reportGate?: string; autoCaptureErrors?: boolean }): Promise<void> {
   const sets: string[] = [], args: any[] = []
   if (cfg.mode !== undefined) { sets.push("widget_mode=?"); args.push(["support", "leadgen", "off"].includes(cfg.mode) ? cfg.mode : "support") }
@@ -2767,7 +2925,13 @@ export async function projectAccess(email: string, projectId: string): Promise<'
   const acctRole = await accountRole(proj.accountId, email)
   if (acctRole === "owner" || acctRole === "admin") return "admin"
   const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [projectId, email] })
-  if (r.rows.length) return String((r.rows[0] as any).project_role) === "admin" ? "admin" : "member"
+  if (r.rows.length) {
+    const role = String((r.rows[0] as any).project_role)
+    if (role === "admin") return "admin"
+    // A 'viewer' row (shared-ticket onboarding) is NOT member access — viewers never mutate.
+    if (role === "viewer") return null
+    return "member"
+  }
   if (acctRole === "member") return null // account member with no explicit project row sees nothing
   return null
 }
@@ -2783,7 +2947,8 @@ export async function addProjectMember(projectId: string, accountId: string, ema
   await upsertUser(email)
   const now = Date.now()
   await db!.execute({ sql: "INSERT OR IGNORE INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)", args: ["am_" + accountId + "_" + email, accountId, email, "member", now] })
-  await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, projectRole === "admin" ? "admin" : "member", invitedBy ?? null, now] })
+  const role = projectRole === "admin" ? "admin" : projectRole === "viewer" ? "viewer" : "member"
+  await db!.execute({ sql: "INSERT INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(project_id,email) DO NOTHING", args: ["pm_" + projectId + "_" + email, projectId, email, role, invitedBy ?? null, now] })
 }
 
 // Remove an ACTIVE member from a project (distinct from revokeProjectInvite, which only clears a
@@ -4112,6 +4277,178 @@ export async function recordAiCall(a: AiCallInsert): Promise<void> {
   })
 }
 
+// ── Klavity Credits: action-cost config ──────────────────────────────────────────────────────────
+export async function getCreditActionCost(action: string): Promise<number | null> {
+  try {
+    const r = await db!.execute({ sql: "SELECT millicredits FROM credit_action_costs WHERE action=?", args: [action] })
+    if (!r.rows.length) return null
+    const v = Number((r.rows[0] as any).millicredits)
+    return Number.isFinite(v) ? v : null
+  } catch { return null }
+}
+
+// Fill any missing action rows from the code defaults. Idempotent (INSERT OR IGNORE) — a price a human
+// edited in the table is preserved. Call once at boot AFTER applySchema.
+export async function seedCreditActionCosts(): Promise<void> {
+  const now = Date.now()
+  const defaults: Array<[string, number]> = [
+    ["enhance", 1000], ["transcript", 1000], ["keyframes", 2000],
+    ["voice", 100], ["sim", 15000], ["autosim", 75000],
+  ]
+  for (const [action, mc] of defaults) {
+    await db!.execute({
+      sql: "INSERT OR IGNORE INTO credit_action_costs (action, millicredits, updated_at) VALUES (?,?,?)",
+      args: [action, mc, now],
+    }).catch((e: any) => console.warn(`seedCreditActionCosts ${action} skipped:`, e?.message || e))
+  }
+}
+
+// ── Klavity Credits: per-workspace wallet ────────────────────────────────────────────────────────
+export type WorkspaceCredits = {
+  workspaceId: string; grantedMc: number; topupMc: number; planGrantMc: number
+  grantPeriod: string; lastGracePeriod: string | null; updatedAt: number
+}
+
+function mapWorkspaceCredits(x: any): WorkspaceCredits {
+  return {
+    workspaceId: String(x.workspace_id),
+    grantedMc: Number(x.granted_millicredits) || 0,
+    topupMc: Number(x.topup_millicredits) || 0,
+    planGrantMc: Number(x.plan_grant_millicredits) || 0,
+    grantPeriod: String(x.grant_period),
+    lastGracePeriod: x.last_grace_period != null ? String(x.last_grace_period) : null,
+    updatedAt: Number(x.updated_at) || 0,
+  }
+}
+
+export async function getWorkspaceCredits(workspaceId: string): Promise<WorkspaceCredits | null> {
+  if (!workspaceId) return null
+  const r = await db!.execute({ sql: "SELECT * FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
+  return r.rows.length ? mapWorkspaceCredits(r.rows[0]) : null
+}
+
+// Create-on-first-touch (seeded to a full grant — the §11 launch migration: nobody worse off) and
+// lazily re-grant when the UTC month has rolled. Top-up survives; grace resets each period.
+export async function ensureWorkspaceCredits(workspaceId: string, planGrantMc: number, atMs: number = Date.now()): Promise<WorkspaceCredits> {
+  const period = usagePeriod(atMs)
+  const now = atMs
+  await db!.execute({
+    sql: `INSERT INTO workspace_credits
+            (workspace_id, granted_millicredits, topup_millicredits, plan_grant_millicredits, grant_period, last_grace_period, updated_at)
+          VALUES (?,?,?,?,?,NULL,?)
+          ON CONFLICT(workspace_id) DO NOTHING`,
+    args: [workspaceId, planGrantMc, 0, planGrantMc, period, now],
+  })
+  // Lazy re-grant: only when the stored period is strictly older than the current one.
+  await db!.execute({
+    sql: `UPDATE workspace_credits
+             SET granted_millicredits = ?, plan_grant_millicredits = ?, grant_period = ?,
+                 last_grace_period = NULL, updated_at = ?
+           WHERE workspace_id = ? AND grant_period < ?`,
+    args: [planGrantMc, planGrantMc, period, now, workspaceId, period],
+  })
+  const w = await getWorkspaceCredits(workspaceId)
+  return w! // row is guaranteed to exist after the upsert
+}
+
+// ── Klavity Credits: append-only ledger ──────────────────────────────────────────────────────────
+export type CreditLedgerInsert = {
+  workspaceId: string; action: string; millicredits: number
+  refFeedbackId?: string | null; refRunId?: string | null
+  actorEmail?: string | null; isGuest?: boolean; aiCallId?: string | null; atMs?: number
+}
+export type CreditLedgerRow = {
+  id: string; workspaceId: string; action: string; millicredits: number
+  refFeedbackId: string | null; refRunId: string | null; actorEmail: string | null
+  isGuest: boolean; aiCallId: string | null; createdAt: number
+}
+
+export async function insertCreditLedger(e: CreditLedgerInsert): Promise<string> {
+  const id = "cl_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO credit_ledger
+            (id, workspace_id, action, millicredits, ref_feedback_id, ref_run_id, actor_email, is_guest, ai_call_id, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [id, e.workspaceId, e.action, Math.trunc(e.millicredits),
+           e.refFeedbackId ?? null, e.refRunId ?? null, e.actorEmail ?? null,
+           e.isGuest ? 1 : 0, e.aiCallId ?? null, e.atMs ?? Date.now()],
+  })
+  return id
+}
+
+export async function listCreditLedgerForWorkspace(workspaceId: string, limit = 200): Promise<CreditLedgerRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM credit_ledger WHERE workspace_id=? ORDER BY created_at DESC LIMIT ?",
+    args: [workspaceId, limit],
+  })
+  return r.rows.map((x: any) => ({
+    id: String(x.id), workspaceId: String(x.workspace_id), action: String(x.action),
+    millicredits: Number(x.millicredits) || 0,
+    refFeedbackId: x.ref_feedback_id != null ? String(x.ref_feedback_id) : null,
+    refRunId: x.ref_run_id != null ? String(x.ref_run_id) : null,
+    actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    isGuest: Number(x.is_guest) === 1,
+    aiCallId: x.ai_call_id != null ? String(x.ai_call_id) : null,
+    createdAt: Number(x.created_at) || 0,
+  }))
+}
+
+// ── Klavity Credits: atomic balance mutators ─────────────────────────────────────────────────────
+export type DebitSplit = { grantMc: number; topupMc: number }
+
+// Spend grant-first, then top-up. Read-modify-write serialized via an OPTIMISTIC conditional UPDATE
+// (guard on the exact balances read — the same lock-free pattern tryReserveDailySpend uses; this
+// repo's @libsql/client is driven WITHOUT interactive transactions). Returns the actual split, or
+// null when short and allowNegative is off. With allowNegative (Phase-1 soft mode) it always debits,
+// draining grant to 0 then top-up (which may go negative) so consumption is recorded truthfully.
+// KLA-609 batch-5 (latent, pre Phase-2 hard-enforce): the retry budget must be generous enough that a
+// SOLVENT wallet reliably wins the optimistic CAS even under heavy concurrent debits. A `null` return
+// here means GENUINELY INSUFFICIENT (balance < cost, hard mode) — it must NEVER mean "lost the CAS race
+// N times". We therefore re-check solvency on every read (returning null immediately only when actually
+// short) and, when we merely keep losing the CAS on a solvent wallet, retry many times with a small
+// jittered backoff rather than giving up and reporting a false insufficient.
+const DEBIT_MAX_ATTEMPTS = Number(process.env.KLAV_CREDITS_DEBIT_MAX_ATTEMPTS || 40)
+export async function debitWorkspaceCredits(workspaceId: string, amountMc: number, opts: { allowNegative?: boolean } = {}): Promise<DebitSplit | null> {
+  const amt = Math.max(0, Math.trunc(amountMc))
+  if (amt === 0) return { grantMc: 0, topupMc: 0 }
+  for (let attempt = 0; attempt < DEBIT_MAX_ATTEMPTS; attempt++) {
+    const r = await db!.execute({ sql: "SELECT granted_millicredits AS g, topup_millicredits AS t FROM workspace_credits WHERE workspace_id=?", args: [workspaceId] })
+    if (!r.rows.length) return null
+    const g = Number((r.rows[0] as any).g) || 0
+    const t = Number((r.rows[0] as any).t) || 0
+    if (!opts.allowNegative && g + t < amt) return null // genuinely insufficient — the ONLY legit null
+    const grantMc = Math.min(g, amt)
+    const topupMc = amt - grantMc // remainder off top-up (may exceed t → t goes negative in soft mode)
+    const upd = await db!.execute({
+      sql: "UPDATE workspace_credits SET granted_millicredits=?, topup_millicredits=?, updated_at=? WHERE workspace_id=? AND granted_millicredits=? AND topup_millicredits=?",
+      args: [g - grantMc, t - topupMc, Date.now(), workspaceId, g, t],
+    })
+    if (Number(upd.rowsAffected) > 0) return { grantMc, topupMc }
+    // Lost a race — another debit mutated the row. Back off a touch (capped, jittered) so contending
+    // writers de-sync, then re-read and retry. We do NOT surface this as "insufficient".
+    const backoffMs = Math.min(20, 1 << Math.min(attempt, 4)) + Math.floor(Math.random() * 4)
+    await new Promise(res => setTimeout(res, backoffMs))
+  }
+  // Exhausted the (large) budget under pathological contention on a solvent wallet. Return null so the
+  // caller can retry the whole operation, but note this is NOT a semantic "insufficient" signal — a
+  // truly-insufficient wallet returned null far earlier via the solvency check above.
+  return null
+}
+
+export async function creditWorkspaceCredits(workspaceId: string, split: DebitSplit): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE workspace_credits SET granted_millicredits = granted_millicredits + ?, topup_millicredits = topup_millicredits + ?, updated_at=? WHERE workspace_id=?",
+    args: [Math.trunc(split.grantMc), Math.trunc(split.topupMc), Date.now(), workspaceId],
+  })
+}
+
+export async function markGraceUsed(workspaceId: string, period: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE workspace_credits SET last_grace_period=?, updated_at=? WHERE workspace_id=?",
+    args: [period, Date.now(), workspaceId],
+  })
+}
+
 export async function opsTotals(): Promise<{ totalCost: number; totalInputTokens: number; totalOutputTokens: number; callCount: number }> {
   const r = await db!.execute(
     `SELECT COALESCE(SUM(cost_usd),0) AS cost, COALESCE(SUM(input_tokens),0) AS inp,
@@ -5377,12 +5714,31 @@ export async function enqueueExportOutbox(x: {
     return id
   }
   const id = "outbox_" + crypto.randomUUID()
-  await db!.execute({
-    sql: `INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,attempts,last_error,next_attempt_at,created_by,created_at,updated_at)
-          VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)`,
-    args: [id, x.feedbackId, x.projectId, x.connectorId, x.type, x.error ?? null, nextAt, x.createdBy ?? null, now, now],
-  })
-  return id
+  try {
+    await db!.execute({
+      sql: `INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,attempts,last_error,next_attempt_at,created_by,created_at,updated_at)
+            VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)`,
+      args: [id, x.feedbackId, x.projectId, x.connectorId, x.type, x.error ?? null, nextAt, x.createdBy ?? null, now, now],
+    })
+    return id
+  } catch (e: any) {
+    // Lost an INSERT race to a concurrent enqueue of the same (feedback,connector) pending row (blocked
+    // by the export_outbox_pending_uniq partial index). Don't drop the retry — re-fetch the winner and
+    // re-arm it, matching the idempotent existing-row branch above. Re-throw only if there's no winner.
+    const raced = await db!.execute({
+      sql: "SELECT id FROM export_outbox WHERE feedback_id=? AND connector_id=? AND status='pending' LIMIT 1",
+      args: [x.feedbackId, x.connectorId],
+    })
+    if (raced.rows.length) {
+      const winner = String((raced.rows[0] as any).id)
+      await db!.execute({
+        sql: "UPDATE export_outbox SET last_error=?, next_attempt_at=?, updated_at=? WHERE id=?",
+        args: [x.error ?? null, nextAt, now, winner],
+      })
+      return winner
+    }
+    throw e
+  }
 }
 
 // List due pending outbox rows (next_attempt_at <= now), oldest first, for the retry sweep.
@@ -5571,6 +5927,8 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     // (feedbackToTicketPayload / raw-row callers reference fb.report_type directly).
     reportType: x.report_type != null ? String(x.report_type) : null,
     report_type: x.report_type != null ? String(x.report_type) : null,
+    // KLA-173 source tag (widget/sim/manual/…) — surfaced in the shared-ticket teaser pills.
+    source: x.source != null ? String(x.source) : null,
     // PX4 #411: explicit Title (feedbackToTicketPayload prefers it over the observation first-line auto-title).
     title: x.title != null ? String(x.title) : null,
     // #543 straggler (Codex re-review): expose the parsed suggested bug so effectiveTicketTitle /
@@ -5586,7 +5944,54 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     // by feedbackToTicketPayload to attribute the exported ticket.
     reporter: safeJsonParse(x.reporter_json),
     clientInfo: safeJsonParse(x.client_info_json),
+    // KLA-603: server-side "AI summary from walkthrough" (see ai_walkthrough_json column). Null when the
+    // report had no transcribed video or the description was already substantial. Additive.
+    aiWalkthrough: safeJsonParse(x.ai_walkthrough_json),
   }
+}
+
+// KLA-603: store the server-side "AI summary from walkthrough" JSON blob (post-transcription enrichment).
+// ADDITIVE — this is a dedicated column and NEVER touches the reporter's observation. Overwrites any prior
+// walkthrough summary for the row (the enrichment pass is idempotent per report). Best-effort caller.
+export async function setFeedbackWalkthroughSummary(
+  feedbackId: string,
+  projectId: string,
+  walkthrough: { text: string; draft?: any; source?: string; at?: number },
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE feedback SET ai_walkthrough_json=? WHERE id=? AND project_id=? AND (ai_walkthrough_json IS NULL OR ai_walkthrough_json='')",
+    args: [JSON.stringify(walkthrough), feedbackId, projectId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
+// KLA-603: append extracted video KEY FRAMES (and any other synthesized evidence) to a report's
+// attachments_json array. Reuses the SAME { key, filename, contentType, size } descriptor shape #425 uses,
+// so each frame flows to the external tracker natively AND surfaces (presigned) in the dashboard/report read
+// for free. Extra fields on a descriptor (e.g. `keyframe: true`, `atMs`) are preserved. Idempotent-ish: it
+// APPENDS, so the caller must only run once per report (the enrichment pass does). Best-effort caller.
+export async function appendFeedbackAttachments(
+  feedbackId: string,
+  projectId: string,
+  newAttachments: Array<Record<string, any>>,
+): Promise<boolean> {
+  if (!Array.isArray(newAttachments) || !newAttachments.length) return false
+  const r = await db!.execute({
+    sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row) return false
+  let atts: any[] = []
+  if (row.attachments_json != null) {
+    try { const parsed = JSON.parse(String(row.attachments_json)); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] }
+  }
+  atts.push(...newAttachments)
+  await db!.execute({
+    sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?",
+    args: [JSON.stringify(atts), feedbackId, projectId],
+  })
+  return true
 }
 
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given

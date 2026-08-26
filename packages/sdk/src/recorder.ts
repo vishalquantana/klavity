@@ -70,6 +70,7 @@ export interface RecordingResult {
 }
 
 export interface StartRecordingOptions {
+  // #639: OPT-IN. Defaults to false — screen-only is the default capture. Pass true to composite the webcam PiP.
   wantCamera?: boolean
   wantMic?: boolean
   fps?: number
@@ -87,6 +88,10 @@ export interface RecordingController {
   stop(): void
   state(): RecorderState
   screenOnly(): boolean
+  // KLA-602(b): the LIVE local camera stream (getUserMedia) when the recording actually includes the camera,
+  // so the overlay can render a self-view bubble (Loom/Mevak style). null when screen-only / camera blocked.
+  // This is the raw local preview stream — it is separate from the composited canvas that gets recorded.
+  cameraStream(): any | null
   // Resolves when the recording fully stops (native "stop sharing", Stop button, or a cap auto-stop).
   done: Promise<RecordingResult>
 }
@@ -159,7 +164,11 @@ export async function startRecording(
   deps: RecorderDeps = defaultRecorderDeps(),
 ): Promise<RecordingController> {
   const caps: RecordingCaps = { ...DEFAULT_RECORDING_CAPS, ...(opts.caps || {}) }
-  const wantCamera = opts.wantCamera !== false
+  // #639: the webcam camera is OFF by default — screen-only (+ mic narration) is the default capture path.
+  // Camera is strictly OPT-IN: a caller must pass wantCamera:true (or tick the consent-panel camera box) to
+  // enable the PiP self-view. Mic stays default-ON (narration) unless explicitly disabled. This avoids
+  // surprising reporters with a live webcam and keeps the common bug-repro flow screen-only.
+  const wantCamera = opts.wantCamera === true
   const wantMic = opts.wantMic !== false
   const fps = Math.max(5, Math.min(60, opts.fps ?? 24))
 
@@ -178,7 +187,31 @@ export async function startRecording(
   const setState = (s: RecorderState) => { state = s; try { opts.onState?.(s) } catch { /* listener errors never break capture */ } }
 
   // 1) Screen — required. Throws (caller treats as cancel) if the user dismisses the picker.
-  const screenStream = await deps.mediaDevices.getDisplayMedia({ video: { frameRate: fps }, audio: false, preferCurrentTab: false })
+  // #640: hint the picker toward the WHOLE MONITOR so multi-page/tab flows are actually captured. With a
+  // single-tab share, switching tabs isn't recorded; "Entire Screen" captures everything the reporter does.
+  // We cannot FORCE the browser's choice, but the constraints below nudge it:
+  //   • displaySurface:'monitor'      — advertises "Entire Screen" as the preferred surface (Chromium orders
+  //                                     the monitor option first / preselects it).
+  //   • preferCurrentTab:false        — don't shortcut to a current-tab capture.
+  //   • selfBrowserSurface:'exclude'  — de-emphasise sharing THIS very tab (avoids the trivial current-tab pick).
+  //   • surfaceSwitching:'include'    — lets the reporter switch the shared surface mid-recording without a restart.
+  //   • monitorTypeSurfaces:'include' — ensure monitor surfaces are offered.
+  // Findings (#640c) on "picked Entire Screen but only the current app was captured": this is an OS-level
+  // screen-recording PERMISSION gap, not a constraints bug — on macOS, if the browser lacks Screen Recording
+  // permission (System Settings → Privacy & Security → Screen Recording) getDisplayMedia can hand back a stream
+  // that only paints the browser's own window/app and shows other apps as blank/black until the permission is
+  // granted and the browser is relaunched. Virtual desktops/Spaces and HDR/secondary displays can likewise clip
+  // capture to the active app. The fix is user-side (grant OS permission + relaunch); the constraints here can't
+  // override it, so the consent-panel tip + this note document it. These extra keys are non-standard/advisory and
+  // browsers safely ignore unknown ones, so older engines keep the previous behaviour.
+  const screenStream = await deps.mediaDevices.getDisplayMedia({
+    video: { frameRate: fps, displaySurface: 'monitor' },
+    audio: false,
+    preferCurrentTab: false,
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+  } as any)
 
   // #474 (privacy): once ANY track is acquired, a throw during the REST of init (canvas.captureStream,
   // new MediaStream/MediaRecorder, recorder.start) must never leave live camera/mic/screen tracks running.
@@ -334,6 +367,9 @@ export async function startRecording(
     stop() { stop() },
     state() { return state },
     screenOnly() { return screenOnly },
+    // KLA-602(b): expose the live camera stream ONLY when the camera is genuinely part of the capture, so the
+    // overlay can mount a self-view bubble. Screen-only / audio-only(mic) fallbacks return null → no bubble.
+    cameraStream() { return hadCamera && camStream ? camStream : null },
     done,
   }
   } catch (e) {
@@ -369,19 +405,80 @@ export async function recordingResultToAttachment(r: RecordingResult): Promise<R
   }
 }
 
-// ── recordMe(): thin browser-only overlay (consent → recording → preview → attach) ────────────────────
-// Resolves a RecordingAttachment when the reporter clicks "Attach to report", or null on cancel/close.
-// Deliberately self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of
-// the shared composer (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
+// ── KLA-602(b): live camera self-view bubble (Loom/Mevak style) ────────────────────────────────────────
+// A small circular LIVE preview of the LOCAL getUserMedia camera track, shown WHILE recording so the reporter
+// sees themselves. It plays a muted <video> off the camera stream and is NOT composited into the recorded file
+// here (compositing already happens in startRecording's PiP; live-bubble compositing is Phase B / KLA follow-up).
+// Returns the bubble element (the caller appends it to the recorder host so it's torn down with the overlay), or
+// null when there is no camera track (screen-only / camera blocked) — so a permission denial simply yields no
+// bubble and no error. Corner-anchored bottom-left by default; draggable via pointer events.
+export function startCameraPreview(stream: any | null): HTMLElement | null {
+  if (typeof document === 'undefined') return null
+  if (!stream || !(stream.getVideoTracks?.().length)) return null
+  const bubble = document.createElement('div')
+  bubble.setAttribute('data-klavity-ui', 'camera-preview')
+  bubble.setAttribute('role', 'img')
+  bubble.setAttribute('aria-label', 'Your camera preview')
+  bubble.style.cssText =
+    'position:fixed;left:24px;bottom:24px;width:128px;height:128px;border-radius:50%;overflow:hidden;' +
+    'z-index:2147483647;pointer-events:auto;cursor:grab;background:#000;border:3px solid #7c3aed;' +
+    'box-shadow:0 10px 30px rgba(28,22,40,.42);touch-action:none'
+  const video = document.createElement('video')
+  video.muted = true
+  ;(video as any).playsInline = true
+  video.setAttribute('playsinline', '')
+  video.autoplay = true
+  video.setAttribute('aria-hidden', 'true')
+  // Mirror horizontally so it reads like a selfie/webcam preview; cover-fit the circle.
+  video.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block'
+  try { (video as any).srcObject = stream } catch { /* jsdom/headless: no real playback */ }
+  try { const p = video.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {}) } catch { /* no-op */ }
+  bubble.appendChild(video)
+  // Best-effort drag to reposition (corner-anchored otherwise). Pointer events keep it simple + touch-friendly.
+  let dragging = false, startX = 0, startY = 0, originX = 0, originY = 0
+  const onDown = (e: any) => {
+    dragging = true
+    bubble.style.cursor = 'grabbing'
+    const r = bubble.getBoundingClientRect()
+    originX = r.left; originY = r.top; startX = e.clientX; startY = e.clientY
+    // switch from bottom/left anchoring to absolute top/left so the drag math is uniform
+    bubble.style.right = 'auto'; bubble.style.bottom = 'auto'
+    bubble.style.left = originX + 'px'; bubble.style.top = originY + 'px'
+    try { bubble.setPointerCapture?.(e.pointerId) } catch { /* no-op */ }
+  }
+  const onMove = (e: any) => {
+    if (!dragging) return
+    bubble.style.left = Math.max(0, originX + (e.clientX - startX)) + 'px'
+    bubble.style.top = Math.max(0, originY + (e.clientY - startY)) + 'px'
+  }
+  const onUp = () => { dragging = false; bubble.style.cursor = 'grab' }
+  bubble.addEventListener('pointerdown', onDown)
+  bubble.addEventListener('pointermove', onMove)
+  bubble.addEventListener('pointerup', onUp)
+  return bubble
+}
+
+// ── recordMe(): thin browser-only overlay (consent → recording → auto-attach) ─────────────────────────
+// KLA-602(a): the finished recording now resolves DIRECTLY when the reporter stops (no "Preview → Attach to
+// report" gate) — the composer drops it straight into the photos/videos gallery as a removable video tile, and
+// Re-record lives there as a tile action. recordMe still resolves null on cancel/close. Deliberately
+// self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of the shared composer
+// (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
 export interface RecordMeOptions {
   caps?: Partial<RecordingCaps>
   deps?: RecorderDeps
-  // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore
-  // the composer around a live recording. 'consent' and 'preview' render the centered card+backdrop; the
-  // ACTIVE 'recording' phase docks a compact bar and lets clicks pass through to the page, so the host
-  // should hide the composer while phase==='recording' and restore it on 'preview' (or when recordMe's
-  // promise resolves/rejects). Best-effort — listener errors never break capture.
+  // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore the
+  // composer around a live recording. 'consent' renders the centered card+backdrop; the ACTIVE 'recording'
+  // phase docks a compact bar and lets clicks pass through to the page, so the host should hide the composer
+  // while phase==='recording' and restore it otherwise (and when recordMe's promise resolves/rejects).
+  // ('preview' is retained in the union for back-compat but is NO LONGER emitted — KLA-602(a) dropped the
+  // preview panel; stop auto-attaches.) Best-effort — listener errors never break capture.
   onPhase?: (phase: 'consent' | 'recording' | 'preview') => void
+  // #639: initial state of the consent panel's Camera checkbox. Defaults to FALSE (camera OFF / opt-in) so
+  // screen-only is the default. A host/project that wants camera-on-by-default can pass defaultCamera:true.
+  // (A persistent per-project UI toggle for this belongs in the shared composer settings — see modal.ts
+  // follow-up noted in the ticket report; recordMe only takes the resolved boolean.)
+  defaultCamera?: boolean
 }
 
 export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAttachment | null> {
@@ -414,6 +511,11 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
 
     let settled = false
     let controller: RecordingController | null = null
+    // KLA-620: click-outside-to-dismiss for the consent card (standard modal affordance). Only armed while the
+    // consent panel is up (modal chrome); the ACTIVE 'recording' bar must NOT be dismissed by a stray page click
+    // (its host is pointer-events:none anyway, so clicks pass through to the live app). renderConsent arms this;
+    // renderRecording disarms it. Same effect as Cancel/Escape — finish(null) tears down every track.
+    let backdropDismiss = false
     // #474 (privacy) teardown hook: recordMe owns its own fixed overlay, sibling to the composer modal. If the
     // overlay is dismissed (Attach/Cancel/Re-record), the reporter presses Escape, or the host page navigates
     // away while a recording is ACTIVE, every camera/mic/screen track must stop. finish() is the single exit and
@@ -426,12 +528,21 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); finish(null) }
     }
     const onPageHide = () => { teardownRecorder() }
+    // KLA-620: backdrop pointerdown. host is the full-screen dim layer that centers the card; a pointerdown whose
+    // target is host itself (i.e. OUTSIDE the card) while the consent panel is up dismisses like Cancel. Clicks
+    // landing on the card (or its descendants) have target !== host and are ignored, so the card stays put.
+    const onBackdropDown = (e: PointerEvent) => {
+      if (!backdropDismiss) return
+      if (e.target === host) { e.preventDefault(); e.stopPropagation(); finish(null) }
+    }
+    host.addEventListener('pointerdown', onBackdropDown)
     document.addEventListener('keydown', onKeydown, { capture: true })
     if (typeof window !== 'undefined') { window.addEventListener('pagehide', onPageHide); window.addEventListener('beforeunload', onPageHide) }
     const finish = (val: RecordingAttachment | null) => {
       if (settled) return
       settled = true
       teardownRecorder() // stop any live camera/mic/screen tracks on EVERY exit (cancel/attach/redo/esc/close)
+      host.removeEventListener('pointerdown', onBackdropDown)
       document.removeEventListener('keydown', onKeydown, { capture: true })
       if (typeof window !== 'undefined') { window.removeEventListener('pagehide', onPageHide); window.removeEventListener('beforeunload', onPageHide) }
       try { host.remove() } catch { /* no-op */ }
@@ -445,13 +556,20 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     // Panel 1 — consent-first start.
     const renderConsent = () => {
       setChrome('modal'); emitPhase('consent')
+      backdropDismiss = true // KLA-620: consent panel is a real modal — click-outside dismisses like Cancel
+      card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.setAttribute('aria-label', 'Record a walkthrough')
+      // #639: camera OFF by default (opt-in). The checkbox starts unchecked unless the host opted in via
+      // opts.defaultCamera. #640: an inline tip nudges the reporter to pick "Entire Screen" in the browser's
+      // upcoming share picker so multi-page flows (tab switches) are actually captured.
+      const camChecked = opts.defaultCamera === true ? ' checked' : ''
       card.innerHTML =
         '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Record a walkthrough</div>' +
         '<div style="padding:14px">' +
         '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-screen" checked disabled> Share my <b>screen</b></label>' +
-        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-cam" checked> Camera <span style="font-size:9px;font-weight:800;color:#fff;background:#6366f1;padding:1px 5px;border-radius:999px">optional</span></label>' +
+        `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-cam"${camChecked}> Camera <span style="font-size:9px;font-weight:800;color:#fff;background:#6366f1;padding:1px 5px;border-radius:999px">optional</span></label>` +
         '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-mic" checked> Microphone (narration)</label>' +
         '<div style="display:flex;gap:8px;margin-top:10px"><button id="klr-start" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Start recording</button><button id="klr-cancel" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Cancel</button></div>' +
+        '<p style="font-size:11px;color:#574f45;margin-top:8px;padding:8px;background:#efeadf;border-radius:8px;border:1px solid #e3ddd1">Tip: to capture steps across <b>multiple pages/tabs</b>, choose <b>&quot;Entire Screen&quot;</b> in the next dialog. Sharing a single tab will not follow you when you switch tabs.</p>' +
         `<p style="font-size:11px;color:#574f45;margin-top:8px">Your browser will ask to share a tab/screen. Max ${Math.round(caps.maxDurationMs / 60000)} min. Nothing uploads until you attach it.</p>` +
         '<div id="klr-hint"></div></div>'
       ;(card.querySelector('#klr-cancel') as HTMLButtonElement).onclick = () => finish(null)
@@ -480,7 +598,16 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
         finish(null); return // user dismissed the screen-share picker
       }
       renderRecording(fallbackReason)
-      controller.done.then(async (r) => { renderPreview(await recordingResultToAttachment(r)) })
+      // KLA-602(b): live self-view bubble while recording, ONLY when the camera is genuinely part of the
+      // capture (opt-in via the consent camera checkbox + granted). A denial → cameraStream() is null → no
+      // bubble, no error. Appended to the recorder host so finish()'s host.remove() tears it down.
+      try {
+        const camBubble = startCameraPreview(controller?.cameraStream?.())
+        if (camBubble) host.appendChild(camBubble)
+      } catch { /* preview is a nicety — never let it break capture */ }
+      // KLA-602(a): on stop, resolve the attachment DIRECTLY (no preview/attach gate) — the composer auto-adds
+      // it to the gallery as a selected, removable video tile.
+      controller.done.then(async (r) => { finish(await recordingResultToAttachment(r)) })
     }
 
     // Panel 2 — ACTIVE recording. KLA-555: a NON-BLOCKING compact bar docked bottom-center (Loom/CleanShot
@@ -500,6 +627,8 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
           ? '<div style="padding:0 14px 10px;font-size:11px;color:#574f45">Camera/mic blocked — recording <b>screen only</b>. Narrate by typing, or use the extension.</div>'
           : ''
       setChrome('bar'); emitPhase('recording')
+      backdropDismiss = false // KLA-620: recording is ACTIVE — a stray page click must NOT tear it down
+      card.removeAttribute('role'); card.removeAttribute('aria-modal'); card.removeAttribute('aria-label')
       card.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px">' +
         '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap">' +
@@ -519,21 +648,9 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       ;(card.querySelector('#klr-stop') as HTMLButtonElement).onclick = () => controller?.stop()
     }
 
-    // Panel 3 — preview → attach.
-    const renderPreview = (att: RecordingAttachment) => {
-      setChrome('modal'); emitPhase('preview')
-      card.innerHTML =
-        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Preview</div>' +
-        '<div style="padding:14px">' +
-        `<video src="${att.dataUrl}" controls style="width:100%;border-radius:10px;background:#2a2740;max-height:220px"></video>` +
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">' +
-        '<button id="klr-attach" style="padding:8px 13px;border-radius:8px;border:1px solid #6366f1;background:#6366f1;color:#fff;font-weight:600;cursor:pointer">Attach to report</button>' +
-        '<button id="klr-redo" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Re-record</button>' +
-        `<span style="margin-left:auto;font-size:11px;color:#574f45">${fmtTime(att.durationMs)} · ${fmtMB(att.bytes)}</span></div></div>`
-      ;(card.querySelector('#klr-attach') as HTMLButtonElement).onclick = () => finish(att)
-      ;(card.querySelector('#klr-redo') as HTMLButtonElement).onclick = () => { controller = null; renderConsent() }
-    }
-
+    // KLA-602(a): the old "Panel 3 — preview → attach" is GONE. Stopping the recording resolves the
+    // attachment directly (see begin()'s controller.done handler), and the composer drops it straight into the
+    // gallery as a selected, removable video tile with a Re-record tile action.
     renderConsent()
   })
 }

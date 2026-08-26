@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Shared ticket · Klavity</title>
+<style>
+  :root{--bg:#f6f4f0;--panel:#fff;--ink:#29261f;--mut:#8b857a;--line:#e8e4dc;--pri:#6d5ef0;--pri-d:#5a4be0;--red:#e2445c}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);padding:26px 16px}
+  .wrap{max-width:760px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 28px rgba(35,30,20,.08);overflow:hidden}
+  .head{padding:16px 22px;border-bottom:1px solid var(--line)}
+  .h1{font:600 22px/1.3 Georgia,serif;margin:5px 0 8px}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--mut)}
+  .pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:99px;text-transform:uppercase;background:#fdf1e2;color:#b06a12}
+  .body{padding:20px 22px}
+  .sec-l{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#b6b0a4;margin:18px 0 7px}
+  .shot{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#eceae2}
+  .pic{height:210px;background:linear-gradient(135deg,#dfe6f5,#eef1fa);position:relative}
+  .fakeui{position:absolute;inset:16px;display:flex;flex-direction:column;gap:9px}
+  .bar{height:13px;border-radius:5px;background:#cdd5e8}.bar.s{width:45%}.bar.m{width:70%}.bar.red{background:#f3b0bb}
+  .blur{filter:blur(7px);user-select:none;pointer-events:none}
+  .gate{margin:20px 0 4px;border:1px solid #dcd6fa;background:linear-gradient(180deg,#faf9ff,#f3f1fd);border-radius:14px;padding:22px;text-align:center}
+  .row{display:flex;gap:8px;max-width:380px;margin:10px auto 0}
+  .inp{flex:1;border:1px solid var(--line);border-radius:9px;padding:10px 13px;font:inherit}
+  .btn{padding:10px 16px;border-radius:9px;border:none;background:var(--pri);color:#fff;font-weight:600;cursor:pointer}
+  .btn:hover{background:var(--pri-d)}
+  .fine{font-size:11px;color:#b6b0a4;margin-top:10px}
+  .guestbar{display:flex;gap:11px;align-items:center;background:#f0edfa;border:1px solid #dcd6fa;border-radius:11px;padding:11px 14px;margin-bottom:16px;font-size:13px}
+  .cmt{margin-bottom:12px}.cmt .who{font-weight:600}.cmt .when{color:#b6b0a4;font-size:11px;margin-left:6px}
+  .foot{padding:16px 22px;border-top:1px solid var(--line);background:#fbfaf7;color:var(--mut);font-size:12.5px;display:flex}
+  .foot .cta{margin-left:auto;color:var(--pri-d);font-weight:600;text-decoration:none}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<!-- shared-ticket teaser page -->
+<div class="wrap"><div class="card" id="app" data-ticket="__TICKET_ID__" data-project="__PROJECT_ID__">
+  <div class="head">
+    <div class="h1" id="title">Loading shared ticket…</div>
+    <div class="meta" id="meta"></div>
+  </div>
+  <div class="body" id="bodyEl"></div>
+  <div class="foot">Shared from <b>Klavity</b> · a bug report your team can act on
+    <a class="cta" href="/signup">Create your own free Klavity →</a></div>
+</div></div>
+<script>
+(function(){
+  var REF = document.getElementById("app").getAttribute("data-ticket");
+  var email = "";
+  function h(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"})[c]; }); }
+  function pill(v){ return v ? "<span class=\"pill\">" + h(v) + "</span>" : ""; }
+  function load(){
+    fetch("/api/t/" + encodeURIComponent(REF), { credentials: "include" })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if(!d){ document.getElementById("title").textContent = "This ticket is not available."; return; } render(d); });
+  }
+  function render(d){
+    var t = d.ticket || {};
+    document.getElementById("title").textContent = t.title || "Untitled";
+    document.getElementById("meta").innerHTML = pill(t.status) + pill(t.priority) + pill(t.source) +
+      " <span>" + h(t.commentCount || 0) + " comments</span>";
+    var b = document.getElementById("bodyEl");
+    if (d.access === "full") { b.innerHTML = fullHtml(t); wireComment(); }
+    else { b.innerHTML = teaserHtml(d.access); wireGate(); }
+  }
+  function teaserHtml(access){
+    var pending = access === "pending" ? "<p class=\"fine\">An admin needs to approve you before this unblurs.</p>" : "";
+    return "<div class=\"sec-l\">Screenshot</div>" +
+      "<div class=\"shot\"><div class=\"pic blur\"><div class=\"fakeui\"><div class=\"bar m\"></div><div class=\"bar s\"></div><div class=\"bar red m\"></div><div class=\"bar s\"></div></div></div></div>" +
+      "<div class=\"sec-l\">Description</div>" +
+      "<div class=\"blur\"><p>When I click the button it just spins and nothing happens. I tried several times across browsers. This is placeholder text — the real report is hidden until you unblur.</p></div>" +
+      "<div class=\"gate\"><h3>See the full report and join the conversation</h3>" +
+      "<p class=\"fine\">Enter your email to unblur the screenshot, read the details, and comment. No password — we email you a code.</p>" + pending +
+      "<div class=\"row\"><input class=\"inp\" id=\"emailInp\" placeholder=\"you@company.com\" /><button class=\"btn\" id=\"unlockBtn\">Continue</button></div>" +
+      "<div class=\"row hide\" id=\"otpRow\"><input class=\"inp\" id=\"codeInp\" placeholder=\"6-digit code\" maxlength=\"6\" /><button class=\"btn\" id=\"verifyBtn\">Unlock</button></div>" +
+      "<div class=\"fine\" id=\"gateMsg\">Free forever · viewing this ticket only</div></div>";
+  }
+  function fullHtml(t){
+    var shot = t.screenshotUrl ? "<div class=\"shot\"><img src=\"" + h(t.screenshotUrl) + "\" alt=\"Screenshot\" style=\"max-width:100%;display:block\" /></div>" : "";
+    var comments = (t.comments || []).map(function(c){
+      return "<div class=\"cmt\"><span class=\"who\">" + h(c.author || "Someone") + "</span><span class=\"when\">" + h(new Date(c.createdAt).toLocaleString()) + "</span><div>" + h(c.body) + "</div></div>";
+    }).join("");
+    return "<div class=\"guestbar\">You are viewing as a <b>guest</b> on this ticket.</div>" +
+      "<div class=\"sec-l\">Screenshot</div>" + shot +
+      "<div class=\"sec-l\">Description</div><div><p>" + h(t.description) + "</p></div>" +
+      "<div class=\"sec-l\">Activity</div>" + comments +
+      "<div class=\"row\"><input class=\"inp\" id=\"cmtInp\" placeholder=\"Add a comment…\" /><button class=\"btn\" id=\"cmtBtn\">Send</button></div>" +
+      "<div class=\"fine\" id=\"cmtMsg\"></div>";
+  }
+  function wireGate(){
+    document.getElementById("unlockBtn").onclick = function(){
+      email = (document.getElementById("emailInp").value || "").trim();
+      if (!email || email.indexOf("@") < 0){ document.getElementById("gateMsg").textContent = "Enter a valid email."; return; }
+      fetch("/api/t/" + encodeURIComponent(REF) + "/unlock", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: email }) })
+        .then(function(){ document.getElementById("otpRow").classList.remove("hide"); document.getElementById("gateMsg").textContent = "We sent a code to " + email; });
+    };
+    document.getElementById("verifyBtn").onclick = function(){
+      var code = (document.getElementById("codeInp").value || "").trim();
+      fetch("/api/t/" + encodeURIComponent(REF) + "/verify", { method:"POST", headers:{"Content-Type":"application/json"}, credentials:"include", body: JSON.stringify({ email: email, code: code }) })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){ if (d && d.ok){ location.reload(); } else { document.getElementById("gateMsg").textContent = "Invalid or expired code."; } });
+    };
+  }
+  function wireComment(){
+    var btn = document.getElementById("cmtBtn"); if (!btn) return;
+    btn.onclick = function(){
+      var body = (document.getElementById("cmtInp").value || "").trim(); if (!body) return;
+      fetch("/api/feedback/" + encodeURIComponent(REF) + "/comments", { method:"POST", headers:{"Content-Type":"application/json"}, credentials:"include", body: JSON.stringify({ body: body }) })
+        .then(function(r){ if (r.status === 201){ load(); } else { document.getElementById("cmtMsg").textContent = "Could not post comment."; } });
+    };
+  }
+  load();
+})();
+</script>
+</body>
+</html>

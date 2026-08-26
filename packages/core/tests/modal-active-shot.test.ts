@@ -31,6 +31,29 @@ describe('active shot follows the newest capture', () => {
     ctrl.close()
   })
 
+  it('addCapturedShot selects the newest shot even after silent seeds (region-into-open-composer / reopen)', async () => {
+    // Bug 3: two shots are seeded (fireAdded=false, activeIndex stays 0), then a freshly-captured region
+    // shot arrives via addCapturedShot — it must become the SELECTED/active hero at the END of the strip.
+    const added: string[] = []
+    const ctrl = buildModal('bug', {
+      onCaptureFull: async () => 'x',
+      onSubmit: async () => ({ issueKey: '1', issueUrl: '' }),
+      onShotAdded: (d: string) => added.push(d),
+    })
+    ctrl.addScreenshot('data:image/png;base64,SEED0')
+    ctrl.addScreenshot('data:image/png;base64,SEED1')
+    ctrl.addCapturedShot('data:image/png;base64,REGION', undefined, undefined, false)
+    await new Promise(r => setTimeout(r, 0))
+    const allWraps = qa(ctrl, '.klavity-strip > *')
+    expect(allWraps.length).toBe(3)
+    // The just-captured (last) shot is active; the first seed is not.
+    expect(allWraps[allWraps.length - 1].classList.contains('kl-thumb-active')).toBe(true)
+    expect(allWraps[0].classList.contains('kl-thumb-active')).toBe(false)
+    // addCapturedShot fires onShotAdded (persist); the silent seeds do not.
+    expect(added).toEqual(['data:image/png;base64,REGION'])
+    ctrl.close()
+  })
+
   it('the seed path (controller.addScreenshot, fireAdded=false) keeps activeIndex at 0', async () => {
     const ctrl = buildModal('bug', {
       onCaptureFull: async () => 'x',

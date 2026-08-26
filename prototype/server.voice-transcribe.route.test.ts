@@ -149,3 +149,34 @@ test("per-IP rate limit: window exhausts to 429 for the SAME client IP", async (
   const over = await postVoice({ projectId: PROJ, audio: smallClip() }, ip)
   expect(over.status).toBe(429)
 })
+
+// Memory-DoS hardening: a CHUNKED request (streamed body, NO Content-Length header) that carries an
+// oversized body must be rejected with 413 WITHOUT the server buffering the whole thing. Previously the
+// declaredLen guard read Content-Length (absent on chunked) as 0, passed, and req.formData() buffered the
+// entire multi-chunk body into RAM before the audio.size check. Now readBodyBounded aborts at the ceiling.
+// Kept LAST: aborting the upload mid-stream leaves the client's keep-alive socket undrained, so undici may
+// not reuse it cleanly for a following request — the server behaviour (early 413) is exactly what we want.
+test("a chunked (no Content-Length) oversized body is rejected 413 without an STT call", async () => {
+  sttCalls = 0
+  const CHUNK = new Uint8Array(64 * 1024) // 64KB per chunk
+  const TOTAL = 512 * 1024 // 512KB total — far over VOICE_MAX_BYTES(2KB)+64KB ceiling
+  let sent = 0
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sent >= TOTAL) { controller.close(); return }
+      controller.enqueue(CHUNK)
+      sent += CHUNK.byteLength
+    },
+  })
+  const r = await fetch(`${BASE}/api/voice/transcribe`, {
+    method: "POST",
+    // Streaming body ⇒ chunked transfer-encoding, so NO Content-Length is sent. A boundary is present
+    // but the payload is never a valid/complete multipart — it must be rejected on size, before parse.
+    headers: { "content-type": "multipart/form-data; boundary=----klavtest", "x-forwarded-for": "203.0.113.99" },
+    body: stream,
+    // @ts-ignore — required by fetch when body is a stream (Bun/undici)
+    duplex: "half",
+  })
+  expect(r.status).toBe(413)
+  expect(sttCalls).toBe(0)
+})

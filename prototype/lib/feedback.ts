@@ -49,6 +49,23 @@ export function redactSensitiveParams(urlStr: string): string {
   }
 }
 
+// Matches http(s) URLs embedded in free text (console messages / error stacks). Stops at
+// whitespace, quotes, angle brackets, or a closing paren so a parenthesised stack frame like
+// `at fn (https://x.com/a?token=SECRET:1:2)` doesn't swallow the trailing `)`.
+const EMBEDDED_URL_RE = /https?:\/\/[^\s)<>"'`]+/g
+
+/**
+ * KLA-582 (security): console error messages/stacks routinely embed full request URLs, including
+ * `?token=…`/`?api_key=…`/`?password=…`. Scan a free-text string for embedded http(s) URLs and
+ * redact the sensitive query params of each (via redactSensitiveParams), leaving everything else —
+ * file paths, line/col numbers, error text — intact. Returns the string unchanged when it holds no
+ * URL with a sensitive param, so the common case is allocation-free.
+ */
+export function redactSensitiveUrlsInText(text: string): string {
+  if (!text || text.indexOf('http') === -1) return text
+  return text.replace(EMBEDDED_URL_RE, (m) => redactSensitiveParams(m))
+}
+
 const PERF_TYPES = new Set(['longtask', 'paint', 'resource'])
 
 export function sanitizeClientContext(raw: any): any | null {
@@ -59,11 +76,14 @@ export function sanitizeClientContext(raw: any): any | null {
   if (raw.screenSize) out.screenSize = capStr(raw.screenSize, 40)
   if (raw.viewportSize) out.viewportSize = capStr(raw.viewportSize, 40)
   if (Array.isArray(raw.consoleErrors)) {
+    // KLA-582 (security): redact sensitive URL query params embedded in console message/stack text,
+    // exactly as networkFailures[].url is redacted below. Applied HERE at intake so BOTH the stored
+    // row and the log-file attachment (built from stored ctx) inherit the redaction.
     out.consoleErrors = raw.consoleErrors.slice(0, CTX_MAX_ENTRIES).map((e: any) => ({
-      message: capStr(e?.message),
+      message: redactSensitiveUrlsInText(capStr(e?.message)),
       level: ['log', 'info', 'warn', 'error'].includes(e?.level) ? e.level : 'error',
       timestamp: Number(e?.timestamp) || 0,
-      ...(e?.stack ? { stack: capStr(e.stack) } : {}),
+      ...(e?.stack ? { stack: redactSensitiveUrlsInText(capStr(e.stack)) } : {}),
     }))
   }
   if (Array.isArray(raw.networkFailures)) {
@@ -259,33 +279,11 @@ export function clientContextHtml(ctx: any, opts: { skipIdentity?: boolean } = {
       .map(([k, v]) => `<li>${escapeHtml(String(k))}: ${escapeHtml(String(v))}</li>`).join('')
     parts.push(`<p><strong>User / metadata:</strong></p><ul>${rows}</ul>`)
   }
-  if (Array.isArray(ctx.consoleErrors) && ctx.consoleErrors.length) {
-    // #434: bounded + deduped + errors-prioritized rendering (full array stays in storage).
-    const { lines: cl, omitted } = trimConsoleLines(ctx.consoleErrors)
-    const rows = cl.map((l) => `<li>${escapeHtml(l)}</li>`).join('')
-    const more = omitted > 0 ? `<li>&hellip; ${omitted} more line(s) trimmed</li>` : ''
-    parts.push(`<p><strong>Console (${ctx.consoleErrors.length}):</strong></p><ul>${rows}${more}</ul>`)
-  }
-  if (Array.isArray(ctx.networkFailures) && ctx.networkFailures.length) {
-    // #434: drop analytics/beacon noise, dedupe, cap — keep the real failed requests.
-    const { lines: nl, omitted, dropped } = trimNetworkLines(ctx.networkFailures)
-    const rows = nl.map((l) => `<li>${escapeHtml(l)}</li>`).join('')
-    const notes: string[] = []
-    if (omitted > 0) notes.push(`${omitted} more trimmed`)
-    if (dropped > 0) notes.push(`${dropped} analytics/beacon hidden`)
-    const more = notes.length ? `<li>&hellip; ${escapeHtml(notes.join(', '))}</li>` : ''
-    parts.push(`<p><strong>Network (${ctx.networkFailures.length}):</strong></p><ul>${rows}${more}</ul>`)
-  }
-  if (Array.isArray(ctx.perfEntries) && ctx.perfEntries.length) {
-    const rows = ctx.perfEntries.map((p: any) => {
-      const type = String(p.type || 'resource')
-      const name = escapeHtml(capStr(p.name, 200))
-      const dur = p.durationMs != null && p.durationMs > 0 ? ` ${escapeHtml(String(p.durationMs))}ms` : ''
-      const init = p.initiatorType ? ` [${escapeHtml(String(p.initiatorType))}]` : ''
-      return `<li>[${escapeHtml(type)}]${init} ${name}${dur}</li>`
-    }).join('')
-    parts.push(`<p><strong>Performance (${ctx.perfEntries.length}):</strong></p><ul>${rows}</ul>`)
-  }
+  // KLA-582: the console / network / performance dump used to be rendered here. It was noisy and
+  // low-value inline, so it has moved OUT of the ticket body and into a file attachment instead
+  // (see buildLogAttachmentText + feedbackToTicketPayload). The full arrays stay in storage
+  // (client_context_json) untouched. The body now keeps only the browser/screen + identity/metadata
+  // "key context" fields above.
   return parts.length ? `<hr/>${parts.join('')}` : ''
 }
 
@@ -299,32 +297,68 @@ export function clientContextLines(ctx: any, opts: { skipIdentity?: boolean } = 
   const identityEntries = (ctx.identity && !opts.skipIdentity) ? Object.entries(ctx.identity) : []
   const metaEntries = ctx.metadata ? Object.entries(ctx.metadata) : []
   for (const [k, v] of [...identityEntries, ...metaEntries]) lines.push(`${k}: ${v}`)
-  if (Array.isArray(ctx.consoleErrors) && ctx.consoleErrors.length) {
-    // #434: bounded + deduped + errors-prioritized rendering (full array stays in storage).
-    const { lines: cl, omitted } = trimConsoleLines(ctx.consoleErrors)
-    lines.push(`Console (${ctx.consoleErrors.length}):`)
-    for (const l of cl) lines.push(`  ${l}`)
-    if (omitted > 0) lines.push(`  … ${omitted} more line(s) trimmed`)
-  }
-  if (Array.isArray(ctx.networkFailures) && ctx.networkFailures.length) {
-    // #434: drop analytics/beacon noise, dedupe, cap — keep the real failed requests.
-    const { lines: nl, omitted, dropped } = trimNetworkLines(ctx.networkFailures)
-    lines.push(`Network (${ctx.networkFailures.length}):`)
-    for (const l of nl) lines.push(`  ${l}`)
-    const notes: string[] = []
-    if (omitted > 0) notes.push(`${omitted} more trimmed`)
-    if (dropped > 0) notes.push(`${dropped} analytics/beacon hidden`)
-    if (notes.length) lines.push(`  … ${notes.join(', ')}`)
-  }
-  if (Array.isArray(ctx.perfEntries) && ctx.perfEntries.length) {
-    lines.push(`Performance (${ctx.perfEntries.length}):`)
-    for (const p of ctx.perfEntries) {
-      const dur = p.durationMs != null && p.durationMs > 0 ? ` ${p.durationMs}ms` : ''
-      const init = p.initiatorType ? ` [${p.initiatorType}]` : ''
-      lines.push(`  [${p.type || 'resource'}]${init} ${capStr(p.name, 200)}${dur}`)
+  // KLA-582: console / network / performance logs no longer render into the ticket body — they
+  // travel as a file attachment instead (see buildLogAttachmentText + feedbackToTicketPayload).
+  // The full arrays stay in storage untouched; this body keeps only the browser/env + identity fields.
+  return lines
+}
+
+// ── KLA-582: console/network logs → file attachment ──
+// The captured console + network (+ performance) logs used to be dumped inline into every ticket body,
+// which was noisy and low-signal. They now travel as a single text-file attachment on the ticket (both
+// the Klavity ticket and the exported Jira/Plane/etc. issue) so a dev can still open the FULL capture —
+// no readability cap needed in a file, so this renders every captured entry (arrays are already bounded
+// to CTX_MAX_ENTRIES and sensitive URL params redacted at intake). Returns null when there's nothing to
+// attach so the caller can skip the attachment entirely.
+export const LOG_ATTACHMENT_FILENAME = 'console-network-logs.txt'
+
+function fmtTs(ts: any): string {
+  const n = Number(ts)
+  if (!n || !isFinite(n) || n <= 0) return ''
+  try { return new Date(n).toISOString() } catch { return '' }
+}
+
+export function buildLogAttachmentText(ctx: any): string | null {
+  if (!ctx || typeof ctx !== 'object') return null
+  const consoleErrors = Array.isArray(ctx.consoleErrors) ? ctx.consoleErrors : []
+  const networkFailures = Array.isArray(ctx.networkFailures) ? ctx.networkFailures : []
+  const perfEntries = Array.isArray(ctx.perfEntries) ? ctx.perfEntries : []
+  if (!consoleErrors.length && !networkFailures.length && !perfEntries.length) return null
+  const out: string[] = []
+  out.push('Console / network logs captured with this Klavity bug report.')
+  if (ctx.pageUrl) out.push(`Page: ${capStr(ctx.pageUrl, 1000)}`)
+  if (ctx.userAgent) out.push(`Browser: ${capStr(ctx.userAgent, 500)}`)
+  if (consoleErrors.length) {
+    out.push('')
+    out.push(`=== Console (${consoleErrors.length}) ===`)
+    for (const e of consoleErrors) {
+      const level = ['log', 'info', 'warn', 'error'].includes(e?.level) ? e.level : 'error'
+      const ts = fmtTs(e?.timestamp)
+      // KLA-582 (security): stored ctx is already redacted at intake (sanitizeClientContext), but
+      // redact here too so a raw/unsanitized ctx can never leak `?token=…` into the attachment file.
+      out.push(`${ts ? ts + ' ' : ''}[${level}] ${redactSensitiveUrlsInText(capStr(e?.message ?? ''))}`)
+      if (e?.stack) for (const sl of redactSensitiveUrlsInText(capStr(e.stack)).split('\n')) out.push(`    ${sl}`)
     }
   }
-  return lines
+  if (networkFailures.length) {
+    out.push('')
+    out.push(`=== Network (${networkFailures.length}) ===`)
+    for (const n of networkFailures) {
+      const ts = fmtTs(n?.timestamp)
+      const dur = n?.durationMs != null ? ` (${Number(n.durationMs) || 0}ms)` : ''
+      out.push(`${ts ? ts + ' ' : ''}${capStr(n?.method || 'GET', 10)} ${capStr(n?.url ?? '', 1000)} → ${Number(n?.status) || 0}${dur}`)
+    }
+  }
+  if (perfEntries.length) {
+    out.push('')
+    out.push(`=== Performance (${perfEntries.length}) ===`)
+    for (const p of perfEntries) {
+      const dur = p?.durationMs != null && p.durationMs > 0 ? ` ${Number(p.durationMs) || 0}ms` : ''
+      const init = p?.initiatorType ? ` [${capStr(p.initiatorType, 30)}]` : ''
+      out.push(`[${capStr(p?.type || 'resource', 30)}]${init} ${capStr(p?.name, 1000)}${dur}`)
+    }
+  }
+  return out.join('\n')
 }
 
 export function buildIssueHtml(description: string, pageUrl: string, imageUrls: string[], clientContext?: any, sourceReferrer?: string): string {

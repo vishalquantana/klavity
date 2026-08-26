@@ -10,13 +10,34 @@ export class VoiceInput {
   private _timer: ReturnType<typeof setTimeout> | null = null
   private _retryTimer: ReturnType<typeof setTimeout> | null = null
   private _recording = false
-  // KLAVITYKLA-495: the browser Web Speech backend (Google's server for webkitSpeechRecognition) drops with
-  // an 'error: network' fairly often in injected-widget contexts. Rather than surface a bare "lost
-  // connection" on the first blip, auto-retry a couple of times before giving up.
-  private _retries = 0
-  private _retrying = false
-  private static readonly MAX_RETRIES = 2
-  private static readonly RETRY_DELAY_MS = 500
+  private _stopping = false
+  private _stopFired = false
+  private _showedReconnecting = false
+  // KLA-590: the browser Web Speech backend (Google's server for webkitSpeechRecognition) is fundamentally
+  // unstable in injected-widget contexts — it drops with 'error: network', auto-ends after ~60s, and fires
+  // 'no-speech' on any pause. The old model (MAX_RETRIES=2, fixed 500ms, counter reset only on a result,
+  // and a HARD STOP on 'no-speech'/unexpected onend) surfaced "Voice disconnected — tap Voice to try again"
+  // on the first pause or blip — the founder repro.
+  //
+  // Ported from Mevak's deepgramStream reconnect model: treat recognition as a PERSISTENT session that
+  // auto-restarts through silence, unexpected ends, and transient errors. All recovery is funneled through
+  // a single onend handler (mirroring Mevak funnelling recovery through ws.onclose). Only CONSECUTIVE real
+  // failures count toward giving up, with exponential backoff, and the budget resets the moment recognition
+  // (re)connects — so a healthy long session with the odd blip never surfaces a scary message. A benign
+  // silence/auto-end restarts near-instantly (analogous to Mevak's continuous-PCM keepalive holding the
+  // socket open through silence). This is CLIENT-side recovery of the browser backend — no Klavity server.
+  private _consecFailures = 0
+  private static readonly MAX_CONSEC_FAILURES = 6
+  private static readonly BASE_BACKOFF_MS = 400
+  private static readonly MAX_BACKOFF_MS = 8000
+  private static readonly BENIGN_RESTART_MS = 250
+  private static readonly SESSION_MS = 180000
+  // Unrecoverable errors — surface immediately, no reconnect (a dead mic/denied permission won't heal).
+  private static readonly TERMINAL_ERRORS: Record<string, string> = {
+    'not-allowed': 'Microphone access was denied',
+    'service-not-allowed': 'Microphone access was denied',
+    'audio-capture': 'No microphone was found',
+  }
 
   static isSupported(): boolean {
     return typeof window !== 'undefined' &&
@@ -26,15 +47,18 @@ export class VoiceInput {
   start() {
     if (this._recording || !VoiceInput.isSupported()) return
     this._recording = true
-    this._retries = 0
-    this._retrying = false
-    // Overall session cap spans across any retries — set once here, cleared on stop.
-    this._timer = setTimeout(() => this.stop(), 180000)
+    this._stopping = false
+    this._stopFired = false
+    this._showedReconnecting = false
+    this._consecFailures = 0
+    // Overall session cap spans across every auto-restart — set once here, cleared on stop.
+    this._timer = setTimeout(() => this.stop(), VoiceInput.SESSION_MS)
     this._begin()
   }
 
-  // Spin up a fresh SpeechRecognition instance. Called on start() and again on each auto-retry so a
-  // dropped connection reconnects transparently while _recording stays true.
+  // Spin up a fresh SpeechRecognition instance. Called on start() and again on every auto-restart (a
+  // silence timeout, an unexpected end, or a reconnect after a transient error) so a dropped backend
+  // reconnects transparently while _recording stays true.
   private _begin() {
     if (!this._recording) return
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
@@ -43,50 +67,82 @@ export class VoiceInput {
     rec.continuous = true
     rec.interimResults = false
     rec.lang = (typeof document !== 'undefined' && document.documentElement.lang) || 'en-US'
+    // A successful (re)start means the backend is healthy — clear the failure budget + any status row.
+    rec.onstart = () => { this._recovered() }
     rec.onresult = (event: any) => {
-      // A real result means the connection recovered — reset the retry budget and clear any status.
-      if (this._retries > 0) { this._retries = 0; this.onStatus('idle', '') }
+      this._recovered()
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) this.onTranscript(event.results[i][0].transcript)
       }
     }
     rec.onerror = (event: any) => {
-      if (event.error === 'no-speech') { this.stop(); return }
-      // KLAVITYKLA-495: 'network' (and 'aborted') are transient — try to reconnect a couple of times before
-      // surfacing an error. onend fires right after onerror; we flag _retrying so onend restarts instead of
-      // stopping. This is a CLIENT-side recovery of the browser speech backend — no Klavity server involved.
-      if ((event.error === 'network' || event.error === 'aborted') && this._retries < VoiceInput.MAX_RETRIES) {
-        this._retries++
-        this._retrying = true
-        this.onStatus('retrying', 'Reconnecting voice…')
+      if (this._stopping || !this._recording) return
+      const err = event?.error
+      // Unrecoverable → surface and stop (reconnecting can't fix a denied/absent mic).
+      if (err && err in VoiceInput.TERMINAL_ERRORS) {
+        this.onError(err, VoiceInput.TERMINAL_ERRORS[err])
+        this._teardown()
         return
       }
-      const msgs: Record<string, string> = {
-        'not-allowed': 'Microphone access was denied',
-        'network': 'Voice disconnected — tap Voice to try again',
+      // 'no-speech' is a silence timeout, NOT a failure: onend follows and we auto-restart to keep listening
+      // through the pause. Don't count it, don't alarm the user. Every other error (network/aborted/…) is
+      // transient — count it (a genuinely dead connection eventually gives up) and show a soft reconnect note.
+      if (err && err !== 'no-speech') {
+        this._consecFailures++
+        if (!this._showedReconnecting) { this._showedReconnecting = true; this.onStatus('retrying', 'Reconnecting voice…') }
       }
-      this.onError(event.error, msgs[event.error] ?? '')
-      this.stop()
+      // onend fires right after onerror → the single reconnect funnel below handles the restart/give-up.
     }
+    // Single reconnect funnel (mirrors Mevak funnelling all recovery through ws.onclose): fired after a
+    // normal end, a silence timeout, or an error. While still recording we auto-restart; only a sustained
+    // run of consecutive failures surfaces the terminal message.
     rec.onend = () => {
-      if (this._retrying) {
-        this._retrying = false
-        this._recognition = null
-        // Brief backoff, then reconnect if the user hasn't stopped in the meantime.
-        this._retryTimer = setTimeout(() => { this._retryTimer = null; this._begin() }, VoiceInput.RETRY_DELAY_MS)
+      this._recognition = null
+      if (this._stopping || !this._recording) { this._emitStop(); return }
+      if (this._consecFailures > VoiceInput.MAX_CONSEC_FAILURES) {
+        // Genuinely dead (a sustained outage across the whole backoff window) → soft terminal message.
+        this.onError('network', 'Voice disconnected — tap Voice to try again')
+        this._teardown()
         return
       }
-      if (this._recording) { this._recording = false; this._clearTimers(); this._recognition = null; this.onStop() }
+      // Near-instant restart on a benign silence/auto-end; exponential backoff on real failures.
+      const delay = this._consecFailures === 0
+        ? VoiceInput.BENIGN_RESTART_MS
+        : Math.min(VoiceInput.MAX_BACKOFF_MS, VoiceInput.BASE_BACKOFF_MS * 2 ** (this._consecFailures - 1))
+      this._retryTimer = setTimeout(() => { this._retryTimer = null; this._begin() }, delay)
     }
-    rec.start()
+    try { rec.start() } catch { /* start() on an already-live instance throws — ignore */ }
+  }
+
+  // Recognition (re)connected — clear the consecutive-failure budget and any reconnecting status.
+  private _recovered() {
+    this._consecFailures = 0
+    if (this._showedReconnecting) { this._showedReconnecting = false; this.onStatus('idle', '') }
   }
 
   stop() {
     if (!this._recording) return
     this._recording = false
-    this._retrying = false
+    this._stopping = true
     this._clearTimers()
-    if (this._recognition) { this._recognition.onend = null; this._recognition.stop(); this._recognition = null }
+    // Ask the backend to stop; its onend fires _emitStop() (guarded against a double-fire). If there's no
+    // live instance (already ended between segments), finish now.
+    if (this._recognition) { try { this._recognition.stop() } catch { /* no-op */ } }
+    this._emitStop()
+  }
+
+  // Tear down after an unrecoverable error (no user stop): release + notify exactly once.
+  private _teardown() {
+    this._recording = false
+    this._stopping = true
+    this._clearTimers()
+    this._recognition = null
+    this._emitStop()
+  }
+
+  private _emitStop() {
+    if (this._stopFired) return
+    this._stopFired = true
     this.onStop()
   }
 
@@ -182,8 +238,9 @@ export class LiveDictation {
     if (this._recording) return
     this._recording = true
     this._firstSegment = true
+    let stream: any
     try {
-      this._stream = await this._deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      stream = await this._deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     } catch (e: any) {
       this._recording = false
       const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
@@ -191,6 +248,16 @@ export class LiveDictation {
       this.onStop()
       return
     }
+    // getUserMedia is async (it shows the browser's mic-permission prompt). If the user pressed Stop while
+    // that prompt was open, stop() already ran (_recording flipped false, onStop fired) BEFORE the grant
+    // resolved here — so continuing would open a mic that never gets released (a zombie stream + a live
+    // session timer) and surface no transcript. Release the just-granted stream and bail. Founder-repro:
+    // "clicked Voice, nothing worked" when they re-clicked before the permission grant landed.
+    if (!this._recording) {
+      try { stream?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ }
+      return
+    }
+    this._stream = stream
     this._mime = pickDictationMime(this._deps)
     try {
       this._recorder = this._mime

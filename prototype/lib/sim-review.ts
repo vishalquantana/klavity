@@ -11,7 +11,8 @@
 //   3. RECURRING-ISSUE MEMORY (KLA-2): deduped reactions carry a RecurrenceMemory so the
 //      client knows "this was already filed by Alice 3 days ago."
 import type { Client } from "@libsql/client"
-import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents, incrementUsageMeter } from "./db"
+import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
+import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { issueKeyFor, chooseDedup } from "./dedup"
 import { classifySimObservation } from "./sim-bug-classify"
@@ -410,6 +411,18 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     // meter real work.
     if (rawReactions.length > 0) {
       void incrementUsageMeter({ metric: "sim_review", projectId, actorEmail })
+      // KLAVITY CREDITS (Phase 1, SOFT): meter one "sim" review (15cr) alongside the usage meter.
+      // Fire-safe — wrapped so a credits failure never throws into the Sim pipeline; soft mode only logs.
+      void (async () => {
+        try {
+          const wsId = await accountIdForAiCall(projectId, null, actorEmail ?? null)
+          if (wsId) {
+            const rv = await reserveCredits(wsId, "sim", { plan: await accountPlan(wsId), actorEmail: actorEmail ?? null })
+            if (rv.wouldBlock) console.log(`[credits] sim wouldBlock ws=${wsId} (soft)`)
+            await rv.settle({ ok: true, aiCallId: null })
+          }
+        } catch (e: any) { console.warn("[credits] sim reserve skipped (non-fatal):", e?.message || e) }
+      })()
       // Quota signal (KLAVITYKLA-306): read-only degrade check — non-blocking, ship-dark.
       // When KLAV_ENFORCE_QUOTA is off (default) this always returns allow=true and has no effect.
       // When the flag is on, the degraded flag is available for the caller to act on.
