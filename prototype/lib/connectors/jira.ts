@@ -2,6 +2,7 @@ import type { Connector, TicketPayload, TicketAttachment, ExportResult, CommentS
 import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
 import { selectAttachmentsWithinCaps } from "./attach-caps"
+import { UpstreamTrackerError } from "./errors"
 import { applyStateMap, applyLabelMap, type UnresolvedMapping } from "./mapping-failsafe"
 
 // Klavity->Jira #414: base64 Basic-auth credential for the Jira REST API from the connector config.
@@ -292,7 +293,8 @@ export const jiraConnector: Connector = {
       const text = (await res.text().catch(() => "")).slice(0, 500)
       const reason = redactSecrets(jiraErrorReason(text))
       console.error(`jira create-issue upstream error ${res.status}: ${reason}`)
-      const err = new Error(`tracker request failed (HTTP ${res.status})`)
+      // KLA-724: typed 4xx/5xx classification. Keeps the historical message + upstream* diagnosis props.
+      const err = new UpstreamTrackerError(res.status, redactSecrets(text))
       ;(err as any).upstreamStatus = res.status
       ;(err as any).upstreamBody = redactSecrets(text)
       ;(err as any).upstreamReason = reason
@@ -503,7 +505,7 @@ export const jiraConnector: Connector = {
     if (!res.ok) {
       const t = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
       console.error(`jira issuetypes error ${res.status}: ${t}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, t)
     }
     const json = await res.json()
     const arr: any[] = Array.isArray(json) ? json : (json?.values ?? json?.issueTypes ?? [])
@@ -524,7 +526,7 @@ export const jiraConnector: Connector = {
     if (!res.ok) {
       const t = redactSecrets((await res.text().catch(() => "")).slice(0, 200))
       console.error(`jira statuses error ${res.status}: ${t}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, t)
     }
     const json = await res.json()
     const seen = new Set<string>()

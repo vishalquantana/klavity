@@ -196,7 +196,14 @@ test("POST /connectors/meta with cid alone (no posted config) still resolves the
     cid: editCid,
     config: {},
   })
-  // Stored host is unreachable (DEAD_JIRA_HOST returns 404 for every path), so with no overlay
-  // the request should fail to find matching capabilities rather than silently succeed elsewhere.
-  expect(r.status).toBe(502)
+  // Stored host is unreachable (DEAD_JIRA_HOST returns 404 for every path), so with no overlay the
+  // request resolves the stored decrypted config and hits that dead host rather than silently
+  // succeeding elsewhere. KLA-724: an upstream 404 is a user-fixable config error, so it now surfaces
+  // as a SPECIFIC validation message (HTTP 200, {ok:false, code:404}) — NOT a 502 that pages on-call.
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.ok).toBe(false)
+  expect(d.code).toBe(404)
+  // Proof the stored (dead) host was used, not JIRA_HOST: no capabilities/issue types came back.
+  expect(d.issueTypes).toBeUndefined()
 })

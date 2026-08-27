@@ -11387,9 +11387,14 @@ async function renderConnectorMapping(type, config) {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   }).catch(() => null)
-  const d = (r && r.ok) ? await r.json().catch(() => null) : null
+  // KLA-724: a friendly upstream-4xx validation error is returned as HTTP 200 {ok:false,error,code}
+  // (bad token / wrong workspace/project) — parse the body even so we can surface the specific,
+  // self-fixable message instead of the generic fallback.
+  const d = r ? await r.json().catch(() => null) : null
   if (!d || !d.rows) {
-    wrap.innerHTML = `<div class="conn-result err">${kicon('x')} Couldn't load field mapping — you can still connect; Klavity's defaults will be used.</div>`
+    const specific = (d && d.ok === false && d.error) ? esc(d.error)
+      : "Couldn't load field mapping — you can still connect; Klavity's defaults will be used."
+    wrap.innerHTML = `<div class="conn-result err">${kicon('x')} ${specific}</div>`
     updateConnMapGate()
     return
   }

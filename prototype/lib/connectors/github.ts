@@ -3,6 +3,7 @@ import { safeFetch } from "../safe-fetch"
 import { resolveIssueType } from "./resolve-issue-type"
 import { applyLabelMap } from "./mapping-failsafe"
 import { inlineLogAttachmentIntoBody } from "./inline-log-fallback"
+import { UpstreamTrackerError } from "./errors"
 
 // Connector-field-mapping: overridable via KLAV_GITHUB_API so tests can point this at a loopback
 // fake. Read lazily (a function, not a module-level const) because bun's test runner shares one
@@ -122,7 +123,7 @@ export const githubConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`github upstream error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, text)
     }
 
     const json = await res.json()
@@ -271,7 +272,7 @@ export const githubConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`github listIssues error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, text)
     }
 
     const json = await res.json()
@@ -319,7 +320,7 @@ export const githubConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`github labels error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, text)
     }
     const json = await res.json()
     const rows: any[] = Array.isArray(json) ? json : []

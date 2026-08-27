@@ -311,6 +311,8 @@ export interface Connector {
 // details). Re-exported here for back-compat with existing callers/tests that import from "./index".
 export { parseJsonMap, resolveIssueType } from "./resolve-issue-type"
 export type { IssueKind } from "./resolve-issue-type"
+// KLA-724: typed upstream-tracker error + classifier (leaf module ./errors, cycle-safe like above).
+export { UpstreamTrackerError, classifyUpstreamError } from "./errors"
 
 // ── Registry ───────────────────────────────────────────────────────────────────
 

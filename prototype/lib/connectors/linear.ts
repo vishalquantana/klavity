@@ -2,6 +2,7 @@ import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUp
 import { safeFetch } from "../safe-fetch"
 import { resolveIssueType } from "./resolve-issue-type"
 import { applyLabelMap } from "./mapping-failsafe"
+import { UpstreamTrackerError } from "./errors"
 
 // Connector-field-mapping: overridable via KLAV_LINEAR_API so tests can point this at a loopback
 // fake (Linear has no sandbox). Prod always uses the real api.linear.app/graphql default. Read
@@ -193,7 +194,7 @@ export const linearConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`linear upstream error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, text)
     }
 
     const json = await res.json()
@@ -386,7 +387,7 @@ export const linearConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`linear listIssues error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, text)
     }
 
     const json = await res.json()

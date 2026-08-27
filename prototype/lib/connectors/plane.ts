@@ -2,6 +2,7 @@ import type { Connector, TicketPayload, ExportResult, CommentSyncResult, FieldUp
 import { resolveIssueType } from "./resolve-issue-type"
 import { safeFetch } from "../safe-fetch"
 import { applyStateMap, applyLabelMap, resolveOptionByName, type UnresolvedMapping } from "./mapping-failsafe"
+import { UpstreamTrackerError } from "./errors"
 
 // KLA-551: best-effort fetch of a Plane project's states (id+name), for resolving a configured
 // default-status NAME to its UUID at create time. Returns null on any failure so a states-lookup
@@ -141,7 +142,9 @@ export const planeConnector: Connector = {
     if (!res.ok) {
       const text = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`plane upstream error ${res.status}: ${text}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      // KLA-724: typed so the connector test/meta handlers can tell a user-config 4xx (bad token /
+      // wrong workspace/project) from a real backend outage and NOT page on-call for a typo.
+      throw new UpstreamTrackerError(res.status, text)
     }
 
     const json = await res.json()
@@ -423,7 +426,7 @@ export const planeConnector: Connector = {
     if (!res.ok) {
       const t = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`plane states error ${res.status}: ${t}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, t)
     }
     const data = await res.json()
     const rows = Array.isArray(data) ? data : (data?.results ?? [])
@@ -445,7 +448,7 @@ export const planeConnector: Connector = {
     if (!res.ok) {
       const t = (await res.text().catch(() => "")).slice(0, 200)
       console.error(`plane labels error ${res.status}: ${t}`)
-      throw new Error(`tracker request failed (HTTP ${res.status})`)
+      throw new UpstreamTrackerError(res.status, t)
     }
     const data = await res.json()
     const rows = Array.isArray(data) ? data : (data?.results ?? [])

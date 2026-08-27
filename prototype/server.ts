@@ -29,7 +29,7 @@ import { recordClientError, type ClientError } from "./lib/client-error-ticket"
 import { deriveActivation, type ActivationSignals } from "./lib/activation"
 import { issueKeyFor, chooseDedup, humanReportIssueKeyFor } from "./lib/dedup"
 import { classifySimObservation } from "./lib/sim-bug-classify"
-import { getConnector, listConnectorTypes, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
+import { getConnector, listConnectorTypes, classifyUpstreamError, type TicketPayload, type TicketAttachment } from "./lib/connectors/index"
 import { inboundSupported, verifyGithubSignature, verifyLinearSignature, extractExternalKey, mapExternalStatus } from "./lib/connectors/inbound"
 import { pushCommentToLinkedIssues } from "./lib/connectors/comment-sync"
 import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
@@ -11769,6 +11769,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               await cleanupTestIssue(adapter, result.externalKey, config)
               return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
             } catch (e: any) {
+              // KLA-724: an EXPECTED upstream 4xx (bad token / wrong workspace / wrong project) is a
+              // user config error, not a backend incident — return a specific, self-fixable message and
+              // do NOT page on-call / auto-file a junk ticket. Only real backend problems hit oops().
+              const upstream = classifyUpstreamError(e)
+              if (upstream) return json({ ok: false, error: upstream.friendly, code: upstream.code })
               // A10: never echo guard/upstream/internal text — generic message + logged correlation id.
               const o = oops(e, "connector-test")
               return json({ ok: false, error: o.error, id: o.id })
@@ -11831,6 +11836,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               for (const r of statusRows) if (r.suggested) status_map[r.key] = r.suggested
               return json({ capabilities: caps, issueTypes, statuses, rows: { types: typeRows, statuses: statusRows }, suggested: { issue_type_map, status_map } })
             } catch (e: any) {
+              // KLA-724: an EXPECTED upstream 4xx (bad token / wrong workspace / wrong project) while
+              // fetching issue types/statuses is a user config error — return a specific message (HTTP
+              // 200 so the client can read it) and do NOT page on-call / auto-file a ticket. Only a real
+              // backend problem (5xx / network) hits oops().
+              const upstream = classifyUpstreamError(e)
+              if (upstream) return json({ ok: false, error: upstream.friendly, code: upstream.code })
               // A10: never echo guard/upstream/internal text — generic message + logged correlation id.
               const o = oops(e, "connector-meta")
               return json({ ok: false, error: o.error, id: o.id }, 502)
@@ -11860,6 +11871,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               await cleanupTestIssue(adapter, result.externalKey, decryptedConfig)
               return json({ ok: true, externalKey: result.externalKey, externalUrl: result.externalUrl })
             } catch (e: any) {
+              // KLA-724: EXPECTED upstream 4xx = user config error → specific message, no on-call page /
+              // junk ticket. Only real backend problems (5xx / network) hit oops().
+              const upstream = classifyUpstreamError(e)
+              if (upstream) return json({ ok: false, error: upstream.friendly, code: upstream.code })
               // A10: generic message + logged correlation id (no guard/upstream leak).
               const o = oops(e, "connector-test")
               return json({ ok: false, error: o.error, id: o.id })
