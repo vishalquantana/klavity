@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test"
-import { resolveOgType, renderOgCardHtml, injectOgMeta, escapeHtml, type OgCardData } from "./og-card"
+import { resolveOgType, renderOgCardHtml, injectOgMeta, escapeHtml, safeHexColor, type OgCardData } from "./og-card"
 
 describe("resolveOgType — type resolver mapping (KLA-738)", () => {
   test("human: report_type=bug + human provenance (no sim_id, human source)", () => {
@@ -88,6 +88,37 @@ describe("renderOgCardHtml — templates render without throwing (KLA-738)", () 
 
   test("escapeHtml handles quotes/amp/lt/gt", () => {
     expect(escapeHtml(`a<b>&"'`)).toBe("a&lt;b&gt;&amp;&quot;&#39;")
+  })
+
+  // ── KLA-739 C2-4 (SSRF): the Sim accent is a CSS-context value. A stored accent crafted to break out
+  // of the CSS `background:` value must NOT reach the rendered document as a live CSS token — otherwise
+  // headless Chromium would fetch the attacker's internal URL (Codex's live probe). NEG-CONTROL: against
+  // the pre-fix template (which interpolated the raw/HTML-escaped accent), the crafted url(...) survives
+  // and this test FAILS.
+  test("C2-4: crafted Sim accent produces NO url()/http token in the rendered CSS (no outbound fetch)", () => {
+    const evil = "red);background-image:url(http://127.0.0.1:9/x);/*"
+    const html = renderOgCardHtml({
+      type: "sim", ticketKey: "K-9", title: "t", finding: "f",
+      severity: null, simName: "S", simRole: null, initials: "S", accent: evil,
+    })
+    // The malicious CSS payload must be fully neutralized — no url(), no attacker host, anywhere.
+    expect(html).not.toContain("url(http")
+    expect(html.toLowerCase()).not.toContain("127.0.0.1")
+    expect(html).not.toContain("background-image:url")
+    // And the accent that DID render is a strict hex (the safe fallback).
+    expect(html).toContain("#8b5cf6")
+  })
+
+  test("safeHexColor: passes strict #RRGGBB/#RGB, rejects everything else to the fallback", () => {
+    expect(safeHexColor("#8b5cf6")).toBe("#8b5cf6")
+    expect(safeHexColor("#abc")).toBe("#abc")
+    expect(safeHexColor("#ABC123")).toBe("#ABC123")
+    expect(safeHexColor("red);url(http://x)")).toBe("#8b5cf6")
+    expect(safeHexColor("rgb(1,2,3)")).toBe("#8b5cf6")
+    expect(safeHexColor("")).toBe("#8b5cf6")
+    expect(safeHexColor(null)).toBe("#8b5cf6")
+    expect(safeHexColor("javascript:alert(1)")).toBe("#8b5cf6")
+    expect(safeHexColor("#12345")).toBe("#8b5cf6") // wrong length
   })
 })
 

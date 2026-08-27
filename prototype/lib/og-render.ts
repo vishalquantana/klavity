@@ -34,34 +34,64 @@ export function ogS3Key(ref: string, version?: string | number | null): string {
   return v ? `og/${safeRef}-${v}.png` : `og/${safeRef}.png`
 }
 
+// Minimal structural seams over the Playwright browser/context/page so the render+timeout+kill logic
+// is unit-testable with a fake browser (no real Chromium). Only the members we actually call.
+export interface OgPageLike {
+  setContent(html: string, opts?: any): Promise<void>
+  evaluate(fn: any): Promise<any>
+  screenshot(opts?: any): Promise<Uint8Array | ArrayBuffer | Buffer>
+}
+export interface OgContextLike { newPage(): Promise<OgPageLike>; close(): Promise<void> }
+export interface OgBrowserLike { newContext(opts?: any): Promise<OgContextLike>; close(): Promise<void> }
+
+/**
+ * Core render: build a page, screenshot it, race against a hard deadline — and CRITICALLY, on timeout
+ * (or any error) actively CLOSE the browser (KLA-739 C2-3). The previous Promise.race left the losing
+ * render() promise — and its Chromium process — alive when the deadline fired, so a hung render leaked a
+ * browser and (because withPdfSlot is a single serialized slot shared with PDF/AutoSim) could wedge the
+ * whole box. The `finally` here guarantees the browser is torn down whether we win, time out, or throw.
+ * Injectable `launch` + `deadlineMs` make this hermetically testable with a fake, hanging browser.
+ */
+export async function renderOgPngWith(
+  html: string,
+  launch: () => Promise<OgBrowserLike>,
+  deadlineMs = 20_000,
+): Promise<Uint8Array> {
+  let browser: OgBrowserLike | null = null
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const render = async (): Promise<Uint8Array> => {
+    browser = await launch()
+    const context = await browser.newContext({
+      viewport: { width: OG_WIDTH, height: OG_HEIGHT },
+      deviceScaleFactor: OG_SCALE,
+    })
+    const page = await context.newPage()
+    await page.setContent(html, { waitUntil: "domcontentloaded" })
+    // Wait for any <img>/font settle so gradients+emoji paint before the shot (best-effort).
+    await page.evaluate(() => (document as any).fonts?.ready).catch(() => {})
+    const buf = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: OG_WIDTH, height: OG_HEIGHT } })
+    await context.close().catch(() => {})
+    return new Uint8Array(buf as any)
+  }
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("OG render timed out (20s)")), deadlineMs)
+  })
+  try {
+    return await Promise.race([render(), deadline])
+  } finally {
+    if (timer) clearTimeout(timer)
+    // Single-browser invariant: kill Chromium on the winning path AND on timeout/error (no leak).
+    if (browser) { try { await browser.close() } catch { /* already gone */ } }
+  }
+}
+
 /** Render an OG-card HTML document to a PNG at 1200×630 @2x. Mirrors the PDF render path. */
 export async function renderOgPng(html: string): Promise<Uint8Array> {
   const { withPdfSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
   const { chromium } = await import("playwright")
-  return withPdfSlot(async () => {
-    const deadline = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("OG render timed out (20s)")), 20_000),
-    )
-    const render = async (): Promise<Uint8Array> => {
-      const browser = await chromium.launch({ headless: true, args: CHROMIUM_PROD_ARGS })
-      try {
-        const context = await browser.newContext({
-          viewport: { width: OG_WIDTH, height: OG_HEIGHT },
-          deviceScaleFactor: OG_SCALE,
-        })
-        const page = await context.newPage()
-        await page.setContent(html, { waitUntil: "domcontentloaded" })
-        // Wait for any <img>/font settle so gradients+emoji paint before the shot (best-effort).
-        await page.evaluate(() => (document as any).fonts?.ready).catch(() => {})
-        const buf = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: OG_WIDTH, height: OG_HEIGHT } })
-        await context.close()
-        return new Uint8Array(buf)
-      } finally {
-        await browser.close()
-      }
-    }
-    return Promise.race([render(), deadline])
-  })
+  return withPdfSlot(async () =>
+    renderOgPngWith(html, () => chromium.launch({ headless: true, args: CHROMIUM_PROD_ARGS }) as unknown as Promise<OgBrowserLike>),
+  )
 }
 
 // ── default card (prebuilt so the cache-miss path is INSTANT) ────────────────────────────────────
@@ -100,20 +130,31 @@ export function prewarmDefaultOgCard(): void {
 // ── background render queue (dedup by key so a burst of crawler misses renders once) ─────────────
 const _inflight = new Set<string>()
 
+// KLA-739 (C2-2 DoS): a GLOBAL bounded admission cap on concurrent/queued OG renders. Every render
+// takes the single serialized withPdfSlot (shared with PDF export + AutoSim recording), so an attacker
+// who defeats per-key dedupe (distinct refs) could otherwise flood that slot and starve real work. Once
+// this many renders are in flight, further enqueues are DROPPED (the crawler still got the default card;
+// the cache simply stays cold until pressure clears). Tunable via OG_MAX_INFLIGHT.
+const OG_MAX_INFLIGHT = Math.max(1, Number(process.env.OG_MAX_INFLIGHT) || 4)
+
 /**
- * Enqueue a BACKGROUND render → S3 upload for a ref+version. Deduped per key. Fire-and-forget; never
- * throws into the caller. Skips entirely when S3 is unconfigured (dev/test) — there's nowhere to cache.
+ * Enqueue a BACKGROUND render → S3 upload for a ref+version. Deduped per key AND globally admission-
+ * capped. Fire-and-forget; never throws into the caller. Skips entirely when S3 is unconfigured
+ * (dev/test) — there's nowhere to cache — or when the global cap is saturated (DoS backpressure).
+ * The uploaded object is PRIVATE (KLA-739 C1): /og streams it back via the gated route, so the bucket
+ * never needs public-read exposure of ticket-derived imagery.
  */
 export function enqueueOgRender(ref: string, version: string | number | null, loadData: () => Promise<OgCardData>): void {
   if (!s3Configured()) return
   const key = ogS3Key(ref, version)
   if (_inflight.has(key)) return
+  if (_inflight.size >= OG_MAX_INFLIGHT) return // global backpressure — drop rather than pile onto the slot
   _inflight.add(key)
   ;(async () => {
     try {
       const data = await loadData()
       const png = await renderOgPng(renderOgCardHtml(data))
-      await uploadObject(key, png, "image/png", "public-read")
+      await uploadObject(key, png, "image/png", "private")
     } catch (e: any) {
       console.warn("[og] background render failed for", key, "-", e?.message || e)
     } finally {
@@ -125,6 +166,24 @@ export function enqueueOgRender(ref: string, version: string | number | null, lo
 /** True while a render for this ref+version is in flight (tests/introspection). */
 export function isOgRenderInFlight(ref: string, version?: string | number | null): boolean {
   return _inflight.has(ogS3Key(ref, version))
+}
+
+/**
+ * KLA-739 (C1): the response served for a ref that is NOT anon-shareable — an UNKNOWN ref OR a
+ * login-gated (share_mode='off') / non-anon-shared ticket. It is BYTE-IDENTICAL for every such ref (the
+ * prebuilt branded default card, same headers, no per-ref S3 probe, no `x-og-cache: hit`, no background
+ * enqueue) so an anonymous crawler cannot use /og as an existence oracle to tell a private ticket apart
+ * from a nonexistent one. This is the ONLY path allowed to serve those refs; it never renders/uploads.
+ */
+export function serveDefaultOgResponse(defaultPng: () => Uint8Array = defaultCardPngSync): Response {
+  return new Response(defaultPng() as any, {
+    status: 200,
+    headers: {
+      "content-type": "image/png",
+      "cache-control": "public, max-age=60",
+      "x-og-cache": "default",
+    },
+  })
 }
 
 // ── the crawler-safe serve path ──────────────────────────────────────────────────────────────────

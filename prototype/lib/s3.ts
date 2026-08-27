@@ -83,14 +83,16 @@ export async function uploadRecordingObject(
 
 // KLA-738: write one object to an EXPLICIT key (not a random one). Used by the OG social-card
 // pre-render pipeline to store the rendered PNG at a deterministic, cacheable key (`og/<ref>.png`)
-// so `GET /og/:ref.png` can look it up by ref. acl defaults to 'public-read' because the OG image
-// is meant to be fetched by social crawlers; the /og route streams it back itself so the bucket
-// exposure is not strictly required, but public-read keeps a direct fallback link valid.
+// so `GET /og/:ref.png` can look it up by ref. acl defaults to 'private' (KLA-739 C1): the /og route
+// STREAMS the object back itself (getObjectStream, credentialed), so the bucket must NOT expose these
+// ticket-derived PNGs publicly — a public-read object would let anyone bypass the /og access gate by
+// hitting the S3 URL directly and read a private ticket's rendered card. 'public-read' stays available
+// for callers that explicitly need a permanent direct link, but must be avoided for user content.
 export async function uploadObject(
   key: string,
   bytes: ArrayBuffer | Uint8Array,
   contentType: string,
-  acl: 'public-read' | 'private' = 'public-read',
+  acl: 'public-read' | 'private' = 'private',
 ): Promise<{ key: string; bucket: string; contentType: string }> {
   await getClient().write(key, bytes, { acl, type: contentType })
   return { key, bucket: BUCKET, contentType }

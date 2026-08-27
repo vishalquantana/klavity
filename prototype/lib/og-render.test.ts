@@ -1,5 +1,8 @@
 import { test, expect, describe } from "bun:test"
-import { serveOgImage, ogS3Key, type OgServeDeps } from "./og-render"
+import {
+  serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse,
+  type OgServeDeps, type OgBrowserLike,
+} from "./og-render"
 import type { OgCardData } from "./og-card"
 
 // The crawler-safety guarantee (KLA-738): GET /og/:ref.png must serve cache-or-default INSTANTLY and
@@ -87,5 +90,63 @@ describe("serveOgImage — cache MISS returns default AND enqueues (never blocks
     }
     const res = await serveOgImage("fb_x", null, loadData, deps)
     expect(res.headers.get("cache-control")).toContain("max-age=60")
+  })
+})
+
+// ── KLA-739 C2-3 (browser leak on timeout): renderOgPngWith must ACTIVELY kill the browser when the
+// render exceeds the deadline. NEG-CONTROL: the pre-fix Promise.race left the hung render() — and its
+// Chromium process — alive when the deadline fired; asserting browser.close() is called on timeout FAILS
+// against that behavior.
+describe("renderOgPngWith — timeout kills the browser (single-browser invariant)", () => {
+  function fakeBrowser(opts: { hang?: boolean }): { browser: OgBrowserLike; closed: () => number } {
+    let closes = 0
+    const page = {
+      setContent: async () => {},
+      evaluate: async () => {},
+      // A hanging screenshot models a wedged render that never resolves.
+      screenshot: async () => (opts.hang ? new Promise<Uint8Array>(() => {}) : new Uint8Array([7, 7])),
+    }
+    const context = { newPage: async () => page, close: async () => {} }
+    const browser: OgBrowserLike = { newContext: async () => context, close: async () => { closes++ } }
+    return { browser, closed: () => closes }
+  }
+
+  test("a hung render times out AND the browser is closed (no leaked process)", async () => {
+    const { browser, closed } = fakeBrowser({ hang: true })
+    let threw = false
+    try {
+      await renderOgPngWith("<html></html>", async () => browser, 25)
+    } catch (e: any) {
+      threw = true
+      expect(String(e?.message || e)).toContain("timed out")
+    }
+    expect(threw).toBe(true)
+    // The fix: browser.close() was invoked even though render() never resolved.
+    expect(closed()).toBe(1)
+  })
+
+  test("a normal render returns the PNG bytes and still closes the browser exactly once", async () => {
+    const { browser, closed } = fakeBrowser({ hang: false })
+    const png = await renderOgPngWith("<html></html>", async () => browser, 5_000)
+    expect(Array.from(png)).toEqual([7, 7])
+    expect(closed()).toBe(1)
+  })
+})
+
+// ── KLA-739 C1 (existence oracle): the response for a non-anon-serveable ref (unknown OR login-gated)
+// must be byte-identical + header-identical so /og can't distinguish a private ticket from a missing one,
+// and it must never carry an `x-og-cache: hit`.
+describe("serveDefaultOgResponse — indistinguishable default (C1 no existence oracle)", () => {
+  test("identical body + headers for any ref; never x-og-cache:hit", async () => {
+    const png = new Uint8Array([5, 5, 5])
+    const a = serveDefaultOgResponse(() => png)
+    const b = serveDefaultOgResponse(() => png)
+    expect(a.status).toBe(200)
+    expect(a.headers.get("content-type")).toBe(b.headers.get("content-type"))
+    expect(a.headers.get("cache-control")).toBe(b.headers.get("cache-control"))
+    expect(a.headers.get("x-og-cache")).toBe(b.headers.get("x-og-cache"))
+    expect(a.headers.get("x-og-cache")).not.toBe("hit")
+    expect(Array.from(new Uint8Array(await a.arrayBuffer()))).toEqual([5, 5, 5])
+    expect(Array.from(new Uint8Array(await b.arrayBuffer()))).toEqual([5, 5, 5])
   })
 })

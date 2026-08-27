@@ -86,6 +86,17 @@ export function escapeHtml(s: unknown): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;")
 }
 
+// KLA-739 (C2-4 SSRF): the Sim accent is interpolated into a CSS `background:` value, so it is a CSS
+// context — HTML-escaping is NOT sufficient there. A stored accent like
+// `red);background-image:url(http://127.0.0.1:9/x);/*` would otherwise make headless Chromium fetch an
+// internal URL. Clamp to a strict #RRGGBB (or #RGB) hex; anything else falls back to the brand purple.
+// This is defense-in-depth: loadOgCardData ALSO normalizes via normAccent, but the pure template must
+// be self-safe so it can never emit an attacker-controlled CSS token regardless of caller.
+export function safeHexColor(v: unknown, fallback = "#8b5cf6"): string {
+  const s = String(v ?? "").trim()
+  return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s) ? s : fallback
+}
+
 function initialsOf(name: string, fallback?: string | null): string {
   if (fallback && fallback.trim()) return fallback.trim().slice(0, 2).toUpperCase()
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean)
@@ -194,7 +205,8 @@ function renderHuman(d: HumanCardData): string {
 
 function renderSim(d: SimCardData): string {
   const sev = d.severity
-  const accent = d.accent || "#8b5cf6"
+  // CSS-context value — MUST be a strict hex (see safeHexColor); never interpolate the raw stored accent.
+  const accent = safeHexColor(d.accent, "#8b5cf6")
   const inits = initialsOf(d.simName, d.initials)
   const inner = `<div class="card">
     ${BRAND}

@@ -22,8 +22,9 @@ import { effectiveTicketTitle } from "./lib/db"
 import { NON_HUMAN_FEEDBACK_SOURCES } from "./lib/db"
 // KLA-738: dynamic per-type OG social share cards. og-card = pure templates + resolver; og-render =
 // headless Playwright render (reuses the PDF browser slot) + crawler-safe cache-or-default serving.
-import { resolveOgType, injectOgMeta, type OgCardData, type Severity as OgSeverity } from "./lib/og-card"
-import { serveOgImage, enqueueOgRender, prewarmDefaultOgCard } from "./lib/og-render"
+import { injectOgMeta, type OgCardData } from "./lib/og-card"
+import { loadOgCardData as _loadOgCardData } from "./lib/og-data"
+import { serveOgImage, enqueueOgRender, prewarmDefaultOgCard, serveDefaultOgResponse } from "./lib/og-render"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
 import { getFoundingSpots, decideFoundingCheckout, foundingRibbonLabel, foundingSpotsLabel, foundingStateToken, computeFoundingSpots } from "./lib/founding"
@@ -359,68 +360,35 @@ async function prettyDeepLinkUrl(
   return `${base}${path}`
 }
 
-// ── KLA-738: OG social-card data loader + meta injection ─────────────────────────────────────────
-// Map a stored priority/severity to a display severity badge for the card.
-function ogSeverityFor(priority: string | null | undefined): OgSeverity | null {
-  switch (String(priority || "").trim().toLowerCase()) {
-    case "urgent": return { label: "P1 · Critical", cls: "c1" }
-    case "high":   return { label: "P2 · High", cls: "c1" }
-    case "medium": return { label: "C2 · Needs work", cls: "c2" }
-    case "low":    return { label: "C3 · Polish", cls: "c3" }
-    default: return null
-  }
-}
-
-// Resolve a shared ref (opaque fb_ id, pretty <KEY>-<n>, or workspace handle) to its typed OG card
-// data + a cache version. Returns null when the ref can't be resolved. Pure glue over the resolver in
-// lib/og-card + the feedback row; the template/render live in the (unit-tested) og libs.
-async function loadOgCardData(ref: string): Promise<{ data: OgCardData; version: string; title: string; description: string } | null> {
-  const resolved = await resolveFeedbackRef(ref).catch(() => null)
-  if (!resolved || !db) return null
-  let row: any
-  try {
-    const r = await db.execute({
-      sql: `SELECT id, project_id, sim_id, source, report_type, reporter_json, title, observation,
-                   suggested_bug_json, COALESCE(priority, severity) AS priority, url_host, url_path,
-                   source_quote, seq_num, COALESCE(last_seen_at, created_at) AS ver
-            FROM feedback WHERE project_id=? AND id=? LIMIT 1`,
-      args: [resolved.projectId, resolved.id],
-    })
-    row = r.rows[0]
-  } catch { return null }
-  if (!row) return null
-  const reporter = (() => { try { return row.reporter_json ? JSON.parse(String(row.reporter_json)) : null } catch { return null } })()
-  const title = effectiveTicketTitle({ title: row.title, suggested_bug_json: row.suggested_bug_json, observation: row.observation })
-  const ogType = resolveOgType({
-    reportType: row.report_type != null ? String(row.report_type) : null,
-    simId: row.sim_id != null ? String(row.sim_id) : null,
-    source: row.source != null ? String(row.source) : null,
-    reporter: reporter && reporter.name ? { name: String(reporter.name) } : null,
-  })
-  const version = String(row.ver ?? "1")
-  const severity = ogSeverityFor(row.priority != null ? String(row.priority) : null)
-  const ticketKey = String(row.id).split("-")[0]
-  const description = title
-  if (ogType === "sim") {
-    const persona = (await listPersonas(resolved.projectId).catch(() => [])).find((p: any) => p.id === String(row.sim_id))
-    const finding = (row.source_quote && String(row.source_quote).trim()) || title
-    return {
-      data: {
-        type: "sim", ticketKey, title, finding, severity,
-        simName: persona?.name || "A Sim", simRole: persona?.role || null,
-        initials: persona?.initials || null, accent: persona?.accent || null,
-      },
-      version, title, description,
-    }
-  }
-  if (ogType === "human") {
-    return {
-      data: { type: "human", ticketKey, title, severity, reporter: reporter?.name ? String(reporter.name) : null },
-      version, title, description,
-    }
-  }
-  // default (feature/task/query or unresolved provenance) — generic branded card.
-  return { data: { type: "default" }, version, title, description }
+// ── KLA-738 / KLA-739: OG social-card data loader + meta injection ───────────────────────────────
+// The loader's policy (anon C1 gate + teaser redaction + version fold) lives in lib/og-data.ts as a
+// dependency-injected, unit-tested function; this thin wrapper binds the app's impure edges (ref
+// resolution, the DB row read with the C2-5 version fold, the anonymous access decision, persona list).
+async function loadOgCardData(
+  ref: string,
+  opts?: { anon?: boolean },
+): Promise<{ data: OgCardData; version: string; title: string; description: string } | null> {
+  if (!db) return null
+  return _loadOgCardData({
+    resolveRef: (r) => resolveFeedbackRef(r).catch(() => null),
+    anonAccess: (id) => ticketViewAccess(id, null),
+    listPersonas: (projectId) => listPersonas(projectId).catch(() => []),
+    effectiveTitle: (row) => effectiveTicketTitle(row),
+    loadRow: async (projectId, id) => {
+      // KLA-739 (C2-5): fold updated_at into the cache version so an edited title/severity busts the
+      // otherwise-immutable (1yr) cached PNG. MAX() over updated_at/last_seen_at/created_at so BOTH an
+      // edit AND a recurrence bump produce a new version → new S3 key → freshly rendered card.
+      const r = await db!.execute({
+        sql: `SELECT id, project_id, sim_id, source, report_type, reporter_json, title, observation,
+                     suggested_bug_json, COALESCE(priority, severity) AS priority, url_host, url_path,
+                     source_quote, seq_num,
+                     MAX(COALESCE(updated_at,0), COALESCE(last_seen_at,0), COALESCE(created_at,0)) AS ver
+              FROM feedback WHERE project_id=? AND id=? LIMIT 1`,
+        args: [projectId, id],
+      })
+      return (r.rows[0] as any) ?? null
+    },
+  }, ref, opts)
 }
 
 // Build the versioned OG image URL for a ref. Origin defaults to the request origin so shares from a
@@ -5868,9 +5836,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
         // hits the share link gets a warm cache (never a synchronous render on the crawler request).
         // Best-effort + deduped + no-op when S3 is unconfigured.
+        // KLA-739 (C1): pre-render ONLY when the ticket is anon-shareable (loadOgCardData(anon) returns
+        // null for share_mode='off' / non-anon-shared), and store the ANON-redacted card that /og serves —
+        // so we never pre-render a private ticket's card to a public-ish cache.
         if (feedbackId) {
           try {
-            const _og = await loadOgCardData(feedbackId)
+            const _og = await loadOgCardData(feedbackId, { anon: true })
             if (_og) enqueueOgRender(feedbackId, _og.version, async () => _og.data)
           } catch { /* best-effort prerender */ }
         }
@@ -8020,19 +7991,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && ogMatch) {
       if (!rlAllow("og:img:" + clientIp(req, server), 240, 60_000)) return new Response("Rate limited", { status: 429 })
       const ref = ogMatch[1]
-      const version = url.searchParams.get("v")
-      // Loader is invoked LAZILY — only the background render path (cache miss) actually calls it, so a
-      // cache hit never touches the DB. Resolves the ref's typed card data.
-      const loadData = async (): Promise<OgCardData> => {
-        const r = await loadOgCardData(ref).catch(() => null)
-        return r?.data ?? { type: "default" }
-      }
       try {
-        return await serveOgImage(ref, version, loadData)
+        // KLA-739 (C1): resolve the ANONYMOUS card data FIRST. loadOgCardData(anon) returns null for an
+        // unknown ref AND for a login-gated / non-anon-shared ticket — both get the BYTE-IDENTICAL default
+        // card (serveDefaultOgResponse), which never probes S3 and never enqueues, so /og cannot be used as
+        // an existence oracle or to render a private ticket to a crawler.
+        const anon = await loadOgCardData(ref, { anon: true }).catch(() => null)
+        if (!anon) return serveDefaultOgResponse()
+        // C2-2: dedupe by REF using the CANONICAL version (ignore any attacker-supplied ?v), so a flood of
+        // distinct ?v values can't defeat the cache/dedupe and spam the shared render slot.
+        const data = anon.data
+        return await serveOgImage(ref, anon.version, async () => data)
       } catch (e: any) {
         console.warn("[og] serve failed:", e?.message || e)
-        // Absolute last resort — still never 500 a crawler; serve the default (may enqueue).
-        return await serveOgImage(ref, version, async () => ({ type: "default" }))
+        // Absolute last resort — still never 500 a crawler; serve the prebuilt default (no render/enqueue).
+        return serveDefaultOgResponse()
       }
     }
 
