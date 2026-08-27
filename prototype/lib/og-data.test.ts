@@ -4,7 +4,8 @@
 
 import { test, expect, describe } from "bun:test"
 import {
-  loadOgCardData, ogAnonServeable, redactOgCardForAnon, ogSeverityFor, type OgDataDeps, type OgFeedbackRow,
+  loadOgCardData, ogAnonServeable, redactOgCardForAnon, ogSeverityFor, ogKeyVersion,
+  type OgDataDeps, type OgFeedbackRow,
 } from "./og-data"
 import type { TicketViewAccess } from "./ticket-viewers"
 
@@ -99,6 +100,26 @@ describe("C1 redaction — anon teaser withholds reporter / source_quote / perso
     expect(d.finding).toContain("couldn't tell which plan")
     expect(d.simName).toBe("Sarah Chen")
     expect(d.simRole).toBe("Small-business owner")
+  })
+})
+
+describe("C1-a — redaction TIER is folded into the cache key (no cross-tier bytes)", () => {
+  // NEG-CONTROL: without tier in the key, a teaser request and a (later/earlier) full request map to the
+  // SAME S3 key → the teaser viewer can be served the cached 'full' card (reporter/quote leak). Asserting
+  // the keyVersions DIFFER by tier reproduces the fix; a tier-less key would make them equal → FAIL.
+  test("teaser vs full for the same ref+version produce DIFFERENT keyVersions", async () => {
+    const teaser = await loadOgCardData(makeDeps("teaser"), "fb_human01", { anon: true })
+    const full = await loadOgCardData(makeDeps("full"), "fb_human01", { anon: true })
+    expect(teaser!.tier).toBe("teaser")
+    expect(full!.tier).toBe("full")
+    expect(teaser!.version).toBe(full!.version) // same underlying ticket version…
+    expect(teaser!.keyVersion).not.toBe(full!.keyVersion) // …but tier-partitioned keys
+    expect(teaser!.keyVersion).toBe("teaser-100")
+    expect(full!.keyVersion).toBe("full-100")
+  })
+  test("ogKeyVersion folds tier ahead of version", () => {
+    expect(ogKeyVersion("teaser", "42")).toBe("teaser-42")
+    expect(ogKeyVersion("full", "42")).toBe("full-42")
   })
 })
 

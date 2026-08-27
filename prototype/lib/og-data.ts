@@ -42,6 +42,16 @@ export function ogAnonServeable(access: TicketViewAccess): boolean {
   return access === "full" || access === "teaser"
 }
 
+// KLA-739 (C1-a): the REDACTION TIER a resolved card was built at. It is folded into the S3 key + cache
+// version so a request at one tier can NEVER be served bytes cached at a more-permissive tier (a teaser
+// viewer must not hit a 'full' object left over from when the ticket was public / from before the hotfix).
+export type OgTier = "full" | "teaser"
+
+// Fold the tier into the cache version so the S3 key (og/<ref>-<keyVersion>.png) is tier-partitioned.
+export function ogKeyVersion(tier: OgTier, version: string): string {
+  return `${tier}-${version}`
+}
+
 // KLA-739 (C1): redact a fully-resolved card to what an ANONYMOUS teaser viewer may see. The teaser
 // exposes title + priority (severity) but WITHHOLDS: the human reporter; the Sim's verbatim finding
 // (source_quote); and the Sim's persona identity (name/role/initials/accent). Only called when the anon
@@ -79,17 +89,19 @@ export async function loadOgCardData(
   deps: OgDataDeps,
   ref: string,
   opts?: { anon?: boolean },
-): Promise<{ data: OgCardData; version: string; title: string; description: string } | null> {
+): Promise<{ data: OgCardData; version: string; keyVersion: string; tier: OgTier; title: string; description: string } | null> {
   const resolved = await deps.resolveRef(ref).catch(() => null)
   if (!resolved) return null
 
-  // C1: apply the anonymous access decision BEFORE reading any ticket content.
+  // C1: apply the anonymous access decision BEFORE reading any ticket content (and BEFORE any cache
+  // probe — the caller keys on the tier this returns, so a teaser request can never hit a 'full' object).
   let anonAccess: TicketViewAccess | null = null
   if (opts?.anon) {
     anonAccess = await deps.anonAccess(resolved.id).catch(() => "login" as const)
     if (!ogAnonServeable(anonAccess)) return null // login/pending → not anon-serveable → default card
   }
   const anonPublic = !opts?.anon || anonAccess === "full"
+  const tier: OgTier = anonPublic ? "full" : "teaser"
 
   const row = await deps.loadRow(resolved.projectId, resolved.id).catch(() => null)
   if (!row) return null
@@ -121,10 +133,10 @@ export async function loadOgCardData(
     data = { type: "human", ticketKey, title, severity, reporter: reporter?.name ? String(reporter.name) : null }
   } else {
     // default (feature/task/query or unresolved provenance) — generic branded card.
-    return { data: { type: "default" }, version, title, description }
+    return { data: { type: "default" }, version, keyVersion: ogKeyVersion(tier, version), tier, title, description }
   }
 
   // C1: redact to the anonymous teaser level unless the ticket is anon-PUBLIC.
   if (!anonPublic) data = redactOgCardForAnon(data)
-  return { data, version, title, description }
+  return { data, version, keyVersion: ogKeyVersion(tier, version), tier, title, description }
 }

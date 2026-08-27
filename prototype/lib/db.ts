@@ -7720,9 +7720,11 @@ export async function setSuggestedLabels(feedbackId: string, labelIds: string[])
 // screenshot-only report that was inserted with a deterministic fallback title). Project-scoped so a
 // stray/attacker-supplied feedbackId can't rewrite another tenant's row.
 export async function setFeedbackObservation(feedbackId: string, projectId: string, observation: string): Promise<void> {
+  // KLA-739 (C2-5): advance updated_at so card-visible content changes bust the immutable OG cache
+  // (the OG version folds MAX(updated_at,last_seen_at,created_at) → a new version → a new S3 key).
   await db!.execute({
-    sql: "UPDATE feedback SET observation=? WHERE id=? AND project_id=?",
-    args: [observation, feedbackId, projectId],
+    sql: "UPDATE feedback SET observation=?, updated_at=? WHERE id=? AND project_id=?",
+    args: [observation, Date.now(), feedbackId, projectId],
   })
 }
 
@@ -7733,9 +7735,12 @@ export async function setFeedbackObservation(feedbackId: string, projectId: stri
 // otherwise fell back to the raw first line of `observation`. Project-scoped so a stray/attacker
 // feedbackId can't retitle another tenant's row. Returns true iff this call actually set the title.
 export async function updateFeedbackTitle(feedbackId: string, projectId: string, title: string): Promise<boolean> {
+  // KLA-739 (C2-5): advance updated_at so an async AI-title update (after a screenshot-only report's
+  // fallback-title OG pre-render) busts the immutable OG cache — otherwise the stale fallback-title PNG
+  // stays cached for a year. Only fires when the guard matches (title still empty), same as before.
   const r = await db!.execute({
-    sql: "UPDATE feedback SET title=? WHERE id=? AND project_id=? AND (title IS NULL OR title='')",
-    args: [title, feedbackId, projectId],
+    sql: "UPDATE feedback SET title=?, updated_at=? WHERE id=? AND project_id=? AND (title IS NULL OR title='')",
+    args: [title, Date.now(), feedbackId, projectId],
   })
   return Number(r.rowsAffected) > 0
 }

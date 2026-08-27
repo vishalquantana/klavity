@@ -46,22 +46,45 @@ export interface OgBrowserLike { newContext(opts?: any): Promise<OgContextLike>;
 
 /**
  * Core render: build a page, screenshot it, race against a hard deadline — and CRITICALLY, on timeout
- * (or any error) actively CLOSE the browser (KLA-739 C2-3). The previous Promise.race left the losing
- * render() promise — and its Chromium process — alive when the deadline fired, so a hung render leaked a
- * browser and (because withPdfSlot is a single serialized slot shared with PDF/AutoSim) could wedge the
- * whole box. The `finally` here guarantees the browser is torn down whether we win, time out, or throw.
- * Injectable `launch` + `deadlineMs` make this hermetically testable with a fake, hanging browser.
+ * (or any error) actively CLOSE the browser (KLA-739 C2-3), holding the single-browser invariant so a
+ * hung render can't wedge the shared withPdfSlot (which PDF/AutoSim also use).
+ *
+ * Two teardown holes closed in round 2:
+ *   (i)  DELAYED LAUNCH: if launch() resolves AFTER the deadline fired, the browser handle would be null
+ *        in a naïve finally and the late browser would leak. We capture the handle in launch().then() and
+ *        kill it there if teardown already ran — so a post-timeout launch is still torn down.
+ *   (ii) HUNG CLOSE: a browser.close() that never resolves would make finally await forever and hold the
+ *        slot. We RACE close() against `closeTimeoutMs` so the slot is always released within a bound.
+ *
+ * Injectable `launch` + `deadlineMs` + `closeTimeoutMs` make this hermetically testable with fakes.
  */
 export async function renderOgPngWith(
   html: string,
   launch: () => Promise<OgBrowserLike>,
   deadlineMs = 20_000,
+  closeTimeoutMs = 3_000,
 ): Promise<Uint8Array> {
   let browser: OgBrowserLike | null = null
+  let toreDown = false
   let timer: ReturnType<typeof setTimeout> | undefined
+
+  // Bounded close: never let a hung close() hold the shared slot open indefinitely.
+  const closeBounded = (b: OgBrowserLike): Promise<void> =>
+    Promise.race([
+      Promise.resolve().then(() => b.close()).catch(() => {}),
+      new Promise<void>((res) => setTimeout(res, closeTimeoutMs)),
+    ])
+
+  // Capture the handle even if launch resolves LATE (after we've already given up) → kill the late arrival.
+  const launchP = launch().then((b) => {
+    browser = b
+    if (toreDown) void closeBounded(b) // deadline already fired before launch resolved → tear down now
+    return b
+  })
+
   const render = async (): Promise<Uint8Array> => {
-    browser = await launch()
-    const context = await browser.newContext({
+    const b = await launchP
+    const context = await b.newContext({
       viewport: { width: OG_WIDTH, height: OG_HEIGHT },
       deviceScaleFactor: OG_SCALE,
     })
@@ -80,8 +103,12 @@ export async function renderOgPngWith(
     return await Promise.race([render(), deadline])
   } finally {
     if (timer) clearTimeout(timer)
-    // Single-browser invariant: kill Chromium on the winning path AND on timeout/error (no leak).
-    if (browser) { try { await browser.close() } catch { /* already gone */ } }
+    toreDown = true
+    // Kill Chromium on the winning path AND on timeout/error. If launch hasn't resolved yet, launchP.then
+    // above closes the late browser once it arrives (toreDown is now true). Bounded so a hung close can't
+    // hold the slot; swallow a rejected launchP so teardown never throws.
+    if (browser) await closeBounded(browser)
+    void launchP.catch(() => {})
   }
 }
 

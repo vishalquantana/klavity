@@ -104,6 +104,65 @@ export async function deleteObject(key: string): Promise<void> {
   await getClient().delete(key)
 }
 
+// True iff an object exists at `key` (a cheap metadata HEAD via stat; never fetches the body).
+export async function objectExists(key: string): Promise<boolean> {
+  try { await getClient().file(key).stat(); return true } catch { return false }
+}
+
+// List object keys under a prefix (one page). Returns the page's keys + a continuation token when the
+// listing is truncated, so callers can page through a large prefix.
+export async function listObjectKeys(prefix: string, continuationToken?: string): Promise<{ keys: string[]; next?: string }> {
+  const res: any = await getClient().list({ prefix, maxKeys: 1000, ...(continuationToken ? { continuationToken } : {}) })
+  const keys: string[] = Array.isArray(res?.contents) ? res.contents.map((c: any) => String(c?.key)).filter(Boolean) : []
+  const next = res?.isTruncated ? (res?.nextContinuationToken || undefined) : undefined
+  return { keys, next }
+}
+
+// ── KLA-739 (C1-b): one-shot purge of LEGACY OG objects ──────────────────────────────────────────
+// OG PNGs written BEFORE the hotfix were uploaded public-read AND without the redaction tier in the key,
+// so they remain directly fetchable by bucket URL — leaking private (share_mode='off') tickets the old
+// intake pre-rendered, and letting a teaser viewer's key collide with a cached 'full' object. They're
+// throwaway (regenerate on demand — now private + tier-keyed + gated), so we DELETE the whole og/ prefix
+// exactly once per environment, guarded by a marker object so it never runs again on subsequent boots.
+
+export const OG_PURGE_MARKER = "og/.purged-legacy-v1"
+
+export interface OgPurgeDeps {
+  hasMarker: () => Promise<boolean>
+  list: (continuationToken?: string) => Promise<{ keys: string[]; next?: string }>
+  del: (key: string) => Promise<void>
+  putMarker: () => Promise<void>
+}
+
+// Pure, injectable purge: skip if the marker exists; else delete every listed key (except the marker),
+// paging to the end, then write the marker so this is a true one-shot. Deletes are best-effort per key.
+export async function purgeOgObjectsWith(deps: OgPurgeDeps): Promise<{ purged: number; skipped: boolean }> {
+  if (await deps.hasMarker()) return { purged: 0, skipped: true }
+  let purged = 0
+  let token: string | undefined
+  do {
+    const { keys, next } = await deps.list(token)
+    for (const k of keys) {
+      if (!k || k === OG_PURGE_MARKER) continue
+      try { await deps.del(k); purged++ } catch { /* best-effort per key */ }
+    }
+    token = next
+  } while (token)
+  await deps.putMarker()
+  return { purged, skipped: false }
+}
+
+// Wire the pure purge to the real S3 client. No-op when S3 is unconfigured. Best-effort; never throws.
+export async function purgeLegacyOgObjects(): Promise<{ purged: number; skipped: boolean }> {
+  if (!s3Configured()) return { purged: 0, skipped: true }
+  return purgeOgObjectsWith({
+    hasMarker: () => objectExists(OG_PURGE_MARKER),
+    list: (t) => listObjectKeys("og/", t),
+    del: (k) => deleteObject(k),
+    putMarker: async () => { await uploadObject(OG_PURGE_MARKER, new Uint8Array([1]), "application/octet-stream", "private") },
+  })
+}
+
 // Read one PRIVATE object's bytes (used by the connector export path to pass bytes to trackers that
 // natively attach the image). Throws if S3 isn't configured / not found. NOTE: this BUFFERS the whole
 // object — do not use it for high-fanout HTTP serving; use getObjectStream instead (KLA-519).

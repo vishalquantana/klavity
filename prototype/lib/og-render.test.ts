@@ -131,6 +131,45 @@ describe("renderOgPngWith — timeout kills the browser (single-browser invarian
     expect(Array.from(png)).toEqual([7, 7])
     expect(closed()).toBe(1)
   })
+
+  // C2-3 hole (i): launch() resolves AFTER the deadline. NEG-CONTROL: a finally that only closes an
+  // already-captured handle would see `browser` still null → the LATE browser leaks. Asserting it is
+  // eventually closed reproduces the round-2 fix.
+  test("a DELAYED launch (resolves after timeout) is still killed", async () => {
+    const { browser, closed } = fakeBrowser({ hang: false })
+    let threw = false
+    // launch resolves 40ms in; deadline is 10ms → the render times out before the browser even exists.
+    const launch = () => new Promise<OgBrowserLike>((res) => setTimeout(() => res(browser), 40))
+    try {
+      await renderOgPngWith("<html></html>", launch, 10)
+    } catch (e: any) {
+      threw = true
+      expect(String(e?.message || e)).toContain("timed out")
+    }
+    expect(threw).toBe(true)
+    // At the moment of timeout the late browser wasn't launched yet; give it time to arrive + be torn down.
+    await new Promise((r) => setTimeout(r, 80))
+    expect(closed()).toBe(1) // the post-timeout browser WAS closed (no leak)
+  })
+
+  // C2-3 hole (ii): browser.close() hangs. NEG-CONTROL: an unbounded `await browser.close()` in finally
+  // would hang forever and hold the shared slot; asserting the call returns within a bound reproduces the
+  // bounded-close fix.
+  test("a HUNG close() does not hold the slot — returns within closeTimeoutMs", async () => {
+    const page = {
+      setContent: async () => {},
+      evaluate: async () => {},
+      screenshot: async () => new Uint8Array([7, 7]),
+    }
+    const context = { newPage: async () => page, close: async () => {} }
+    // close() never resolves.
+    const browser: OgBrowserLike = { newContext: async () => context, close: () => new Promise<void>(() => {}) }
+    const t0 = Date.now()
+    const png = await renderOgPngWith("<html></html>", async () => browser, 5_000, 30) // closeTimeoutMs=30
+    const elapsed = Date.now() - t0
+    expect(Array.from(png)).toEqual([7, 7]) // render succeeded
+    expect(elapsed).toBeLessThan(1_000) // did NOT block on the hung close (bounded to ~30ms)
+  })
 })
 
 // ── KLA-739 C1 (existence oracle): the response for a non-anon-serveable ref (unknown OR login-gated)

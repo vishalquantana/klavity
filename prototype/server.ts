@@ -51,7 +51,7 @@ import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
@@ -446,6 +446,16 @@ await initDb()
 // under test — the one-time render would briefly hold the shared PDF/browser slot (walkPoolStats busy),
 // which the health-busy + feedback tests assert is idle.
 if (process.env.NODE_ENV !== "test") prewarmDefaultOgCard()
+
+// KLA-739 (C1-b): one-shot purge of LEGACY OG objects (public-read + non-tier-keyed, written before the
+// hotfix) so a stale private-ticket card can't be fetched by direct bucket URL, bypassing the /og gate.
+// Guarded by a marker object → runs at most once per environment, then no-ops on every subsequent boot.
+// Fire-and-forget; a failure is logged and never blocks boot (the objects also age out via retention).
+if (process.env.NODE_ENV !== "test") {
+  void purgeLegacyOgObjects()
+    .then((r) => { if (!r.skipped) console.log(`[og] purged ${r.purged} legacy public OG object(s) (C1-b one-shot)`) })
+    .catch((e: any) => console.warn("[og] legacy OG purge failed (non-fatal):", e?.message || e))
+}
 
 // Model mix (/opsadmin): in-process cache of the weighted model selection. Seed the qwen3-heavy
 // default on first boot ONLY (never clobber weights set later via the UI).
@@ -5842,7 +5852,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (feedbackId) {
           try {
             const _og = await loadOgCardData(feedbackId, { anon: true })
-            if (_og) enqueueOgRender(feedbackId, _og.version, async () => _og.data)
+            // C1-a: pre-render under the SAME tier-folded key /og looks up, so the warm object matches.
+            if (_og) enqueueOgRender(feedbackId, _og.keyVersion, async () => _og.data)
           } catch { /* best-effort prerender */ }
         }
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
@@ -7992,16 +8003,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("og:img:" + clientIp(req, server), 240, 60_000)) return new Response("Rate limited", { status: 429 })
       const ref = ogMatch[1]
       try {
-        // KLA-739 (C1): resolve the ANONYMOUS card data FIRST. loadOgCardData(anon) returns null for an
-        // unknown ref AND for a login-gated / non-anon-shared ticket — both get the BYTE-IDENTICAL default
-        // card (serveDefaultOgResponse), which never probes S3 and never enqueues, so /og cannot be used as
-        // an existence oracle or to render a private ticket to a crawler.
+        // KLA-739 (C1): resolve the ANONYMOUS access decision + card data FIRST, BEFORE any S3 cache probe.
+        // loadOgCardData(anon) returns null for an unknown ref AND for a login-gated / non-anon-shared
+        // ticket — both get the BYTE-IDENTICAL default card (serveDefaultOgResponse), which never probes S3
+        // and never enqueues, so /og cannot be used as an existence oracle or to render a private ticket.
+        // C1-c (accepted LOW): an unknown ref returns after resolveFeedbackRef while a real share_mode='off'
+        // ref additionally runs ticketViewAccess, so a *timing* side-channel remains (bytes+headers are
+        // identical). Accepted as LOW — the same timing distinguisher already exists on /t/ and /api/t/, the
+        // signal is noisy over the network, and equalizing it would add cost to every crawler hit.
         const anon = await loadOgCardData(ref, { anon: true }).catch(() => null)
         if (!anon) return serveDefaultOgResponse()
-        // C2-2: dedupe by REF using the CANONICAL version (ignore any attacker-supplied ?v), so a flood of
-        // distinct ?v values can't defeat the cache/dedupe and spam the shared render slot.
+        // C2-2: dedupe by REF using the CANONICAL version (ignore any attacker-supplied ?v). C1-a: key on
+        // the tier-folded version so a TEASER request can only ever hit a teaser-tier object — never a
+        // 'full' object cached when the ticket was public / before the hotfix.
         const data = anon.data
-        return await serveOgImage(ref, anon.version, async () => data)
+        return await serveOgImage(ref, anon.keyVersion, async () => data)
       } catch (e: any) {
         console.warn("[og] serve failed:", e?.message || e)
         // Absolute last resort — still never 500 a crawler; serve the prebuilt default (no render/enqueue).
