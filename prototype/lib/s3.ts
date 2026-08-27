@@ -81,6 +81,21 @@ export async function uploadRecordingObject(
   return { key, bucket: BUCKET, contentType: contentType || 'application/octet-stream' }
 }
 
+// KLA-738: write one object to an EXPLICIT key (not a random one). Used by the OG social-card
+// pre-render pipeline to store the rendered PNG at a deterministic, cacheable key (`og/<ref>.png`)
+// so `GET /og/:ref.png` can look it up by ref. acl defaults to 'public-read' because the OG image
+// is meant to be fetched by social crawlers; the /og route streams it back itself so the bucket
+// exposure is not strictly required, but public-read keeps a direct fallback link valid.
+export async function uploadObject(
+  key: string,
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+  acl: 'public-read' | 'private' = 'public-read',
+): Promise<{ key: string; bucket: string; contentType: string }> {
+  await getClient().write(key, bytes, { acl, type: contentType })
+  return { key, bucket: BUCKET, contentType }
+}
+
 // Delete one object by key. Used by the data-retention sweep (C1) and GDPR erasure (C2) to remove the
 // underlying S3 bytes when a screenshots ledger row is deleted. Best-effort: callers should catch/log.
 export async function deleteObject(key: string): Promise<void> {

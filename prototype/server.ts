@@ -20,6 +20,10 @@ import { effectiveTicketTitle } from "./lib/db"
 // lib/db.ts (NON_HUMAN_FEEDBACK_SOURCES) and imported here so the request-time intake gate and the
 // DB-layer recurrence head guard can never drift apart. Do not redefine it locally.
 import { NON_HUMAN_FEEDBACK_SOURCES } from "./lib/db"
+// KLA-738: dynamic per-type OG social share cards. og-card = pure templates + resolver; og-render =
+// headless Playwright render (reuses the PDF browser slot) + crawler-safe cache-or-default serving.
+import { resolveOgType, injectOgMeta, type OgCardData, type Severity as OgSeverity } from "./lib/og-card"
+import { serveOgImage, enqueueOgRender, prewarmDefaultOgCard } from "./lib/og-render"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
 import { getFoundingSpots, decideFoundingCheckout, foundingRibbonLabel, foundingSpotsLabel, foundingStateToken, computeFoundingSpots } from "./lib/founding"
@@ -355,6 +359,77 @@ async function prettyDeepLinkUrl(
   return `${base}${path}`
 }
 
+// ── KLA-738: OG social-card data loader + meta injection ─────────────────────────────────────────
+// Map a stored priority/severity to a display severity badge for the card.
+function ogSeverityFor(priority: string | null | undefined): OgSeverity | null {
+  switch (String(priority || "").trim().toLowerCase()) {
+    case "urgent": return { label: "P1 · Critical", cls: "c1" }
+    case "high":   return { label: "P2 · High", cls: "c1" }
+    case "medium": return { label: "C2 · Needs work", cls: "c2" }
+    case "low":    return { label: "C3 · Polish", cls: "c3" }
+    default: return null
+  }
+}
+
+// Resolve a shared ref (opaque fb_ id, pretty <KEY>-<n>, or workspace handle) to its typed OG card
+// data + a cache version. Returns null when the ref can't be resolved. Pure glue over the resolver in
+// lib/og-card + the feedback row; the template/render live in the (unit-tested) og libs.
+async function loadOgCardData(ref: string): Promise<{ data: OgCardData; version: string; title: string; description: string } | null> {
+  const resolved = await resolveFeedbackRef(ref).catch(() => null)
+  if (!resolved || !db) return null
+  let row: any
+  try {
+    const r = await db.execute({
+      sql: `SELECT id, project_id, sim_id, source, report_type, reporter_json, title, observation,
+                   suggested_bug_json, COALESCE(priority, severity) AS priority, url_host, url_path,
+                   source_quote, seq_num, COALESCE(last_seen_at, created_at) AS ver
+            FROM feedback WHERE project_id=? AND id=? LIMIT 1`,
+      args: [resolved.projectId, resolved.id],
+    })
+    row = r.rows[0]
+  } catch { return null }
+  if (!row) return null
+  const reporter = (() => { try { return row.reporter_json ? JSON.parse(String(row.reporter_json)) : null } catch { return null } })()
+  const title = effectiveTicketTitle({ title: row.title, suggested_bug_json: row.suggested_bug_json, observation: row.observation })
+  const ogType = resolveOgType({
+    reportType: row.report_type != null ? String(row.report_type) : null,
+    simId: row.sim_id != null ? String(row.sim_id) : null,
+    source: row.source != null ? String(row.source) : null,
+    reporter: reporter && reporter.name ? { name: String(reporter.name) } : null,
+  })
+  const version = String(row.ver ?? "1")
+  const severity = ogSeverityFor(row.priority != null ? String(row.priority) : null)
+  const ticketKey = String(row.id).split("-")[0]
+  const description = title
+  if (ogType === "sim") {
+    const persona = (await listPersonas(resolved.projectId).catch(() => [])).find((p: any) => p.id === String(row.sim_id))
+    const finding = (row.source_quote && String(row.source_quote).trim()) || title
+    return {
+      data: {
+        type: "sim", ticketKey, title, finding, severity,
+        simName: persona?.name || "A Sim", simRole: persona?.role || null,
+        initials: persona?.initials || null, accent: persona?.accent || null,
+      },
+      version, title, description,
+    }
+  }
+  if (ogType === "human") {
+    return {
+      data: { type: "human", ticketKey, title, severity, reporter: reporter?.name ? String(reporter.name) : null },
+      version, title, description,
+    }
+  }
+  // default (feature/task/query or unresolved provenance) — generic branded card.
+  return { data: { type: "default" }, version, title, description }
+}
+
+// Build the versioned OG image URL for a ref. Origin defaults to the request origin so shares from a
+// customer origin still resolve; falls back to BASE.
+function ogImageUrl(ref: string, version: string, origin?: string | null): string {
+  const base = (origin || BASE).replace(/\/+$/, "")
+  return `${base}/og/${encodeURIComponent(ref)}.png?v=${encodeURIComponent(version)}`
+}
+
 // JTBD 2.15: the post-login invite redirect carries the assigned ticket forward so first login
 // lands directly on it. The stored feedbackId is threaded through so the login flow can preserve it.
 function ticketInviteUrl(projectId: string, email: string, feedbackId?: string | null): string {
@@ -396,6 +471,13 @@ async function notifyTicketAssignee(input: { projectId: string; feedbackId: stri
 }
 
 await initDb()
+
+// KLA-738: pre-build the DEFAULT OG card PNG in the background on boot so the /og cache-MISS path is
+// instant (returns the branded default immediately instead of a 1×1 placeholder). Best-effort; if
+// Chromium isn't available the route still serves the transparent fail-safe and never blocks. Skipped
+// under test — the one-time render would briefly hold the shared PDF/browser slot (walkPoolStats busy),
+// which the health-busy + feedback tests assert is idle.
+if (process.env.NODE_ENV !== "test") prewarmDefaultOgCard()
 
 // Model mix (/opsadmin): in-process cache of the weighted model selection. Seed the qwen3-heavy
 // default on first boot ONLY (never clobber weights set later via the UI).
@@ -5783,6 +5865,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const issueUrl = (feedbackId && dashBase)
           ? await prettyDeepLinkUrl(feedbackId, submitProjectId, { origin: dashBase })
           : ""
+        // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
+        // hits the share link gets a warm cache (never a synchronous render on the crawler request).
+        // Best-effort + deduped + no-op when S3 is unconfigured.
+        if (feedbackId) {
+          try {
+            const _og = await loadOgCardData(feedbackId)
+            if (_og) enqueueOgRender(feedbackId, _og.version, async () => _og.data)
+          } catch { /* best-effort prerender */ }
+        }
         return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
       } catch (e: any) {
         return json(oops(e, "feedback"), 500)
@@ -7920,6 +8011,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return new Response(renderReportStatusPage(reportRefMatch[1], status), { status: 200, headers })
     }
 
+    // ── GET /og/:ref.png — CRAWLER-SAFE per-type social share image (KLA-738) ──
+    // Serves cache-or-default INSTANTLY and NEVER renders synchronously on the request: S3 cache hit →
+    // stream the PNG (long immutable cache; the URL is versioned via ?v); cache MISS → return the
+    // pre-built DEFAULT card immediately AND enqueue a background render for next time. This is the
+    // guarantee that a slow render can never make a Slackbot/LinkedInBot/Twitterbot request time out.
+    const ogMatch = path.match(/^\/og\/([A-Za-z0-9_-]{1,80})\.png$/)
+    if (req.method === "GET" && ogMatch) {
+      if (!rlAllow("og:img:" + clientIp(req, server), 240, 60_000)) return new Response("Rate limited", { status: 429 })
+      const ref = ogMatch[1]
+      const version = url.searchParams.get("v")
+      // Loader is invoked LAZILY — only the background render path (cache miss) actually calls it, so a
+      // cache hit never touches the DB. Resolves the ref's typed card data.
+      const loadData = async (): Promise<OgCardData> => {
+        const r = await loadOgCardData(ref).catch(() => null)
+        return r?.data ?? { type: "default" }
+      }
+      try {
+        return await serveOgImage(ref, version, loadData)
+      } catch (e: any) {
+        console.warn("[og] serve failed:", e?.message || e)
+        // Absolute last resort — still never 500 a crawler; serve the default (may enqueue).
+        return await serveOgImage(ref, version, async () => ({ type: "default" }))
+      }
+    }
+
     // ── GET /t/:ref — fast, member-gated single-ticket permalink (KLAVITYKLA-491 / JTBD 2.15) ──
     // A ticket deep link used to be /dashboard?...&ticket=fb_... which booted the ENTIRE dashboard SPA
     // just to focus one ticket (Raghu flagged the wait). This route serves a tiny standalone page
@@ -7946,6 +8062,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
       _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
+      // KLA-738: per-type og:image so a shared link's social card reflects its ticket type.
+      try {
+        const og = await loadOgCardData(resolved.id)
+        if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(resolved.id, og.version, url.origin), title: `${og.title} · Klavity`, description: og.description })
+      } catch { /* best-effort meta — never block the page */ }
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
       })
@@ -7977,6 +8098,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
         let _tHtml = await Bun.file(pagePath).text()
         _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
+        try {
+          const og = await loadOgCardData(res.id)
+          if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.version, url.origin), title: `${og.title} · Klavity`, description: og.description })
+        } catch { /* best-effort */ }
         return new Response(_tHtml, {
           headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
         })
@@ -8007,6 +8132,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
       _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
+      try {
+        const og = await loadOgCardData(res.id)
+        if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.version, url.origin), title: `${og.title} · Klavity`, description: og.description })
+      } catch { /* best-effort */ }
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
       })
