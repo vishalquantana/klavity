@@ -131,6 +131,28 @@ test("KLA-730 neg-control: a failed primary feedback insert returns a non-2xx an
   expect(Number(after.rows[0].c)).toBe(Number(before.rows[0].c))
 })
 
+// ── PATH A neg-control: a NON-throwing skip (unresolved project) must also fail closed ────────────
+// An anonymous submit with NO Origin/auth and an unknown project_id never resolves a project, so the
+// whole persist body is skipped WITHOUT any exception (the catch never runs). Before the success-exit
+// guard this hit the success return and answered 200 {id:"", saved:true} with ZERO rows written. It must
+// now fail closed. This assertion FAILS against pre-fix code (200 saved:true).
+test("KLA-730 PATH A neg-control: anon submit to an unknown project (no Origin) fails closed with 0 rows", async () => {
+  const before = await rawClient.execute({ sql: "SELECT COUNT(*) c FROM feedback" })
+  const fd = new FormData()
+  fd.set("description", "report for a project that does not exist")
+  fd.set("project_id", "ghost-project-does-not-exist")
+  // NO origin header, no auth → actor/firstParty/anonWidgetAllowed all falsy → resolved stays null.
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd })
+  expect(r.ok).toBe(false)
+  expect(r.status).toBeGreaterThanOrEqual(500)
+  const j = await r.json().catch(() => ({}))
+  expect(j.saved).not.toBe(true)
+  expect(j.id).toBeFalsy()
+  // Nothing persisted anywhere.
+  const after = await rawClient.execute({ sql: "SELECT COUNT(*) c FROM feedback" })
+  expect(Number(after.rows[0].c)).toBe(Number(before.rows[0].c))
+})
+
 // ── Preserve the success path: a normal insert still returns 200 with a real id + a persisted row ──
 test("KLA-730: the normal success path is unchanged — 200 with a real id and a persisted row", async () => {
   const fd = new FormData()

@@ -3865,9 +3865,14 @@ export async function findFeedbackBySignature(projectId: string, signature: stri
 // guard can never drift apart.
 export const NON_HUMAN_FEEDBACK_SOURCES = new Set(["sim", "autosim", "adhoc", "ad-hoc", "trail", "trails", "walk", "studio-demo"])
 
-export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { allowPromote?: boolean }): Promise<void> {
+// KLA-730 PATH B (dedup race): returns TRUE only when the recurrence bump actually landed on a row.
+// findDuplicateFeedback can hand back a head that a concurrent delete removes before we UPDATE it (a
+// TOCTOU race); the SELECT then finds nothing, or the UPDATE matches ZERO rows. Previously this returned
+// void, so the caller assigned feedbackId to the vanished id and reported saved:true though NOTHING was
+// persisted. The boolean lets the /api/feedback handler only claim success when a row was truly touched.
+export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { allowPromote?: boolean }): Promise<boolean> {
   const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id, project_id FROM feedback WHERE id=?", args: [id] })
-  if (!r.rows.length) return
+  if (!r.rows.length) return false
   const row = r.rows[0] as any
   const count = Number(row.recurrence_count ?? 1) + 1
   let dates: number[] = []
@@ -3895,13 +3900,17 @@ export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { 
   const headHasSimId = row.sim_id != null && String(row.sim_id).trim() !== ""
   const headQuarantined = headHasSimId || NON_HUMAN_FEEDBACK_SOURCES.has(headSource)
   const promote = opts?.allowPromote === true && count >= 3 && String(row.status) === "new" && !headQuarantined
-  await db!.execute({
+  const upd = await db!.execute({
     sql: promote
       ? "UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=?, status='open' WHERE id=?"
       : "UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=?",
     args: [count, JSON.stringify(dates), atMs, id],
   })
+  // Row could have been deleted between the SELECT above and this UPDATE — rowsAffected===0 means the
+  // bump persisted nothing, so the caller must NOT treat this as a saved report.
+  if (Number(upd.rowsAffected ?? 0) < 1) return false
   if (row.project_id) invalidateDashboardCache(String(row.project_id)) // #722 (P2.2): recurrence/promotion changes recurring + counts
+  return true
 }
 
 // ── A.8 occurrence receipts ──

@@ -5437,7 +5437,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   console.warn(`auto-copy rate cap hit for project ${projectId} — skipping recurrence status advance`)
                   allowRecurrencePromote = false
                 }
-                await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
+                // KLA-730 PATH B (dedup race): bump reports whether it actually landed on a row. If the
+                // deduped head was deleted between findDuplicateFeedback and this bump (TOCTOU), the UPDATE
+                // matched ZERO rows → nothing was persisted for THIS submission. Do NOT claim it saved:
+                // leave feedbackId null (knownDuplicate false) so the success-exit guard fails closed and
+                // the client retries into a fresh insert. Skip the best-effort occurrence/recurrence work
+                // below too — its target row no longer exists.
+                const bumped = await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
+                if (!bumped) {
+                  console.warn(`[dedup-race] recurrence head ${dedupedInto} vanished before bump — failing closed (nothing persisted)`)
+                } else {
                 feedbackId = dedupedInto
                 knownDuplicate = true
                 // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its
@@ -5469,6 +5478,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     baseUrl: process.env.KLAV_BASE_URL || "",
                     evidence: { occurrences: recurrenceMem.count, firstSeenAt: recurrenceMem.firstSeenAt },
                   }, { db }).catch(() => {})
+                }
                 }
               } else {
                 // PostHog activation: first_bug_filed / first_widget_report — check BEFORE insert.
@@ -5737,6 +5747,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             console.error("feedback persistence (post-insert side-effect, non-fatal):", persistErr?.message || persistErr)
           }
+        }
+
+        // KLA-730 PATH A (non-throwing skip) — the definitive fail-closed gate. The ONLY legitimate way
+        // to reach this success exit is with a persisted row (feedbackId truthy). If feedbackId is falsy
+        // here, NO row was written — and NOT via a thrown persist error (the catch above handles those),
+        // but via a NON-throwing skip that never entered the persist body at all:
+        //   • db unavailable → the whole `if (db)` block was skipped;
+        //   • project unresolved → an anonymous no-Origin / bad-project_id submit leaves `resolved` null,
+        //     so the inner `if (resolved)` persist body is skipped with no exception;
+        //   • dedup-race miss (PATH B) → the bump landed on zero rows.
+        // Returning {saved:true, id:""} in any of these is silent report loss — the composer treats 2xx
+        // as success and tells the user it saved. Fail closed with a CORS-readable 5xx so backendSubmit
+        // sees a non-2xx and the user gets a retryable failure. A genuinely persisted report has a
+        // truthy feedbackId and is unaffected — it falls straight through to the success return below.
+        if (!feedbackId) {
+          console.error("feedback not persisted (no row written, no exception) — failing closed at success exit")
+          return wjson({ error: "We couldn't save your report. Please try again.", saved: false }, 500)
         }
 
         // Always return success. Auto-copy (if enabled) fires on triage-accept (PATCH status→open),
