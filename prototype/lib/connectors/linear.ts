@@ -37,6 +37,23 @@ function linearGraphqlErrorStatus(errors: any[] | undefined | null): number | nu
   return null
 }
 
+// KLA-731: given a Linear GraphQL `errors` array from an HTTP-200 response, throw the RIGHT error so
+// the connector-test / meta handlers classify it correctly: an auth/permission error → typed
+// UpstreamTrackerError(401/403) (user-config → friendly message, NO on-call page), matching how the
+// HTTP-4xx path is typed; any OTHER GraphQL error → a plain Error (a real backend problem → oops).
+// Shared by createIssue + listIssues + the meta readers so every Linear call surfaces a GraphQL-200
+// auth failure identically (previously only the meta methods classified it → createIssue still paged).
+function throwLinearGraphqlError(gqlErrors: any[], label: string): never {
+  const status = linearGraphqlErrorStatus(gqlErrors)
+  if (status) {
+    const msg = String(gqlErrors[0]?.message ?? "graphql auth error").slice(0, 200)
+    console.error(`linear ${label} graphql auth error (→HTTP ${status}): ${msg}`)
+    throw new UpstreamTrackerError(status, msg)
+  }
+  console.error(`linear ${label} graphql error: ${gqlErrors[0]?.message ?? "unknown error"}`)
+  throw new Error("tracker request failed (GraphQL error)")
+}
+
 // KLA-731: read a Linear GraphQL response, throwing a typed UpstreamTrackerError on any upstream
 // failure so the /connectors/meta (and connector-test) handlers can classify it as user-config (4xx)
 // vs. a real backend incident (5xx / plain Error) — the SAME contract plane.ts/jira.ts meta methods
@@ -49,18 +66,13 @@ async function linearMetaJson(res: Response, label: string): Promise<any> {
     console.error(`linear ${label} error ${res.status}: ${text}`)
     throw new UpstreamTrackerError(res.status, text)
   }
-  const json = await res.json().catch(() => null)
-  const gqlErrors = json?.errors
-  if (gqlErrors?.length) {
-    const status = linearGraphqlErrorStatus(gqlErrors)
-    if (status) {
-      const msg = String(gqlErrors[0]?.message ?? "graphql auth error").slice(0, 200)
-      console.error(`linear ${label} graphql auth error (→HTTP ${status}): ${msg}`)
-      throw new UpstreamTrackerError(status, msg)
-    }
-    console.error(`linear ${label} graphql error: ${gqlErrors[0]?.message ?? "unknown error"}`)
-    throw new Error("tracker request failed (GraphQL error)")
-  }
+  // KLA-731 PATH B: a SUCCESSFUL (2xx) response with an unparseable body is a genuine upstream /
+  // protocol failure, NOT an empty result. Do NOT swallow the parse error (that would resolve to []
+  // and return a silent empty mapping while SKIPPING oops/alerts). Let res.json() reject so the
+  // route's catch routes it through oops()/reportError() as a real incident. Only res.ok===false
+  // maps to UpstreamTrackerError; a 200-with-garbage-body must stay an unclassified error.
+  const json = await res.json()
+  if (json?.errors?.length) throwLinearGraphqlError(json.errors, label)
   return json
 }
 
@@ -248,9 +260,12 @@ export const linearConnector: Connector = {
     }
 
     const json = await res.json()
+    // KLA-731 PATH A: Linear can return HTTP 200 with a GraphQL `errors` array for a bad token /
+    // missing permission. Classify auth/permission → UpstreamTrackerError(401/403) (user-config,
+    // no on-call page) — matching the HTTP-4xx path above and the meta methods — instead of the old
+    // untyped plain Error that classifyUpstreamError couldn't see, which paged on-call for a typo.
     if (json.errors && json.errors.length > 0) {
-      console.error(`linear graphql error: ${json.errors[0]?.message ?? "unknown error"}`)
-      throw new Error("tracker request failed (GraphQL error)")
+      throwLinearGraphqlError(json.errors, "createIssue")
     }
 
     const issue = json?.data?.issueCreate?.issue
