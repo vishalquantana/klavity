@@ -460,5 +460,12 @@
     "excerpt": "Non-technical users can't describe console errors or network calls, so capture them automatically. Here's how to design intake for reproducible reports.",
     "category": "Guides",
     "date": "2026-08-26"
+  },
+  {
+    "slug": "cut-clarification-round-trips-on-bug-reports",
+    "title": "How to Cut Clarification Round-Trips on Bug Reports",
+    "excerpt": "Bug reports bounce back when they're missing steps, environment, expected-vs-actual, or evidence. Capture all four at report time to stop the loop.",
+    "category": "Insights",
+    "date": "2026-08-27"
   }
 ]
