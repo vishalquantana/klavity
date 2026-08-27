@@ -1,9 +1,8 @@
 import { test, expect, describe, beforeEach } from "bun:test"
 import {
-  serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse, ogLaunchOrKill,
-  ogLiveBrowserCount, __resetOgLiveBrowsersForTest, OgAdmissionError, OgOrphanError,
+  serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse,
+  ogLiveBrowserCount, __resetOgLiveBrowsersForTest, OgAdmissionError,
   type OgServeDeps, type OgBrowserLike, type OgContextLike, type OgPageLike,
-  type OgServerLike, type OgLaunched, type OgServerHandle,
 } from "./og-render"
 import type { OgCardData } from "./og-card"
 
@@ -99,82 +98,54 @@ describe("serveOgImage — cache MISS returns default AND enqueues (never blocks
   })
 })
 
-// ── KLA-739 C2-3 (round 6): definitive teardown via a real killable BrowserServer handle. A close()
-// rejection only means close FAILED, not that Chromium exited — so a failed close now SIGKILLs the real
-// process and the live-slot is released ONLY on confirmed exit.
+// ── KLA-739 C2-3 (round 8): CONSERVATIVE live-browser bound over chromium.launch() (the Bun-compatible
+// path). No process handle → we release the admission slot ONLY on a graceful close() that RESOLVES; a
+// close that REJECTS or hangs PINS the slot (we can't prove the process died). Fakes model an
+// OgBrowserLike (newContext + close) with a configurable close mode.
 type CloseMode = "ok" | "reject" | "hang"
-type KillMode = "ok" | "reject" | "hang"
 
-// A fake OgLaunched whose "process" is alive until close/kill fires an exit. Models Playwright's
-// BrowserServer: close()/kill() resolve AFTER the process exits; onExit fires on any exit.
-function fakeLaunched(opts: { closeMode?: CloseMode; killMode?: KillMode } = {}): { launched: OgLaunched; isAlive: () => boolean; closeCalls: () => number; killCalls: () => number } {
+function fakeBrowser(opts: { closeMode?: CloseMode; hangRender?: boolean } = {}): { browser: OgBrowserLike; closeCalls: () => number } {
   const closeMode = opts.closeMode ?? "ok"
-  const killMode = opts.killMode ?? "ok"
-  let alive = true
   let closeCalls = 0
-  let killCalls = 0
-  const exitCbs: Array<() => void> = []
-  const fireExit = () => { if (alive) { alive = false; for (const cb of exitCbs) cb() } }
-  const page: OgPageLike = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
+  const page: OgPageLike = {
+    setContent: async () => {},
+    evaluate: async () => {},
+    screenshot: () => (opts.hangRender ? new Promise<Uint8Array>(() => {}) : Promise.resolve(new Uint8Array([7, 7]))),
+  }
   const context: OgContextLike = { newPage: async () => page, close: async () => {} }
-  const browser: OgBrowserLike = { newContext: async () => context }
-  const server: OgServerLike = {
+  const browser: OgBrowserLike = {
+    newContext: async () => context,
     close: () => {
       closeCalls++
-      if (closeMode === "ok") { fireExit(); return Promise.resolve() }
+      if (closeMode === "ok") return Promise.resolve()
       if (closeMode === "reject") return Promise.reject(new Error("close failed"))
       return new Promise<void>(() => {}) // hang
     },
-    kill: () => {
-      killCalls++
-      if (killMode === "ok") { fireExit(); return Promise.resolve() }
-      if (killMode === "reject") return Promise.reject(new Error("kill failed"))
-      return new Promise<void>(() => {}) // hang
-    },
-    onExit: (cb) => { if (!alive) cb(); else exitCbs.push(cb) },
   }
-  return { launched: { browser, server }, isAlive: () => alive, closeCalls: () => closeCalls, killCalls: () => killCalls }
+  return { browser, closeCalls: () => closeCalls }
 }
 
-describe("renderOgPngWith — definitive teardown + live-process bound (C2-3 round 6)", () => {
-  test("normal render returns bytes AND releases the live-slot to 0 (process exited)", async () => {
-    const f = fakeLaunched({ closeMode: "ok" })
-    const png = await renderOgPngWith("<html></html>", async () => f.launched, 5_000, 30)
+describe("renderOgPngWith — conservative live-browser bound (C2-3 round 8)", () => {
+  test("normal render returns bytes AND releases the live-slot to 0 (close resolved)", async () => {
+    const f = fakeBrowser({ closeMode: "ok" })
+    const png = await renderOgPngWith("<html></html>", async () => f.browser, 5_000, 30)
     expect(Array.from(png)).toEqual([7, 7])
     await new Promise((r) => setTimeout(r, 5))
+    expect(f.closeCalls()).toBe(1)
     expect(ogLiveBrowserCount()).toBe(0)
-    expect(f.isAlive()).toBe(false)
   })
 
-  test("a hung RENDER times out AND the server is torn down (process exits)", async () => {
-    // hanging screenshot → render never resolves; graceful close then reaps the process.
-    const f = fakeLaunched({ closeMode: "ok" })
-    ;(f.launched.browser as any).newContext = async () => ({
-      newPage: async () => ({ setContent: async () => {}, evaluate: async () => {}, screenshot: () => new Promise<Uint8Array>(() => {}) }),
-      close: async () => {},
-    })
+  test("a hung RENDER times out AND the browser is closed (slot released on the graceful close)", async () => {
+    const f = fakeBrowser({ closeMode: "ok", hangRender: true })
     let threw = false
-    try { await renderOgPngWith("<html></html>", async () => f.launched, 25) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("timed out") }
+    try { await renderOgPngWith("<html></html>", async () => f.browser, 25) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("timed out") }
     expect(threw).toBe(true)
     await new Promise((r) => setTimeout(r, 10))
-    expect(f.isAlive()).toBe(false)
+    expect(f.closeCalls()).toBe(1)
     expect(ogLiveBrowserCount()).toBe(0)
   })
 
-  // Delayed launch: launch resolves AFTER the deadline → the late server is still torn down + released.
-  test("a DELAYED launch (resolves after timeout) is still torn down + released", async () => {
-    const f = fakeLaunched({ closeMode: "ok" })
-    const launch = () => new Promise<OgLaunched>((res) => setTimeout(() => res(f.launched), 40))
-    let threw = false
-    try { await renderOgPngWith("<html></html>", launch, 10) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("timed out") }
-    expect(threw).toBe(true)
-    await new Promise((r) => setTimeout(r, 80))
-    expect(f.isAlive()).toBe(false)
-    expect(ogLiveBrowserCount()).toBe(0)
-  })
-
-  // #4 sync-throw launch: a synchronously-throwing launcher must still run cleanup (no pre-reserved leak).
-  test("a SYNCHRONOUSLY-throwing launcher rejects AND releases the pre-reserved slot", async () => {
+  test("a SYNCHRONOUSLY-throwing launcher rejects AND releases the pre-reserved slot (no leak)", async () => {
     const before = ogLiveBrowserCount()
     let threw = false
     try { await renderOgPngWith("<html></html>", () => { throw new Error("launch boom") }, 5_000, 30) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("launch boom") }
@@ -183,126 +154,42 @@ describe("renderOgPngWith — definitive teardown + live-process bound (C2-3 rou
     expect(ogLiveBrowserCount()).toBe(before)
   })
 
-  // A HUNG close but a working kill → SIGKILL reaps the process; slot released within the bound.
-  test("a HUNG close() → SIGKILL reaps the process; slot released within closeTimeoutMs", async () => {
-    const f = fakeLaunched({ closeMode: "hang", killMode: "ok" })
+  // CONSERVATIVE neg-control: a browser whose close() REJECTS must NOT release the slot (we can't prove
+  // the process died). NEG-CONTROL: a naive "release on close settle (resolve OR reject)" would drop to 0.
+  test("a REJECTED close() does NOT release the slot (pinned — bounds live count)", async () => {
+    const f = fakeBrowser({ closeMode: "reject" })
     const t0 = Date.now()
-    const png = await renderOgPngWith("<html></html>", async () => f.launched, 5_000, 30)
+    const png = await renderOgPngWith("<html></html>", async () => f.browser, 5_000, 30)
     expect(Array.from(png)).toEqual([7, 7])
-    expect(Date.now() - t0).toBeLessThan(1_000) // shared slot released within bound
+    expect(Date.now() - t0).toBeLessThan(1_000) // shared slot released within bound (render succeeded)
     await new Promise((r) => setTimeout(r, 20))
-    expect(f.killCalls()).toBe(1)      // force-killed
-    expect(f.isAlive()).toBe(false)    // process reaped
-    expect(ogLiveBrowserCount()).toBe(0)
+    expect(f.closeCalls()).toBe(1)
+    expect(ogLiveBrowserCount()).toBe(1) // PINNED — close failed, no proof of exit
   })
 
-  // REQUIRED neg-control (Codex probe b): a REJECTED close() must SIGKILL the real process — a counter
-  // that merely decremented on the rejection (round-5) would show trackedLive:0 while the process lived.
-  test("probe (b): 7 renders whose close() REJECTS → every process is SIGKILLed, live count accurate", async () => {
+  // Worst case: 7 renders whose close() never settles (or rejects) → live bounded at cap; surplus renders
+  // fail-fast with OgAdmissionError (serve default). Bounded, fail-CLOSED — never an unbounded leak.
+  test("probe: 7 renders with failing closes and cap=4 → live bounded at 4, surplus fail-fast", async () => {
     const CAP = 4
-    const fs: Array<ReturnType<typeof fakeLaunched>> = []
-    const launch = async (): Promise<OgLaunched> => { const f = fakeLaunched({ closeMode: "reject", killMode: "ok" }); fs.push(f); return f.launched }
-    for (let i = 0; i < 7; i++) await renderOgPngWith("<html></html>", launch, 1_000, 10, CAP)
-    await new Promise((r) => setTimeout(r, 20))
-    expect(fs.length).toBe(7)                                    // each reaped before the next → all admitted
-    expect(fs.filter((f) => f.isAlive()).length).toBe(0)        // NEG-CONTROL: EVERY process actually killed
-    expect(fs.every((f) => f.killCalls() === 1)).toBe(true)     // kill invoked on each failed close
-    expect(ogLiveBrowserCount()).toBe(0)                        // tracked count accurate
-  })
-
-  // REQUIRED neg-control (Codex probe a): worst case — BOTH close() and kill() hang (unreapable). Live
-  // processes must still be bounded by the cap: after `cap` renders admission fails-fast (default card).
-  test("probe (a): 7 renders where BOTH close() and kill() hang → live bounded at cap, surplus fail-fast", async () => {
-    const CAP = 4
-    const fs: Array<ReturnType<typeof fakeLaunched>> = []
-    const launch = async (): Promise<OgLaunched> => { const f = fakeLaunched({ closeMode: "hang", killMode: "hang" }); fs.push(f); return f.launched }
-    let rejections = 0
+    let launched = 0
     let maxLive = 0
+    let rejections = 0
+    const launch = async (): Promise<OgBrowserLike> => { launched++; return fakeBrowser({ closeMode: "hang" }).browser }
     for (let i = 0; i < 7; i++) {
       try { await renderOgPngWith("<html></html>", launch, 1_000, 10, CAP) }
       catch (e) { if (e instanceof OgAdmissionError) rejections++; else throw e }
       maxLive = Math.max(maxLive, ogLiveBrowserCount())
     }
-    expect(fs.length).toBeLessThanOrEqual(CAP)   // never launched beyond the cap
-    expect(maxLive).toBeLessThanOrEqual(CAP)      // live processes never exceeded the cap
-    expect(ogLiveBrowserCount()).toBe(CAP)        // the cap's worth stay pinned (truly unreapable)
-    expect(rejections).toBe(7 - CAP)              // surplus renders fail-fast (serve default)
+    expect(launched).toBeLessThanOrEqual(CAP)  // never launched beyond the cap
+    expect(maxLive).toBeLessThanOrEqual(CAP)    // live browsers never exceeded the cap
+    expect(ogLiveBrowserCount()).toBe(CAP)      // the cap's worth stay pinned (failing closes)
+    expect(rejections).toBe(7 - CAP)            // surplus renders fail-fast
   })
 
   test("OgAdmissionError is an Error subclass (callers catch → serve default card, never 500)", () => {
     const e = new OgAdmissionError()
     expect(e instanceof Error).toBe(true)
     expect(e instanceof OgAdmissionError).toBe(true)
-  })
-})
-
-// ── KLA-739 C2-3 (round 7): the process-CREATION ownership state machine. launchServer() succeeds but
-// connect() rejects → the orphaned server process must be SIGKILLed, not leaked. Uses ogLaunchOrKill with
-// injected launchServer/connect fakes (no real Chromium).
-describe("ogLaunchOrKill — connect-failure ownership (C2-3 round 7)", () => {
-  test("connect() succeeds → returns {browser,server}; render tracks + releases to 0", async () => {
-    const f = fakeLaunched({ closeMode: "ok" })
-    const launch = () => ogLaunchOrKill(async (): Promise<OgServerHandle> => ({ server: f.launched.server, wsEndpoint: "ws://ok" }), async () => f.launched.browser)
-    const png = await renderOgPngWith("<html></html>", launch, 5_000, 30)
-    expect(Array.from(png)).toEqual([7, 7])
-    await new Promise((r) => setTimeout(r, 5))
-    expect(f.isAlive()).toBe(false)
-    expect(ogLiveBrowserCount()).toBe(0)
-  })
-
-  // REQUIRED neg-control (Codex probe): launchServer OK + connect REJECTS → the orphaned server process is
-  // SIGKILLed (serverProcessAliveAfterReject → false) and trackedLive stays accurate. Against the pre-fix
-  // launcher (connect throw with NO kill), the process stays alive → this FAILS.
-  test("launchServer OK + connect REJECTS → orphaned server is SIGKILLed; live count accurate", async () => {
-    const f = fakeLaunched({ killMode: "ok" }) // close mode irrelevant — we never connect
-    const launch = () => ogLaunchOrKill(
-      async (): Promise<OgServerHandle> => ({ server: f.launched.server, wsEndpoint: "ws://x" }),
-      async () => { throw new Error("connect ECONNREFUSED") },
-    )
-    let threw = false
-    try { await renderOgPngWith("<html></html>", launch, 1_000, 30, 4) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("connect") }
-    expect(threw).toBe(true)
-    await new Promise((r) => setTimeout(r, 10))
-    expect(f.killCalls()).toBe(1)        // orphan SIGKILLed
-    expect(f.isAlive()).toBe(false)      // process reaped (serverProcessAliveAfterReject === false)
-    expect(ogLiveBrowserCount()).toBe(0) // tracked accurate (no leak, no double-count)
-  })
-
-  // Conservative edge: connect rejects AND the orphan kill can't confirm exit → OgOrphanError → PIN the
-  // slot (maybe-alive process), same rule as a hung close.
-  test("connect REJECTS + orphan kill HANGS → OgOrphanError, slot PINNED (not released)", async () => {
-    const f = fakeLaunched({ killMode: "hang" })
-    const launch = () => ogLaunchOrKill(
-      async (): Promise<OgServerHandle> => ({ server: f.launched.server, wsEndpoint: "ws://x" }),
-      async () => { throw new Error("connect fail") },
-      20, // killBoundMs — small so the probe is fast
-    )
-    let err: any
-    try { await renderOgPngWith("<html></html>", launch, 1_000, 30, 4) } catch (e) { err = e }
-    expect(err).toBeInstanceOf(OgOrphanError)
-    await new Promise((r) => setTimeout(r, 10))
-    expect(ogLiveBrowserCount()).toBe(1) // PINNED — kill couldn't confirm exit
-  })
-
-  // launchServer() itself fails → NO process created → plain release, no kill attempted.
-  test("launchServer() fails (no process) → plain release, no kill", async () => {
-    const f = fakeLaunched({})
-    const launch = () => ogLaunchOrKill(
-      async (): Promise<OgServerHandle> => { throw new Error("launchServer failed") },
-      async () => f.launched.browser,
-    )
-    let threw = false
-    try { await renderOgPngWith("<html></html>", launch, 1_000, 30, 4) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("launchServer") }
-    expect(threw).toBe(true)
-    await new Promise((r) => setTimeout(r, 5))
-    expect(f.killCalls()).toBe(0)        // no process was created → nothing to kill
-    expect(ogLiveBrowserCount()).toBe(0) // released
-  })
-
-  test("OgOrphanError is an Error subclass", () => {
-    const e = new OgOrphanError(new Error("root"))
-    expect(e instanceof Error).toBe(true)
-    expect(e instanceof OgOrphanError).toBe(true)
   })
 })
 
