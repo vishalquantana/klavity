@@ -74,6 +74,23 @@ export function openModal(type: ReportType = 'bug') {
   }, 200)
 }
 
+// KLA-725: the script-tag SDK must expose a DOM-detectable marker so the browser
+// extension reliably YIELDS its context menu (no double right-click menu). The extension
+// (isolated world) can only see the DOM, so we mount a stable, invisible host node with
+// id="klavity-sdk-host" + [data-klavity-ui]. The id already matches the screenshot
+// host-filter in capturePageDataUrl (excluded from captures), so this is a no-op there.
+function ensureSdkMarker() {
+  if (typeof document === 'undefined' || !document.body) return
+  let host = document.getElementById('klavity-sdk-host')
+  if (!host) {
+    host = document.createElement('div')
+    host.id = 'klavity-sdk-host'
+    host.style.cssText = 'display:none!important;position:fixed;width:0;height:0;pointer-events:none;'
+    document.body.appendChild(host)
+  }
+  host.setAttribute('data-klavity-ui', 'sdk')
+}
+
 function setupErrorCapture() {
   // Full-fidelity capture (G3): all console levels + all fetch/XHR requests, bounded + redacted.
   installCapture(_buffers, { consoleLevels: true })
@@ -128,6 +145,7 @@ export function init(config: SdkConfig = {}) {
     plane: { ...DEFAULT_SETTINGS.plane, ...config.plane },
   }
   setupErrorCapture()
+  ensureSdkMarker() // KLA-725: let the extension detect this in-page SDK and yield its menu
   addContextMenu()
   // G1 session replay: start a rolling rrweb buffer (masked by default). Best-effort — a recorder
   // failure must never break host-app init. Only meaningful when reporting via the Klavity backend.

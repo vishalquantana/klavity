@@ -13682,7 +13682,7 @@ var _l;
 (function(e) {
   e[e.NotStarted = 0] = "NotStarted", e[e.Running = 1] = "Running", e[e.Stopped = 2] = "Stopped";
 })(_l || (_l = {}));
-const { addCustomEvent: Oy } = jt, { freezePage: Ny } = jt, { takeFullSnapshot: Py } = jt, En = 2, Rs = 4;
+const { addCustomEvent: Ny } = jt, { freezePage: Py } = jt, { takeFullSnapshot: Dy } = jt, En = 2, Rs = 4;
 class Vg {
   constructor(t) {
     un(this, "events", []);
@@ -14577,7 +14577,7 @@ function Ry() {
   }
   return er = document.createElement("div"), er.id = Sy, er.style.cssText = "position:fixed;top:0;left:0;width:0;height:0;pointer-events:none;overflow:visible;z-index:2147483640;", document.body.appendChild(er), er;
 }
-function Dy(e, t, r = {}) {
+function $y(e, t, r = {}) {
   const n = Ry(), i = r.color ?? "#6366f1", o = `klav-ao-${My++}`, a = 5, c = document.createElement("div");
   c.className = "klav-ao-halo", c.dataset.aoId = o, c.style.left = e.x - a + "px", c.style.top = e.y - a + "px", c.style.width = e.w + a * 2 + "px", c.style.height = e.h + a * 2 + "px", c.style.borderColor = i, c.style.boxShadow = `0 0 0 4px ${zl(i, 0.14)},0 0 24px ${zl(i, 0.18)}`, n.appendChild(c);
   let l = null;
@@ -14613,7 +14613,7 @@ function Cu(e) {
     Oe(n), Oe(r);
   }, 240)) : Oe(r);
 }
-function $y() {
+function zy() {
   for (const e of [...Bn.keys()]) Cu(e);
 }
 let Eu = br;
@@ -14660,6 +14660,11 @@ function so(e = "bug") {
   }, 200);
 }
 function _y() {
+  if (typeof document > "u" || !document.body) return;
+  let e = document.getElementById("klavity-sdk-host");
+  e || (e = document.createElement("div"), e.id = "klavity-sdk-host", e.style.cssText = "display:none!important;position:fixed;width:0;height:0;pointer-events:none;", document.body.appendChild(e)), e.setAttribute("data-klavity-ui", "sdk");
+}
+function Ly() {
   xh(Mu, { consoleLevels: !0 });
 }
 function _u(e) {
@@ -14668,7 +14673,7 @@ function _u(e) {
 function Lu(e) {
   Au = e ? Tu(e) : void 0;
 }
-function Ly() {
+function Iy() {
   document.addEventListener("contextmenu", (e) => {
     if (nf(e.target)) return;
     e.preventDefault();
@@ -14695,7 +14700,7 @@ function Iu(e = {}) {
     linear: { ...br.linear, ...e.linear },
     github: { ...br.github, ...e.github },
     plane: { ...br.plane, ...e.plane }
-  }, _y(), Ly(), !_r)
+  }, Ly(), _y(), Iy(), !_r)
     try {
       _r = Yg(jt);
     } catch {
@@ -14703,17 +14708,17 @@ function Iu(e = {}) {
     }
 }
 typeof window < "u" && (window.KlavitySnap = { init: Iu, openModal: so, identify: _u, setMetadata: Lu });
-const zy = { init: Iu, openModal: so, identify: _u, setMetadata: Lu };
+const Fy = { init: Iu, openModal: so, identify: _u, setMetadata: Lu };
 export {
   Tn as KlavitySims,
   Tn as SimsLive,
   Cu as clearAnnotation,
-  $y as clearAnnotations,
-  zy as default,
+  zy as clearAnnotations,
+  Fy as default,
   _u as identify,
   Iu as init,
   xy as installKlavitySims,
   so as openModal,
   Lu as setMetadata,
-  Dy as showAnnotation
+  $y as showAnnotation
 };
