@@ -137,3 +137,71 @@ test("linear listStatuses: 200 + non-auth GraphQL error stays unclassified plain
   expect(thrown).not.toBeInstanceOf(UpstreamTrackerError)
   expect(classifyUpstreamError(thrown)).toBeNull()
 })
+
+// ── KLA-731 PATH A: createIssue GraphQL-200 auth also classifies as user-config (was still paging) ──
+//
+// linearGraphqlErrorStatus() was applied only to the META methods, not createIssue. A connector "Test
+// connection" runs createIssue; Linear can answer HTTP 200 with a GraphQL auth `errors` payload for a
+// bad token, so createIssue threw a plain Error("tracker request failed (GraphQL error)"),
+// classifyUpstreamError returned null, and the connector-test catch called oops() → paged + auto-filed.
+const TICKET = {
+  title: "✅ Klavity connection test", body: "verify creds", priority: null, url: null,
+  simName: "Klavity", createdAt: 1, klavityUrl: "https://klavity.in/dashboard", attachments: [],
+}
+
+test("linear createIssue: 200 + GraphQL auth errors → typed UpstreamTrackerError(401)", async () => {
+  mock200GraphqlAuth()
+  let thrown: any
+  try { await linearConnector.createIssue(TICKET as any, cfg()) } catch (e) { thrown = e }
+  expect(thrown).toBeInstanceOf(UpstreamTrackerError)
+  expect(thrown.status).toBe(401)
+  // Pre-fix: createIssue threw a plain Error on a GraphQL-200 auth payload → instanceof FAILS.
+})
+
+test("linear createIssue: 200 + GraphQL auth → friendly validation error, oops NOT called", async () => {
+  mock200GraphqlAuth()
+  const oops = mock(() => ({ error: "Something went wrong. Please try again.", id: "z" }))
+  const res = await simulateMeta(() => linearConnector.createIssue(TICKET as any, cfg()), oops)
+  expect(res.ok).toBe(false)
+  expect((res as any).code).toBe(401)
+  expect(oops).not.toHaveBeenCalled()
+})
+
+// A GraphQL permission (FORBIDDEN) error on createIssue → 403, still classified (no oops).
+test("linear createIssue: 200 + GraphQL FORBIDDEN → UpstreamTrackerError(403)", async () => {
+  globalThis.fetch = mock(async () =>
+    Response.json({ errors: [{ message: "You are not authorized", extensions: { code: "FORBIDDEN" } }] }),
+  ) as any
+  let thrown: any
+  try { await linearConnector.createIssue(TICKET as any, cfg()) } catch (e) { thrown = e }
+  expect(thrown).toBeInstanceOf(UpstreamTrackerError)
+  expect(thrown.status).toBe(403)
+})
+
+// ── KLA-731 PATH B: a 200 with a NON-JSON (garbage) body is a real failure, NOT an empty result ──
+//
+// linearMetaJson previously did `res.json().catch(() => null)`, so a malformed successful response
+// resolved to null → listStatuses/listIssueTypes returned [] → /connectors/meta reported an empty
+// SUCCESSFUL mapping while SKIPPING oops/alerts. It must now surface as an (unclassified) error so
+// the route reaches oops()/reportError() — a protocol failure should page, not silently succeed.
+test("linear listStatuses: 200 with non-JSON body → surfaces as error (not empty success)", async () => {
+  globalThis.fetch = mock(async () => new Response("<html>gateway timeout</html>", { status: 200 })) as any
+  let thrown: any
+  let result: any
+  try { result = await linearConnector.listStatuses!(cfg()) } catch (e) { thrown = e }
+  // It must THROW, not resolve to [].
+  expect(thrown).toBeTruthy()
+  expect(result).toBeUndefined()
+  // And it must be UNCLASSIFIED (a genuine backend/protocol failure) → routes through oops(), not a
+  // friendly "user-config" short-circuit (that would be for a res.ok===false 4xx only).
+  expect(classifyUpstreamError(thrown)).toBeNull()
+})
+
+test("linear listIssueTypes: 200 with non-JSON body → oops IS called (not silent empty mapping)", async () => {
+  globalThis.fetch = mock(async () => new Response("not json", { status: 200 })) as any
+  const oops = mock(() => ({ error: "Something went wrong. Please try again.", id: "boom" }))
+  const res = await simulateMeta(() => linearConnector.listIssueTypes!(cfg()), oops)
+  // Pre-fix (swallow → null → []): simulateMeta would have returned { ok: true } and NOT called oops.
+  expect(res.ok).toBe(false)
+  expect(oops).toHaveBeenCalledTimes(1)
+})
