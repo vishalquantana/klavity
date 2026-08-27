@@ -10052,6 +10052,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ANON_AI_DEMO_ROUTES power the pre-signup onboarding aha and are safe anonymously
       // (own rate limit + SSRF guard + caps) — their handlers below re-derive auth themselves.
+      // KLAVITYKLA-717: /api/dashboard is polled by the SPA via fetch(). The generic GET gate
+      // (needLogin → loginGate) 302-redirects to /login, which fetch() silently follows into a
+      // 200 HTML page — the SPA never sees an auth failure and paints an EMPTY switcher/"Couldn't
+      // load your project" state that never self-heals. Return a real 401 JSON so the SPA's
+      // 401-guard (dashboard.html refreshAll/load) redirects to /login instead. This fires ONLY
+      // for a null/expired session (falsy `me`); an authed user with zero projects (truthy `me`,
+      // empty list) still falls through to the normal 200 {projects:[], active:null} shape below.
+      if (!me && req.method === "GET" && path === "/api/dashboard") return json({ error: "unauthenticated" }, 401)
       if (!me && !ANON_AI_DEMO_ROUTES.has(`${req.method} ${path}`)) return needLogin()
 
       // dashboard data

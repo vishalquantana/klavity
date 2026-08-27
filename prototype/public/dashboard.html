@@ -3620,6 +3620,12 @@ async function refreshAll(isPoll) {
   } catch (e) { return }
   finally { kbar.done() }
   if (!data || data.error) return
+  // KLAVITYKLA-717 (defense in depth): never let a stray EMPTY payload ({active:null, projects:[]})
+  // blank an already-loaded switcher. A transient session blip / race can return the empty shape;
+  // if we already had projects, keep the good state instead of painting an empty dropdown + a
+  // "Couldn't load your project" Settings pane that only a full reload would recover from.
+  if (data && Array.isArray(data.projects) && data.projects.length === 0 && !data.active
+      && state && Array.isArray(state.projects) && state.projects.length > 0) { return }
   // #532: overlay locally-edited fields the fresh payload may not yet reflect (belt-and-suspenders
   // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
   mergeLocalEdits(data, fetchStart)
