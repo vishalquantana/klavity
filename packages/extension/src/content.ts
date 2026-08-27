@@ -264,25 +264,107 @@ let _composerOpening = false
 // video-upload: file attachments DEFAULT-ON (opt-out) even when config is missing/unreachable — mirrors
 // parseComposerOpts + the widget so the "Attach file" button shows on every project by default.
 const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
-async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts }> {
+// KLA-728 (ext↔widget parity): when a matched project is reachable we also return an `assist` scope
+// (resolved backend base + project id) so openComposer can wire the composer AI-assist callbacks
+// (Enhance / clarity-tip / voice) against the SAME per-project widget API the widget uses. Null when no
+// project matches / config is unreachable → classic composer with no assist (unchanged behavior).
+type AssistScope = { backendUrl: string; projectId: string } | null
+async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts; assist: AssistScope }> {
   try {
     const proj = klavMatchProject(location.href)
     const backendUrl = klavConfig?.backendUrl
     if (proj?.id && backendUrl) {
-      const r = await fetch(`${backendUrl.replace(/\/+$/, '')}/api/projects/${encodeURIComponent(proj.id)}/config`)
+      const base = backendUrl.replace(/\/+$/, '')
+      const r = await fetch(`${base}/api/projects/${encodeURIComponent(proj.id)}/config`)
       if (r.ok) {
-        const modalConfig = (await r.json()).modalConfig || {}
+        const j = await r.json()
+        const modalConfig = j.modalConfig || {}
         // Attribution (ext↔widget parity): mark the surface + project id so the modal's "Powered by
         // Klavity" badge carries UTM (utm_medium=extension, utm_content=<projectId>, utm_source=host).
         if (modalConfig && typeof modalConfig === 'object') {
           ;(modalConfig as any).attributionMedium = 'extension'
           ;(modalConfig as any).projectId = proj.id
+          // KLA-728 (ext↔widget parity): the report-clarity toggle rides at the TOP LEVEL of the config
+          // response (sibling of modalConfig), NOT inside it — exactly how the widget reads it (widget.ts
+          // `reportClarity = j.reportClarity !== false`). Default ON: only an explicit false disables it.
+          // Merge it into modalConfig so resolveModalConfig threads it through to buildModal
+          // (cfg.reportClarity) and the composer renders the clarity meter/tip when enabled.
+          ;(modalConfig as any).reportClarity = j.reportClarity !== false
         }
-        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig) }
+        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId: proj.id } }
       }
     }
   } catch { /* default theme + classic composer */ }
-  return { config: resolveModalConfig({}), composer: EMPTY_COMPOSER_OPTS }
+  return { config: resolveModalConfig({}), composer: EMPTY_COMPOSER_OPTS, assist: null }
+}
+
+// ── KLA-728 composer AI-assist (ext↔widget parity) ────────────────────────────────────────────────────
+// Mirrors packages/sdk/src/widget.ts + packages/sdk/src/index.ts (KLA-729): the Enhance-with-AI button,
+// the report-clarity coach tip, and server-side voice dictation (batch + live WebSocket stream). All calls
+// are best-effort — each catches and resolves null/undefined so a slow or unreachable endpoint never blocks
+// the composer (the meter/enhance still render; voice falls back to Web Speech). The endpoints are the SAME
+// public per-project widget API scoped by projectId + the extension's backend base, fetched DIRECTLY from
+// the content script exactly as fetchModalConfig already fetches /api/projects/:id/config (no new chrome.*
+// surface, so nothing needs to route through the service worker).
+const ASSIST_FETCH_TIMEOUT_MS = 15_000
+function assistFetch(input: string, init: RequestInit = {}, timeoutMs = ASSIST_FETCH_TIMEOUT_MS): Promise<Response> {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), timeoutMs)
+  return fetch(input, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(t))
+}
+type ModalOpts = Parameters<typeof buildModal>[1]
+function buildComposerAssist(assist: AssistScope, clarityOn: boolean): Partial<ModalOpts> {
+  if (!assist) return {}
+  const { backendUrl, projectId } = assist
+  const opts: Partial<ModalOpts> = {}
+  // Report-clarity coach (POST /api/report/clarity) + AI Enhance (POST /api/report/enhance) are gated on
+  // the per-project reportClarity toggle — parity with the widget (both wired only when clarity is on).
+  if (clarityOn) {
+    opts.onClarityTip = async (text, ctx) => {
+      try {
+        const res = await assistFetch(backendUrl + '/api/report/clarity', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ projectId, text, pageUrl: location.href, images: ctx?.images ?? 0, client: captureExtClientInfo() }),
+        })
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        return (data && typeof data.tip === 'string' && data.tip) ? { tip: data.tip } : null
+      } catch { return null }
+    }
+    opts.onEnhance = async (text, ctx) => {
+      try {
+        const res = await assistFetch(backendUrl + '/api/report/enhance', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ projectId, text, pageUrl: location.href, shot: ctx?.shot || '', picked: ctx?.picked || null, images: ctx?.images ?? 0, client: captureExtClientInfo() }),
+        }, 30_000) // vision call — longer timeout than the cheap tip
+        if (!res.ok) return null
+        const data = await res.json().catch(() => null)
+        return (data && data.draft) ? data.draft : null
+      } catch { return null }
+    }
+  }
+  // Voice dictation — batch STT (POST /api/voice/transcribe) + a live WS stream (wss …/api/voice/stream?
+  // project=…). Not tied to reportClarity: the widget wires voice on every project. The composer PREFERS
+  // the stream, falls back to onDictate, then Web Speech — all handled inside the shared core voice-input.
+  opts.onDictate = async (audio) => {
+    try {
+      const fd = new FormData()
+      fd.append('projectId', projectId)
+      fd.append('audio', audio, 'dictation.webm')
+      if (audio.type) fd.append('mime', audio.type)
+      const res = await assistFetch(backendUrl + '/api/voice/transcribe', { method: 'POST', body: fd })
+      if (!res.ok) return null
+      const data = await res.json().catch(() => null)
+      return (data && typeof data.text === 'string') ? { text: data.text } : null
+    } catch { return null }
+  }
+  try {
+    const u = new URL(backendUrl + '/api/voice/stream')
+    u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+    u.searchParams.set('project', projectId)
+    opts.dictationStreamUrl = u.toString()
+  } catch { /* leave unset → composer uses onDictate / Web Speech */ }
+  return opts
 }
 
 // Entry point for the context menu / OPEN_MODAL / region-drag. Bug reports open in "evidence-session mode"
@@ -319,7 +401,7 @@ async function openComposer(
   type: ReportType,
   opts: { initialShot?: { dataUrl: string; quality?: CaptureQuality }; session?: ExtEvidenceSession } = {},
 ) {
-  const { config, composer } = await fetchModalConfig()
+  const { config, composer, assist } = await fetchModalConfig()
   const session = opts.session ?? null
   const seedShots = session ? session.shots.slice() : []
   const hasSeed = seedShots.length > 0
@@ -345,6 +427,12 @@ async function openComposer(
     // the widget (widget.ts consoleAttachToggle:true). The reporter's opt-in threads through onSubmit as
     // attachConsole; buildContext strips console logs unless it's true — parity + privacy by default.
     consoleAttachToggle: true,
+    // KLA-728 (ext↔widget parity): composer AI-assist — Enhance-with-AI, the report-clarity coach tip, and
+    // server-side voice dictation (batch + live WS stream). Spread from buildComposerAssist so they're wired
+    // ONLY when a matched project + reachable backend supplied an assist scope (and Enhance/clarity only when
+    // the project's reportClarity toggle is on). No-op {} otherwise → classic composer, unchanged. Mirrors
+    // packages/sdk/src/widget.ts + index.ts. All callbacks are best-effort (resolve null on any failure).
+    ...buildComposerAssist(assist, config.reportClarity === true),
     // #442: for an evidence session, append a "Pages captured" trail (read the LATEST session so shots
     // added across pages/origins are included) and clear the session on a successful file.
     onSubmit: (p) => submitViaSW(p, session),

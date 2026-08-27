@@ -23,6 +23,9 @@
 // gate, by contrast, uses a repo-wide `git diff` file list (not the tsconfig), so
 // it still sees this file regardless of where it sits in the package.
 //
+// touched by KLA-728: composer AI-assist (Enhance/clarity/voice) wired into content.ts. This file must
+// stay in `git diff --name-only origin/master..HEAD` so the merge-train changed-file tsc gate compiles the
+// chrome shim alongside content.ts and net-new TS2304 ('chrome') stays 0.
 // touched by KLA-735: the auto-file-error outbox added NEW chrome.storage.local refs in background.ts.
 // This file must appear in `git diff --name-only origin/master..HEAD` so the merge-train's changed-file
 // tsc gate includes this ambient shim on its compile line and `chrome` resolves to `any` (net-new TS2304 → 0).
