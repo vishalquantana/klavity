@@ -64,7 +64,7 @@ describe('reporterLines / clientInfoLines', () => {
     const joined = lines.join('\n')
     expect(joined).toContain('Name: Ada')
     expect(joined).toContain('Email: a@b.com')
-    expect(joined).toContain('Org: Acme')
+    expect(joined).toContain('Company Name: Acme')
     expect(joined).toContain('Environment: prod')
   })
 

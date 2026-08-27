@@ -292,27 +292,38 @@ test("4a: the report surfaces in the project dashboard with url context", async 
   expect(Array.isArray(body.tickets)).toBe(true)
   const mine = body.tickets.find((t: any) => t.id === feedbackId)
   expect(mine).toBeTruthy()
-  // FINDING: the list title surfaces the DESCRIPTION (observation), NOT the explicit
-  // composer `title` field — every read API derives title from observation/suggested_bug,
-  // so the PX4 #411 one-line Title is persisted (feedback.title) but never displayed.
-  expect(mine.title).toBe("Checkout button is misaligned on the pricing page.")
+  // KLA-719: read APIs now surface the EXPLICIT composer `title` first (effectiveTicketTitle,
+  // lib/db.ts) — the PX4 #411 one-line Title, falling back to suggested-bug/observation only
+  // when absent. The old "title === observation" finding was fixed; assert the composer title.
+  expect(mine.title).toBe("Misaligned checkout button")
   // Carries the report's url context (path-only by privacy design).
   expect(mine.urlPath).toBe("/pricing")
   expect(mine.urlHost).toBe("acme.example.com")
 })
 
-test("4b: the report appears in the New-reports triage queue for the project", async () => {
+test("4b: a trusted autofiled report skips the New-reports triage queue (advances to the board)", async () => {
+  // KLA-719 / #534: this is a TRUSTED authenticated-member submit under the default `autofile`
+  // routing, so autoFileHumanSnap → advanceFeedbackToOpenIfNew flips it new→open. It therefore
+  // does NOT sit in the triage 'new' queue (which is gated to status='new'); it lands on the
+  // board instead (4a already found it there). The anon/untrusted triage-gate invariant is
+  // unchanged — only trusted autofiled reports skip triage.
   const r = await fetch(`${BASE}/api/projects/${encodeURIComponent(projectId)}/triage`, {
     headers: { Cookie: sessionCookie },
   })
   expect(r.status).toBe(200)
   const body = await r.json()
   expect(Array.isArray(body.triage)).toBe(true)
-  const mine = body.triage.find((t: any) => t.id === feedbackId)
-  expect(mine).toBeTruthy()
-  // Same surfacing behavior as the dashboard list — title === observation (see 4a finding).
-  expect(mine.title).toBe("Checkout button is misaligned on the pricing page.")
-  expect(mine.urlPath).toBe("/pricing")
+  const inTriage = body.triage.find((t: any) => t.id === feedbackId)
+  expect(inTriage).toBeUndefined()
+
+  // Positive confirmation it wasn't lost: it's on the board with a non-'new' status.
+  const dash = await fetch(`${BASE}/api/dashboard?project=${encodeURIComponent(projectId)}`, {
+    headers: { Cookie: sessionCookie },
+  })
+  const dbody = await dash.json()
+  const onBoard = dbody.tickets.find((t: any) => t.id === feedbackId)
+  expect(onBoard).toBeTruthy()
+  expect(onBoard.status).not.toBe("new")
 })
 
 test("4c: with a connector configured, the report is eligible for export (manual export succeeds)", async () => {

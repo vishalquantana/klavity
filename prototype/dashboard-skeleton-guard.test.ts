@@ -194,7 +194,10 @@ test("overview cards use per-card View all links without a Focus/Full control", 
   expect(HTML).not.toContain("Focus mode")
   expect(HTML).not.toContain("Focus/Full")
   expect(HTML).not.toContain("Focus ⇄ Full")
-  expect(HTML).not.toContain("Full</button>")
+  // KLA-719: "Full</button>" was over-broad — it now matches an UNRELATED project-plan
+  // toggle (id="projPlanFullBtn">Full</button>), not a Focus/Full overview control. The
+  // toggle's other label ">Focus</button>" is the precise, false-positive-free guard.
+  expect(HTML).not.toContain(">Focus</button>")
   expect(HTML).toContain('onclick="setView(\'sims\')" aria-label="View all Sims and their feedback"')
   expect(HTML).toContain('onclick="setView(\'tickets\')" aria-label="View all tickets"')
   expect(HTML).toContain('onclick="setView(\'triage\')" style="margin-left:auto" aria-label="View all feedback and activity"')
@@ -261,7 +264,7 @@ test("renderSimsFeed shows actual observation text with a Triage link", () => {
   )
   renderSimsFeed()
   expect(els.simsFeed.innerHTML).toContain("The checkout CTA disappears below the fold.")
-  expect(els.simsFeed.innerHTML).toContain("View in New reports")
+  expect(els.simsFeed.innerHTML).toContain("View in Sim Reports")
   expect(els.simsFeed.innerHTML).toContain('href="#triage"')
   expect(els.simsCount.textContent).toBe("1")
 })

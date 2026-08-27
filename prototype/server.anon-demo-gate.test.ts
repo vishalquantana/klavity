@@ -97,5 +97,6 @@ test("anonymous POST /api/persona/brief (NOT allowlisted) still hits the login g
 test("anonymous GET /api/me still redirects to /login (gate intact for everything else)", async () => {
   const r = await fetch(`${BASE}/api/me`, { redirect: "manual" })
   expect(r.status).toBe(302)
-  expect(r.headers.get("location")).toBe("/login")
+  // Gate now preserves the return path via ?next= (deep-link back after login).
+  expect(r.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/api/me"))
 })

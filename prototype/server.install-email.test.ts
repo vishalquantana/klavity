@@ -5,6 +5,19 @@
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
 import { createClient } from "@libsql/client"
+import net from "node:net"
+
+// KLA-719: replace a crowded `<base> + rand(1000)` port with an OS-assigned free port.
+// Sharing a random base with sibling suites caused co-scheduled servers to answer each
+// other's requests (spurious 401/404 / "no such table: users" from a readiness false-positive).
+function freePort(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = net.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlinkSync } from "node:fs"
@@ -12,7 +25,7 @@ import { unlinkSync } from "node:fs"
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const DB_FILE = join(tmpdir(), `klav-install-${RUN}.db`)
 const SECRET = Buffer.from(new Uint8Array(32).fill(39)).toString("base64")
-const PORT = 45500 + Math.floor(Math.random() * 200)
+const PORT = await freePort()
 const BASE = `http://localhost:${PORT}`
 
 const OWNER = `inst-owner-${RUN}@test.local`

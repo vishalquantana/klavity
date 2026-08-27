@@ -11,30 +11,32 @@ import { test, expect } from "bun:test"
 const ONBOARDING = await Bun.file(import.meta.dir + "/../site/onboarding.html").text()
 const DASHBOARD  = await Bun.file(import.meta.dir + "/public/dashboard.html").text()
 
-// ── Onboarding: Snap tiles must NOT be hidden inside a collapsed toggle ────────
-test("onboarding: mw-toggle is hidden by CSS (Snap visible by default)", () => {
-  // The toggle that used to show/hide the two paths must be display:none
-  expect(ONBOARDING).toContain(".more-ways .mw-toggle{display:none}")
+// ── Onboarding: Snap must be a first-class goal choice (not hidden) ────────────
+// KLA-719: onboarding.html was redesigned from the old "More ways to set up" collapse
+// (mw-toggle / mwBody / goaltile) into a stepped wizard. The KLA-293 INTENT is unchanged
+// and re-pinned against the new wizard's markers: Snap is a top-level goal/fork choice,
+// offered alongside Sims, and NOT collapsed behind a toggle.
+test("onboarding: Snap is a top-level goal choice (not collapsed behind a toggle)", () => {
+  // Snap is a first-class goal in the wizard's goal step…
+  expect(ONBOARDING).toContain('data-goal="snap"')
+  // …and the old show/hide collapse toggle is gone entirely.
+  expect(ONBOARDING).not.toContain(".more-ways .mw-toggle")
 })
 
-test("onboarding: mw-body is NOT marked hide at load time", () => {
-  // The body wrapping the two goal tiles must be open on page load
-  expect(ONBOARDING).toContain('<div class="mw-body" id="mwBody">')
-  // It must NOT include the 'hide' class in its initial HTML
-  const mwBodyTag = ONBOARDING.match(/<div class="mw-body[^"]*" id="mwBody">/)
-  expect(mwBodyTag).toBeTruthy()
-  expect((mwBodyTag![0] || "")).not.toContain("hide")
+test("onboarding: Snap fork is offered directly on the goal step", () => {
+  // The Snap path is a direct fork the user can pick at load — no expand-to-reveal step.
+  expect(ONBOARDING).toContain('data-fork="snap"')
 })
 
-test("onboarding: Snap goal tile is present and visible (not in a collapsed section)", () => {
-  expect(ONBOARDING).toContain('class="goaltile snap"')
-  // The Snap tile's label must be directly visible (not inside an aria-hidden wrapper)
-  expect(ONBOARDING).toContain("Catch bugs from real visitors")
+test("onboarding: Snap goal tile is present and visible", () => {
+  // The Snap tile's label is directly present in the markup.
+  expect(ONBOARDING).toContain("Snap — a one-click bug button, free forever")
 })
 
-test("onboarding: hero subtitle mentions both Snap and Sims", () => {
-  // The URL hero should no longer be "Meet your Sims" only
-  expect(ONBOARDING).toContain("Start with")
+test("onboarding: goal step offers both Snap and Sims paths", () => {
+  // Both forks are offered so Snap is not buried beneath a Sims-only hero.
+  expect(ONBOARDING).toContain('data-fork="snap"')
+  expect(ONBOARDING).toContain('data-fork="sims"')
 })
 
 // ── Dashboard: Snap nav entry must exist in the sidebar ───────────────────────
