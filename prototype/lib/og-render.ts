@@ -34,30 +34,38 @@ export function ogS3Key(ref: string, version?: string | number | null): string {
   return v ? `og/${safeRef}-${v}.png` : `og/${safeRef}.png`
 }
 
-// Minimal structural seams over the Playwright browser/context/page so the render+timeout+kill logic
-// is unit-testable with a fake browser (no real Chromium). Only the members we actually call.
+// Minimal structural seams over Playwright so the render + bounded-teardown + kill logic is unit-testable
+// with fakes (no real Chromium). Only the members we actually call.
 export interface OgPageLike {
   setContent(html: string, opts?: any): Promise<void>
   evaluate(fn: any): Promise<any>
   screenshot(opts?: any): Promise<Uint8Array | ArrayBuffer | Buffer>
 }
 export interface OgContextLike { newPage(): Promise<OgPageLike>; close(): Promise<void> }
-export interface OgBrowserLike {
-  newContext(opts?: any): Promise<OgContextLike>
-  close(): Promise<void>
-}
+export interface OgBrowserLike { newContext(opts?: any): Promise<OgContextLike> }
 
-// ── live-browser process cap (KLA-739 C2-3 — TRUE bound on leaked Chromiums) ─────────────────────
-// A cap on LIVE OG Chromium browsers — launched but whose close() has NOT yet settled. Crucially, a
-// browser whose close() HANGS keeps counting against this cap until its close ACTUALLY settles (unlike
-// the per-key _inflight job dedupe, which frees on the close TIMEOUT and so let hung-close browsers leak
-// unboundedly — Codex's 7-render probe). Once `OG_MAX_LIVE_BROWSERS` are alive, further renders fail-fast
-// with OgAdmissionError (the caller serves the default card), so live Chromiums are bounded by a fixed cap
-// even under persistent hung closes. withPdfSlot is still released within closeTimeoutMs (PDF not wedged);
-// this live cap is a SEPARATE counter released only on a real close.
+// KLA-739 (C2-3, round 6): a REAL, killable browser-SERVER handle (Playwright BrowserServer). A counter
+// alone can't know if a process died — a close() REJECTION only means close failed, not that Chromium
+// exited (Codex's probe: 7 rejected closes → trackedLive:0 but 7 processes still alive). So the OG render
+// path owns a BrowserServer whose process we can SIGKILL, and we release the live-slot ONLY on a CONFIRMED
+// process exit (close/kill resolves, or an 'exit' signal) — never merely because close() rejected.
+export interface OgServerLike {
+  close(): Promise<void>       // graceful terminate; resolves AFTER the process exits
+  kill(): Promise<void>        // SIGKILL the process; resolves AFTER the process exits
+  onExit(cb: () => void): void // register a process-exit listener (fires on graceful/kill/crash exit)
+}
+export interface OgLaunched { browser: OgBrowserLike; server: OgServerLike }
+
+// ── live-browser process cap (KLA-739 C2-3 — TRUE bound on live Chromiums) ────────────────────────
+// A cap on LIVE OG Chromium processes — launched but not yet CONFIRMED exited. A browser whose close
+// hangs OR rejects keeps counting until its process is proven gone (SIGKILL'd), so neither a never-
+// settling close nor a rejected close can bypass the bound (unlike the per-key _inflight dedupe, which
+// frees on the close TIMEOUT). Once `OG_MAX_LIVE_BROWSERS` are alive, further renders fail-fast with
+// OgAdmissionError (caller serves the default card). withPdfSlot is still released within closeTimeoutMs
+// (PDF/AutoSim never wedge); this live cap is a SEPARATE counter released only on confirmed process exit.
 export const OG_MAX_LIVE_BROWSERS = Math.max(1, Number(process.env.OG_MAX_INFLIGHT) || 4)
 let _liveOgBrowsers = 0
-/** Number of OG Chromium browsers currently alive (launched, close not yet settled). Introspection/tests. */
+/** Number of OG Chromium processes currently alive (launched, exit not yet confirmed). Introspection/tests. */
 export function ogLiveBrowserCount(): number { return _liveOgBrowsers }
 /** TEST-ONLY: reset the live-browser counter between hermetic cases (no real process is touched). */
 export function __resetOgLiveBrowsersForTest(): void { _liveOgBrowsers = 0 }
@@ -68,51 +76,49 @@ export class OgAdmissionError extends Error {
 }
 
 /**
- * Core render: build a page, screenshot it, race against a hard deadline — and on timeout/error CLOSE the
- * browser (KLA-739 C2-3) so a hung render can't wedge the shared withPdfSlot (PDF/AutoSim use it too).
+ * Core render: build a page, screenshot it, race against a hard deadline; on timeout/error tear the
+ * browser down (KLA-739 C2-3) so a hung render can't wedge the shared withPdfSlot (PDF/AutoSim use it).
  *
- * Guarantees:
- *   • ADMISSION: refuses (OgAdmissionError) when `maxLive` browsers are already alive, so the number of
- *     LIVE Chromium processes is bounded by a fixed cap EVEN under persistent hung closes.
- *   • SLOT RELEASE: the caller (and thus withPdfSlot) is released within `closeTimeoutMs` — a hung close
- *     never blocks the shared slot.
- *   • LIVE-SLOT RELEASE: the live-browser counter is decremented ONLY when close() ACTUALLY settles (even
- *     if long after the bounded wait returned), so a hung-close browser keeps occupying its slot — this is
- *     what makes the cap a TRUE bound on live processes rather than a bound on in-flight requests.
- *   • DELAYED LAUNCH: a launch() that resolves AFTER the deadline is still closed + its slot released.
+ * Guarantees (proven by neg-controls):
+ *   • ADMISSION: refuses (OgAdmissionError) when `maxLive` processes are already alive → live Chromiums
+ *     are bounded by a fixed cap even under persistent hung/rejected closes.
+ *   • DEFINITIVE TEARDOWN: graceful server.close() bounded by `closeTimeoutMs`; on timeout OR rejection OR
+ *     any close failure, SIGKILL via server.kill() — with a real process handle the process actually dies
+ *     regardless of how close failed.
+ *   • LIVE-SLOT RELEASE ON CONFIRMED EXIT ONLY: the counter is decremented only when close()/kill()
+ *     resolves or an 'exit' signal fires — NOT because close() rejected. A failed close with no exit
+ *     evidence retains the slot until the kill confirms exit (or, if kill also hangs, the slot stays →
+ *     the cap fail-fasts further renders rather than leaking).
+ *   • SLOT RELEASE: the caller (and thus withPdfSlot) returns within `closeTimeoutMs`.
+ *   • DELAYED / SYNC-THROW LAUNCH: a late launch is still torn down; a synchronously-throwing launcher
+ *     still runs cleanup (no pre-reserved counter leak).
  *
  * Injectable `launch` + `deadlineMs` + `closeTimeoutMs` + `maxLive` make this hermetically testable.
  */
 export async function renderOgPngWith(
   html: string,
-  launch: () => Promise<OgBrowserLike>,
+  launch: () => Promise<OgLaunched> | OgLaunched,
   deadlineMs = 20_000,
   closeTimeoutMs = 3_000,
   maxLive = OG_MAX_LIVE_BROWSERS,
 ): Promise<Uint8Array> {
-  // Admission: refuse before launching if the live-browser cap is saturated (fail-fast → default card).
+  // Admission: refuse before launching if the cap is saturated (fail-fast → default card).
   if (_liveOgBrowsers >= maxLive) throw new OgAdmissionError()
   _liveOgBrowsers++
   let released = false
   const releaseLiveSlot = () => { if (!released) { released = true; _liveOgBrowsers-- } }
 
+  // #4: wrap launch so a SYNCHRONOUSLY-throwing launcher becomes a rejected promise (still runs cleanup).
+  const launchP: Promise<OgLaunched> = Promise.resolve().then(launch)
+  // The DEFINITIVE release trigger: register an exit listener the moment we have a server. ANY real
+  // process exit (graceful close, SIGKILL, or crash) frees the slot — a mere close() rejection never does.
+  void launchP.then(({ server }) => server.onExit(releaseLiveSlot), () => { /* launch failed → teardown frees it */ })
+
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  // Launch once; keep the promise so a LATE-resolving launch is still torn down.
-  const launchP = launch()
-
-  // Definitive teardown: close the browser and release the live-slot ONLY when close ACTUALLY settles
-  // (hung close → slot stays occupied → bounds live processes). If launch failed, free the slot now.
-  // Returns a promise that resolves when close settles, so finally can bound the SHARED-slot wait on it.
-  const teardown = (): Promise<void> =>
-    launchP.then(
-      (b) => Promise.resolve().then(() => b.close()).then(releaseLiveSlot, releaseLiveSlot),
-      () => { releaseLiveSlot() }, // launch rejected → no browser to close; free the slot
-    )
-
   const render = async (): Promise<Uint8Array> => {
-    const b = await launchP
-    const context = await b.newContext({
+    const { browser } = await launchP
+    const context = await browser.newContext({
       viewport: { width: OG_WIDTH, height: OG_HEIGHT },
       deviceScaleFactor: OG_SCALE,
     })
@@ -124,6 +130,24 @@ export async function renderOgPngWith(
     await context.close().catch(() => {})
     return new Uint8Array(buf as any)
   }
+
+  // Definitive teardown: graceful close bounded by closeTimeoutMs; on timeout/rejection/failure, SIGKILL.
+  // Release the live-slot ONLY on confirmed exit (close/kill resolves; onExit is the belt-and-suspenders).
+  const runTeardown = async (): Promise<void> => {
+    let launched: OgLaunched
+    try { launched = await launchP } catch { releaseLiveSlot(); return } // launch failed → no process → free slot
+    const { server } = launched
+    const closeP = Promise.resolve().then(() => server.close())
+    const outcome = await Promise.race([
+      closeP.then(() => "closed" as const, () => "failed" as const),
+      new Promise<"timeout">((res) => setTimeout(() => res("timeout"), closeTimeoutMs)),
+    ])
+    if (outcome === "closed") { releaseLiveSlot(); return } // graceful exit confirmed
+    // timeout OR failed close → SIGKILL. Release ONLY when the kill CONFIRMS exit; if kill also fails,
+    // RETAIN the slot (no exit evidence) so the cap still bounds live processes.
+    void Promise.resolve().then(() => server.kill()).then(releaseLiveSlot, () => { /* retain; onExit may fire */ })
+  }
+
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("OG render timed out (20s)")), deadlineMs)
   })
@@ -131,20 +155,34 @@ export async function renderOgPngWith(
     return await Promise.race([render(), deadline])
   } finally {
     if (timer) clearTimeout(timer)
-    // Kick off teardown (closes the browser now, or the late browser once it arrives). Bound the SHARED
-    // slot wait on the close settling — released within closeTimeoutMs even if close hangs. The live-slot,
-    // by contrast, is released inside teardown only when close truly settles.
-    const settled = teardown()
-    await Promise.race([settled, new Promise<void>((res) => setTimeout(res, closeTimeoutMs))])
+    // Bound the SHARED-slot wait at closeTimeoutMs; runTeardown continues in the background (late launch,
+    // background kill) and releases the live-slot on confirmed process exit.
+    const t = runTeardown()
+    await Promise.race([t, new Promise<void>((res) => setTimeout(res, closeTimeoutMs))])
+    void t.catch(() => {})
   }
 }
 
-/** Render an OG-card HTML document to a PNG at 1200×630 @2x. Mirrors the PDF render path. */
+/** Render an OG-card HTML document to a PNG at 1200×630 @2x. Uses its OWN launchServer()+connect() so it
+ *  holds a real, killable BrowserServer process handle — scoped ENTIRELY to the OG path (the shared
+ *  withPdfSlot / PDF / AutoSim browser lifecycle is untouched). */
 export async function renderOgPng(html: string): Promise<Uint8Array> {
   const { withPdfSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
   const { chromium } = await import("playwright")
   return withPdfSlot(async () =>
-    renderOgPngWith(html, () => chromium.launch({ headless: true, args: CHROMIUM_PROD_ARGS }) as unknown as Promise<OgBrowserLike>),
+    renderOgPngWith(html, async (): Promise<OgLaunched> => {
+      const server: any = await (chromium as any).launchServer({ headless: true, args: CHROMIUM_PROD_ARGS })
+      const browser: any = await (chromium as any).connect(server.wsEndpoint())
+      const serverLike: OgServerLike = {
+        close: () => server.close(),
+        kill: () => Promise.resolve(server.kill()),
+        onExit: (cb: () => void) => {
+          try { const p = server.process?.(); if (p) { p.once?.("exit", cb); p.once?.("close", cb) } } catch { /* no proc */ }
+          try { server.on?.("close", cb) } catch { /* no emitter */ }
+        },
+      }
+      return { browser: browser as OgBrowserLike, server: serverLike }
+    }),
   )
 }
 

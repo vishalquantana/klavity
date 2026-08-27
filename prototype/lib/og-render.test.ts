@@ -2,7 +2,8 @@ import { test, expect, describe, beforeEach } from "bun:test"
 import {
   serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse,
   ogLiveBrowserCount, __resetOgLiveBrowsersForTest, OgAdmissionError,
-  type OgServeDeps, type OgBrowserLike,
+  type OgServeDeps, type OgBrowserLike, type OgContextLike, type OgPageLike,
+  type OgServerLike, type OgLaunched,
 } from "./og-render"
 import type { OgCardData } from "./og-card"
 
@@ -98,133 +99,140 @@ describe("serveOgImage — cache MISS returns default AND enqueues (never blocks
   })
 })
 
-// ── KLA-739 C2-3 (browser leak on timeout): renderOgPngWith must ACTIVELY kill the browser when the
-// render exceeds the deadline. NEG-CONTROL: the pre-fix Promise.race left the hung render() — and its
-// Chromium process — alive when the deadline fired; asserting browser.close() is called on timeout FAILS
-// against that behavior.
-describe("renderOgPngWith — timeout kills the browser (single-browser invariant)", () => {
-  function fakeBrowser(opts: { hang?: boolean }): { browser: OgBrowserLike; closed: () => number } {
-    let closes = 0
-    const page = {
-      setContent: async () => {},
-      evaluate: async () => {},
-      // A hanging screenshot models a wedged render that never resolves.
-      screenshot: async () => (opts.hang ? new Promise<Uint8Array>(() => {}) : new Uint8Array([7, 7])),
-    }
-    const context = { newPage: async () => page, close: async () => {} }
-    const browser: OgBrowserLike = { newContext: async () => context, close: async () => { closes++ } }
-    return { browser, closed: () => closes }
+// ── KLA-739 C2-3 (round 6): definitive teardown via a real killable BrowserServer handle. A close()
+// rejection only means close FAILED, not that Chromium exited — so a failed close now SIGKILLs the real
+// process and the live-slot is released ONLY on confirmed exit.
+type CloseMode = "ok" | "reject" | "hang"
+type KillMode = "ok" | "reject" | "hang"
+
+// A fake OgLaunched whose "process" is alive until close/kill fires an exit. Models Playwright's
+// BrowserServer: close()/kill() resolve AFTER the process exits; onExit fires on any exit.
+function fakeLaunched(opts: { closeMode?: CloseMode; killMode?: KillMode } = {}): { launched: OgLaunched; isAlive: () => boolean; closeCalls: () => number; killCalls: () => number } {
+  const closeMode = opts.closeMode ?? "ok"
+  const killMode = opts.killMode ?? "ok"
+  let alive = true
+  let closeCalls = 0
+  let killCalls = 0
+  const exitCbs: Array<() => void> = []
+  const fireExit = () => { if (alive) { alive = false; for (const cb of exitCbs) cb() } }
+  const page: OgPageLike = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
+  const context: OgContextLike = { newPage: async () => page, close: async () => {} }
+  const browser: OgBrowserLike = { newContext: async () => context }
+  const server: OgServerLike = {
+    close: () => {
+      closeCalls++
+      if (closeMode === "ok") { fireExit(); return Promise.resolve() }
+      if (closeMode === "reject") return Promise.reject(new Error("close failed"))
+      return new Promise<void>(() => {}) // hang
+    },
+    kill: () => {
+      killCalls++
+      if (killMode === "ok") { fireExit(); return Promise.resolve() }
+      if (killMode === "reject") return Promise.reject(new Error("kill failed"))
+      return new Promise<void>(() => {}) // hang
+    },
+    onExit: (cb) => { if (!alive) cb(); else exitCbs.push(cb) },
   }
+  return { launched: { browser, server }, isAlive: () => alive, closeCalls: () => closeCalls, killCalls: () => killCalls }
+}
 
-  test("a hung render times out AND the browser is closed (no leaked process)", async () => {
-    const { browser, closed } = fakeBrowser({ hang: true })
-    let threw = false
-    try {
-      await renderOgPngWith("<html></html>", async () => browser, 25)
-    } catch (e: any) {
-      threw = true
-      expect(String(e?.message || e)).toContain("timed out")
-    }
-    expect(threw).toBe(true)
-    // The fix: browser.close() was invoked even though render() never resolved.
-    expect(closed()).toBe(1)
-  })
-
-  test("a normal render returns the PNG bytes and still closes the browser exactly once", async () => {
-    const { browser, closed } = fakeBrowser({ hang: false })
-    const png = await renderOgPngWith("<html></html>", async () => browser, 5_000)
+describe("renderOgPngWith — definitive teardown + live-process bound (C2-3 round 6)", () => {
+  test("normal render returns bytes AND releases the live-slot to 0 (process exited)", async () => {
+    const f = fakeLaunched({ closeMode: "ok" })
+    const png = await renderOgPngWith("<html></html>", async () => f.launched, 5_000, 30)
     expect(Array.from(png)).toEqual([7, 7])
-    expect(closed()).toBe(1)
-  })
-
-  // C2-3 hole (i): launch() resolves AFTER the deadline. NEG-CONTROL: a finally that only closes an
-  // already-captured handle would see `browser` still null → the LATE browser leaks. Asserting it is
-  // eventually closed reproduces the round-2 fix.
-  test("a DELAYED launch (resolves after timeout) is still killed", async () => {
-    const { browser, closed } = fakeBrowser({ hang: false })
-    let threw = false
-    // launch resolves 40ms in; deadline is 10ms → the render times out before the browser even exists.
-    const launch = () => new Promise<OgBrowserLike>((res) => setTimeout(() => res(browser), 40))
-    try {
-      await renderOgPngWith("<html></html>", launch, 10)
-    } catch (e: any) {
-      threw = true
-      expect(String(e?.message || e)).toContain("timed out")
-    }
-    expect(threw).toBe(true)
-    // At the moment of timeout the late browser wasn't launched yet; give it time to arrive + be torn down.
-    await new Promise((r) => setTimeout(r, 80))
-    expect(closed()).toBe(1) // the post-timeout browser WAS closed (no leak)
-  })
-
-  // C2-3 hole (ii): browser.close() hangs. NEG-CONTROL: an unbounded `await browser.close()` in finally
-  // would hang forever and hold the shared withPdfSlot; asserting the call returns within closeTimeoutMs
-  // reproduces the bounded-close fix (the SLOT-RELEASED guarantee). Force-kill is an accepted-LOW residual
-  // (a launch()ed Playwright Browser has no process handle) — see the renderOgPngWith docstring.
-  test("a HUNG close() is bounded — the shared slot is released within closeTimeoutMs", async () => {
-    const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
-    const context = { newPage: async () => page, close: async () => {} }
-    const browser: OgBrowserLike = { newContext: async () => context, close: () => new Promise<void>(() => {}) } // never resolves
-    const t0 = Date.now()
-    const png = await renderOgPngWith("<html></html>", async () => browser, 5_000, 30) // closeTimeoutMs=30
-    const elapsed = Date.now() - t0
-    expect(Array.from(png)).toEqual([7, 7]) // render succeeded
-    expect(elapsed).toBeLessThan(1_000) // returned (slot released) — did NOT block on the hung close (~30ms)
-  })
-
-  // A REJECTED close() must also not throw out of teardown (swallowed) and stays bounded.
-  test("a REJECTED close() is swallowed and does not break teardown", async () => {
-    const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
-    const context = { newPage: async () => page, close: async () => {} }
-    const browser: OgBrowserLike = { newContext: async () => context, close: async () => { throw new Error("close boom") } }
-    const png = await renderOgPngWith("<html></html>", async () => browser, 5_000, 30)
-    expect(Array.from(png)).toEqual([7, 7])
-  })
-
-  test("a normal render releases the live-browser slot (count returns to 0)", async () => {
-    const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
-    const context = { newPage: async () => page, close: async () => {} }
-    const browser: OgBrowserLike = { newContext: async () => context, close: async () => {} }
-    await renderOgPngWith("<html></html>", async () => browser, 5_000, 30)
-    // let the (already-settled) close chain flush
     await new Promise((r) => setTimeout(r, 5))
     expect(ogLiveBrowserCount()).toBe(0)
+    expect(f.isAlive()).toBe(false)
   })
-})
 
-// ── KLA-739 C2-3 (Codex's exact probe): live Chromium processes must be bounded by a FIXED cap even
-// under persistent hung closes. The pre-round-5 code freed the per-key _inflight slot on the close
-// TIMEOUT, so hung-close browsers didn't count → N sequential renders leaked N live browsers. This probe
-// runs > cap renders whose close() NEVER settles and asserts the live count never exceeds the cap.
-describe("renderOgPngWith — live-browser cap is a TRUE bound under hung closes (C2-3 round 5)", () => {
-  test("7 sequential never-closing renders with cap=4 → at most 4 browsers ever launched/alive", async () => {
+  test("a hung RENDER times out AND the server is torn down (process exits)", async () => {
+    // hanging screenshot → render never resolves; graceful close then reaps the process.
+    const f = fakeLaunched({ closeMode: "ok" })
+    ;(f.launched.browser as any).newContext = async () => ({
+      newPage: async () => ({ setContent: async () => {}, evaluate: async () => {}, screenshot: () => new Promise<Uint8Array>(() => {}) }),
+      close: async () => {},
+    })
+    let threw = false
+    try { await renderOgPngWith("<html></html>", async () => f.launched, 25) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("timed out") }
+    expect(threw).toBe(true)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(f.isAlive()).toBe(false)
+    expect(ogLiveBrowserCount()).toBe(0)
+  })
+
+  // Delayed launch: launch resolves AFTER the deadline → the late server is still torn down + released.
+  test("a DELAYED launch (resolves after timeout) is still torn down + released", async () => {
+    const f = fakeLaunched({ closeMode: "ok" })
+    const launch = () => new Promise<OgLaunched>((res) => setTimeout(() => res(f.launched), 40))
+    let threw = false
+    try { await renderOgPngWith("<html></html>", launch, 10) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("timed out") }
+    expect(threw).toBe(true)
+    await new Promise((r) => setTimeout(r, 80))
+    expect(f.isAlive()).toBe(false)
+    expect(ogLiveBrowserCount()).toBe(0)
+  })
+
+  // #4 sync-throw launch: a synchronously-throwing launcher must still run cleanup (no pre-reserved leak).
+  test("a SYNCHRONOUSLY-throwing launcher rejects AND releases the pre-reserved slot", async () => {
+    const before = ogLiveBrowserCount()
+    let threw = false
+    try { await renderOgPngWith("<html></html>", () => { throw new Error("launch boom") }, 5_000, 30) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("launch boom") }
+    expect(threw).toBe(true)
+    await new Promise((r) => setTimeout(r, 5))
+    expect(ogLiveBrowserCount()).toBe(before)
+  })
+
+  // A HUNG close but a working kill → SIGKILL reaps the process; slot released within the bound.
+  test("a HUNG close() → SIGKILL reaps the process; slot released within closeTimeoutMs", async () => {
+    const f = fakeLaunched({ closeMode: "hang", killMode: "ok" })
+    const t0 = Date.now()
+    const png = await renderOgPngWith("<html></html>", async () => f.launched, 5_000, 30)
+    expect(Array.from(png)).toEqual([7, 7])
+    expect(Date.now() - t0).toBeLessThan(1_000) // shared slot released within bound
+    await new Promise((r) => setTimeout(r, 20))
+    expect(f.killCalls()).toBe(1)      // force-killed
+    expect(f.isAlive()).toBe(false)    // process reaped
+    expect(ogLiveBrowserCount()).toBe(0)
+  })
+
+  // REQUIRED neg-control (Codex probe b): a REJECTED close() must SIGKILL the real process — a counter
+  // that merely decremented on the rejection (round-5) would show trackedLive:0 while the process lived.
+  test("probe (b): 7 renders whose close() REJECTS → every process is SIGKILLed, live count accurate", async () => {
     const CAP = 4
-    let launched = 0
-    let maxAlive = 0
-    const hungBrowser = (): OgBrowserLike => {
-      const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([1]) }
-      const context = { newPage: async () => page, close: async () => {} }
-      return { newContext: async () => context, close: () => new Promise<void>(() => {}) } // close NEVER settles
-    }
-    const launch = async (): Promise<OgBrowserLike> => { launched++; return hungBrowser() }
+    const fs: Array<ReturnType<typeof fakeLaunched>> = []
+    const launch = async (): Promise<OgLaunched> => { const f = fakeLaunched({ closeMode: "reject", killMode: "ok" }); fs.push(f); return f.launched }
+    for (let i = 0; i < 7; i++) await renderOgPngWith("<html></html>", launch, 1_000, 10, CAP)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fs.length).toBe(7)                                    // each reaped before the next → all admitted
+    expect(fs.filter((f) => f.isAlive()).length).toBe(0)        // NEG-CONTROL: EVERY process actually killed
+    expect(fs.every((f) => f.killCalls() === 1)).toBe(true)     // kill invoked on each failed close
+    expect(ogLiveBrowserCount()).toBe(0)                        // tracked count accurate
+  })
 
-    let admissionRejections = 0
+  // REQUIRED neg-control (Codex probe a): worst case — BOTH close() and kill() hang (unreapable). Live
+  // processes must still be bounded by the cap: after `cap` renders admission fails-fast (default card).
+  test("probe (a): 7 renders where BOTH close() and kill() hang → live bounded at cap, surplus fail-fast", async () => {
+    const CAP = 4
+    const fs: Array<ReturnType<typeof fakeLaunched>> = []
+    const launch = async (): Promise<OgLaunched> => { const f = fakeLaunched({ closeMode: "hang", killMode: "hang" }); fs.push(f); return f.launched }
+    let rejections = 0
+    let maxLive = 0
     for (let i = 0; i < 7; i++) {
-      try {
-        // small deadline/closeTimeout so the probe is fast; close never settles → browser stays "alive".
-        await renderOgPngWith("<html></html>", launch, 1_000, 10, CAP)
-      } catch (e) {
-        if (e instanceof OgAdmissionError) admissionRejections++
-        else throw e
-      }
-      maxAlive = Math.max(maxAlive, ogLiveBrowserCount())
+      try { await renderOgPngWith("<html></html>", launch, 1_000, 10, CAP) }
+      catch (e) { if (e instanceof OgAdmissionError) rejections++; else throw e }
+      maxLive = Math.max(maxLive, ogLiveBrowserCount())
     }
+    expect(fs.length).toBeLessThanOrEqual(CAP)   // never launched beyond the cap
+    expect(maxLive).toBeLessThanOrEqual(CAP)      // live processes never exceeded the cap
+    expect(ogLiveBrowserCount()).toBe(CAP)        // the cap's worth stay pinned (truly unreapable)
+    expect(rejections).toBe(7 - CAP)              // surplus renders fail-fast (serve default)
+  })
 
-    // NEG-CONTROL: pre-fix, admission didn't exist → all 7 launched → 7 live browsers leaked.
-    expect(launched).toBeLessThanOrEqual(CAP)     // never launched more than the cap
-    expect(maxAlive).toBeLessThanOrEqual(CAP)      // live processes never exceeded the cap
-    expect(ogLiveBrowserCount()).toBe(CAP)         // the cap's worth stay pinned (hung) — bounded, not growing
-    expect(admissionRejections).toBe(7 - CAP)      // the surplus renders fail-fast (serve default)
+  test("OgAdmissionError is an Error subclass (callers catch → serve default card, never 500)", () => {
+    const e = new OgAdmissionError()
+    expect(e instanceof Error).toBe(true)
+    expect(e instanceof OgAdmissionError).toBe(true)
   })
 })
 
