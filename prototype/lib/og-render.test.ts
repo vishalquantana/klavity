@@ -1,9 +1,9 @@
 import { test, expect, describe, beforeEach } from "bun:test"
 import {
-  serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse,
-  ogLiveBrowserCount, __resetOgLiveBrowsersForTest, OgAdmissionError,
+  serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse, ogLaunchOrKill,
+  ogLiveBrowserCount, __resetOgLiveBrowsersForTest, OgAdmissionError, OgOrphanError,
   type OgServeDeps, type OgBrowserLike, type OgContextLike, type OgPageLike,
-  type OgServerLike, type OgLaunched,
+  type OgServerLike, type OgLaunched, type OgServerHandle,
 } from "./og-render"
 import type { OgCardData } from "./og-card"
 
@@ -233,6 +233,76 @@ describe("renderOgPngWith — definitive teardown + live-process bound (C2-3 rou
     const e = new OgAdmissionError()
     expect(e instanceof Error).toBe(true)
     expect(e instanceof OgAdmissionError).toBe(true)
+  })
+})
+
+// ── KLA-739 C2-3 (round 7): the process-CREATION ownership state machine. launchServer() succeeds but
+// connect() rejects → the orphaned server process must be SIGKILLed, not leaked. Uses ogLaunchOrKill with
+// injected launchServer/connect fakes (no real Chromium).
+describe("ogLaunchOrKill — connect-failure ownership (C2-3 round 7)", () => {
+  test("connect() succeeds → returns {browser,server}; render tracks + releases to 0", async () => {
+    const f = fakeLaunched({ closeMode: "ok" })
+    const launch = () => ogLaunchOrKill(async (): Promise<OgServerHandle> => ({ server: f.launched.server, wsEndpoint: "ws://ok" }), async () => f.launched.browser)
+    const png = await renderOgPngWith("<html></html>", launch, 5_000, 30)
+    expect(Array.from(png)).toEqual([7, 7])
+    await new Promise((r) => setTimeout(r, 5))
+    expect(f.isAlive()).toBe(false)
+    expect(ogLiveBrowserCount()).toBe(0)
+  })
+
+  // REQUIRED neg-control (Codex probe): launchServer OK + connect REJECTS → the orphaned server process is
+  // SIGKILLed (serverProcessAliveAfterReject → false) and trackedLive stays accurate. Against the pre-fix
+  // launcher (connect throw with NO kill), the process stays alive → this FAILS.
+  test("launchServer OK + connect REJECTS → orphaned server is SIGKILLed; live count accurate", async () => {
+    const f = fakeLaunched({ killMode: "ok" }) // close mode irrelevant — we never connect
+    const launch = () => ogLaunchOrKill(
+      async (): Promise<OgServerHandle> => ({ server: f.launched.server, wsEndpoint: "ws://x" }),
+      async () => { throw new Error("connect ECONNREFUSED") },
+    )
+    let threw = false
+    try { await renderOgPngWith("<html></html>", launch, 1_000, 30, 4) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("connect") }
+    expect(threw).toBe(true)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(f.killCalls()).toBe(1)        // orphan SIGKILLed
+    expect(f.isAlive()).toBe(false)      // process reaped (serverProcessAliveAfterReject === false)
+    expect(ogLiveBrowserCount()).toBe(0) // tracked accurate (no leak, no double-count)
+  })
+
+  // Conservative edge: connect rejects AND the orphan kill can't confirm exit → OgOrphanError → PIN the
+  // slot (maybe-alive process), same rule as a hung close.
+  test("connect REJECTS + orphan kill HANGS → OgOrphanError, slot PINNED (not released)", async () => {
+    const f = fakeLaunched({ killMode: "hang" })
+    const launch = () => ogLaunchOrKill(
+      async (): Promise<OgServerHandle> => ({ server: f.launched.server, wsEndpoint: "ws://x" }),
+      async () => { throw new Error("connect fail") },
+      20, // killBoundMs — small so the probe is fast
+    )
+    let err: any
+    try { await renderOgPngWith("<html></html>", launch, 1_000, 30, 4) } catch (e) { err = e }
+    expect(err).toBeInstanceOf(OgOrphanError)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(ogLiveBrowserCount()).toBe(1) // PINNED — kill couldn't confirm exit
+  })
+
+  // launchServer() itself fails → NO process created → plain release, no kill attempted.
+  test("launchServer() fails (no process) → plain release, no kill", async () => {
+    const f = fakeLaunched({})
+    const launch = () => ogLaunchOrKill(
+      async (): Promise<OgServerHandle> => { throw new Error("launchServer failed") },
+      async () => f.launched.browser,
+    )
+    let threw = false
+    try { await renderOgPngWith("<html></html>", launch, 1_000, 30, 4) } catch (e: any) { threw = true; expect(String(e?.message)).toContain("launchServer") }
+    expect(threw).toBe(true)
+    await new Promise((r) => setTimeout(r, 5))
+    expect(f.killCalls()).toBe(0)        // no process was created → nothing to kill
+    expect(ogLiveBrowserCount()).toBe(0) // released
+  })
+
+  test("OgOrphanError is an Error subclass", () => {
+    const e = new OgOrphanError(new Error("root"))
+    expect(e instanceof Error).toBe(true)
+    expect(e instanceof OgOrphanError).toBe(true)
   })
 })
 

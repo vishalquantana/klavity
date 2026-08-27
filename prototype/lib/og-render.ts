@@ -76,6 +76,18 @@ export class OgAdmissionError extends Error {
 }
 
 /**
+ * Thrown when launchServer() created a process but connect() failed AND the subsequent kill could NOT
+ * confirm the process exited. Signals renderOgPngWith to PIN the live-slot (a maybe-alive orphan) rather
+ * than take the generic no-process launch-failure release — same conservative rule as a hung close.
+ */
+export class OgOrphanError extends Error {
+  constructor(public readonly reason?: unknown) {
+    super("OG launch: connect failed and the orphaned browser-server kill could not confirm exit")
+    this.name = "OgOrphanError"
+  }
+}
+
+/**
  * Core render: build a page, screenshot it, race against a hard deadline; on timeout/error tear the
  * browser down (KLA-739 C2-3) so a hung render can't wedge the shared withPdfSlot (PDF/AutoSim use it).
  *
@@ -135,7 +147,15 @@ export async function renderOgPngWith(
   // Release the live-slot ONLY on confirmed exit (close/kill resolves; onExit is the belt-and-suspenders).
   const runTeardown = async (): Promise<void> => {
     let launched: OgLaunched
-    try { launched = await launchP } catch { releaseLiveSlot(); return } // launch failed → no process → free slot
+    try { launched = await launchP }
+    catch (e) {
+      // OWNERSHIP: an OgOrphanError means launchServer() DID create a process but connect() failed AND the
+      // kill couldn't confirm exit → a maybe-alive orphan → PIN the slot (do NOT release), same as a hung
+      // close. Any other launch failure = no process was created (launchServer threw) OR the orphan was
+      // killed-confirmed inside the launcher → plain release.
+      if (!(e instanceof OgOrphanError)) releaseLiveSlot()
+      return
+    }
     const { server } = launched
     const closeP = Promise.resolve().then(() => server.close())
     const outcome = await Promise.race([
@@ -163,26 +183,70 @@ export async function renderOgPngWith(
   }
 }
 
+// A launched-but-not-connected browser server + its ws endpoint (for connect()).
+export interface OgServerHandle { server: OgServerLike; wsEndpoint: string }
+
+// Bounded kill that returns TRUE iff the process is CONFIRMED gone (kill() resolved or an exit signal
+// fired) within `boundMs`. Used to reap an orphaned server whose connect() failed.
+async function confirmKill(server: OgServerLike, boundMs: number): Promise<boolean> {
+  let exited = false
+  try { server.onExit(() => { exited = true }) } catch { /* best-effort */ }
+  const killP = Promise.resolve().then(() => server.kill()).then(() => { exited = true }, () => { /* kill failed */ })
+  await Promise.race([killP, new Promise<void>((res) => setTimeout(res, boundMs))])
+  return exited
+}
+
+/**
+ * KLA-739 (C2-3 round 7): the OWNERSHIP state machine for the process-CREATION path. Once launchServer()
+ * returns a server, that server is OWNED — every exit path must reap it:
+ *   • launchServer() throws  → NO process created → propagate (renderOgPngWith does a plain release).
+ *   • connect() succeeds     → return {browser, server}; renderOgPngWith tracks + tears it down.
+ *   • connect() FAILS        → the server is an ORPHAN. SIGKILL it (bounded). If the kill CONFIRMS exit →
+ *                              rethrow the connect error (safe plain release). If the kill can't confirm →
+ *                              throw OgOrphanError so renderOgPngWith PINS the slot (maybe-alive process).
+ * Injectable launchServer/connect make this hermetically testable without real Chromium.
+ */
+export async function ogLaunchOrKill(
+  launchServer: () => Promise<OgServerHandle>,
+  connect: (wsEndpoint: string) => Promise<OgBrowserLike>,
+  killBoundMs = 3_000,
+): Promise<OgLaunched> {
+  const { server, wsEndpoint } = await launchServer() // throws here → no process was created
+  try {
+    const browser = await connect(wsEndpoint)
+    return { browser, server }
+  } catch (connectErr) {
+    // launchServer OK but connect FAILED → orphaned process. Own it: SIGKILL (bounded).
+    const confirmed = await confirmKill(server, killBoundMs)
+    if (confirmed) throw connectErr           // process dead → safe for the plain launch-failure release
+    throw new OgOrphanError(connectErr)       // kill unconfirmed → PIN the slot
+  }
+}
+
 /** Render an OG-card HTML document to a PNG at 1200×630 @2x. Uses its OWN launchServer()+connect() so it
  *  holds a real, killable BrowserServer process handle — scoped ENTIRELY to the OG path (the shared
  *  withPdfSlot / PDF / AutoSim browser lifecycle is untouched). */
 export async function renderOgPng(html: string): Promise<Uint8Array> {
   const { withPdfSlot, CHROMIUM_PROD_ARGS } = await import("./trails-browser")
   const { chromium } = await import("playwright")
+  const wrapServer = (server: any): OgServerLike => ({
+    close: () => server.close(),
+    kill: () => Promise.resolve(server.kill()),
+    onExit: (cb: () => void) => {
+      try { const p = server.process?.(); if (p) { p.once?.("exit", cb); p.once?.("close", cb) } } catch { /* no proc */ }
+      try { server.on?.("close", cb) } catch { /* no emitter */ }
+    },
+  })
   return withPdfSlot(async () =>
-    renderOgPngWith(html, async (): Promise<OgLaunched> => {
-      const server: any = await (chromium as any).launchServer({ headless: true, args: CHROMIUM_PROD_ARGS })
-      const browser: any = await (chromium as any).connect(server.wsEndpoint())
-      const serverLike: OgServerLike = {
-        close: () => server.close(),
-        kill: () => Promise.resolve(server.kill()),
-        onExit: (cb: () => void) => {
-          try { const p = server.process?.(); if (p) { p.once?.("exit", cb); p.once?.("close", cb) } } catch { /* no proc */ }
-          try { server.on?.("close", cb) } catch { /* no emitter */ }
+    renderOgPngWith(html, () =>
+      ogLaunchOrKill(
+        async (): Promise<OgServerHandle> => {
+          const server: any = await (chromium as any).launchServer({ headless: true, args: CHROMIUM_PROD_ARGS })
+          return { server: wrapServer(server), wsEndpoint: server.wsEndpoint() }
         },
-      }
-      return { browser: browser as OgBrowserLike, server: serverLike }
-    }),
+        async (wsEndpoint: string) => (await (chromium as any).connect(wsEndpoint)) as OgBrowserLike,
+      ),
+    ),
   )
 }
 
