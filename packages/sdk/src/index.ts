@@ -6,10 +6,7 @@ import { DEFAULT_SETTINGS } from '@klavity/core'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { dispatchSubmit } from '@klavity/core/submit'
 import { buildModal, isEditableTarget } from '@klavity/core/modal'
-import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
-import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
-import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
-import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
+// KLA-720: client-direct tracker submitters (jira/linear/github/plane) removed — persist-first only.
 import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 import { record as rrwebRecord } from 'rrweb'
 import { startReplayRecording, type ReplayController } from './replay-recorder'
@@ -51,7 +48,7 @@ async function dispatchToIntegration(config: IntegrationConfig) {
   return dispatchSubmit(
     { type: config.type, description: config.description, context: config.context, screenshots: config.screenshots, replayEvents: config.replayEvents },
     _settings,
-    { jira: jiraSubmit, linear: linearSubmit, github: githubSubmit, plane: planeSubmit, backend: backendSubmit },
+    { backend: backendSubmit },
   )
 }
 

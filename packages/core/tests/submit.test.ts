@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { dispatchSubmit } from '../src/submit'
 import type { KlavitySettings, SubmitReportPayload } from '../src/types'
-import { DEFAULT_SETTINGS } from '../src/types'
+import { DEFAULT_SETTINGS, DEFAULT_BACKEND_URL } from '../src/types'
 
 const mockPayload: SubmitReportPayload = {
   type: 'bug',
@@ -17,18 +17,10 @@ const mockPayload: SubmitReportPayload = {
   },
 }
 
-describe('dispatchSubmit', () => {
+describe('dispatchSubmit (KLA-720: persist-first only)', () => {
   beforeEach(() => vi.resetAllMocks())
 
-  it('calls the jira integration in direct mode', async () => {
-    const mockJira = vi.fn().mockResolvedValue({ issueKey: 'PROJ-1', issueUrl: 'https://jira/PROJ-1' })
-    const settings: KlavitySettings = { ...DEFAULT_SETTINGS, integration: 'jira', backendUrl: '' }
-    const result = await dispatchSubmit(mockPayload, settings, { jira: mockJira })
-    expect(mockJira).toHaveBeenCalledOnce()
-    expect(result.issueKey).toBe('PROJ-1')
-  })
-
-  it('calls backend integration when backendUrl is set', async () => {
+  it('routes to the backend handler when backendUrl is set', async () => {
     const mockBackend = vi.fn().mockResolvedValue({ issueKey: 'PROJ-2', issueUrl: 'https://klav.io/PROJ-2' })
     const settings: KlavitySettings = { ...DEFAULT_SETTINGS, backendUrl: 'https://klav.io' }
     const result = await dispatchSubmit(mockPayload, settings, { backend: mockBackend })
@@ -36,20 +28,48 @@ describe('dispatchSubmit', () => {
     expect(result.issueKey).toBe('PROJ-2')
   })
 
-  it('throws if no handler found', async () => {
-    const settings: KlavitySettings = { ...DEFAULT_SETTINGS, integration: 'linear', backendUrl: '' }
-    await expect(dispatchSubmit(mockPayload, settings, {})).rejects.toThrow('No handler')
+  // NEGATIVE CONTROL (KLA-720): even with integration='plane' and NO backendUrl — the old client-direct
+  // trigger — dispatchSubmit MUST route to the backend and NEVER call a direct-tracker handler. The spy
+  // "direct" handlers must receive ZERO calls; the backend handler receives the report. This is the exact
+  // path that caused the customer's report to reach Plane + email but be invisible in Klavity.
+  it('NEVER calls a direct tracker handler even when integration=plane and backendUrl is absent', async () => {
+    const backend = vi.fn().mockResolvedValue({ issueKey: 'K-1', issueUrl: '' })
+    const directPlane = vi.fn().mockResolvedValue({ issueKey: 'PLANE-1', issueUrl: '' })
+    const directJira = vi.fn().mockResolvedValue({ issueKey: 'JIRA-1', issueUrl: '' })
+
+    const settings: KlavitySettings = { ...DEFAULT_SETTINGS, integration: 'plane', backendUrl: '' }
+    // Pass the direct spies alongside backend — a regression that reintroduced the fallback would call them.
+    const result = await dispatchSubmit(mockPayload, settings, { backend, plane: directPlane, jira: directJira } as any)
+
+    expect(backend).toHaveBeenCalledOnce()
+    expect(directPlane).not.toHaveBeenCalled()
+    expect(directJira).not.toHaveBeenCalled()
+    expect(result.issueKey).toBe('K-1')
   })
 
-  it('backend submit includes project_id and never routes to a direct tracker', async () => {
-    const calls: Record<string, boolean> = {}
-    const backend = vi.fn(async (cfg: any) => { calls.backend = true; expect(cfg.projectId).toBe('proj_X'); return { issueKey: '1', issueUrl: '' } })
-    const jira = vi.fn(async () => { calls.jira = true; return { issueKey: 'J', issueUrl: '' } })
+  it('defaults an absent backendUrl to the canonical Klavity backend (never silently drops)', async () => {
+    const backend = vi.fn(async (cfg: any) => {
+      // The handler must receive a usable backend URL so the report is actually persisted.
+      expect(cfg.settings.backendUrl).toBe(DEFAULT_BACKEND_URL)
+      return { issueKey: 'K-2', issueUrl: '' }
+    })
+    const settings: KlavitySettings = { ...DEFAULT_SETTINGS, integration: 'plane', backendUrl: '' }
+    await dispatchSubmit(mockPayload, settings, { backend })
+    expect(backend).toHaveBeenCalledOnce()
+  })
+
+  it('forwards project_id to the backend handler', async () => {
+    const backend = vi.fn(async (cfg: any) => { expect(cfg.projectId).toBe('proj_X'); return { issueKey: '1', issueUrl: '' } })
     await dispatchSubmit(
-      { type: 'bug', description: 'd', context: { pageUrl: 'https://x' } as any, screenshots: [], projectId: 'proj_X' } as any,
+      { ...mockPayload, projectId: 'proj_X' } as any,
       { ...DEFAULT_SETTINGS, backendUrl: 'https://k', connectionMode: 'klavity', klavToken: 't' },
-      { backend, jira } as any,
+      { backend },
     )
-    expect(calls.backend).toBe(true); expect(calls.jira).toBeUndefined()
+    expect(backend).toHaveBeenCalledOnce()
+  })
+
+  it('throws a clear error when no backend handler is wired up (never falls back to direct)', async () => {
+    const settings: KlavitySettings = { ...DEFAULT_SETTINGS, integration: 'linear', backendUrl: '' }
+    await expect(dispatchSubmit(mockPayload, settings, {})).rejects.toThrow('No backend handler')
   })
 })

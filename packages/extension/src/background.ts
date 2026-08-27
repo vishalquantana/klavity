@@ -4,10 +4,7 @@ import { onSettingsChanged } from './config-flush'
 import { revalidateConfig } from './config-revalidate'
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { dispatchSubmit } from '@klavity/core/submit'
-import { submitReport as jiraSubmit } from '@klavity/core/integrations/jira'
-import { submitReport as linearSubmit } from '@klavity/core/integrations/linear'
-import { submitReport as githubSubmit } from '@klavity/core/integrations/github'
-import { submitReport as planeSubmit } from '@klavity/core/integrations/plane'
+// KLA-720: client-direct tracker submitters (jira/linear/github/plane) removed — persist-first only.
 import { submitReport as backendSubmit, buildFeedbackFormData } from '@klavity/core/integrations/backend'
 import { EVIDENCE_KEY } from './evidence-store'
 
@@ -736,13 +733,7 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
         screenshots: [],
       }
 
-      return dispatchSubmit(payload, settings, {
-        jira: jiraSubmit,
-        linear: linearSubmit,
-        github: githubSubmit,
-        plane: planeSubmit,
-        backend: backendSubmit,
-      })
+      return dispatchSubmit(payload, settings, { backend: backendSubmit })
     }).catch(() => {
       // Fire-and-forget: silently ignore submission errors for auto-filed bugs
     })
@@ -783,13 +774,7 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
       // is identical to dispatchSubmit: it uses the backend handler exactly when backendUrl is set, so this
       // only diverges to ADD fields — direct-tracker modes (no backendUrl) keep the classic dispatch.
       if (settings.backendUrl) return submitToBackendWithExtras(msg.payload, settings)
-      return dispatchSubmit(msg.payload, settings, {
-        jira: jiraSubmit,
-        linear: linearSubmit,
-        github: githubSubmit,
-        plane: planeSubmit,
-        backend: backendSubmit,
-      })
+      return dispatchSubmit(msg.payload, settings, { backend: backendSubmit })
     }).then(result => {
       const tabId = sender.tab?.id
       if (tabId) void safeSend(tabId, { kind: 'SUBMIT_SUCCESS', ...result })

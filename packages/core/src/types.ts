@@ -51,6 +51,11 @@ export interface KlavitySettings {
   plane: { token: string; host: string; workspace: string; projectId: string } // host: API base — https://api.plane.so or a self-hosted origin
 }
 
+// KLA-720: client-direct submit mode removed — every report persists through the Klavity backend.
+// When a caller (SDK/extension) hasn't configured an explicit backendUrl, dispatchSubmit falls back
+// to this canonical Klavity backend rather than ever POSTing straight to an external tracker.
+export const DEFAULT_BACKEND_URL = 'https://klavity.in'
+
 export const DEFAULT_SETTINGS: KlavitySettings = {
   integration: 'jira',
   backendUrl: '',
