@@ -14,6 +14,17 @@
 // shared db module singleton). No network to any real IdP.
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -109,8 +120,8 @@ beforeAll(async () => {
   // Private port band: every other server-spawning suite lives in 30000–39400, and these two
   // processes hold their ports for the whole suite run, so overlapping would kill other tests'
   // servers. 39500–39799 is unclaimed.
-  const portOff = 39500 + Math.floor(Math.random() * 100)
-  const portOn = 39650 + Math.floor(Math.random() * 100)
+  const portOff = await __freePortKLA719()
+  const portOn = await __freePortKLA719()
   BASE_OFF = `http://localhost:${portOff}`
   BASE_ON = `http://localhost:${portOn}`
   // No KLAV_SSO_ENABLED at all → feature must be OFF by default.

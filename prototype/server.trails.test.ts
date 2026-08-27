@@ -5,6 +5,17 @@
 // exercised against a real connector (no auto-copy connector is seeded).
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -123,7 +134,7 @@ beforeAll(async () => {
   // server.inbound-webhook (19500-19899); under bun's concurrent file execution a port clash
   // meant our readiness probe hit the OTHER suite's server, whose DB has no MEMBER_SID, so every
   // authed route 401'd — the intermittent CI red. No other test uses 4xxxx.
-  serverPort = 41000 + Math.floor(Math.random() * 1000)
+  serverPort = await __freePortKLA719()
   BASE = `http://localhost:${serverPort}`
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {
     cwd: import.meta.dir,

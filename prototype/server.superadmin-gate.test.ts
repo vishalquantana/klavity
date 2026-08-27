@@ -2,6 +2,17 @@
 // page 404), and the /api/extract + /api/react attribution fixes now write project_id to ai_calls.
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -12,7 +23,7 @@ const DB = join(tmpdir(), `klav-sa-gate-${RUN}.db`)
 const OPS_EMAIL = `vishal@quantana.com.au`          // ops admin (device test email)
 const PLAIN_EMAIL = `plain-${RUN}@test.local`
 const SECRET = Buffer.from(new Uint8Array(32).fill(73)).toString("base64")
-const PORT = 45300 + Math.floor(Math.random() * 300)
+const PORT = await __freePortKLA719()
 const BASE = `http://localhost:${PORT}`
 
 function rmDb() { for (const s of ["", "-wal", "-shm"]) { try { unlinkSync(DB + s) } catch {} } }

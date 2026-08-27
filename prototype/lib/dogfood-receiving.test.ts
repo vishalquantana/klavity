@@ -10,6 +10,17 @@
 //      exactly like dogfood-activation.test.ts.
 
 import { test, expect, describe, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlinkSync } from "node:fs"
@@ -289,7 +300,7 @@ describe("receiving-side dogfood — full runner vs real server", () => {
     })
     const AI_BASE = `http://localhost:${aiSrv.port}`
 
-    const port = 46950 + Math.floor(Math.random() * 300)
+    const port = await __freePortKLA719()
     BASE = `http://localhost:${port}`
     appProc = Bun.spawn(["bun", "run", "server.ts"], {
       cwd: join(import.meta.dir, ".."),

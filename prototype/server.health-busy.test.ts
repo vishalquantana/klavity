@@ -3,6 +3,17 @@
 // slot flip never kills an in-flight run mid-execution. On an idle server it must report busy:0 /
 // idle:true. Spawns a real server subprocess (mirrors server.legacy-domain-api-cors.test.ts).
 import { test, expect, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -15,7 +26,7 @@ let serverProc: ReturnType<typeof Bun.spawn>
 let base: string
 
 beforeAll(async () => {
-  serverPort = 32000 + Math.floor(Math.random() * 1000)
+  serverPort = await __freePortKLA719()
   base = `http://localhost:${serverPort}`
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {
     cwd: import.meta.dir,

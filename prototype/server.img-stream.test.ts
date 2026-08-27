@@ -15,6 +15,17 @@
 //   3) Guards intact: bad token → 404; unknown screenshot id → 404.
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -24,7 +35,7 @@ import { S3Client } from "bun"
 const ts = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const srvDbFile = join(tmpdir(), `klav-imgstream-${ts}.db`)
 const s3Root = join(tmpdir(), `klav-imgstream-s3-${ts}`)
-const S3_PORT = 45680 + Math.floor(Math.random() * 100)
+const S3_PORT = await __freePortKLA719()
 const S3_ENDPOINT = `http://localhost:${S3_PORT}/kla519`
 const TEST_SECRET = Buffer.from(new Uint8Array(32).fill(42)).toString("base64")
 
@@ -86,7 +97,7 @@ beforeAll(async () => {
   await rawExec(`INSERT INTO screenshots (id, project_id, s3_key, bucket, content_type, acl, bytes, owner_email, expires_at, created_at) VALUES (?, ?, ?, 'kla519', 'image/png', 'private', ?, NULL, NULL, ?)`, [SHOT_ID, PROJECT_ID, S3_KEY, IMG_BYTES.length, NOW])
 
   // 3) spawn the app server pointed at BOTH the temp DB and the local S3
-  serverPort = 31000 + Math.floor(Math.random() * 3000)
+  serverPort = await __freePortKLA719()
   BASE = `http://localhost:${serverPort}`
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {
     cwd: import.meta.dir,

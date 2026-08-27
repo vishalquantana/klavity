@@ -2,6 +2,17 @@
 // pre-signup attribution on the free AI tools. Same hermetic shape as server.cro.test.ts: a stub
 // page server, a stub OpenRouter, and a REAL server subprocess against a fresh temp SQLite DB.
 import { afterAll, beforeAll, expect, test } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -59,7 +70,7 @@ beforeAll(async () => {
   })
   const AI_BASE = `http://localhost:${aiServer.port}`
 
-  const port = 48100 + Math.floor(Math.random() * 200)
+  const port = await __freePortKLA719()
   BASE = `http://localhost:${port}`
   appProc = Bun.spawn(["bun", "run", "server.ts"], {
     cwd: import.meta.dir,

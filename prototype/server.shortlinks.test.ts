@@ -1,6 +1,17 @@
 // Integration tests for the short-link surface: public /s/:code redirector (Task 3) and the
 // OPS_ADMIN-gated /api/superadmin/links CRUD API (Task 4). Hermetic spawned-server pattern.
 import { test, expect, beforeAll, afterAll } from "bun:test"
+import * as __netKLA719 from "node:net"
+// KLA-719: OS-assigned free port (replaces a crowded random base that let co-scheduled
+// server suites collide and answer each other's requests → spurious 401/404/no-such-table).
+function __freePortKLA719(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = __netKLA719.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -9,7 +20,7 @@ import { unlinkSync } from "node:fs"
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const DB_FILE = join(tmpdir(), `klav-shortlinks-srv-${RUN}.db`)
 const TEST_SECRET = Buffer.alloc(32, 7).toString("base64")
-const PORT = 45200 + Math.floor(Math.random() * 300)
+const PORT = await __freePortKLA719()
 const BASE = `http://localhost:${PORT}`
 
 const ADMIN_EMAIL = `ops-${RUN}@test.local`
