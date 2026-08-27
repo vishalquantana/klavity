@@ -1,11 +1,11 @@
-import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, ReportType, SubmitReportPayload, SubmitResult } from '@klavity/core'
+import type { BackgroundMessage, ContentMessage, KlavitySettings, KlavConfig, ReportType, SubmitReportPayload } from '@klavity/core'
 import { findProjectForUrl } from './project-url'
 import { onSettingsChanged } from './config-flush'
 import { revalidateConfig } from './config-revalidate'
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import { dispatchSubmit } from '@klavity/core/submit'
 // KLA-720: client-direct tracker submitters (jira/linear/github/plane) removed — persist-first only.
-import { submitReport as backendSubmit, buildFeedbackFormData } from '@klavity/core/integrations/backend'
+import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 import { EVIDENCE_KEY } from './evidence-store'
 
 // Safety net: messaging a tab/port that has no listener (e.g. a tab with no
@@ -24,67 +24,66 @@ async function getSettings(): Promise<KlavitySettings> {
   return { ...DEFAULT_SETTINGS, ...(result.klavSettings ?? {}) }
 }
 
-// PX4 #411/#425 (ext↔widget parity): submit to the Klavity /api/feedback backend WITH the enhanced
-// composer fields (Title, precise issue kind, non-image file attachments). This mirrors the core
-// backendSubmit (packages/core/integrations/backend) — same shared form serializer, same auth (klavity
-// Bearer vs direct-Plane creds), same screenshots-as-blobs and same response shape — but additionally:
-//   • sends the precise kind as the `type` field (`kind ?? type`), so Task/Query reach the server's
-//     report_type + connector issue-type mapping (exactly what the widget forwards);
-//   • sets the explicit `title` when the composer had a Title field; and
-//   • appends non-image `files` as their own multipart field with the real filename preserved.
-// Used only on the Klavity-backend path; direct-tracker modes still go through dispatchSubmit unchanged.
-async function submitToBackendWithExtras(payload: SubmitReportPayload, settings: KlavitySettings): Promise<SubmitResult> {
-  const kind = payload.kind ?? payload.type
-  const form = buildFeedbackFormData({
-    // `type` carries the precise kind (bug/feature/task/query) — the server maps it to report_type.
-    type: kind,
-    description: payload.description,
-    pageUrl: payload.context.pageUrl,
-    context: payload.context,
-    projectId: payload.projectId,
-    replayEvents: payload.replayEvents,
-  })
-  // Explicit one-line Title (server prefers it over the auto-title; connectors use it as the summary).
-  if (payload.title) form.set('title', payload.title)
+// KLA-727 + KLA-729 (ext↔widget parity): the extension's full-payload /api/feedback serialization now lives
+// entirely in the SHARED core path — dispatchSubmit maps SubmitReportPayload → IntegrationConfig and
+// submitReport (backendSubmit) + buildFeedbackFormData emit title/kind/files/recordings/reporter/clientInfo/
+// annotations_json/reporter_email/screenshot_thumbs. The former extension-local submitToBackendWithExtras
+// duplicated all of that and has been removed; the SUBMIT_REPORT handler calls dispatchSubmit directly.
+// ── KLA-735: auto-file-error outbox ───────────────────────────────────────────────────────────────────
+// An automatically-filed error report that fails to POST (offline / DNS / 5xx) used to be silently dropped.
+// We stash a bounded queue in chrome.storage.local and re-attempt on the next AUTO_FILE_ERROR (SW wake).
+// Deliberately tiny + best-effort: capped size, capped age, and every storage op is guarded so a failing
+// outbox can never itself throw or wedge the error handler.
+const AUTOFILE_OUTBOX_KEY = 'klavAutoFileOutbox'
+const AUTOFILE_OUTBOX_MAX = 20
+const AUTOFILE_OUTBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000 // drop reports older than a day rather than retry forever
+interface AutoFileOutboxItem { message: string; stack?: string; pageUrl: string; timestamp: number }
 
-  // Klavity mode: signed-in user — the backend resolves their personal→team connection, so the tracker
-  // token never leaves the server (Bearer only). Direct mode forwards this browser's own Plane creds.
-  const useKlavity = settings.connectionMode === 'klavity' && !!settings.klavToken
-  if (!useKlavity) {
-    const { plane } = settings
-    form.append('plane_token', plane.token)
-    form.append('plane_workspace', plane.workspace)
-    form.append('plane_project_id', plane.projectId)
-    form.append('plane_host', plane.host)
-  }
-
-  // PX4 #425: non-image file attachments. Fetch each data URL → blob (works in the MV3 service worker,
-  // same as the screenshot path below) and append with its real filename. A malformed data URL is skipped.
-  for (const f of payload.files ?? []) {
-    try {
-      const raw = await (await fetch(f.dataUrl)).blob()
-      // KLA-560 item 6 (ext↔widget parity): when the composer stamped a concrete content-type onto a
-      // video it accepted by extension (empty file.type), the fetched blob's type is empty/generic —
-      // re-type it via slice so the multipart part carries video/* and the server's 100MB video cap agrees.
-      const isGeneric = !raw.type || raw.type === 'application/octet-stream'
-      const blob = (isGeneric && f.type) ? raw.slice(0, raw.size, f.type) : raw
-      form.append('files', blob, f.name)
-    } catch { /* skip a malformed / oversized attachment rather than fail the whole submit */ }
-  }
-
-  for (let i = 0; i < payload.screenshots.length; i++) {
-    const blob = await (await fetch(payload.screenshots[i])).blob()
-    form.append('screenshots', blob, `screenshot-${i}.png`)
-  }
-
-  const headers: Record<string, string> = useKlavity ? { Authorization: `Bearer ${settings.klavToken}` } : {}
-  const res = await fetch(`${settings.backendUrl}/api/feedback`, { method: 'POST', headers, body: form })
-  if (!res.ok) throw new Error(`Klavity backend error ${res.status}: ${await res.text()}`)
-  const data = await res.json() as { id: string; jira_key?: string; issue_url?: string }
+async function readAutoFileOutbox(): Promise<AutoFileOutboxItem[]> {
+  try {
+    const r = await chrome.storage.local.get(AUTOFILE_OUTBOX_KEY)
+    const list = r[AUTOFILE_OUTBOX_KEY]
+    return Array.isArray(list) ? (list as AutoFileOutboxItem[]) : []
+  } catch { return [] }
+}
+async function writeAutoFileOutbox(list: AutoFileOutboxItem[]): Promise<void> {
+  try { await chrome.storage.local.set({ [AUTOFILE_OUTBOX_KEY]: list.slice(-AUTOFILE_OUTBOX_MAX) }) } catch { /* best-effort */ }
+}
+async function enqueueAutoFileOutbox(item: AutoFileOutboxItem): Promise<void> {
+  const list = await readAutoFileOutbox()
+  list.push(item)
+  await writeAutoFileOutbox(list)
+}
+// Rebuild the /api/feedback payload for a queued item (same shape as the live AUTO_FILE_ERROR path).
+function autoFilePayloadFor(item: AutoFileOutboxItem): SubmitReportPayload {
+  const body = [
+    `**Page:** ${item.pageUrl}`,
+    `**Time:** ${new Date(item.timestamp).toISOString()}`,
+    '',
+    item.stack ? `**Stack trace:**\n\`\`\`\n${item.stack}\n\`\`\`` : '',
+  ].filter(Boolean).join('\n')
   return {
-    issueKey: data.jira_key ?? data.id,
-    issueUrl: data.issue_url ?? settings.backendUrl,
+    type: 'bug',
+    description: `Auto: ${item.message}\n\n${body}`,
+    context: { pageUrl: item.pageUrl, userAgent: '', screenSize: '', viewportSize: '', consoleErrors: [], networkFailures: [] },
+    screenshots: [],
   }
+}
+// Best-effort drain: try each queued report; keep the ones that still fail (unless too old). Never throws.
+async function flushAutoFileOutbox(settings: KlavitySettings): Promise<void> {
+  const list = await readAutoFileOutbox()
+  if (!list.length) return
+  const now = Date.now()
+  const remaining: AutoFileOutboxItem[] = []
+  for (const item of list) {
+    if (now - item.timestamp > AUTOFILE_OUTBOX_MAX_AGE_MS) continue // give up on stale reports
+    try {
+      await dispatchSubmit(autoFilePayloadFor(item), settings, { backend: backendSubmit })
+    } catch {
+      remaining.push(item) // still failing — keep for the next attempt
+    }
+  }
+  if (remaining.length !== list.length) await writeAutoFileOutbox(remaining)
 }
 
 function getTrackerUrl(settings: KlavitySettings): string {
@@ -707,10 +706,14 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
   }
 
   if (msg.kind === 'AUTO_FILE_ERROR') {
-    getSettings().then(settings => {
+    getSettings().then(async settings => {
       // Guard again on the background side in case the flag changed between
       // the content script reading it and the message arriving.
       if (!settings.autoFileErrors) return
+
+      // KLA-735: first, best-effort drain any previously-failed auto-file reports (the SW woke for this
+      // error, so we have a live network window). A still-failing item stays queued; this never throws.
+      await flushAutoFileOutbox(settings)
 
       const body = [
         `**Page:** ${msg.pageUrl}`,
@@ -734,8 +737,14 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
       }
 
       return dispatchSubmit(payload, settings, { backend: backendSubmit })
-    }).catch(() => {
-      // Fire-and-forget: silently ignore submission errors for auto-filed bugs
+    }).catch((err) => {
+      // KLA-735: an auto-filed error report used to vanish here — a terminal no-op catch with NO diagnostic,
+      // NO retry and NO outbox meant an offline/DNS/HTTP failure silently lost the report. Now: log a
+      // diagnostic AND stash it in a small bounded chrome.storage outbox for a best-effort resend on the next
+      // AUTO_FILE_ERROR (SW wake). Best-effort throughout — a failing outbox write must never throw.
+      const reason = String((err as Error)?.message ?? err)
+      console.warn('[Klavity] auto-file error report failed to submit:', reason, '— queued to outbox for retry')
+      void enqueueAutoFileOutbox({ message: msg.message, stack: msg.stack, pageUrl: msg.pageUrl, timestamp: msg.timestamp })
     })
     return true
   }
@@ -767,13 +776,12 @@ chrome.runtime.onMessage.addListener((msg: BackgroundMessage, sender, sendRespon
 
   if (msg.kind === 'SUBMIT_REPORT') {
     getSettings().then(settings => {
-      // PX4 #411/#425 (ext↔widget parity): the enhanced composer can carry an explicit Title, a precise
-      // issue kind (Task/Query beyond Bug/Feature), and non-image file attachments. The shared
-      // dispatchSubmit → backendSubmit path drops those (IntegrationConfig has no title/kind/files), so on
-      // the Klavity-backend path we build + POST the /api/feedback form here with the extra fields. Routing
-      // is identical to dispatchSubmit: it uses the backend handler exactly when backendUrl is set, so this
-      // only diverges to ADD fields — direct-tracker modes (no backendUrl) keep the classic dispatch.
-      if (settings.backendUrl) return submitToBackendWithExtras(msg.payload, settings)
+      // KLA-727 + KLA-729 (ext↔widget parity): the enhanced composer's full evidence set — Title, precise
+      // issue kind (Task/Query), file attachments, recordings, annotations, reporter/clientInfo, reporter_email
+      // and screenshot thumbnails — now flows through the SHARED core path. KLA-729 pushed all of that
+      // serialization into buildFeedbackFormData + submitReport (via IntegrationConfig), so the previous
+      // extension-local submitToBackendWithExtras is redundant. dispatchSubmit maps the whole SubmitReportPayload
+      // onto IntegrationConfig, so a single shared call now carries everything for BOTH backend + default modes.
       return dispatchSubmit(msg.payload, settings, { backend: backendSubmit })
     }).then(result => {
       const tabId = sender.tab?.id

@@ -207,6 +207,8 @@ export interface SubmitReportPayload {
   // KLA-729: embed-page referrer (document.referrer). Threaded as `referrer`. Optional.
   referrer?: string
   // KLA-729: lightweight per-screenshot JPEG previews (index-aligned with `screenshots`). Optional.
+  // KLA-727 (ext↔widget parity) relies on this same field — the extension now generates thumbnails in the
+  // content script (canvas) since the MV3 service worker has no DOM, and forwards them here.
   screenshotThumbs?: string[]
   // G1 session replay: rolling rrweb DOM-event buffer (Klavity backend integration only).
   replayEvents?: unknown[]

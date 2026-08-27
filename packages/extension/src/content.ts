@@ -1,4 +1,4 @@
-import type { ContentMessage, BackgroundMessage, ReportType, IssueKind, ReportFileAttachment, SubmitReportPayload, KlavConfig, KlavMonitoredProject } from '@klavity/core'
+import type { ContentMessage, BackgroundMessage, ReportType, IssueKind, ReportFileAttachment, ReportRecording, ClientInfo, SubmitReportPayload, KlavConfig, KlavMonitoredProject } from '@klavity/core'
 import { parseComposerOpts, type ExtComposerOpts } from './composer-opts'
 import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type CaptureQuality } from '@klavity/core/modal'
 import { icon } from '@klavity/core/icons'
@@ -154,8 +154,84 @@ function getHost(): ShadowRoot {
   return shadowRoot
 }
 
-function buildContext(): SubmitReportPayload['context'] {
-  return buildReportContext(_buffers)
+// KLA-727 (ext↔widget parity, B1): console logs are DEFAULT OFF, matching the widget's consoleContext
+// (packages/sdk/src/widget.ts). The rolling capture buffer keeps running (bounded, cheap + still powers
+// auto-file-on-error), but the captured console errors ride a manually-filed report ONLY when the reporter
+// flipped the composer's "Attach console logs" toggle (attachConsole). Network failures are left intact
+// (the widget keeps those too). Default/undefined attachConsole → console stripped.
+function buildContext(attachConsole?: boolean): SubmitReportPayload['context'] {
+  const ctx = buildReportContext(_buffers)
+  if (attachConsole !== true) ctx.consoleErrors = []
+  return ctx
+}
+
+// KLA-727 (ext↔widget parity, #428): capture the client/browser/OS/viewport/locale at report time. Ported
+// minimally from the SDK's captureClientInfo (packages/sdk/src/identity.ts) so the extension — which depends
+// only on @klavity/core — matches the widget's client_info field without pulling in the sdk. Every read is
+// guarded so a hostile/headless environment never throws; absent fields are simply omitted.
+function captureExtClientInfo(): ClientInfo {
+  const out: ClientInfo = {}
+  try {
+    const ua = navigator.userAgent || ''
+    if (ua) out.userAgent = ua.slice(0, 500)
+    // Browser name/version (rough parse; mirrors identity.ts intent — Edge/Chrome/Firefox/Safari).
+    let m: RegExpMatchArray | null = null
+    if ((m = ua.match(/Edg\/([\d.]+)/))) { out.browser = 'Edge'; out.browserVersion = m[1] }
+    else if ((m = ua.match(/Firefox\/([\d.]+)/))) { out.browser = 'Firefox'; out.browserVersion = m[1] }
+    else if ((m = ua.match(/Chrome\/([\d.]+)/))) { out.browser = 'Chrome'; out.browserVersion = m[1] }
+    else if ((m = ua.match(/Version\/([\d.]+).*Safari/))) { out.browser = 'Safari'; out.browserVersion = m[1] }
+    if (/Windows/.test(ua)) out.os = 'Windows'
+    else if (/Android/.test(ua)) out.os = 'Android'
+    else if (/iPhone|iPad|iPod/.test(ua)) out.os = 'iOS'
+    else if (/Mac OS X/.test(ua)) out.os = 'macOS'
+    else if (/CrOS/.test(ua)) out.os = 'ChromeOS'
+    else if (/Linux/.test(ua)) out.os = 'Linux'
+    out.deviceType = /Mobi|Android|iPhone|iPod/i.test(ua) && !/iPad|Tablet/i.test(ua)
+      ? 'mobile' : (/iPad|Tablet/i.test(ua) ? 'tablet' : 'desktop')
+  } catch { /* ignore */ }
+  try { out.viewport = `${window.innerWidth}x${window.innerHeight}` } catch { /* ignore */ }
+  try { if (window.screen) out.screen = `${window.screen.width}x${window.screen.height}` } catch { /* ignore */ }
+  try { if (window.devicePixelRatio) out.devicePixelRatio = Math.round(window.devicePixelRatio * 100) / 100 } catch { /* ignore */ }
+  try { if (navigator.language) out.locale = String(navigator.language).slice(0, 35) } catch { /* ignore */ }
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (tz) out.timezone = String(tz).slice(0, 60)
+  } catch { /* ignore */ }
+  return out
+}
+
+// KLA-727 (ext↔widget parity): build a small JPEG preview per screenshot (≤320px, low quality) so the
+// dashboard list loads a lightweight thumbnail instead of the full image — the same idea as widget-lib's
+// buildThumbnail. Runs in the content script (has canvas); the MV3 service worker has no DOM. Best-effort:
+// a shot that can't be down-scaled is simply omitted (the server pairs by index and falls back to the full
+// image). Returns an index-aligned array (with '' placeholders removed by the caller when empty).
+async function buildExtThumbnails(screenshots: string[]): Promise<string[]> {
+  const thumbs = await Promise.all(screenshots.map((dataUrl) => buildOneThumb(dataUrl)))
+  // If NOTHING produced a real thumb, return [] so we don't ship a same-index array of placeholders.
+  return thumbs.some((t) => !!t) ? thumbs.map((t) => t || '') : []
+}
+async function buildOneThumb(dataUrl: string): Promise<string> {
+  const maxWidth = 320, quality = 0.6
+  if (typeof document === 'undefined' || !dataUrl.startsWith('data:image/')) return ''
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl
+    })
+    const nw = img.naturalWidth, nh = img.naturalHeight
+    if (!nw || !nh) return ''
+    const scale = nw > maxWidth ? maxWidth / nw : 1
+    const w = Math.round(nw * scale), h = Math.round(nh * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return ''
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    const out = canvas.toDataURL('image/jpeg', quality)
+    return out.length < dataUrl.length ? out : dataUrl
+  } catch {
+    return ''
+  }
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
@@ -265,6 +341,10 @@ async function openComposer(
     showTitleField: composer.showTitleField,
     allowFileAttachments: composer.allowFileAttachments,
     issueTypes: composer.issueTypes,
+    // KLA-727 (ext↔widget parity, B1): render the "Attach console logs" toggle (DEFAULT OFF), exactly like
+    // the widget (widget.ts consoleAttachToggle:true). The reporter's opt-in threads through onSubmit as
+    // attachConsole; buildContext strips console logs unless it's true — parity + privacy by default.
+    consoleAttachToggle: true,
     // #442: for an evidence session, append a "Pages captured" trail (read the LATEST session so shots
     // added across pages/origins are included) and clear the session on a successful file.
     onSubmit: (p) => submitViaSW(p, session),
@@ -495,8 +575,22 @@ async function evResumeDockOnBoot(): Promise<void> {
 // Single-slot: at most one submit is in flight (one modal at a time).
 let pendingSubmit: { resolve: (r: { issueKey: string; issueUrl: string }) => void; reject: (e: Error) => void } | null = null
 
-async function submitViaSW(
-  p: { type: ReportType; kind?: IssueKind; title?: string; description: string; screenshots: string[]; files?: ReportFileAttachment[] },
+// KLA-727: exported for the data-loss negative-control test (content-dataloss.test.ts). This is the single
+// funnel where the composer's full payload is marshalled into the SUBMIT_REPORT message — the previous
+// version destructured only {type,kind,title,description,screenshots,files} and SILENTLY DROPPED
+// annotations, recordings, reporterEmail, client_info and the console toggle that the widget keeps.
+export async function submitViaSW(
+  p: {
+    type: ReportType; kind?: IssueKind; title?: string; description: string; screenshots: string[]
+    files?: ReportFileAttachment[]
+    // KLA-727 (ext↔widget parity): the full set of fields the shared buildModal produces (modal.ts onSubmit).
+    recordings?: ReportRecording[]
+    annotations?: any
+    reporterEmail?: string
+    // #638 console toggle (default OFF): the reporter's opt-in to attach console logs. Undefined/false → console
+    // stripped from context in buildContext.
+    attachConsole?: boolean
+  },
   session?: ExtEvidenceSession | null,
 ): Promise<{ issueKey: string; issueUrl: string }> {
   const matchedProject = klavMatchProject(location.href)
@@ -509,6 +603,9 @@ async function submitViaSW(
     const trail = evBuildPagesTrail((latest && latest.shots.length ? latest : session).shots)
     if (trail) description = (description ? description + '\n\n' : '') + trail
   }
+  // KLA-727: generate index-aligned thumbnails here (content script has canvas; the SW does not) so the
+  // dashboard list loads a lightweight preview — same idea as widget-lib buildThumbnail. Best-effort.
+  const screenshotThumbs = await buildExtThumbnails(p.screenshots).catch(() => [] as string[])
   const payload: SubmitReportPayload = {
     type: p.type,
     // PX4 #411 (ext↔widget parity): the precise issue kind (bug/feature/task/query) the reporter chose,
@@ -519,11 +616,22 @@ async function submitViaSW(
     // over the auto-title and connectors use it verbatim as the external issue summary.
     ...(p.title ? { title: p.title } : {}),
     description,
-    context: buildContext(),
+    // B1: console logs attached only when the reporter opted in via the composer toggle (default OFF).
+    context: buildContext(p.attachConsole),
     screenshots: [...p.screenshots],
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
     // their own path; these ride the /api/feedback `files` field (forwarded in the background).
     ...(p.files && p.files.length ? { files: p.files } : {}),
+    // KLA-727 (ext↔widget parity): "Record me" video recordings → /api/feedback `recording` + `recording_meta`.
+    ...(p.recordings && p.recordings.length ? { recordings: p.recordings } : {}),
+    // KLA-727 (ext↔widget parity): structured annotation overlay → `annotations_json`. Previously DROPPED.
+    ...(p.annotations ? { annotations: p.annotations } : {}),
+    // KLA-727 (ext↔widget parity): required-email gate value → `reporter_email`.
+    ...(p.reporterEmail ? { reporterEmail: p.reporterEmail } : {}),
+    // KLA-727 (ext↔widget parity, #428): captured browser/OS/viewport/locale → `client_info`.
+    clientInfo: captureExtClientInfo(),
+    // KLA-727: lightweight per-screenshot preview thumbnails → `screenshot_thumbs`.
+    ...(screenshotThumbs.length ? { screenshotThumbs } : {}),
     ...(matchedProject?.id ? { projectId: matchedProject.id } : {}),
   }
   return new Promise((resolve, reject) => {

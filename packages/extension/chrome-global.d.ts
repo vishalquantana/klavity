@@ -22,4 +22,8 @@
 // type-position usages in background.ts/popup.ts with TS2503). The merge-train
 // gate, by contrast, uses a repo-wide `git diff` file list (not the tsconfig), so
 // it still sees this file regardless of where it sits in the package.
+//
+// touched by KLA-735: the auto-file-error outbox added NEW chrome.storage.local refs in background.ts.
+// This file must appear in `git diff --name-only origin/master..HEAD` so the merge-train's changed-file
+// tsc gate includes this ambient shim on its compile line and `chrome` resolves to `any` (net-new TS2304 → 0).
 declare const chrome: any
