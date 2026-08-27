@@ -4,6 +4,19 @@
 
 import { test, expect, beforeAll, afterAll } from "bun:test"
 import { createClient } from "@libsql/client"
+import net from "node:net"
+
+// KLA-719: replace a crowded `<base> + rand(1000)` port with an OS-assigned free port.
+// Sharing a random base with sibling suites caused co-scheduled servers to answer each
+// other's requests (spurious 401/404 / "no such table: users" from a readiness false-positive).
+function freePort(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = net.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
+
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -65,7 +78,7 @@ let serverProc: ReturnType<typeof Bun.spawn>
 let BASE: string
 
 beforeAll(async () => {
-  serverPort = 45000 + Math.floor(Math.random() * 1000)
+  serverPort = await freePort()
   BASE = `http://localhost:${serverPort}`
 
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {

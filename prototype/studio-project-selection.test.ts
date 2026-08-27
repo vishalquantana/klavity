@@ -117,8 +117,13 @@ test("onboarding: renderWidgetSnippet points skipToDash at /dashboard?project=",
     skipToDash: { textContent: "", href: "/dashboard" },
   }
   const doc = { getElementById: (id: string) => els[id] || null }
-  const render = new Function("projectId", "document", "goal",
-    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc, null) as () => void
+  // KLA-719: the shipped renderWidgetSnippet now resolves nodes via a `$` helper
+  // (const $ = id => document.getElementById(id)) and reads location.origin — inject
+  // both into the extracted-function scope, mirroring the document/window stubs.
+  const $ = (id: string) => doc.getElementById(id)
+  const location = { origin: "https://klavity.test" }
+  const render = new Function("projectId", "document", "goal", "$", "location",
+    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc, null, $, location) as () => void
   render()
   expect(els.snipPid.textContent).toBe("proj_9db93ede")
   expect(els.skipToDash.href).toBe("/dashboard?project=proj_9db93ede")
@@ -131,8 +136,10 @@ test("onboarding: skipToDash also carries goal= once a goal is chosen", () => {
     skipToDash: { textContent: "", href: "/dashboard" },
   }
   const doc = { getElementById: (id: string) => els[id] || null }
-  const render = new Function("projectId", "document", "goal",
-    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc, "snap") as () => void
+  const $ = (id: string) => doc.getElementById(id)
+  const location = { origin: "https://klavity.test" }
+  const render = new Function("projectId", "document", "goal", "$", "location",
+    renderSnippetSrc + "\nreturn renderWidgetSnippet;")("proj_9db93ede", doc, "snap", $, location) as () => void
   render()
   expect(els.skipToDash.href).toBe("/dashboard?project=proj_9db93ede&goal=snap")
 })

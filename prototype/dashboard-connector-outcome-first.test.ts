@@ -31,7 +31,9 @@ test("a per-type outcome map covers every tracker and renders above the fields",
   expect(html).toContain("auto-appears in Plane as an issue")
   // banner is rendered before the credential fields
   expect(html).toContain('class="conn-outcome field-full"')
-  expect(html).toContain("outcomeHtml + helpHtml + fieldsHtml + syncPanel")
+  // KLA-719: a `pasteHtml` segment was added between outcome and help; the outcome
+  // banner still renders before the credential fields (intent preserved).
+  expect(html).toContain("outcomeHtml + pasteHtml + helpHtml + fieldsHtml + syncPanel")
 })
 
 test("connOutcomeLine falls back for unknown types", () => {

@@ -42,7 +42,10 @@ test("kanbanKeyForStatus routes done and dismissed to distinct keys (KLA-206)", 
   // and both status dots are styled.
   expect(html).toContain('.kanban{display:flex;flex-wrap:nowrap')
   expect(html).toContain('overflow-x:auto')
-  expect(html).toContain('.kb-col{flex:0 0 300px')
+  // KLA-719: columns now grow to fill (flex:1 1 300px) but never squish below 300px
+  // thanks to min-width:300px — the "don't squish" intent is preserved via min-width.
+  expect(html).toContain('.kb-col{flex:1 1 300px')
+  expect(html).toContain('min-width:300px')
   expect(html).toContain('.kb-dot-done{')
   expect(html).toContain('.kb-dot-dismissed{')
 })
@@ -88,8 +91,8 @@ test("Tickets board and detail expose a member-backed assignee picker", () => {
   expect(html).toContain('id="tktAssigneeOptions"')
   expect(html).toContain("function projectMemberEmails()")
   expect(html).toContain('list="tktAssigneeOptions"')
-  expect(html).toContain("assigneePickerHtml(t, true)")
-  expect(html).toContain("patchTicketAssignee(ticketId, next)")
+  expect(html).toContain("assigneePickerHtml(t)")
+  expect(html).toContain("patchTicketAssignee(ticketId, assignee)")
   expect(html).toContain('body: JSON.stringify({ assignee: assignee || null, notes: notes || null })')
 })
 

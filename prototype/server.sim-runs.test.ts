@@ -1,5 +1,17 @@
 import { test, expect, beforeAll, afterAll } from "bun:test"
 import { createClient } from "@libsql/client"
+import net from "node:net"
+
+// KLA-719: a random `44000 + rand(1000)` port collided with other suites sharing
+// the same base (co-scheduled test files answered each other's requests → spurious
+// 401s / wrong-server HTML). Grab an OS-assigned free port instead of gambling.
+function freePort(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = net.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -80,7 +92,7 @@ let serverProc: ReturnType<typeof Bun.spawn>
 let BASE: string
 
 beforeAll(async () => {
-  serverPort = 44000 + Math.floor(Math.random() * 1000)
+  serverPort = await freePort()
   BASE = `http://localhost:${serverPort}`
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {
     cwd: import.meta.dir,

@@ -130,8 +130,14 @@ test("POST /api/feedback never pushes to Plane inline, even with forwarded creds
   // permalink (/t/<id>, #727) back to our own Klavity ticket and never an external key.
   expect(j.jira_key).toBeUndefined()
   expect(typeof j.issue_url).toBe("string")
-  expect(String(j.issue_url).startsWith(`${BASE}/t/`)).toBe(true)
-  expect(String(j.issue_url)).not.toContain(PLANE_URL)
+  // KLA-719: #727's opaque `/t/<id>` was superseded by the #745 pretty deep link
+  // (prettyTicketPath → `/<slug>/<KEY>-<n>` when the alias is backfilled, else `/t/<id>`).
+  // The invariant that matters is unchanged: it's an IN-APP permalink on our OWN host
+  // (never the external tracker), so assert the host + a ticket path of either shape.
+  const iu = String(j.issue_url)
+  expect(iu.startsWith(`${BASE}/`)).toBe(true)
+  expect(iu.slice(BASE.length)).toMatch(/^\/(t\/[^/]+|[^/]+\/[^/]+-\d+)$/)
+  expect(iu).not.toContain(PLANE_URL)
 
   // Give a fire-and-forget push time to land before asserting it never happened.
   await Bun.sleep(600)

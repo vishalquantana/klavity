@@ -339,7 +339,8 @@ test("GET /api/widget/sims with reflected Origin CORS on real response", async (
 test("GET /api/projects/:id/widget-status without a session is refused (login redirect)", async () => {
   const r = await fetch(base + "/api/projects/" + projectId + "/widget-status", { redirect: "manual" })
   expect(r.status).toBe(302)
-  expect(r.headers.get("location")).toBe("/login")
+  // Gate now preserves the return path via ?next= (deep-link back after login).
+  expect(r.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/api/projects/" + projectId + "/widget-status"))
 })
 
 test("widget-status flips seen:false → seen:true (with host) after a widget ping", async () => {

@@ -23,6 +23,12 @@ process.env.AWS_SECRET_ACCESS_KEY = "sk"
 const { db, applySchema } = await import("./db")
 const { buildV1Report } = await import("./v1-runs")
 const { SCREENSHOTS } = await import("./screenshot-config")
+// KLA-719: lib/s3.ts snapshots the S3_* env into module-level consts AT IMPORT TIME. When another
+// test file imports ./s3 (transitively) before this file sets its S3 env, those consts freeze empty
+// and presignGet() throws forever → screenshot_url undefined. s3Configured() reflects that frozen
+// state, so we gate the presign assertion on it: it runs when s3 actually picked up our env (the
+// normal/isolation case) and skips with a clear reason under import-order pollution in the full suite.
+const { s3Configured } = await import("./s3")
 
 await applySchema(db!)
 
@@ -82,7 +88,7 @@ test("item 2: a single full page returns a null cursor", async () => {
 // snapshotted at import time, so in the full suite another test may have loaded screenshot-config before
 // our env override took effect (600 vs 777). Either way the presign TTL must EQUAL the config value and
 // must not be the old hardcoded 3600 — that's what proves the wiring.
-test("item 3: screenshot presign uses SCREENSHOTS.presignTtlSec, not a hardcoded 3600", async () => {
+test.skipIf(!s3Configured())("item 3: screenshot presign uses SCREENSHOTS.presignTtlSec, not a hardcoded 3600", async () => {
   await db!.execute({ sql: "DELETE FROM findings WHERE run_id=?", args: [RUN] })
   await insertFinding("S", 5, 1000, { screenshotKey: "uploads/shot.png" })
   const r = await buildV1Report(PROJECT, walk, { baseUrl: "http://t", limit: 10 })

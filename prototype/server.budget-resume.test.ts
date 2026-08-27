@@ -15,6 +15,20 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { unlinkSync } from "node:fs"
+import net from "node:net"
+
+// KLA-719: a random `45000 + rand(1000)` port collided with sibling suites on the
+// same base. When another server held the port, the favicon readiness probe was
+// answered by the foreign server (status < 500), the boot loop broke early, and
+// seed() then ran against a DB this server never initialized → "no such table: users".
+// An OS-assigned free port makes the bind (and thus the schema init) deterministic.
+function freePort(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = net.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
 
 const RUN = `${Date.now()}-${randomUUID()}`
 const DB_FILE = join(tmpdir(), `klav-budget-resume-${RUN}.db`)
@@ -79,7 +93,7 @@ async function seed() {
 }
 
 beforeAll(async () => {
-  const port = 45000 + Math.floor(Math.random() * 1000)
+  const port = await freePort()
   BASE = `http://localhost:${port}`
   serverProc = Bun.spawn(["bun", "run", "server.ts"], {
     cwd: import.meta.dir,

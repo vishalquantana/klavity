@@ -172,11 +172,14 @@ test('dashboard.html "Connect your tracker" task reuses #445 openTrackerConnect(
   expect(src).toMatch(/fsTrackerBtn"\)\.onclick[\s\S]{0,80}openTrackerConnect\(\)/)
 })
 
-test('dashboard.html checklist is dismissible and re-openable via a "Getting started" sidebar entry', () => {
+test('dashboard.html checklist is dismissible and re-openable via the Getting started entry', () => {
   const src = loadPublic('dashboard.html')
   expect(src).toContain('id="finishSetupX"')
   expect(src).toContain('klav-finish-setup-x')
-  expect(src).toContain('data-go="getting-started"')
+  // KLA-719 / #713: the standalone `data-go="getting-started"` sidebar nav entry was
+  // intentionally dropped — the getting-started route now redirects to Overview and the
+  // checklist re-opens via the `reopenFinish` flag. The "Getting started" label remains.
+  expect(src).toContain('reopenFinish')
   expect(src).toContain('Getting started')
 })
 

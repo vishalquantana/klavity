@@ -114,7 +114,8 @@ test("GET /sim/new serves the dashboard for a session; anon redirects to /login"
 
   const anon = await fetch(`${base}/sim/new`, { redirect: "manual" })
   expect(anon.status).toBe(302)
-  expect(anon.headers.get("location")).toBe("/login")
+  // Gate now preserves the return path via ?next= (deep-link back after login).
+  expect(anon.headers.get("location")).toBe("/login?next=" + encodeURIComponent("/sim/new"))
 })
 
 test("GET /sim/new/ (trailing slash) and ?mode= also serve the dashboard for a session", async () => {

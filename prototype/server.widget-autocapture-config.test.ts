@@ -10,11 +10,24 @@ import { createClient } from "@libsql/client"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlinkSync } from "node:fs"
+import net from "node:net"
+
+// KLA-719: a random `45700 + rand(200)` port overlapped a neighboring suite's range.
+// When the port was already held, the favicon readiness probe was answered by the
+// foreign server, the boot loop broke early, and seed() ran against a DB this server
+// never initialized → "no such table: users". OS-assigned free port fixes it.
+function freePort(): Promise<number> {
+  return new Promise((res, rej) => {
+    const s = net.createServer()
+    s.on("error", rej)
+    s.listen(0, "127.0.0.1", () => { const p = (s.address() as any).port; s.close(() => res(p)) })
+  })
+}
 
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const DB_FILE = join(tmpdir(), `klav-autocapture-cfg-${RUN}.db`)
 const SECRET = Buffer.from(new Uint8Array(32).fill(53)).toString("base64")
-const PORT = 45700 + Math.floor(Math.random() * 200)
+const PORT = await freePort()
 const BASE = `http://localhost:${PORT}`
 
 const ADMIN = `ac-admin-${RUN}@test.local`
