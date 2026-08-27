@@ -5720,7 +5720,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               }
             }
           } catch (persistErr: any) {
-            console.error("feedback persistence (non-fatal):", persistErr?.message || persistErr)
+            // KLA-730 FAIL CLOSED: distinguish "the report row was never saved" (FATAL — must not
+            // return success) from "the row saved but a best-effort side-effect threw" (non-fatal).
+            // `feedbackId` is assigned the instant the PRIMARY persistence succeeds — either the new
+            // insertFeedback row or the dedup recurrence bump (feedbackId = dedupedInto). So if we land
+            // here with feedbackId still null, the primary feedback-row persistence itself failed (DB
+            // constraint/RAISE(ABORT) trigger, read-only/full DB, insertFeedback rejection, or a dedup
+            // lookup/bump throwing before any row was written) and NO report was persisted. Returning
+            // 200 {saved:true, id:""} in that case is silent report loss — the composer would tell the
+            // user "saved" while nothing landed. Fail closed with a 5xx so backendSubmit sees a non-2xx
+            // and the user gets a retryable failure. Once a row exists (feedbackId truthy), a later
+            // best-effort step throwing is genuinely non-fatal → fall through to the normal 200 exit.
+            if (!feedbackId) {
+              console.error("feedback persistence FAILED (no row written) — failing closed:", persistErr?.message || persistErr)
+              return wjson({ error: "We couldn't save your report. Please try again.", saved: false }, 500)
+            }
+            console.error("feedback persistence (post-insert side-effect, non-fatal):", persistErr?.message || persistErr)
           }
         }
 
