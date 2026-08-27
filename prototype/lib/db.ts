@@ -3355,10 +3355,10 @@ export async function deletePersona(id: string, projectId: string) {
 }
 
 // KLA-739 (C2-5): monotonically advance updated_at on every feedback row that cites `simId`, so any Sim
-// OG card derived from that persona busts its immutable cache. MAX(updated_at+1, now) → strictly advances.
+// OG card derived from that persona busts its immutable cache. Strictly beyond all key timestamps.
 export async function touchFeedbackBySimId(simId: string, projectId: string): Promise<void> {
   await db!.execute({
-    sql: "UPDATE feedback SET updated_at=MAX(COALESCE(updated_at,0)+1, ?) WHERE sim_id=? AND project_id=?",
+    sql: `UPDATE feedback SET updated_at=${MONOTONIC_UPDATED_AT_SQL} WHERE sim_id=? AND project_id=?`,
     args: [Date.now(), simId, projectId],
   })
 }
@@ -6048,6 +6048,12 @@ export async function resumePausedExportOutbox(connectorId: string, now = Date.n
   return r.rowsAffected ?? 0
 }
 
+// KLA-739 (C2-5): SQL fragment that advances updated_at STRICTLY beyond EVERY timestamp the OG cache
+// version keys on — the card version is MAX(updated_at, last_seen_at, created_at) — AND beyond `now-1`.
+// So any card-visible edit busts the OG key even under a frozen/rolled-back clock, a same-ms write, OR a
+// dominant last_seen_at (recurrence). Callers place exactly ONE `now` (ms) bound arg at this position.
+const MONOTONIC_UPDATED_AT_SQL = "MAX(COALESCE(updated_at,0),COALESCE(last_seen_at,0),COALESCE(created_at,0),?-1)+1"
+
 // Update feedback management columns. Always sets updated_at. Returns true if a row was updated
 // (i.e. the feedback belongs to the given project), false if no rows matched (cross-project guard).
 export async function updateFeedbackMeta(
@@ -6056,7 +6062,8 @@ export async function updateFeedbackMeta(
   meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null; observation: string | null }>
 ): Promise<boolean> {
   const now = Date.now()
-  const sets: string[] = ["updated_at=?"]
+  // C2-5: monotonic beyond all key timestamps (a frozen-clock PATCH must still bust the OG card).
+  const sets: string[] = ["updated_at=" + MONOTONIC_UPDATED_AT_SQL]
   const args: any[] = [now]
   if (meta.status !== undefined) {
     sets.push("status=?"); args.push(meta.status)
@@ -7738,10 +7745,10 @@ export async function setSuggestedLabels(feedbackId: string, labelIds: string[])
 export async function setFeedbackObservation(feedbackId: string, projectId: string, observation: string): Promise<void> {
   // KLA-739 (C2-5): advance updated_at so card-visible content changes bust the immutable OG cache
   // (the OG version folds MAX(updated_at,last_seen_at,created_at) → a new version → a new S3 key).
-  // MONOTONIC (residual b): MAX(updated_at+1, now) so a same-ms edit or a clock rollback still strictly
-  // advances the version (never leaves it unchanged).
+  // MONOTONIC beyond ALL key timestamps (C2-5) so a same-ms edit, clock rollback, or dominant
+  // last_seen_at still strictly advances the version.
   await db!.execute({
-    sql: "UPDATE feedback SET observation=?, updated_at=MAX(COALESCE(updated_at,0)+1, ?) WHERE id=? AND project_id=?",
+    sql: `UPDATE feedback SET observation=?, updated_at=${MONOTONIC_UPDATED_AT_SQL} WHERE id=? AND project_id=?`,
     args: [observation, Date.now(), feedbackId, projectId],
   })
 }
@@ -7755,10 +7762,10 @@ export async function setFeedbackObservation(feedbackId: string, projectId: stri
 export async function updateFeedbackTitle(feedbackId: string, projectId: string, title: string): Promise<boolean> {
   // KLA-739 (C2-5): advance updated_at so an async AI-title update (after a screenshot-only report's
   // fallback-title OG pre-render) busts the immutable OG cache — otherwise the stale fallback-title PNG
-  // stays cached for a year. MONOTONIC (residual b): MAX(updated_at+1, now). Only fires when the guard
+  // stays cached for a year. MONOTONIC beyond ALL key timestamps (C2-5). Only fires when the guard
   // matches (title still empty), same as before.
   const r = await db!.execute({
-    sql: "UPDATE feedback SET title=?, updated_at=MAX(COALESCE(updated_at,0)+1, ?) WHERE id=? AND project_id=? AND (title IS NULL OR title='')",
+    sql: `UPDATE feedback SET title=?, updated_at=${MONOTONIC_UPDATED_AT_SQL} WHERE id=? AND project_id=? AND (title IS NULL OR title='')`,
     args: [title, Date.now(), feedbackId, projectId],
   })
   return Number(r.rowsAffected) > 0

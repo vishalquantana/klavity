@@ -15,7 +15,7 @@ for (const s of ["", "-wal", "-shm"]) { try { unlinkSync(DB_FILE + s) } catch {}
 process.env.TURSO_DATABASE_URL = "file:" + DB_FILE
 process.env.TURSO_AUTH_TOKEN = ""
 
-const { db, applySchema, migrateV2, insertFeedback, updateFeedbackTitle, setFeedbackObservation, upsertPersona, deletePersona } = await import("./db")
+const { db, applySchema, migrateV2, insertFeedback, updateFeedbackTitle, setFeedbackObservation, updateFeedbackMeta, upsertPersona, deletePersona } = await import("./db")
 await applySchema(db!)
 await migrateV2(db!)
 
@@ -63,6 +63,31 @@ describe("C2-5 — card-visible mutators advance updated_at (OG cache-bust)", ()
     // NEG-CONTROL: a plain `updated_at = now` would REGRESS to `now` (< future) → stale-again; MAX(old+1,now)
     // yields old+1.
     expect(after!).toBe(future + 1)
+  })
+})
+
+describe("C2-5 round-4 — updateFeedbackMeta + beyond-version-max monotonicity", () => {
+  // (a) the normal dashboard PATCH must bust the card even under a frozen/rolled-back clock.
+  test("updateFeedbackMeta advances updated_at beyond a future value (frozen-clock PATCH still busts)", async () => {
+    const id = await insertFeedback({ projectId: PROJECT, observation: "x", source: "widget", reportType: "bug" } as any)
+    const future = Date.now() + 5_000_000
+    await db!.execute({ sql: "UPDATE feedback SET updated_at=? WHERE id=?", args: [future, id] })
+    await updateFeedbackMeta(PROJECT, id, { priority: "high" })
+    const after = await updatedAt(id)
+    // NEG-CONTROL: plain `updated_at = now` would REGRESS to now (< future) → stale card. Monotonic → future+1.
+    expect(after!).toBe(future + 1)
+  })
+
+  // (b) a dominant last_seen_at (recurrence) must not leave the version (MAX of all three) unchanged.
+  test("edit with dominant last_seen_at still advances the version beyond last_seen_at", async () => {
+    const id = await insertFeedback({ projectId: PROJECT, observation: "x", source: "widget", reportType: "bug" } as any)
+    const lastSeen = Date.now() + 9_000_000 // recurrence pushed last_seen_at far into the future
+    await db!.execute({ sql: "UPDATE feedback SET updated_at=?, last_seen_at=? WHERE id=?", args: [1_000, lastSeen, id] })
+    await updateFeedbackTitle(id, PROJECT, "AI title")
+    const after = await updatedAt(id)
+    // NEG-CONTROL: MAX(updated_at+1, now) would give ~now < last_seen_at → version (=last_seen_at) UNCHANGED
+    // → stale card. Beyond-max monotonic → last_seen_at+1, so the version strictly advances.
+    expect(after!).toBe(lastSeen + 1)
   })
 })
 

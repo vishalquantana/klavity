@@ -42,10 +42,33 @@ describe("isLegacyOgKey — only un-tiered og/* keys are legacy (C1-b residual b
     expect(isLegacyOgKey("og/fb_a-full-1699.png")).toBe(false)
     expect(isLegacyOgKey("og/fb_a-teaser-1699.png")).toBe(false)
   })
-  test("the marker + non-og keys are never legacy", () => {
+  test("any purge marker (v1/v2/…) + non-og keys are never legacy", () => {
     expect(isLegacyOgKey(OG_PURGE_MARKER)).toBe(false)
+    expect(isLegacyOgKey("og/.purged-legacy-v1")).toBe(false) // stale marker is bookkeeping, not deleted
+    expect(isLegacyOgKey("og/.purged-legacy-v2")).toBe(false)
     expect(isLegacyOgKey("uploads/x.png")).toBe(false)
     expect(isLegacyOgKey("")).toBe(false)
+  })
+})
+
+describe("C1-b round-4 — marker bumped to v2 (a stale v1 must not skip the corrected purge)", () => {
+  // NEG-CONTROL: round-2 could write v1 on a FAILED delete. If the constant stayed v1, an env with a
+  // stale v1 marker would no-op forever, never retrying the surviving public object. Bumping to v2 forces
+  // the corrected purge to run once more. Reverting the constant to v1 makes this test FAIL (skipped=true).
+  test("v1 marker present but v2 absent → purge RUNS (retries the survivor) and writes v2", async () => {
+    expect(OG_PURGE_MARKER).toBe("og/.purged-legacy-v2")
+    const existing = new Set<string>(["og/.purged-legacy-v1"]) // round-2 wrote v1 (possibly on a failure)
+    const deleted: string[] = []
+    let wrote = false
+    const res = await purgeOgObjectsWith({
+      hasMarker: async () => existing.has(OG_PURGE_MARKER), // checks the CURRENT constant (v2)
+      list: async () => ({ keys: ["og/fb_survivor-1.png"], next: undefined }),
+      del: async (k) => { deleted.push(k) },
+      putMarker: async () => { wrote = true; existing.add(OG_PURGE_MARKER) },
+    })
+    expect(res.skipped).toBe(false) // did NOT no-op despite the stale v1 marker
+    expect(deleted).toContain("og/fb_survivor-1.png") // the surviving legacy object is retried
+    expect(wrote).toBe(true)
   })
 })
 

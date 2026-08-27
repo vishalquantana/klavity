@@ -42,26 +42,28 @@ export interface OgPageLike {
   screenshot(opts?: any): Promise<Uint8Array | ArrayBuffer | Buffer>
 }
 export interface OgContextLike { newPage(): Promise<OgPageLike>; close(): Promise<void> }
-export interface OgProcessLike { kill(signal?: string): void }
 export interface OgBrowserLike {
   newContext(opts?: any): Promise<OgContextLike>
   close(): Promise<void>
-  // Playwright's Browser.process() → the underlying Chromium ChildProcess (or null for a remote browser).
-  // Used to SIGKILL the process if close() itself hangs (KLA-739 C2-3 residual).
-  process?(): OgProcessLike | null
 }
 
 /**
  * Core render: build a page, screenshot it, race against a hard deadline — and CRITICALLY, on timeout
- * (or any error) actively CLOSE the browser (KLA-739 C2-3), holding the single-browser invariant so a
- * hung render can't wedge the shared withPdfSlot (which PDF/AutoSim also use).
+ * (or any error) actively CLOSE the browser (KLA-739 C2-3), so a hung render can't wedge the shared
+ * withPdfSlot (which PDF/AutoSim also use).
  *
- * Two teardown holes closed in round 2:
+ * Teardown guarantees:
  *   (i)  DELAYED LAUNCH: if launch() resolves AFTER the deadline fired, the browser handle would be null
  *        in a naïve finally and the late browser would leak. We capture the handle in launch().then() and
- *        kill it there if teardown already ran — so a post-timeout launch is still torn down.
+ *        close it there if teardown already ran — so a post-timeout launch is still torn down.
  *   (ii) HUNG CLOSE: a browser.close() that never resolves would make finally await forever and hold the
- *        slot. We RACE close() against `closeTimeoutMs` so the slot is always released within a bound.
+ *        slot. We RACE close() against `closeTimeoutMs`, so the SHARED SLOT IS ALWAYS RELEASED within a
+ *        bound. ACCEPTED-LOW residual: a genuinely-hung close() cannot be force-killed here because a
+ *        Playwright Browser from chromium.launch() exposes NO process handle (only ElectronApplication /
+ *        BrowserServer have .process()); a real SIGKILL would require a launchServer()+connect() refactor
+ *        of the prod render path — disproportionate for a rare hung close. The exposure is bounded: at
+ *        most `OG_MAX_INFLIGHT` (admission cap) leaked Chromiums, each reaped when its close() eventually
+ *        settles or on process exit. We deliberately do NOT claim a force-kill we can't deliver.
  *
  * Injectable `launch` + `deadlineMs` + `closeTimeoutMs` make this hermetically testable with fakes.
  */
@@ -75,18 +77,12 @@ export async function renderOgPngWith(
   let toreDown = false
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  // Bounded close: never let a hung close() hold the shared slot open indefinitely — AND never merely
-  // ABANDON a pending close (which would leak the Chromium process, so the single-browser-memory invariant
-  // stays false). If close() doesn't finish within closeTimeoutMs, SIGKILL the underlying process so it
-  // actually dies (KLA-739 C2-3 residual).
+  // Bounded close: never let a hung close() hold the shared slot open beyond closeTimeoutMs. On a hung
+  // close the pending close() is left to settle on its own (see the ACCEPTED-LOW note above — we cannot
+  // force-kill a launch()ed Browser). Swallow rejections so teardown never throws.
   const closeBounded = async (b: OgBrowserLike): Promise<void> => {
-    let closed = false
-    const closeP = Promise.resolve().then(() => b.close()).then(() => { closed = true }).catch(() => { closed = true })
+    const closeP = Promise.resolve().then(() => b.close()).catch(() => {})
     await Promise.race([closeP, new Promise<void>((res) => setTimeout(res, closeTimeoutMs))])
-    if (!closed) {
-      // close() hung → force-kill the process so it can't leak past the bound.
-      try { b.process?.()?.kill("SIGKILL") } catch { /* no process handle (remote) or already dead */ }
-    }
   }
 
   // Capture the handle even if launch resolves LATE (after we've already given up) → kill the late arrival.

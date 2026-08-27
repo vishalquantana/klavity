@@ -125,16 +125,20 @@ export async function listObjectKeys(prefix: string, continuationToken?: string)
 // throwaway (regenerate on demand — now private + tier-keyed + gated), so we DELETE the whole og/ prefix
 // exactly once per environment, guarded by a marker object so it never runs again on subsequent boots.
 
-export const OG_PURGE_MARKER = "og/.purged-legacy-v1"
+// KLA-739 (C1-b round-4): marker bumped v1 → v2. ROUND-2's purge could write v1 on a FAILED delete (it
+// wrote the marker unconditionally), so on an already-deployed env (v0.97.21) hasMarker(v1)=true would
+// make the corrected round-3 purge no-op forever, leaving a surviving public legacy object un-retried.
+// A NEW marker name forces the corrected purge (failed-delete-aware + legacy-scoped) to run once more.
+export const OG_PURGE_MARKER = "og/.purged-legacy-v2"
 
 // KLA-739 (C1-b residual b): a key is LEGACY (pre-hotfix, public-read, non-tier-keyed) iff it does NOT
 // carry a tier segment. New objects are keyed og/<ref>-full-<v>.png / og/<ref>-teaser-<v>.png (via
 // ogKeyVersion), so ANY key containing a `-full-` or `-teaser-` segment is a NEW private object and MUST
 // be preserved — the purge must never delete a fresh private render (cold-cache churn / rolling-deploy
-// race). The marker itself is never legacy.
+// race). Any purge marker (v1/v2/…) is bookkeeping, never a legacy object to delete.
 export function isLegacyOgKey(key: string): boolean {
-  if (!key || key === OG_PURGE_MARKER) return false
-  if (!key.startsWith("og/")) return false
+  if (!key || !key.startsWith("og/")) return false
+  if (key.startsWith("og/.purged-legacy-")) return false // never delete a marker (any version)
   return !/-(?:full|teaser)-/.test(key)
 }
 
