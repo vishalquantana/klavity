@@ -199,6 +199,15 @@ export interface SubmitReportPayload {
   // PX4 #428: captured client/browser/app info. Threaded as `client_info` and persisted to
   // feedback.client_info_json. Optional so existing payloads stay valid.
   clientInfo?: ClientInfo
+  // KLA-729 (SDK parity): structured annotation overlay markup ({ w, h, shapes, byIndex, selector }).
+  // Threaded to /api/feedback as `annotations_json`. Optional + additive — absent => nothing serialized.
+  annotations?: unknown
+  // KLA-729: the email typed into the required-email gate. Threaded as `reporter_email`. Optional.
+  reporterEmail?: string
+  // KLA-729: embed-page referrer (document.referrer). Threaded as `referrer`. Optional.
+  referrer?: string
+  // KLA-729: lightweight per-screenshot JPEG previews (index-aligned with `screenshots`). Optional.
+  screenshotThumbs?: string[]
   // G1 session replay: rolling rrweb DOM-event buffer (Klavity backend integration only).
   replayEvents?: unknown[]
 }
@@ -215,6 +224,19 @@ export interface IntegrationConfig {
   screenshots: string[]
   settings: KlavitySettings
   projectId?: string    // threaded from SubmitReportPayload; backend appends as project_id
+  // KLA-729 (SDK parity): full-payload fields forwarded from SubmitReportPayload so the backend
+  // integration (persist-first /api/feedback) receives the SAME evidence the widget sends. All optional
+  // + additive — the extension omits them and its serialized form is byte-identical to before.
+  title?: string
+  kind?: IssueKind
+  files?: ReportFileAttachment[]
+  recordings?: ReportRecording[]
+  reporter?: Reporter
+  clientInfo?: ClientInfo
+  annotations?: unknown
+  reporterEmail?: string
+  referrer?: string
+  screenshotThumbs?: string[]
   // G1 session replay: rolling rrweb DOM-event buffer (only the Klavity backend integration uses it).
   replayEvents?: unknown[]
 }

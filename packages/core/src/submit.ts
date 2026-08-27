@@ -30,6 +30,18 @@ export async function dispatchSubmit(
     screenshots: payload.screenshots,
     settings: effectiveSettings,
     ...(payload.projectId ? { projectId: payload.projectId } : {}),
+    // KLA-729: forward the full evidence set so the backend integration reaches widget parity. All optional —
+    // absent fields are simply undefined on IntegrationConfig and the serializer skips them.
+    title: payload.title,
+    kind: payload.kind,
+    files: payload.files,
+    recordings: payload.recordings,
+    reporter: payload.reporter,
+    clientInfo: payload.clientInfo,
+    annotations: payload.annotations,
+    reporterEmail: payload.reporterEmail,
+    referrer: payload.referrer,
+    screenshotThumbs: payload.screenshotThumbs,
     replayEvents: payload.replayEvents,
   }
 
