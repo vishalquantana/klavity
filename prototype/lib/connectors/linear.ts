@@ -14,6 +14,56 @@ function linearApi(): string {
   return process.env.KLAV_LINEAR_API || "https://api.linear.app/graphql"
 }
 
+// KLA-731: classify a Linear GraphQL error into an HTTP-like status so an auth/permission failure is
+// treated as a USER config problem (→ UpstreamTrackerError → friendly message, NO on-call page),
+// mirroring how plane.ts/jira.ts throw UpstreamTrackerError on a non-ok REST response. Linear is
+// GraphQL, so an auth failure can arrive EITHER as an HTTP 4xx (401 with a plain-text body — which
+// res.json() would choke on with a SyntaxError) OR as an HTTP 200 whose JSON body carries a GraphQL
+// `errors` array (extensions.code AUTHENTICATION_ERROR / FORBIDDEN / …). Returns null for a
+// non-auth GraphQL error so it keeps the historical plain-Error shape (a real backend problem → oops).
+function linearGraphqlErrorStatus(errors: any[] | undefined | null): number | null {
+  for (const e of errors ?? []) {
+    const code = String(e?.extensions?.code ?? e?.extensions?.type ?? "").toUpperCase()
+    const msg = String(e?.message ?? "").toLowerCase()
+    if (
+      code.includes("AUTHENTICATION") || code === "UNAUTHENTICATED" || code === "UNAUTHORIZED" ||
+      /authenticat|invalid api key|invalid token|not.*logged in/.test(msg)
+    ) return 401
+    if (
+      code.includes("FORBIDDEN") || code.includes("PERMISSION") ||
+      /not authorized|permission|forbidden|access denied/.test(msg)
+    ) return 403
+  }
+  return null
+}
+
+// KLA-731: read a Linear GraphQL response, throwing a typed UpstreamTrackerError on any upstream
+// failure so the /connectors/meta (and connector-test) handlers can classify it as user-config (4xx)
+// vs. a real backend incident (5xx / plain Error) — the SAME contract plane.ts/jira.ts meta methods
+// give. Used by the meta methods (listStatuses / listIssueTypes) which previously called res.json()
+// WITHOUT checking res.ok, so a 401 plain-text body became a SyntaxError → classifyUpstreamError null
+// → oops() paged on-call + auto-filed a junk ticket (the exact noise KLA-724 fixed for Plane/Jira).
+async function linearMetaJson(res: Response, label: string): Promise<any> {
+  if (!res.ok) {
+    const text = (await res.text().catch(() => "")).slice(0, 200)
+    console.error(`linear ${label} error ${res.status}: ${text}`)
+    throw new UpstreamTrackerError(res.status, text)
+  }
+  const json = await res.json().catch(() => null)
+  const gqlErrors = json?.errors
+  if (gqlErrors?.length) {
+    const status = linearGraphqlErrorStatus(gqlErrors)
+    if (status) {
+      const msg = String(gqlErrors[0]?.message ?? "graphql auth error").slice(0, 200)
+      console.error(`linear ${label} graphql auth error (→HTTP ${status}): ${msg}`)
+      throw new UpstreamTrackerError(status, msg)
+    }
+    console.error(`linear ${label} graphql error: ${gqlErrors[0]?.message ?? "unknown error"}`)
+    throw new Error("tracker request failed (GraphQL error)")
+  }
+  return json
+}
+
 // JTBD 5.10: reverse of linearPriority — map Linear's priority Int back onto Klavity's vocabulary
 // (0 none → null). Used on IMPORT so an issue keeps its priority when pulled into Klavity.
 function priorityFromLinear(p: any): string | null {
@@ -429,8 +479,9 @@ export const linearConnector: Connector = {
       },
       { allowHosts: ["linear.app"], allowLoopbackInTest: true },
     )
-    const json = await res.json()
-    if (json?.errors?.length) throw new Error("tracker request failed (GraphQL error)")
+    // KLA-731: check res.ok + classify GraphQL auth errors so a bad token / wrong team is a friendly
+    // user-config 4xx (no on-call page), not a SyntaxError/plain Error that oops() alerts on.
+    const json = await linearMetaJson(res, "listStatuses")
     return (json?.data?.team?.states?.nodes ?? []).map((s: any) => ({ id: String(s.id), name: String(s.name), category: s.type }))
   },
 
@@ -450,8 +501,9 @@ export const linearConnector: Connector = {
       },
       { allowHosts: ["linear.app"], allowLoopbackInTest: true },
     )
-    const json = await res.json()
-    if (json?.errors?.length) throw new Error("tracker request failed (GraphQL error)")
+    // KLA-731: check res.ok + classify GraphQL auth errors (see linearMetaJson) so a bad token /
+    // wrong team surfaces as a friendly user-config 4xx instead of paging on-call via oops().
+    const json = await linearMetaJson(res, "listIssueTypes")
     return (json?.data?.team?.labels?.nodes ?? []).map((l: any) => ({ id: String(l.id), name: String(l.name) }))
   },
 }
