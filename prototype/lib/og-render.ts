@@ -42,7 +42,14 @@ export interface OgPageLike {
   screenshot(opts?: any): Promise<Uint8Array | ArrayBuffer | Buffer>
 }
 export interface OgContextLike { newPage(): Promise<OgPageLike>; close(): Promise<void> }
-export interface OgBrowserLike { newContext(opts?: any): Promise<OgContextLike>; close(): Promise<void> }
+export interface OgProcessLike { kill(signal?: string): void }
+export interface OgBrowserLike {
+  newContext(opts?: any): Promise<OgContextLike>
+  close(): Promise<void>
+  // Playwright's Browser.process() → the underlying Chromium ChildProcess (or null for a remote browser).
+  // Used to SIGKILL the process if close() itself hangs (KLA-739 C2-3 residual).
+  process?(): OgProcessLike | null
+}
 
 /**
  * Core render: build a page, screenshot it, race against a hard deadline — and CRITICALLY, on timeout
@@ -68,12 +75,19 @@ export async function renderOgPngWith(
   let toreDown = false
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  // Bounded close: never let a hung close() hold the shared slot open indefinitely.
-  const closeBounded = (b: OgBrowserLike): Promise<void> =>
-    Promise.race([
-      Promise.resolve().then(() => b.close()).catch(() => {}),
-      new Promise<void>((res) => setTimeout(res, closeTimeoutMs)),
-    ])
+  // Bounded close: never let a hung close() hold the shared slot open indefinitely — AND never merely
+  // ABANDON a pending close (which would leak the Chromium process, so the single-browser-memory invariant
+  // stays false). If close() doesn't finish within closeTimeoutMs, SIGKILL the underlying process so it
+  // actually dies (KLA-739 C2-3 residual).
+  const closeBounded = async (b: OgBrowserLike): Promise<void> => {
+    let closed = false
+    const closeP = Promise.resolve().then(() => b.close()).then(() => { closed = true }).catch(() => { closed = true })
+    await Promise.race([closeP, new Promise<void>((res) => setTimeout(res, closeTimeoutMs))])
+    if (!closed) {
+      // close() hung → force-kill the process so it can't leak past the bound.
+      try { b.process?.()?.kill("SIGKILL") } catch { /* no process handle (remote) or already dead */ }
+    }
+  }
 
   // Capture the handle even if launch resolves LATE (after we've already given up) → kill the late arrival.
   const launchP = launch().then((b) => {

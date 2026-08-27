@@ -15,7 +15,7 @@ for (const s of ["", "-wal", "-shm"]) { try { unlinkSync(DB_FILE + s) } catch {}
 process.env.TURSO_DATABASE_URL = "file:" + DB_FILE
 process.env.TURSO_AUTH_TOKEN = ""
 
-const { db, applySchema, migrateV2, insertFeedback, updateFeedbackTitle, setFeedbackObservation } = await import("./db")
+const { db, applySchema, migrateV2, insertFeedback, updateFeedbackTitle, setFeedbackObservation, upsertPersona, deletePersona } = await import("./db")
 await applySchema(db!)
 await migrateV2(db!)
 
@@ -49,6 +49,46 @@ describe("C2-5 — card-visible mutators advance updated_at (OG cache-bust)", ()
     await setFeedbackObservation(id, PROJECT, "edited body with new visible content")
     const after = await updatedAt(id)
     expect(after).not.toBeNull()
+    expect(after!).toBeGreaterThan(before!)
+  })
+
+  // Residual b: monotonic. If the stored updated_at is already in the FUTURE (clock rollback / same-ms),
+  // MAX(updated_at+1, now) must STILL strictly advance it (→ old+1), never leave it unchanged.
+  test("updated_at is MONOTONIC — a future/same-ms value still advances (old+1)", async () => {
+    const id = await insertFeedback({ projectId: PROJECT, observation: "x", source: "widget", reportType: "bug" } as any)
+    const future = Date.now() + 5_000_000 // far ahead of `now`
+    await db!.execute({ sql: "UPDATE feedback SET updated_at=? WHERE id=?", args: [future, id] })
+    await setFeedbackObservation(id, PROJECT, "edited again")
+    const after = await updatedAt(id)
+    // NEG-CONTROL: a plain `updated_at = now` would REGRESS to `now` (< future) → stale-again; MAX(old+1,now)
+    // yields old+1.
+    expect(after!).toBe(future + 1)
+  })
+})
+
+describe("C2-5 residual a — persona edits/deletes bust the linked Sim OG card", () => {
+  const persona = (name: string) => ({ name, role: "Buyer", type: "user", initials: "SX", accent: "#123456", summary: "", insights: [] } as any)
+
+  test("upsertPersona (edit) advances updated_at on every feedback that cites the Sim", async () => {
+    const simId = "sim_edit_" + Math.random().toString(36).slice(2)
+    await upsertPersona(simId, PROJECT, persona("Sarah Chen"))
+    const id = await insertFeedback({ projectId: PROJECT, simId, source: "sim", reportType: "bug", observation: "finding" } as any)
+    await db!.execute({ sql: "UPDATE feedback SET updated_at=? WHERE id=?", args: [1_000, id] })
+    const before = await updatedAt(id)
+    await upsertPersona(simId, PROJECT, persona("Sarah C. (edited)")) // edit the persona name
+    const after = await updatedAt(id)
+    // NEG-CONTROL: pre-fix, only personas.updated_at moved → the Sim card stayed cached with the OLD name.
+    expect(after!).toBeGreaterThan(before!)
+  })
+
+  test("deletePersona advances updated_at on every citing feedback (re-render as generic Sim)", async () => {
+    const simId = "sim_del_" + Math.random().toString(36).slice(2)
+    await upsertPersona(simId, PROJECT, persona("Temp Sim"))
+    const id = await insertFeedback({ projectId: PROJECT, simId, source: "sim", reportType: "bug", observation: "finding" } as any)
+    await db!.execute({ sql: "UPDATE feedback SET updated_at=? WHERE id=?", args: [1_000, id] })
+    const before = await updatedAt(id)
+    await deletePersona(simId, PROJECT)
+    const after = await updatedAt(id)
     expect(after!).toBeGreaterThan(before!)
   })
 })

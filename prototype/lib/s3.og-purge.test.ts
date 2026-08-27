@@ -2,9 +2,9 @@
 // injected so we exercise the real paging + guard logic with fakes (no S3).
 
 import { test, expect, describe } from "bun:test"
-import { purgeOgObjectsWith, OG_PURGE_MARKER, type OgPurgeDeps } from "./s3"
+import { purgeOgObjectsWith, isLegacyOgKey, OG_PURGE_MARKER, type OgPurgeDeps } from "./s3"
 
-function fakeStore(initial: string[]): {
+function fakeStore(initial: string[], failKeys: string[] = []): {
   deps: (markerPresent?: boolean) => OgPurgeDeps
   deleted: string[]
   markerWritten: () => boolean
@@ -12,10 +12,9 @@ function fakeStore(initial: string[]): {
   const deleted: string[] = []
   let markerPresent = false
   let wroteMarker = false
-  // page the keys in chunks of 2 to exercise continuation-token paging.
   const pageOf = (token?: string): { keys: string[]; next?: string } => {
     const start = token ? Number(token) : 0
-    const keys = initial.slice(start, start + 2)
+    const keys = initial.slice(start, start + 2) // page size 2 → exercise continuation paging
     const nextStart = start + 2
     return { keys, next: nextStart < initial.length ? String(nextStart) : undefined }
   }
@@ -27,28 +26,68 @@ function fakeStore(initial: string[]): {
       return {
         hasMarker: async () => markerPresent,
         list: async (t) => pageOf(t),
-        del: async (k) => { deleted.push(k) },
+        del: async (k) => { if (failKeys.includes(k)) throw new Error("AccessDenied"); deleted.push(k) },
         putMarker: async () => { wroteMarker = true; markerPresent = true },
       }
     },
   }
 }
 
+describe("isLegacyOgKey — only un-tiered og/* keys are legacy (C1-b residual b)", () => {
+  test("legacy = og/<ref>[-<num>].png with NO tier segment", () => {
+    expect(isLegacyOgKey("og/fb_a.png")).toBe(true)
+    expect(isLegacyOgKey("og/fb_a-1699.png")).toBe(true)
+  })
+  test("NEW tier-keyed objects are NOT legacy (never purged)", () => {
+    expect(isLegacyOgKey("og/fb_a-full-1699.png")).toBe(false)
+    expect(isLegacyOgKey("og/fb_a-teaser-1699.png")).toBe(false)
+  })
+  test("the marker + non-og keys are never legacy", () => {
+    expect(isLegacyOgKey(OG_PURGE_MARKER)).toBe(false)
+    expect(isLegacyOgKey("uploads/x.png")).toBe(false)
+    expect(isLegacyOgKey("")).toBe(false)
+  })
+})
+
 describe("purgeOgObjectsWith — one-shot legacy purge (C1-b)", () => {
-  test("deletes EVERY listed og/* key across pages, then writes the marker", async () => {
+  test("deletes EVERY legacy og/* key across pages, then writes the marker", async () => {
     const keys = ["og/fb_a-1.png", "og/fb_b-2.png", "og/fb_c-3.png", "og/fb_off-9.png", "og/fb_e-5.png"]
     const store = fakeStore(keys)
     const res = await purgeOgObjectsWith(store.deps(false))
     expect(res.skipped).toBe(false)
+    expect(res.failed).toBe(0)
     expect(res.purged).toBe(5)
-    // NEG-CONTROL: pre-fix these public/non-tier-keyed objects (incl. the private 'off' ticket's) survive.
     expect(store.deleted.sort()).toEqual([...keys].sort())
     expect(store.markerWritten()).toBe(true)
   })
 
+  // Residual b NEG-CONTROL: a purge that deletes EVERY og/ key would nuke fresh private tier-keyed renders.
+  test("PRESERVES new tier-keyed private objects; deletes only legacy", async () => {
+    const keys = ["og/fb_a-1.png", "og/fb_b-full-5.png", "og/fb_c-teaser-7.png", "og/fb_d.png"]
+    const store = fakeStore(keys)
+    const res = await purgeOgObjectsWith(store.deps(false))
+    expect(store.deleted.sort()).toEqual(["og/fb_a-1.png", "og/fb_d.png"])
+    expect(store.deleted).not.toContain("og/fb_b-full-5.png")
+    expect(store.deleted).not.toContain("og/fb_c-teaser-7.png")
+    expect(res.purged).toBe(2)
+    expect(store.markerWritten()).toBe(true)
+  })
+
+  // Residual a NEG-CONTROL: a failed delete must NOT certify the purge done (a public object survived).
+  test("a FAILED delete → marker NOT written (retry next boot)", async () => {
+    const keys = ["og/fb_a-1.png", "og/fb_b-2.png", "og/fb_bad-3.png"]
+    const store = fakeStore(keys, ["og/fb_bad-3.png"]) // this delete throws
+    const res = await purgeOgObjectsWith(store.deps(false))
+    expect(res.failed).toBe(1)
+    expect(res.purged).toBe(2)
+    expect(res.skipped).toBe(false)
+    // The whole point: because a delete failed, the marker is NOT written so the purge runs again.
+    expect(store.markerWritten()).toBe(false)
+  })
+
   test("idempotent: a second run (marker present) deletes NOTHING and is skipped", async () => {
     const store = fakeStore(["og/fb_a-1.png", "og/fb_b-2.png"])
-    const res = await purgeOgObjectsWith(store.deps(true)) // marker already present
+    const res = await purgeOgObjectsWith(store.deps(true))
     expect(res.skipped).toBe(true)
     expect(res.purged).toBe(0)
     expect(store.deleted).toEqual([])

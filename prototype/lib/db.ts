@@ -3342,9 +3342,25 @@ export async function upsertPersona(id: string, projectId: string, data: Omit<Pe
            data.simSource ?? null,
            now, now],
   })
+  // KLA-739 (C2-5 residual a): a persona edit (name/role/initials/accent) changes the Sim OG card, but the
+  // linked feedback row's own timestamps don't move — so its full-<version> card would stay cached stale.
+  // Touch (monotonically) every feedback that cites this Sim so its OG version + key change → re-render.
+  await touchFeedbackBySimId(id, projectId)
 }
 export async function deletePersona(id: string, projectId: string) {
   await db!.execute({ sql: "DELETE FROM personas WHERE id=? AND project_id=?", args: [id, projectId] })
+  // KLA-739 (C2-5 residual a): a deleted persona would otherwise leave the stale card (with the now-gone
+  // persona's identity) cached. Bust every citing feedback's OG cache so it re-renders as a generic Sim.
+  await touchFeedbackBySimId(id, projectId)
+}
+
+// KLA-739 (C2-5): monotonically advance updated_at on every feedback row that cites `simId`, so any Sim
+// OG card derived from that persona busts its immutable cache. MAX(updated_at+1, now) → strictly advances.
+export async function touchFeedbackBySimId(simId: string, projectId: string): Promise<void> {
+  await db!.execute({
+    sql: "UPDATE feedback SET updated_at=MAX(COALESCE(updated_at,0)+1, ?) WHERE sim_id=? AND project_id=?",
+    args: [Date.now(), simId, projectId],
+  })
 }
 
 // ── screenshots / feedback / activity (Sims-dashboard ledger, P0) ──
@@ -7722,8 +7738,10 @@ export async function setSuggestedLabels(feedbackId: string, labelIds: string[])
 export async function setFeedbackObservation(feedbackId: string, projectId: string, observation: string): Promise<void> {
   // KLA-739 (C2-5): advance updated_at so card-visible content changes bust the immutable OG cache
   // (the OG version folds MAX(updated_at,last_seen_at,created_at) → a new version → a new S3 key).
+  // MONOTONIC (residual b): MAX(updated_at+1, now) so a same-ms edit or a clock rollback still strictly
+  // advances the version (never leaves it unchanged).
   await db!.execute({
-    sql: "UPDATE feedback SET observation=?, updated_at=? WHERE id=? AND project_id=?",
+    sql: "UPDATE feedback SET observation=?, updated_at=MAX(COALESCE(updated_at,0)+1, ?) WHERE id=? AND project_id=?",
     args: [observation, Date.now(), feedbackId, projectId],
   })
 }
@@ -7737,9 +7755,10 @@ export async function setFeedbackObservation(feedbackId: string, projectId: stri
 export async function updateFeedbackTitle(feedbackId: string, projectId: string, title: string): Promise<boolean> {
   // KLA-739 (C2-5): advance updated_at so an async AI-title update (after a screenshot-only report's
   // fallback-title OG pre-render) busts the immutable OG cache — otherwise the stale fallback-title PNG
-  // stays cached for a year. Only fires when the guard matches (title still empty), same as before.
+  // stays cached for a year. MONOTONIC (residual b): MAX(updated_at+1, now). Only fires when the guard
+  // matches (title still empty), same as before.
   const r = await db!.execute({
-    sql: "UPDATE feedback SET title=?, updated_at=? WHERE id=? AND project_id=? AND (title IS NULL OR title='')",
+    sql: "UPDATE feedback SET title=?, updated_at=MAX(COALESCE(updated_at,0)+1, ?) WHERE id=? AND project_id=? AND (title IS NULL OR title='')",
     args: [title, Date.now(), feedbackId, projectId],
   })
   return Number(r.rowsAffected) > 0

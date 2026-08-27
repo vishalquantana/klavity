@@ -52,6 +52,14 @@ export function ogKeyVersion(tier: OgTier, version: string): string {
   return `${tier}-${version}`
 }
 
+// KLA-739 (C1-a residual): build the EXTERNAL og:image / twitter:image URL. It MUST embed the tier-folded
+// keyVersion (not the bare feedback version) so a public→teaser downgrade changes the URL — otherwise a
+// crawler/CDN keeps serving the already-cached FULL image at the unchanged 1yr-immutable URL.
+export function buildOgImageUrl(base: string, ref: string, keyVersion: string): string {
+  const b = String(base || "").replace(/\/+$/, "")
+  return `${b}/og/${encodeURIComponent(ref)}.png?v=${encodeURIComponent(keyVersion)}`
+}
+
 // KLA-739 (C1): redact a fully-resolved card to what an ANONYMOUS teaser viewer may see. The teaser
 // exposes title + priority (severity) but WITHHOLDS: the human reporter; the Sim's verbatim finding
 // (source_quote); and the Sim's persona identity (name/role/initials/accent). Only called when the anon

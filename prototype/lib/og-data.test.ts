@@ -4,7 +4,7 @@
 
 import { test, expect, describe } from "bun:test"
 import {
-  loadOgCardData, ogAnonServeable, redactOgCardForAnon, ogSeverityFor, ogKeyVersion,
+  loadOgCardData, ogAnonServeable, redactOgCardForAnon, ogSeverityFor, ogKeyVersion, buildOgImageUrl,
   type OgDataDeps, type OgFeedbackRow,
 } from "./og-data"
 import type { TicketViewAccess } from "./ticket-viewers"
@@ -120,6 +120,24 @@ describe("C1-a — redaction TIER is folded into the cache key (no cross-tier by
   test("ogKeyVersion folds tier ahead of version", () => {
     expect(ogKeyVersion("teaser", "42")).toBe("teaser-42")
     expect(ogKeyVersion("full", "42")).toBe("full-42")
+  })
+
+  // C1-a residual NEG-CONTROL: the EXTERNAL og:image URL must embed the tier-folded keyVersion, so a
+  // public→teaser downgrade changes the URL (busting the crawler/CDN cache of the FULL image). Emitting
+  // the bare feedback version instead would make both tiers share ONE URL → this test FAILS.
+  test("buildOgImageUrl → full vs teaser for the same ref produce DIFFERENT og:image URLs", async () => {
+    const teaser = await loadOgCardData(makeDeps("teaser"), "fb_human01", { anon: true })
+    const full = await loadOgCardData(makeDeps("full"), "fb_human01", { anon: true })
+    const base = "https://klavity.in"
+    const teaserUrl = buildOgImageUrl(base, "fb_human01", teaser!.keyVersion)
+    const fullUrl = buildOgImageUrl(base, "fb_human01", full!.keyVersion)
+    expect(teaserUrl).not.toBe(fullUrl)
+    expect(teaserUrl).toContain("v=teaser-100")
+    expect(fullUrl).toContain("v=full-100")
+  })
+
+  test("buildOgImageUrl strips trailing slashes + encodes the ref/version", () => {
+    expect(buildOgImageUrl("https://x.io/", "fb_a", "full-9")).toBe("https://x.io/og/fb_a.png?v=full-9")
   })
 })
 

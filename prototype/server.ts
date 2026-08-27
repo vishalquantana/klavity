@@ -23,7 +23,7 @@ import { NON_HUMAN_FEEDBACK_SOURCES } from "./lib/db"
 // KLA-738: dynamic per-type OG social share cards. og-card = pure templates + resolver; og-render =
 // headless Playwright render (reuses the PDF browser slot) + crawler-safe cache-or-default serving.
 import { injectOgMeta, type OgCardData } from "./lib/og-card"
-import { loadOgCardData as _loadOgCardData } from "./lib/og-data"
+import { loadOgCardData as _loadOgCardData, buildOgImageUrl } from "./lib/og-data"
 import { serveOgImage, enqueueOgRender, prewarmDefaultOgCard, serveDefaultOgResponse } from "./lib/og-render"
 // KLAVITYKLA-366 — the Founding Ten spot counter. One cached source of truth behind the public
 // pricing band, the in-app ribbon, and the server-side refusal of an 11th founding checkout.
@@ -393,9 +393,10 @@ async function loadOgCardData(
 
 // Build the versioned OG image URL for a ref. Origin defaults to the request origin so shares from a
 // customer origin still resolve; falls back to BASE.
-function ogImageUrl(ref: string, version: string, origin?: string | null): string {
-  const base = (origin || BASE).replace(/\/+$/, "")
-  return `${base}/og/${encodeURIComponent(ref)}.png?v=${encodeURIComponent(version)}`
+function ogImageUrl(ref: string, keyVersion: string, origin?: string | null): string {
+  // keyVersion is the TIER-FOLDED version (C1-a): a tier change → different external URL → crawler/CDN
+  // cache-bust, so a downgraded ticket never keeps serving a stale higher-tier image.
+  return buildOgImageUrl(origin || BASE, ref, keyVersion)
 }
 
 // JTBD 2.15: the post-login invite redirect carries the assigned ticket forward so first login
@@ -453,7 +454,11 @@ if (process.env.NODE_ENV !== "test") prewarmDefaultOgCard()
 // Fire-and-forget; a failure is logged and never blocks boot (the objects also age out via retention).
 if (process.env.NODE_ENV !== "test") {
   void purgeLegacyOgObjects()
-    .then((r) => { if (!r.skipped) console.log(`[og] purged ${r.purged} legacy public OG object(s) (C1-b one-shot)`) })
+    .then((r) => {
+      if (r.skipped) return
+      if (r.failed > 0) console.warn(`[og] legacy purge INCOMPLETE — ${r.purged} deleted, ${r.failed} failed; marker NOT written, will retry next boot`)
+      else console.log(`[og] purged ${r.purged} legacy public OG object(s) (C1-b one-shot)`)
+    })
     .catch((e: any) => console.warn("[og] legacy OG purge failed (non-fatal):", e?.message || e))
 }
 
@@ -8051,10 +8056,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
       _tHtml = _tHtml.replaceAll("__TICKET_ID__", resolved.id).replaceAll("__PROJECT_ID__", resolved.projectId)
-      // KLA-738: per-type og:image so a shared link's social card reflects its ticket type.
+      // KLA-738: per-type og:image so a shared link's social card reflects its ticket type. KLA-739
+      // (C1-a): compute the ANON tier (og:image is always fetched anonymously by crawlers) and embed the
+      // tier-folded keyVersion so a public→teaser downgrade changes the URL. Non-anon-serveable (off) →
+      // no og:image (a private ticket gets no social card).
       try {
-        const og = await loadOgCardData(resolved.id)
-        if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(resolved.id, og.version, url.origin), title: `${og.title} · Klavity`, description: og.description })
+        const og = await loadOgCardData(resolved.id, { anon: true })
+        if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(resolved.id, og.keyVersion, url.origin), title: `${og.title} · Klavity`, description: og.description })
       } catch { /* best-effort meta — never block the page */ }
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
@@ -8088,8 +8096,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let _tHtml = await Bun.file(pagePath).text()
         _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
         try {
-          const og = await loadOgCardData(res.id)
-          if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.version, url.origin), title: `${og.title} · Klavity`, description: og.description })
+          // C1-a: anon tier + tier-folded keyVersion in the external og:image URL (crawler-fetched).
+          const og = await loadOgCardData(res.id, { anon: true })
+          if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.keyVersion, url.origin), title: `${og.title} · Klavity`, description: og.description })
         } catch { /* best-effort */ }
         return new Response(_tHtml, {
           headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
@@ -8122,8 +8131,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       let _tHtml = await Bun.file(pagePath).text()
       _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
       try {
-        const og = await loadOgCardData(res.id)
-        if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.version, url.origin), title: `${og.title} · Klavity`, description: og.description })
+        // C1-a: anon tier + tier-folded keyVersion in the external og:image URL (crawler-fetched).
+        const og = await loadOgCardData(res.id, { anon: true })
+        if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.keyVersion, url.origin), title: `${og.title} · Klavity`, description: og.description })
       } catch { /* best-effort */ }
       return new Response(_tHtml, {
         headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },

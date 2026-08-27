@@ -1,7 +1,7 @@
 import { test, expect, describe } from "bun:test"
 import {
   serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse,
-  type OgServeDeps, type OgBrowserLike,
+  type OgServeDeps, type OgBrowserLike, type OgProcessLike,
 } from "./og-render"
 import type { OgCardData } from "./og-card"
 
@@ -152,23 +152,42 @@ describe("renderOgPngWith — timeout kills the browser (single-browser invarian
     expect(closed()).toBe(1) // the post-timeout browser WAS closed (no leak)
   })
 
-  // C2-3 hole (ii): browser.close() hangs. NEG-CONTROL: an unbounded `await browser.close()` in finally
-  // would hang forever and hold the shared slot; asserting the call returns within a bound reproduces the
-  // bounded-close fix.
-  test("a HUNG close() does not hold the slot — returns within closeTimeoutMs", async () => {
+  // C2-3 hole (ii) + residual: browser.close() hangs. A bounded close that merely RETURNS would leak the
+  // Chromium process (killed=false). NEG-CONTROL: assert (a) it returns within the bound AND (b) the
+  // process was SIGKILL'd — a fix that only races the timeout without force-killing FAILS (b).
+  test("a HUNG close() is bounded AND the process is force-killed (no leak)", async () => {
+    let killed = false
+    let killSignal = ""
+    const proc: OgProcessLike = { kill: (sig?: string) => { killed = true; killSignal = String(sig || "") } }
     const page = {
       setContent: async () => {},
       evaluate: async () => {},
       screenshot: async () => new Uint8Array([7, 7]),
     }
     const context = { newPage: async () => page, close: async () => {} }
-    // close() never resolves.
-    const browser: OgBrowserLike = { newContext: async () => context, close: () => new Promise<void>(() => {}) }
+    // close() never resolves; process() exposes the killable handle.
+    const browser: OgBrowserLike = {
+      newContext: async () => context,
+      close: () => new Promise<void>(() => {}),
+      process: () => proc,
+    }
     const t0 = Date.now()
     const png = await renderOgPngWith("<html></html>", async () => browser, 5_000, 30) // closeTimeoutMs=30
     const elapsed = Date.now() - t0
     expect(Array.from(png)).toEqual([7, 7]) // render succeeded
     expect(elapsed).toBeLessThan(1_000) // did NOT block on the hung close (bounded to ~30ms)
+    expect(killed).toBe(true) // the leaked process WAS force-killed
+    expect(killSignal).toBe("SIGKILL")
+  })
+
+  test("a fast close() does NOT force-kill the process", async () => {
+    let killed = false
+    const proc: OgProcessLike = { kill: () => { killed = true } }
+    const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
+    const context = { newPage: async () => page, close: async () => {} }
+    const browser: OgBrowserLike = { newContext: async () => context, close: async () => {}, process: () => proc }
+    await renderOgPngWith("<html></html>", async () => browser, 5_000, 30)
+    expect(killed).toBe(false)
   })
 })
 

@@ -127,6 +127,17 @@ export async function listObjectKeys(prefix: string, continuationToken?: string)
 
 export const OG_PURGE_MARKER = "og/.purged-legacy-v1"
 
+// KLA-739 (C1-b residual b): a key is LEGACY (pre-hotfix, public-read, non-tier-keyed) iff it does NOT
+// carry a tier segment. New objects are keyed og/<ref>-full-<v>.png / og/<ref>-teaser-<v>.png (via
+// ogKeyVersion), so ANY key containing a `-full-` or `-teaser-` segment is a NEW private object and MUST
+// be preserved — the purge must never delete a fresh private render (cold-cache churn / rolling-deploy
+// race). The marker itself is never legacy.
+export function isLegacyOgKey(key: string): boolean {
+  if (!key || key === OG_PURGE_MARKER) return false
+  if (!key.startsWith("og/")) return false
+  return !/-(?:full|teaser)-/.test(key)
+}
+
 export interface OgPurgeDeps {
   hasMarker: () => Promise<boolean>
   list: (continuationToken?: string) => Promise<{ keys: string[]; next?: string }>
@@ -134,27 +145,31 @@ export interface OgPurgeDeps {
   putMarker: () => Promise<void>
 }
 
-// Pure, injectable purge: skip if the marker exists; else delete every listed key (except the marker),
-// paging to the end, then write the marker so this is a true one-shot. Deletes are best-effort per key.
-export async function purgeOgObjectsWith(deps: OgPurgeDeps): Promise<{ purged: number; skipped: boolean }> {
-  if (await deps.hasMarker()) return { purged: 0, skipped: true }
+// Pure, injectable purge: skip if the marker exists; else delete every LEGACY (un-tiered) og/* key,
+// paging to the end. The one-shot marker is written ONLY if EVERY delete succeeded (residual a): a single
+// failed delete (AccessDenied/5xx) leaves a public legacy object alive, so we must NOT certify the purge
+// done — skip the marker and retry on the next boot instead.
+export async function purgeOgObjectsWith(deps: OgPurgeDeps): Promise<{ purged: number; failed: number; skipped: boolean }> {
+  if (await deps.hasMarker()) return { purged: 0, failed: 0, skipped: true }
   let purged = 0
+  let failed = 0
   let token: string | undefined
   do {
     const { keys, next } = await deps.list(token)
     for (const k of keys) {
-      if (!k || k === OG_PURGE_MARKER) continue
-      try { await deps.del(k); purged++ } catch { /* best-effort per key */ }
+      if (!isLegacyOgKey(k)) continue // preserve NEW tier-keyed private objects + the marker
+      try { await deps.del(k); purged++ } catch { failed++ /* leave a public object alive → do not certify */ }
     }
     token = next
   } while (token)
-  await deps.putMarker()
-  return { purged, skipped: false }
+  // Only mark done when nothing failed — otherwise a public legacy object survived and we must retry.
+  if (failed === 0) await deps.putMarker()
+  return { purged, failed, skipped: false }
 }
 
 // Wire the pure purge to the real S3 client. No-op when S3 is unconfigured. Best-effort; never throws.
-export async function purgeLegacyOgObjects(): Promise<{ purged: number; skipped: boolean }> {
-  if (!s3Configured()) return { purged: 0, skipped: true }
+export async function purgeLegacyOgObjects(): Promise<{ purged: number; failed: number; skipped: boolean }> {
+  if (!s3Configured()) return { purged: 0, failed: 0, skipped: true }
   return purgeOgObjectsWith({
     hasMarker: () => objectExists(OG_PURGE_MARKER),
     list: (t) => listObjectKeys("og/", t),
