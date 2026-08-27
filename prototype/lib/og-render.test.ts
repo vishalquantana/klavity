@@ -1,9 +1,14 @@
-import { test, expect, describe } from "bun:test"
+import { test, expect, describe, beforeEach } from "bun:test"
 import {
   serveOgImage, ogS3Key, renderOgPngWith, serveDefaultOgResponse,
+  ogLiveBrowserCount, __resetOgLiveBrowsersForTest, OgAdmissionError,
   type OgServeDeps, type OgBrowserLike,
 } from "./og-render"
 import type { OgCardData } from "./og-card"
+
+// The live-browser cap is module-global; reset it between cases so a prior test's hung-close browser
+// (deliberately left "alive") doesn't bleed into the next test's admission count.
+beforeEach(() => __resetOgLiveBrowsersForTest())
 
 // The crawler-safety guarantee (KLA-738): GET /og/:ref.png must serve cache-or-default INSTANTLY and
 // NEVER render synchronously on the request. These tests exercise serveOgImage with injected deps so
@@ -174,6 +179,52 @@ describe("renderOgPngWith — timeout kills the browser (single-browser invarian
     const browser: OgBrowserLike = { newContext: async () => context, close: async () => { throw new Error("close boom") } }
     const png = await renderOgPngWith("<html></html>", async () => browser, 5_000, 30)
     expect(Array.from(png)).toEqual([7, 7])
+  })
+
+  test("a normal render releases the live-browser slot (count returns to 0)", async () => {
+    const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([7, 7]) }
+    const context = { newPage: async () => page, close: async () => {} }
+    const browser: OgBrowserLike = { newContext: async () => context, close: async () => {} }
+    await renderOgPngWith("<html></html>", async () => browser, 5_000, 30)
+    // let the (already-settled) close chain flush
+    await new Promise((r) => setTimeout(r, 5))
+    expect(ogLiveBrowserCount()).toBe(0)
+  })
+})
+
+// ── KLA-739 C2-3 (Codex's exact probe): live Chromium processes must be bounded by a FIXED cap even
+// under persistent hung closes. The pre-round-5 code freed the per-key _inflight slot on the close
+// TIMEOUT, so hung-close browsers didn't count → N sequential renders leaked N live browsers. This probe
+// runs > cap renders whose close() NEVER settles and asserts the live count never exceeds the cap.
+describe("renderOgPngWith — live-browser cap is a TRUE bound under hung closes (C2-3 round 5)", () => {
+  test("7 sequential never-closing renders with cap=4 → at most 4 browsers ever launched/alive", async () => {
+    const CAP = 4
+    let launched = 0
+    let maxAlive = 0
+    const hungBrowser = (): OgBrowserLike => {
+      const page = { setContent: async () => {}, evaluate: async () => {}, screenshot: async () => new Uint8Array([1]) }
+      const context = { newPage: async () => page, close: async () => {} }
+      return { newContext: async () => context, close: () => new Promise<void>(() => {}) } // close NEVER settles
+    }
+    const launch = async (): Promise<OgBrowserLike> => { launched++; return hungBrowser() }
+
+    let admissionRejections = 0
+    for (let i = 0; i < 7; i++) {
+      try {
+        // small deadline/closeTimeout so the probe is fast; close never settles → browser stays "alive".
+        await renderOgPngWith("<html></html>", launch, 1_000, 10, CAP)
+      } catch (e) {
+        if (e instanceof OgAdmissionError) admissionRejections++
+        else throw e
+      }
+      maxAlive = Math.max(maxAlive, ogLiveBrowserCount())
+    }
+
+    // NEG-CONTROL: pre-fix, admission didn't exist → all 7 launched → 7 live browsers leaked.
+    expect(launched).toBeLessThanOrEqual(CAP)     // never launched more than the cap
+    expect(maxAlive).toBeLessThanOrEqual(CAP)      // live processes never exceeded the cap
+    expect(ogLiveBrowserCount()).toBe(CAP)         // the cap's worth stay pinned (hung) — bounded, not growing
+    expect(admissionRejections).toBe(7 - CAP)      // the surplus renders fail-fast (serve default)
   })
 })
 

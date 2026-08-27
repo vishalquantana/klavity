@@ -47,50 +47,68 @@ export interface OgBrowserLike {
   close(): Promise<void>
 }
 
+// ── live-browser process cap (KLA-739 C2-3 — TRUE bound on leaked Chromiums) ─────────────────────
+// A cap on LIVE OG Chromium browsers — launched but whose close() has NOT yet settled. Crucially, a
+// browser whose close() HANGS keeps counting against this cap until its close ACTUALLY settles (unlike
+// the per-key _inflight job dedupe, which frees on the close TIMEOUT and so let hung-close browsers leak
+// unboundedly — Codex's 7-render probe). Once `OG_MAX_LIVE_BROWSERS` are alive, further renders fail-fast
+// with OgAdmissionError (the caller serves the default card), so live Chromiums are bounded by a fixed cap
+// even under persistent hung closes. withPdfSlot is still released within closeTimeoutMs (PDF not wedged);
+// this live cap is a SEPARATE counter released only on a real close.
+export const OG_MAX_LIVE_BROWSERS = Math.max(1, Number(process.env.OG_MAX_INFLIGHT) || 4)
+let _liveOgBrowsers = 0
+/** Number of OG Chromium browsers currently alive (launched, close not yet settled). Introspection/tests. */
+export function ogLiveBrowserCount(): number { return _liveOgBrowsers }
+/** TEST-ONLY: reset the live-browser counter between hermetic cases (no real process is touched). */
+export function __resetOgLiveBrowsersForTest(): void { _liveOgBrowsers = 0 }
+
+/** Thrown when the live-browser cap is saturated — the render is refused (caller serves the default). */
+export class OgAdmissionError extends Error {
+  constructor(message = "OG render refused: live-browser cap reached") { super(message); this.name = "OgAdmissionError" }
+}
+
 /**
- * Core render: build a page, screenshot it, race against a hard deadline — and CRITICALLY, on timeout
- * (or any error) actively CLOSE the browser (KLA-739 C2-3), so a hung render can't wedge the shared
- * withPdfSlot (which PDF/AutoSim also use).
+ * Core render: build a page, screenshot it, race against a hard deadline — and on timeout/error CLOSE the
+ * browser (KLA-739 C2-3) so a hung render can't wedge the shared withPdfSlot (PDF/AutoSim use it too).
  *
- * Teardown guarantees:
- *   (i)  DELAYED LAUNCH: if launch() resolves AFTER the deadline fired, the browser handle would be null
- *        in a naïve finally and the late browser would leak. We capture the handle in launch().then() and
- *        close it there if teardown already ran — so a post-timeout launch is still torn down.
- *   (ii) HUNG CLOSE: a browser.close() that never resolves would make finally await forever and hold the
- *        slot. We RACE close() against `closeTimeoutMs`, so the SHARED SLOT IS ALWAYS RELEASED within a
- *        bound. ACCEPTED-LOW residual: a genuinely-hung close() cannot be force-killed here because a
- *        Playwright Browser from chromium.launch() exposes NO process handle (only ElectronApplication /
- *        BrowserServer have .process()); a real SIGKILL would require a launchServer()+connect() refactor
- *        of the prod render path — disproportionate for a rare hung close. The exposure is bounded: at
- *        most `OG_MAX_INFLIGHT` (admission cap) leaked Chromiums, each reaped when its close() eventually
- *        settles or on process exit. We deliberately do NOT claim a force-kill we can't deliver.
+ * Guarantees:
+ *   • ADMISSION: refuses (OgAdmissionError) when `maxLive` browsers are already alive, so the number of
+ *     LIVE Chromium processes is bounded by a fixed cap EVEN under persistent hung closes.
+ *   • SLOT RELEASE: the caller (and thus withPdfSlot) is released within `closeTimeoutMs` — a hung close
+ *     never blocks the shared slot.
+ *   • LIVE-SLOT RELEASE: the live-browser counter is decremented ONLY when close() ACTUALLY settles (even
+ *     if long after the bounded wait returned), so a hung-close browser keeps occupying its slot — this is
+ *     what makes the cap a TRUE bound on live processes rather than a bound on in-flight requests.
+ *   • DELAYED LAUNCH: a launch() that resolves AFTER the deadline is still closed + its slot released.
  *
- * Injectable `launch` + `deadlineMs` + `closeTimeoutMs` make this hermetically testable with fakes.
+ * Injectable `launch` + `deadlineMs` + `closeTimeoutMs` + `maxLive` make this hermetically testable.
  */
 export async function renderOgPngWith(
   html: string,
   launch: () => Promise<OgBrowserLike>,
   deadlineMs = 20_000,
   closeTimeoutMs = 3_000,
+  maxLive = OG_MAX_LIVE_BROWSERS,
 ): Promise<Uint8Array> {
-  let browser: OgBrowserLike | null = null
-  let toreDown = false
+  // Admission: refuse before launching if the live-browser cap is saturated (fail-fast → default card).
+  if (_liveOgBrowsers >= maxLive) throw new OgAdmissionError()
+  _liveOgBrowsers++
+  let released = false
+  const releaseLiveSlot = () => { if (!released) { released = true; _liveOgBrowsers-- } }
+
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  // Bounded close: never let a hung close() hold the shared slot open beyond closeTimeoutMs. On a hung
-  // close the pending close() is left to settle on its own (see the ACCEPTED-LOW note above — we cannot
-  // force-kill a launch()ed Browser). Swallow rejections so teardown never throws.
-  const closeBounded = async (b: OgBrowserLike): Promise<void> => {
-    const closeP = Promise.resolve().then(() => b.close()).catch(() => {})
-    await Promise.race([closeP, new Promise<void>((res) => setTimeout(res, closeTimeoutMs))])
-  }
+  // Launch once; keep the promise so a LATE-resolving launch is still torn down.
+  const launchP = launch()
 
-  // Capture the handle even if launch resolves LATE (after we've already given up) → kill the late arrival.
-  const launchP = launch().then((b) => {
-    browser = b
-    if (toreDown) void closeBounded(b) // deadline already fired before launch resolved → tear down now
-    return b
-  })
+  // Definitive teardown: close the browser and release the live-slot ONLY when close ACTUALLY settles
+  // (hung close → slot stays occupied → bounds live processes). If launch failed, free the slot now.
+  // Returns a promise that resolves when close settles, so finally can bound the SHARED-slot wait on it.
+  const teardown = (): Promise<void> =>
+    launchP.then(
+      (b) => Promise.resolve().then(() => b.close()).then(releaseLiveSlot, releaseLiveSlot),
+      () => { releaseLiveSlot() }, // launch rejected → no browser to close; free the slot
+    )
 
   const render = async (): Promise<Uint8Array> => {
     const b = await launchP
@@ -113,12 +131,11 @@ export async function renderOgPngWith(
     return await Promise.race([render(), deadline])
   } finally {
     if (timer) clearTimeout(timer)
-    toreDown = true
-    // Kill Chromium on the winning path AND on timeout/error. If launch hasn't resolved yet, launchP.then
-    // above closes the late browser once it arrives (toreDown is now true). Bounded so a hung close can't
-    // hold the slot; swallow a rejected launchP so teardown never throws.
-    if (browser) await closeBounded(browser)
-    void launchP.catch(() => {})
+    // Kick off teardown (closes the browser now, or the late browser once it arrives). Bound the SHARED
+    // slot wait on the close settling — released within closeTimeoutMs even if close hangs. The live-slot,
+    // by contrast, is released inside teardown only when close truly settles.
+    const settled = teardown()
+    await Promise.race([settled, new Promise<void>((res) => setTimeout(res, closeTimeoutMs))])
   }
 }
 
@@ -193,7 +210,10 @@ export function enqueueOgRender(ref: string, version: string | number | null, lo
       const png = await renderOgPng(renderOgCardHtml(data))
       await uploadObject(key, png, "image/png", "private")
     } catch (e: any) {
-      console.warn("[og] background render failed for", key, "-", e?.message || e)
+      // OgAdmissionError is EXPECTED backpressure (live-browser cap saturated by hung closes) — the crawler
+      // already got the default card; log quietly, not as a failure.
+      if (e instanceof OgAdmissionError) console.log("[og] render deferred (live-browser cap):", key)
+      else console.warn("[og] background render failed for", key, "-", e?.message || e)
     } finally {
       _inflight.delete(key)
     }
