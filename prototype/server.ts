@@ -36,6 +36,7 @@ import { syncFieldsToLinkedIssues } from "./lib/connectors/field-sync"
 import { importExternalIssues } from "./lib/connectors/import"
 import { deriveHealth } from "./lib/connectors/health"
 import { autoMatch } from "./lib/connector-automatch"
+import { finalizeSuccessfulExport } from "./lib/export-finalize"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, groundQuote, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./lib/transcript-parse"
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
@@ -2853,10 +2854,16 @@ async function runExportOutboxSweep(): Promise<void> {
       touchConnectorHeartbeat(row.connectorId, { kind: "outbound", success: true })
         .catch((e: any) => console.warn("heartbeat record failed (non-fatal):", e?.message || e))
       recordExportMappingFallbacks(connector, result, row.feedbackId)
-      if (connector.type === "plane" && !fb.planeIssueKey) {
-        await updateFeedbackTracker(row.feedbackId, result.externalKey || null, result.externalUrl || null)
-          .catch((e: any) => console.warn("outbox tracker writeback failed (non-fatal):", e?.message || e))
-      }
+      // KLA-718: mirror the inline auto-copy success path (autoCopyFeedback) — stamp the Plane tracker key
+      // AND advance the row 'new'→'open'. The sweep previously only wrote the tracker key, so an autofiled
+      // human Snap that reached Plane only on RETRY was stranded at status='new' (invisible on the Tickets
+      // board) even though its external ticket existed. advanceFeedbackToOpenIfNew is idempotent
+      // (WHERE status='new') so a manual-export-origin row that was already 'open' is unaffected.
+      await finalizeSuccessfulExport({
+        feedbackId: row.feedbackId, projectId: row.projectId,
+        connectorType: connector.type, externalKey: result.externalKey, externalUrl: result.externalUrl,
+        hasExistingTrackerKey: !!fb.planeIssueKey,
+      })
       await markExportOutboxDone(row.id)
     } catch (e: any) {
       // createIssue (or a wrapping step) threw. The row is 'in_flight' if we claimed it; bump resets it
