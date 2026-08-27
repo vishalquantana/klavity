@@ -2,6 +2,9 @@ import type { ContentMessage, BackgroundMessage, ReportType, IssueKind, ReportFi
 import { parseComposerOpts, type ExtComposerOpts } from './composer-opts'
 import { buildModal, installRegionDrag, isEditableTarget, type ModalController, type CaptureQuality } from '@klavity/core/modal'
 import { icon } from '@klavity/core/icons'
+// KLA-726: keep in sync with widget.ts card menu — shared source of truth in @klavity/core/context-menu.
+import { CONTEXT_MENU_CSS, buildMenuCard, renderSimChips, type SimChip } from '@klavity/core/context-menu'
+import { safeRemove } from '@klavity/core'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { cropDataUrl } from '@klavity/core/crop'
@@ -653,20 +656,13 @@ function ensureCtxMenuStyle() {
   if (document.getElementById('klavity-ctxmenu-anim')) return
   const s = document.createElement('style')
   s.id = 'klavity-ctxmenu-anim'
-  s.textContent =
-    '@keyframes klm-in{0%{opacity:0;transform:scale(.9) translateY(-8px)}100%{opacity:1;transform:scale(1) translateY(0)}}' +
-    '@keyframes klm-row-in{0%{opacity:0;transform:translateY(7px)}100%{opacity:1;transform:translateY(0)}}' +
-    '@keyframes klm-shine{0%{transform:translateX(-130%)}100%{transform:translateX(240%)}}' +
-    '@keyframes klm-spin{to{transform:rotate(360deg)}}' +
-    '.klm-menu{animation:klm-in .34s cubic-bezier(.34,1.56,.64,1) both}' +
-    '.klm-row{animation:klm-row-in .34s cubic-bezier(.16,1,.3,1) both}' +
-    '.klm-ic{transition:transform .2s cubic-bezier(.34,1.56,.64,1)}' +
-    '.klm-row:hover .klm-ic{transform:scale(1.18) rotate(-7deg)}' +
-    '.klm-shine{position:absolute;top:0;left:0;width:42%;height:100%;pointer-events:none;background:linear-gradient(105deg,transparent,rgba(255,255,255,.6),transparent);transform:translateX(-130%);animation:klm-shine 1s ease-out .15s both;border-radius:inherit}'
+  // KLA-726: shared card-menu stylesheet — identical to the widget's (@klavity/core/context-menu).
+  s.textContent = CONTEXT_MENU_CSS
   document.head.appendChild(s)
 }
 
-function showCtxMenu(x: number, y: number) {
+// Exported for KLA-726 tests (drives the real card menu without a synthetic right-click gesture).
+export function showCtxMenu(x: number, y: number) {
   closeCtxMenu()
   ensureCtxMenuStyle()
 
@@ -675,41 +671,37 @@ function showCtxMenu(x: number, y: number) {
   menu.className = 'klm-menu'
   // Warm cream "glass" surface with a soft Klavity-purple top glow + layered purple shadow,
   // matching the in-page widget menu. (Plain backdrop blur — not liquid-glass refraction.)
-  menu.style.cssText = 'position:fixed;z-index:2147483647;min-width:236px;max-width:calc(100vw - 24px);border-radius:14px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;padding:6px;transform-origin:top left;' +
+  // KLA-726: same geometry as widget.showMenu — 200px card column, 20px radius, 8px pad, 7px gap.
+  menu.style.cssText = 'position:fixed;z-index:2147483647;width:200px;max-width:calc(100vw - 16px);border-radius:20px;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;padding:8px;transform-origin:top left;box-sizing:border-box;display:flex;flex-direction:column;gap:7px;' +
     'background:radial-gradient(135% 90% at 50% -12%, rgba(139,92,246,.18), rgba(139,92,246,0) 55%), linear-gradient(180deg, rgba(250,247,240,.96), rgba(243,236,225,.97));' +
     'border:1px solid rgba(255,255,255,.55);' +
     'box-shadow:0 24px 60px -12px rgba(76,40,130,.32),0 8px 22px rgba(99,102,241,.16),0 1.5px 4px rgba(25,20,15,.10),inset 0 1px 0 rgba(255,255,255,.75);' +
     '-webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);'
   menu.style.left = `${x}px`
   menu.style.top = `${y}px`
-  const shine = document.createElement('div'); shine.className = 'klm-shine'; menu.appendChild(shine)
   let rowIdx = 0
 
-  // One consistent row builder: a fixed-width icon box so every label lines up,
-  // uniform padding/gap/size, rounded hover. `muted` styles the footer affordance.
-  const makeRow = (icon: string, iconColor: string, label: string, opts: { muted?: boolean; hint?: string } = {}) => {
-    const btn = document.createElement('button')
-    btn.className = 'klm-row'
-    const muted = !!opts.muted
-    btn.style.cssText = `position:relative;display:flex;align-items:center;gap:11px;width:100%;padding:9px 12px;background:transparent;border:none;border-radius:9px;cursor:pointer;text-align:left;color:${muted ? '#8a8076' : '#19140f'};font-size:${muted ? '12.5px' : '14.5px'};font-weight:${muted ? '450' : '500'};line-height:1;transition:background .18s ease,color .18s ease;animation-delay:${70 + rowIdx * 45}ms;`
+  // One shared card builder (icon chip + title + description + arrow/hint) — identical look to
+  // the widget's card menu (@klavity/core/context-menu). `onClick` closes the menu then runs.
+  const card = (
+    iconName: string,
+    label: string,
+    desc: string,
+    opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void },
+  ) => {
+    const b = buildMenuCard(document, {
+      iconHtml: icon(iconName, { size: 16 }),
+      label,
+      desc,
+      primary: opts.primary,
+      muted: opts.muted,
+      hint: opts.hint,
+      animationDelayMs: 70 + rowIdx * 64,
+    })
     rowIdx++
-    const ic = document.createElement('span')
-    ic.className = 'klm-ic'
-    ic.style.cssText = `display:grid;place-items:center;width:18px;height:18px;flex-shrink:0;color:${iconColor};`
-    ic.innerHTML = icon
-    const lab = document.createElement('span')
-    lab.textContent = label
-    lab.style.cssText = 'flex:1;'
-    btn.append(ic, lab)
-    if (opts.hint) {
-      const h = document.createElement('span')
-      h.textContent = opts.hint
-      h.style.cssText = 'font-family:ui-monospace,monospace;font-size:11px;color:#a59a8c;flex-shrink:0;white-space:pre-line;text-align:center;line-height:1.32;'
-      btn.append(h)
-    }
-    btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(139,92,246,.12)'; btn.style.color = '#4f46e5' })
-    btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; btn.style.color = muted ? '#8a8076' : '#19140f' })
-    return btn
+    b.addEventListener('click', () => { closeCtxMenu(); opts.onClick() })
+    menu.appendChild(b)
+    return b
   }
 
   // Resolve the active project for Sim-deploy actions (matched URL or first configured)
@@ -719,7 +711,7 @@ function showCtxMenu(x: number, y: number) {
   const showExtSimPicker = async () => {
     if (!simsProject || !klavConfig) return
     Array.from(menu.children).forEach((c) => {
-      if (!(c as HTMLElement).classList.contains('klm-shine')) c.remove()
+      if (!(c as HTMLElement).classList.contains('klm-shine')) safeRemove(c)
     })
     const status = document.createElement('div')
     status.style.cssText = 'display:flex;align-items:center;gap:8px;padding:12px;font-size:12.5px;color:#7c7793'
@@ -738,7 +730,7 @@ function showCtxMenu(x: number, y: number) {
       return
     }
     if (!personas.length) { status.innerHTML = 'No Sims in this project yet.'; return }
-    status.remove()
+    safeRemove(status)
     // Header
     const hdr = document.createElement('div')
     hdr.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 8px 8px;border-bottom:1px solid rgba(99,102,241,.1);margin-bottom:4px'
@@ -793,46 +785,83 @@ function showCtxMenu(x: number, y: number) {
     menu.append(list, confirmBtn)
   }
 
-  const actions: Array<{ icon: string; color: string; label: string; run: () => void }> = [
-    { icon: icon('bug', { size: 16 }), color: '#E94F37', label: 'Report a Bug', run: () => openModal('bug') },
-    { icon: icon('lightbulb', { size: 16 }), color: '#F4A93C', label: 'Request a Feature', run: () => openModal('feature') },
-    { icon: icon('clipboard-list', { size: 16 }), color: '#8A837A', label: 'View submissions', run: () => { chrome.runtime.sendMessage({ kind: 'OPEN_TRACKER_URL' } satisfies BackgroundMessage).catch(() => {}) } },
-  ]
-  actions.forEach((a) => {
-    const btn = makeRow(a.icon, a.color, a.label)
-    btn.addEventListener('click', () => { closeCtxMenu(); a.run() })
-    menu.appendChild(btn)
-  })
-
-  // Sims deploy entries — only shown when the extension has a configured project
-  if (simsProject) {
-    const deployAllBtn = makeRow(icon('users', { size: 16 }), '#7c4dff', 'Deploy all Sims')
-    deployAllBtn.addEventListener('click', () => {
-      closeCtxMenu()
-      const w = window as any
-      if (w.KlavitySims?.deploy) { w.KlavitySims.deploy('all') }
-      else { klavSend({ kind: 'KLAV_DEPLOY_SIMS', projectId: simsProject.id, simIds: 'all' }).catch(() => {}) }
+  // ── Sim-avatar header: stacked chips + "N Sims" count (mirrors the widget). Populated ASYNC
+  // so the menu never blocks on the network; the row stays hidden until Sims arrive, then reveals. ──
+  const simsRow = document.createElement('div')
+  simsRow.className = 'klm-sims-row'
+  simsRow.style.display = 'none'
+  const simsChips = document.createElement('div')
+  simsChips.className = 'klm-sims-chips'
+  simsRow.appendChild(simsChips)
+  menu.appendChild(simsRow)
+  if (simsProject && klavConfig) {
+    // Same endpoint the picker uses; degrade gracefully (omit the header) on any failure.
+    fetch(klavConfig.backendUrl + '/api/personas?project=' + encodeURIComponent(simsProject.id), {
+      headers: { authorization: 'Bearer ' + klavConfig.token },
     })
-    menu.appendChild(deployAllBtn)
-    const selectSimsBtn = makeRow(icon('sparkles', { size: 16 }), '#7c4dff', 'Select Sims…')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const sims = (d?.personas || []) as SimChip[]
+        if (Array.isArray(sims) && sims.length && ctxMenuEl === menu) {
+          renderSimChips(document, simsChips, sims)
+          simsRow.style.display = 'flex'
+        }
+      })
+      .catch(() => {})
+  }
+
+  // Primary + secondary report cards — copy matched to the widget (source of truth).
+  card('zap', 'Report a Bug', 'Snap the page and tell us what broke.', { primary: true, onClick: () => openModal('bug') })
+  card('lightbulb', 'Request a Feature', "Suggest something you'd love to see.", { onClick: () => openModal('feature') })
+
+  // Sims deploy entries — only shown when the extension has a configured project.
+  if (simsProject) {
+    card('users', 'Deploy all Sims', 'Have every Sim jump in and analyze this page.', {
+      onClick: () => {
+        const w = window as any
+        if (w.KlavitySims?.deploy) { w.KlavitySims.deploy('all') }
+        else { klavSend({ kind: 'KLAV_DEPLOY_SIMS', projectId: simsProject.id, simIds: 'all' }).catch(() => {}) }
+      },
+    })
+    // Select Sims… opens the inline picker IN-PLACE, so don't let card() close the menu first.
+    const selectSimsBtn = buildMenuCard(document, {
+      iconHtml: icon('sparkles', { size: 16 }),
+      label: 'Select Sims…',
+      desc: 'Choose which Sims jump into action.',
+      animationDelayMs: 70 + rowIdx * 64,
+    })
+    rowIdx++
     selectSimsBtn.addEventListener('click', () => { void showExtSimPicker() })
     menu.appendChild(selectSimsBtn)
   }
 
-  // single divider, then the browser-menu affordance as an aligned footer row
-  const divider = document.createElement('div')
-  divider.style.cssText = 'height:1px;background:rgba(99,102,241,.12);margin:6px 8px;'
-  menu.appendChild(divider)
-
-  const winIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/></svg>`
-  // Scripts can't open Chrome's native menu directly — arm the next right-click to pass through.
-  const nativeBtn = makeRow(winIcon, '#9aa0a6', 'Show browser menu', { muted: true, hint: '⇧ right-\nclick' })
-  nativeBtn.addEventListener('click', () => {
-    closeCtxMenu()
-    nativeMenuPending = true
-    showNativeHint(x, y)
+  // Browser-menu affordance — muted card with the ⇧ right-click hint (arms the next right-click).
+  card('monitor', 'Browser menu', '', {
+    muted: true,
+    hint: '⇧ right-<br>click',
+    onClick: () => { nativeMenuPending = true; showNativeHint(x, y) },
   })
-  menu.appendChild(nativeBtn)
+
+  // "View submissions" — extension-only entry (the widget has no tracker). Folded in as a lighter
+  // muted card above the footer so it stays discoverable without crowding the primary actions.
+  card('clipboard-list', 'View submissions', 'Open the tracker to see your reports.', {
+    muted: true,
+    onClick: () => { chrome.runtime.sendMessage({ kind: 'OPEN_TRACKER_URL' } satisfies BackgroundMessage).catch(() => {}) },
+  })
+
+  // "Powered by Klavity" footer — matches the widget wordmark.
+  const footer = document.createElement('button')
+  footer.className = 'klm-foot'
+  footer.style.animationDelay = (70 + rowIdx * 64) + 'ms'
+  footer.innerHTML = 'Powered by <strong style="background:linear-gradient(135deg,#6366f1,#8b5cf6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;font-weight:700">Klavity</strong>'
+  footer.addEventListener('click', () => {
+    closeCtxMenu()
+    try { window.open('https://klavity.in/?utm_source=widget&utm_medium=ext_menu&utm_campaign=powered_by', '_blank', 'noopener,noreferrer') } catch { /* popup blocked — non-fatal */ }
+  })
+  menu.appendChild(footer)
+
+  // One-pass shimmer sweep — appended LAST so it sweeps OVER the opaque cards (pointer-events:none).
+  const shine = document.createElement('div'); shine.className = 'klm-shine'; menu.appendChild(shine)
 
   document.body.appendChild(menu)
 

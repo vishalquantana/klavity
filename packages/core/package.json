@@ -19,6 +19,7 @@
     "./modal": "./src/modal.ts",
     "./modal-theme": "./src/modal-theme.ts",
     "./otp-input": "./src/otp-input.ts",
+    "./context-menu": "./src/context-menu.ts",
     "./icons": "./src/icons.ts"
   },
   "scripts": {

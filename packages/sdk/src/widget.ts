@@ -14,6 +14,8 @@ import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureCli
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
+// KLA-726: keep in sync with the extension card menu — shared source of truth in @klavity/core/context-menu.
+import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { recordMe, recordingSupported } from "./recorder"
@@ -1592,49 +1594,8 @@ async function mount() {
     if (root.getElementById("klavity-menu-anim")) return
     const s = document.createElement("style")
     s.id = "klavity-menu-anim"
-    s.textContent =
-      // entrance keyframes: spring scale-in from top-left (cursor anchor)
-      "@keyframes klm-in{0%{opacity:0;transform:scale(.9) translateY(-6px)}100%{opacity:1;transform:scale(1) translateY(0)}}" +
-      "@keyframes klm-row-in{0%{opacity:0;transform:translateY(8px) scale(.97)}100%{opacity:1;transform:translateY(0) scale(1)}}" +
-      "@keyframes klm-shine{0%{transform:translateX(-130%)}100%{transform:translateX(240%)}}" +
-      "@keyframes klm-spin{to{transform:rotate(360deg)}}" +
-      ".klm-menu{animation:klm-in .34s cubic-bezier(.34,1.56,.64,1) both}" +
-      // ── Large touch cards (L6): icon chip + label + one-line description + arrow ──
-      ".klm-card{position:relative;display:flex;align-items:center;gap:8px;width:100%;border:0;cursor:pointer;text-align:left;padding:8px 10px;border-radius:12px;color:#2a2342;font-family:inherit;background:linear-gradient(180deg,rgba(255,255,255,.72),rgba(252,250,246,.55));box-shadow:0 1px 2px rgba(40,25,70,.06),inset 0 0 0 1px rgba(99,102,241,.08);transition:scale .14s cubic-bezier(.2,0,0,1),box-shadow .2s ease,background .2s ease;animation:klm-row-in .42s cubic-bezier(.16,1,.3,1) both}" +
-      ".klm-card:hover{scale:1.015;box-shadow:0 5px 14px -3px rgba(99,102,241,.3),inset 0 0 0 1px rgba(99,102,241,.16)}" +
-      ".klm-card:active{scale:.96}" +
-      ".klm-card:focus-visible{outline:2px solid #6366f1;outline-offset:2px}" +
-      ".klm-chip{flex:none;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:#5b51c9;background:rgba(99,102,241,.12);transition:transform .2s cubic-bezier(.34,1.56,.64,1)}" +
-      ".klm-chip svg{width:16px;height:16px;display:block}" +
-      ".klm-card:hover .klm-chip{transform:scale(1.1) rotate(-5deg)}" +
-      ".klm-body{display:flex;flex-direction:column;gap:2px;min-width:0}" +
-      ".klm-t{font-size:13px;font-weight:650;letter-spacing:-.01em;line-height:1.2}" +
-      ".klm-d{font-size:10.5px;line-height:1.35;color:#7c7793;text-wrap:pretty}" +
-      ".klm-go{margin-left:auto;flex:none;color:#b6afce;display:inline-flex;transition:transform .2s cubic-bezier(.2,0,0,1)}" +
-      ".klm-go svg{width:14px;height:14px;display:block}" +
-      ".klm-card:hover .klm-go{transform:translateX(3px)}" +
-      ".klm-hint{margin-left:auto;flex:none;font-family:ui-monospace,monospace;font-size:10px;color:#9a93a6;background:rgba(40,30,60,.06);padding:3px 8px;border-radius:12px;text-align:center;line-height:1.32}" +
-      // primary = Report a Bug (brand purple)
-      ".klm-card.primary{background:linear-gradient(160deg,#6d6bf3,#5b51d8);color:#fff;box-shadow:0 6px 16px -4px rgba(79,70,229,.45),inset 0 1px 0 rgba(255,255,255,.3)}" +
-      ".klm-card.primary:hover{box-shadow:0 9px 22px -4px rgba(79,70,229,.55),inset 0 1px 0 rgba(255,255,255,.35)}" +
-      ".klm-card.primary .klm-chip{background:rgba(255,255,255,.22);color:#fff}" +
-      ".klm-card.primary .klm-d{color:rgba(255,255,255,.85)}" +
-      ".klm-card.primary .klm-go{color:rgba(255,255,255,.72)}" +
-      // muted = Show browser menu (warm beige)
-      ".klm-card.muted{background:linear-gradient(180deg,rgba(250,248,244,.62),rgba(243,236,225,.5))}" +
-      ".klm-card.muted .klm-chip{background:rgba(40,30,60,.06);color:#8a8390}" +
-      ".klm-card.muted .klm-t{color:#5d5870}.klm-card.muted .klm-d{color:#9a93a6}" +
-      // Sim icons row at the top of the menu
-      ".klm-sims-row{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 4px;gap:6px;min-height:30px}" +
-      ".klm-sims-chips{display:flex;align-items:center;gap:0}" +
-      ".klm-sim-chip{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;border:1.5px solid rgba(255,255,255,.65);margin-left:-3px}" +
-      ".klm-sims-chips .klm-sim-chip:first-child{margin-left:0}" +
-      ".klm-issue-pill{font-size:10px;font-weight:650;color:#ef4444;background:rgba(239,68,68,.1);border-radius:20px;padding:2px 7px;white-space:nowrap;margin-left:auto}" +
-      ".klm-sims-label{font-size:10.5px;color:#9a93a6;margin-left:6px;white-space:nowrap}" +
-      // footer wordmark
-      ".klm-foot{text-align:center;font-size:11px;color:#8a8076;padding:4px 0 2px;border:0;background:transparent;width:100%;cursor:pointer;font-family:inherit;border-radius:8px;transition:color .18s ease;animation:klm-row-in .42s cubic-bezier(.16,1,.3,1) both}" +
-      ".klm-foot:hover{color:#5b51c9}.klm-foot:focus-visible{outline:2px solid #6366f1;outline-offset:2px}" +
-      ".klm-shine{position:absolute;top:0;left:0;width:42%;height:100%;pointer-events:none;background:linear-gradient(105deg,transparent,rgba(255,255,255,.6),transparent);transform:translateX(-130%);animation:klm-shine 1s ease-out .15s both}"
+    // KLA-726: shared card-menu stylesheet — kept in sync with the extension via @klavity/core/context-menu.
+    s.textContent = CONTEXT_MENU_CSS
     root.appendChild(s)
   }
   // Scripts can't open the browser's native context menu programmatically — it only
@@ -1659,8 +1620,6 @@ async function mount() {
       "border:1px solid rgba(255,255,255,.55);" +
       "box-shadow:0 24px 60px -12px rgba(76,40,130,.32), 0 8px 22px rgba(99,102,241,.16), 0 1.5px 4px rgba(25,20,15,.10), inset 0 1px 0 rgba(255,255,255,.75);" +
       "-webkit-backdrop-filter:blur(14px) saturate(140%);backdrop-filter:blur(14px) saturate(140%);"
-    // Lucide arrow-right (no such icon in our set → inline) for each card's affordance.
-    const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>'
     let idx = 0
     // Sims actions ("Deploy all Sims" / "Select Sims…") + the Sim-chip preview row are shown ONLY in
     // 'full' mode AND only to identified project members (own first-party page, or a signed-in widget
@@ -1670,18 +1629,8 @@ async function mount() {
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
-      const b = document.createElement("button")
-      b.className = "klm-card" + (opts.primary ? " primary" : "") + (opts.muted ? " muted" : "")
-      b.style.animationDelay = (70 + idx * 64) + "ms"
+      const b = buildMenuCard(document, { iconHtml: icon(iconName), label, desc, primary: opts.primary, muted: opts.muted, hint: opts.hint, animationDelayMs: 70 + idx * 64 })
       idx++
-      const right = opts.hint
-        ? '<span class="klm-hint">' + opts.hint + '</span>'
-        : '<span class="klm-go">' + ARROW + '</span>'
-      b.innerHTML =
-        '<span class="klm-chip">' + icon(iconName) + '</span>' +
-        '<span class="klm-body"><span class="klm-t">' + label + '</span>' +
-        (desc ? '<span class="klm-d">' + desc + '</span>' : '') +
-        '</span>' + right
       b.addEventListener("click", () => { closeMenu(); opts.onClick() })
       return b
     }
