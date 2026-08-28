@@ -1978,6 +1978,22 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .wp-thanks-msg{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--kl-fg,#1d1d24)}
 .wp-cta{display:inline-block;text-decoration:none;background:var(--kl-accent,#5b5bf0);color:var(--kl-on-accent,#fff);border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700}
 .wp-pb{text-align:center;font-size:9px;color:var(--kl-muted,#6c6c79);margin-top:10px}
+/* KLA-742: live-preview facsimile of the CURRENT buildModal composer (capture actions, Voice mic,
+   Enhance-with-AI, report-clarity meter). Keep these in sync with packages/core/src/modal.ts. */
+.wp-actions{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.wp-act{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--kl-border,#e6e6ec);border-radius:6px;padding:6px 4px;font-size:11px;font-weight:600;background:var(--kl-input-bg,#fafafb);color:var(--kl-fg,#1d1d24)}
+.wp-act svg{width:12px;height:12px}
+.wp-descbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;min-height:24px}
+.wp-counter{font-size:10px;color:var(--kl-muted,#6c6c79)}
+.wp-voice{margin-left:auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--kl-chip,#f4f4f7);color:var(--kl-fg,#1d1d24)}
+.wp-voice svg{width:13px;height:13px}
+.wp-enhance{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--kl-accent,#5b5bf0);border:1px solid var(--kl-border,#e6e6ec);border-radius:8px;padding:5px 9px;margin-bottom:10px}
+.wp-enhance svg{width:13px;height:13px}
+.wp-clarity{border:1px solid var(--kl-border,#e6e6ec);border-radius:8px;padding:8px 9px;margin-bottom:10px}
+.wp-clr-row{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-weight:600;color:var(--kl-muted,#6c6c79);margin-bottom:6px}
+.wp-clr-st{color:var(--kl-accent2,#f59e0b)}
+.wp-clr-chips{display:flex;flex-direction:column;gap:3px}
+.wp-clr-chip{font-size:10px;color:var(--kl-muted,#6c6c79)}
 .wp-ext{margin-top:18px;padding-top:16px;border-top:1px solid var(--line,#e6e6ec)}
 .wp-ext-t{font-weight:700;font-size:14px}
 @media (min-width:760px){.wp-config-preview{display:flex;gap:20px;flex-wrap:wrap}.wp-config{flex:1;min-width:300px}}
@@ -2204,8 +2220,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <div class="fs-body">
           <div class="cl-step-t">Install the widget</div>
           <div class="cl-step-d" id="fsInstallDesc">One script tag — every visitor gets a one-click bug button. Auto-checks off when a report or the widget is detected.</div>
+          <!-- KLA-741: inline copy-paste snippet so a genuinely-empty new project can install without leaving Overview. -->
+          <div class="cl-embed" style="margin-top:10px">
+            <code id="fsEmbedSnippet">Loading…</code>
+            <button class="btn btn-ghost btn-sm" id="fsEmbedCopy" type="button">Copy</button>
+          </div>
+          <div class="cl-step-d" style="margin-top:8px">Or <a href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" style="color:var(--indigo);text-decoration:none">install the browser extension &rarr;</a> for internal QA.</div>
         </div>
-        <button class="btn btn-ghost btn-sm fs-cta" id="fsInstallBtn" type="button">Show snippet</button>
+        <button class="btn btn-ghost btn-sm fs-cta" id="fsInstallBtn" type="button">Full setup</button>
       </li>
       <li class="fs-task" id="fsTracker">
         <span class="fs-tick" aria-hidden="true"></span>
@@ -2823,14 +2845,35 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           <div class="wp-stage">
             <div class="wp-launcher"><span data-ki="lightbulb"></span> Report a bug</div>
             <div class="wp-modal" id="wp-root">
+              <!-- KLA-742: mirrors the CURRENT buildModal composer (packages/core/src/modal.ts) so the
+                   Live preview never drifts from the real widget. Order/labels match the real .kl-side:
+                   Bug/Feature toggle → capture actions → images counter + Voice mic → description →
+                   Enhance-with-AI → report-clarity meter → Submit → Powered by. Static + sandboxed
+                   (no handlers, never submits). Keep in sync with modal.ts if the composer changes. -->
               <div id="wp-body">
                 <div class="wp-row">
                   <button class="wp-tab wp-tab-on"><span data-ki="bug"></span> Bug</button>
                   <button class="wp-tab"><span data-ki="lightbulb"></span> Feature</button>
                 </div>
-                <div class="wp-page"><span data-ki="map-pin"></span> /your/page</div>
-                <div class="wp-strip"><span><span data-ki="camera"></span> screenshot</span></div>
+                <div class="wp-actions">
+                  <span class="wp-act"><span data-ki="camera"></span> Full Page</span>
+                  <span class="wp-act"><span data-ki="image"></span> Upload</span>
+                </div>
+                <div class="wp-strip"><span><span data-ki="image"></span> Capture or upload a screenshot to mark it up</span></div>
+                <div class="wp-descbar">
+                  <span class="wp-counter">0/5 images</span>
+                  <span class="wp-voice" title="Voice dictation"><span data-ki="mic"></span></span>
+                </div>
                 <div class="wp-desc">Describe the bug…</div>
+                <div class="wp-enhance"><span data-ki="sparkles"></span> Enhance with AI</div>
+                <div class="wp-clarity">
+                  <div class="wp-clr-row"><span>Report clarity</span><span class="wp-clr-st">Needs detail</span></div>
+                  <div class="wp-clr-chips">
+                    <span class="wp-clr-chip">○ What's broken</span>
+                    <span class="wp-clr-chip">○ What you expected</span>
+                    <span class="wp-clr-chip">○ How to reproduce</span>
+                  </div>
+                </div>
                 <button class="wp-submit">Submit</button>
               </div>
               <div id="wp-thanks" class="wp-thanks-screen" style="display:none">
@@ -5168,11 +5211,15 @@ function renderChecklist() {
   const hasTrails = (state.trails || []).length > 0
 
   let dismissed = false
-  // KLAVITYKLA-301: read from localStorage so dismissal persists across sessions.
-  try { dismissed = localStorage.getItem("klavChecklistDismissed") === "1" } catch (e) {}
+  // KLA-741: per-project dismissal — the old GLOBAL key meant that once dismissed on the first
+  // project the onboarding never reappeared for any new project of the same account.
+  try { dismissed = localStorage.getItem("klavChecklistDismissed:" + (curProjId() || "")) === "1" } catch (e) {}
+  // KLA-741: emptiness gate — a genuinely-empty project (no widget heartbeat AND no human report)
+  // always gets get-started guidance; a project with real activity never shows the onboarding.
+  const isEmpty = !connected && !hasHumanReport
   // All 5 done = hide automatically (celebrate, then hide)
   const allDone = hasReaction && hasHumanReport && connected && hasSims_fromCall && hasTrails
-  el.classList.toggle("hide", allDone || dismissed)
+  el.classList.toggle("hide", !isEmpty || allDone || dismissed)
 
   // Tick individual items
   const seeReactLi = $("clSeeReact");  if (seeReactLi) seeReactLi.classList.toggle("cl-done", hasReaction)
@@ -5229,16 +5276,23 @@ window.renderChecklist = renderChecklist   // called from setView so the poll re
 function renderFinishSetup() {
   const el = $("finishSetup")
   if (!el || !state) return
-  let dismissed = false
-  try { dismissed = localStorage.getItem("klav-finish-setup-x") === "1" } catch (e) {}
-  el.classList.toggle("hide", dismissed)
-  // While the deferred-setup card is showing, suppress the older generic welcome checklist so the
-  // Overview isn't stacked with two onboarding cards (it returns once this one is dismissed).
-  const oldCl = $("checklist"); if (oldCl && !dismissed) oldCl.classList.add("hide")
-  if (dismissed) return
   // Detection (honest, mirrors renderChecklist's signals):
   const widgetSeen = !!(state.widgetStatus && state.widgetStatus.lastSeen)
   const hasHumanReport = (state.tickets || []).some(t => !t.simName)
+  // KLA-741: emptiness gate — only surface the get-started card for a genuinely-empty project.
+  const isEmpty = !widgetSeen && !hasHumanReport
+  let dismissed = false
+  // KLA-741: per-project dismissal so a new project of an existing account always re-surfaces onboarding.
+  try { dismissed = localStorage.getItem("klav-finish-setup-x:" + (curProjId() || "")) === "1" } catch (e) {}
+  const hide = dismissed || !isEmpty
+  el.classList.toggle("hide", hide)
+  // While the deferred-setup card is showing, suppress the older generic welcome checklist so the
+  // Overview isn't stacked with two onboarding cards (it returns once this one is dismissed/hidden).
+  const oldCl = $("checklist"); if (oldCl && !hide) oldCl.classList.add("hide")
+  // KLA-741: keep the inline embed snippet copy-paste ready for THIS project so the empty-project
+  // card can install without leaving Overview (populated even while hidden so it's ready on show).
+  { const _pid = curProjId(); const _snip = $("fsEmbedSnippet"); if (_snip && _pid) _snip.textContent = embedSnippet(_pid) }
+  if (hide) return
   const installDone = widgetSeen || hasHumanReport
   const trackerDone = (state._connectors || []).length > 0
   const autosimDone = (state.trails || []).length > 0
@@ -5261,12 +5315,13 @@ function renderFinishSetup() {
 window.renderFinishSetup = renderFinishSetup
 // Wire the card's controls once (buttons exist in the static markup).
 $("finishSetupX") && ($("finishSetupX").onclick = () => {
-  try { localStorage.setItem("klav-finish-setup-x", "1") } catch (e) {}
+  try { localStorage.setItem("klav-finish-setup-x:" + (curProjId() || ""), "1") } catch (e) {}
   const el = $("finishSetup"); if (el) el.classList.add("hide")
   // Restore the generic welcome checklist now that the deferred-setup card is gone.
   if (typeof renderChecklist === "function") renderChecklist()
 })
 $("fsInstallBtn") && ($("fsInstallBtn").onclick = () => { try { setView("snap") } catch (e) {} })
+$("fsEmbedCopy") && ($("fsEmbedCopy").onclick = () => { const pid = curProjId(); if (pid) klavCopy(embedSnippet(pid), $("fsEmbedCopy")) })
 $("fsTrackerBtn") && ($("fsTrackerBtn").onclick = () => { try { openTrackerConnect() } catch (e) {} })
 $("fsAutosimBtn") && ($("fsAutosimBtn").onclick = () => { try { setView("autosims") } catch (e) {} })
 $("fsPlanBtn") && ($("fsPlanBtn").onclick = () => { try { openPlanDrawer() } catch (e) {} })
@@ -5428,8 +5483,8 @@ $("embedCopyAI") && ($("embedCopyAI").onclick = () => {
   klavCopy(cspFixPrompt(pid), $("embedCopyAI"), "Copied for AI \u2713")
 })
 $("checklistDismiss") && ($("checklistDismiss").onclick = () => {
-  // KLAVITYKLA-301: persist dismissal durably so checklist stays gone across sessions.
-  try { localStorage.setItem("klavChecklistDismissed", "1") } catch (e) {}
+  // KLA-741: persist dismissal PER-PROJECT so new projects still surface the welcome checklist.
+  try { localStorage.setItem("klavChecklistDismissed:" + (curProjId() || ""), "1") } catch (e) {}
   const el = $("checklist"); if (el) el.classList.add("hide")
 })
 // Zero-install first report: the real widget is mounted on THIS page (mountReportWidget), so the
