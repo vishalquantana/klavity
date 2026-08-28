@@ -959,11 +959,14 @@ details.drawer .drawer-in{padding:0 22px 22px}
 /* ── #712: Settings view → two-column layout (heading left, controls right; Stripe/Linear style).
    Scoped to body[data-view="settings"] so the SAME shared drawers keep their accordion look when
    shown under the Sims/Tickets views. Re-layout only — every control id/handler is untouched. */
+/* KLA-740: each Settings section is its own white card on the beige canvas
+   (reuses the app card tokens: var(--ink-2) surface + var(--shadow-border) hairline+shadow),
+   with a vertical gap between cards. Two-column header/controls layout is preserved. */
 body[data-view="settings"] details.drawer[data-view~="settings"]{
   display:grid;grid-template-columns:minmax(220px,34%) minmax(0,1fr);column-gap:36px;
-  align-items:start;max-width:1080px;margin:0;padding:26px 2px;
-  background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;overflow:visible}
-body[data-view="settings"] details.drawer[data-view~="settings"]:first-of-type{border-top:0;padding-top:6px}
+  align-items:start;max-width:1080px;margin:0 0 18px;padding:26px 28px;
+  background:var(--ink-2);box-shadow:var(--shadow-border);border:0;border-radius:16px;overflow:visible}
+body[data-view="settings"] details.drawer[data-view~="settings"]:first-of-type{padding-top:26px}
 /* left column = section header (icon + title + one-line description); no longer a click-to-expand row */
 body[data-view="settings"] details.drawer[data-view~="settings"]>summary{
   grid-column:1;grid-row:1;align-items:flex-start;flex-wrap:wrap;gap:6px 10px;padding:0;cursor:default}
