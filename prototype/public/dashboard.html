@@ -484,7 +484,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .bar .switcher{min-width:0}
 .bar .sw-lbl{display:none}
 .bar .proj-select{width:100%;max-width:260px;background-color:var(--ink);box-shadow:0 1px 0 rgba(25,20,15,.03)}
-@media(max-width:760px){.proj-pick{flex:1 1 120px}.bar .proj-select{max-width:none;padding:7px 28px 7px 10px;font-size:13px}.bar .proj-pick .newproj input{min-width:0;width:110px}.bar .proj-pick .newproj .btn{padding:7px 9px}}
+@media(max-width:760px){.proj-pick{flex:1 1 120px}.bar .proj-select{max-width:none;padding:7px 28px 7px 10px;font-size:13px}.bar .proj-combo-btn{max-width:none;padding:7px 10px;font-size:13px}.bar .proj-pick .newproj input{min-width:0;width:110px}.bar .proj-pick .newproj .btn{padding:7px 9px}}
 @media(max-width:540px){.bar-brand{display:none}.who{display:none}.lo{font-size:12px}.right{gap:8px}}
 /* bar-brand: Klavity logo shown in the top bar on mobile only (sidebar is horizontal there,
    its own brand is hidden, so the bar carries the logo instead) */
@@ -499,10 +499,32 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .nav-snap:hover{background:rgba(217,131,36,.14);border-color:rgba(217,131,36,.4);transform:translateY(-1.5px) scale(1.02)}
 .nav-snap:active{transform:scale(0.97)}
 @media(max-width:500px){.nav-snap .nav-snap-lbl{display:none}.nav-snap{padding:7px 10px}}
-.switcher{display:flex;align-items:center;gap:8px}
+.switcher{display:flex;align-items:center;gap:8px;position:relative}
 .switcher .sw-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
 .proj-select{appearance:none;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 34px 9px 13px;color:var(--paper);font-family:var(--body);font-weight:600;font-size:14px;cursor:pointer;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;transition:border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease)}
 .proj-select:focus{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+/* KLA-743: smart command-palette project switcher — trigger button + searchable popover */
+.proj-combo-btn{appearance:none;display:inline-flex;align-items:center;gap:6px;max-width:260px;background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px 9px 13px;color:var(--paper);font-family:var(--body);font-weight:600;font-size:14px;cursor:pointer;outline:none;transition:border-color var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+.proj-combo-btn:hover{border-color:var(--paper-faint)}
+.proj-combo-btn:active{transform:scale(.98)}
+.proj-combo-btn:focus-visible,.proj-combo-btn[aria-expanded="true"]{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+.proj-combo-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.proj-combo-caret{flex:none;color:var(--paper-faint);transition:transform var(--mi-dur) var(--mi-ease)}
+.proj-combo-btn[aria-expanded="true"] .proj-combo-caret{transform:rotate(180deg)}
+.bar .proj-combo-btn{width:100%;max-width:260px}
+.proj-combo-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:60;width:288px;max-width:min(320px,86vw);background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:var(--mi-shadow-card);padding:6px}
+.proj-combo-pop.hide{display:none}
+.proj-combo-pop .tap-search-row{margin:2px 2px 6px}
+.proj-combo-search-ic{display:inline-flex;color:var(--paper-faint);flex:none}
+.proj-combo-list{max-height:min(320px,52vh);overflow-y:auto;display:flex;flex-direction:column}
+.proj-combo-opt{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;border-radius:8px;padding:8px 9px;cursor:pointer;color:var(--paper);font-family:var(--body);font-size:13.5px;font-weight:500;transition:background var(--mi-dur) var(--mi-ease)}
+.proj-combo-opt:hover{background:var(--ink-3)}
+.proj-combo-opt.active{background:var(--ink-3)}
+.proj-combo-opt .pco-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1 1 auto}
+.proj-combo-opt .pco-check{margin-left:auto;color:var(--indigo);display:inline-flex;flex:none;line-height:0;visibility:hidden}
+.proj-combo-opt.current .pco-check{visibility:visible}
+.proj-combo-opt.current .pco-name{font-weight:700}
+.proj-combo-empty{padding:12px 9px;font-size:12.5px;color:var(--paper-faint)}
 /* inline "new project" creator under the switcher */
 .newproj{display:flex;align-items:center;gap:8px;margin-top:10px}
 .newproj input{background:var(--ink-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--paper);font-family:var(--body);font-size:14px;outline:none;min-width:200px;transition:border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease)}
@@ -2133,9 +2155,23 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <div class="proj-pick" id="projPick">
     <div class="switcher" id="projSwitcher">
       <span class="sw-lbl">Project</span>
-      <select class="proj-select" id="projSwitch" aria-label="Active project"></select>
+      <!-- KLA-743: smart command-palette project switcher. The native <select> was unusable
+           past ~20 projects, so the visible control is now a button that opens a searchable
+           popover combobox (type-to-filter + arrow/enter to switch). Keyboard + mouse both work. -->
+      <button class="proj-combo-btn" id="projComboBtn" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="projComboList" aria-label="Active project — search and switch">
+        <span class="proj-combo-name" id="projComboName">—</span>
+        <svg class="proj-combo-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
       <!-- Admin-only "+" button: explicit click, no accidental keyboard trigger -->
       <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
+      <!-- Popover: autofocused search input + filtered, keyboard-navigable results list -->
+      <div class="proj-combo-pop hide" id="projComboPop">
+        <div class="tap-search-row">
+          <span class="proj-combo-search-ic" data-ki="search" aria-hidden="true"></span>
+          <input class="tap-search" id="projComboSearch" type="text" placeholder="Search projects…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="projComboList" aria-expanded="true" aria-autocomplete="list" aria-label="Search projects">
+        </div>
+        <div class="proj-combo-list" id="projComboList" role="listbox" aria-label="Projects"></div>
+      </div>
     </div>
     <!-- KLA-292: new project inline form moved to #npBg modal -->
   </div>
@@ -5953,28 +5989,144 @@ function renderObs(events, named) {
   })
 }
 
+// KLA-743: Smart command-palette project switcher. Replaces the native <select> (unusable
+// past ~20 projects) with a button that opens a searchable popover: type-to-filter,
+// arrow up/down to move the highlight, Enter to switch, Esc to close, click a row to select.
+// A11y: trigger is role=combobox (aria-haspopup=listbox), the popover holds a search
+// input + a role=listbox; the highlighted row is tracked via aria-activedescendant.
+const projSwitch = {
+  matches: [],       // filtered project list currently shown
+  active: -1         // index into matches of the highlighted row
+}
 function renderSwitcher() {
-  const sel = $("projSwitch")
   const projects = state.projects || []
   const activeId = state.active ? state.active.id : null
   const isAdmin = state.active && state.active.role === "admin"
-  // KLAVITYKLA-201: "__new__" removed from the <select> to prevent accidental project
-  // creation via keyboard arrow-key or scroll. A dedicated "#projNewBtn" button is shown
-  // for admins — requires an explicit click.
-  const opts = projects.map(p => `<option value="${esc(p.id)}"${p.id===activeId?" selected":""}>${esc(p.name)}</option>`).join("")
-  sel.innerHTML = opts || `<option>—</option>`
-  // Always enabled: switch between projects by selecting in the dropdown.
-  sel.disabled = false
-  sel.onchange = () => {
-    const pid = sel.value
-    if (!pid || pid === activeId) return
-    location.href = "/dashboard?project=" + encodeURIComponent(pid)
+  const btnName = $("projComboName")
+  if (btnName) {
+    const cur = projects.find(p => p.id === activeId)
+    btnName.textContent = cur ? cur.name : (projects.length ? "Select project" : "—")
   }
   // Show/hide the "+ New project" button for admins only
   const newBtn = $("projNewBtn")
   if (newBtn) {
     newBtn.classList.toggle("hide", !isAdmin)
     newBtn.onclick = () => openNewProject()
+  }
+  // Re-render the popover list against current data (keeps it fresh when projects change).
+  projSwitchWire()
+  if (projSwitchIsOpen()) projSwitchFilter($("projComboSearch") ? $("projComboSearch").value : "")
+}
+// One-time wiring of the combobox controls (idempotent — safe to call on every render).
+function projSwitchWire() {
+  const btn = $("projComboBtn"); const pop = $("projComboPop")
+  const input = $("projComboSearch"); const list = $("projComboList")
+  if (!btn || !pop || !input || !list) return
+  if (btn.dataset.wired === "1") return
+  btn.dataset.wired = "1"
+  btn.addEventListener("click", () => { projSwitchIsOpen() ? projSwitchClose() : projSwitchOpen() })
+  input.addEventListener("input", () => projSwitchFilter(input.value))
+  input.addEventListener("keydown", projSwitchKeydown)
+  // Outside-click closes the popover.
+  document.addEventListener("mousedown", (e) => {
+    if (!projSwitchIsOpen()) return
+    if (!$("projSwitcher").contains(e.target)) projSwitchClose()
+  })
+}
+function projSwitchIsOpen() { const p = $("projComboPop"); return !!p && !p.classList.contains("hide") }
+function projSwitchOpen() {
+  const btn = $("projComboBtn"); const pop = $("projComboPop"); const input = $("projComboSearch")
+  if (!btn || !pop || !input) return
+  pop.classList.remove("hide")
+  btn.setAttribute("aria-expanded", "true")
+  input.value = ""
+  projSwitchFilter("")
+  // Autofocus the search input so the user can type immediately.
+  input.focus()
+}
+function projSwitchClose(returnFocus) {
+  const btn = $("projComboBtn"); const pop = $("projComboPop")
+  if (!pop || !btn) return
+  pop.classList.add("hide")
+  btn.setAttribute("aria-expanded", "false")
+  btn.removeAttribute("aria-activedescendant")
+  if (returnFocus !== false) btn.focus()
+}
+// Case-insensitive substring filter, then render + highlight the first match.
+function projSwitchFilter(q) {
+  const projects = state.projects || []
+  const activeId = state.active ? state.active.id : null
+  const needle = String(q || "").trim().toLowerCase()
+  const matches = needle
+    ? projects.filter(p => String(p.name || "").toLowerCase().includes(needle))
+    : projects.slice()
+  const list = $("projComboList")
+  if (!list) return
+  if (!matches.length) {
+    list.innerHTML = `<div class="proj-combo-empty">${projects.length ? "No projects match" : "No projects yet"}</div>`
+    projSwitch.matches = []; projSwitch.active = -1
+    projSwitchSetActive(-1)
+    return
+  }
+  list.innerHTML = matches.map((p, i) => {
+    const isCur = p.id === activeId
+    return `<div class="proj-combo-opt${isCur ? " current" : ""}" role="option" id="pco-${i}" data-pid="${esc(p.id)}" aria-selected="${isCur ? "true" : "false"}">`
+      + `<span class="pco-name">${esc(p.name)}</span>`
+      + `<span class="pco-check">${(typeof kicon === "function" ? kicon("check", { size: 15 }) : "")}</span>`
+      + `</div>`
+  }).join("")
+  projSwitch.matches = matches
+  // Highlight the current project if visible, else the first row.
+  let start = matches.findIndex(p => p.id === activeId)
+  if (start < 0) start = 0
+  projSwitchSetActive(start)
+  // Mouse selection on the rendered rows.
+  Array.from(list.querySelectorAll(".proj-combo-opt")).forEach((el, i) => {
+    el.addEventListener("mouseenter", () => projSwitchSetActive(i))
+    el.addEventListener("click", () => projSwitchChoose(i))
+  })
+}
+function projSwitchSetActive(i) {
+  const list = $("projComboList"); const input = $("projComboSearch")
+  if (!list) return
+  const rows = list.querySelectorAll(".proj-combo-opt")
+  projSwitch.active = i
+  rows.forEach((el, idx) => el.classList.toggle("active", idx === i))
+  if (i >= 0 && rows[i]) {
+    rows[i].scrollIntoView({ block: "nearest" })
+    if (input) input.setAttribute("aria-activedescendant", "pco-" + i)
+  } else if (input) {
+    input.removeAttribute("aria-activedescendant")
+  }
+}
+function projSwitchChoose(i) {
+  const p = projSwitch.matches[i]
+  if (!p) return
+  const activeId = state.active ? state.active.id : null
+  if (p.id === activeId) { projSwitchClose(); return }
+  // Reuse the existing navigation to switch projects.
+  location.href = "/dashboard?project=" + encodeURIComponent(p.id)
+}
+function projSwitchKeydown(e) {
+  const n = projSwitch.matches.length
+  if (e.key === "ArrowDown") {
+    e.preventDefault()
+    if (n) projSwitchSetActive((projSwitch.active + 1 + n) % n)
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault()
+    if (n) projSwitchSetActive((projSwitch.active - 1 + n) % n)
+  } else if (e.key === "Enter") {
+    e.preventDefault()
+    if (projSwitch.active >= 0) projSwitchChoose(projSwitch.active)
+  } else if (e.key === "Escape") {
+    e.preventDefault()
+    projSwitchClose()
+  } else if (e.key === "Home") {
+    e.preventDefault()
+    if (n) projSwitchSetActive(0)
+  } else if (e.key === "End") {
+    e.preventDefault()
+    if (n) projSwitchSetActive(n - 1)
   }
 }
 // KLA-292: new client project modal
