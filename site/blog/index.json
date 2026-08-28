@@ -467,5 +467,12 @@
     "excerpt": "Bug reports bounce back when they're missing steps, environment, expected-vs-actual, or evidence. Capture all four at report time to stop the loop.",
     "category": "Insights",
     "date": "2026-08-27"
+  },
+  {
+    "slug": "alpha-testing-vs-beta-testing",
+    "title": "Alpha Testing vs. Beta Testing: What's the Difference?",
+    "excerpt": "Alpha testing happens in-house before release; beta testing puts a near-final build in real users' hands. Here's how they differ and when to run each.",
+    "category": "Compare",
+    "date": "2026-08-28"
   }
 ]
