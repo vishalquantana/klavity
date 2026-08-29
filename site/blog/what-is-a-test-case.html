@@ -1,0 +1,113 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is a Test Case? Anatomy, Types, and How to Write One · Klavity</title>
+<meta name="description" content="A test case is a documented set of steps, inputs, and expected results that verifies one specific behavior of your software. Here's how to write one.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-a-test-case">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is a Test Case? Anatomy, Types, and How to Write One"><meta property="og:description" content="A test case is a documented set of steps, inputs, and expected results that verifies one specific behavior of your software. Here's how to write one.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-a-test-case"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is a Test Case? Anatomy, Types, and How to Write One"><meta name="twitter:description" content="A test case is a documented set of steps, inputs, and expected results that verifies one specific behavior of your software. Here's how to write one."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is a Test Case? Anatomy, Types, and How to Write One","description":"A test case is a documented set of steps, inputs, and expected results that verifies one specific behavior of your software. Here's how to write one.","datePublished":"2026-08-29","dateModified":"2026-08-29","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-a-test-case","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Test Case? Anatomy, Types, and How to Write One","item":"https://klavity.in/blog/what-is-a-test-case"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-test-case"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between a test case and a test scenario?","acceptedAnswer":{"@type":"Answer","text":"A test scenario is a high-level thing to test ('user can reset a forgotten password'). A test case is the concrete, step-by-step way to verify part of that scenario, with specific inputs and one expected result. One scenario usually expands into several test cases — the valid email, the unregistered email, the expired reset link, and so on."}},{"@type":"Question","name":"Should test cases be manual or automated?","acceptedAnswer":{"@type":"Answer","text":"Automate the stable, repetitive, high-value cases you run every release — logins, checkout, core API responses. Keep exploratory and one-off checks manual, since scripting them costs more than they return. A well-written manual test case is also the fastest thing to hand to an automation tool later, because the steps and expected result are already explicit."}},{"@type":"Question","name":"How many test cases do I need for a feature?","acceptedAnswer":{"@type":"Answer","text":"Enough to cover the happy path, the main error paths, and the boundaries — not one per imaginable input. Coverage comes from testing distinct behaviors and equivalence classes, not from sheer count. Ten sharp cases usually beat fifty overlapping ones that all re-check the same code path."}},{"@type":"Question","name":"What makes a test case a good one?","acceptedAnswer":{"@type":"Answer","text":"It is atomic (verifies one behavior), repeatable (anyone running it gets the same result), and specific (exact inputs and an unambiguous expected result). If two people could disagree on whether it passed, it is not specific enough yet."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-08-29</div>
+    <h1>What Is a Test Case? Anatomy, Types, and How to Write One</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A test case is a documented set of conditions, inputs, and steps that verifies one specific behavior of a product, pairing an expected result with an actual result so it can be marked pass or fail. The single rule that makes test cases useful: keep each one atomic — one behavior, one expected outcome — so a failure points at exactly what broke.</div>
+    <div class="prose"><p>A test case is a documented set of conditions, inputs, and steps used to verify that one specific feature or behavior of a software product works as intended. Each test case pairs an <strong>expected result</strong> with the <strong>actual result</strong>, so a tester or an automated runner can mark it pass or fail. Good test cases are atomic — they check one behavior each — repeatable, and specific enough that anyone can run them and get the same outcome.</p>
+
+<h2>What are the parts of a test case?</h2>
+<p>A complete test case has a predictable anatomy. Every field earns its place by removing ambiguity about what is being tested and whether it passed:</p>
+<ul>
+<li><strong>ID and title</strong> — a stable identifier and a one-line summary of the behavior under test (for example, "Login rejects an unregistered email").</li>
+<li><strong>Preconditions</strong> — the state the system must be in before you start: logged-out session, a seeded test account, a specific feature flag on.</li>
+<li><strong>Test data</strong> — the exact inputs you will use, not "a valid email" but the specific value, so the run is reproducible.</li>
+<li><strong>Steps</strong> — numbered, single-action instructions in the order a user performs them.</li>
+<li><strong>Expected result</strong> — the one observable outcome that means "pass," written before the run.</li>
+<li><strong>Actual result and status</strong> — what actually happened, and pass/fail/blocked. This is the field that turns into a bug report when it fails.</li>
+</ul>
+<p>The discipline that matters most: write the expected result <em>before</em> you execute the case. Filling it in afterward turns the test into a description of whatever the software already does — bugs included.</p>
+
+<h2>Test case vs. test scenario vs. test script</h2>
+<p>These three terms get used interchangeably, but they sit at different levels of detail:</p>
+<ul>
+<li>A <strong>test scenario</strong> is a high-level goal to verify: "a user can recover a forgotten password."</li>
+<li>A <strong>test case</strong> is one concrete path through that scenario with specific data and a single expected result: "submitting an unregistered email shows the same neutral confirmation message and sends no email."</li>
+<li>A <strong>test script</strong> is the executable version — code or a recorded flow that runs the case automatically.</li>
+</ul>
+<p>One scenario fans out into several test cases; each test case may become one test script. Confusing the levels is why some teams have "100 test cases" that are really 10 vague scenarios, and why others automate scripts nobody can trace back to a requirement.</p>
+
+<h2>Types of test cases you should be writing</h2>
+<p>Coverage comes from testing distinct kinds of behavior, not from volume. The types that catch the most real bugs:</p>
+<ol>
+<li><strong>Positive (happy path)</strong> — valid input produces the intended result. This is the baseline; if it fails, nothing else matters.</li>
+<li><strong>Negative</strong> — invalid or unexpected input is rejected gracefully, with a clear error and no crash or data corruption. Most escaped defects hide here.</li>
+<li><strong>Boundary value</strong> — the edges of an allowed range: 0, 1, the maximum, the maximum plus one, an empty field, a field at its character limit. Off-by-one bugs live at boundaries.</li>
+<li><strong>Equivalence partition</strong> — one representative case per group of inputs that should behave identically, so you get coverage without testing every possible value.</li>
+<li><strong>State transition</strong> — the system behaves correctly moving between states (draft to published, trial to paid, logged-in to session-expired).</li>
+</ol>
+
+<h2>How to write a good test case, step by step</h2>
+<ol>
+<li><strong>Name the single behavior.</strong> If your title needs the word "and," split it into two cases. One behavior per case keeps a failure diagnostic.</li>
+<li><strong>State the precondition and exact data.</strong> Replace every "a valid X" with the real value you will use. Reproducibility is the whole point.</li>
+<li><strong>Write numbered, single-action steps.</strong> Each step should be one thing a person does, in order, with no branching.</li>
+<li><strong>Define one unambiguous expected result.</strong> Written up front, phrased so two people could not disagree on whether it passed.</li>
+<li><strong>Decide what evidence a failure needs.</strong> For a UI case, that's a screenshot plus the console and network log at the moment of failure; for an API case, the request and full response. Deciding this in advance is what makes a failed case immediately actionable.</li>
+</ol>
+
+<h2>Common test case mistakes to avoid</h2>
+<ul>
+<li><strong>Vague inputs.</strong> "Enter some text" is not a test case — it can't be reproduced or automated.</li>
+<li><strong>Bundled behaviors.</strong> A case that verifies login <em>and</em> the dashboard <em>and</em> a notification tells you something broke but not what.</li>
+<li><strong>Expected result written after the run.</strong> This bakes existing bugs in as "correct."</li>
+<li><strong>No failure evidence plan.</strong> A case that fails with only "didn't work" recorded creates a clarification round-trip instead of a fix.</li>
+</ul>
+
+<h2>From test case to automated test and bug report</h2>
+<p>A well-structured test case is already most of the way to two other artifacts. Because its steps and expected result are explicit, it converts cleanly into an automated end-to-end test — and tools that keep those tests running as your UI changes save you from rewriting selectors every release (that's the idea behind <a href="/autosim">self-healing e2e tests</a>). And when a case fails, the actual result plus the evidence you planned for becomes a complete bug report on its own; capturing that evidence at the moment of failure — screenshot, console, and network in one click — is exactly what <a href="/snap">in-app bug reporting</a> is for. Write the test case well once, and the automated test and the bug report both fall out of it. For more QA fundamentals, browse the <a href="/blog">Klavity blog</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Keep every test case atomic — one behavior, one expected result</li><li>Write the expected result before you run the case, never after</li><li>Cover the happy path, key error paths, and boundary values</li><li>Capture actual result plus evidence when a case fails, so triage is instant</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the difference between a test case and a test scenario?</summary><p>A test scenario is a high-level thing to test ('user can reset a forgotten password'). A test case is the concrete, step-by-step way to verify part of that scenario, with specific inputs and one expected result. One scenario usually expands into several test cases — the valid email, the unregistered email, the expired reset link, and so on.</p></details><details><summary>Should test cases be manual or automated?</summary><p>Automate the stable, repetitive, high-value cases you run every release — logins, checkout, core API responses. Keep exploratory and one-off checks manual, since scripting them costs more than they return. A well-written manual test case is also the fastest thing to hand to an automation tool later, because the steps and expected result are already explicit.</p></details><details><summary>How many test cases do I need for a feature?</summary><p>Enough to cover the happy path, the main error paths, and the boundaries — not one per imaginable input. Coverage comes from testing distinct behaviors and equivalence classes, not from sheer count. Ten sharp cases usually beat fifty overlapping ones that all re-check the same code path.</p></details><details><summary>What makes a test case a good one?</summary><p>It is atomic (verifies one behavior), repeatable (anyone running it gets the same result), and specific (exact inputs and an unambiguous expected result). If two people could disagree on whether it passed, it is not specific enough yet.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

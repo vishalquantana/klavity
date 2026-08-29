@@ -474,5 +474,12 @@
     "excerpt": "Alpha testing happens in-house before release; beta testing puts a near-final build in real users' hands. Here's how they differ and when to run each.",
     "category": "Compare",
     "date": "2026-08-28"
+  },
+  {
+    "slug": "what-is-a-test-case",
+    "title": "What Is a Test Case? Anatomy, Types, and How to Write One",
+    "excerpt": "A test case is a documented set of steps, inputs, and expected results that verifies one specific behavior of your software. Here's how to write one.",
+    "category": "Learn",
+    "date": "2026-08-29"
   }
 ]
