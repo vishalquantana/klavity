@@ -1,7 +1,7 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
-import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
@@ -459,6 +459,9 @@ export async function acquireDisplayStream(): Promise<MediaStream> {
     preferCurrentTab: true,
   })
   _sharedDisplayStream = stream
+  // snap-share-hint: the reporter just granted a screen-share — remember it so the "click Allow" hover hint on
+  // the FAB stops showing (they know the flow now). Best-effort; private mode / disabled storage is fine.
+  try { localStorage.setItem("klavity_share_ok", "1") } catch { /* noop */ }
   // If the reporter stops sharing from the browser bar, drop our handle so the next capture re-prompts.
   try { stream.getVideoTracks().forEach((t) => t.addEventListener("ended", () => releaseSharedDisplayStream())) } catch { /* noop */ }
   return stream
@@ -1204,6 +1207,31 @@ async function mount() {
   }
   // Wait for the (non-blocking) config to settle so launcherMode is final before deciding to show it.
   try { Promise.resolve(configReady).then(() => setTimeout(() => { try { showFabIntro() } catch { /* non-fatal */ } }, 800)).catch(() => {}) } catch { /* non-fatal */ }
+
+  // ── snap-share-hint: on FAB hover, preview the browser's "Allow … to see this tab?" dialog so the reporter
+  // knows the upcoming system prompt and to click Allow. Only when screen-share is supported + not yet granted,
+  // and never stacked on the first-run intro. Auto-suppressed once they've shared once (localStorage flag).
+  if (sharpCaptureSupported()) {
+    let fabShareHint: HTMLElement | null = null
+    let fabHover = false
+    const sharedBefore = () => { try { return localStorage.getItem("klavity_share_ok") === "1" } catch { return false } }
+    reportBtn.addEventListener("mouseenter", async () => {
+      fabHover = true
+      if (sharedBefore() || introEl || launcherMode === "hidden") return
+      if (await shareCaptureLikelyGranted()) return
+      if (!fabHover) return // pointer left during the async permission check
+      if (!fabShareHint) {
+        fabShareHint = createSharePickerHint({
+          title: "Report an issue with a screenshot",
+          steer: "When the dialog appears, just click Allow so we can capture the issue.",
+        })
+        fabShareHint.style.right = "0"; fabShareHint.style.bottom = "56px" // above the 44px FAB, right-aligned
+        reportDock.appendChild(fabShareHint)
+      }
+      requestAnimationFrame(() => { if (fabHover && fabShareHint) fabShareHint.classList.add("kl-show") })
+    })
+    reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
+  }
 
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return

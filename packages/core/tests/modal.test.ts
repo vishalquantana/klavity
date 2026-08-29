@@ -586,13 +586,17 @@ describe('buildModal Screen tooltip positioning', () => {
 
     sharpBtn.dispatchEvent(new MouseEvent('mouseenter'))
 
-    const floatTip = ctrl.shadowRoot.querySelector('.kl-float-tip') as HTMLElement
-    expect(floatTip).not.toBeNull()
-    
-    // Center of button is 260, TIP_W / 2 is 114 -> preferred left is 146px.
-    // Clamped left boundary is modalRect.left (100) + PAD (8) = 108px.
-    // So left should be 146px.
-    expect(floatTip.style.left).toBe('146px')
+    // snap-share-hint: when a screen-share isn't granted yet (jsdom has no Permissions API → not granted), the
+    // hover surface is the actionable "Allow this tab" share hint (.kl-shp), positioned under the Snap button.
+    const shareHint = ctrl.shadowRoot.querySelector('.kl-shp') as HTMLElement
+    expect(shareHint).not.toBeNull()
+    expect(shareHint.classList.contains('kl-show')).toBe(true)
+    // Center of button is 260, TIP_W/2 is 144 (288px card) -> preferred left 116px; well within [8, 728].
+    expect(shareHint.style.left).toBe('116px')
+    // And it stays inside the viewport horizontally.
+    const leftPx = parseInt(shareHint.style.left, 10)
+    expect(leftPx).toBeGreaterThanOrEqual(8)
+    expect(leftPx + 288).toBeLessThanOrEqual(window.innerWidth)
 
     sharpBtnSpy.mockRestore()
     modalSpy.mockRestore()

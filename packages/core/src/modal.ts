@@ -7,6 +7,9 @@ import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
 import { klavityAttributionUrl } from './attribution'
+import { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
+// Re-export so the widget/launcher (which already imports from '@klavity/core/modal') can build the same hint.
+export { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
 import {
   clampZoom, wheelZoomFactor, zoomEasing, zoomTowardPan, visibleImageRect,
   minimapToImage, panForImageCenter, heroLogoHref,
@@ -687,6 +690,9 @@ export function buildModal(
   // and we chose to show the "couldn't capture — Snap" empty state instead of seeding a white image. Cleared
   // the moment any real shot lands so the empty state reverts to its normal copy.
   let blankCaptureHint = false
+  // snap-share-hint: set once a real screen-share (getDisplayMedia) capture succeeds — after that the reporter
+  // clearly knows the flow, so the "click Allow" hover hint on the Snap button suppresses itself for the session.
+  let shareCaptureSucceeded = false
   // KLA-412: "session mode" is on whenever the host wired onMinimize — it means this composer is backed
   // by a multi-page evidence session, so we show the minimize button + per-shot page labels and raise the
   // image cap so evidence can span more pages. Absent => behaves exactly as before.
@@ -1526,36 +1532,49 @@ export function buildModal(
     ft.setAttribute('role', 'tooltip')
     ft.innerHTML = infoPopSource.innerHTML
     shadowRoot.appendChild(ft)
-    const showTip = () => {
+    // snap-share-hint: the actionable "Allow this tab" preview, shown on hover when a screen-share hasn't been
+    // granted yet — so a first-timer knows the upcoming system prompt is safe and what to click. Positioned
+    // viewport-fixed (like the info tip) so overflow:hidden on the modal can't clip it.
+    const shp = createSharePickerHint({
+      title: 'One click to snap this tab',
+      steer: "When the dialog appears, just click Allow — we'll grab a pixel-perfect screenshot of the issue.",
+    })
+    shp.style.position = 'fixed'
+    shadowRoot.appendChild(shp)
+    // Cache the best-effort "already granted?" once (async, no persistent grant to poll per-hover) so the hover
+    // handler stays synchronous. Unresolved/unsupported → false → we show the actionable share hint.
+    let shareGranted = false
+    void shareCaptureLikelyGranted().then((g) => { shareGranted = g }).catch(() => {})
+
+    // Shared placement: sit the element under the Snap button, centered on it, flipping above when short.
+    const placeUnderSharp = (el: HTMLElement, width: number) => {
       const r = sharpBtn.getBoundingClientRect()
-      const TIP_W = Math.min(228, window.innerWidth - 16)
-      const PAD = 8
-      const vw = window.innerWidth, vh = window.innerHeight
-
-      // Horizontal: center over the Screen button, clamped to viewport only.
-      // The tooltip is position:fixed and lives outside the modal, so there is no overflow
-      // clipping — we must NOT constrain to modalRect (that would cause edge clipping).
-      const preferredLeft = (r.left + r.width / 2) - TIP_W / 2
-      const left = Math.max(PAD, Math.min(preferredLeft, vw - TIP_W - PAD))
-      ft.style.left = left + 'px'
-
-      ft.style.top = '-9999px'     // off-screen to measure height before final placement
-      ft.style.visibility = 'hidden'
-      ft.style.display = 'block'
-      const tipH = ft.offsetHeight
-      ft.style.display = ''
-      ft.style.visibility = ''
-
-      // Vertical: prefer below the button (Screen is near the top of the modal so there's
-      // more room below). Flip above if the viewport below is too short.
+      const TIP_W = Math.min(width, window.innerWidth - 16)
+      const PAD = 8, vw = window.innerWidth, vh = window.innerHeight
+      el.style.left = Math.max(PAD, Math.min((r.left + r.width / 2) - TIP_W / 2, vw - TIP_W - PAD)) + 'px'
+      el.style.top = '-9999px'; el.style.visibility = 'hidden'; el.style.display = 'block'
+      const tipH = el.offsetHeight
+      el.style.display = ''
       let top = r.bottom + 8
       if (top + tipH + PAD > vh) top = r.top - tipH - 8
-      top = Math.max(PAD, Math.min(top, vh - tipH - PAD))
-      ft.style.top = top + 'px'
-
-      ft.classList.add('kl-show')
+      el.style.top = Math.max(PAD, Math.min(top, vh - tipH - PAD)) + 'px'
+      el.style.visibility = ''
     }
-    const hideTip = () => ft.classList.remove('kl-show')
+
+    const showTip = () => {
+      // Prefer the actionable "click Allow" share hint; fall back to the plain "what Snap does" tip once a
+      // share has been granted this session or the browser reports display-capture already granted.
+      if (!shareCaptureSucceeded && !shareGranted) {
+        ft.classList.remove('kl-show')
+        placeUnderSharp(shp, 288)
+        shp.classList.add('kl-show')
+      } else {
+        shp.classList.remove('kl-show')
+        placeUnderSharp(ft, 228)
+        ft.classList.add('kl-show')
+      }
+    }
+    const hideTip = () => { ft.classList.remove('kl-show'); shp.classList.remove('kl-show') }
     sharpBtn.addEventListener('mouseenter', showTip)
     sharpBtn.addEventListener('mouseleave', hideTip)
     sharpBtn.addEventListener('focus', showTip)
@@ -1587,19 +1606,30 @@ export function buildModal(
       `<button type="button" class="kl-nudge-x" aria-label="Dismiss">${icon('x', { size: 13 })}</button></div>`
     shadowRoot.appendChild(el)
     screenNudgeEl = el
-    // Position like the hover tip (below the Screen button, flipping above when short on room).
-    const r = sharpBtn.getBoundingClientRect()
-    const TIP_W = Math.min(228, window.innerWidth - 16)
+    el.style.visibility = 'hidden'; el.style.left = '-9999px'; el.style.top = '-9999px'; el.style.display = 'block'
+    // Anchor snugly UNDER the Snap button, right-aligned to it so it visibly belongs to Snap. The composer is
+    // momentarily HIDDEN while a capture runs, so sharpBtn's rect can read 0x0 right after a decline — which
+    // used to strand this callout in the top-left corner. Position on a frame where the button is laid out
+    // again (bounded rAF retries) so it lands next to Snap.
     const PAD = 8
-    const vw = window.innerWidth, vh = window.innerHeight
-    el.style.left = Math.max(PAD, Math.min((r.left + r.width / 2) - TIP_W / 2, vw - TIP_W - PAD)) + 'px'
-    el.style.top = '-9999px'; el.style.visibility = 'hidden'; el.style.display = 'block'
-    const tipH = el.offsetHeight
-    el.style.display = ''; el.style.visibility = ''
-    let top = r.bottom + 8
-    if (top + tipH + PAD > vh) top = r.top - tipH - 8
-    el.style.top = Math.max(PAD, Math.min(top, vh - tipH - PAD)) + 'px'
-    el.classList.add('kl-show')
+    const TIP_W = Math.min(228, window.innerWidth - 16)
+    let placeTries = 0
+    const placeNudge = () => {
+      if (!screenNudgeEl || _closed) return
+      const r = sharpBtn.getBoundingClientRect()
+      if ((r.width === 0 || r.height === 0) && placeTries++ < 20) { requestAnimationFrame(placeNudge); return }
+      const vw = window.innerWidth, vh = window.innerHeight
+      el.style.visibility = 'hidden'; el.style.display = 'block'
+      const tipH = el.offsetHeight
+      // Right edge lines up with the Snap button's right edge; clamp inside the viewport.
+      el.style.left = Math.max(PAD, Math.min(r.right - TIP_W, vw - TIP_W - PAD)) + 'px'
+      let top = r.bottom + 8
+      if (top + tipH + PAD > vh) top = r.top - tipH - 8
+      el.style.top = Math.max(PAD, Math.min(top, vh - tipH - PAD)) + 'px'
+      el.style.visibility = ''
+      el.classList.add('kl-show')
+    }
+    requestAnimationFrame(placeNudge)
     ;(el.querySelector('.kl-nudge-x') as HTMLButtonElement | null)?.addEventListener('click', dismissScreenNudge)
     // Pulse the Screen button to steer the eye toward the one-tap manual retry (CSS-gated for reduced-motion).
     try { sharpBtn.classList.add('kl-pulse') } catch { /* no-op */ }
@@ -3158,7 +3188,7 @@ export function buildModal(
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
         // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
-        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true }
+        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true; shareCaptureSucceeded = true /* snap-share-hint: they've shared once → stop nudging */ }
       }
     } catch (err) {
       // A cancelled picker or a spent user-gesture rejects as NotAllowedError|AbortError — an expected outcome
