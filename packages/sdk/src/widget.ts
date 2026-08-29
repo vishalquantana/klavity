@@ -2192,7 +2192,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     .pill.ok .klogo{width:19px;height:19px;flex:0 0 auto;border-radius:5px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:11px}
     .pill.ok .tx .sub{opacity:1;color:#6b5f4e;font-size:12.5px;white-space:normal;margin-top:3px}
     .pill.ok .refc{font-family:ui-monospace,Menlo,monospace;background:#eadfce;padding:1px 6px;border-radius:5px;color:#4a3f2e}
-    .pill.ok a.open{color:#6366f1;font-weight:700}
+    .pill.ok a.open{color:#6366f1;font-weight:700;white-space:nowrap}
     .pill.ok .x{color:#a89a84;align-self:flex-start}
     .pill.ok .x:hover{color:#5a4f3e}
     .pill.ok .prog{background:rgba(0,0,0,.07);border-radius:999px}
