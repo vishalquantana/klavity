@@ -152,11 +152,13 @@ export type CaptureQuality = 'real-pixel' | 'rendered' | 'wireframe'
  * that the DOM render came back blank or only partial (cross-origin images dropped to white gaps), so the
  * composer should nudge the user toward the Screen button — the sharp capture stays a user-gesture click.
  */
-export type CaptureResult = string | { dataUrl: string; quality?: CaptureQuality; suggestSharp?: boolean }
+export type CaptureResult = string | { dataUrl: string; quality?: CaptureQuality; suggestSharp?: boolean; blank?: boolean }
 
-/** Normalise a {@link CaptureResult} (raw dataUrl or { dataUrl, quality, suggestSharp }) to a uniform shape. */
-function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: CaptureQuality; suggestSharp?: boolean } {
-  return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: r.suggestSharp }
+/** Normalise a {@link CaptureResult} (raw dataUrl or { dataUrl, quality, suggestSharp, blank }) to a uniform shape.
+ * `blank` = the DOM render came back essentially empty/white (detected in-browser). The auto-capture-on-open
+ * path uses it to skip seeding a useless white image and instead show the "couldn't capture — Snap" empty state. */
+function normalizeCapture(r: CaptureResult): { dataUrl: string; quality?: CaptureQuality; suggestSharp?: boolean; blank?: boolean } {
+  return typeof r === 'string' ? { dataUrl: r } : { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: r.suggestSharp, blank: r.blank }
 }
 
 /**
@@ -681,6 +683,10 @@ export function buildModal(
   let screenshotCapture: (ShotCapture | undefined)[] = []
   // Set once the reporter dismisses the sharp-capture callout so it never nags again this session.
   let sharpHintDismissed = false
+  // KLAVITYKLA-473 follow-up: true when the auto-capture came back BLANK (declined share / unrenderable page)
+  // and we chose to show the "couldn't capture — Snap" empty state instead of seeding a white image. Cleared
+  // the moment any real shot lands so the empty state reverts to its normal copy.
+  let blankCaptureHint = false
   // KLA-412: "session mode" is on whenever the host wired onMinimize — it means this composer is backed
   // by a multi-page evidence session, so we show the minimize button + per-shot page labels and raise the
   // image cap so evidence can span more pages. Absent => behaves exactly as before.
@@ -1015,6 +1021,11 @@ export function buildModal(
     #klavity-sharp.kl-suggest{color:var(--kl-accent);background:color-mix(in srgb,var(--kl-chip) 70%,var(--kl-accent) 30%);animation:kl-sharp-pulse 1.7s ease-out infinite;}
     @media (prefers-reduced-motion: reduce){#klavity-sharp.kl-suggest{animation:none;}.klavity-sharphint .kl-sh-use{transition:none;}}
     .klavity-thumb{position:relative;flex-shrink:0;}
+    /* The image + its overlay badges (remove/markup/quality) live in this fixed-size media box so the
+       absolutely-positioned badges anchor to the IMAGE, not the whole thumb column. Without it the markup
+       pencil (bottom:4px) rode the bottom of the taller wrap and overlapped the "Retake sharp" pill below. */
+    .klavity-thumb-media{position:relative;width:104px;}
+    .klavity-thumb.kl-tall .klavity-thumb-media{width:68px;}
     /* KLAVITYKLA-509: capture-in-progress skeleton tile — same footprint as a real thumbnail so the strip
        doesn't jump when the shot swaps in. Pulses (kl-cap-pulse) unless reduced-motion is requested. */
     .kl-thumb-skel{width:104px;height:72px;border-radius:8px;background:var(--kl-chip);outline:1px solid var(--kl-img-outline);outline-offset:-1px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:10.5px;font-weight:600;color:var(--kl-muted);}
@@ -1042,7 +1053,7 @@ export function buildModal(
     .klavity-qb.kl-q-wireframe{color:#8a5a00;background:#fef3c7;border-color:#f59e0b;}
     /* "Retake sharp" affordance — a full-width pill under the degraded thumbnail (rendered/wireframe).
        Uses the accent so it reads as the fix. Hidden when no onRetakeSharp host callback is wired. */
-    .klavity-retake{margin-top:5px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:10px;font-weight:700;line-height:1;padding:5px 6px;border:none;border-radius:7px;background:color-mix(in srgb,var(--kl-chip) 70%,var(--kl-accent) 30%);color:var(--kl-accent);cursor:pointer;transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,box-shadow .15s ease;will-change:transform;}
+    .klavity-retake{margin-top:5px;width:100%;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:10px;font-weight:700;line-height:1;padding:5px 6px;border:none;border-radius:7px;background:color-mix(in srgb,var(--kl-chip) 70%,var(--kl-accent) 30%);color:var(--kl-accent);cursor:pointer;transition:transform .15s cubic-bezier(.2,.7,.2,1),background .15s ease,box-shadow .15s ease;will-change:transform;}
     .klavity-retake svg{display:block;width:11px;height:11px;}
     .klavity-retake:hover{transform:var(--kl-lift);background:color-mix(in srgb,var(--kl-chip) 55%,var(--kl-accent) 45%);box-shadow:0 3px 10px color-mix(in srgb,var(--kl-accent) 26%,transparent);}
     .klavity-retake:active{transform:var(--kl-press);}
@@ -1408,7 +1419,7 @@ export function buildModal(
     <div class="kl-hero" id="klavity-hero">
       <div class="kl-hero-tools" id="klavity-hero-tools"></div>
       <div class="kl-hero-stage" id="klavity-hero-stage">
-        <div class="kl-hero-empty" id="klavity-hero-empty">${icon('image', { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>
+        <div class="kl-hero-empty" id="klavity-hero-empty">${icon('image', { size: 34 })}<span id="klavity-hero-empty-txt">Capture or upload a screenshot to start marking it up</span></div>
       </div>
       <div class="klavity-strip" id="klavity-strip"></div>
       ${callbacks.onCaptureSharp ? `<div class="klavity-sharphint" id="klavity-sharphint" role="status" aria-live="polite" hidden></div>` : ''}
@@ -1572,7 +1583,7 @@ export function buildModal(
     el.setAttribute('role', 'status')
     el.setAttribute('aria-live', 'polite')
     el.innerHTML =
-      '<div class="kl-nudge-row"><span><b>Get pixel-perfect screenshots by sharing</b> — try it now.</span>' +
+      '<div class="kl-nudge-row"><span><b>This screenshot may be missing images or detail.</b> Share your screen for a pixel-perfect shot.</span>' +
       `<button type="button" class="kl-nudge-x" aria-label="Dismiss">${icon('x', { size: 13 })}</button></div>`
     shadowRoot.appendChild(el)
     screenNudgeEl = el
@@ -1689,7 +1700,12 @@ export function buildModal(
       mk.innerHTML = icon('pencil', { size: 13 })
       mk.title = 'Mark up'
       mk.addEventListener('click', (e) => { e.stopPropagation(); openAnnotator(i) })
-      wrap.append(img, rm, mk)
+      // Media box holds the image + its overlay badges so those absolutely-positioned badges anchor to the
+      // image, not the taller thumb column (which also carries the "Retake sharp" pill + notes below).
+      const media = document.createElement('div')
+      media.className = 'klavity-thumb-media'
+      media.append(img, rm, mk)
+      wrap.append(media)
 
       // JTBD 1.9: capture-quality badge + guided "Retake sharp". A shot with a known quality tag gets a
       // small pill (sharp/rendered/wireframe); a DEGRADED shot (rendered/wireframe) also gets a full-width
@@ -1701,10 +1717,10 @@ export function buildModal(
         badge.className = 'klavity-qb kl-q-' + quality
         badge.title =
           quality === 'real-pixel' ? 'Pixel-perfect capture (every image included)'
-          : quality === 'wireframe' ? 'Wireframe fallback — layout only, images not captured. Retake for a sharp shot.'
-          : 'Rendered capture — some cross-origin images may be missing. Retake for a sharp shot.'
+          : quality === 'wireframe' ? 'Wireframe fallback — layout only, images not captured. This shot may contain defects; share your screen with Snap (or "Retake sharp") for a pixel-perfect capture.'
+          : 'Rendered screenshot — may be missing images or detail. This shot can contain defects; share your screen with Snap (or "Retake sharp") for a pixel-perfect capture.'
         badge.innerHTML = icon(meta.iconName, { size: 10 }) + '<span class="klavity-qb-t">' + escHtml(meta.label) + '</span>'
-        wrap.appendChild(badge)
+        media.appendChild(badge)
 
         if (meta.degraded && callbacks.onRetakeSharp) {
           const retake = document.createElement('button')
@@ -1883,7 +1899,7 @@ export function buildModal(
         const txt = document.createElement('span')
         txt.className = 'kl-sh-txt'
         // ASCII-only copy, mirroring the approved mockup.
-        txt.textContent = "Some areas can't be captured this way (embedded frames or cross-origin images) - click Snap for a pixel-perfect shot."
+        txt.textContent = "This screenshot may be missing images or detail. Share your screen with Snap for a pixel-perfect shot."
         const use = document.createElement('button')
         use.type = 'button'
         use.className = 'kl-sh-use'
@@ -1907,6 +1923,27 @@ export function buildModal(
     }
   }
 
+  // KLAVITYKLA-473 follow-up: when the auto-capture-on-open comes back BLANK (e.g. the reporter DECLINED the
+  // tab-share and the fallback DOM render was essentially white — common on dark/app-shell pages), we do NOT
+  // seed the useless white image into the hero. Instead we leave the stage empty and swap the empty-state copy
+  // to steer the reporter to Snap (share screen) or an upload. Non-destructive: any later real capture hides
+  // the empty state as usual (updateStrip only shows it while screenshots is empty).
+  function showBlankCaptureEmptyState() {
+    blankCaptureHint = true
+    capturing = false
+    updateStrip() // re-renders the empty stage via renderHeroEmpty(), which reads blankCaptureHint for its copy
+  }
+  // The empty-state line under the hero image. Steers to Snap after a blank auto-capture; otherwise the
+  // neutral "capture or upload" prompt.
+  function emptyStateText(): string {
+    if (blankCaptureHint) {
+      return callbacks.onCaptureSharp
+        ? "Couldn't grab this page automatically — click Snap to share your tab for a pixel-perfect shot, or attach an image."
+        : "Couldn't grab this page automatically — try Full Page, or attach an image."
+    }
+    return 'Capture or upload a screenshot to start marking it up'
+  }
+
   // Surface a problem in the shared error line (used for upload + submit failures alike).
   function showError(msg: string) {
     const errEl = shadowRoot.getElementById('klavity-err')
@@ -1925,6 +1962,7 @@ export function buildModal(
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
+    blankCaptureHint = false // a real shot landed → drop the "couldn't capture" empty-state steer
     screenshots.push(dataUrl)
     // Kick off compression immediately — by submit time the Promise is settled (user was typing).
     screenshotCompressed.push(callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl))
@@ -3041,8 +3079,11 @@ export function buildModal(
     if (!callbacks.onCaptureViewport) return false
     const restore = maskOn ? maskNumbers(document.body) : null
     try {
-      const { dataUrl } = normalizeCapture(await callbacks.onCaptureViewport())
-      if (dataUrl) {
+      const { dataUrl, blank } = normalizeCapture(await callbacks.onCaptureViewport())
+      if (blank && screenshots.length === 0) {
+        // Declined-share / unrenderable page → a white PNG. Don't seed it; show the steer-to-Snap empty state.
+        showBlankCaptureEmptyState()
+      } else if (dataUrl) {
         capturing = false // a real preview is now shown — clear the "Capturing…" skeleton
         addScreenshot(dataUrl, 'rendered', undefined, true, false)
         if (activeBtn) setActiveCapture(activeBtn)
@@ -3397,7 +3438,7 @@ export function buildModal(
     const stage = shadowRoot.getElementById('klavity-hero-stage')
     const tools = shadowRoot.getElementById('klavity-hero-tools')
     if (tools) tools.innerHTML = ''
-    if (stage) stage.innerHTML = `<div class="kl-hero-empty">${icon('image', { size: 34 })}<span>Capture or upload a screenshot to start marking it up</span></div>`
+    if (stage) stage.innerHTML = `<div class="kl-hero-empty" id="klavity-hero-empty"><span class="kl-hero-empty-ic">${icon('image', { size: 34 })}</span><span id="klavity-hero-empty-txt">${escHtml(emptyStateText())}</span></div>`
     detachHeroKeys()
   }
 
@@ -4309,7 +4350,7 @@ export function buildModal(
           capturing = true; updateStrip()
           if (callbacks.onCaptureViewport) { captureViewportOnly(null).catch(() => { capturing = false; updateStrip() }); return }
           callbacks.onCaptureFull()
-            .then(shot => { const { dataUrl, quality, suggestSharp } = normalizeCapture(shot); capturing = false; addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn) })
+            .then(shot => { const { dataUrl, quality, suggestSharp, blank } = normalizeCapture(shot); capturing = false; if (blank && screenshots.length === 0) { showBlankCaptureEmptyState(); return } addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); setActiveCapture(fullBtn) })
             .catch(() => { capturing = false; updateStrip() })
         })()
         return controller
@@ -4326,8 +4367,9 @@ export function buildModal(
         }
         callbacks.onCaptureFull()
           .then(shot => {
-            const { dataUrl, quality, suggestSharp } = normalizeCapture(shot)
+            const { dataUrl, quality, suggestSharp, blank } = normalizeCapture(shot)
             capturing = false
+            if (blank && screenshots.length === 0) { showBlankCaptureEmptyState(); return }
             addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp)
             setActiveCapture(fullBtn)
           })

@@ -621,14 +621,16 @@ async function captureSharpViewport(): Promise<string> {
 // button; the sharp getDisplayMedia capture then fires ONLY from that button's real user-gesture click.
 function withSharpSuggestion(
   r: { dataUrl: string; quality: "rendered" | "wireframe"; blank: boolean; partial?: boolean },
-): { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean } {
+): { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean; blank: boolean } {
   // KLA-587: also steer to Screen when the page embeds a cross-origin iframe. The DOM render provably can't
   // capture the frame's pixels, yet neither the blank nor the partial check flags it (the surrounding page
   // rendered fine, so the PNG is content-rich) — so we detect the uncapturable embed directly. Screen
   // (getDisplayMedia) grabs real tab pixels including the frame. Still a user-gesture click; this only nudges.
   // Only worth suggesting the sharp path when the browser can actually do it (hidden on iOS Safari).
   const suggest = (!!(r.blank || r.partial) || hasUncapturableEmbeds()) && sharpCaptureSupported()
-  return { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: suggest }
+  // Pass `blank` through so the composer can show the "couldn't capture — Snap" empty state instead of seeding
+  // a useless white image on the auto-capture-on-open path (e.g. after the reporter declines the tab share).
+  return { dataUrl: r.dataUrl, quality: r.quality, suggestSharp: suggest, blank: !!r.blank }
 }
 
 // Active watch-engine controller — torn down when Sims are undeployed.
@@ -1148,6 +1150,61 @@ async function mount() {
   }
   paintLauncher()
   mq.addEventListener('change', paintLauncher)
+
+  // ── First-run FAB intro (KLA): the launcher is an unlabelled lightbulb, so a first-time visitor can't tell
+  // what it is. Show a ONE-TIME popover explaining it, anchored above the button. Stored in localStorage so it
+  // appears once per browser and never nags again. Skipped on our own first-party pages (the widget is only
+  // mounted there for dogfooding), when the launcher is hidden, or when storage already says it's seen.
+  const INTRO_SEEN_KEY = "klavity_fab_intro_seen_v1"
+  const introSeen = () => { try { return localStorage.getItem(INTRO_SEEN_KEY) === "1" } catch { return false } }
+  const markIntroSeen = () => { try { localStorage.setItem(INTRO_SEEN_KEY, "1") } catch { /* private mode */ } }
+  let introEl: HTMLElement | null = null
+  function dismissIntro() {
+    markIntroSeen()
+    if (!introEl) return
+    const el = introEl; introEl = null
+    el.style.opacity = "0"; el.style.transform = "translateY(6px)"
+    setTimeout(() => { try { el.remove() } catch { /* already gone */ } }, 200)
+  }
+  function showFabIntro() {
+    if (firstParty || introSeen() || launcherMode === "hidden" || introEl) return
+    const el = document.createElement("div")
+    introEl = el
+    el.setAttribute("role", "status")
+    el.style.cssText = "position:absolute;right:0;bottom:56px;width:250px;max-width:calc(100vw - 36px);box-sizing:border-box;background:#fff;color:#1f2430;border:1px solid #e6e3f5;border-radius:14px;padding:13px 14px;box-shadow:0 18px 40px -12px rgba(40,30,80,.4);font-family:system-ui,-apple-system,sans-serif;pointer-events:auto;opacity:0;transform:translateY(6px);transition:opacity .22s ease,transform .22s cubic-bezier(.2,.7,.2,1)"
+    const head = document.createElement("div")
+    head.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px"
+    const chip = document.createElement("span")
+    chip.textContent = "K"
+    chip.style.cssText = "flex:0 0 auto;width:22px;height:22px;border-radius:6px;background:#6366f1;color:#fff;display:inline-grid;place-items:center;font-weight:800;font-size:12px"
+    const h = document.createElement("b")
+    h.textContent = "Klavity — your bug-reporting assistant"
+    h.style.cssText = "font-size:13.5px;font-weight:800;letter-spacing:-.01em;line-height:1.25"
+    head.append(chip, h)
+    const p = document.createElement("div")
+    p.textContent = "Spot something broken, or have an idea? Click here (or right-click anywhere) to snap a screenshot and send it over — so we can improve faster."
+    p.style.cssText = "font-size:12.5px;line-height:1.5;color:#5b6270;margin-bottom:11px"
+    const btn = document.createElement("button")
+    btn.type = "button"
+    btn.textContent = "Got it"
+    btn.style.cssText = "display:block;margin-left:auto;border:0;border-radius:8px;padding:7px 14px;background:#6366f1;color:#fff;font-weight:700;font-size:12.5px;cursor:pointer"
+    btn.addEventListener("click", dismissIntro)
+    const tail = document.createElement("span")
+    tail.setAttribute("aria-hidden", "true")
+    tail.style.cssText = "position:absolute;right:16px;bottom:-6px;width:12px;height:12px;background:#fff;border-right:1px solid #e6e3f5;border-bottom:1px solid #e6e3f5;transform:rotate(45deg)"
+    el.append(head, p, btn, tail)
+    // reportDock is position:static inside the fixed launcher host, so this absolute popover resolves to the
+    // host box — sitting directly above the FAB, right-aligned to it. reportDock is pointer-events:none but the
+    // popover re-enables its own so "Got it" stays clickable.
+    reportDock.appendChild(el)
+    requestAnimationFrame(() => { el.style.opacity = "1"; el.style.transform = "translateY(0)" })
+    // Dismiss the moment the visitor actually opens the launcher, and auto-hide so it never lingers.
+    reportBtn.addEventListener("click", dismissIntro, { once: true })
+    setTimeout(() => dismissIntro(), 12000)
+  }
+  // Wait for the (non-blocking) config to settle so launcherMode is final before deciding to show it.
+  try { Promise.resolve(configReady).then(() => setTimeout(() => { try { showFabIntro() } catch { /* non-fatal */ } }, 800)).catch(() => {}) } catch { /* non-fatal */ }
+
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
