@@ -2863,14 +2863,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <span style="font-size:13px">Notify on every new bug</span>
           </label>
           <p style="font-size:12px;opacity:.7;margin-top:-2px">Master switch. Turn off to silence all bug notifications for this project.</p>
-          <label>Slack incoming webhook
-            <input type="url" id="kl-slack-webhook" placeholder="https://hooks.slack.com/services/...">
+          <label style="display:block;font-size:13px;font-weight:600;margin:16px 0 5px">Slack incoming webhook
+            <input type="url" id="kl-slack-webhook" placeholder="https://hooks.slack.com/services/..." style="display:block;width:100%;margin-top:5px;font-weight:400">
           </label>
-          <p id="kl-slack-webhook-hint" style="font-size:12px;opacity:.7;margin-top:-4px">Paste a Slack incoming-webhook URL to post each new bug to a channel. Leave blank to keep the current one; the saved URL is never shown back.</p>
-          <label>Email these people on every bug
-            <input type="text" id="kl-bug-emails" placeholder="alerts@company.com, oncall@company.com">
+          <p id="kl-slack-webhook-hint" style="font-size:12px;opacity:.7;margin:5px 0 0">Paste a Slack incoming-webhook URL to post each new bug to a channel. Leave blank to keep the current one; the saved URL is never shown back.</p>
+          <label style="display:block;font-size:13px;font-weight:600;margin:16px 0 5px">Email these people on every bug
+            <input type="text" id="kl-bug-emails" placeholder="alerts@company.com, oncall@company.com" style="display:block;width:100%;margin-top:5px;font-weight:400">
           </label>
-          <p style="font-size:12px;opacity:.7;margin-top:-4px">Comma-separated. Leave blank to alert the account owner and admins instead.</p>
+          <p style="font-size:12px;opacity:.7;margin:5px 0 0">Comma-separated. Leave blank to alert the account owner and admins instead.</p>
         </div>
         </div><!-- /.wp-config -->
         <div class="wp-preview">
