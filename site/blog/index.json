@@ -481,5 +481,12 @@
     "excerpt": "A test case is a documented set of steps, inputs, and expected results that verifies one specific behavior of your software. Here's how to write one.",
     "category": "Learn",
     "date": "2026-08-29"
+  },
+  {
+    "slug": "positive-vs-negative-testing-difference",
+    "title": "Positive vs. Negative Testing: What's the Difference?",
+    "excerpt": "Positive testing proves a feature works with valid input. Negative testing proves it fails safely with invalid input. Here's how to use both.",
+    "category": "Compare",
+    "date": "2026-08-30"
   }
 ]
