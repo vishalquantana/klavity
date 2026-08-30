@@ -12827,54 +12827,49 @@ function __loadRrwebPlayer() {
 // its status into the Walk modal's note and mounted the player into a #replayPlayerHost that
 // does not exist there — every ticket "Session replay" click failed with "Could not start the
 // player". Keep the ticket player's ids prefixed and unique.
+// KLA replay-csp: the ticket "Session replay" now renders in a same-origin <iframe src="/replay-frame">
+// whose response carries a RELAXED CSP, so the recorded page's cross-origin CSS/fonts load and the replay
+// is styled instead of a blank white box (see the /replay-frame route in server.ts). The frame posts its
+// status/meta back here for the note. This modal chrome was also dark-on-dark (illegible title/note); it's
+// now a light card with readable contrast.
 function __ensureReplayModal() {
   var bg = document.getElementById("fbReplayBg")
   if (bg) return bg
   bg = document.createElement("div")
   bg.id = "fbReplayBg"
   bg.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:2147483646"
-  bg.innerHTML = '<div style="background:var(--ink-1,#15110d);border:1px solid var(--line,#574f45);border-radius:14px;padding:18px;max-width:980px;width:94%;max-height:92vh;overflow:auto">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
-    + '<h3 style="margin:0;font-size:15px">Session replay</h3>'
-    + '<button id="fbReplayClose" aria-label="Close" style="background:none;border:0;color:inherit;font-size:22px;cursor:pointer;line-height:1">&times;</button></div>'
-    + '<div id="fbReplayPlayerHost"></div>'
-    + '<div id="fbReplayNote" class="muted" style="font-size:12px;margin-top:10px"></div></div>'
+  bg.innerHTML = '<div style="background:#fff;color:#1c1917;border:1px solid #e7e2d8;border-radius:14px;padding:16px 16px 14px;max-width:1024px;width:96%;max-height:92vh;overflow:auto;box-shadow:0 30px 80px -20px rgba(0,0,0,.55)">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    + '<h3 style="margin:0;font-size:15px;font-weight:700;color:#1c1917">Session replay</h3>'
+    + '<button id="fbReplayClose" aria-label="Close" style="background:none;border:0;color:#78716c;font-size:24px;cursor:pointer;line-height:1">&times;</button></div>'
+    + '<iframe id="fbReplayFrame" title="Session replay" style="display:block;width:100%;height:64vh;border:1px solid #e7e2d8;border-radius:10px;background:#fff"></iframe>'
+    + '<div id="fbReplayNote" style="font-size:12px;margin-top:10px;color:#57534e">&nbsp;</div></div>'
   document.body.appendChild(bg)
   function close(){ bg.style.display = "none"; __destroyReplay() }
   bg.querySelector("#fbReplayClose").onclick = close
   bg.addEventListener("click", function(e){ if (e.target === bg) close() })
   document.addEventListener("keydown", function(e){ if (e.key === "Escape" && bg.style.display !== "none") close() })
+  // Status/meta from the replay frame → the note line (contrast-fixed). Same-origin messages only.
+  window.addEventListener("message", function(e){
+    if (e.origin !== location.origin) return
+    var m = e.data; if (!m || m.source !== "klv-replay") return
+    var note = document.getElementById("fbReplayNote"); if (!note) return
+    if (m.status === "ok") note.textContent = (m.nEvents || "") + " events" + (m.trimmed ? " · trimmed to the most recent window" : "") + " · recorded just before the report was filed"
+    else if (m.status === "none") note.textContent = "No replay was recorded for this report."
+    else if (m.status === "few") note.textContent = "Too few frames to scrub."
+    else if (m.status === "error") note.textContent = "Couldn’t load the replay."
+  })
   return bg
 }
 function __destroyReplay() {
-  try { if (__replayState.player && __replayState.player.$destroy) __replayState.player.$destroy() } catch(e){}
-  __replayState.player = null
-  var host = document.getElementById("fbReplayPlayerHost"); if (host) host.innerHTML = ""
+  var frame = document.getElementById("fbReplayFrame"); if (frame) frame.src = "about:blank"
 }
-async function openReplay(feedbackId) {
+function openReplay(feedbackId) {
   var bg = __ensureReplayModal()
   bg.style.display = "flex"
-  var note = document.getElementById("fbReplayNote")
-  __destroyReplay()
-  note.textContent = "Loading replay…"
-  try { await __loadRrwebPlayer() } catch(e){ note.textContent = "Couldn't load the replay player."; return }
-  var r
-  try { r = await fetch("/api/feedback/" + encodeURIComponent(feedbackId) + "/replay") }
-  catch(e){ note.textContent = "Network error loading replay."; return }
-  if (r.status === 404){ note.textContent = "No replay was recorded for this report."; return }
-  if (!r.ok){ note.textContent = "Couldn't load the replay."; return }
-  var d = await r.json()
-  var events = (d.events || [])
-  if (events.length < 2){ note.textContent = "Too few frames to scrub."; return }
-  try {
-    var PlayerClass = (window.rrwebPlayer && (window.rrwebPlayer.default || window.rrwebPlayer.Player))
-    if (!PlayerClass) throw new Error("rrweb-player not loaded")
-    __replayState.player = new PlayerClass({
-      target: document.getElementById("fbReplayPlayerHost"),
-      props: { events: events, width: 900, autoPlay: true, showController: true },
-    })
-    note.textContent = (d.nEvents || events.length) + " events" + (d.trimmed ? " · trimmed to the most recent window" : "") + " · recorded just before the report was filed"
-  } catch(e){ note.textContent = "Could not start the player: " + (e && e.message ? e.message : "unknown error") }
+  var note = document.getElementById("fbReplayNote"); if (note) note.textContent = "Loading replay…"
+  var frame = document.getElementById("fbReplayFrame")
+  if (frame) frame.src = "/replay-frame?fb=" + encodeURIComponent(feedbackId)
 }
 
 // ===== Bugs by page (in-app QA mode) =====
