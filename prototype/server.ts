@@ -11763,7 +11763,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -12897,6 +12897,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (!ok) return json({ error: "Update failed." }, 500)
             return json({ ok: true, matchId })
           }
+        }
+
+        // GET /api/projects/:id/tickets/rev — cheap change-token for LIVE board refresh. Returns a tiny
+        // signature (row count + newest created_at + newest updated_at across the project's feedback) that
+        // changes whenever a ticket is filed OR any ticket's status/fields change. The dashboard polls this
+        // ~15s and only refetches the full board when the signature differs — so a report filed from the
+        // embedded widget appears WITHOUT a manual reload, at a fraction of the cost of re-listing the board
+        // every tick. Member-gated (same access as the list); no row bodies → a few-byte payload.
+        if (req.method === "GET" && sub === "/tickets/rev") {
+          const r = await db.execute({
+            sql: "SELECT COUNT(*) AS c, COALESCE(MAX(created_at),0) AS cr, COALESCE(MAX(updated_at),0) AS u FROM feedback WHERE project_id=?",
+            args: [proj.id],
+          })
+          const row: any = r.rows[0] || {}
+          const rev = String(row.c ?? 0) + ":" + String(row.cr ?? 0) + ":" + String(row.u ?? 0)
+          return json({ rev })
         }
 
         // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)

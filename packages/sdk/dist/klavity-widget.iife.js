@@ -743,7 +743,7 @@ ${i}`)}return(e.suggestedSeverity||e.suggestedPriority)&&t.push(`*Severity: ${e.
       </div>`:""}
       ${t.consoleAttachToggle?`<div class="klavity-conlog" id="klavity-conlog">
         <label class="kl-conlog-lbl" title="Attach this page's captured console logs to the report">
-          <input type="checkbox" id="klavity-conlog-cb">${Y("file-text",{size:14})}<span>Attach console logs</span>
+          <input type="checkbox" id="klavity-conlog-cb" checked>${Y("file-text",{size:14})}<span>Attach console logs</span>
         </label>
       </div>`:""}
       <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>

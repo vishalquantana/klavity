@@ -2357,7 +2357,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <!-- First-catch celebration — one-time dismissible callout when the first Sim reaction / finding appears -->
   <div class="first-report hide" id="firstReportCallout" data-view="overview" role="status">
     <span class="fr-ic" data-ki="sparkles"></span>
-    <span class="fr-txt"><b>A customer just found something before your users would.</b> Review it in <a href="#triage" onclick="setView('triage');return false">Sim Reports</a> — accept it as a bug or dismiss it.</span>
+    <span class="fr-txt"><b>A Sim just found something before your users would.</b> Review it in <a href="#triage" onclick="setView('triage');return false">Sim Reports</a> — accept it as a bug or dismiss it.</span>
     <button class="fr-x" id="firstReportDismiss" type="button" aria-label="Dismiss first-report celebration"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /> <path d="m6 6 12 12" /></svg></button>
   </div>
 
@@ -3792,6 +3792,35 @@ function retickAgo() {
     if (ts) el.textContent = ago(ts)
   })
 }
+// KLA live-board: a report filed from the embedded widget (or by a teammate) must appear on an OPEN
+// Tickets kanban WITHOUT a manual reload. The board renders from an in-memory cache (_tktBoardTickets)
+// that the 25s dashboard poll does NOT revalidate, so it went stale between reloads. This lightweight
+// ~15s change-token poll closes that gap the cheap way (best practice for a mostly-idle board vs. an
+// SSE stream): hit the tiny GET /tickets/rev signature, and only refetch the full board when it differs.
+// Guards: only while the board (kanban) view is the active, idle, visible surface — never during a
+// mutation, an open ticket detail / dedicated page, or a hidden tab.
+async function boardRevTick() {
+  try {
+    if (document.hidden || window.__klavMutating > 0 || window.__klavTktPageOpen) return
+    if (document.body.getAttribute("data-view") !== "tickets" || _tktView !== "board") return
+    if (_tktBoardState.loading) return
+    const pid = curProjId()
+    if (!pid) return
+    const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/rev")
+    if (!r || !r.ok) return
+    const d = await r.json().catch(() => null)
+    const rev = d && d.rev
+    if (rev == null) return
+    // First sample for this project (fresh entry / project switch) → just record; the board is already current.
+    if (_tktBoardRevPid !== pid) { _tktBoardRevPid = pid; _tktBoardRev = rev; return }
+    if (rev !== _tktBoardRev) {
+      _tktBoardRev = rev
+      // fetchAndRenderTktBoard silently revalidates a warm cache (no 'Loading…' flash) and repaints the
+      // kanban from the fresh set — so the new/changed ticket shows up in place.
+      if (typeof fetchAndRenderTktBoard === "function") fetchAndRenderTktBoard()
+    }
+  } catch (e) { /* network blip — retry next tick */ }
+}
 ;(function initDashLiveness() {
   if (window.__klavLivenessInit) return
   window.__klavLivenessInit = true
@@ -3799,6 +3828,11 @@ function retickAgo() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) dashLiveTick() })
   setInterval(dashLiveTick, 25000)   // guarded background poll while visible
   setInterval(retickAgo, 45000)      // live relative-time re-tick
+  // KLA live-board: cheap board change-token poll (see boardRevTick) + fire on focus/tab-visible so a
+  // just-filed ticket surfaces near-instantly when the user returns to the tab.
+  setInterval(boardRevTick, 15000)
+  window.addEventListener("focus", boardRevTick)
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) boardRevTick() })
 })()
 
 // KLA-200: if the URL contains ?ticket=<id>, switch to the Tickets view and open that ticket's detail.
@@ -8956,6 +8990,11 @@ let _tktBoardTickets = []
 // source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
 // (no 'Loading…' wipe, no round-trip). This tracks which project the cache belongs to.
 let _tktBoardProjId = null
+// KLA live-board: last board change-token seen from GET /tickets/rev, plus the project it belongs to.
+// The ~15s poll compares the server's cheap signature to this; a mismatch means a ticket was filed or
+// edited elsewhere (e.g. from the embedded widget), so we silently revalidate the board WITHOUT a reload.
+let _tktBoardRev = null
+let _tktBoardRevPid = null
 // JTBD 2.14: board selection UI sync — reassigned each render (see renderTicketsKanban).
 let syncKbSelectionUi = () => {}
 let _tktView = "board" // "list" | "board"

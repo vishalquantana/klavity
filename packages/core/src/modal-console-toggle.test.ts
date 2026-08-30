@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// #638: console logs are DEFAULT OFF, gated behind a per-report "Attach console logs" toggle in the composer.
-// These tests lock in: the toggle renders only when the host opts in (callbacks.consoleAttachToggle), it is
-// UNCHECKED by default, and the submit payload's attachConsole reflects the checkbox state (false by default,
-// true only when the reporter flips it on). When the host does NOT opt in, attachConsole is omitted entirely.
+// #638 + 2026-08-30 founder ask: console logs ride reports BY DEFAULT now, gated behind a per-report
+// "Attach console logs" toggle that is CHECKED (ON) by default. These tests lock in: the toggle renders only
+// when the host opts in (callbacks.consoleAttachToggle), it is CHECKED by default, and the submit payload's
+// attachConsole reflects the checkbox state (true by default, false when the reporter unchecks it). When the
+// host does NOT opt in, attachConsole is omitted entirely.
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { buildModal } from "./modal"
@@ -42,12 +43,12 @@ async function submit(shadow: ShadowRoot, text: string) {
 beforeEach(() => { document.body.innerHTML = "" })
 
 describe("#638 console-logs attach toggle", () => {
-  it("renders the toggle (unchecked) only when the host opts in", () => {
+  it("renders the toggle (checked) only when the host opts in", () => {
     const shadow = build(vi.fn().mockResolvedValue({ issueKey: "KLA-1", issueUrl: "" }), true)
     const cb = shadow.getElementById("klavity-conlog-cb") as HTMLInputElement | null
     expect(cb).not.toBeNull()
-    // DEFAULT OFF — the checkbox starts unchecked.
-    expect(cb!.checked).toBe(false)
+    // DEFAULT ON — the checkbox starts checked so console logs ride the report unless withheld.
+    expect(cb!.checked).toBe(true)
     expect((shadow.getElementById("klavity-conlog") as HTMLElement).textContent || "").toContain("Attach console logs")
   })
 
@@ -56,22 +57,22 @@ describe("#638 console-logs attach toggle", () => {
     expect(shadow.getElementById("klavity-conlog-cb")).toBeNull()
   })
 
-  it("DEFAULT OFF: submit sends attachConsole=false when the toggle is untouched", async () => {
+  it("DEFAULT ON: submit sends attachConsole=true when the toggle is untouched", async () => {
     const onSubmit = vi.fn().mockResolvedValue({ issueKey: "KLA-1", issueUrl: "" })
     const shadow = build(onSubmit, true)
-    await submit(shadow, "something is broken on this page")
-    expect(onSubmit).toHaveBeenCalled()
-    expect(onSubmit.mock.calls[0][0].attachConsole).toBe(false)
-  })
-
-  it("OPT IN: checking the toggle sends attachConsole=true", async () => {
-    const onSubmit = vi.fn().mockResolvedValue({ issueKey: "KLA-1", issueUrl: "" })
-    const shadow = build(onSubmit, true)
-    const cb = shadow.getElementById("klavity-conlog-cb") as HTMLInputElement
-    cb.checked = true
     await submit(shadow, "something is broken on this page")
     expect(onSubmit).toHaveBeenCalled()
     expect(onSubmit.mock.calls[0][0].attachConsole).toBe(true)
+  })
+
+  it("OPT OUT: unchecking the toggle sends attachConsole=false", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ issueKey: "KLA-1", issueUrl: "" })
+    const shadow = build(onSubmit, true)
+    const cb = shadow.getElementById("klavity-conlog-cb") as HTMLInputElement
+    cb.checked = false
+    await submit(shadow, "something is broken on this page")
+    expect(onSubmit).toHaveBeenCalled()
+    expect(onSubmit.mock.calls[0][0].attachConsole).toBe(false)
   })
 
   it("no toggle rendered => attachConsole is omitted from the payload entirely", async () => {

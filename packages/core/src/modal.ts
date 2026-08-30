@@ -500,10 +500,11 @@ export interface ModalCallbacks {
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
-  // #638: when true, render a small "Attach console logs" toggle just above Submit. It is OFF by default —
-  // console logs are only attached when the reporter explicitly flips it on. The chosen state rides the
-  // submit payload as `attachConsole` (boolean) so the host attaches the captured console logs only then.
-  // Absent/false => no toggle is rendered and attachConsole is omitted from the payload (default-off).
+  // #638: when true, render a small "Attach console logs" toggle just above Submit. It is CHECKED (ON) by
+  // default now (founder ask 2026-08-30) — console logs ride most reports since they're high-signal for
+  // debugging; the reporter can still uncheck it to withhold them. The chosen state rides the submit payload
+  // as `attachConsole` (boolean) so the host attaches the captured console logs when checked.
+  // Absent/false => no toggle is rendered and attachConsole is omitted from the payload.
   consoleAttachToggle?: boolean
 }
 
@@ -1509,7 +1510,7 @@ export function buildModal(
       </div>` : ''}
       ${callbacks.consoleAttachToggle ? `<div class="klavity-conlog" id="klavity-conlog">
         <label class="kl-conlog-lbl" title="Attach this page's captured console logs to the report">
-          <input type="checkbox" id="klavity-conlog-cb">${icon('file-text', { size: 14 })}<span>Attach console logs</span>
+          <input type="checkbox" id="klavity-conlog-cb" checked>${icon('file-text', { size: 14 })}<span>Attach console logs</span>
         </label>
       </div>` : ''}
       <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
