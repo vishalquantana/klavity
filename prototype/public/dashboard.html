@@ -3552,7 +3552,7 @@ window.safeFetch = safeFetch
 // Because the guarantee lives HERE, callers must NOT hand-roll their own post-call `.sk` fallback.
 // (Every section that forgot that per-caller fallback — counts, triage — is exactly how we shipped
 // the "skeleton shimmers forever" regressions. Centralizing it makes that class impossible.)
-async function swrSection(cacheKey, fetcher, apply, host) {
+async function swrSection(cacheKey, fetcher, apply, host, _isRetry) {
   const cached = swrRead(cacheKey)
   if (cached != null) { try { apply(cached) } catch (e) {} }
   kbar.start()
@@ -3565,10 +3565,17 @@ async function swrSection(cacheKey, fetcher, apply, host) {
     // Central guarantee: whatever happened above, never leave this section on a stuck skeleton.
     const el = typeof host === "string" ? $(host) : host
     if (el && el.querySelector && el.querySelector(".sk")) {
-      el.innerHTML = emptyState("", "Couldn't load — try refreshing.", "")
+      // Bad-UX fix: don't dead-end on "try refreshing". First failure → ONE silent auto-retry after a short
+      // delay (covers a transient blip / a just-fixed data race). If it still fails, show an actionable
+      // Retry button that re-runs this exact section load — no full page reload needed.
+      if (!_isRetry) { setTimeout(() => { try { swrSection(cacheKey, fetcher, apply, host, true) } catch (e) {} }, 1200); return }
+      window.__klavRetry = window.__klavRetry || {}
+      window.__klavRetry[cacheKey] = () => { if (el && el.querySelector && !el.querySelector(".sk")) el.innerHTML = '<div class="sk sk-card"></div>'; swrSection(cacheKey, fetcher, apply, host, false) }
+      el.innerHTML = emptyState("", "Couldn't load.", '<button class="btn btn-sm" type="button" onclick="__klavRetryRun(\'' + String(cacheKey).replace(/'/g, "") + '\')">Retry</button>')
     }
   }
 }
+window.__klavRetryRun = function (key) { const f = window.__klavRetry && window.__klavRetry[key]; if (typeof f === "function") f() }
 
 // The complete set of loading-skeleton hosts on the page (stat tiles + every list/feed). Centralizing
 // the list means a NEW section is one entry away from the same guarantee — and clearStuckSkeletons()
