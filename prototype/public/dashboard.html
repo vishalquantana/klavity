@@ -6853,7 +6853,12 @@ function buildEvidenceStrip(t, detailEl) {
       el.className = "t3-ev-thumb" + (it.kind === "shot" ? " active" : "")
       if (it.kind === "shot") {
         var img = document.createElement("img"); img.alt = "Screenshot"
-        img.src = "/api/screenshots/" + encodeURIComponent(String(t.screenshotId)) + "?thumb=1"
+        // Stream the THUMB BYTES (proxy=1) — a bare ?thumb=1 returns JSON {url}, not an image, so setting it
+        // as <img src> rendered a BROKEN image. If the thumb object is missing/failed, fall back once to the
+        // full image bytes (also same-origin proxy) so the tile is never broken.
+        var _sid = encodeURIComponent(String(t.screenshotId))
+        img.onerror = function () { img.onerror = null; img.src = "/api/screenshots/" + _sid + "?proxy=1" }
+        img.src = "/api/screenshots/" + _sid + "?thumb=1&proxy=1"
         el.appendChild(img); el.appendChild(_evBadge("IMG", false))
         el.setAttribute("title", "Screenshot")
         el.addEventListener("click", function () { _evSelect(strip, el); var w = detailEl.querySelector(".tkt-browser") || detailEl.querySelector(".tkt-shot"); if (w) { try { w.scrollIntoView({ behavior: "smooth", block: "nearest" }) } catch (e) {} } })
