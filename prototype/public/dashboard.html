@@ -3815,12 +3815,16 @@ function retickAgo() {
 let _boardRevInFlight = false
 async function boardRevTick() {
   if (_boardRevInFlight) return
+  // Covers BOTH the kanban board AND the list view (either can be the active Tickets sub-view). A ticket
+  // filed elsewhere (e.g. from the embedded widget) must surface in whichever is showing WITHOUT a reload —
+  // previously only the board live-refreshed; the list was static after load.
+  const tktLoading = () => _tktView === "list" ? _tktListState.loading : _tktBoardState.loading
   const okToRun = () => !document.hidden && !(window.__klavMutating > 0) && !window.__klavTktPageOpen
-    && document.body.getAttribute("data-view") === "tickets" && _tktView === "board" && !_tktBoardState.loading
+    && document.body.getAttribute("data-view") === "tickets" && (_tktView === "board" || _tktView === "list") && !tktLoading()
   if (!okToRun()) return
   const pid = curProjId()
   if (!pid) return
-  // No baseline yet (board not loaded for this project) → nothing to compare; the load path sets it.
+  // No baseline yet (the view hasn't loaded for this project) → nothing to compare; the load path sets it.
   if (_tktBoardRevPid !== pid || _tktBoardRev == null) return
   _boardRevInFlight = true
   try {
@@ -3830,13 +3834,15 @@ async function boardRevTick() {
     const rev = d && d.rev
     if (rev == null) return
     // Re-check EVERYTHING after the await: the user may have started a mutation / opened a ticket / switched
-    // project / left the board while the request was outstanding. Also confirm the baseline still belongs to
-    // this project (a switch could have reset it).
+    // project / left the Tickets view while the request was outstanding. Also confirm the baseline still
+    // belongs to this project (a switch could have reset it).
     if (!okToRun() || curProjId() !== pid || _tktBoardRevPid !== pid) return
     if (rev !== _tktBoardRev) {
       _tktBoardRev = rev
-      // Silently revalidate the warm cache (no 'Loading…' flash) so the new/changed ticket shows in place.
-      if (typeof fetchAndRenderTktBoard === "function") await fetchAndRenderTktBoard()
+      // Silently revalidate whichever sub-view is showing (both paint from the SWR cache first, so no
+      // 'Loading…' flash) so the new/changed ticket shows in place.
+      if (_tktView === "list") { if (typeof fetchAndRenderTktList === "function") await fetchAndRenderTktList() }
+      else if (typeof fetchAndRenderTktBoard === "function") { await fetchAndRenderTktBoard() }
     }
   } catch (e) { /* network blip — retry next tick */ }
   finally { _boardRevInFlight = false }
@@ -9305,6 +9311,11 @@ async function fetchAndRenderTktList() {
     if (!res.ok) throw new Error("HTTP " + res.status)
     const data = await res.json()
     _tktListState.totalPages = data.totalPages || 1
+    // Live-refresh: record the project-level change-token so the rev poll (ticketsRevTick) can detect a
+    // ticket filed/changed AFTER the list loaded and revalidate — the LIST previously never refetched on
+    // poll/focus, so a report filed while the list was open stayed invisible until a manual reload (the
+    // "where's the ticket I just submitted?" bug). Shared with the board (project-wide token, view-agnostic).
+    if (data.rev != null) { _tktBoardRev = data.rev; _tktBoardRevPid = projId }
     // Keep the SWR snapshot fresh regardless of whether we re-paint the DOM this pass.
     swrWrite(cacheKey, { tickets: data.tickets || [], total: data.total || 0, totalPages: data.totalPages || 1 })
     // #720: preserve the __klavMutating poll-pause guard — if an optimistic mutation is in flight, a
