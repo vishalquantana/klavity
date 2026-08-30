@@ -3266,6 +3266,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "document.getElementById('klvmsg').style.display='none';"
         + "var w=Math.max(320,Math.min(window.innerWidth-8,1024));"
         + "try{new P({target:document.getElementById('klvhost'),props:{events:ev,width:w,height:Math.round(w*0.62),autoPlay:true,showController:true}});"
+        // ── Reveal-gate override (KLA replay-blank) ──────────────────────────────────────────────────────
+        // rrweb rebuilds the recorded DOM into a nested iframe but runs NONE of the page's JavaScript. Modern
+        // themed/SPA pages hide their content behind JS-lifted CSS gates — AngularJS `[ng-cloak]{display:none}`
+        // (removed after bootstrap), `.ng-animate-shim{visibility:hidden}` (animation shim), Vue `[v-cloak]`,
+        // and full-viewport preloader overlays that JS hides on ready. With no JS in replay those gates never
+        // lift, so the rebuilt DOM — which DOES contain the real content — paints BLANK WHITE (confirmed on the
+        // BookJoy AngularJS admin). Inject a corrective stylesheet into the replayer iframe that neutralizes
+        // ONLY these bootstrap/reveal gates (not ng-hide/ng-show/modal state, which reflect real captured
+        // state). Re-applied on a short idempotent poll so it survives rrweb's rebuilds on scrub/checkout; the
+        // poll dies with the frame when the modal closes.
+        + "var OVR='html,body{visibility:visible!important;opacity:1!important;filter:none!important}[ng-cloak],[data-ng-cloak],.ng-cloak,.x-ng-cloak,[v-cloak]{display:revert!important}.ng-animate-shim{visibility:visible!important}.preloader,.page-loader,#preloader,.loading-overlay,.pace,.spinner-overlay,.app-loading,.loader-wrapper{display:none!important}';"
+        + "function _ovr(){try{var f=document.querySelector('#klvhost iframe');if(!f||!f.contentDocument)return;var cd=f.contentDocument;if(cd.getElementById('klv-reveal-fix'))return;var st=cd.createElement('style');st.id='klv-reveal-fix';st.textContent=OVR;(cd.head||cd.documentElement).appendChild(st)}catch(e){}}"
+        + "_ovr();var _oi=setInterval(_ovr,500);setTimeout(function(){try{clearInterval(_oi)}catch(e){}},120000);"
         + "post({status:'ok',nEvents:(d.nEvents||ev.length),trimmed:!!d.trimmed})}"
         + "catch(e){msg('Could not start the player: '+(e&&e.message?e.message:'error'));post({status:'error'})}"
         + "}).catch(function(){msg('Network error loading replay.');post({status:'error'})})"
