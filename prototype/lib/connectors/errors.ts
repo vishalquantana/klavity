@@ -48,6 +48,13 @@ export function classifyUpstreamError(e: unknown): { friendly: string; code: num
     } else {
       friendly = `The tracker rejected the request (HTTP ${s}). Check the connector settings and try again.`
     }
+    // Surface the tracker's OWN reason when a connector captured a clean one (e.g. Jira 400 →
+    // "project: The target project doesn't exist or you don't have permission to create issues in it").
+    // This turns a generic dead-end into a self-fixable message. It's admin-only (connector management is
+    // admin-gated) and already redactSecrets()'d at the connector, so it's safe to show — and it's the
+    // tracker's config-error text, not Klavity-internal/guard text (A10 concern doesn't apply).
+    const reason = (typeof (e as any).upstreamReason === "string" ? (e as any).upstreamReason : "").replace(/\s+/g, " ").trim()
+    if (reason) friendly += ` Tracker said: ${reason.slice(0, 200)}`
     return { friendly, code: s }
   }
   return null
