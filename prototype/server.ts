@@ -3203,6 +3203,71 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ ok: true, db: !!db, klavityIntakeConfigured })
     }
 
+    // GET /replay-frame?fb=<id> — the session-replay VIEWER, served in its own same-origin document with a
+    // RELAXED Content-Security-Policy. WHY: rrweb rebuilds the recorded page's DOM into a nested iframe that
+    // inherits the embedding document's CSP. Under the dashboard's strict CSP (style-src 'self', font-src
+    // 'self' data:) the recorded page's CROSS-ORIGIN stylesheets/fonts (jsdelivr, bootstrapcdn, the customer's
+    // own CDN chunks) are blocked, so the replay renders blank/unstyled. A `srcdoc`/about:blank iframe can only
+    // make CSP *stricter*, never looser — so the viewer must be its OWN navigated document whose response
+    // carries a relaxed CSP. The dashboard embeds this via <iframe src="/replay-frame?fb=…">; the dashboard's
+    // global strict CSP is untouched. Auth-gated (session) + project-access checked; rrweb runs NO page
+    // scripts, so loading the recorded DOM here is safe. The events themselves come from the existing
+    // /api/feedback/:id/replay endpoint (which re-checks auth), fetched same-origin from inside this frame.
+    if (req.method === "GET" && path === "/replay-frame") {
+      const email = await sessionEmail(req)
+      const fbId = (url.searchParams.get("fb") || "").trim()
+      const FRAME_CSP = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+        "style-src * 'unsafe-inline'",   // ← the point: allow the recorded page's cross-origin stylesheets
+        "font-src * data:",
+        "img-src * data: blob:",
+        "media-src * blob: data:",
+        "connect-src 'self'",
+        "frame-ancestors 'self'",        // only our own dashboard may embed it
+        "base-uri 'self'",
+        "object-src 'none'",
+      ].join("; ")
+      const frameHtml = (bodyInner: string) =>
+        withSecurityHeaders(new Response(
+          "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+          + "<link rel=\"stylesheet\" href=\"/vendor/klv-view.css\">"
+          + "<style>html,body{margin:0;background:#fff}#klvhost{width:100%}.klv-msg{font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#57534e;padding:24px;text-align:center}</style>"
+          + "</head><body>" + bodyInner + "</body></html>",
+          { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP, "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" } },
+        ))
+      if (!email) return frameHtml('<div class="klv-msg">Please sign in to view this replay.</div>')
+      // Validate the feedback exists + the viewer has access to its project before rendering the shell.
+      if (!fbId) return frameHtml('<div class="klv-msg">No replay specified.</div>')
+      const fb = await feedbackById(fbId).catch(() => null)
+      if (!fb || !fb.projectId) return frameHtml('<div class="klv-msg">Replay not found.</div>')
+      if (!(await projectAccess(email, fb.projectId).catch(() => null))) return frameHtml('<div class="klv-msg">You don\'t have access to this replay.</div>')
+      // The shell loads the player, fetches the events same-origin (session cookie carried), mounts the
+      // Replayer, and postMessages status/meta up to the dashboard so it can render the "N events" note.
+      const bootScript =
+        "<div id=\"klvhost\"></div><div id=\"klvmsg\" class=\"klv-msg\">Loading replay…</div>"
+        + "<script src=\"/vendor/klv-view.min.js\"></script>"
+        + "<script>(function(){"
+        + "var FB=" + JSON.stringify(fbId) + ";"
+        + "function post(m){try{parent.postMessage(Object.assign({source:'klv-replay'},m),location.origin)}catch(e){}}"
+        + "function msg(t){var e=document.getElementById('klvmsg');if(e)e.textContent=t}"
+        + "fetch('/api/feedback/'+encodeURIComponent(FB)+'/replay').then(function(r){"
+        + "if(r.status===404){msg('No replay was recorded for this report.');post({status:'none'});return null}"
+        + "if(!r.ok){msg('Couldn\\u2019t load the replay.');post({status:'error'});return null}return r.json()"
+        + "}).then(function(d){if(!d)return;var ev=(d.events||[]);"
+        + "if(ev.length<2){msg('Too few frames to scrub.');post({status:'few'});return}"
+        + "var P=(window.rrwebPlayer&&(window.rrwebPlayer.default||window.rrwebPlayer.Player));"
+        + "if(!P){msg('Could not start the player.');post({status:'error'});return}"
+        + "document.getElementById('klvmsg').style.display='none';"
+        + "var w=Math.max(320,Math.min(window.innerWidth-8,1024));"
+        + "try{new P({target:document.getElementById('klvhost'),props:{events:ev,width:w,height:Math.round(w*0.62),autoPlay:true,showController:true}});"
+        + "post({status:'ok',nEvents:(d.nEvents||ev.length),trimmed:!!d.trimmed})}"
+        + "catch(e){msg('Could not start the player: '+(e&&e.message?e.message:'error'));post({status:'error'})}"
+        + "}).catch(function(){msg('Network error loading replay.');post({status:'error'})})"
+        + "})();</script>"
+      return frameHtml(bootScript)
+    }
+
     // KLAVITYKLA-346 — busy-check for the zero-downtime autodeploy drain step. The deploy polls this on
     // the OLD slot before stopping it; `busy: 0` means no AutoSim/Sim/author/PDF work is in flight and
     // the slot is safe to stop. Intentionally cheap (in-memory counters), no auth (loopback-only signal).
