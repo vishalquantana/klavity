@@ -8986,6 +8986,15 @@ function recurBadgeHtml(t) {
   const since = t.firstSeen ? " · first seen " + esc(ago(t.firstSeen)) : ""
   return `<span class="recur-badge">Reported ${n}×${since}</span>`
 }
+// A ticket's most useful timestamp on a card is when it was LAST reported, not when the cluster was first
+// created. When a report DEDUPES into an existing ticket (recurrence ≥ 2) the card otherwise kept showing
+// the original "10h ago" even though it was just re-reported a minute ago — so a freshly-active ticket read
+// as stale ("where's the report I just filed?"). Show "reported <ago>" off last_seen_at in that case.
+function ticketAgo(t) {
+  const n = t && (t.recurrenceCount || t.recurrence)
+  if (n && n >= 2 && t.lastSeenAt && t.lastSeenAt > (t.createdAt || 0)) return "reported " + ago(t.lastSeenAt)
+  return ago(t.createdAt)
+}
 function regrBannerHtml(t) {
   if (!t.isRegression) return ""
   return `<div class="regr-banner"><span class="regr-ico">↩</span>Regression — came back after resolved</div>`
@@ -9749,7 +9758,7 @@ function renderTktList(listEl, tickets, total) {
 
     const pri = t.priority || ""
     const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
-    const sub = [t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
+    const sub = [t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
 
     const lblChipsHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
     const rowInner = document.createElement("span")
@@ -10016,7 +10025,7 @@ function renderTicketsKanban(boardTickets) {
         cardEl.classList.remove("dragging")
         boardEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
       })
-      const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ago(t.createdAt)].filter(Boolean).join(" · ")
+      const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
       const renderCard = () => { cardEl.querySelector(".kb-card-meta").innerHTML = kbCardMetaHtml(t) }
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>

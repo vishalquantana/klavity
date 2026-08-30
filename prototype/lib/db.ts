@@ -7499,6 +7499,7 @@ export async function listTicketsPaginated(
       recurrenceCount: Number(x.recurrence_count ?? 1),
       createdAt: Number(x.created_at),
       updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
+    lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
       source: x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human"),
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
