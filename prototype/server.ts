@@ -3239,9 +3239,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!email) return frameHtml('<div class="klv-msg">Please sign in to view this replay.</div>')
       // Validate the feedback exists + the viewer has access to its project before rendering the shell.
       if (!fbId) return frameHtml('<div class="klv-msg">No replay specified.</div>')
-      const fb = await feedbackById(fbId).catch(() => null)
-      if (!fb || !fb.projectId) return frameHtml('<div class="klv-msg">Replay not found.</div>')
-      if (!(await projectAccess(email, fb.projectId).catch(() => null))) return frameHtml('<div class="klv-msg">You don\'t have access to this replay.</div>')
+      // feedbackById is (projectId, id)-scoped and we only have the id here, so resolve the owning project
+      // UNSCOPED first (project_id only — no row bodies), then enforce projectAccess on THAT project before
+      // serving. This is not an IDOR: access is checked against the resolved project, and the row itself
+      // (events) is fetched by the frame from /api/feedback/:id/replay, which re-authorizes. (QA C1.1)
+      const fbProjRow = await db.execute({ sql: "SELECT project_id FROM feedback WHERE id=?", args: [fbId] }).catch(() => null)
+      const fbProjectId = fbProjRow && fbProjRow.rows[0] ? String((fbProjRow.rows[0] as any).project_id || "") : ""
+      if (!fbProjectId) return frameHtml('<div class="klv-msg">Replay not found.</div>')
+      if (!(await projectAccess(email, fbProjectId).catch(() => null))) return frameHtml('<div class="klv-msg">You don\'t have access to this replay.</div>')
       // The shell loads the player, fetches the events same-origin (session cookie carried), mounts the
       // Replayer, and postMessages status/meta up to the dashboard so it can render the "N events" note.
       const bootScript =
@@ -12998,6 +13003,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const ticketIds = result.tickets.map((t: any) => t.id)
           const labelsMap = await labelsForFeedbackBatch(ticketIds)
           result.tickets = result.tickets.map((t: any) => ({ ...t, labels: labelsMap[t.id] || [] }))
+          // QA C2.2: return the SAME change-token the /tickets/rev poll computes, so whoever loads the board
+          // (fresh fetch OR idle prefetch) records an AUTHORITATIVE baseline. Without this, a board warmed by
+          // the prefetch had no rev baseline; boardRevTick's first sample blessed the (possibly already-stale)
+          // cache and never revalidated. Same formula → the poll compares like-for-like.
+          const revRow = await db.execute({ sql: "SELECT COUNT(*) AS c, COALESCE(MAX(created_at),0) AS cr, COALESCE(MAX(updated_at),0) AS u FROM feedback WHERE project_id=?", args: [proj.id] }).catch(() => null)
+          const rr: any = revRow && revRow.rows[0] ? revRow.rows[0] : {}
+          ;(result as any).rev = String(rr.c ?? 0) + ":" + String(rr.cr ?? 0) + ":" + String(rr.u ?? 0)
           return json(result)
         }
 
