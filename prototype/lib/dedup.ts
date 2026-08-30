@@ -70,14 +70,37 @@ export function lexicalSim(a: string, b: string): number {
 // Exact key match (looked up by the caller) wins; else best semantic match ≥ threshold.
 // A.10: `excludeIds` are ids an operator manually SPLIT apart from this candidate — they must
 // never be re-collapsed automatically, so they're skipped by both the exact- and lexical-match paths.
+//
+// `exactMinSim` (KLA dedup-smart) guards the EXACT path against over-merging on a BROAD key. A human
+// widget report keys by project|page|type only (no cited traits), so two UNRELATED bug reports on the same
+// page collapse into one ticket regardless of description (e.g. a "Testing" report merging into a real bug).
+// When the caller passes `exactMinSim` (only for such broad/human keys — see findDuplicateFeedback) AND the
+// exact match carries text, the exact match wins ONLY if the candidate is at least that lexically similar
+// to it; otherwise we fall through to the semantic search (and likely file a NEW ticket). Sim/AutoSim
+// reports cite traits → specific keys → the caller omits exactMinSim, so their recurrence/regression
+// detection is UNCHANGED (unconditional exact-key merge).
 export function chooseDedup(
   cand: { title: string; observation: string },
-  exactMatch: { id: string } | null,
+  exactMatch: { id: string; title?: string; observation?: string } | null,
   recent: Array<{ id: string; title: string; observation: string }>,
   threshold = 0.82,
   excludeIds: Set<string> = new Set(),
+  exactMinSim = 0,
 ): string | null {
-  if (exactMatch && !excludeIds.has(exactMatch.id)) return exactMatch.id
+  if (exactMatch && !excludeIds.has(exactMatch.id)) {
+    if (exactMinSim > 0 && (exactMatch.title != null || exactMatch.observation != null)) {
+      const sim = Math.max(
+        lexicalSim(cand.title, exactMatch.title || ""),
+        lexicalSim(cand.observation, exactMatch.observation || ""),
+        lexicalSim(cand.observation, exactMatch.title || ""),
+        lexicalSim(cand.title, exactMatch.observation || ""),
+      )
+      if (sim >= exactMinSim) return exactMatch.id
+      // else: too dissimilar for a broad page-key merge → fall through to the semantic search below.
+    } else {
+      return exactMatch.id
+    }
+  }
   let best: { id: string | null; score: number } = { id: null, score: 0 }
   for (const r of recent) {
     if (excludeIds.has(r.id)) continue

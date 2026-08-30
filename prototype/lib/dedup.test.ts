@@ -45,3 +45,24 @@ test("humanReportIssueKeyFor normalizes volatile ids, numbers, and timestamps", 
   expect(a).toBe(b)
   expect(a).not.toBe(humanReportIssueKeyFor({ projectId: "p2", urlPath: "/checkout", text: "checkout order 987 failed for user x at 2026-07-12" }))
 })
+
+// KLA dedup-smart: an exact BROAD page-key match must NOT merge unrelated reports. When the caller passes
+// exactMinSim (only for broad/human keys — no cited traits), the exact match wins only if the candidate is
+// at least that similar; a low-signal report ("Testing") falls through to a NEW ticket instead of collapsing
+// into an unrelated same-page bug. Trait-cited (Sim/AutoSim) keys pass exactMinSim=0 → unconditional merge.
+test("exactMinSim blocks an over-broad same-page merge for dissimilar reports", () => {
+  const exact = { id: "fb-head", title: "Fix bug on admin user index page", observation: "the user table pagination is broken" }
+  // Dissimilar candidate ("Testing") → below floor → NOT merged (returns null → caller files a new ticket).
+  expect(chooseDedup({ title: "Testing", observation: "Testing" }, exact, [], 0.82, new Set(), 0.3)).toBeNull()
+  // Similar candidate → above floor → merges into the head.
+  expect(chooseDedup({ title: "admin user index page bug", observation: "pagination on the user table is broken" }, exact, [], 0.82, new Set(), 0.3)).toBe("fb-head")
+})
+test("exactMinSim=0 (trait-cited Sim key) keeps unconditional exact-key merge", () => {
+  const exact = { id: "fb-sim", title: "A", observation: "B" }
+  // Even a totally dissimilar candidate merges when the caller does NOT require a floor (Sim/AutoSim path).
+  expect(chooseDedup({ title: "totally different", observation: "nothing alike" }, exact, [], 0.82, new Set(), 0)).toBe("fb-sim")
+})
+test("exactMinSim default is 0 — legacy callers keep unconditional exact merge", () => {
+  const exact = { id: "fb-x" }
+  expect(chooseDedup({ title: "z", observation: "z" }, exact, [])).toBe("fb-x")
+})

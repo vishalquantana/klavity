@@ -2872,6 +2872,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </label>
           <p style="font-size:12px;opacity:.7;margin:5px 0 0">Comma-separated. Leave blank to alert the account owner and admins instead.</p>
         </div>
+        <div id="kl-dedup" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(120,120,140,.18)">
+          <div style="font-weight:600;font-size:14px;margin-bottom:2px">Duplicate handling</div>
+          <p style="font-size:12px;opacity:.7;margin:0 0 10px">When the same bug is reported again, Klavity merges it into the existing ticket and bumps <b>Reported N×</b> instead of creating a duplicate.</p>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="kl-dedup-enabled" style="accent-color:#6366f1;width:14px;height:14px">
+            <span style="font-size:13px">Merge repeat reports</span>
+          </label>
+          <p style="font-size:12px;opacity:.7;margin-top:-2px">On by default. Turn <b>off</b> to make every submission its own ticket (no merging). Repeat detection is also stricter now — reports on the same page only merge when their descriptions actually match.</p>
+        </div>
         </div><!-- /.wp-config -->
         <div class="wp-preview">
           <div class="wp-preview-head">
@@ -12156,6 +12165,9 @@ async function loadAppearance() {
       if (bugEmailsEl) body.bugNotifyEmails = bugEmailsEl.value.trim()
       const slackEl = $("kl-slack-webhook")
       if (slackEl) { const sv = slackEl.value.trim(); if (sv) body.slackWebhookUrl = sv }
+      // KLA dedup-smart: merge-repeat-reports master toggle.
+      const dedupChk = $("kl-dedup-enabled")
+      if (dedupChk) body.dedupEnabled = dedupChk.checked
       msg.textContent = "Saving…"
       try {
         const r = await fetch(projPath("/config"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -12217,6 +12229,10 @@ async function loadAppearance() {
     // Show the whole section to admins only (writes are admin-gated server-side too).
     const bnBox = $("kl-bugnotify")
     if (bnBox) bnBox.style.display = (state.active && state.active.role === "admin") ? "" : "none"
+    // KLA dedup-smart: read back the merge-repeat-reports toggle (default ON); admin-only section.
+    if ($("kl-dedup-enabled")) $("kl-dedup-enabled").checked = d.dedupEnabled !== false
+    const dedupBox = $("kl-dedup")
+    if (dedupBox) dedupBox.style.display = (state.active && state.active.role === "admin") ? "" : "none"
     // Store isPro on the note element for the save handler to read
     proNote.dataset.pro = isPro ? "1" : "0"
     proNote.style.display = isPro ? "none" : "block"

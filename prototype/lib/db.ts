@@ -1168,6 +1168,9 @@ export async function applySchema(c: Client) {
   if (needCol("projects", "slack_webhook_url")) await c.execute("ALTER TABLE projects ADD COLUMN slack_webhook_url TEXT").catch((e) => console.warn("projects.slack_webhook_url ALTER skipped:", e?.message || e))
   if (needCol("projects", "bug_notify_emails")) await c.execute("ALTER TABLE projects ADD COLUMN bug_notify_emails TEXT").catch((e) => console.warn("projects.bug_notify_emails ALTER skipped:", e?.message || e))
   if (needCol("projects", "notify_on_every_bug")) await c.execute("ALTER TABLE projects ADD COLUMN notify_on_every_bug INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.notify_on_every_bug ALTER skipped:", e?.message || e))
+  // KLA dedup-smart: master switch for repeat-report merging. DEFAULT 1 (ON) so existing projects keep
+  // dedup (repeats bump "Reported N×"); a project turns it OFF to make every submission its own ticket.
+  if (needCol("projects", "dedup_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN dedup_enabled INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.dedup_enabled ALTER skipped:", e?.message || e))
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
   // 'anonymous' (default, JTBD 1.7) = open (identity asked post-submit); 'email' = logged-in OR a valid
   // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
@@ -2162,6 +2165,9 @@ export type ProjectRow = {
   slackWebhookUrl: string | null
   bugNotifyEmails: string[]
   notifyOnEveryBug: boolean
+  // KLA dedup-smart: master switch for merging repeat reports. DEFAULT true (column default 1); legacy rows
+  // coerce NULL → true. When false, every submission becomes its own ticket (no "Reported N×" merge).
+  dedupEnabled: boolean
   widgetReportGate: string
   widgetAutoCaptureErrors: boolean
   instructionsMd?: string | null
@@ -2219,6 +2225,7 @@ function rowToProject(x: any): ProjectRow {
     widgetCtaUrl: x.widget_cta_url != null ? String(x.widget_cta_url) : null,
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
     slackWebhookUrl: x.slack_webhook_url != null ? String(x.slack_webhook_url) : null,
+    dedupEnabled: x.dedup_enabled == null ? true : Number(x.dedup_enabled) !== 0,
     bugNotifyEmails: parseEmailList(x.bug_notify_emails),
     // DEFAULT 1: NULL/undefined (pre-column rows) read as enabled; only an explicit 0 disables.
     notifyOnEveryBug: x.notify_on_every_bug == null ? true : Number(x.notify_on_every_bug) !== 0,
@@ -2944,6 +2951,15 @@ export async function getProjectSlackWebhookUrl(projectId: string): Promise<stri
   const p = await projectById(projectId)
   const raw = (p?.slackWebhookUrl || "").trim()
   return /^https:\/\/hooks\.slack\.com\//.test(raw) && raw.length <= 500 ? raw : null
+}
+
+// KLA dedup-smart: whether repeat-report merging is on for this project (default true / column default 1).
+export async function getProjectDedupEnabled(projectId: string): Promise<boolean> {
+  const p = await projectById(projectId)
+  return p ? p.dedupEnabled : true
+}
+export async function setProjectDedupEnabled(projectId: string, enabled: boolean): Promise<void> {
+  await db!.execute({ sql: "UPDATE projects SET dedup_enabled=?, updated_at=? WHERE id=?", args: [enabled ? 1 : 0, Date.now(), projectId] })
 }
 
 // Admin-gated write. slackWebhookUrl: pass a URL to set, "" to clear, undefined to keep as-is (the
@@ -3813,13 +3829,17 @@ export async function recordSimDismissEvents(args: {
   return written
 }
 
-export async function findFeedbackByIssueKey(projectId: string, issueKey: string): Promise<{ id: string } | null> {
+export async function findFeedbackByIssueKey(projectId: string, issueKey: string): Promise<{ id: string; title: string | null; observation: string | null } | null> {
   if (!issueKey) return null
   const r = await db!.execute({
-    sql: "SELECT id FROM feedback WHERE project_id=? AND issue_key=? ORDER BY created_at DESC LIMIT 1",
+    // title + observation come back so the caller can apply a similarity floor on a broad page-key match
+    // (KLA dedup-smart) instead of merging unconditionally.
+    sql: "SELECT id, title, observation FROM feedback WHERE project_id=? AND issue_key=? ORDER BY created_at DESC LIMIT 1",
     args: [projectId, issueKey],
   })
-  return r.rows.length ? { id: String((r.rows[0] as any).id) } : null
+  if (!r.rows.length) return null
+  const x = r.rows[0] as any
+  return { id: String(x.id), title: x.title != null ? String(x.title) : null, observation: x.observation != null ? String(x.observation) : null }
 }
 
 // #543 completeness (Codex review): ONE shared resolver for a report's effective display/notification
