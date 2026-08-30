@@ -5731,6 +5731,9 @@ function sparkline(vals) {
 
 const curProjId = () => (state && state.active ? state.active.id : null)
 window.klavCurProjId = curProjId // exposed for the AutoSims iframe loader (separate script scope)
+// Exposed so the AutoSims wizard (a separate script block) can gate admin-only affordances
+// like the inline "add a test account" form — mirrors the Settings drawer's admin gate.
+window.klavIsProjectAdmin = () => !!(state && state.active && state.active.role === "admin")
 const projPath = (suffix) => "/api/projects/" + encodeURIComponent(curProjId()) + suffix
 // B1 fix: projParam was only defined inside the AutoSims IIFE but is called from
 // the outer CI/CD section (ciRender, updateCiSnippets, _wireCi). Expose it globally
@@ -14109,7 +14112,22 @@ load()
       <label class="wiz-field">Test account <span style="font-weight:400;color:var(--paper-faint)">(optional)</span>
         <select id="wizAcc"><option value="">(none — public pages only)</option></select>
       </label>
-      <p class="hint">If your AutoSim needs to log in, pick a saved test account and Klavity fills the credentials automatically. Add test accounts in Settings.</p>
+      <!-- Inline "add a test account" — revealed when the admin picks "+ Add a test account…" in
+           #wizAcc (the option is only injected for admins; see loadAccounts / _wireWizAcc). Lets users
+           create login credentials without leaving the wizard for Settings. Mirrors the Settings drawer
+           payload: POST /api/projects/:id/test-accounts { name, login_email, password, auth_shape }. -->
+      <div id="wizAccAdd" class="hide" style="margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper-1)">
+        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">New test account — AutoSim uses this email &amp; password to log in. Stored encrypted.</p>
+        <input id="wizAccName" placeholder="name (e.g. admin)" maxlength="40" autocomplete="off" style="display:block;width:100%;margin-bottom:6px" />
+        <input id="wizAccEmail" type="text" placeholder="login email" autocomplete="off" style="display:block;width:100%;margin-bottom:6px" />
+        <input id="wizAccPw" type="password" placeholder="password" autocomplete="new-password" style="display:block;width:100%;margin-bottom:8px" />
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn btn-indigo btn-sm" id="wizAccSave">Save</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="wizAccCancel">Cancel</button>
+          <span id="wizAccMsg" style="font-size:12px"></span>
+        </div>
+      </div>
+      <p class="hint" id="wizAccHint">If your AutoSim needs to log in, pick a saved test account and Klavity fills the credentials automatically. Add test accounts in Settings.</p>
     </div>
     <div id="wiz3" class="wiz-panel" style="display:none">
       <p class="wiz-desc">Describe what the AutoSim should do, step by step.</p>
@@ -15585,8 +15603,83 @@ load()
         var o=document.createElement("option");o.value=a.name;o.textContent=a.name+" ("+a.loginEmail+")";sel.appendChild(o)
         if(wizAccSel){var o2=document.createElement("option");o2.value=a.name;o2.textContent=a.name+" ("+a.loginEmail+")";wizAccSel.appendChild(o2)}
       })
+      // Inline "add a test account" — admin-only (POST /test-accounts is admin-gated). Non-admins keep
+      // the original "Add test accounts in Settings" hint and never see the __add__ option.
+      var canAdd=!(window.klavIsProjectAdmin)||window.klavIsProjectAdmin()
+      if(wizAccSel&&canAdd){
+        var oa=document.createElement("option");oa.value="__add__";oa.textContent="+ Add a test account…";wizAccSel.appendChild(oa)
+      }
+      var wizAccHint=document.getElementById("wizAccHint")
+      if(wizAccHint)wizAccHint.textContent=canAdd
+        ? "If your AutoSim needs to log in, pick a saved test account and Klavity fills the credentials automatically, or add one below."
+        : "If your AutoSim needs to log in, pick a saved test account and Klavity fills the credentials automatically. Add test accounts in Settings."
     }catch(e){}
   }
+  // Inline test-account creation inside the wizard (KLA: don't force a Settings detour).
+  var _wizAccPrev="" // remembers the last real selection so choosing "__add__" doesn't strand the select
+  var _wizAccWired=false
+  function _wireWizAcc(){
+    if(_wizAccWired)return;_wizAccWired=true
+    var sel=document.getElementById("wizAcc")
+    var form=document.getElementById("wizAccAdd")
+    if(!sel||!form)return
+    function showForm(show){
+      form.classList.toggle("hide",!show)
+      if(show){var n=document.getElementById("wizAccName");if(n)setTimeout(function(){n.focus()},40)}
+    }
+    function resetForm(){
+      var m=document.getElementById("wizAccMsg");if(m){m.textContent="";m.style.color=""}
+      document.getElementById("wizAccName").value=""
+      document.getElementById("wizAccEmail").value=""
+      document.getElementById("wizAccPw").value=""
+    }
+    sel.addEventListener("change",function(){
+      if(sel.value==="__add__"){sel.value=_wizAccPrev;resetForm();showForm(true)}
+      else{_wizAccPrev=sel.value;showForm(false)}
+    })
+    var cancel=document.getElementById("wizAccCancel")
+    if(cancel)cancel.addEventListener("click",function(){resetForm();showForm(false)})
+    var save=document.getElementById("wizAccSave")
+    if(save)save.addEventListener("click",async function(){
+      var msg=document.getElementById("wizAccMsg")
+      if(msg){msg.textContent="";msg.style.color=""}
+      var body={
+        name:document.getElementById("wizAccName").value.trim(),
+        login_email:document.getElementById("wizAccEmail").value.trim(),
+        password:document.getElementById("wizAccPw").value,
+        auth_shape:"password"
+      }
+      if(!/^[a-z0-9_-]{1,40}$/.test(body.name)){if(msg){msg.style.color="var(--rose)";msg.textContent="Name must be 1–40 chars: lowercase letters, digits, _ or -."}return}
+      if(!body.login_email||!body.login_email.includes("@")){if(msg){msg.style.color="var(--rose)";msg.textContent="A valid login email is required."}return}
+      if(!body.password){if(msg){msg.style.color="var(--rose)";msg.textContent="A password is required."}return}
+      var pid=projParam();if(!pid){if(msg){msg.style.color="var(--rose)";msg.textContent="No active project."}return}
+      save.disabled=true
+      try{
+        var r=await fetch("/api/projects/"+encodeURIComponent(pid)+"/test-accounts",
+          {method:"POST",headers:{"content-type":"application/json"},credentials:"include",body:JSON.stringify(body)})
+        if(r.ok){
+          var d=await r.json().catch(function(){return {}})
+          var acc=d.account||{name:body.name,loginEmail:body.login_email}
+          var o=document.createElement("option");o.value=acc.name;o.textContent=acc.name+" ("+(acc.loginEmail||body.login_email)+")"
+          var addOpt=sel.querySelector('option[value="__add__"]')
+          if(addOpt)sel.insertBefore(o,addOpt);else sel.appendChild(o)
+          sel.value=acc.name;_wizAccPrev=acc.name
+          // Keep the "new trail" dropdown (#ntAcc) in sync so the account is available there too.
+          var nt=document.getElementById("ntAcc")
+          if(nt){var o3=document.createElement("option");o3.value=acc.name;o3.textContent=acc.name+" ("+(acc.loginEmail||body.login_email)+")";nt.appendChild(o3)}
+          resetForm();showForm(false)
+          // Reflect the new choice in the review step if it's currently rendered.
+          var rev=document.getElementById("wizRevAcc");if(rev&&typeof renderWizReview==="function")renderWizReview()
+        }else{
+          var err=await r.json().catch(function(){return {}})
+          if(msg){msg.style.color="var(--rose)";msg.textContent=err.error||("Failed to add account ("+r.status+").")}
+        }
+      }catch(e){
+        if(msg){msg.style.color="var(--rose)";msg.textContent="Network error — please try again."}
+      }finally{save.disabled=false}
+    })
+  }
+  _wireWizAcc()
   function stepLine(s,sid){
     var cls=s.ok?"ok":"err"
     var shot=sid&&s.screenshotKey?'<img class="nt-step-shot" src="'+esc("/api/trails/author/"+encodeURIComponent(sid)+"/steps/"+encodeURIComponent(String(s.idx))+"/screenshot"+projQ())+'" alt="" loading="lazy" />':"";
@@ -15690,6 +15783,9 @@ load()
     document.getElementById("wizProgress").style.display="none";document.getElementById("wizProgress").innerHTML=""
     document.getElementById("wizNav").style.display=""
     var cb=document.getElementById("wizCreate");cb.disabled=false;cb.textContent="Create & Run"
+    // Reset the inline "add a test account" form so a prior open never leaves it showing.
+    var accAdd=document.getElementById("wizAccAdd");if(accAdd)accAdd.classList.add("hide")
+    var accMsg=document.getElementById("wizAccMsg");if(accMsg){accMsg.textContent="";accMsg.style.color=""}
     document.getElementById("wizBg").classList.add("show")
     wizRender();loadWizSims()
   }
