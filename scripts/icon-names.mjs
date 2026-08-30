@@ -29,4 +29,7 @@ export const ICON_NAMES = [
   // KLAVITYKLA-374: 'archive' was referenced by the Archive kebab action on /autosims but was never
   // registered, so kicon('archive') rendered nothing and warned. Registering it fixes both surfaces.
   'archive',
+  // console-noise-fixes: 'user-check' referenced by dashboard (data-ki="user-check") but never
+  // registered → icon() warned "[Klavity] unknown icon: user-check". Registering resolves it.
+  'user-check',
 ];
