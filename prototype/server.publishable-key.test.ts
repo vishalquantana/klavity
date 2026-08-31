@@ -145,3 +145,55 @@ test("an unknown publishableKey with no Origin is rejected", async () => {
   expect(r.status).toBeGreaterThanOrEqual(400)
   expect(r.status).toBeLessThan(500)
 })
+
+// ── Task 3: Settings — generate/rotate/reveal the publishable key via /api/projects/:id/config ──
+
+const ADMIN_EMAIL = `admin-pk-${ts}@test.local`
+const ADMIN_SID = `sess_pk_admin_${ts}`
+
+await rawExec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, [ADMIN_EMAIL, now])
+await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [`pm_pk_${ts}`, "p1", ADMIN_EMAIL, "admin", null, now])
+await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [ADMIN_SID, ADMIN_EMAIL, now, now + 86400_000])
+
+function authCookie(sid: string) { return `klav_session=${sid}` }
+async function apiGet(path: string, sid?: string) {
+  return fetch(`${BASE}${path}`, { headers: sid ? { Cookie: authCookie(sid) } : {} })
+}
+async function apiPost(path: string, body: any, sid?: string) {
+  return fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(sid ? { Cookie: authCookie(sid) } : {}) },
+    body: JSON.stringify(body),
+  })
+}
+
+test("admin config GET returns the publishable key; rotate issues a new one", async () => {
+  // p1 has no publishable key at this point in the suite (this test's own project — feedback tests
+  // above rotate the key on p1 via raw SQL, so seed a fresh project here instead to avoid ordering coupling).
+  const PID = `p1_settings_${ts}`
+  await rawExec(
+    `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES (?, 'a1', 'Settings Project', 'active', 'auto', 'named', '{}', 'support', 'https://klavity.in/onboarding', 'lead@x.com', 'anonymous', ?, ?)`,
+    [PID, now, now]
+  )
+  await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [`pm_pk_settings_${ts}`, PID, ADMIN_EMAIL, "admin", null, now])
+
+  // 1) GET as admin → publishableKey is null initially.
+  const r1 = await apiGet(`/api/projects/${PID}/config?admin=1`, ADMIN_SID)
+  expect(r1.status).toBe(200)
+  const b1 = await r1.json() as any
+  expect(b1.publishableKey).toBe(null)
+
+  // 2) POST rotatePublishableKey:true → returns a fresh pk_ key.
+  const r2 = await apiPost(`/api/projects/${PID}/config`, { theme: "light", rotatePublishableKey: true }, ADMIN_SID)
+  expect(r2.status).toBe(200)
+  const b2 = await r2.json() as any
+  expect(b2.ok).toBe(true)
+  expect(typeof b2.publishableKey).toBe("string")
+  expect(b2.publishableKey).toMatch(/^pk_[0-9a-f]{64}$/)
+
+  // 3) GET again → publishableKey equals the rotated key.
+  const r3 = await apiGet(`/api/projects/${PID}/config?admin=1`, ADMIN_SID)
+  expect(r3.status).toBe(200)
+  const b3 = await r3.json() as any
+  expect(b3.publishableKey).toBe(b2.publishableKey)
+})
