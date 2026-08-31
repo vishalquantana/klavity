@@ -1171,6 +1171,12 @@ export async function applySchema(c: Client) {
   // KLA dedup-smart: master switch for repeat-report merging. DEFAULT 1 (ON) so existing projects keep
   // dedup (repeats bump "Reported N×"); a project turns it OFF to make every submission its own ticket.
   if (needCol("projects", "dedup_enabled")) await c.execute("ALTER TABLE projects ADD COLUMN dedup_enabled INTEGER NOT NULL DEFAULT 1").catch((e) => console.warn("projects.dedup_enabled ALTER skipped:", e?.message || e))
+  // Mobile SDK publishable key (pk_…): a Sentry-DSN-style token that authorizes filing reports to THIS
+  // project from a non-browser client (the Flutter SDK — no Origin/Turnstile). NULL until an admin
+  // generates one. Plaintext by design (it is publishable / shipped in an app binary and only authorizes
+  // filing to one project — rate-limited + reportGate-honored), so Settings can re-display it.
+  if (needCol("projects", "publishable_key")) await c.execute("ALTER TABLE projects ADD COLUMN publishable_key TEXT").catch((e) => console.warn("projects.publishable_key ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS projects_pubkey_idx ON projects (publishable_key)").catch((e) => console.warn("projects_pubkey_idx skipped:", e?.message || e))
   // report-identity gate: how an end-user is identified before a widget ticket is accepted.
   // 'anonymous' (default, JTBD 1.7) = open (identity asked post-submit); 'email' = logged-in OR a valid
   // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
@@ -2168,6 +2174,8 @@ export type ProjectRow = {
   // KLA dedup-smart: master switch for merging repeat reports. DEFAULT true (column default 1); legacy rows
   // coerce NULL → true. When false, every submission becomes its own ticket (no "Reported N×" merge).
   dedupEnabled: boolean
+  // Mobile SDK publishable key (pk_…), null until generated. Admin read-back only.
+  publishableKey: string | null
   widgetReportGate: string
   widgetAutoCaptureErrors: boolean
   instructionsMd?: string | null
@@ -2226,6 +2234,7 @@ function rowToProject(x: any): ProjectRow {
     widgetNotifyEmail: x.widget_notify_email != null ? String(x.widget_notify_email) : null,
     slackWebhookUrl: x.slack_webhook_url != null ? String(x.slack_webhook_url) : null,
     dedupEnabled: x.dedup_enabled == null ? true : Number(x.dedup_enabled) !== 0,
+    publishableKey: x.publishable_key != null ? String(x.publishable_key) : null,
     bugNotifyEmails: parseEmailList(x.bug_notify_emails),
     // DEFAULT 1: NULL/undefined (pre-column rows) read as enabled; only an explicit 0 disables.
     notifyOnEveryBug: x.notify_on_every_bug == null ? true : Number(x.notify_on_every_bug) !== 0,
@@ -2960,6 +2969,25 @@ export async function getProjectDedupEnabled(projectId: string): Promise<boolean
 }
 export async function setProjectDedupEnabled(projectId: string, enabled: boolean): Promise<void> {
   await db!.execute({ sql: "UPDATE projects SET dedup_enabled=?, updated_at=? WHERE id=?", args: [enabled ? 1 : 0, Date.now(), projectId] })
+}
+
+// Mobile SDK publishable key (pk_…). Sentry-DSN-style: safe to ship in an app binary (authorizes filing
+// reports to ONE project only, rate-limited + reportGate-honored). One re-viewable key per project.
+export function newPublishableKey(): string {
+  return "pk_" + crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
+}
+// Resolve a presented publishable key → its project id (or null). Blank / unknown → null.
+export async function getProjectByPublishableKey(pk: string): Promise<{ id: string } | null> {
+  const key = (pk || "").trim()
+  if (!/^pk_[0-9a-f]{64}$/.test(key)) return null
+  const r = await db!.execute({ sql: "SELECT id FROM projects WHERE publishable_key=? LIMIT 1", args: [key] })
+  return r.rows.length ? { id: String((r.rows[0] as any).id) } : null
+}
+// Generate + store a fresh publishable key for the project (replaces any prior), returning the plaintext.
+export async function rotateProjectPublishableKey(projectId: string): Promise<string> {
+  const key = newPublishableKey()
+  await db!.execute({ sql: "UPDATE projects SET publishable_key=?, updated_at=? WHERE id=?", args: [key, Date.now(), projectId] })
+  return key
 }
 
 // Admin-gated write. slackWebhookUrl: pass a URL to set, "" to clear, undefined to keep as-is (the
