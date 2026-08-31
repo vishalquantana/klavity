@@ -173,6 +173,7 @@ import { updateFeedbackEvidenceDropped } from "./lib/db"
 import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
 import { countRecentFeedback, countUsers } from "./lib/db"
 import { getProjectByPublishableKey } from "./lib/db"
+import { rotateProjectPublishableKey } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, sameOriginCrawlTargets, MAX_LINKS_CHECKED, applyProspectSafety } from "./lib/bugcheck"
 import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
@@ -12560,7 +12561,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             // KLA dedup-smart: admin toggle for merging repeat reports (OFF → every submission its own ticket).
             if (typeof body.dedupEnabled === "boolean") await setProjectDedupEnabled(pid, body.dedupEnabled)
-            return json({ ok: true, modalConfig: v.config, pro })
+            // Mobile SDK: rotate (generate/replace) the project publishable key. Returns the new key so
+            // the admin can copy it into their app. Admin-gated (this branch is already past access check).
+            let rotatedPublishableKey: string | null = null
+            if (body.rotatePublishableKey === true) rotatedPublishableKey = await rotateProjectPublishableKey(pid)
+            return json({ ok: true, modalConfig: v.config, pro, publishableKey: rotatedPublishableKey })
           }
           // GET here (session-authed) returns current + pro flag + widget config for the admin UI.
           // widgetStatus = the heartbeat: when /widget.js last loaded and on which host (null = never seen).
@@ -12586,6 +12591,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     },
                     // KLA dedup-smart: admin read-back for the "merge repeat reports" toggle.
                     dedupEnabled: proj.dedupEnabled,
+                    // Mobile SDK publishable key (admin read-back; safe to display — publishable by design).
+                    publishableKey: proj.publishableKey,
                   }
                 })()
               : {}),

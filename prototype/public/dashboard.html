@@ -2881,6 +2881,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
           </label>
           <p style="font-size:12px;opacity:.7;margin-top:-2px">On by default. Turn <b>off</b> to make every submission its own ticket (no merging). Repeat detection is also stricter now — reports on the same page only merge when their descriptions actually match.</p>
         </div>
+        <div id="kl-mobilekey" style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(120,120,140,.18)">
+          <div style="font-weight:600;font-size:14px;margin-bottom:2px">Mobile SDK key</div>
+          <p style="font-size:12px;opacity:.7;margin:0 0 10px">A publishable key for the Klavity Flutter SDK. Safe to ship in your app — it only authorizes filing reports to this project. <a href="https://pub.dev/packages/klavity_flutter" target="_blank" rel="noopener">Setup guide →</a></p>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="kl-mobilekey-val" readonly placeholder="No key yet — generate one" style="flex:1;font-family:var(--mono);font-size:12px" />
+            <button type="button" id="kl-mobilekey-copy" class="btn btn-sm">Copy</button>
+            <button type="button" id="kl-mobilekey-rotate" class="btn btn-sm">Generate</button>
+          </div>
+          <p id="kl-mobilekey-msg" style="font-size:12px;opacity:.7;margin:6px 0 0"></p>
+        </div>
         </div><!-- /.wp-config -->
         <div class="wp-preview">
           <div class="wp-preview-head">
@@ -12233,6 +12243,36 @@ async function loadAppearance() {
     if ($("kl-dedup-enabled")) $("kl-dedup-enabled").checked = d.dedupEnabled !== false
     const dedupBox = $("kl-dedup")
     if (dedupBox) dedupBox.style.display = (state.active && state.active.role === "admin") ? "" : "none"
+    // Mobile SDK publishable key: admin-only read-back + section visibility.
+    const mkVal = $("kl-mobilekey-val")
+    if (mkVal) mkVal.value = d.publishableKey || ""
+    if ($("kl-mobilekey-rotate")) $("kl-mobilekey-rotate").textContent = d.publishableKey ? "Rotate" : "Generate"
+    const mkBox = $("kl-mobilekey")
+    if (mkBox) mkBox.style.display = (state.active && state.active.role === "admin") ? "" : "none"
+    const mkRotate = $("kl-mobilekey-rotate")
+    if (mkRotate && !mkRotate.dataset.bound) {
+      mkRotate.dataset.bound = "1"
+      mkRotate.addEventListener("click", async () => {
+        const msg = $("kl-mobilekey-msg")
+        if (mkRotate.textContent === "Rotate" && !confirm("Rotate the mobile key? Apps using the old key will stop filing reports until updated.")) return
+        mkRotate.disabled = true; if (msg) msg.textContent = "Generating…"
+        try {
+          const r = await fetch(projPath("/config"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ theme: sel.value || "light", rotatePublishableKey: true }) })
+          const d2 = await r.json().catch(() => ({}))
+          if (d2.ok && d2.publishableKey) { $("kl-mobilekey-val").value = d2.publishableKey; mkRotate.textContent = "Rotate"; if (msg) msg.textContent = "New key generated — copy it into your app." }
+          else if (msg) msg.textContent = "Error: " + (d2.error || "failed")
+        } catch { if (msg) msg.textContent = "Network error" }
+        finally { mkRotate.disabled = false }
+      })
+    }
+    const mkCopy = $("kl-mobilekey-copy")
+    if (mkCopy && !mkCopy.dataset.bound) {
+      mkCopy.dataset.bound = "1"
+      mkCopy.addEventListener("click", () => {
+        const v = $("kl-mobilekey-val").value
+        if (v) { try { navigator.clipboard.writeText(v) } catch (e) {} const msg = $("kl-mobilekey-msg"); if (msg) msg.textContent = "Copied." }
+      })
+    }
     // Store isPro on the note element for the save handler to read
     proNote.dataset.pro = isPro ? "1" : "0"
     proNote.style.display = isPro ? "none" : "block"
