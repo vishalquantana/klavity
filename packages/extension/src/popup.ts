@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@klavity/core'
 import type { KlavitySettings } from '@klavity/core'
-import { trySilentLogin, requestCode, verifyCode, isSignedIn, isSignedOutExplicitly, getConfig, getSelectedProjectId, setSelectedProjectId, pickProject, signOut } from './auth'
+import { trySilentLogin, requestCode, verifyCode, isSignedIn, isSignedOutExplicitly, getConfig, getSelectedProjectId, setSelectedProjectId, pickProject, signOut, triggerConfigSync } from './auth'
 import { mountOtpInput } from '@klavity/core/otp-input'
 
 interface Sim { id: string; name: string; role: string; accent: string; initials: string; enabled: boolean }
@@ -229,30 +229,50 @@ async function renderSignedIn() {
   // ── Project picker ──
   // (resolved before the analyze handler so activeProjectId + projects are in scope below)
   const config = await getConfig()
-  const projects = config?.projects ?? []
+  let projects = config?.projects ?? []
   const sel = $('proj-select') as HTMLSelectElement
   let activeProjectId: string | null = null
 
-  if (projects.length) {
+  // Populate (or re-populate) the project dropdown from a project list, preserving the saved selection.
+  const populateProjects = async (list: typeof projects) => {
+    projects = list
+    if (!list.length) { sel.style.display = 'none'; activeProjectId = null; return }
     const saved = await getSelectedProjectId()
-    const active = pickProject(projects, saved)
+    const active = pickProject(list, saved)
     activeProjectId = active?.id ?? null
-    sel.replaceChildren(...projects.map((p) => {
+    sel.replaceChildren(...list.map((p) => {
       const opt = document.createElement('option')
       opt.value = p.id
       opt.textContent = p.name
       return opt
     }))
     sel.value = activeProjectId ?? ''
-    sel.style.display = projects.length > 1 ? 'inline-block' : 'none'
-    sel.addEventListener('change', async () => {
-      activeProjectId = sel.value
-      await setSelectedProjectId(activeProjectId)
-      setTrackerLink(activeProjectId)
-      await renderSims(s, activeProjectId)
-    })
+    sel.style.display = list.length > 1 ? 'inline-block' : 'none'
   }
+  // Bind the change handler ONCE (survives re-populate).
+  sel.addEventListener('change', async () => {
+    activeProjectId = sel.value
+    await setSelectedProjectId(activeProjectId)
+    setTrackerLink(activeProjectId)
+    await renderSims(s, activeProjectId)
+  })
+  await populateProjects(projects)
   setTrackerLink(activeProjectId)
+
+  // KLA ext-popup-refresh: the popup used to render the project list from the CACHED config only, and the
+  // full sync ran solely on browser-startup / install / re-connect — so a project created in the dashboard
+  // after that (e.g. "Ms India TG") never appeared in the extension until a browser restart. Refresh on open:
+  // paint from cache instantly (above), then force a background sync and re-render the dropdown if the set
+  // changed (a new/removed project). Best-effort — a failed sync keeps the cached list.
+  void triggerConfigSync().then(async (fresh) => {
+    const next = fresh?.projects ?? []
+    const changed = next.length !== projects.length || next.some((p, i) => p.id !== projects[i]?.id)
+    if (!changed) return
+    const prevActive = activeProjectId
+    await populateProjects(next)
+    setTrackerLink(activeProjectId)
+    if (activeProjectId !== prevActive) await renderSims(s, activeProjectId)
+  }).catch(() => { /* offline / SW asleep — keep the cached list */ })
 
   // ── Ad-hoc "Analyze this page" ──
   const analyzeBtn = $('btn-analyze') as HTMLButtonElement
