@@ -12257,7 +12257,7 @@ async function loadAppearance() {
         if (mkRotate.textContent === "Rotate" && !confirm("Rotate the mobile key? Apps using the old key will stop filing reports until updated.")) return
         mkRotate.disabled = true; if (msg) msg.textContent = "Generating…"
         try {
-          const r = await fetch(projPath("/config"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ theme: sel.value || "light", rotatePublishableKey: true }) })
+          const r = await fetch(projPath("/config"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rotatePublishableKey: true }) })
           const d2 = await r.json().catch(() => ({}))
           if (d2.ok && d2.publishableKey) { $("kl-mobilekey-val").value = d2.publishableKey; mkRotate.textContent = "Rotate"; if (msg) msg.textContent = "New key generated — copy it into your app." }
           else if (msg) msg.textContent = "Error: " + (d2.error || "failed")

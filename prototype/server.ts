@@ -12489,6 +12489,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (req.method === "POST") {
             if (access !== "admin") return json({ error: "Only project admins can change widget appearance." }, 403)
             const body = await req.json().catch(() => ({}))
+            // Mobile SDK: rotate (generate/replace) the project publishable key. This is a SHORT-CIRCUIT
+            // that runs BEFORE appearance validation/write — rotating a key must NOT touch modal config.
+            // Returns the new key so the admin can copy it into their app. Admin-gated (already past the
+            // access !== "admin" check above).
+            if (body.rotatePublishableKey === true) {
+              const rotatedPublishableKey = await rotateProjectPublishableKey(pid)
+              return json({ ok: true, publishableKey: rotatedPublishableKey })
+            }
             const pro = await isAccountPro(proj.accountId)
             const v = validateModalConfigInput(body, { isPro: pro })
             if (!v.ok) return json({ error: (v as { ok: false; error: string }).error }, 400)
@@ -12561,11 +12569,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             // KLA dedup-smart: admin toggle for merging repeat reports (OFF → every submission its own ticket).
             if (typeof body.dedupEnabled === "boolean") await setProjectDedupEnabled(pid, body.dedupEnabled)
-            // Mobile SDK: rotate (generate/replace) the project publishable key. Returns the new key so
-            // the admin can copy it into their app. Admin-gated (this branch is already past access check).
-            let rotatedPublishableKey: string | null = null
-            if (body.rotatePublishableKey === true) rotatedPublishableKey = await rotateProjectPublishableKey(pid)
-            return json({ ok: true, modalConfig: v.config, pro, publishableKey: rotatedPublishableKey })
+            return json({ ok: true, modalConfig: v.config, pro })
           }
           // GET here (session-authed) returns current + pro flag + widget config for the admin UI.
           // widgetStatus = the heartbeat: when /widget.js last loaded and on which host (null = never seen).

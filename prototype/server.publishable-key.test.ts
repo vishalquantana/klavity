@@ -183,8 +183,15 @@ test("admin config GET returns the publishable key; rotate issues a new one", as
   const b1 = await r1.json() as any
   expect(b1.publishableKey).toBe(null)
 
-  // 2) POST rotatePublishableKey:true → returns a fresh pk_ key.
-  const r2 = await apiPost(`/api/projects/${PID}/config`, { theme: "light", rotatePublishableKey: true }, ADMIN_SID)
+  // 1.5) Set a distinctive appearance config BEFORE rotating, so we can prove rotate doesn't clobber it.
+  const rSetCfg = await apiPost(`/api/projects/${PID}/config`, { theme: "dark", thankYou: "KEEP ME" }, ADMIN_SID)
+  expect(rSetCfg.status).toBe(200)
+  const bSetCfg = await rSetCfg.json() as any
+  expect(bSetCfg.ok).toBe(true)
+  expect(bSetCfg.modalConfig?.thankYou).toBe("KEEP ME")
+
+  // 2) POST rotatePublishableKey:true (rotate-only body, no theme) → returns a fresh pk_ key.
+  const r2 = await apiPost(`/api/projects/${PID}/config`, { rotatePublishableKey: true }, ADMIN_SID)
   expect(r2.status).toBe(200)
   const b2 = await r2.json() as any
   expect(b2.ok).toBe(true)
@@ -196,4 +203,8 @@ test("admin config GET returns the publishable key; rotate issues a new one", as
   expect(r3.status).toBe(200)
   const b3 = await r3.json() as any
   expect(b3.publishableKey).toBe(b2.publishableKey)
+
+  // 4) Regression guard for the clobber bug: rotating must NOT wipe the appearance config set in step 1.5.
+  expect(b3.modalConfig?.thankYou).toBe("KEEP ME")
+  expect(b3.modalConfig?.theme).toBe("dark")
 })
