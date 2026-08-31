@@ -172,6 +172,7 @@ import { fireEvidenceDropped } from "./lib/mail"
 import { updateFeedbackEvidenceDropped } from "./lib/db"
 import { diagnoseHeartbeat, renderDeveloperEmail, type HeartbeatSignals } from "./lib/heartbeat-diagnosis"
 import { countRecentFeedback, countUsers } from "./lib/db"
+import { getProjectByPublishableKey } from "./lib/db"
 import { enrollLead, buildNurtureEmail, recordNurtureEmailSent, recordSendgridEvents, startLeadNurtureScheduler } from "./lib/lead-nurture"
 import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filterModelFindings, checkedSummary, sameOriginCrawlTargets, MAX_LINKS_CHECKED, applyProspectSafety } from "./lib/bugcheck"
 import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
@@ -3005,6 +3006,7 @@ async function transitionLinkedIssuesOnQaClose(
 const FEEDBACK_ANON_WINDOW = 60 * 60 * 1000
 const FEEDBACK_ANON_PER_IP = 20
 const FEEDBACK_ANON_PER_PROJECT = 200
+const FEEDBACK_PK_PER_KEY = 200 // per publishable key, per FEEDBACK_ANON_WINDOW (mobile SDK)
 
 // SECURITY (KLA-559): hard ceiling on any request body. Bun buffers the whole body before our handler
 // runs, so without this an attacker could POST an arbitrarily large body (no Origin needed) and spike
@@ -5041,6 +5043,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         const form = await req.formData()
+
+        // Mobile SDK path: a non-browser caller (no Origin) may authorize an anonymous submit with a
+        // per-project publishable key (pk_…) instead of the Origin/Turnstile gate. The project is derived
+        // FROM the key (never trusted from the body). Browser callers (Origin present) keep the existing
+        // gate untouched. Resolved here so both the rate-limit and persist branches can use it.
+        let pkProjectId: string | null = null
+        if (anonActor && !reqOrigin) {
+          const pk = String(form.get("publishableKey") || "").trim()
+          if (pk) {
+            const proj = await getProjectByPublishableKey(pk)
+            if (!proj) return wjson({ error: "Invalid publishable key." }, 401)
+            pkProjectId = proj.id
+            if (!rlAllow(`fbpk:key:${pk.slice(0, 12)}:${proj.id}`, FEEDBACK_PK_PER_KEY, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
+          }
+        }
+
         const description = String(form.get("description") || "").trim()
         const pageUrl = String(form.get("page_url") || "")
         // KLAVITYKLA-256: quarantine the bare /app Studio DEMO funnel. That funnel reviews a MOCK
@@ -5131,6 +5149,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             anonWidgetAllowed = true
           }
+        }
+
+        // Publishable-key submit (no Origin): treat as an allowed anonymous widget submit, scoped to the
+        // key's project. reportGate still applies below (email/login gates use the same validReporterEmail).
+        if (pkProjectId) {
+          const gate = (await getWidgetConfig(pkProjectId))?.reportGate || "anonymous"
+          if (gate === "login") return wjson({ error: "Sign in to report on this project." }, 401)
+          if (gate === "email" && !validReporterEmail) return wjson({ error: "A valid email is required to submit." }, 400)
+          anonWidgetAllowed = true
         }
 
         // G2/G3/G5: captured dev-tools context (console + network + env + identity/metadata). Optional
@@ -5394,6 +5421,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // the project's report gate above (anonWidgetAllowed). no-Origin (curl/script) anonymous
             // calls still never reach projectById — the deferred surface stays closed.
             if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = await projectById(reqProject)
+            // TENANT ISOLATION: a publishable-key submit's project is ALWAYS the key's resolved project —
+            // never the (attacker-controlled) project_id form field. Overrides any resolution above.
+            if (pkProjectId) resolved = await projectById(pkProjectId)
             // ── KLA submit-target: dogfood intake routing ────────────────────────────────────────────
             // When the reporter picked "Klavity" in the composer ("problem with this tool"), file the report
             // into the DESIGNATED Klavity intake project (env KLAVITY_INTAKE_PROJECT_ID) instead of the
