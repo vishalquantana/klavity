@@ -1,0 +1,99 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Build a Release Readiness Checklist (Pre-Launch) · Klavity</title>
+<meta name="description" content="A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off.">
+<link rel="canonical" href="https://klavity.in/blog/release-readiness-checklist-pre-launch-qa">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Build a Release Readiness Checklist (Pre-Launch)"><meta property="og:description" content="A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off.">
+<meta property="og:url" content="https://klavity.in/blog/release-readiness-checklist-pre-launch-qa"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Build a Release Readiness Checklist (Pre-Launch)"><meta name="twitter:description" content="A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Build a Release Readiness Checklist (Pre-Launch)","description":"A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off.","datePublished":"2026-08-31","dateModified":"2026-08-31","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/release-readiness-checklist-pre-launch-qa","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Build a Release Readiness Checklist (Pre-Launch)","item":"https://klavity.in/blog/release-readiness-checklist-pre-launch-qa"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/release-readiness-checklist-pre-launch-qa"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a release readiness checklist?","acceptedAnswer":{"@type":"Answer","text":"It's a standing list of conditions a release must meet before it ships — passing smoke tests, a working rollback path, live monitoring, and a named sign-off owner. Unlike a test plan, which describes what you test, a readiness checklist is the final go/no-go gate that turns 'I think we're fine' into an explicit, auditable decision."}},{"@type":"Question","name":"How long should a release readiness checklist be?","acceptedAnswer":{"@type":"Answer","text":"Short enough that people actually run it — usually 8 to 12 items. Every entry should be something that could genuinely stop a launch. If a check has never once blocked a release, cut it; a checklist people skip because it's too long protects nothing."}},{"@type":"Question","name":"Who signs off on a release?","acceptedAnswer":{"@type":"Answer","text":"One named person with the authority to say no — typically a release owner, on-call engineer, or QA lead — not a group. Diffused ownership ('everyone approved') means no one actually verified the gate. The sign-off is a person attaching their name to 'this is safe to ship,' and rotating that role keeps it from becoming a rubber stamp."}},{"@type":"Question","name":"Is a release readiness checklist the same as a definition of done?","acceptedAnswer":{"@type":"Answer","text":"No. Definition of done applies to a single change ('this bug fix is complete'). A release readiness checklist applies to the whole shipment ('this build is safe to deploy to everyone'). You can have every ticket meet its definition of done and still fail readiness — for example, if monitoring is broken or there's no rollback plan."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-31</div>
+    <h1>How to Build a Release Readiness Checklist (Pre-Launch)</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A release readiness checklist is a short, standing list of conditions every release must meet before it ships: critical-path smoke tests pass, a tested rollback exists, monitoring and alerts are live, and a named owner signs off. Keep it to items that would actually stop a launch — 8 to 12 checks — and run it the same way every time, so 'are we ready?' becomes a decision instead of a debate.</div>
+    <div class="prose"><p>A release readiness checklist is a short, standing list of conditions every release must meet before it ships: critical-path smoke tests pass, a tested rollback path exists, monitoring and alerts are live, and a named owner signs off on the go/no-go decision. It's the final gate that turns "I think we're fine" into an explicit, auditable choice. Keep it to items that would actually stop a launch — typically 8 to 12 checks — and run it the same way every time.</p>
+
+<h2>What is a release readiness checklist?</h2>
+<p>It's the last verification step before a build reaches users. A test plan describes <em>what</em> you test; a readiness checklist confirms the release as a whole is safe to deploy. The distinction matters because you can have every individual change pass its own tests and still ship a broken release — a stale migration, a missing feature flag, or monitoring that quietly stopped reporting.</p>
+<p>The checklist's real job is to convert a vague feeling into a decision. "Are we ready?" invites optimism and hallway consensus. A checklist replaces that with concrete yes/no conditions, so the answer is defensible and the same person can be pointed to if it was wrong.</p>
+
+<h2>What should a release readiness checklist include?</h2>
+<p>Group items by the question each one answers. A practical starting set:</p>
+<ol>
+<li><strong>Critical paths verified.</strong> The handful of flows that must never break — sign-up, login, checkout, the core action of your product — pass an automated <a href="/autosim">end-to-end smoke test</a> against a production-like build. Not the full suite; just the flows whose failure would be an incident.</li>
+<li><strong>No open blockers.</strong> Every bug tagged blocker or critical for this release is closed or explicitly deferred with a named owner. "We'll fix it in a patch" is a valid answer — but it has to be a written one, not an assumption.</li>
+<li><strong>Rollback is tested, not theoretical.</strong> You can revert to the previous version, and someone has actually done it recently. A rollback plan you've never executed is a hypothesis.</li>
+<li><strong>Migrations are reversible or forward-safe.</strong> Database changes can be rolled back, or the old code keeps working against the new schema. This is where rollback plans quietly fail.</li>
+<li><strong>Monitoring and alerts are live.</strong> Error rates, latency, and key business metrics are being reported, and alerts will actually page someone. If you can't see a regression, you can't respond to one.</li>
+<li><strong>Feature flags are set correctly.</strong> Anything gated is in its intended state, and you know how to turn new behavior off without a redeploy.</li>
+<li><strong>Owner and on-call are named.</strong> One person owns the go/no-go call, and whoever is on call after the release knows the release is happening.</li>
+</ol>
+<p>Trim this to your product. The test isn't whether an item sounds responsible — it's whether it has ever, or could plausibly, stop a release. Anything else is ceremony.</p>
+
+<h2>How to run the go/no-go decision</h2>
+<ol>
+<li><strong>Run the checklist at a fixed point.</strong> Same moment every release — after the release branch is cut and deployed to staging, before the production promotion. A checklist run at a random time gets skipped under pressure.</li>
+<li><strong>Record the actual state, not a checkmark.</strong> "Smoke tests: 14/14 passing, run at 09:12" is auditable. A bare tick tells you nothing when something breaks later.</li>
+<li><strong>Make no-go cheap.</strong> If halting a release is a career risk, people will wave through borderline builds. The owner should be able to say "not yet" without a fight; that's the entire point of naming one person.</li>
+<li><strong>Log the decision.</strong> Who signed off, when, and what was outstanding. When a regression escapes, this is how you improve the checklist instead of blaming a person.</li>
+</ol>
+
+<h2>Common release readiness mistakes</h2>
+<ul>
+<li><strong>The checklist grows until nobody runs it.</strong> Every incident adds an item, none ever get removed, and after a year it's a 40-line ritual people copy-paste past. Prune anything that has never blocked a launch.</li>
+<li><strong>Group sign-off.</strong> "Everyone approved" means no individual verified the gate. Diffused ownership is the same as no ownership.</li>
+<li><strong>Checking that tests exist, not that they passed on this build.</strong> Green CI from last week is not readiness. Verify the run that matches the artifact you're about to ship.</li>
+<li><strong>No plan for what you can't test.</strong> Some risks — a third-party outage, a slow data migration on real volume — can't be fully verified pre-launch. Name them, decide your response in advance, and make sure monitoring will catch them.</li>
+</ul>
+
+<h2>Where readiness meets reality: the first hour after launch</h2>
+<p>A checklist reduces the odds of a bad release; it doesn't eliminate them. The releases that go wrong quietly are the ones where a real user hits an edge case your smoke tests never modeled, and the report comes back too thin to act on. That's why the readiness gate and your post-launch feedback loop are two halves of the same system.</p>
+<p>The faster a real regression turns into a reproducible report — exact steps, the environment, console and network evidence — the shorter the window between "we shipped" and "we fixed it." Tools like <a href="/snap">Klavity Snap</a> let anyone file a bug report with that evidence attached the moment they hit it, so the first users to notice become your fastest signal rather than a support-ticket backlog. Pair a disciplined pre-launch checklist with a tight post-launch feedback path and most bad releases get caught in minutes, not days. For more on catching issues early, see our <a href="/blog">guides on shift-left testing and smoke tests</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Gate every release on 8 to 12 checks that could genuinely block a launch</li><li>Require a tested rollback path before you ship, not just a forward fix</li><li>Confirm monitoring and alerts are live so you'd notice a regression fast</li><li>Assign one named owner to make the go/no-go call and rotate the role</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is a release readiness checklist?</summary><p>It's a standing list of conditions a release must meet before it ships — passing smoke tests, a working rollback path, live monitoring, and a named sign-off owner. Unlike a test plan, which describes what you test, a readiness checklist is the final go/no-go gate that turns 'I think we're fine' into an explicit, auditable decision.</p></details><details><summary>How long should a release readiness checklist be?</summary><p>Short enough that people actually run it — usually 8 to 12 items. Every entry should be something that could genuinely stop a launch. If a check has never once blocked a release, cut it; a checklist people skip because it's too long protects nothing.</p></details><details><summary>Who signs off on a release?</summary><p>One named person with the authority to say no — typically a release owner, on-call engineer, or QA lead — not a group. Diffused ownership ('everyone approved') means no one actually verified the gate. The sign-off is a person attaching their name to 'this is safe to ship,' and rotating that role keeps it from becoming a rubber stamp.</p></details><details><summary>Is a release readiness checklist the same as a definition of done?</summary><p>No. Definition of done applies to a single change ('this bug fix is complete'). A release readiness checklist applies to the whole shipment ('this build is safe to deploy to everyone'). You can have every ticket meet its definition of done and still fail readiness — for example, if monitoring is broken or there's no rollback plan.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

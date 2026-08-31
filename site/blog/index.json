@@ -488,5 +488,12 @@
     "excerpt": "Positive testing proves a feature works with valid input. Negative testing proves it fails safely with invalid input. Here's how to use both.",
     "category": "Compare",
     "date": "2026-08-30"
+  },
+  {
+    "slug": "release-readiness-checklist-pre-launch-qa",
+    "title": "How to Build a Release Readiness Checklist (Pre-Launch)",
+    "excerpt": "A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off.",
+    "category": "Guides",
+    "date": "2026-08-31"
   }
 ]
