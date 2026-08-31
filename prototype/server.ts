@@ -60,7 +60,7 @@ import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
 import { encryptSecret, decryptSecret } from "./lib/crypto"
-import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, isTestAccountEmail, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
+import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
 import { createShortLink, getShortLinkByCodeOrSlug, listShortLinks, getShortLinkDetail, updateShortLink, recordLinkClick, linkClickStats, ShortLinkConflictError, type ShortLinkRow } from "./lib/db"
@@ -4353,7 +4353,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // many login Trails in succession never exhausts the 5/email/15min request rate limit.
         // KLAVITYKLA-304: the gate is now runtime-checked (env bootstrap OR an /opsadmin toggle with
         // a required auto-expiry) rather than read once at boot.
-        const reqDecision = await testOtpDecision(e, () => isTestAccountEmail(e))
+        // KLA testotp-scope: the Klavity-login bypass is granted ONLY by the EXPLICIT env allowlist
+        // (KLAV_TEST_OTP_EMAILS) or the opsadmin runtime gate — NOT implicitly by "this email is a
+        // registered test account". A test account is a credential for the CUSTOMER'S app (AutoSim logs
+        // into their product with it); it must never divert that person's REAL Klavity OTP login. A real
+        // user (e.g. a customer whose email was added as a test account) now correctly receives a real OTP
+        // email. Operator dogfood identities that DO log into Klavity via 666666 are listed explicitly in
+        // KLAV_TEST_OTP_EMAILS. (Previously any test-account email hijacked the Klavity login → no email sent.)
+        const reqDecision = await testOtpDecision(e)
         if (reqDecision.allowed) {
           console.warn(`[TEST-OTP-REQUEST] email=${e} via=${reqDecision.via} — test-OTP active: skipping rate limit + email send, advancing client to code entry`)
           // testOtp:true tells the login page to advance to the code field even though no email was
@@ -4409,12 +4416,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         //   (a) KLAV_TEST_OTP env var is set/truthy (local dev + CI bootstrap; OFF in production), OR
         //   (b) an ops admin enabled the runtime gate from /opsadmin and it hasn't expired yet
         //       (KLAVITYKLA-304 — checked per request, so it auto-disables with no restart), AND
-        //   the email is on the matching allowlist OR is a registered test account login_email in
-        //   the DB (so AutoSim login Trails never need the allowlist kept manually in sync).
+        //   the email is on the matching EXPLICIT allowlist (KLAV_TEST_OTP_EMAILS or the opsadmin gate).
+        // KLA testotp-scope: being a registered test-account login_email NO LONGER grants the bypass — a
+        // test account is a customer-app credential and must not hijack that person's real Klavity login.
+        // Operator dogfood identities that log into Klavity via 666666 are listed in KLAV_TEST_OTP_EMAILS.
         // Any other email, or with both gates off, 666666 is rejected by the normal verifyOtp path.
         // This is server-side-gated only — no URL param or header can enable it.
         const testOtpDec = c === TEST_OTP_CODE
-          ? await testOtpDecision(e, () => isTestAccountEmail(e))
+          ? await testOtpDecision(e)
           : { allowed: false, via: null as null | string }
         const testOtpGranted = testOtpDec.allowed
         if (!(testOtpGranted || await verifyOtp(e, c))) {
@@ -8344,7 +8353,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const failEmailKey = `viewerfail:e:${email}:${verifyMatch[1]}`
       if (rlCount(failEmailKey) >= OTP_FAIL_EMAIL_MAX)
         return json({ error: "Too many attempts. Please wait a few minutes and try again." }, 429, { "Retry-After": "900" })
-      const testGranted = code === TEST_OTP_CODE ? (await testOtpDecision(email, () => isTestAccountEmail(email))).allowed : false
+      // KLA testotp-scope: explicit allowlist / opsadmin gate only — a test-account email no longer grants
+      // the Klavity 666666 bypass (it's a customer-app credential, not a Klavity login identity).
+      const testGranted = code === TEST_OTP_CODE ? (await testOtpDecision(email)).allowed : false
       if (!(testGranted || await verifyOtp(email, code))) {
         rlRecord(failEmailKey, OTP_FAIL_EMAIL_WINDOW)
         return json({ error: "Invalid or expired code." }, 401)

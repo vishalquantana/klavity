@@ -153,6 +153,26 @@ test("666666 is REJECTED for a non-allowlisted email even when KLAV_TEST_OTP=1",
   expect(body.error).toBeTruthy()
 })
 
+test("KLA testotp-scope: 666666 is REJECTED for a registered TEST-ACCOUNT email that is NOT allowlisted", async () => {
+  // Regression for the roshini incident: a customer registered a real person's email as an AutoSim test
+  // account (a credential for THEIR app), which used to implicitly grant the Klavity 666666 bypass and
+  // silently skip that person's real OTP email. Being a test-account login_email must NO LONGER grant the
+  // Klavity bypass — only the explicit KLAV_TEST_OTP_EMAILS allowlist / opsadmin gate does.
+  const { createClient } = await import("@libsql/client")
+  const c = createClient({ url: "file:" + dbOn })
+  const tacctEmail = `tacct-${RUN}@test.local` // NOT in KLAV_TEST_OTP_EMAILS
+  await c.execute({
+    sql: "INSERT INTO test_accounts (id,project_id,name,login_email,password_enc,auth_shape,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+    args: ["ta_" + RUN, "proj_test_" + RUN, "roland", tacctEmail, "x", "password", "seed", Date.now(), Date.now()],
+  })
+  // Sanity: it IS a test account now.
+  const seen = await c.execute({ sql: "SELECT 1 FROM test_accounts WHERE LOWER(login_email)=?", args: [tacctEmail] })
+  expect(seen.rows.length).toBe(1)
+  // …yet 666666 must be rejected (401), because the email is not on the explicit allowlist.
+  const r = await verify(BASE_ON, tacctEmail, TEST_OTP_CODE)
+  expect(r.status).toBe(401)
+})
+
 test("666666 is REJECTED when KLAV_TEST_OTP is NOT set (production-like server)", async () => {
   // The production server has no test OTP env — 666666 must be a normal wrong code.
   const r = await verify(BASE_OFF, ALLOWED_EMAIL, TEST_OTP_CODE)

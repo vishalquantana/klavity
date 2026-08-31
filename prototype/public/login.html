@@ -163,7 +163,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <div id="step-code" class="hide">
     <h1>Enter your code</h1>
-    <p class="sub">Sent to <span id="sentTo" style="color:var(--paper)"></span>. It expires in 10 minutes.</p>
+    <p class="sub" id="codeSub">Sent to <span id="sentTo" style="color:var(--paper)"></span>. It expires in 10 minutes.</p>
     <label>6-digit code</label>
     <input id="code" class="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" />
     <button class="btn" id="verifyBtn">Verify & continue</button>
@@ -271,10 +271,14 @@ async function requestCode(btn, msgId, advance) {
       return true
     }
     if (d.testOtp) {
-      // Test-OTP mode (KLAV_TEST_OTP): no email is sent — the fixed test code is entered directly.
-      // Advance to the code field so AutoSim login Trails / e2e tests aren't dead-ended.
-      if (advance) { $("sentTo").textContent = email; show("code"); $("code").focus() }
-      else msg(msgId, "Enter your test code to continue.", true)
+      // Test-OTP mode (KLAV_TEST_OTP): NO email is sent — the fixed test code is entered directly.
+      // Make that explicit so the user doesn't wait for an email that will never arrive (the "Sent to X"
+      // code-screen sub would otherwise imply one was sent). Advance so AutoSim/e2e Trails aren't dead-ended.
+      if (advance) {
+        show("code"); $("code").focus()
+        var subEl = $("codeSub")
+        if (subEl) subEl.innerHTML = "Test login for <span style='color:var(--paper)'>" + email.replace(/</g, "&lt;") + "</span> — no email is sent. Enter your test code."
+      } else msg(msgId, "Test login — no email sent. Enter your test code to continue.", true)
       return true
     }
     if (!d.emailed) {
@@ -282,7 +286,11 @@ async function requestCode(btn, msgId, advance) {
       msg(msgId, "We couldn't send your code right now. Please try again.")
       return false
     }
-    if (advance) { $("sentTo").textContent = email; show("code"); $("code").focus() }
+    if (advance) {
+      // Restore the default "Sent to <email>" sub in case a prior testOtp attempt overwrote it this session.
+      var cs = $("codeSub"); if (cs) cs.innerHTML = 'Sent to <span id="sentTo" style="color:var(--paper)"></span>. It expires in 10 minutes.'
+      $("sentTo").textContent = email; show("code"); $("code").focus()
+    }
     else msg(msgId, "A new code is on its way.", true)
     return true
   } catch (e) { msg(msgId, e.message); return false }
