@@ -11611,7 +11611,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             projectId: fbRow.projectId, type: "regression_receipt_sent", actorEmail: me, feedbackId: fid,
             meta: { recipients: res.recipients.length, expectationId: res.record.expectationId },
           }).catch((e: any) => console.warn("regression receipt activity skipped:", e?.message || e))
-          return json({ ok: true, sent: true, recipients: res.recipients, sentAt: res.record.sentAt })
+          return json({ ok: true, sent: true, emailed: res.emailed, recipients: res.recipients, sentAt: res.record.sentAt })
         }
 
         // POST /api/feedback/:id/guard — KLA-242 "Guard this fix".

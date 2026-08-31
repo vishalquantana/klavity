@@ -289,7 +289,7 @@ export async function latestReceiptForFeedback(
 }
 
 export type ReceiptSendResult =
-  | { ok: true; sent: true; recipients: string[]; record: ReceiptRecord }
+  | { ok: true; sent: true; emailed: boolean; recipients: string[]; record: ReceiptRecord }
   | { ok: true; sent: false; reason: "not_guard_caught" | "no_recipient" }
   | { ok: false; error: string }
 
@@ -327,7 +327,10 @@ export async function sendRegressionCaughtReceipt(
 
     // Only actually transmit when SendGrid is configured; recording still happens (audit) so the UI
     // reflects the intent in dev/test. The transport itself is the A.4 sender (individual copies).
-    if (process.env.SENDGRID_API_KEY || deps.sendEmail) {
+    // `emailed` tracks whether the email ACTUALLY went out, so the UI doesn't claim "Receipt sent" to a
+    // customer when no transport was configured (mirrors the assigneeEmailSent pattern; UX-audit HIGH #1).
+    const emailed = !!(process.env.SENDGRID_API_KEY || deps.sendEmail)
+    if (emailed) {
       const send = deps.sendEmail ?? sendReportAlertEmail
       await send(recipients, subject, html, text)
     }
@@ -338,7 +341,7 @@ export async function sendRegressionCaughtReceipt(
       recipients, firstFixedAt: guard.firstFixedAt, caughtAt: guard.caughtAt,
       sentBy: input.sentBy ?? null, sentAt: input.fixedAt,
     })
-    return { ok: true, sent: true, recipients, record }
+    return { ok: true, sent: true, emailed, recipients, record }
   } catch (e: any) {
     console.error("sendRegressionCaughtReceipt (non-fatal):", e?.message || e)
     return { ok: false, error: e?.message || "Could not send receipt." }

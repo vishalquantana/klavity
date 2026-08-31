@@ -94,8 +94,14 @@
     document.getElementById("unlockBtn").onclick = function(){
       email = (document.getElementById("emailInp").value || "").trim();
       if (!email || email.indexOf("@") < 0){ document.getElementById("gateMsg").textContent = "Enter a valid email."; return; }
+      // UX-audit HIGH #2: only reveal the code input + claim "We sent a code" when the request actually
+      // succeeded — a 4xx/5xx (or network failure) must show an error, not a false "sent" that leaves the
+      // viewer waiting for an email that never arrives (same class as the login-OTP bug).
+      var gm = document.getElementById("gateMsg"); gm.textContent = "Sending…";
       fetch("/api/t/" + encodeURIComponent(REF) + "/unlock", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: email }) })
-        .then(function(){ document.getElementById("otpRow").classList.remove("hide"); document.getElementById("gateMsg").textContent = "We sent a code to " + email; });
+        .then(function(r){ return r.ok ? (r.json().catch(function(){ return {}; })) : Promise.reject(new Error("http " + r.status)); })
+        .then(function(){ document.getElementById("otpRow").classList.remove("hide"); gm.textContent = "We sent a code to " + email; })
+        .catch(function(){ gm.textContent = "Couldn't send a code. Check the email and try again."; });
     };
     document.getElementById("verifyBtn").onclick = function(){
       var code = (document.getElementById("codeInp").value || "").trim();

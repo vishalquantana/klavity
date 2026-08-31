@@ -7534,12 +7534,21 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         }).catch(() => null)
         const d = r ? await r.json().catch(() => ({})) : {}
         if (r && r.ok && d.ok && d.sent) {
-          regrReceiptBtn.innerHTML = kicon('mail-check') + " Receipt sent"
-          regrReceiptBtn.classList.add("btn-indigo")
+          // UX-audit HIGH #1: only claim "Receipt sent" when the email transport actually ran. When SendGrid
+          // isn't configured the receipt is RECORDED (audit) but no customer email went out — say so instead
+          // of falsely telling the operator a customer was emailed.
+          const n = Array.isArray(d.recipients) ? d.recipients.length : 0
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.receiptSent = true
-          const n = Array.isArray(d.recipients) ? d.recipients.length : 0
-          showTktMsg(detailEl, "Receipt sent to " + n + " reporter" + (n === 1 ? "" : "s") + ".", false)
+          if (d.emailed === false) {
+            regrReceiptBtn.innerHTML = kicon('mail-check') + " Receipt recorded"
+            regrReceiptBtn.classList.add("btn-indigo")
+            showTktMsg(detailEl, "Receipt recorded, but email isn't configured on this server — no message was sent to the reporter.", true)
+          } else {
+            regrReceiptBtn.innerHTML = kicon('mail-check') + " Receipt sent"
+            regrReceiptBtn.classList.add("btn-indigo")
+            showTktMsg(detailEl, "Receipt sent to " + n + " reporter" + (n === 1 ? "" : "s") + ".", false)
+          }
         } else if (r && r.ok && d.ok && d.sent === false) {
           // Graceful skip (not guard-caught / no reporter contact) — surfaced, not an error.
           regrReceiptBtn.disabled = false
@@ -9551,9 +9560,15 @@ async function applyBulkAction(projId, body, onDone, optimistic) {
   const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
     method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, ticketIds: ids })
   }).catch(() => null)
-  if (!r) return
+  // UX-audit HIGH #3: a bulk action that fails must NOT fail silently — the user selected tickets and applied
+  // a change; a network error or a hard 4xx/5xx used to "surface nothing", leaving them unable to tell whether
+  // it applied. Toast the failure so they can retry.
+  if (!r) { if (typeof klavToast === "function") klavToast("Couldn't apply the bulk action — network error. Please try again."); return }
   const data = await r.json().catch(() => ({}))
-  if (!r.ok && r.status !== 207) return   // hard error (400/403/404): surface nothing, no mutation applied
+  if (!r.ok && r.status !== 207) {
+    if (typeof klavToast === "function") klavToast((data && data.error) || ("Bulk action failed (" + r.status + "). No changes were applied."))
+    return
+  }
   const failures = Array.isArray(data.failures) ? data.failures : []
   const prior = Array.isArray(data.prior) ? data.prior : []
   // Which metadata fields changed and are therefore undoable (label ops aren't captured in `prior`).

@@ -130,6 +130,8 @@ test("send + record: guard-caught close with a reporter contact emails via A.4 t
   )
   expect(res.ok).toBe(true)
   expect(res.sent).toBe(true)
+  // UX-audit HIGH #1: emailed=true when a transport (deps.sendEmail here) actually ran.
+  if (res.ok && res.sent) expect(res.emailed).toBe(true)
   if (res.ok && res.sent) expect(res.recipients).toEqual(["carol@client.example"])
   expect(sent).toHaveLength(1)
   expect(sent[0].to).toEqual(["carol@client.example"])

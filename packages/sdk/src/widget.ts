@@ -1240,7 +1240,15 @@ async function mount() {
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
-    if (widget.reportGate === "login" && !identified) { openConnect(); return }
+    // UX-audit HIGH #4: the "login" gate opens the connect popup, but openConnect() was fired-and-forgotten
+    // so the composer never opened after a successful login — the user had to click "Report a bug" AGAIN with
+    // no hint why nothing happened. Chain off its promise: it resolves with a token (truthy on success, "" if
+    // the popup was cancelled). On success, re-enter openReport — now `identified`, so it proceeds past the
+    // gate and opens the composer. On cancel, do nothing (the user declined).
+    if (widget.reportGate === "login" && !identified) {
+      void openConnect().then((tok) => { if (tok) openReport(type, opts) })
+      return
+    }
     const requireEmail = widget.reportGate === "email" && !identified
     // Don't beg for an email on the success screen when it's redundant: we already collected it via the
     // gate (requireEmail), the user is a signed-in widget user (token), or it's our own non-leadgen page
