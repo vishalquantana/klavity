@@ -208,8 +208,17 @@ test("#725a: the ticket page is uncapped width and widens the outer .wrap when o
 // ── #726: the cockpit media column defaults to 480px (LEFT ~480 | MIDDLE 1fr | RIGHT ~280 per the
 //    approved Studio Cockpit mockup — supersedes #725b's 460/270 default; still user-resizable). ───────
 test("#726: the 3-col cockpit grid defaults col1 (evidence) 480px and col3 280px", () => {
-  expect(HTML).toContain("grid-template-columns:var(--t3c1,480px) 8px minmax(0,1fr) 8px var(--t3c3,280px)")
+  // KLA-responsive: cols now SHRINK (minmax max = the persisted width) so a wide col1 / narrow content
+  // area can't overflow; col3 keeps a 200px floor so PROPERTIES never crushes. Defaults stay 480/280.
+  expect(HTML).toContain("grid-template-columns:minmax(0,var(--t3c1,480px)) 8px minmax(0,1fr) 8px minmax(200px,var(--t3c3,280px))")
   expect(HTML).not.toContain("var(--t3c1,300px)")
+})
+
+// ── KLA-responsive: the cockpit collapses on the CARD's width (container query), not just viewport, so
+//    it stacks correctly when the sidebar is open (viewport wide, card narrow — the reported bug). ─────
+test("KLA-responsive: ticket page collapses via a container query on the card width", () => {
+  expect(HTML).toContain("container-type:inline-size")
+  expect(HTML).toContain("@container (max-width:900px)")
 })
 
 // ── #725c: the redundant "ACTIVITY & COMMENTS" parent heading is removed from the middle column ──────
