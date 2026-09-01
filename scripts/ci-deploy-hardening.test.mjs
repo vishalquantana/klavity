@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -63,6 +64,29 @@ test("KLA-750(b): autodeploy verifies served commit before flipping Caddy", () =
   assert.ok(flipIdx > 0, "flip_caddy must be called")
   assert.ok(assertIdx < flipIdx, "served-commit check must run BEFORE the Caddy flip")
 })
+
+// (b2) BEHAVIORAL parse test — the (b) test above is static (matches script TEXT) and missed a real
+// bug: served_commit's old `grep -oE '[0-9a-fA-F]+' | head -n1` matched the 'c' in the word "commit"
+// FIRST, so it returned "c" and aborted EVERY Caddy flip (prod froze on old code). Extract the ACTUAL
+// served_commit function from the script, stub curl, and prove it returns the SHA — not "c".
+function runServedCommit(script, body) {
+  const fn = script.match(/served_commit\(\)\s*\{[\s\S]*?\n\}/)
+  assert.ok(fn, "served_commit() function must exist")
+  const harness = `curl(){ printf '%s' ${JSON.stringify(body)}; }\n${fn[0]}\nserved_commit "http://127.0.0.1:0/api/version"`
+  return execFileSync("bash", ["-c", harness], { encoding: "utf8" }).trim()
+}
+for (const [name, script] of [["autodeploy", autodeploy], ["prod-deploy", prodDeploy]]) {
+  test(`KLA-750 parse: ${name} served_commit extracts the SHA, not the 'c' in "commit"`, () => {
+    const sha = "5416faeb6b4256031044e8758c2990bbb0b81f52"
+    assert.equal(runServedCommit(script, `{"ok":true,"commit":"${sha}","startedAt":"x","pid":1}`), sha)
+    // whitespace variant + no commit → empty (not a partial match)
+    assert.equal(runServedCommit(script, `{ "commit" : "abcdef1234567890" }`), "abcdef1234567890")
+    assert.equal(runServedCommit(script, `{"ok":true,"pid":1}`), "")
+    // regression guard: the buggy second-grep-then-head antipattern must be gone from CODE
+    // (matches the pipeline `grep -oE '[0-9a-fA-F]+' | head`, not the prose comment describing it).
+    assert.doesNotMatch(script, /grep -oE '\[0-9a-fA-F\]\+'\s*\|\s*head/, "the double-grep→head that returned 'c' must be removed")
+  })
+}
 
 // (c) Restart-counter climb (EADDRINUSE crash-loop) detection → abort, not silent success.
 test("KLA-750(c): autodeploy detects a climbing restart counter and aborts", () => {

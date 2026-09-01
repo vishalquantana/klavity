@@ -164,8 +164,10 @@ served_commit() {
   local url="$1" body
   body="$(curl -fsS --max-time 3 "$url" 2>/dev/null || echo '')"
   [ -z "$body" ] && { echo ""; return; }
-  echo "$body" | grep -oE '"commit"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]+"' \
-    | grep -oE '[0-9a-fA-F]+' | head -n1
+  # Capture ONLY the quoted value. A second `grep -oE '[0-9a-fA-F]+'` would match the 'c' in the
+  # word "commit" FIRST (both are hex chars) and `head -n1` returned "c" — a false mismatch that
+  # aborted every Caddy flip (KLA-750 parse bug: prod froze on old code). sed extracts the group.
+  echo "$body" | sed -nE 's/.*"commit"[[:space:]]*:[[:space:]]*"([0-9a-fA-F]+)".*/\1/p' | head -n1
 }
 
 # Assert the slot at $1 (health url base host:port) is serving the commit we just checked out ($2).

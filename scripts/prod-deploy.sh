@@ -155,7 +155,9 @@ served_commit() {
   local url="$1" body
   body="$(curl -fsS --max-time 3 "$url" 2>/dev/null || echo '')"
   [ -z "$body" ] && { echo ""; return; }
-  echo "$body" | grep -oE '"commit"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]+"' | grep -oE '[0-9a-fA-F]+' | head -n1
+  # sed captures ONLY the quoted value; a 2nd `grep -oE '[0-9a-fA-F]+'` matched the 'c' in "commit"
+  # first and froze every deploy (KLA-750 parse bug). Keep in sync with scripts/autodeploy.sh.
+  echo "$body" | sed -nE 's/.*"commit"[[:space:]]*:[[:space:]]*"([0-9a-fA-F]+)".*/\1/p' | head -n1
 }
 
 assert_served_commit() {
