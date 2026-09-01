@@ -214,6 +214,90 @@ test("saveFeedbackReplay is a no-op for an empty buffer", async () => {
   expect(await R.getFeedbackReplay("proj_F", "fb_empty")).toBeNull()
 })
 
+// ── object-storage offload (KLA-757/759) ──────────────────────────────────────────────────────────
+// An in-memory fake of ReplayBlobStore so the S3-first read path + lazy backfill are unit-testable with
+// no real S3. `objs` lets a test assert an upload happened and read the stored bytes back.
+function fakeStore() {
+  const objs = new Map<string, Uint8Array>()
+  let n = 0
+  const store = {
+    configured: () => true,
+    upload: async (bytes: Uint8Array) => { const k = `replays/fake-${++n}.json.gz`; objs.set(k, Uint8Array.from(bytes)); return k },
+    fetch: async (key: string) => { const b = objs.get(key); if (!b) throw new Error("missing " + key); return b },
+  }
+  return { objs, store }
+}
+const gunzipToArray = (gz: Uint8Array) => JSON.parse(Buffer.from(Bun.gunzipSync(gz)).toString())
+
+test("saveFeedbackReplay uploads gz to object storage + stores s3_key; getFeedbackReplayGz reads it (fast path, ARRAY)", async () => {
+  const { objs, store } = fakeStore()
+  const events = [
+    { type: 4, timestamp: 1, data: { href: "https://x" } },
+    { type: 2, timestamp: 2, data: { node: { id: 1 } } },
+    { type: 3, timestamp: 3, data: { i: 42 } },
+  ]
+  const res = await R.saveFeedbackReplay("proj_S3", "fb_s3", events, R.DEFAULT_REPLAY_CAP_BYTES, store)
+  expect(res.saved).toBe(true)
+  expect(objs.size).toBe(1) // the gz payload was offloaded to object storage
+  const row = await db.execute({ sql: "SELECT s3_key FROM feedback_replays WHERE feedback_id=?", args: ["fb_s3"] })
+  expect(String(row.rows[0].s3_key || "")).toBeTruthy() // s3_key persisted
+
+  // NEGATIVE CONTROL: corrupt the DB blob so a read that hits it would fail — proving the fast path
+  // sources the bytes from S3, not from Turso.
+  await db.execute({ sql: "UPDATE feedback_replays SET events_gz='CORRUPT' WHERE feedback_id=?", args: ["fb_s3"] })
+  const gz = await R.getFeedbackReplayGz("proj_S3", "fb_s3", store)
+  expect(gz).not.toBeNull()
+  const arr = gunzipToArray(gz!.gz)
+  expect(Array.isArray(arr)).toBe(true) // the read path yields a valid rrweb events ARRAY
+  expect(arr).toHaveLength(3)
+  expect(arr[2].data.i).toBe(42)
+  expect(gz!.nEvents).toBe(3)
+})
+
+test("getFeedbackReplayGz lazily backfills a legacy blob-only row to S3 and sets s3_key", async () => {
+  const { objs, store } = fakeStore()
+  // Legacy row: saved with an UNCONFIGURED store → s3_key stays null, only the DB blob exists.
+  const offStore = { configured: () => false, upload: async () => { throw new Error("off") }, fetch: async () => { throw new Error("off") } }
+  const events = [
+    { type: 4, timestamp: 1, data: {} }, { type: 2, timestamp: 2, data: { node: {} } }, { type: 3, timestamp: 3, data: {} },
+  ]
+  await R.saveFeedbackReplay("proj_BF", "fb_bf", events, R.DEFAULT_REPLAY_CAP_BYTES, offStore)
+  let row = await db.execute({ sql: "SELECT s3_key FROM feedback_replays WHERE feedback_id=?", args: ["fb_bf"] })
+  expect(row.rows[0].s3_key == null).toBe(true)
+
+  // First read: sources the DB blob (slow path) AND backfills the object to S3, setting s3_key.
+  const first = await R.getFeedbackReplayGz("proj_BF", "fb_bf", store)
+  expect(first).not.toBeNull()
+  expect(gunzipToArray(first!.gz)).toHaveLength(3)
+  expect(objs.size).toBe(1) // uploaded during lazy backfill
+  row = await db.execute({ sql: "SELECT s3_key FROM feedback_replays WHERE feedback_id=?", args: ["fb_bf"] })
+  expect(String(row.rows[0].s3_key || "")).toBeTruthy() // s3_key now set
+
+  // Second read now takes the S3 fast path — corrupt the blob to prove it never touches Turso.
+  await db.execute({ sql: "UPDATE feedback_replays SET events_gz='CORRUPT' WHERE feedback_id=?", args: ["fb_bf"] })
+  const second = await R.getFeedbackReplayGz("proj_BF", "fb_bf", store)
+  expect(gunzipToArray(second!.gz)).toHaveLength(3)
+})
+
+test("getFeedbackReplayGz falls back to the DB blob when the S3 object is missing (replay never lost)", async () => {
+  const { store } = fakeStore()
+  const events = [{ type: 4, timestamp: 1, data: {} }, { type: 2, timestamp: 2, data: { node: {} } }, { type: 3, timestamp: 3, data: {} }]
+  await R.saveFeedbackReplay("proj_FALLBACK", "fb_fb", events, R.DEFAULT_REPLAY_CAP_BYTES, store)
+  // A store that is configured but whose object has vanished (fetch throws) — s3_key IS set, so the read
+  // attempts S3 first, fails, and must recover from the intact DB blob.
+  const gone = { configured: () => true, upload: async () => "replays/x.json.gz", fetch: async () => { throw new Error("gone") } }
+  const got = await R.getFeedbackReplayGz("proj_FALLBACK", "fb_fb", gone)
+  expect(got).not.toBeNull()
+  expect(gunzipToArray(got!.gz)).toHaveLength(3)
+})
+
+test("getFeedbackReplayGz returns null cross-project (no tenant leak) and for a missing feedback", async () => {
+  const { store } = fakeStore()
+  await R.saveFeedbackReplay("proj_SCOPE", "fb_sc", [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }], R.DEFAULT_REPLAY_CAP_BYTES, store)
+  expect(await R.getFeedbackReplayGz("proj_OTHER", "fb_sc", store)).toBeNull()
+  expect(await R.getFeedbackReplayGz("proj_SCOPE", "fb_none", store)).toBeNull()
+})
+
 test("feedbackIdsWithReplay reports which feedback rows have a stored replay", async () => {
   await R.saveFeedbackReplay("proj_S", "fb_a", [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }])
   const set = await R.feedbackIdsWithReplay("proj_S", ["fb_a", "fb_missing"])

@@ -242,6 +242,39 @@ test("the /replay-frame inline boot script parses as valid JS", async () => {
   expect(() => new Function(boot as string)).not.toThrow()
 })
 
+test("boot script feeds rrwebPlayer a raw events ARRAY (guarded) — would catch 'events is not an array'", async () => {
+  // THE #1 mount fix (KLA replay-mount): rrweb-player's Player constructor no-ops/throws when its `events`
+  // prop is not a real ARRAY, which left #klvhost with no iframe (the blank, stuck-on-"Rebuilding" regression).
+  // Assert the boot both (a) hands the Player the guarded `ev` variable, and (b) derives `ev` as an ARRAY or
+  // null (never an object/envelope), failing loudly on the null case instead of silently rendering blank.
+  const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`, { headers: { cookie: sessionCookie } })
+  const html = await r.text()
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
+  const boot = scripts.find((s) => s.includes("DL_TIMEOUT")) as string
+  expect(boot).toBeTruthy()
+
+  // (a) the Player is constructed with the guarded `ev`, and a non-array `ev` fails loudly (never mounts).
+  expect(boot).toContain("props:{events:ev,")
+  expect(boot).toContain("if(!ev){")
+  expect(boot).toContain("console.error")
+  // airtight decode: the body bytes are decoded defensively (gzip-magic sniff + DecompressionStream) so a
+  // still-gzipped / double-encoded / proxied body is never handed to JSON.parse as garbage.
+  expect(boot).toContain("decodeToText")
+  expect(boot).toContain("DecompressionStream")
+
+  // (b) EXECUTE the exact ev-derivation extracted from the shipped boot against several shapes — this is the
+  // test that would have caught a non-array being passed to the Player.
+  const m = boot.match(/var ev=\(Array\.isArray\(d\)[\s\S]*?\)\);/)
+  expect(m).toBeTruthy()
+  const deriveEv = new Function("d", "metaN", "metaT", `${m![0]} return ev;`)
+  expect(deriveEv([{ a: 1 }, { b: 2 }], 2, false)).toEqual([{ a: 1 }, { b: 2 }]) // top-level ARRAY body → array
+  expect(deriveEv({ events: [{ a: 1 }] }, 1, false)).toEqual([{ a: 1 }])          // legacy envelope → its array
+  expect(deriveEv({ nEvents: 3 }, 3, false)).toBeNull()                            // object w/o events array → null (guard fails)
+  expect(deriveEv({ events: { not: "array" } }, 0, false)).toBeNull()              // envelope w/ non-array → null
+  expect(deriveEv(null, 0, false)).toBeNull()
+  expect(deriveEv("some string", 0, false)).toBeNull()
+})
+
 test("garbage replay_events is ignored but the bug still saves", async () => {
   const fd = new FormData()
   fd.set("description", "bug bad replay"); fd.set("page_url", "https://test.local/y"); fd.set("project_id", "p1")

@@ -81,6 +81,16 @@ export async function uploadRecordingObject(
   return { key, bucket: BUCKET, contentType: contentType || 'application/octet-stream' }
 }
 
+// Session-replay blobs (KLA-757/759). The gzipped rrweb event buffer (100s of KB) is stored PRIVATE
+// under a `replays/` prefix, keyed by a random id — never in the DB row, whose large-BLOB read out of
+// remote Turso was the ~17s TTFB. A feedback_replays.s3_key column keeps the object key; the read path
+// streams it back with Content-Encoding: gzip. `bytes` are the ALREADY-gzipped payload.
+export async function uploadReplayObject(bytes: ArrayBuffer | Uint8Array): Promise<{ key: string; bucket: string }> {
+  const key = s3Key(`${FOLDER}/replays`, Date.now(), crypto.randomUUID(), 'json.gz')
+  await getClient().write(key, bytes, { acl: 'private', type: 'application/gzip' })
+  return { key, bucket: BUCKET }
+}
+
 // KLA-738: write one object to an EXPLICIT key (not a random one). Used by the OG social-card
 // pre-render pipeline to store the rendered PNG at a deterministic, cacheable key (`og/<ref>.png`)
 // so `GET /og/:ref.png` can look it up by ref. acl defaults to 'private' (KLA-739 C1): the /og route

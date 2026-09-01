@@ -103,7 +103,7 @@ import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { dashboardTrends, dashboardTrendDrill, TREND_SERIES, type TrendSeries } from "./lib/dashboard-trends"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay, findingReplayOffsets } from "./lib/trails-replay"
-import { saveFeedbackReplay, getFeedbackReplay, getFeedbackReplayRaw, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
+import { saveFeedbackReplay, getFeedbackReplay, getFeedbackReplayGz, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, reorderTrailSteps, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 // KLA-550: /api/v1/runs — REST wrapper over the AutoSim/Trail engine (idempotency + git + AI report).
@@ -3318,6 +3318,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "function setIndet(){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.add('klv-indet');barEl.style.width=''}}"
         + "function hideBar(){if(barWrap)barWrap.style.display='none'}"
         + "function fail(t,st){setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:st||'error'})}"
+        // KLA replay-mount: decode the response BODY BYTES to text defensively. The stored payload is
+        // gzip(JSON.stringify(events)) and the endpoint sends it with Content-Encoding: gzip; browsers
+        // normally decompress that transparently (buf is then raw JSON, starting with '['/'{' = 0x5b/0x7b).
+        // But if a proxy forwarded it still-compressed, or double-encoded it, buf can START with the gzip
+        // magic (0x1f 0x8b) — decompress it in-browser so we ALWAYS hand rrweb parsed JSON, never a gzipped
+        // blob (which made new rrwebPlayer(...) no-op/throw → the blank, no-iframe mount).
+        + "function decodeToText(buf){"
+        + "if(buf&&buf.length>=2&&buf[0]===0x1f&&buf[1]===0x8b){"
+        + "if(typeof DecompressionStream==='undefined'){fail('This browser cannot decompress the replay.','error');return Promise.resolve(null)}"
+        + "try{var ds=new DecompressionStream('gzip');return new Response(new Response(buf).body.pipeThrough(ds)).text().catch(function(){fail('Could not decompress the replay.','error');return null})}"
+        + "catch(e){fail('Could not decompress the replay.','error');return Promise.resolve(null)}"
+        + "}"
+        + "return Promise.resolve(new TextDecoder('utf-8').decode(buf))"
+        + "}"
         + "function boot(){"
         + "if(retryEl)retryEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
         + "var done=false,metaN=0,metaT=false;"
@@ -3326,26 +3340,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "fetch('/api/feedback/'+encodeURIComponent(FB)+'/replay',ctrl?{signal:ctrl.signal}:{}).then(function(r){"
         + "if(r.status===404){done=true;clearTimeout(dlTimer);hideBar();setStatus('No replay was recorded for this report.');post({status:'none'});return null}"
         + "if(!r.ok){done=true;clearTimeout(dlTimer);fail('Couldn\\u2019t load the replay.','error');return null}"
-        // KLA-759: meta now rides in response headers (the body is a gz-encoded events ARRAY).
+        // KLA-759: meta rides in response headers (the body is a gz-encoded events ARRAY).
         + "metaN=parseInt(r.headers.get('x-klv-nevents')||'0',10)||0;metaT=(r.headers.get('x-klv-trimmed')==='1');"
         + "var enc=(r.headers.get('content-encoding')||'').toLowerCase();"
         + "var total=parseInt(r.headers.get('content-length')||'0',10);"
-        // Determinate %-bar only when the body is NOT content-encoded: for a gzip response content-length is
-        // the COMPRESSED size but the reader yields DECOMPRESSED bytes, so recv/total would blow past 100%.
-        // In that case fall through to the indeterminate 'Downloading…' bar + r.json() (browser decodes gz).
-        + "if(r.body&&r.body.getReader&&total>0&&enc.indexOf('gzip')===-1){"
+        // Read the FULL body bytes OURSELVES (works whether or not the browser transparently decoded a gz
+        // response). A determinate %-bar only when we truly know the wire size AND it is not content-encoded:
+        // a gzip content-length is the COMPRESSED size but the reader yields DECODED bytes, so recv/total
+        // would blow past 100% — fall back to the indeterminate bar in that case.
+        + "var determinate=(total>0&&enc.indexOf('gzip')===-1);"
+        + "if(r.body&&r.body.getReader){"
         + "var reader=r.body.getReader(),recv=0,chunks=[];"
+        + "if(determinate){setPct(0)}else{setIndet();setStatus('Downloading replay…')}"
         + "return (function pump(){return reader.read().then(function(res){"
-        + "if(res.done){var buf=new Uint8Array(recv),off=0;for(var i=0;i<chunks.length;i++){buf.set(chunks[i],off);off+=chunks[i].length}return JSON.parse(new TextDecoder('utf-8').decode(buf))}"
-        + "chunks.push(res.value);recv+=res.value.length;var p=Math.round(recv/total*100);setPct(p);setStatus('Downloading replay… '+Math.min(100,p)+'%');return pump()"
+        + "if(res.done){var buf=new Uint8Array(recv),off=0;for(var i=0;i<chunks.length;i++){buf.set(chunks[i],off);off+=chunks[i].length}return buf}"
+        + "chunks.push(res.value);recv+=res.value.length;if(determinate){var p=Math.round(recv/total*100);setPct(p);setStatus('Downloading replay… '+Math.min(100,p)+'%')}return pump()"
         + "})})()"
         + "}"
-        + "setIndet();setStatus('Downloading replay…');return r.json()"
-        + "}).then(function(d){"
-        + "if(!d)return;done=true;clearTimeout(dlTimer);"
-        // KLA-759: the body is now a top-level events ARRAY (gz-streamed); tolerate the legacy
-        // {events,nEvents,trimmed} envelope too so a mid-deploy client never breaks.
-        + "var ev=(Array.isArray(d)?d:((d&&d.events)||[]));"
+        + "setIndet();setStatus('Downloading replay…');return r.arrayBuffer().then(function(ab){return new Uint8Array(ab)})"
+        + "}).then(function(buf){"
+        + "if(!buf)return null;done=true;clearTimeout(dlTimer);return decodeToText(buf)"
+        + "}).then(function(txt){"
+        + "if(txt==null)return;"
+        + "var d;try{d=JSON.parse(txt)}catch(e){fail('The replay data was corrupted.','error');return}"
+        // KLA replay-mount FIX: the endpoint returns a top-level events ARRAY (meta in x-klv-* headers);
+        // tolerate the legacy {events,nEvents,trimmed} envelope too. THE #1 BUG: rrweb-player's Player
+        // constructor no-ops/throws when `events` is not a real ARRAY, so it must ALWAYS be the raw rrweb
+        // events array. If the parse ever yields the wrong shape, fail LOUDLY (console breadcrumb + honest
+        // message + Retry) instead of a silent blank frame with no iframe under #klvhost.
+        + "var ev=(Array.isArray(d)?d:((d&&Array.isArray(d.events))?d.events:null));"
+        + "if(!ev){try{console.error('[klv-replay] events is not an array; typeof d=',(d&&typeof d))}catch(e){}fail('The replay data was in an unexpected format.','error');return}"
         + "var nEv=(Array.isArray(d)?(metaN||ev.length):((d&&d.nEvents)||ev.length));"
         + "var trm=(Array.isArray(d)?metaT:!!(d&&d.trimmed));"
         + "if(ev.length<2){hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
@@ -11372,10 +11396,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Verified under Bun: Bun.serve does NOT re-compress a body that already carries a
           // Content-Encoding, so there is no double-encode; fetch().json() and the streamed getReader()
           // path both decode it correctly. The response is per-viewer private + no-store (a session DOM
-          // recording must never be cached by a shared proxy).
-          const raw = await getFeedbackReplayRaw(fbRow.projectId, fid)
+          // recording must never be cached by a shared proxy). KLA-757/759: the gz bytes are sourced from
+          // object storage (S3) when available (fast) — with a lazy backfill for legacy rows — instead of
+          // dragging the events_gz BLOB out of remote Turso (the ~17s TTFB). See getFeedbackReplayGz.
+          const raw = await getFeedbackReplayGz(fbRow.projectId, fid)
           if (!raw) return json({ error: "No replay for this report." }, 404)
-          const gzBytes = Buffer.from(raw.gzB64, "base64")
+          const gzBytes = raw.gz
           return withSecurityHeaders(new Response(gzBytes, {
             headers: {
               "content-type": "application/json; charset=utf-8",

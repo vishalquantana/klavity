@@ -1033,6 +1033,10 @@ export async function applySchema(c: Client) {
     // wip/ci-token-settings: extension_tokens gains id/name/token_prefix/last_used_at/kind via needCol
     // below — preload it so an established DB issues zero ALTERs on reboot (zero-ALTER boot invariant).
     "extension_tokens",
+    // feedback_replays.s3_key (KLA-757/759 perf): replay gz blobs are offloaded to object storage so
+    // reads never drag a 100s-of-KB BLOB out of remote Turso. Preload so an established DB issues zero
+    // ALTERs on reboot.
+    "feedback_replays",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1157,6 +1161,16 @@ export async function applySchema(c: Client) {
   // `status` column is added by the feedbackAlters ALTER above and does not exist on the base table.
   await c.execute(`CREATE INDEX IF NOT EXISTS fb_proj_status_idx ON feedback (project_id, status, created_at)`)
     .catch((e: any) => console.warn("fb_proj_status_idx skipped:", e?.message || e))
+
+  // ── feedback_replays.s3_key (KLA-757/759 perf): the gzipped rrweb event buffer is uploaded to object
+  // storage at ingest and the object key stored here, so GET /api/feedback/:id/replay streams the blob
+  // from S3 (fast) instead of SELECTing a 100s-of-KB events_gz BLOB out of remote Turso (pathologically
+  // slow — the measured ~17s TTFB). Additive/nullable: rows written before this land keep events_gz and
+  // are lazily backfilled to S3 on first read (getFeedbackReplayGz). ──
+  if (needCol("feedback_replays", "s3_key")) {
+    await c.execute("ALTER TABLE feedback_replays ADD COLUMN s3_key TEXT")
+      .catch((e: any) => console.warn("feedback_replays.s3_key ALTER skipped:", e?.message || e))
+  }
 
   // ── widget-config columns (leadgen integration task-1) ──
   if (needCol("projects", "widget_mode")) await c.execute("ALTER TABLE projects ADD COLUMN widget_mode TEXT NOT NULL DEFAULT 'support'").catch((e) => console.warn("projects.widget_mode ALTER skipped:", e?.message || e))

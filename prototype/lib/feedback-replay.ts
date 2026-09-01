@@ -9,8 +9,28 @@
 // the DB: oversize buffers are TRIMMED oldest-first to the most-recent events that fit (a replay's tail
 // — the seconds right before the bug — is the valuable part).
 import { db } from "./db"
+import { s3Configured, uploadReplayObject, getObjectBytes } from "./s3"
 
 export type ReplayEvent = unknown
+
+// ── object-storage offload (KLA-757/759 perf) ────────────────────────────────────────────────────
+// The gzipped event buffer is offloaded to object storage so a READ never drags a 100s-of-KB BLOB out
+// of remote Turso (the measured ~17s TTFB). The store is an injectable seam (mirrors s3.ts's
+// OgPurgeDeps) so the ingest/read/backfill logic is unit-testable without real S3.
+export interface ReplayBlobStore {
+  /** True when object storage is configured; false ⇒ keep everything in the DB blob (dev/test). */
+  configured(): boolean
+  /** Upload the already-gzipped bytes; returns the durable object key. */
+  upload(bytes: Uint8Array): Promise<string>
+  /** Fetch the gzipped bytes for a previously-uploaded key. */
+  fetch(key: string): Promise<Uint8Array>
+}
+
+export const s3ReplayStore: ReplayBlobStore = {
+  configured: () => s3Configured(),
+  upload: async (bytes) => (await uploadReplayObject(bytes)).key,
+  fetch: async (key) => (await getObjectBytes(key)).bytes,
+}
 
 // Default max size of the stored base64-gzip payload. A 10 MB ceiling accommodates high-mutation
 // pages during the last 30-60s while still bounding worst-case rows.
@@ -130,14 +150,23 @@ export interface SaveResult { saved: boolean; nEvents: number; trimmed: boolean;
  */
 export async function saveFeedbackReplay(
   projectId: string, feedbackId: string, events: ReplayEvent[], capBytes = DEFAULT_REPLAY_CAP_BYTES,
+  store: ReplayBlobStore = s3ReplayStore,
 ): Promise<SaveResult> {
   const cap = capReplayEvents(events, capBytes)
   if (!cap.events.length) return { saved: false, nEvents: 0, trimmed: false, bytes: 0 }
+  // KLA-757/759: offload the gz bytes to object storage (fast reads). Best-effort — a failed upload must
+  // NOT fail the replay save; we still write the DB blob (backward-compat + lazy-backfill fallback), so
+  // the read path works with or without s3_key. The gz payload IS what the endpoint streams to the client.
+  let s3key: string | null = null
+  if (store.configured()) {
+    try { s3key = await store.upload(Buffer.from(cap.encoded, "base64")) }
+    catch (e: any) { s3key = null; console.warn("[feedback-replay] S3 upload failed (kept DB blob):", e?.message || e) }
+  }
   await db!.execute({
-    sql: `INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, bytes, trimmed, created_at)
-          VALUES (?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, bytes, trimmed, s3_key, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`,
     args: ["frep_" + crypto.randomUUID(), feedbackId, projectId, cap.encoded,
-           cap.events.length, cap.encoded.length, cap.trimmed ? 1 : 0, Date.now()],
+           cap.events.length, cap.encoded.length, cap.trimmed ? 1 : 0, s3key, Date.now()],
   })
   return { saved: true, nEvents: cap.events.length, trimmed: cap.trimmed, bytes: cap.encoded.length }
 }
@@ -149,23 +178,53 @@ export interface FeedbackReplay { events: ReplayEvent[]; nEvents: number; trimme
 // (browser decompresses transparently) instead of gunzip→JSON.stringify→send an uncompressed multi-MB
 // body (the cause of slow/timed-out loads on large replays). The decompressed body IS exactly
 // JSON.stringify(events) — a top-level events ARRAY — so meta (nEvents/trimmed) rides in response headers.
-export interface FeedbackReplayRaw { gzB64: string; nEvents: number; trimmed: boolean; createdAt: number }
+export interface FeedbackReplayGz { gz: Uint8Array; nEvents: number; trimmed: boolean; createdAt: number }
 
-/** Read the latest stored replay for a feedback row WITHOUT decoding — project-scoped (no cross-tenant read). */
-export async function getFeedbackReplayRaw(projectId: string, feedbackId: string): Promise<FeedbackReplayRaw | null> {
-  const r = await db!.execute({
-    sql: `SELECT events_gz, n_events, trimmed, created_at FROM feedback_replays
+/**
+ * Read the latest stored replay for a feedback row as RAW gzip BYTES (no gunzip/parse) — project-scoped
+ * (no cross-tenant read). This is the perf-critical read path (KLA-757/759): it streams the gz payload
+ * straight to the client with Content-Encoding: gzip.
+ *
+ * SOURCING: reads a cheap META row first (id + s3_key + counts — NEVER the events_gz BLOB), then:
+ *   • FAST PATH — if s3_key is set and object storage is configured, fetch the bytes from S3 (fast) and
+ *     never touch the Turso BLOB. This is the fix for the ~17s TTFB (large-BLOB read out of remote Turso).
+ *   • SLOW PATH — a row with no s3_key (written before this landed, or when S3 was down at ingest): read
+ *     the events_gz BLOB from the DB (the pathological slow read, but only ONCE), then LAZILY BACKFILL it
+ *     to object storage and set s3_key so the NEXT read is fast. Backfill is best-effort.
+ * Falls back to the DB blob if the S3 fetch throws (object missing) so a replay is never lost.
+ */
+export async function getFeedbackReplayGz(
+  projectId: string, feedbackId: string, store: ReplayBlobStore = s3ReplayStore,
+): Promise<FeedbackReplayGz | null> {
+  // META first — no events_gz BLOB in this SELECT, so a fast row lookup stays fast.
+  const meta = await db!.execute({
+    sql: `SELECT id, s3_key, n_events, trimmed, created_at FROM feedback_replays
           WHERE project_id=? AND feedback_id=? ORDER BY created_at DESC LIMIT 1`,
     args: [projectId, feedbackId],
   })
-  if (!r.rows.length) return null
-  const row = r.rows[0] as any
-  return {
-    gzB64: String(row.events_gz),
-    nEvents: Number(row.n_events),
-    trimmed: !!Number(row.trimmed),
-    createdAt: Number(row.created_at),
+  if (!meta.rows.length) return null
+  const row = meta.rows[0] as any
+  const id = String(row.id)
+  const s3key = row.s3_key ? String(row.s3_key) : ""
+  const out = { nEvents: Number(row.n_events), trimmed: !!Number(row.trimmed), createdAt: Number(row.created_at) }
+
+  // FAST PATH — stream from object storage, never reading the DB BLOB.
+  if (s3key && store.configured()) {
+    try { return { gz: await store.fetch(s3key), ...out } }
+    catch (e: any) { console.warn("[feedback-replay] S3 fetch failed, falling back to DB blob:", e?.message || e) }
   }
+
+  // SLOW PATH — read the BLOB from the DB (the one-time slow read), then lazily backfill to S3.
+  const blob = await db!.execute({ sql: `SELECT events_gz FROM feedback_replays WHERE id=?`, args: [id] })
+  if (!blob.rows.length) return null
+  const gz = Buffer.from(String((blob.rows[0] as any).events_gz), "base64")
+  if (!s3key && store.configured()) {
+    try {
+      const key = await store.upload(gz)
+      await db!.execute({ sql: `UPDATE feedback_replays SET s3_key=? WHERE id=?`, args: [key, id] })
+    } catch (e: any) { console.warn("[feedback-replay] lazy S3 backfill failed (non-fatal):", e?.message || e) }
+  }
+  return { gz, ...out }
 }
 
 /** Read the latest stored replay for a feedback row — project-scoped (no cross-tenant read). */
