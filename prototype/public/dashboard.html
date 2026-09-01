@@ -1332,7 +1332,7 @@ body.tkt-page-open .wrap{max-width:none}
    Scope is ONLY #ticketSingle.tkt-page (the full page). The board-expand (.kb-item .tkt-detail) and
    the slide-over panel keep their existing layouts. Uses the app's own tokens — the "paper" card is
    --ink-2 (white in light / near-black surface in dark), so the ticket no longer sits naked on the bg. */
-.tkt3-card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-border);overflow:hidden;margin-bottom:16px}
+.tkt3-card{background:var(--ink-2);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-border);overflow:hidden;margin-bottom:16px;container-type:inline-size}
 .tkt3-card .single-head{max-width:none;margin:0;padding:18px 22px 6px;gap:12px}
 #ticketSingle.tkt-page .tkt3-card .tkt-detail{border:none;border-radius:0;max-width:none;padding:0;background:transparent}
 /* the resizable grid: col1 | 8px gutter | middle | 8px gutter | col3 (widths persisted to localStorage) */
@@ -1343,7 +1343,11 @@ body.tkt-page-open .wrap{max-width:none}
    panel those fixed px columns overflowed the panel width → horizontal scroll + a left-clipped edge
    ("#94"→"94"). Scoping the fixed grid to #ticketSingle.tkt-page means the panel can never inherit it;
    the belt-and-suspenders rules below force any .t3-cols that ever renders inside the panel to stack. */
-#ticketSingle.tkt-page .t3-cols{display:grid;grid-template-columns:var(--t3c1,480px) 8px minmax(0,1fr) 8px var(--t3c3,280px)}
+/* #KLA-responsive: cols SHRINK (minmax max = the persisted/dragged width, min 0) so a wide col1 or a
+   narrow content area (sidebar open) can never overflow; col3 keeps a 200px floor so PROPERTIES never
+   crushes to ~1ch (was: title overlap + one-char-per-line description). Below the card-width breakpoint
+   it stacks entirely — see the @container rule below. */
+#ticketSingle.tkt-page .t3-cols{display:grid;grid-template-columns:minmax(0,var(--t3c1,480px)) 8px minmax(0,1fr) 8px minmax(200px,var(--t3c3,280px))}
 .t3-col{padding:16px 22px;min-width:0;border-top:1px solid var(--line)}
 .t3-gutter{cursor:col-resize;background:transparent;position:relative;border-top:1px solid var(--line);touch-action:none;user-select:none}
 .t3-gutter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
@@ -1369,8 +1373,16 @@ body.tkt-page-open .wrap{max-width:none}
 .t3-mav{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;background:var(--indigo)}
 .t3-mem{color:var(--paper-faint);font-size:11px;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:112px}
 .tkt-tl-text .t3-m{color:var(--indigo);font-weight:600;background:rgba(99,102,241,.12);border-radius:4px;padding:0 3px}
-/* below ~900px: collapse to a single-column stack, hide the drag gutters */
+/* below ~900px: collapse to a single-column stack, hide the drag gutters.
+   VIEWPORT media query kept as a floor; the @container rule is the real fix — it measures the CARD's
+   own width, so the layout collapses correctly even when the sidebar is open (viewport wide but the
+   ticket card narrow). That sidebar-open case was the bug: viewport >900px so the media query never
+   fired, the fixed cols overflowed, and the properties rail crushed. */
 @media(max-width:900px){
+  #ticketSingle.tkt-page .t3-cols{display:block}
+  #ticketSingle.tkt-page .t3-gutter{display:none}
+}
+@container (max-width:900px){
   #ticketSingle.tkt-page .t3-cols{display:block}
   #ticketSingle.tkt-page .t3-gutter{display:none}
 }
