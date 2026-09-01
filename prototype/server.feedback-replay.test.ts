@@ -287,6 +287,54 @@ test("boot script mounts the low-level rrweb.Replayer with a raw events ARRAY (g
   expect(deriveEv("some string", 0, false)).toBeNull()
 })
 
+test("boot script wires the playback controller (play/pause + scrubber + time + speed) — ported from autosims-walk-report.html", async () => {
+  // The low-level rrweb.Replayer ships NO controller UI; the ticket viewer builds its own control bar
+  // (mirroring autosims-walk-report.html's .rpl-* controller) so the user can pause / scrub / change speed
+  // and step to specific clicks/scrolls. Guard the markup + wiring so a future regression is caught.
+  const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`, { headers: { cookie: sessionCookie } })
+  const html = await r.text()
+
+  // control-bar CSS (ported .rpl-* classes) lives in the frame's inline <style>
+  expect(html).toContain(".rpl-ctrl{")
+  expect(html).toContain(".rpl-scrub{")
+  expect(html).toContain(".rpl-pp")
+  expect(html).toContain(".rpl-spd")
+  // click-ripple fallback so clicks are visibly indicated on the rrweb mouse cursor
+  expect(html).toContain(".replayer-mouse.active::after")
+
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
+  const boot = scripts.find((s) => s.includes("DL_TIMEOUT")) as string
+  expect(boot).toBeTruthy()
+
+  // control-bar markup built after mount
+  expect(boot).toContain("rpl-ctrl")
+  expect(boot).toContain('id="rplPP"')     // play/pause button
+  expect(boot).toContain('id="rplScrub"')  // scrubber
+  expect(boot).toContain("rpl-scrub")
+  expect(boot).toContain('id="rplTime"')    // time display
+  expect(boot).toContain('id="rplSpd"')     // speed select
+  expect(boot).toContain("insertAdjacentElement('afterend',ctrl)")
+
+  // wiring mirrors the reference controller exactly
+  expect(boot).toContain("player.getMetaData()")
+  expect(boot).toContain("player.getCurrentTime()")
+  expect(boot).toContain("player.pause()")
+  expect(boot).toContain("player.play(t)")
+  expect(boot).toContain("player.setConfig({speed:Number(sp.value)})")
+  expect(boot).toContain("requestAnimationFrame(rplTick)")
+  expect(boot).toContain("player.on('finish'")
+  // a real play/pause TOGGLE (both branches present)
+  expect(boot).toContain("if(rplPlaying){")
+  expect(boot).toContain("rplPlaying=true")
+  expect(boot).toContain("rplPlaying=false")
+  // NO emoji glyphs — inline SVG play/pause only (CI emoji guard parity)
+  expect(boot).toContain("ppSvg(")
+  // scrub interaction: pause on grab, resume-at-position on release
+  expect(boot).toContain("rplScrubbing=true")
+  expect(boot).toContain("mousedown")
+  expect(boot).toContain("touchstart")
+})
+
 test("garbage replay_events is ignored but the bug still saves", async () => {
   const fd = new FormData()
   fd.set("description", "bug bad replay"); fd.set("page_url", "https://test.local/y"); fd.set("project_id", "p1")

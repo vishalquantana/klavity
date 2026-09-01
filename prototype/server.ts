@@ -3272,7 +3272,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           + "#klvbar.klv-indet{width:40%;animation:klvindet 1.1s ease-in-out infinite}"
           + "@keyframes klvindet{0%{margin-left:-40%}100%{margin-left:100%}}"
           + "#klvretry{margin-top:14px;padding:7px 16px;font:inherit;font-size:13px;color:#fff;background:#7c3aed;border:0;border-radius:8px;cursor:pointer;transition:transform .15s ease,background .15s ease}"
-          + "#klvretry:hover{background:#6d28d9;transform:scale(1.02)}#klvretry:active{transform:scale(.97)}</style>"
+          + "#klvretry:hover{background:#6d28d9;transform:scale(1.02)}#klvretry:active{transform:scale(.97)}"
+          // Playback controller (ported from autosims-walk-report.html .rpl-* controller). The frame has no
+          // --ink-3/--line/--indigo/--paper CSS vars, so the dark tokens are mapped to hardcoded equivalents
+          // consistent with the frame's white paper + purple (#7c3aed) accent.
+          + ".rpl-ctrl{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f5f3ee;border-top:1px solid #e7e2d6;border-radius:0 0 8px 8px;font-family:system-ui,-apple-system,sans-serif}"
+          + ".rpl-pp{background:#fff;border:1px solid #e7e2d6;color:#292524;border-radius:6px;width:30px;height:30px;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .15s ease,border-color .15s ease}"
+          + ".rpl-pp:hover{border-color:#7c3aed;transform:scale(1.02)}.rpl-pp:active{transform:scale(.97)}"
+          + ".rpl-scrub{flex:1;accent-color:#7c3aed;cursor:pointer;height:4px}"
+          + ".rpl-time{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#78716c;white-space:nowrap;min-width:88px;text-align:right}"
+          + ".rpl-spd{background:#fff;border:1px solid #e7e2d6;color:#292524;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:3px 5px;cursor:pointer}"
+          // Click-ripple fallback for rrweb's mouse cursor. The low-level Replayer self-injects .replayer-mouse
+          // + its click animation into THIS (top) document's wrapper; these rules mirror rrweb's defaults so the
+          // click ripple is guaranteed visible even if the bundle's own styles ever regress.
+          + ".replayer-mouse-tail{position:absolute;pointer-events:none}"
+          + ".replayer-mouse::after{content:'';display:inline-block;width:20px;height:20px;background:rgba(99,102,241,.4);border-radius:100%;transform:translate(-50%,-50%);opacity:0}"
+          + ".replayer-mouse.active::after{animation:klvclick .4s ease-in-out 1}"
+          + "@keyframes klvclick{0%{opacity:.4;width:20px;height:20px}50%{opacity:.55;width:10px;height:10px}100%{opacity:0}}</style>"
           + "</head><body>" + bodyInner + "</body></html>",
           { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP, "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" } },
         ))
@@ -3393,6 +3409,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // exists after construction, fail loudly with Retry rather than leaving a silent blank frame.
         + "if(!host.querySelector('iframe')){clearTimeout(mountTimer);fail('Could not start the player.','error');return}"
         + "mounted=true;clearTimeout(mountTimer);if(msgBox)msgBox.style.display='none';"
+        // ── Playback controller (ported from autosims-walk-report.html attachPlayerControls) ────────────────
+        // The low-level Replayer has NO controller UI, so we build a control bar (play/pause + scrubber + time +
+        // speed) below #klvhost, mirroring the .rpl-* controller in autosims-walk-report.html. The frame has no
+        // kicon()/icon() helper, so ppSvg() emits inline SVG glyphs (no emoji — the CI emoji guard). Built only
+        // here, on the success path (after the iframe exists) — never on the watchdog/error paths. Default
+        // playing=true because player.play() already autoplays above.
+        + "try{"
+        + "var _meta={};try{_meta=player.getMetaData()}catch(e){}"
+        + "var totalMs=(_meta&&_meta.totalTime)||60000;"
+        + "var rplPlaying=true,rplScrubbing=false,rplRaf=null;"
+        + "function rplFmt(ms){var s=Math.floor(Math.max(0,ms)/1000);return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)}"
+        + "function ppSvg(p){return p?'<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"currentColor\" aria-hidden=\"true\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"></rect><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"></rect></svg>':'<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M7 5l12 7-12 7z\"></path></svg>'}"
+        + "var ctrl=document.createElement('div');ctrl.id='rplCtrl';ctrl.className='rpl-ctrl';"
+        + "ctrl.innerHTML='<button class=\"rpl-pp\" id=\"rplPP\" type=\"button\" aria-label=\"Pause\">'+ppSvg(true)+'</button>'"
+        + "+'<input class=\"rpl-scrub\" id=\"rplScrub\" type=\"range\" min=\"0\" max=\"'+Math.ceil(totalMs)+'\" value=\"0\" step=\"500\" aria-label=\"Seek\"/>'"
+        + "+'<span class=\"rpl-time\" id=\"rplTime\">0:00 / '+rplFmt(totalMs)+'</span>'"
+        + "+'<select class=\"rpl-spd\" id=\"rplSpd\" aria-label=\"Playback speed\"><option value=\"0.5\">0.5x</option><option value=\"1\" selected>1x</option><option value=\"2\">2x</option><option value=\"4\">4x</option></select>';"
+        + "host.insertAdjacentElement('afterend',ctrl);host.style.borderRadius='8px 8px 0 0';"
+        + "var pp=document.getElementById('rplPP'),sc=document.getElementById('rplScrub'),ti=document.getElementById('rplTime'),sp=document.getElementById('rplSpd');"
+        + "function rplStop(){if(rplRaf){cancelAnimationFrame(rplRaf);rplRaf=null}}"
+        + "function rplTick(){if(!rplScrubbing){var cur=0;try{cur=player.getCurrentTime()}catch(e){}sc.value=Math.min(cur,totalMs);ti.textContent=rplFmt(cur)+' / '+rplFmt(totalMs)}if(rplPlaying)rplRaf=requestAnimationFrame(rplTick)}"
+        + "try{player.on('finish',function(){rplPlaying=false;pp.innerHTML=ppSvg(false);pp.setAttribute('aria-label','Play');rplStop()})}catch(e){}"
+        + "pp.onclick=function(){if(rplPlaying){try{player.pause()}catch(e){}rplPlaying=false;pp.innerHTML=ppSvg(false);pp.setAttribute('aria-label','Play');rplStop()}else{var t=0;try{t=Number(sc.value)}catch(e){}try{player.play(t)}catch(e){}rplPlaying=true;pp.innerHTML=ppSvg(true);pp.setAttribute('aria-label','Pause');rplRaf=requestAnimationFrame(rplTick)}};"
+        + "sc.addEventListener('mousedown',function(){rplScrubbing=true;try{player.pause()}catch(e){}rplStop()});"
+        + "sc.addEventListener('touchstart',function(){rplScrubbing=true;try{player.pause()}catch(e){}rplStop()},{passive:true});"
+        + "sc.addEventListener('input',function(){ti.textContent=rplFmt(Number(sc.value))+' / '+rplFmt(totalMs)});"
+        + "function rplScrubEnd(){if(!rplScrubbing)return;rplScrubbing=false;var t=Number(sc.value);try{player.play(t)}catch(e){}rplPlaying=true;pp.innerHTML=ppSvg(true);pp.setAttribute('aria-label','Pause');rplRaf=requestAnimationFrame(rplTick)}"
+        + "sc.addEventListener('mouseup',rplScrubEnd);sc.addEventListener('touchend',rplScrubEnd);"
+        + "sp.addEventListener('change',function(){try{player.setConfig({speed:Number(sp.value)})}catch(e){}});"
+        + "rplRaf=requestAnimationFrame(rplTick);"
+        + "}catch(e){}"
         // Scale the rebuilt recording (typically ~1280px wide) down to fit the modal, mirroring
         // autosims-walk-report.html. Deferred a beat so layout has settled on the freshly-built iframe.
         + "setTimeout(function(){try{var wrapper=host.querySelector('.replayer-wrapper'),ifr=host.querySelector('iframe');if(wrapper&&ifr){var iw=ifr.offsetWidth,hw=host.offsetWidth;if(iw>0&&hw>0&&iw>hw){var ratio=hw/iw;wrapper.style.transformOrigin='top left';wrapper.style.transform='scale('+ratio+')';host.style.height=Math.round(ifr.offsetHeight*ratio)+'px'}}}catch(e){}},300);"
