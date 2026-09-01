@@ -495,5 +495,12 @@
     "excerpt": "A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off.",
     "category": "Guides",
     "date": "2026-08-31"
+  },
+  {
+    "slug": "how-to-run-persona-based-usability-testing",
+    "title": "How to Run Persona-Based Usability Testing (Step by Step)",
+    "excerpt": "Persona-based usability testing runs your product through the eyes of specific user types to find friction before real users hit it. Here's the workflow.",
+    "category": "Guides",
+    "date": "2026-09-01"
   }
 ]
