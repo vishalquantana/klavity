@@ -1030,6 +1030,9 @@ export async function applySchema(c: Client) {
     // Pre-existing gap: screenshots.thumb_key is needCol-gated below but the table wasn't preloaded,
     // so every established-DB reboot re-issued its ALTER. Preload it too (zero-ALTER boot invariant).
     "screenshots",
+    // wip/ci-token-settings: extension_tokens gains id/name/token_prefix/last_used_at/kind via needCol
+    // below — preload it so an established DB issues zero ALTERs on reboot (zero-ALTER boot invariant).
+    "extension_tokens",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1182,6 +1185,23 @@ export async function applySchema(c: Client) {
   // email; 'login' = Klavity token required. New DBs get 'anonymous' by default; an existing prod column
   // (created earlier with DEFAULT 'email') is left untouched — createProject sets the value explicitly.
   if (needCol("projects", "widget_report_gate")) await c.execute("ALTER TABLE projects ADD COLUMN widget_report_gate TEXT NOT NULL DEFAULT 'anonymous'").catch((e) => console.warn("projects.widget_report_gate ALTER skipped:", e?.message || e))
+  // ── CI-token management UI (wip/ci-token-settings) — additive metadata on extension_tokens so a
+  // Settings "API tokens" card can LIST + REVOKE tokens WITHOUT ever touching the raw token/hash.
+  // The token itself stays sha256hex-hashed (never recoverable → copy-once UI). All null-default so
+  // pre-existing rows keep working (they simply won't appear in the management list). ──
+  //   id           — stable opaque id ("cit_"+uuid); list/revoke key so the UI never needs the raw token.
+  //   name         — user label.
+  //   token_prefix — first ~10 chars of the plaintext ("kci_ab12cd") for display only (NOT the secret).
+  //   last_used_at — best-effort epoch-ms of the last successful CI/MCP auth (fire-and-forget).
+  //   kind         — 'ci' for kci_ tokens minted via the management UI (getExtensionTokenInfo still
+  //                  derives kind from the prefix at auth time; this column just makes the list filter cheap).
+  if (needCol("extension_tokens", "id")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN id TEXT").catch((e) => console.warn("extension_tokens.id ALTER skipped:", e?.message || e))
+  if (needCol("extension_tokens", "name")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN name TEXT").catch((e) => console.warn("extension_tokens.name ALTER skipped:", e?.message || e))
+  if (needCol("extension_tokens", "token_prefix")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN token_prefix TEXT").catch((e) => console.warn("extension_tokens.token_prefix ALTER skipped:", e?.message || e))
+  if (needCol("extension_tokens", "last_used_at")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN last_used_at INTEGER").catch((e) => console.warn("extension_tokens.last_used_at ALTER skipped:", e?.message || e))
+  if (needCol("extension_tokens", "kind")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN kind TEXT").catch((e) => console.warn("extension_tokens.kind ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS ext_tok_id_idx ON extension_tokens (id)").catch((e) => console.warn("ext_tok_id_idx skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS ext_tok_proj_kind_idx ON extension_tokens (project_id, kind)").catch((e) => console.warn("ext_tok_proj_kind_idx skipped:", e?.message || e))
   // BugHerd sub-project A: opt-in client-error auto-capture. When enabled, the widget/SDK
   // recorder (later task) reports uncaught client errors, deduped via feedback.signature.
   // Default OFF (back-compat) — projects must explicitly turn this on.
@@ -5613,6 +5633,10 @@ export async function getExtensionTokenInfo(token: string): Promise<{ email: str
   // can tell a user/extension token (ext_) apart from a machine-to-machine CI walk-trigger token (kci_).
   // Both live in extension_tokens, but only ext_ tokens may authenticate feedback/board-write requests.
   const kind: "ext" | "ci" | "other" = token.startsWith("ext_") ? "ext" : token.startsWith("kci_") ? "ci" : "other"
+  // Best-effort last-used stamp for the Settings management UI. Fire-and-forget (never awaited, never
+  // blocks/errors the request) — a leaked/expired token has already been short-circuited above, so we
+  // only touch valid tokens. Update by hash (+ legacy plaintext) so it works during the E1 dual-read window.
+  try { void db!.execute({ sql: "UPDATE extension_tokens SET last_used_at=? WHERE token=? OR token=?", args: [Date.now(), sha256hex(token), token] }).catch(() => {}) } catch { /* never block auth */ }
   return { email: String(x.email), projectId: x.project_id != null ? String(x.project_id) : null, kind }
 }
 export async function getExtensionTokenEmail(token: string): Promise<string | null> {
@@ -5633,6 +5657,53 @@ export async function issueCIToken(email: string, projectId: string): Promise<st
     args: [sha256hex(token), email, projectId, Date.now(), null],
   })
   return token
+}
+
+// ── Managed CI tokens (wip/ci-token-settings) — the Settings "API tokens" card ──
+// issueCITokenNamed mints a kci_ token AND records the management metadata (id/name/token_prefix/kind)
+// alongside the hash. Only the hash is stored for the token itself → the plaintext is returned ONCE and
+// can NEVER be recovered (copy-once UI). Returns the opaque id + full token + display prefix.
+export type CITokenMeta = { id: string; name: string; prefix: string; createdAt: number; lastUsedAt: number | null; revoked: boolean }
+export async function issueCITokenNamed(email: string, projectId: string, name: string): Promise<{ id: string; token: string; prefix: string }> {
+  const token = "kci_" + crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
+  const id = "cit_" + crypto.randomUUID().replace(/-/g, "")
+  const prefix = token.slice(0, 10) // e.g. "kci_ab12cd" — display only, NOT the secret
+  const label = (name || "").trim().slice(0, 80) || "CI token"
+  await db!.execute({
+    sql: "INSERT INTO extension_tokens (token,email,project_id,created_at,expires_at,revoked,id,name,token_prefix,kind) VALUES (?,?,?,?,?,0,?,?,?,?)",
+    args: [sha256hex(token), email, projectId, Date.now(), null, id, label, prefix, "ci"],
+  })
+  return { id, token, prefix }
+}
+
+// listCITokens — metadata ONLY for the management UI. NEVER selects token (the hash) — so a leaked list
+// response can't be replayed. Scoped to one project; only rows minted via the management UI (id present,
+// kind='ci' / kci_ prefix). Revoked tokens are still listed (shown struck-through) so the user has a record.
+export async function listCITokens(projectId: string): Promise<CITokenMeta[]> {
+  const r = await db!.execute({
+    sql: "SELECT id, name, token_prefix, created_at, last_used_at, revoked FROM extension_tokens WHERE project_id=? AND id IS NOT NULL AND (kind='ci' OR token_prefix LIKE 'kci_%') ORDER BY created_at DESC",
+    args: [projectId],
+  })
+  return r.rows.map((x: any) => ({
+    id: String(x.id),
+    name: x.name != null ? String(x.name) : "CI token",
+    prefix: x.token_prefix != null ? String(x.token_prefix) : "kci_…",
+    createdAt: Number(x.created_at),
+    lastUsedAt: x.last_used_at != null ? Number(x.last_used_at) : null,
+    revoked: Number(x.revoked) === 1,
+  }))
+}
+
+// revokeCITokenById — revoke a managed CI token by its opaque id, STRICTLY scoped to the path project.
+// The project_id predicate is the IDOR guard: a token id belonging to another project can never be revoked
+// through this project's path (the UPDATE simply matches zero rows → returns false → caller 404s). Returns
+// true only when a row in THIS project was actually flipped to revoked.
+export async function revokeCITokenById(projectId: string, id: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE extension_tokens SET revoked=1 WHERE id=? AND project_id=?",
+    args: [id, projectId],
+  })
+  return (r.rowsAffected ?? 0) > 0
 }
 
 // ── /api/sim/review guardrail ordering (§5, binding) ──
