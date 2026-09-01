@@ -242,19 +242,31 @@ test("the /replay-frame inline boot script parses as valid JS", async () => {
   expect(() => new Function(boot as string)).not.toThrow()
 })
 
-test("boot script feeds rrwebPlayer a raw events ARRAY (guarded) — would catch 'events is not an array'", async () => {
-  // THE #1 mount fix (KLA replay-mount): rrweb-player's Player constructor no-ops/throws when its `events`
-  // prop is not a real ARRAY, which left #klvhost with no iframe (the blank, stuck-on-"Rebuilding" regression).
-  // Assert the boot both (a) hands the Player the guarded `ev` variable, and (b) derives `ev` as an ARRAY or
-  // null (never an object/envelope), failing loudly on the null case instead of silently rendering blank.
+test("boot script mounts the low-level rrweb.Replayer with a raw events ARRAY (guarded) — would catch 'events is not an array'", async () => {
+  // THE mount fix (KLA replay-mount): the old rrwebPlayer v2 Svelte WRAPPER constructed but never rendered
+  // an iframe under #klvhost (blank, stuck-on-"Rebuilding"). We now mount the SAME low-level rrweb.Replayer
+  // that autosims-walk-report.html uses, loaded from klv-buffer.min.js (exposes window.rrweb.Replayer; the
+  // old klv-view.min.js exposed only the broken window.rrwebPlayer wrapper). The Replayer also requires its
+  // events to be a real ARRAY. Assert the boot (a) loads klv-buffer + constructs rrweb.Replayer(ev,...) and
+  // no longer relies on the rrwebPlayer wrapper to mount, and (b) derives `ev` as an ARRAY or null.
   const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`, { headers: { cookie: sessionCookie } })
   const html = await r.text()
+  // The player bundle loaded is klv-buffer (Replayer), NOT the broken klv-view wrapper.
+  expect(html).toContain('<script src="/vendor/klv-buffer.min.js"></script>')
+  expect(html).not.toContain('/vendor/klv-view.min.js')
   const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
   const boot = scripts.find((s) => s.includes("DL_TIMEOUT")) as string
   expect(boot).toBeTruthy()
 
-  // (a) the Player is constructed with the guarded `ev`, and a non-array `ev` fails loudly (never mounts).
-  expect(boot).toContain("props:{events:ev,")
+  // (a) the low-level Replayer is constructed with the guarded `ev` array (autosims-walk-report parity), the
+  // rrwebPlayer wrapper is no longer used to mount, and a non-array `ev` fails loudly (never mounts).
+  expect(boot).toContain("new window.rrweb.Replayer(ev,")
+  expect(boot).toContain("window.rrweb.Replayer")
+  expect(boot).not.toContain("window.rrwebPlayer")
+  expect(boot).not.toContain("props:{events:ev,")
+  // the watchdog + post-mount check now detect the Replayer's OWN iframe (the wrapper produced none).
+  expect(boot).toContain("#klvhost iframe")
+  expect(boot).toContain("host.querySelector('iframe')")
   expect(boot).toContain("if(!ev){")
   expect(boot).toContain("console.error")
   // airtight decode: the body bytes are decoded defensively (gzip-magic sniff + DecompressionStream) so a

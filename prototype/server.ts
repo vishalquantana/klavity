@@ -3265,7 +3265,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const frameHtml = (bodyInner: string) =>
         withSecurityHeaders(new Response(
           "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-          + "<link rel=\"stylesheet\" href=\"/vendor/klv-view.css\">"
           + "<style>html,body{margin:0;background:#fff}#klvhost{width:100%}"
           + ".klv-msg{font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#57534e;padding:24px;text-align:center}"
           + "#klvbarwrap{display:none;height:6px;background:#ece8df;border-radius:999px;overflow:hidden;margin:14px auto 0;max-width:280px}"
@@ -3306,7 +3305,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "<div id=\"klvbarwrap\"><div id=\"klvbar\"></div></div>"
         + "<button id=\"klvretry\" type=\"button\" style=\"display:none\">Retry</button>"
         + "</div>"
-        + "<script src=\"/vendor/klv-view.min.js\"></script>"
+        + "<script src=\"/vendor/klv-buffer.min.js\"></script>"
         + "<script>(function(){"
         + "var FB=" + JSON.stringify(fbId) + ";"
         + "var DL_TIMEOUT=30000,MOUNT_TIMEOUT=20000;"
@@ -3373,17 +3372,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "var nEv=(Array.isArray(d)?(metaN||ev.length):((d&&d.nEvents)||ev.length));"
         + "var trm=(Array.isArray(d)?metaT:!!(d&&d.trimmed));"
         + "if(ev.length<2){hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
-        + "var P=(window.rrwebPlayer&&(window.rrwebPlayer.default||window.rrwebPlayer.Player));"
-        + "if(!P){fail('Could not start the player.','error');return}"
+        // Mount with the LOW-LEVEL rrweb Replayer (window.rrweb.Replayer, from klv-buffer.min.js) — the SAME
+        // construction that autosims-walk-report.html uses and that renders reliably. The old rrwebPlayer v2
+        // Svelte WRAPPER (window.rrwebPlayer) constructed but never rendered an iframe under #klvhost, leaving
+        // the frame blank and stuck on "Rebuilding session…" — the confirmed KLA replay-mount bug. The
+        // low-level Replayer has no built-in controller UI, so we autoplay and scale the rebuilt page to fit.
+        + "var Replayer=(window.rrweb&&window.rrweb.Replayer);"
+        + "if(!Replayer){fail('Could not start the player.','error');return}"
         + "setIndet();setStatus('Rebuilding session…');"
         + "var mounted=false;"
-        + "var mountTimer=setTimeout(function(){if(mounted)return;fail('The replay could not be rebuilt in time. Please try again.','timeout')},MOUNT_TIMEOUT);"
+        // Watchdog now detects the Replayer's OWN iframe (#klvhost iframe), not just a flag — the whole point
+        // is that the broken wrapper produced NO iframe. If none appears within the budget, fail honestly.
+        + "var mountTimer=setTimeout(function(){if(mounted||document.querySelector('#klvhost iframe'))return;fail('The replay could not be rebuilt in time. Please try again.','timeout')},MOUNT_TIMEOUT);"
         // Defer the (heavy, synchronous) rrweb mount one tick so the "Rebuilding session…" indeterminate
         // bar actually paints before the main thread is blocked rebuilding the recorded DOM.
         + "setTimeout(function(){"
-        + "var w=Math.max(320,Math.min(window.innerWidth-8,1024));"
-        + "try{new P({target:document.getElementById('klvhost'),props:{events:ev,width:w,height:Math.round(w*0.62),autoPlay:true,showController:true}});"
+        + "var host=document.getElementById('klvhost');"
+        + "try{var player=new window.rrweb.Replayer(ev,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true,UNSAFE_replayCanvas:true});player.play();"
+        // The Replayer builds its .replayer-wrapper + iframe SYNCHRONOUSLY. If (like the old wrapper) no iframe
+        // exists after construction, fail loudly with Retry rather than leaving a silent blank frame.
+        + "if(!host.querySelector('iframe')){clearTimeout(mountTimer);fail('Could not start the player.','error');return}"
         + "mounted=true;clearTimeout(mountTimer);if(msgBox)msgBox.style.display='none';"
+        // Scale the rebuilt recording (typically ~1280px wide) down to fit the modal, mirroring
+        // autosims-walk-report.html. Deferred a beat so layout has settled on the freshly-built iframe.
+        + "setTimeout(function(){try{var wrapper=host.querySelector('.replayer-wrapper'),ifr=host.querySelector('iframe');if(wrapper&&ifr){var iw=ifr.offsetWidth,hw=host.offsetWidth;if(iw>0&&hw>0&&iw>hw){var ratio=hw/iw;wrapper.style.transformOrigin='top left';wrapper.style.transform='scale('+ratio+')';host.style.height=Math.round(ifr.offsetHeight*ratio)+'px'}}}catch(e){}},300);"
         // ── Reveal-gate + self-capture override (KLA-759 / replay-blank) ───────────────────────────────────
         // rrweb rebuilds the recorded DOM into a nested iframe but runs NONE of the page's JavaScript. Two
         // classes of problem make the rebuilt DOM (which DOES contain the real content) paint BLANK WHITE:
