@@ -106,6 +106,80 @@ flip_caddy() {
   log "Caddyfile flipped to port ${new_port}; caddy graceful reload done"
 }
 
+# ── KLA-750 deploy-slot hardening (parity with scripts/autodeploy.sh) ─────────
+# See autodeploy.sh for the incident writeup. Same three guards on the ZDT flip: kill non-systemd
+# port squatters before start, verify the served commit before flipping Caddy, detect restart-loops.
+port_listeners() {
+  local port="$1"
+  ss -H -ltnp "sport = :${port}" 2>/dev/null | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u
+}
+
+free_slot_port() {
+  local port="$1" svc="$2" unit_pid pid waited=0 leftover squatters=""
+  unit_pid="$(systemctl show -p MainPID --value "$svc" 2>/dev/null || echo 0)"
+  [ -z "$unit_pid" ] && unit_pid=0
+  for pid in $(port_listeners "$port"); do
+    [ "$pid" = "$unit_pid" ] && continue
+    squatters="$squatters $pid"
+  done
+  if [ -z "${squatters// }" ]; then
+    log "slot port ${port} clear of non-systemd squatters (unit MainPID=${unit_pid})"
+    return 0
+  fi
+  for pid in $squatters; do
+    log "KLA-750: NON-SYSTEMD squatter pid=${pid} on slot port ${port} (unit ${svc} MainPID=${unit_pid}) — SIGTERM"
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  while [ "$waited" -lt 5 ]; do
+    sleep 1; waited=$((waited + 1))
+    leftover=""
+    for pid in $(port_listeners "$port"); do [ "$pid" = "$unit_pid" ] || leftover="$leftover $pid"; done
+    [ -z "${leftover// }" ] && { log "KLA-750: slot port ${port} freed after ${waited}s"; return 0; }
+  done
+  for pid in $leftover; do
+    log "KLA-750: squatter pid=${pid} survived SIGTERM on port ${port} — SIGKILL"
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+  sleep 1
+  leftover=""
+  for pid in $(port_listeners "$port"); do [ "$pid" = "$unit_pid" ] || leftover="$leftover $pid"; done
+  if [ -n "${leftover// }" ]; then
+    log "KLA-750: FATAL — could not free slot port ${port} (still held by:${leftover}); aborting deploy"
+    return 1
+  fi
+  log "KLA-750: slot port ${port} freed via SIGKILL"
+  return 0
+}
+
+served_commit() {
+  local url="$1" body
+  body="$(curl -fsS --max-time 3 "$url" 2>/dev/null || echo '')"
+  [ -z "$body" ] && { echo ""; return; }
+  echo "$body" | grep -oE '"commit"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]+"' | grep -oE '[0-9a-fA-F]+' | head -n1
+}
+
+assert_served_commit() {
+  local ver_url="$1" expected="$2" served
+  served="$(served_commit "$ver_url")"
+  if [ -z "$served" ]; then
+    log "KLA-750: ${ver_url} exposed no commit — cannot prove the responder is the deployed build; aborting flip"
+    return 1
+  fi
+  if [ "${served:0:12}" != "${expected:0:12}" ]; then
+    log "KLA-750: SERVED-COMMIT MISMATCH at ${ver_url} — served=${served:0:12} expected=${expected:0:12} (stale orphan/squatter?). Aborting BEFORE Caddy flip."
+    return 1
+  fi
+  log "KLA-750: served commit ${served:0:12} matches deployed ${expected:0:12}"
+  return 0
+}
+
+nrestarts() {
+  local n
+  n="$(systemctl show -p NRestarts --value "$1" 2>/dev/null || echo 0)"
+  [ -z "$n" ] && n=0
+  echo "$n"
+}
+
 # ── Preflight ────────────────────────────────────────────────────────────────
 [ -d "$REPO/.git" ]      || { log "repo not found: $REPO"; exit 1; }
 [ -d "$REPO/prototype" ] || { log "prototype dir not found: $REPO/prototype"; exit 1; }
@@ -139,6 +213,15 @@ if [ "$ZDT" = "1" ]; then
   inactive_svc="klav@${inactive_slot}.service"
   active_svc="klav@${active_slot}.service"
   inactive_url="http://127.0.0.1:${inactive_port}/api/health"
+  inactive_ver_url="http://127.0.0.1:${inactive_port}/api/version"
+
+  # KLA-750 (1): clear any non-systemd squatter off the slot port before starting the unit.
+  if ! free_slot_port "$inactive_port" "$inactive_svc"; then
+    log "aborting ZDT: slot port ${inactive_port} could not be freed for ${inactive_slot}"
+    exit 1
+  fi
+  # KLA-750 (3): baseline the restart counter to catch an EADDRINUSE crash-loop.
+  restarts_before="$(nrestarts "$inactive_svc")"
 
   log "active=${active_slot}:${active_port}  →  starting ${inactive_slot}:${inactive_port}"
 
@@ -159,6 +242,22 @@ if [ "$ZDT" = "1" ]; then
     exit 1
   fi
   log "${inactive_svc} healthy at ${inactive_url}"
+
+  # KLA-750 (3): restart-counter climb during the deploy window == crash-loop; the 200 may have come
+  # from a squatter while systemd keeps restarting the real slot. Abort before flipping traffic.
+  restarts_after="$(nrestarts "$inactive_svc")"
+  if [ "$restarts_after" -gt "$restarts_before" ]; then
+    log "KLA-750: ${inactive_svc} restart counter climbed ${restarts_before}→${restarts_after} — crash-loop (EADDRINUSE?). Aborting ZDT."
+    systemctl stop "$inactive_svc" || true
+    exit 1
+  fi
+
+  # KLA-750 (2): verify the responder is the just-deployed commit before flipping Caddy.
+  if ! assert_served_commit "$inactive_ver_url" "$new_head"; then
+    log "aborting ZDT: ${inactive_slot}:${inactive_port} is not serving the deployed commit"
+    systemctl stop "$inactive_svc" || true
+    exit 1
+  fi
 
   # Flip Caddy to the new slot — graceful, no connection drops
   flip_caddy "$inactive_port"

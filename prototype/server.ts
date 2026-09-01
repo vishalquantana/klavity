@@ -255,6 +255,21 @@ async function readBodyBounded(req: Request, maxBytes: number): Promise<Uint8Arr
 }
 
 const PORT = Number(process.env.PORT || 4317)
+// KLA-750 (deploy-slot hardening): the exact commit THIS process is running, captured once at boot so
+// the deploy's health gate can confirm the responding process is the freshly-deployed one (not a stale
+// `bun run server.ts` orphan squatting the port that also answers 200). Prefer KLAV_COMMIT (the deploy
+// passes it), else `git rev-parse HEAD` in the checkout at boot. An orphan booted from an older checkout
+// captured its OLD sha at its own boot, so a served-commit != deployed-commit mismatch exposes it.
+const BOOT_COMMIT: string = (() => {
+  const env = (process.env.KLAV_COMMIT || "").trim()
+  if (env) return env
+  try {
+    const out = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: import.meta.dir + "/.." })
+    if (out.exitCode === 0) return new TextDecoder().decode(out.stdout).trim()
+  } catch { /* not a git checkout / git missing — fall back to empty */ }
+  return ""
+})()
+const BOOT_STARTED_AT = new Date().toISOString()
 const BASE = (process.env.KLAV_BASE_URL || `http://localhost:${PORT}`)
   .replace("klavity.quantana.top", "klavity.in")
 const SECURE = BASE.startsWith("https")
@@ -3212,6 +3227,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // targeted reports have no destination and hit the export-suppressed fail-safe (see boot warning).
       const klavityIntakeConfigured = !!(process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
       return json({ ok: true, db: !!db, klavityIntakeConfigured })
+    }
+
+    // KLA-750 — deploy-slot identity probe. Returns the commit THIS process booted with + when it
+    // started. The zero-downtime deploy (scripts/autodeploy.sh) asserts served commit == deployed
+    // commit BEFORE flipping Caddy, so a stale orphan squatting the slot port can never masquerade as
+    // a healthy new deploy just by answering 200 on /api/health. Loopback-only signal, no auth needed.
+    if (req.method === "GET" && path === "/api/version") {
+      return json({ ok: true, commit: BOOT_COMMIT, startedAt: BOOT_STARTED_AT, pid: process.pid })
     }
 
     // GET /replay-frame?fb=<id> — the session-replay VIEWER, served in its own same-origin document with a

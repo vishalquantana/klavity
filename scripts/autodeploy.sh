@@ -99,6 +99,103 @@ flip_caddy() {
   log "Caddyfile flipped to port ${new_port}; caddy graceful reload done"
 }
 
+# ── KLA-750 deploy-slot hardening ──────────────────────────────────────────────
+# Incident (2026-09-01): a manually-started `bun run server.ts` orphan squatted prod port 4317 for
+# ~28h. Caddy routes prod → :4317, so every "flip to blue:4317" landed on the ORPHAN, whose /api/health
+# returned 200 → the deploy reported success. Meanwhile the real systemd slot crash-looped on
+# EADDRINUSE (restart counter 400+), silently, and prod served 28h-stale code. The three helpers below
+# close that gap: (1) kill non-systemd squatters before starting the slot, (2) verify the responding
+# process is the just-deployed commit before flipping Caddy, (3) detect an EADDRINUSE restart-loop.
+
+# List the PIDs currently listening on a TCP port (empty when the port is free). Uses ss -ltnp and
+# parses the `pid=NNN` field; sorted-unique so a multi-fd process appears once.
+port_listeners() {
+  local port="$1"
+  ss -H -ltnp "sport = :${port}" 2>/dev/null \
+    | grep -oE 'pid=[0-9]+' | grep -oE '[0-9]+' | sort -u
+}
+
+# (1) Free the slot's port of any listener that is NOT this slot's own systemd process. Compares each
+# listener PID against the unit's MainPID (0/empty when the unit is stopped, which is the expected
+# pre-start state). SIGTERM first, then SIGKILL for survivors. Returns non-zero (fail loudly) if a
+# non-systemd squatter still holds the port after both — the deploy MUST NOT proceed onto an orphan.
+free_slot_port() {
+  local port="$1" svc="$2" unit_pid pid waited=0 leftover
+  unit_pid="$(systemctl show -p MainPID --value "$svc" 2>/dev/null || echo 0)"
+  [ -z "$unit_pid" ] && unit_pid=0
+  local squatters=""
+  for pid in $(port_listeners "$port"); do
+    [ "$pid" = "$unit_pid" ] && continue   # legit: the slot's own process already holds the port
+    squatters="$squatters $pid"
+  done
+  if [ -z "${squatters// }" ]; then
+    log "slot port ${port} clear of non-systemd squatters (unit MainPID=${unit_pid})"
+    return 0
+  fi
+  for pid in $squatters; do
+    log "KLA-750: NON-SYSTEMD squatter pid=${pid} on slot port ${port} (unit ${svc} MainPID=${unit_pid}) — SIGTERM"
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  # Give SIGTERM up to 5s to release the port.
+  while [ "$waited" -lt 5 ]; do
+    sleep 1; waited=$((waited + 1))
+    leftover=""
+    for pid in $(port_listeners "$port"); do [ "$pid" = "$unit_pid" ] || leftover="$leftover $pid"; done
+    [ -z "${leftover// }" ] && { log "KLA-750: slot port ${port} freed after ${waited}s"; return 0; }
+  done
+  # SIGKILL fallback for anything still squatting.
+  for pid in $leftover; do
+    log "KLA-750: squatter pid=${pid} survived SIGTERM on port ${port} — SIGKILL"
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+  sleep 1
+  leftover=""
+  for pid in $(port_listeners "$port"); do [ "$pid" = "$unit_pid" ] || leftover="$leftover $pid"; done
+  if [ -n "${leftover// }" ]; then
+    log "KLA-750: FATAL — could not free slot port ${port} (still held by:${leftover}); aborting deploy (old slot untouched)"
+    return 1
+  fi
+  log "KLA-750: slot port ${port} freed via SIGKILL"
+  return 0
+}
+
+# (2) Read the commit a running slot reports at /api/version (empty if unreachable / no such endpoint).
+served_commit() {
+  local url="$1" body
+  body="$(curl -fsS --max-time 3 "$url" 2>/dev/null || echo '')"
+  [ -z "$body" ] && { echo ""; return; }
+  echo "$body" | grep -oE '"commit"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]+"' \
+    | grep -oE '[0-9a-fA-F]+' | head -n1
+}
+
+# Assert the slot at $1 (health url base host:port) is serving the commit we just checked out ($2).
+# Aborts (returns non-zero) on a missing endpoint OR a mismatch — the caller stops the slot and exits
+# BEFORE flip_caddy, so a stale orphan can never be promoted to live.
+assert_served_commit() {
+  local ver_url="$1" expected="$2" served
+  served="$(served_commit "$ver_url")"
+  if [ -z "$served" ]; then
+    log "KLA-750: ${ver_url} exposed no commit — cannot prove the responder is the deployed build; aborting flip"
+    return 1
+  fi
+  # Compare 12-char prefixes (server may report full or abbreviated sha).
+  if [ "${served:0:12}" != "${expected:0:12}" ]; then
+    log "KLA-750: SERVED-COMMIT MISMATCH at ${ver_url} — served=${served:0:12} expected=${expected:0:12} (stale orphan/squatter?). Aborting BEFORE Caddy flip."
+    return 1
+  fi
+  log "KLA-750: served commit ${served:0:12} matches deployed ${expected:0:12}"
+  return 0
+}
+
+# (3) systemd restart counter for a unit (0 when unknown). A climb across the deploy window means the
+# slot is crash-looping (classically EADDRINUSE against a squatter) rather than starting cleanly.
+nrestarts() {
+  local n
+  n="$(systemctl show -p NRestarts --value "$1" 2>/dev/null || echo 0)"
+  [ -z "$n" ] && n=0
+  echo "$n"
+}
+
 # ── Preflight ────────────────────────────────────────────────────────────────
 [ -d "$REPO/.git" ]      || { log "repo not found: $REPO"; exit 1; }
 [ -d "$REPO/prototype" ] || { log "prototype dir not found: $REPO/prototype"; exit 1; }
@@ -134,7 +231,19 @@ inactive_port="$(slot_port "$inactive_slot")"
 inactive_svc="klav@${inactive_slot}.service"
 active_svc="klav@${active_slot}.service"
 inactive_url="http://127.0.0.1:${inactive_port}/api/health"
+inactive_ver_url="http://127.0.0.1:${inactive_port}/api/version"
 active_busy_url="http://127.0.0.1:${active_port}/api/health/busy"
+
+# KLA-750 (1): kill any non-systemd squatter on the target slot port BEFORE starting the slot, so the
+# unit binds cleanly instead of crash-looping on EADDRINUSE behind an orphan that squats the port.
+if ! free_slot_port "$inactive_port" "$inactive_svc"; then
+  log "aborting: slot port ${inactive_port} could not be freed for ${inactive_slot} (old slot still serving)"
+  exit 1
+fi
+
+# KLA-750 (3): snapshot the slot's restart counter so we can detect an EADDRINUSE crash-loop that
+# would otherwise pass silently (systemd keeps restarting while the health check hits a squatter).
+restarts_before="$(nrestarts "$inactive_svc")"
 
 log "active=${active_slot}:${active_port}  →  starting ${inactive_slot}:${inactive_port}"
 systemctl start "$inactive_svc" || { log "failed to start $inactive_svc — aborting (old slot untouched)"; exit 1; }
@@ -146,6 +255,23 @@ if ! poll_health_url "$inactive_url"; then
   exit 1
 fi
 log "${inactive_svc} healthy at ${inactive_url}"
+
+# KLA-750 (3): a climbing restart counter during the deploy window == crash-loop (EADDRINUSE etc.).
+# The 200 above may have come from a squatter while systemd keeps restarting the real slot — fail loud.
+restarts_after="$(nrestarts "$inactive_svc")"
+if [ "$restarts_after" -gt "$restarts_before" ]; then
+  log "KLA-750: ${inactive_svc} restart counter climbed ${restarts_before}→${restarts_after} during deploy — crash-loop (EADDRINUSE?). Aborting BEFORE flip; old slot untouched."
+  systemctl stop "$inactive_svc" || true
+  exit 1
+fi
+
+# KLA-750 (2): confirm the process answering on the slot is the commit we just deployed — not a stale
+# orphan that happens to return 200. Abort BEFORE the Caddy flip on mismatch/missing endpoint.
+if ! assert_served_commit "$inactive_ver_url" "$target"; then
+  log "aborting ZDT: ${inactive_slot}:${inactive_port} is not serving the deployed commit (old slot still serving)"
+  systemctl stop "$inactive_svc" || true
+  exit 1
+fi
 
 # Flip traffic to the new slot FIRST (graceful, no dropped connections)…
 flip_caddy "$inactive_port"
