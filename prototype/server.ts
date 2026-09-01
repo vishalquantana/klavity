@@ -11362,14 +11362,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const isAnnotations = feedbackSubroute === "/annotations"
 
         // Resolve which project this feedback belongs to and check the caller has access.
+        // PERF (fb-endpoint-perf): resolve the owning project in ONE unscoped query, then do a
+        // SINGLE access check — mirroring the /replay-frame route (SELECT project_id + projectAccess).
+        // The previous implementation looped over ALL of the caller's projects doing sequential
+        // projectAccess + feedbackById round-trips (O(N-projects)), which was ~16s on accounts with
+        // many projects — on EVERY subroute (replay/comments/timeline/labels/…). Access semantics are
+        // preserved exactly: fbAccess is still 'admin'/'member'/null for the ticket's OWNING project.
         let fbRow: any = null
         let fbAccess: "admin" | "member" | null = null
-        const allProjects = await listProjects(me)
-        for (const p of allProjects) {
-          const a = await projectAccess(me, p.id)
-          if (!a) continue
-          const row = await feedbackById(p.id, fid)
-          if (row) { fbRow = row; fbAccess = a; break }
+        {
+          const fbProjRow = await db.execute({ sql: "SELECT project_id FROM feedback WHERE id=?", args: [fid] }).catch(() => null)
+          const ownerProjectId = fbProjRow && fbProjRow.rows[0] ? String((fbProjRow.rows[0] as any).project_id || "") : ""
+          if (ownerProjectId) {
+            fbAccess = await projectAccess(me, ownerProjectId)
+            // Only a project member/admin loads the row here. Non-members (fbAccess === null) leave
+            // fbRow null so the shared-ticket-viewer fallback below (isComments only) still runs, and
+            // the final `if (!fbRow) return 404` still denies cross-project access to every other subroute.
+            if (fbAccess) fbRow = await feedbackById(ownerProjectId, fid)
+          }
         }
         // Shared-ticket viewers: allow the COMMENTS subroute (read+write) for a caller whose access
         // resolves 'full' via ticketViewAccess (an active per-ticket viewer, not a project member).
@@ -11450,7 +11460,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // notifyTicketComment.
           void (async () => {
             const priorCommenters = (await listTicketComments(fid).catch(() => [])).map((c) => c.author)
-            const projName = allProjects.find((p: any) => p.id === fbRow.projectId)?.name ?? null
+            const projName = (await projectById(fbRow.projectId).catch(() => null))?.name ?? null
             await notifyTicketComment({
               feedbackId: fid,
               ticketTitle: effectiveTicketTitle(fbRow),

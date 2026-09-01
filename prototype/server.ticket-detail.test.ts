@@ -124,6 +124,33 @@ test("GET /api/feedback/:id returns 404 for outsiders", async () => {
   expect(r.status).toBe(404)
 })
 
+// fb-endpoint-perf NEGATIVE CONTROL: the O(N-projects) resolution loop was replaced by a single
+// `SELECT project_id FROM feedback WHERE id=?` + one `projectAccess(me, ownerProjectId)` check. Prove
+// there is no cross-project access: a caller who is a member of THEIR OWN project (so the resolution
+// path runs) must still get 404 on a ticket that belongs to a DIFFERENT project they don't belong to —
+// on the base route AND every subroute. Access is now gated on the ticket's OWNING project only.
+test("cross-project: a member of another project gets 404 on a foreign ticket (fb-endpoint-perf)", async () => {
+  const otherAcct = `acct_other_${RUN}`
+  const otherProj = `proj_other_${RUN}`
+  const otherFid = `fb_other_${RUN}`
+  await exec("INSERT INTO accounts (id, name, owner_email, created_at) VALUES (?, ?, ?, ?)", [otherAcct, "Outsider Co", OUTSIDE, NOW])
+  await exec("INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)", [`am_other_${RUN}`, otherAcct, OUTSIDE, "owner", NOW])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [otherProj, otherAcct, "Outsider Project", "active", "auto", 200, "named", NOW, NOW])
+  await exec("INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)", [`pm_other_${RUN}`, otherProj, OUTSIDE, "admin", null, NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [otherFid, otherProj, "Outsider's own ticket", "low", "open", NOW])
+
+  // Sanity: OUTSIDE CAN read their own ticket (proves the single-query resolution + access works for a member).
+  const own = await req("GET", `/api/feedback/${otherFid}`, undefined, OUTSIDE_SID)
+  expect(own.status).toBe(200)
+  expect((await own.json()).report.projectId).toBe(otherProj)
+
+  // But OUTSIDE must NOT reach the ticket in PROJ — base route and every subroute return 404.
+  for (const sub of ["", "/timeline", "/comments", "/replay", "/labels", "/annotations"]) {
+    const r = await req("GET", `/api/feedback/${FID}${sub}`, undefined, OUTSIDE_SID)
+    expect(r.status).toBe(404)
+  }
+})
+
 test("GET /api/feedback/:id/timeline returns merged activity", async () => {
   // Add a comment so timeline is non-empty
   const c = await req("POST", `/api/feedback/${FID}/comments`, { body: "Confirmed on iOS 17." })
