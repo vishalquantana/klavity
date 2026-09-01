@@ -103,7 +103,7 @@ import { trailsDashboardData, walkTrends } from "./lib/trails-dashboard"
 import { dashboardTrends, dashboardTrendDrill, TREND_SERIES, type TrendSeries } from "./lib/dashboard-trends"
 import { fileFindingById, dismissFinding, realFiler } from "./lib/trails-findings-gate"
 import { getReplay, runsWithReplay, findingReplayOffsets } from "./lib/trails-replay"
-import { saveFeedbackReplay, getFeedbackReplay, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
+import { saveFeedbackReplay, getFeedbackReplay, getFeedbackReplayRaw, feedbackIdsWithReplay, pruneOldFeedbackReplays } from "./lib/feedback-replay"
 import { listRunSteps, listTrails, getTrail, getWalk, setTrailStatus, listTrailSteps, insertAssertStep, deleteTrailStep, updateTrailStep, reorderTrailSteps, updateTrail, countRunSteps, countTrailSteps, listTrailRunHistory, listFindings, recordFinding, getWalkJudgment, type TrailPatch, type StepPatch, resumeWalk, listWalksPaged } from "./lib/trails"
 import { runWalkNow } from "./lib/trails-trigger"
 // KLA-550: /api/v1/runs — REST wrapper over the AutoSim/Trail engine (idempotency + git + AI report).
@@ -3320,14 +3320,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "function fail(t,st){setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:st||'error'})}"
         + "function boot(){"
         + "if(retryEl)retryEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
-        + "var done=false;"
+        + "var done=false,metaN=0,metaT=false;"
         + "var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;"
         + "var dlTimer=setTimeout(function(){if(done)return;done=true;if(ctrl){try{ctrl.abort()}catch(e){}}fail('The replay is taking too long to load. Check your connection and try again.','timeout')},DL_TIMEOUT);"
         + "fetch('/api/feedback/'+encodeURIComponent(FB)+'/replay',ctrl?{signal:ctrl.signal}:{}).then(function(r){"
         + "if(r.status===404){done=true;clearTimeout(dlTimer);hideBar();setStatus('No replay was recorded for this report.');post({status:'none'});return null}"
         + "if(!r.ok){done=true;clearTimeout(dlTimer);fail('Couldn\\u2019t load the replay.','error');return null}"
+        // KLA-759: meta now rides in response headers (the body is a gz-encoded events ARRAY).
+        + "metaN=parseInt(r.headers.get('x-klv-nevents')||'0',10)||0;metaT=(r.headers.get('x-klv-trimmed')==='1');"
+        + "var enc=(r.headers.get('content-encoding')||'').toLowerCase();"
         + "var total=parseInt(r.headers.get('content-length')||'0',10);"
-        + "if(r.body&&r.body.getReader&&total>0){"
+        // Determinate %-bar only when the body is NOT content-encoded: for a gzip response content-length is
+        // the COMPRESSED size but the reader yields DECOMPRESSED bytes, so recv/total would blow past 100%.
+        // In that case fall through to the indeterminate 'Downloading…' bar + r.json() (browser decodes gz).
+        + "if(r.body&&r.body.getReader&&total>0&&enc.indexOf('gzip')===-1){"
         + "var reader=r.body.getReader(),recv=0,chunks=[];"
         + "return (function pump(){return reader.read().then(function(res){"
         + "if(res.done){var buf=new Uint8Array(recv),off=0;for(var i=0;i<chunks.length;i++){buf.set(chunks[i],off);off+=chunks[i].length}return JSON.parse(new TextDecoder('utf-8').decode(buf))}"
@@ -3337,7 +3343,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "setIndet();setStatus('Downloading replay…');return r.json()"
         + "}).then(function(d){"
         + "if(!d)return;done=true;clearTimeout(dlTimer);"
-        + "var ev=(d.events||[]);"
+        // KLA-759: the body is now a top-level events ARRAY (gz-streamed); tolerate the legacy
+        // {events,nEvents,trimmed} envelope too so a mid-deploy client never breaks.
+        + "var ev=(Array.isArray(d)?d:((d&&d.events)||[]));"
+        + "var nEv=(Array.isArray(d)?(metaN||ev.length):((d&&d.nEvents)||ev.length));"
+        + "var trm=(Array.isArray(d)?metaT:!!(d&&d.trimmed));"
         + "if(ev.length<2){hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
         + "var P=(window.rrwebPlayer&&(window.rrwebPlayer.default||window.rrwebPlayer.Player));"
         + "if(!P){fail('Could not start the player.','error');return}"
@@ -3350,20 +3360,37 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "var w=Math.max(320,Math.min(window.innerWidth-8,1024));"
         + "try{new P({target:document.getElementById('klvhost'),props:{events:ev,width:w,height:Math.round(w*0.62),autoPlay:true,showController:true}});"
         + "mounted=true;clearTimeout(mountTimer);if(msgBox)msgBox.style.display='none';"
-        // ── Reveal-gate override (KLA replay-blank) ──────────────────────────────────────────────────────
-        // rrweb rebuilds the recorded DOM into a nested iframe but runs NONE of the page's JavaScript. Modern
-        // themed/SPA pages hide their content behind JS-lifted CSS gates — AngularJS `[ng-cloak]{display:none}`
-        // (removed after bootstrap), `.ng-animate-shim{visibility:hidden}` (animation shim), Vue `[v-cloak]`,
-        // and full-viewport preloader overlays that JS hides on ready. With no JS in replay those gates never
-        // lift, so the rebuilt DOM — which DOES contain the real content — paints BLANK WHITE (confirmed on the
-        // BookJoy AngularJS admin). Inject a corrective stylesheet into the replayer iframe that neutralizes
-        // ONLY these bootstrap/reveal gates (not ng-hide/ng-show/modal state, which reflect real captured
-        // state). Re-applied on a short idempotent poll so it survives rrweb's rebuilds on scrub/checkout; the
-        // poll dies with the frame when the modal closes.
-        + "var OVR='html,body{visibility:visible!important;opacity:1!important;filter:none!important}[ng-cloak],[data-ng-cloak],.ng-cloak,.x-ng-cloak,[v-cloak]{display:revert!important}.ng-animate-shim{visibility:visible!important}.preloader,.page-loader,#preloader,.loading-overlay,.pace,.spinner-overlay,.app-loading,.loader-wrapper{display:none!important}';"
+        // ── Reveal-gate + self-capture override (KLA-759 / replay-blank) ───────────────────────────────────
+        // rrweb rebuilds the recorded DOM into a nested iframe but runs NONE of the page's JavaScript. Two
+        // classes of problem make the rebuilt DOM (which DOES contain the real content) paint BLANK WHITE:
+        //
+        //  (1) SELF-CAPTURE (the confirmed KLA-759 cause on BookJoy fb_d28a6128…): the rrweb recorder captured
+        //      KLAVITY'S OWN widget UI because the Snap composer was open at capture time. Klavity injects a
+        //      `.klavity-overlay`/`.klavity-modal` at `position:fixed; inset:0; z-index:2147483647` with an
+        //      opaque backdrop + dialog, plus the launcher `#klavity-widget-host` and coach tips
+        //      `.kl-float-tip`/`.kl-shp`/`.ksim`. In the replay those top-most full-viewport overlays sit ON TOP
+        //      of the recorded page → the viewer sees a blank/near-white scrim, not the customer's page. These
+        //      are OUR chrome (never part of the customer page), so hiding them in the replay is strictly
+        //      correct and reveals the real page underneath. (Capture-side fix — excluding Klavity nodes from
+        //      the recording — is tracked in the SDK/extension recorder; this view-side rule salvages the
+        //      replays ALREADY stored, which cannot be re-captured.)
+        //  (2) JS-LIFTED REVEAL GATES: themed/SPA pages hide content behind gates a JS bootstrap removes —
+        //      AngularJS `[ng-cloak]`, Vue `[v-cloak]`, `.ng-animate-shim`, full-viewport preloaders, and
+        //      scroll-reveal libraries (AOS `[data-aos]`, WOW `.wow`, ScrollReveal `.sr`/`[data-sr]`) whose
+        //      INITIAL state is opacity:0/hidden and only becomes visible after JS runs. With no JS in replay
+        //      those never lift. We neutralize ONLY these bootstrap/reveal gates — never ng-hide/ng-show,
+        //      `.invisible`, `[hidden]`, `.fade`, or modal state, which reflect real captured state.
+        //
+        // Re-applied on a short idempotent poll so it survives rrweb's rebuilds on scrub/checkout; the poll
+        // dies with the frame when the modal closes.
+        + "var OVR='html,body{visibility:visible!important;opacity:1!important;filter:none!important}"
+        + "#klavity-widget-host,#klavity-overlay-host,.klavity-overlay,.klavity-modal,.kl-float-tip,.kl-shp,.ksim{display:none!important}"
+        + "[ng-cloak],[data-ng-cloak],.ng-cloak,.x-ng-cloak,[v-cloak]{display:revert!important}.ng-animate-shim{visibility:visible!important}"
+        + "[data-aos],.aos-init,.wow,[data-sr],.sr{opacity:1!important;visibility:visible!important;transform:none!important}"
+        + ".preloader,.page-loader,#preloader,.loading-overlay,.pace,.spinner-overlay,.app-loading,.loader-wrapper{display:none!important}';"
         + "function _ovr(){try{var f=document.querySelector('#klvhost iframe');if(!f||!f.contentDocument)return;var cd=f.contentDocument;if(cd.getElementById('klv-reveal-fix'))return;var st=cd.createElement('style');st.id='klv-reveal-fix';st.textContent=OVR;(cd.head||cd.documentElement).appendChild(st)}catch(e){}}"
         + "_ovr();var _oi=setInterval(_ovr,500);setTimeout(function(){try{clearInterval(_oi)}catch(e){}},120000);"
-        + "post({status:'ok',nEvents:(d.nEvents||ev.length),trimmed:!!d.trimmed})}"
+        + "post({status:'ok',nEvents:nEv,trimmed:trm})}"
         + "catch(e){clearTimeout(mountTimer);fail('Could not start the player: '+(e&&e.message?e.message:'error'),'error')}"
         + "},50)"
         + "}).catch(function(err){"
@@ -3373,11 +3400,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "}"
         + "if(retryEl)retryEl.addEventListener('click',boot);"
         + "boot();"
-        // FOLLOW-UP (deferred, not in scope): the replay is stored gzipped in feedback_replays but this
-        // endpoint gunzips it and returns multi-MB JSON. Serving it with Content-Encoding: gzip (stream the
-        // stored gz bytes; browser decompresses transparently) would cut bandwidth ~20-100x. Left out here
-        // because it needs careful content-negotiation testing (avoid double-encoding under Bun) — track
-        // separately. The download bar above already clamps to 100% so it stays correct if that lands later.
+        // KLA-759 (DONE): GET /api/feedback/:id/replay now streams the already-gzipped events with
+        // Content-Encoding: gzip (browser decompresses transparently), cutting the wire payload ~3-20x and
+        // fixing the slow/timed-out downloads on large replays. The body is a top-level events ARRAY (meta in
+        // x-klv-* headers); the boot fetch above normalizes both the array and the legacy envelope, and skips
+        // the determinate %-bar when the response is gz-encoded (content-length is compressed but the reader
+        // yields decompressed bytes). Verified under Bun that this does NOT double-encode.
         + "})();</script>"
       return frameHtml(bootScript)
     }
@@ -11336,9 +11364,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // dashboard viewer can play them. Project-scoped (access already verified via fbRow above);
         // 404 when this ticket has no recording (widget didn't capture, or buffer was empty).
         if (req.method === "GET" && isReplay) {
-          const replay = await getFeedbackReplay(fbRow.projectId, fid)
-          if (!replay) return json({ error: "No replay for this report." }, 404)
-          return json({ feedbackId: fid, events: replay.events, nEvents: replay.nEvents, trimmed: replay.trimmed, createdAt: replay.createdAt })
+          // KLA-759 (perf): stream the ALREADY-gzipped events straight to the client with
+          // Content-Encoding: gzip — the browser decompresses transparently — instead of gunzip →
+          // JSON.stringify → sending a multi-MB UNCOMPRESSED body (which made large replays slow / time
+          // out on download). The stored payload is gzip(JSON.stringify(events)), so the decompressed
+          // body is a top-level events ARRAY; the meta (nEvents/trimmed/createdAt) rides in headers.
+          // Verified under Bun: Bun.serve does NOT re-compress a body that already carries a
+          // Content-Encoding, so there is no double-encode; fetch().json() and the streamed getReader()
+          // path both decode it correctly. The response is per-viewer private + no-store (a session DOM
+          // recording must never be cached by a shared proxy).
+          const raw = await getFeedbackReplayRaw(fbRow.projectId, fid)
+          if (!raw) return json({ error: "No replay for this report." }, 404)
+          const gzBytes = Buffer.from(raw.gzB64, "base64")
+          return withSecurityHeaders(new Response(gzBytes, {
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "content-encoding": "gzip",
+              "vary": "accept-encoding",
+              "cache-control": "private, no-store",
+              "x-klv-feedback": fid,
+              "x-klv-nevents": String(raw.nEvents),
+              "x-klv-trimmed": raw.trimmed ? "1" : "0",
+              "x-klv-created": String(raw.createdAt),
+            },
+          }))
         }
 
         if (req.method === "GET" && isComments) {

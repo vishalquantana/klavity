@@ -144,6 +144,30 @@ export async function saveFeedbackReplay(
 
 export interface FeedbackReplay { events: ReplayEvent[]; nEvents: number; trimmed: boolean; createdAt: number }
 
+// KLA-759 (perf): the RAW stored replay — base64-gzip payload untouched, no gunzip/parse. Lets the HTTP
+// endpoint stream the already-compressed events bytes straight to the client with Content-Encoding: gzip
+// (browser decompresses transparently) instead of gunzip→JSON.stringify→send an uncompressed multi-MB
+// body (the cause of slow/timed-out loads on large replays). The decompressed body IS exactly
+// JSON.stringify(events) — a top-level events ARRAY — so meta (nEvents/trimmed) rides in response headers.
+export interface FeedbackReplayRaw { gzB64: string; nEvents: number; trimmed: boolean; createdAt: number }
+
+/** Read the latest stored replay for a feedback row WITHOUT decoding — project-scoped (no cross-tenant read). */
+export async function getFeedbackReplayRaw(projectId: string, feedbackId: string): Promise<FeedbackReplayRaw | null> {
+  const r = await db!.execute({
+    sql: `SELECT events_gz, n_events, trimmed, created_at FROM feedback_replays
+          WHERE project_id=? AND feedback_id=? ORDER BY created_at DESC LIMIT 1`,
+    args: [projectId, feedbackId],
+  })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  return {
+    gzB64: String(row.events_gz),
+    nEvents: Number(row.n_events),
+    trimmed: !!Number(row.trimmed),
+    createdAt: Number(row.created_at),
+  }
+}
+
 /** Read the latest stored replay for a feedback row — project-scoped (no cross-tenant read). */
 export async function getFeedbackReplay(projectId: string, feedbackId: string): Promise<FeedbackReplay | null> {
   const r = await db!.execute({
