@@ -3266,7 +3266,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         withSecurityHeaders(new Response(
           "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
           + "<link rel=\"stylesheet\" href=\"/vendor/klv-view.css\">"
-          + "<style>html,body{margin:0;background:#fff}#klvhost{width:100%}.klv-msg{font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#57534e;padding:24px;text-align:center}</style>"
+          + "<style>html,body{margin:0;background:#fff}#klvhost{width:100%}"
+          + ".klv-msg{font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:#57534e;padding:24px;text-align:center}"
+          + "#klvbarwrap{display:none;height:6px;background:#ece8df;border-radius:999px;overflow:hidden;margin:14px auto 0;max-width:280px}"
+          + "#klvbar{height:100%;width:0;background:#7c3aed;border-radius:999px;transition:width .2s ease}"
+          + "#klvbar.klv-indet{width:40%;animation:klvindet 1.1s ease-in-out infinite}"
+          + "@keyframes klvindet{0%{margin-left:-40%}100%{margin-left:100%}}"
+          + "#klvretry{margin-top:14px;padding:7px 16px;font:inherit;font-size:13px;color:#fff;background:#7c3aed;border:0;border-radius:8px;cursor:pointer;transition:transform .15s ease,background .15s ease}"
+          + "#klvretry:hover{background:#6d28d9;transform:scale(1.02)}#klvretry:active{transform:scale(.97)}</style>"
           + "</head><body>" + bodyInner + "</body></html>",
           { headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": FRAME_CSP, "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" } },
         ))
@@ -3283,23 +3290,66 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!(await projectAccess(email, fbProjectId).catch(() => null))) return frameHtml('<div class="klv-msg">You don\'t have access to this replay.</div>')
       // The shell loads the player, fetches the events same-origin (session cookie carried), mounts the
       // Replayer, and postMessages status/meta up to the dashboard so it can render the "N events" note.
+      // Boot script (inline JS string — no build step). The old shell showed a STATIC "Loading replay…"
+      // with no progress and no timeout, so a large replay (avg ~363 KB gz → many MB of decompressed rrweb
+      // JSON, max 3.3 MB gz) looked FROZEN while it was actually just slowly downloading + rebuilding.
+      // This version:
+      //   • streams the download with a DETERMINATE % bar (fetch + Response.body reader + Content-Length),
+      //   • switches to an INDETERMINATE "Rebuilding session…" bar while rrweb mounts,
+      //   • enforces a hard 30s DOWNLOAD timeout (AbortController) + a mount watchdog, and
+      //   • on any failure shows an honest, actionable error with a Retry button — never an infinite spinner.
+      // Status is still posted up to the dashboard via post({status:...}) exactly as before.
       const bootScript =
-        "<div id=\"klvhost\"></div><div id=\"klvmsg\" class=\"klv-msg\">Loading replay…</div>"
+        "<div id=\"klvhost\"></div>"
+        + "<div id=\"klvmsg\" class=\"klv-msg\">"
+        + "<div id=\"klvstatus\">Loading replay…</div>"
+        + "<div id=\"klvbarwrap\"><div id=\"klvbar\"></div></div>"
+        + "<button id=\"klvretry\" type=\"button\" style=\"display:none\">Retry</button>"
+        + "</div>"
         + "<script src=\"/vendor/klv-view.min.js\"></script>"
         + "<script>(function(){"
         + "var FB=" + JSON.stringify(fbId) + ";"
+        + "var DL_TIMEOUT=30000,MOUNT_TIMEOUT=20000;"
         + "function post(m){try{parent.postMessage(Object.assign({source:'klv-replay'},m),location.origin)}catch(e){}}"
-        + "function msg(t){var e=document.getElementById('klvmsg');if(e)e.textContent=t}"
-        + "fetch('/api/feedback/'+encodeURIComponent(FB)+'/replay').then(function(r){"
-        + "if(r.status===404){msg('No replay was recorded for this report.');post({status:'none'});return null}"
-        + "if(!r.ok){msg('Couldn\\u2019t load the replay.');post({status:'error'});return null}return r.json()"
-        + "}).then(function(d){if(!d)return;var ev=(d.events||[]);"
-        + "if(ev.length<2){msg('Too few frames to scrub.');post({status:'few'});return}"
+        + "var statusEl=document.getElementById('klvstatus'),barWrap=document.getElementById('klvbarwrap'),barEl=document.getElementById('klvbar'),retryEl=document.getElementById('klvretry'),msgBox=document.getElementById('klvmsg');"
+        + "function setStatus(t){if(statusEl)statusEl.textContent=t}"
+        + "function showBox(){if(msgBox)msgBox.style.display='block'}"
+        + "function setPct(p){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.remove('klv-indet');barEl.style.width=Math.max(0,Math.min(100,p))+'%'}}"
+        + "function setIndet(){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.add('klv-indet');barEl.style.width=''}}"
+        + "function hideBar(){if(barWrap)barWrap.style.display='none'}"
+        + "function fail(t,st){setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:st||'error'})}"
+        + "function boot(){"
+        + "if(retryEl)retryEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
+        + "var done=false;"
+        + "var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;"
+        + "var dlTimer=setTimeout(function(){if(done)return;done=true;if(ctrl){try{ctrl.abort()}catch(e){}}fail('The replay is taking too long to load. Check your connection and try again.','timeout')},DL_TIMEOUT);"
+        + "fetch('/api/feedback/'+encodeURIComponent(FB)+'/replay',ctrl?{signal:ctrl.signal}:{}).then(function(r){"
+        + "if(r.status===404){done=true;clearTimeout(dlTimer);hideBar();setStatus('No replay was recorded for this report.');post({status:'none'});return null}"
+        + "if(!r.ok){done=true;clearTimeout(dlTimer);fail('Couldn\\u2019t load the replay.','error');return null}"
+        + "var total=parseInt(r.headers.get('content-length')||'0',10);"
+        + "if(r.body&&r.body.getReader&&total>0){"
+        + "var reader=r.body.getReader(),recv=0,chunks=[];"
+        + "return (function pump(){return reader.read().then(function(res){"
+        + "if(res.done){var buf=new Uint8Array(recv),off=0;for(var i=0;i<chunks.length;i++){buf.set(chunks[i],off);off+=chunks[i].length}return JSON.parse(new TextDecoder('utf-8').decode(buf))}"
+        + "chunks.push(res.value);recv+=res.value.length;var p=Math.round(recv/total*100);setPct(p);setStatus('Downloading replay… '+Math.min(100,p)+'%');return pump()"
+        + "})})()"
+        + "}"
+        + "setIndet();setStatus('Downloading replay…');return r.json()"
+        + "}).then(function(d){"
+        + "if(!d)return;done=true;clearTimeout(dlTimer);"
+        + "var ev=(d.events||[]);"
+        + "if(ev.length<2){hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
         + "var P=(window.rrwebPlayer&&(window.rrwebPlayer.default||window.rrwebPlayer.Player));"
-        + "if(!P){msg('Could not start the player.');post({status:'error'});return}"
-        + "document.getElementById('klvmsg').style.display='none';"
+        + "if(!P){fail('Could not start the player.','error');return}"
+        + "setIndet();setStatus('Rebuilding session…');"
+        + "var mounted=false;"
+        + "var mountTimer=setTimeout(function(){if(mounted)return;fail('The replay could not be rebuilt in time. Please try again.','timeout')},MOUNT_TIMEOUT);"
+        // Defer the (heavy, synchronous) rrweb mount one tick so the "Rebuilding session…" indeterminate
+        // bar actually paints before the main thread is blocked rebuilding the recorded DOM.
+        + "setTimeout(function(){"
         + "var w=Math.max(320,Math.min(window.innerWidth-8,1024));"
         + "try{new P({target:document.getElementById('klvhost'),props:{events:ev,width:w,height:Math.round(w*0.62),autoPlay:true,showController:true}});"
+        + "mounted=true;clearTimeout(mountTimer);if(msgBox)msgBox.style.display='none';"
         // ── Reveal-gate override (KLA replay-blank) ──────────────────────────────────────────────────────
         // rrweb rebuilds the recorded DOM into a nested iframe but runs NONE of the page's JavaScript. Modern
         // themed/SPA pages hide their content behind JS-lifted CSS gates — AngularJS `[ng-cloak]{display:none}`
@@ -3314,8 +3364,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "function _ovr(){try{var f=document.querySelector('#klvhost iframe');if(!f||!f.contentDocument)return;var cd=f.contentDocument;if(cd.getElementById('klv-reveal-fix'))return;var st=cd.createElement('style');st.id='klv-reveal-fix';st.textContent=OVR;(cd.head||cd.documentElement).appendChild(st)}catch(e){}}"
         + "_ovr();var _oi=setInterval(_ovr,500);setTimeout(function(){try{clearInterval(_oi)}catch(e){}},120000);"
         + "post({status:'ok',nEvents:(d.nEvents||ev.length),trimmed:!!d.trimmed})}"
-        + "catch(e){msg('Could not start the player: '+(e&&e.message?e.message:'error'));post({status:'error'})}"
-        + "}).catch(function(){msg('Network error loading replay.');post({status:'error'})})"
+        + "catch(e){clearTimeout(mountTimer);fail('Could not start the player: '+(e&&e.message?e.message:'error'),'error')}"
+        + "},50)"
+        + "}).catch(function(err){"
+        + "if(done)return;done=true;clearTimeout(dlTimer);"
+        + "if(!(err&&err.name==='AbortError'))fail('Network error loading the replay.','error')"
+        + "})"
+        + "}"
+        + "if(retryEl)retryEl.addEventListener('click',boot);"
+        + "boot();"
+        // FOLLOW-UP (deferred, not in scope): the replay is stored gzipped in feedback_replays but this
+        // endpoint gunzips it and returns multi-MB JSON. Serving it with Content-Encoding: gzip (stream the
+        // stored gz bytes; browser decompresses transparently) would cut bandwidth ~20-100x. Left out here
+        // because it needs careful content-negotiation testing (avoid double-encoding under Bun) — track
+        // separately. The download bar above already clamps to 100% so it stays correct if that lands later.
         + "})();</script>"
       return frameHtml(bootScript)
     }

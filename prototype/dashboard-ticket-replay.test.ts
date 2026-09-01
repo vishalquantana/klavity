@@ -40,21 +40,23 @@ test("the ticket session-replay modal does not reuse the Walk-replay modal's ids
     expect(html).not.toContain(`<button id="${id}"`)
     expect(html).not.toContain(`<div id="${id}"`)
   }
-  // ...and uses its own prefixed ids instead.
+  // ...and uses its own prefixed ids instead. The ticket viewer now renders in a same-origin
+  // <iframe src="/replay-frame"> (relaxed CSP so the recorded page's cross-origin CSS/fonts load),
+  // so the host is the iframe (#fbReplayFrame), not an in-page rrweb mount point.
   expect(html).toContain('bg.id = "fbReplayBg"')
-  expect(html).toContain('id="fbReplayPlayerHost"')
+  expect(html).toContain('id="fbReplayFrame"')
   expect(html).toContain('id="fbReplayNote"')
   expect(html).toContain('id="fbReplayClose"')
 })
 
-test("openReplay(feedbackId) mounts the player into the host it actually creates", () => {
-  const start = html.indexOf("async function openReplay(feedbackId)")
+test("openReplay(feedbackId) points the replay iframe at the /replay-frame route", () => {
+  const start = html.indexOf("function openReplay(feedbackId)")
   expect(start).toBeGreaterThan(-1)
   const fn = html.slice(start, start + 2000)
-  // fetches the per-feedback replay endpoint...
-  expect(fn).toContain('"/api/feedback/" + encodeURIComponent(feedbackId) + "/replay"')
-  // ...and targets the host __ensureReplayModal() injects, not the Walk modal's.
-  expect(fn).toContain('document.getElementById("fbReplayPlayerHost")')
+  // ...loads the per-feedback viewer shell (which fetches /api/feedback/:id/replay itself)...
+  expect(fn).toContain('"/replay-frame?fb=" + encodeURIComponent(feedbackId)')
+  // ...targeting the iframe it creates, not the Walk modal's in-page host.
+  expect(fn).toContain('document.getElementById("fbReplayFrame")')
   expect(fn).not.toContain('document.getElementById("replayPlayerHost")')
   expect(fn).not.toContain('document.getElementById("replayNote")')
 })

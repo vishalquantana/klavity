@@ -12989,6 +12989,7 @@ function __ensureReplayModal() {
     if (m.status === "ok") note.textContent = (m.nEvents || "") + " events" + (m.trimmed ? " · trimmed to the most recent window" : "") + " · recorded just before the report was filed"
     else if (m.status === "none") note.textContent = "No replay was recorded for this report."
     else if (m.status === "few") note.textContent = "Too few frames to scrub."
+    else if (m.status === "timeout") note.textContent = "The replay took too long to load — use Retry inside the viewer."
     else if (m.status === "error") note.textContent = "Couldn’t load the replay."
   })
   return bg

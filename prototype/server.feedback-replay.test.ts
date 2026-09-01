@@ -143,6 +143,67 @@ test("GET …/replay is project-scoped — a user cannot read a foreign project'
   expect(rr.status).toBe(404)
 })
 
+// ── /replay-frame viewer shell (KLA replay-loading-fix) ───────────────────────────────────────────
+// The shell is static HTML+JS; the events are fetched client-side. We assert the shell now ships the
+// progress UI (determinate download bar + indeterminate rebuild), a hard client-side timeout with a
+// Retry button, and the honest empty-path message — so a big replay never looks frozen.
+let frameFbId = ""
+test("a feedback with a replay exists for the frame test", async () => {
+  const fd = new FormData()
+  fd.set("description", "bug for frame"); fd.set("page_url", "https://test.local/frame"); fd.set("project_id", "p1")
+  fd.set("replay_events", JSON.stringify(sampleEvents()))
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { cookie: sessionCookie } })
+  const j = await r.json(); frameFbId = String(j.id); expect(frameFbId).toBeTruthy()
+})
+
+test("GET /replay-frame renders the progress + timeout + retry viewer shell (authed)", async () => {
+  const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`, { headers: { cookie: sessionCookie } })
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  // progress UI scaffold
+  expect(html).toContain('id="klvbarwrap"')
+  expect(html).toContain('id="klvbar"')
+  expect(html).toContain('id="klvstatus"')
+  expect(html).toContain('id="klvretry"')
+  // determinate download-progress logic (streamed reader + Content-Length %)
+  expect(html).toContain("getReader")
+  expect(html).toContain("content-length")
+  expect(html).toContain("setPct(")
+  // indeterminate rebuild phase
+  expect(html).toContain("Rebuilding session")
+  expect(html).toContain("setIndet(")
+  // hard timeouts + retry
+  expect(html).toContain("DL_TIMEOUT")
+  expect(html).toContain("MOUNT_TIMEOUT")
+  expect(html).toContain("AbortController")
+  expect(html).toContain("addEventListener('click',boot)")
+  // honest states still posted up to the parent
+  expect(html).toContain("No replay was recorded for this report.")
+  expect(html).toContain("'timeout')")   // fail(...,'timeout') on download/mount budget exhaustion
+  expect(html).toContain("status:'none'")
+  // frame CSP already relaxes media-src for the recorded page (CSP media issue is benign)
+  expect(r.headers.get("content-security-policy") || "").toContain("media-src * blob: data:")
+})
+
+test("GET /replay-frame without a session shows the sign-in message (no shell)", async () => {
+  const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`)
+  expect(r.status).toBe(200)
+  const html = await r.text()
+  expect(html).toContain("Please sign in to view this replay.")
+  expect(html).not.toContain('id="klvbar"')
+})
+
+test("the /replay-frame inline boot script parses as valid JS", async () => {
+  // server.ts is not covered by scripts/check-inline-js.mjs (it only scans site/ + prototype/public),
+  // so guard the hand-concatenated boot string here: extract the second <script> and compile it.
+  const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`, { headers: { cookie: sessionCookie } })
+  const html = await r.text()
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
+  const boot = scripts.find((s) => s.includes("DL_TIMEOUT"))
+  expect(boot).toBeTruthy()
+  expect(() => new Function(boot as string)).not.toThrow()
+})
+
 test("garbage replay_events is ignored but the bug still saves", async () => {
   const fd = new FormData()
   fd.set("description", "bug bad replay"); fd.set("page_url", "https://test.local/y"); fd.set("project_id", "p1")
