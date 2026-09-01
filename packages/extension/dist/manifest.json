@@ -1,0 +1,104 @@
+{
+  "manifest_version": 3,
+  "name": "Klavity – AI Bug Reporter & Feedback for Jira, Linear, GitHub",
+  "short_name": "Klavity",
+  "version": "0.107.3",
+  "description": "AI Sims review your pages and file bug & feature tickets to Jira, Linear, GitHub, or Plane — or report any page in one click.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "tabs",
+    "cookies",
+    "contextMenus",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://klavity.in/*",
+    "https://klavity.quantana.top/*",
+    "http://localhost/*"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://klavity.in/*",
+      "https://klavity.quantana.top/*",
+      "http://localhost/*"
+    ]
+  },
+  "background": {
+    "service_worker": "service-worker-loader.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "assets/content.ts-loader-BrjAMWJq.js"
+      ],
+      "matches": [
+        "http://localhost/*"
+      ],
+      "css": [
+        "src/content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "assets/expose-id.ts-CIkdfVtv.js"
+      ],
+      "matches": [
+        "https://klavity.in/*",
+        "https://klavity.quantana.top/*",
+        "http://localhost/*"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "assets/icons-CiC9ZF46.js",
+        "assets/voice-input-BoFN39qq.js",
+        "assets/evidence-store-DkYpvFbG.js",
+        "assets/heic2any-DQxJzxPi.js",
+        "assets/content.ts-Ce68gznH.js"
+      ],
+      "use_dynamic_url": false
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "https://klavity.in/*",
+        "https://klavity.quantana.top/*"
+      ],
+      "resources": [
+        "assets/expose-id.ts-CIkdfVtv.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}

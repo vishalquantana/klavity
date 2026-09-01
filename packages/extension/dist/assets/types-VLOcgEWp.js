@@ -1,0 +1,1 @@
+const e="https://klavity.in",t={integration:"jira",backendUrl:"",autoFileErrors:!1,connectionMode:"direct",klavToken:"",jira:{baseUrl:"",email:"",token:"",projectKey:""},linear:{apiKey:"",teamId:""},github:{token:"",repo:""},plane:{token:"",host:"https://api.plane.so",workspace:"",projectId:""}};export{t as D,e as a};
