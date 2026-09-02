@@ -12610,26 +12610,21 @@ function ciBuildSnippets(token) {
     '  -H "Content-Type: application/json" \\\n' +
     "  -d '" + JSON.stringify({ project_id: pid, objective: "Log in and smoke-test the core flow" }) + "'"
   // Ready-to-paste prompt so an agent self-configures from the public docs — no hand-holding.
+  // The endpoint list lives in /llms.txt (single source of truth) — this prompt only carries the
+  // token-specific bits + a pointer, so it can never drift out of date when the API changes.
   var aiPrompt = [
-    "You are connecting to the Klavity API for this project (bug tickets + AI QA walks).",
+    "You are connecting to the Klavity API for this project (read/manage bug tickets + run AI QA walks).",
     "",
     "- API base URL: " + base,
     "- Auth (every request): Authorization: Bearer " + token,
     "- Project id: " + pid + "  (the token IS the project — ticket routes need no project param)",
-    "- Read " + base + "/llms.txt for the full API. Machine-readable spec: " + base + "/openapi.json",
     "",
-    "Read/manage tickets:",
-    "  GET  " + base + "/api/v1/tickets                 (list; filters: status, priority, assignee, q)",
-    "  GET  " + base + "/api/v1/tickets/{id}            (one ticket + attachments + replay)",
-    "  POST " + base + "/api/v1/tickets                 (create: {title, assignee, description?, priority?})",
-    "  PATCH " + base + "/api/v1/tickets/{id}           (update status/priority/assignee/notes)",
-    "  GET/POST " + base + "/api/v1/tickets/{id}/comments",
-    "",
-    "Run AI QA (AutoSim): POST " + base + "/api/v1/authored-runs with JSON {project_id, target_url, objective},",
-    "poll the returned status_url until status is terminal, then GET the run's /report for findings to fix.",
+    "First fetch " + base + "/llms.txt — it is the authoritative, always-current list of every endpoint",
+    "(tickets: list/create/get/update/comments; AutoSim QA: trigger/poll/report) with request/response",
+    "shapes, the trigger→poll→fetch→fix loop, error envelope, and CI/CD templates.",
+    "Machine-readable spec: " + base + "/openapi.json.",
     "",
     "For MCP (Claude Code / Cursor), add this to .mcp.json: " + mcp.replace(/\n\s*/g, " "),
-    "You can also wire this into CI/CD — copy the GitHub Actions / GitLab templates from " + base + "/llms-full.txt.",
   ].join("\n")
   var mcpEl = $("ciMcpSnippet"); if (mcpEl) mcpEl.textContent = mcp
   var curlEl = $("ciCurlSnippet"); if (curlEl) curlEl.textContent = curl
@@ -12777,20 +12772,18 @@ function kmaBuildSnippets(token) {
     '  -H "Authorization: Bearer ' + token + '" \\\n' +
     '  -H "Content-Type: application/json" \\\n' +
     "  -d '" + JSON.stringify({ name: "New project", site_url: "https://example.com" }) + "'"
+  // Endpoint list lives in /llms.txt (single source) — keep only token-specific bits here so it can't drift.
   var aiPrompt = [
-    "You are connecting to the Klavity MANAGEMENT API to provision projects and invite members.",
+    "You are connecting to the Klavity MANAGEMENT API (account-scoped: provision projects, invite members).",
     "",
     "- API base URL: " + base,
     "- Auth (every request): Authorization: Bearer " + token,
     "- This token is ACCOUNT-scoped (whole workspace), not a single project.",
-    "- Machine-readable spec: " + base + "/openapi.json (see the `management` tag).",
     "",
-    "Endpoints:",
-    "- GET  " + base + "/api/v1/projects            list projects in the account",
-    "- POST " + base + "/api/v1/projects            create {name, site_url?}",
-    "- GET  " + base + "/api/v1/projects/{id}        project detail",
-    "- POST " + base + "/api/v1/projects/{id}/members  invite {email, role?}",
-    "- GET  " + base + "/api/v1/members             account members",
+    "Fetch " + base + "/llms.txt (see the Management API section) — the authoritative, always-current list",
+    "of endpoints (list/create projects, project detail, invite members, account roster) with exact shapes.",
+    "Machine-readable spec: " + base + "/openapi.json (`management` tag).",
+    "",
     "For MCP (Claude Code / Cursor), add this to .mcp.json: " + mcp.replace(/\n\s*/g, " "),
   ].join("\n")
   var mcpEl = $("kmaMcpSnippet"); if (mcpEl) mcpEl.textContent = mcp

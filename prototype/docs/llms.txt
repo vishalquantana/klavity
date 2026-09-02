@@ -1,31 +1,37 @@
-# Klavity AutoSim API
+# Klavity API
 
-> Klavity runs AI "AutoSim" QA walks of a web app — an agent drives the real UI,
-> verifies an objective, and files structured, reproducible findings (with
-> screenshots, DOM selectors, replay links, and grounded quotes). This API lets
-> an AI agent or CI pipeline trigger runs, poll for completion, pull the findings
-> to work on, and wire the whole loop into CI/CD. All endpoints are authenticated
-> with a project-scoped `kci_` bearer token issued from the Klavity dashboard
-> (Settings → API tokens). Base URL: https://klavity.in
+> Klavity is an AI bug-reporting and QA platform. This API lets an AI agent or CI
+> pipeline do everything a user can do: read and manage a project's bug tickets
+> (list, create, comment, update, attachments), run AI "AutoSim" QA walks of a web
+> app and pull the structured findings, and (with an account-scoped token) provision
+> projects and invite members. Base URL: https://klavity.in
 
 ## Start here
 
 - [Full API reference](https://klavity.in/llms-full.txt): every REST endpoint, request/response shape, error codes, plus copy-paste CI/CD templates (GitHub Actions, GitLab CI).
-- [OpenAPI 3.1 spec](https://klavity.in/openapi.json): machine-readable contract for all `/api/v1/*` endpoints.
-- [MCP server](https://klavity.in/docs/mcp.md): connect Claude Code / Cursor over MCP (`POST /mcp`, JSON-RPC 2.0). Same `kci_` token, 6 tools.
+- [OpenAPI 3.1 spec](https://klavity.in/openapi.json): machine-readable contract for all `/api/v1/*` endpoints (project + management, tagged).
+- [MCP server](https://klavity.in/docs/mcp.md): connect Claude Code / Cursor over MCP — `POST /mcp` (project tools) and `POST /api/v1/mcp-admin` (management tools), JSON-RPC 2.0.
 - [CI trigger guide](https://klavity.in/docs/ci-api.md): trigger a Trail from CI and fail the build on a red verdict.
 
-## Authentication
+## Tokens & authentication
 
-- Every request: `Authorization: Bearer kci_<token>`.
-- The token is bound to exactly one project. Any `project_id` (body) or `?project=` (query) that does not match the token's project is rejected 403.
-- Get a token: Klavity dashboard → Settings → "API tokens — REST & MCP access". Tokens do not expire and can be revoked.
+Every request: `Authorization: Bearer <token>`. Two token types, both from the Klavity dashboard → Settings:
 
-## The agent loop (trigger → poll → fetch → fix)
+- **`kci_` — project-scoped** ("API tokens"). The token IS the project; project routes need no project param. Read/manage that project's tickets + run AutoSims.
+- **`kma_` — account-scoped** ("Management API tokens", owner/admin). Provision projects and invite members across the whole account.
 
-1. Trigger: `POST /api/v1/authored-runs` with `{ project_id, target_url, objective }` (natural-language objective — the engine authors and runs the walk), OR `POST /api/v1/runs` with `{ project_id, trail_id }` to re-run an existing Trail. Returns 202 with an id + `status_url`.
-2. Poll the `status_url` until `status` is terminal (`completed` / `failed` / `cancelled`).
-3. Fetch findings: `GET /api/v1/runs/:id/report?project=:id` → cursor-paginated `issues[]` with severity, target selector, evidence, and grounded quote.
-4. Fix, then re-run to verify.
+A token that no longer has live access (owner removed/revoked) is rejected 403. Cross-project/cross-account ids return 404.
 
-See the full reference for exact fields, status enums, rate limits, and CI/CD templates.
+## Project API (`kci_` token)
+
+- **Tickets:** `GET /api/v1/tickets` (list; filters status/priority/assignee/label/q/page), `POST /api/v1/tickets` (create `{title, assignee, description?, priority?}`), `GET /api/v1/tickets/:id` (detail + attachments + replay), `PATCH /api/v1/tickets/:id` (status/priority/assignee/notes), `GET|POST /api/v1/tickets/:id/comments`, `GET /api/v1/tickets/:id/activity`.
+- **AutoSim QA (trigger → poll → fetch → fix):**
+  1. `POST /api/v1/authored-runs` `{project_id, target_url, objective}` (engine authors + runs the walk) OR `POST /api/v1/runs` `{project_id, trail_id}` to re-run a Trail. Returns 202 + `status_url`.
+  2. Poll `status_url` until `status` is terminal (`completed`/`failed`/`cancelled`).
+  3. `GET /api/v1/runs/:id/report?project=:id` → cursor-paginated `issues[]` (severity, selector, evidence, grounded quote). Fix, then re-run to verify.
+
+## Management API (`kma_` token)
+
+- `GET /api/v1/projects` (list account projects), `POST /api/v1/projects` `{name, site_url?}` (create), `GET /api/v1/projects/:id` (detail), `POST /api/v1/projects/:id/members` `{email, role?}` (invite), `GET /api/v1/members` (account roster).
+
+See the full reference for exact fields, status enums, rate limits, error envelope, and CI/CD templates.

@@ -114,8 +114,11 @@ test("GET /llms.txt → 200 text/plain, unauthenticated (no login redirect)", as
   expect(r.status).toBe(200)
   expect(r.headers.get("content-type") || "").toContain("text/plain")
   const body = await r.text()
-  expect(body).toContain("Klavity AutoSim API")
+  expect(body).toContain("Klavity API")
   expect(body).toContain("/llms-full.txt")
+  // The index must cover ALL surfaces (guards the drift the AutoSim-only index had before).
+  expect(body).toContain("/api/v1/tickets")
+  expect(body).toContain("Management API")
 })
 
 test("GET /openapi.json → 200 application/json with v1 paths", async () => {
