@@ -6,12 +6,16 @@ import {
   createProject, listProjectsForAccount, projectById, addProjectMember,
   accountMembersRaw, membersOfProject,
 } from "../db"
+import { normalizeV1Assignee } from "../v1-tickets"
 import { ToolError } from "./tool-error"
 export { ToolError }
 
 // Ctx is resolved by the server.ts /api/v1/mcp-admin entrypoint via resolveMgmtToken (kma_ bearer →
 // getExtensionTokenInfo → live accountRole re-check). role is the RAW account_role (owner|admin|member).
-export interface MgmtToolCtx { accountId: string; email: string; role: string }
+// checkProjectQuota is injected by the server.ts /api/v1/mcp-admin entrypoint so create_project enforces
+// the SAME flag-gated project quota as REST POST /api/v1/projects (the quota fn lives in server.ts and
+// can't be imported into this lib without a cycle). Returns {error} when over quota, else null.
+export interface MgmtToolCtx { accountId: string; email: string; role: string; checkProjectQuota?: () => Promise<{ error: string } | null> }
 export interface MgmtTool {
   name: string
   description: string
@@ -63,6 +67,11 @@ export const MGMT_TOOLS: MgmtTool[] = [
           siteUrl = raw
         }
       }
+      // C2-1 parity: enforce the flag-gated project quota the REST route enforces (injected by server.ts).
+      if (ctx.checkProjectQuota) {
+        const q = await ctx.checkProjectQuota()
+        if (q) throw new ToolError(q.error)
+      }
       const created = await createProject(ctx.accountId, name, siteUrl)
       return { project: { id: created.id, name: created.name } }
     },
@@ -89,8 +98,10 @@ export const MGMT_TOOLS: MgmtTool[] = [
       const pid = String(args?.project_id || "")
       if (!pid) throw new ToolError("project_id is required")
       const p = await loadOwnedProject(pid, ctx)
-      const email = String(args?.email || "").trim().toLowerCase()
-      if (!email.includes("@")) throw new ToolError("a valid email is required")
+      // C3-2: real email validation (regex + length cap), shared with the REST invite route.
+      const rawEmail = String(args?.email || "").trim()
+      const email = rawEmail.length <= 254 ? normalizeV1Assignee(rawEmail) : ""
+      if (!email) throw new ToolError("a valid email is required")
       const role = args?.role === "admin" ? "admin" : "member"
       await addProjectMember(p.id, ctx.accountId, email, role, ctx.email)
       return { ok: true }

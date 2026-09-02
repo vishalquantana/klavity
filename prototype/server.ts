@@ -9118,7 +9118,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
         const msg = parsed.data as any
         if (!msg || msg.jsonrpc !== "2.0") return v1err("bad_request", "invalid JSON-RPC 2.0 message", 400)
-        const reply = await handleMcpMessage(msg, { accountId: mgAccountId, email: mgEmail, role: mgRole }, { tools: MGMT_TOOLS, serverName: "klavity-management" })
+        // C2-1: inject the flag-gated project quota so mcp-admin create_project enforces the SAME limit as
+        // REST POST /api/v1/projects (the quota fn lives here, not in the mcp lib).
+        const checkProjectQuota = async () => await quotaExceeded(mgAccountId, "projects", async () => (await listProjectsForAccount(mgAccountId)).length)
+        const reply = await handleMcpMessage(msg, { accountId: mgAccountId, email: mgEmail, role: mgRole, checkProjectQuota }, { tools: MGMT_TOOLS, serverName: "klavity-management" })
         if (reply === null) return new Response(null, { status: 202 })
         return json(reply, 200)
       }
@@ -9143,6 +9146,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const parsed = await readJsonLimited(req, 8 * 1024)
         if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
         const body = parsed.data as Record<string, any>
+        if (!body || typeof body !== "object" || Array.isArray(body)) return v1err("bad_request", "body must be a JSON object.", 400)
         const name = String(body.name || "").trim()
         if (!name) return v1err("bad_request", "name is required.", 400)
         if (name.length > 120) return v1err("bad_request", "name must be 120 chars or fewer.", 400)
@@ -9185,8 +9189,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const parsed = await readJsonLimited(req, 8 * 1024)
           if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
           const body = parsed.data as Record<string, any>
-          const inv = String(body.email || "").trim().toLowerCase()
-          if (!inv.includes("@")) return v1err("bad_request", "a valid email is required.", 400)
+          if (!body || typeof body !== "object" || Array.isArray(body)) return v1err("bad_request", "body must be a JSON object.", 400)
+          // C3-2: real email validation (regex + length cap), shared with the MCP invite_member tool.
+          const rawEmail = String(body.email || "").trim()
+          const inv = rawEmail.length <= 254 ? normalizeV1Assignee(rawEmail) : ""
+          if (!inv) return v1err("bad_request", "a valid email is required.", 400)
           const role = body.role === "admin" ? "admin" : "member"
           await addProjectMember(pid, mgAccountId, inv, role, mgEmail)
           return json({ ok: true }, 201)
@@ -11537,7 +11544,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
         if (req.method === "POST" && mgmtTokMatch.id === null) {
           if (!rlAllow(`kmatoken:mint:${active.workspaceId}:${me}`, 10, 60 * 60 * 1000)) return json({ error: "Too many tokens minted. Try again later." }, 429)
-          const body = await req.json().catch(() => ({}))
+          const parsed = await readJsonLimited(req, 4 * 1024)
+          if (!parsed.ok) return json({ error: parsed.error }, parsed.status)
+          const body = parsed.data as Record<string, any>
+          if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "body must be a JSON object." }, 400)
           const name = String(body.name || "").trim().slice(0, 80)
           if (!name) return json({ error: "A token name is required." }, 400)
           const { id, token, prefix } = await issueManagementTokenNamed(me, active.workspaceId, name)
@@ -11545,6 +11555,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ id, name, prefix, token }, 201)
         }
         if (req.method === "DELETE" && mgmtTokMatch.id) {
+          if (!rlAllow(`kmatoken:revoke:${active.workspaceId}:${me}`, 60, 60 * 1000)) return json({ error: "Too many requests. Try again shortly." }, 429)
           // IDOR guard: revokeManagementTokenById scopes the UPDATE to this account → a token id from
           // another account matches zero rows → false → 404 (never a cross-account revoke).
           const ok = await revokeManagementTokenById(active.workspaceId, mgmtTokMatch.id)

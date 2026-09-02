@@ -197,6 +197,26 @@ test("POST /api/v1/projects — 400 on a missing name", async () => {
   expect(r.status).toBe(400)
 })
 
+// QA C3-1: a JSON `null` body must return a structured 400, not an unhandled 500.
+test("POST /api/v1/projects — 400 on a null JSON body", async () => {
+  const r = await fetch(`${BASE}/api/v1/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: bearer(KMA_TOKEN) },
+    body: "null",
+  })
+  expect(r.status).toBe(400)
+})
+
+// QA C3-2: a malformed email must be rejected (was: any string with '@' accepted).
+test("POST /api/v1/projects/:id/members — 400 on a malformed email", async () => {
+  const r = await fetch(`${BASE}/api/v1/projects/${encodeURIComponent(PROJECT_A)}/members`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: bearer(KMA_TOKEN) },
+    body: JSON.stringify({ email: "a@", role: "member" }),
+  })
+  expect(r.status).toBe(400)
+})
+
 test("GET /api/v1/projects/:id — detail for an owned project", async () => {
   const r = await fetch(`${BASE}/api/v1/projects/${encodeURIComponent(PROJECT_A)}`, { headers: { Authorization: bearer(KMA_TOKEN) } })
   expect(r.status).toBe(200)

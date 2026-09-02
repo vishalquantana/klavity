@@ -90,3 +90,23 @@ test("list_members returns the account roster with native roles", async () => {
   const out = await getMgmtTool("list_members")!.handler({}, ADMIN_CTX)
   expect(out.members).toEqual([{ email: "owner@test.local", role: "owner" }])
 })
+
+// ── QA C2-1: create_project enforces the injected project quota (parity with REST). ──
+test("C2-1: create_project throws when the injected quota check is over-limit", async () => {
+  calls.created = null
+  const ctx = { ...ADMIN_CTX, checkProjectQuota: async () => ({ error: "Project limit reached on your plan." }) }
+  await expect(getMgmtTool("create_project")!.handler({ name: "Over Quota" }, ctx)).rejects.toThrow(/limit reached/i)
+  expect(calls.created).toBeNull() // never created when over quota
+})
+test("C2-1: create_project proceeds when the quota check returns null", async () => {
+  const ctx = { ...ADMIN_CTX, checkProjectQuota: async () => null }
+  const out = await getMgmtTool("create_project")!.handler({ name: "Under Quota" }, ctx)
+  expect(out.project.id).toBe("proj_new_1")
+})
+
+// ── QA C3-2: invite_member rejects malformed emails (was: any string with '@'). ──
+test("C3-2: invite_member rejects a malformed email", async () => {
+  calls.invited = null
+  await expect(getMgmtTool("invite_member")!.handler({ project_id: "proj_a", email: "a@" }, ADMIN_CTX)).rejects.toThrow(/valid email/i)
+  expect(calls.invited).toBeNull()
+})
