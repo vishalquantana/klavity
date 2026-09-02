@@ -12627,7 +12627,7 @@ function _wireCi() {
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text) }
       else { var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta) }
-      var old = copyAiBtn.innerHTML; copyAiBtn.textContent = "Copied ✓"
+      var old = copyAiBtn.innerHTML; copyAiBtn.textContent = "Copied"
       setTimeout(function() { copyAiBtn.innerHTML = old }, 1600)
     } catch (e) {}
   })
