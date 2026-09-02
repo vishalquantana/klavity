@@ -3144,7 +3144,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 16 4-4-4-4" /><path d="m6 8-4 4 4 4" /><path d="m14.5 4-5 16" /></svg> API tokens <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">REST &amp; MCP access for CI and agents</span> <span class="caret">›</span></summary>
     <div class="drawer-in">
       <div id="ciAdmin" class="hide">
-        <p class="tacc-hint" style="margin-bottom:14px">Let CI or another Claude/agent trigger AutoSims via REST or MCP. Each token is scoped to this project — treat it like a password. You'll only see the full token once, at creation.</p>
+        <p class="tacc-hint" style="margin-bottom:14px">Let CI or an AI agent read &amp; manage this project's tickets (list, create, comment, update) and trigger AutoSims — over REST (<code>/api/v1</code>) or MCP. Each token is scoped to this project — treat it like a password. You'll only see the full token once, at creation.</p>
 
         <div id="ciTokenList" style="margin-bottom:16px"></div>
 
@@ -12552,15 +12552,23 @@ function ciBuildSnippets(token) {
     "  -d '" + JSON.stringify({ project_id: pid, objective: "Log in and smoke-test the core flow" }) + "'"
   // Ready-to-paste prompt so an agent self-configures from the public docs — no hand-holding.
   var aiPrompt = [
-    "You are connecting to the Klavity AutoSim API to run AI QA walks of a web app.",
+    "You are connecting to the Klavity API for this project (bug tickets + AI QA walks).",
     "",
     "- API base URL: " + base,
     "- Auth (every request): Authorization: Bearer " + token,
-    "- Project id: " + pid,
+    "- Project id: " + pid + "  (the token IS the project — ticket routes need no project param)",
     "- Read " + base + "/llms.txt for the full API. Machine-readable spec: " + base + "/openapi.json",
     "",
-    "To run QA: POST " + base + "/api/v1/authored-runs with JSON {project_id, target_url, objective},",
+    "Read/manage tickets:",
+    "  GET  " + base + "/api/v1/tickets                 (list; filters: status, priority, assignee, q)",
+    "  GET  " + base + "/api/v1/tickets/{id}            (one ticket + attachments + replay)",
+    "  POST " + base + "/api/v1/tickets                 (create: {title, assignee, description?, priority?})",
+    "  PATCH " + base + "/api/v1/tickets/{id}           (update status/priority/assignee/notes)",
+    "  GET/POST " + base + "/api/v1/tickets/{id}/comments",
+    "",
+    "Run AI QA (AutoSim): POST " + base + "/api/v1/authored-runs with JSON {project_id, target_url, objective},",
     "poll the returned status_url until status is terminal, then GET the run's /report for findings to fix.",
+    "",
     "For MCP (Claude Code / Cursor), add this to .mcp.json: " + mcp.replace(/\n\s*/g, " "),
     "You can also wire this into CI/CD — copy the GitHub Actions / GitLab templates from " + base + "/llms-full.txt.",
   ].join("\n")
