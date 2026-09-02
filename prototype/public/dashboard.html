@@ -7321,7 +7321,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           const _dot = detailEl.querySelector(".prop-dot")
           if (_dot) _dot.className = "prop-dot ds-" + newStatus
           // Update state
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
           if (tkt) tkt.status = newStatus
           // Also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it, NOT
           // state.tickets. Mirrors the optimistic drag path (moveTicketColumn) so onChange's
@@ -9436,10 +9436,15 @@ async function fetchAndRenderTktBoard() {
   sp.set("page", "1")
   sp.set("limit", "200")
 
+  const _fetchStart = Date.now()
   try {
     const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
     if (!res.ok) throw new Error("HTTP " + res.status)
     const data = await res.json()
+    // A board GET already in flight when the user saves (status dropdown / drag) returns a
+    // pre-save snapshot; overlay any local edit newer than _fetchStart so this refetch can't
+    // clobber the just-moved card back into its old column (mirrors refreshAll's guard).
+    mergeLocalEdits(data, _fetchStart)
     _tktBoardTickets = data.tickets || []
     _tktBoardProjId = projId
     if (data.rev != null) { _tktBoardRev = data.rev; _tktBoardRevPid = projId } // QA C2.2: authoritative live-poll baseline
