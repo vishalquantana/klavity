@@ -24,3 +24,13 @@ argument that does not match the token's project is rejected in-band (`isError: 
 - `get_qa_report { project_id, run_id, cursor? }` → structured issues
 - `get_authored_run { project_id, authored_run_id }` → trail_id + verification_run_id when complete
 - `list_qa_runs { project_id }` → recent runs
+
+### Tickets (bugs/reports)
+
+- `list_tickets { project_id, status?, priority?, assignee?, source?, label?, q?, page?, limit? }` → `{ tickets, total, page, limit }`
+- `get_ticket { project_id, ticket_id }` → single ticket (+ `comments_count`)
+- `create_ticket { project_id, title, assignee, description?, priority? }` → `{ ticket_id }` (assignee is required)
+- `update_ticket { project_id, ticket_id, status?, priority?, assignee?, notes?, description? }` → `{ ok, ticket }`
+- `list_comments { project_id, ticket_id }` → `{ ticket_id, comments }`
+- `add_comment { project_id, ticket_id, body }` → `{ comment }`
+- `get_ticket_activity { project_id, ticket_id }` → `{ ticket_id, events }` (comments + activity + connector exports)

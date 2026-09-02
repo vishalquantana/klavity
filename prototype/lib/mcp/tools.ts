@@ -6,13 +6,23 @@ import { runAuthorNow, getAuthorSession } from "../trails-author"
 import { getWalk, listRecentWalks } from "../trails"
 import { buildV1RunStatus, buildV1Report } from "../v1-runs"
 import { buildAuthoredRunStatus } from "../v1-authored"
+import {
+  insertFeedback, updateFeedbackMeta, insertActivity, feedbackById, projectAccess,
+  listTicketsPaginated, labelsForFeedbackBatch, labelsForFeedback,
+  listTicketComments, insertTicketComment, ticketActivityTimeline,
+} from "../db"
+import {
+  mapTicketToV1, canAssignV1, normalizeV1Assignee, V1_TICKET_STATUSES, V1_TICKET_PRIORITIES,
+} from "../v1-tickets"
 import { ToolError } from "./tool-error"
 
 // Re-export so existing importers of tools.ts keep working; canonical definition lives in tool-error.ts
 // (a dependency-free leaf) so the AutoSim engine can throw ToolError too without an import cycle.
 export { ToolError }
 
-export interface McpToolCtx { projectId: string }
+// The acting user's email (from the kci_ token) rides in ctx so ticket create/update/comment tools
+// attribute activity + notifications to a real actor. Optional so run-only callers stay unaffected.
+export interface McpToolCtx { projectId: string; email?: string }
 export interface McpTool {
   name: string
   description: string
@@ -27,6 +37,21 @@ function requireProject(args: any, ctx: McpToolCtx): string {
   if (!p) throw new ToolError("project_id is required")
   if (p !== ctx.projectId) throw new ToolError("project_id does not match the authenticated token's project")
   return p
+}
+
+// The acting user email from the token. Ticket create/update/comment tools attribute to it.
+function actor(ctx: McpToolCtx): string {
+  return String(ctx.email || "")
+}
+
+// Load a ticket scoped to the token's project. feedbackById is project-scoped, so a cross-project
+// ticket id resolves to null → thrown as an unknown-id error (IDOR guard, mirrors the REST 404).
+async function loadOwnedTicket(project: string, id: string): Promise<any> {
+  const fid = String(id || "")
+  if (!fid) throw new ToolError("ticket_id is required")
+  const row = await feedbackById(project, fid).catch(() => null)
+  if (!row || String(row.projectId) !== project) throw new ToolError("unknown ticket_id")
+  return row
 }
 
 export const MCP_TOOLS: McpTool[] = [
@@ -103,6 +128,163 @@ export const MCP_TOOLS: McpTool[] = [
       const walks = await listRecentWalks(project)
       const runs = await Promise.all(walks.map(w => buildV1RunStatus(project, w, null)))
       return { runs }
+    },
+  },
+  {
+    name: "list_tickets",
+    description: "List the project's tickets (bugs/reports). Filter by status, priority, assignee, source (sim|manual|human), label, or free-text q. Paginated.",
+    inputSchema: { type: "object", required: ["project_id"], properties: {
+      project_id: { type: "string" },
+      status: { type: "string", description: "Comma-separated statuses (new|open|in_progress|done|dismissed)" },
+      priority: { type: "string", description: "Comma-separated priorities (urgent|high|medium|low)" },
+      assignee: { type: "string", description: "Exact assignee email; empty string = unassigned" },
+      source: { type: "string", enum: ["sim", "manual", "human"] },
+      label: { type: "string" }, q: { type: "string" },
+      page: { type: "integer" }, limit: { type: "integer" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const statuses = args.status ? String(args.status).split(",").map((s: string) => s.trim()).filter(Boolean) : []
+      const priorities = args.priority ? String(args.priority).split(",").map((s: string) => s.trim()).filter(Boolean) : []
+      const assignee = args.assignee !== undefined ? String(args.assignee) : undefined
+      const rawSource = String(args.source || "")
+      const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
+      const label = args.label ? String(args.label).trim() : undefined
+      const search = args.q ? String(args.q).trim().slice(0, 500) : undefined
+      const page = Math.max(1, Number(args.page || 1))
+      const limit = Math.min(200, Math.max(1, Number(args.limit || 50)))
+      const result = await listTicketsPaginated(project, { statuses, priorities, assignee, source, label, search, page, limit })
+      const ids = result.tickets.map((t: any) => t.id)
+      const labelsMap = await labelsForFeedbackBatch(ids)
+      const tickets = result.tickets.map((t: any) => mapTicketToV1(t, labelsMap[t.id] || []))
+      return { tickets, total: result.total, page: result.page, limit }
+    },
+  },
+  {
+    name: "get_ticket",
+    description: "Get a single ticket by ticket_id (clean shape + labels).",
+    inputSchema: { type: "object", required: ["project_id", "ticket_id"], properties: {
+      project_id: { type: "string" }, ticket_id: { type: "string" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const row = await loadOwnedTicket(project, args.ticket_id)
+      const labels = await labelsForFeedback(row.id)
+      const commentsCount = (await listTicketComments(row.id).catch(() => [])).length
+      return { ...mapTicketToV1(row, labels), comments_count: commentsCount }
+    },
+  },
+  {
+    name: "create_ticket",
+    description: "Create a ticket. title required; assignee (email) required. Priority defaults to medium.",
+    inputSchema: { type: "object", required: ["project_id", "title", "assignee"], properties: {
+      project_id: { type: "string" }, title: { type: "string" }, description: { type: "string" },
+      priority: { type: "string", enum: ["urgent", "high", "medium", "low"] }, assignee: { type: "string" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const me = actor(ctx)
+      const access = await projectAccess(me, project).catch(() => null)
+      const title = String(args.title || "").trim()
+      if (!title) throw new ToolError("title is required")
+      if (title.length > 500) throw new ToolError("title must be 500 characters or fewer")
+      const description = String(args.description || "").trim()
+      if (description.length > 5000) throw new ToolError("description must be 5000 characters or fewer")
+      const priority = (V1_TICKET_PRIORITIES as readonly string[]).includes(args.priority) ? args.priority : "medium"
+      const assignee = normalizeV1Assignee(args.assignee)
+      if (assignee === "") throw new ToolError("assignee must be a valid email address")
+      if (!assignee) throw new ToolError("assignee is required")
+      if (!(await canAssignV1(project, access, assignee))) throw new ToolError("Only project admins can assign tickets to non-members")
+      const id = await insertFeedback({
+        projectId: project, actorEmail: me || null, observation: description || null,
+        title, priority, assignee: assignee || null, source: "manual", reportType: "bug",
+      })
+      // insertFeedback does not persist the assignee column — set it (and open status) here.
+      await updateFeedbackMeta(project, id, { status: "open", assignee: assignee || null })
+      await insertActivity({ projectId: project, type: "ticket_created", actorEmail: me || null, feedbackId: id, meta: { title, priority, source: "manual" } }).catch(() => {})
+      return { ticket_id: id }
+    },
+  },
+  {
+    name: "update_ticket",
+    description: "Update a ticket: status (new|open|in_progress|done|dismissed), priority, assignee, notes, description.",
+    inputSchema: { type: "object", required: ["project_id", "ticket_id"], properties: {
+      project_id: { type: "string" }, ticket_id: { type: "string" },
+      status: { type: "string", enum: ["new", "open", "in_progress", "done", "dismissed"] },
+      priority: { type: "string", enum: ["urgent", "high", "medium", "low"] },
+      assignee: { type: "string" }, notes: { type: "string" }, description: { type: "string" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const me = actor(ctx)
+      const access = await projectAccess(me, project).catch(() => null)
+      const row = await loadOwnedTicket(project, args.ticket_id)
+      if (args.status !== undefined && !(V1_TICKET_STATUSES as readonly string[]).includes(args.status)) {
+        throw new ToolError(`status must be one of: ${V1_TICKET_STATUSES.join(", ")}`)
+      }
+      if (args.priority !== undefined && args.priority !== null && !(V1_TICKET_PRIORITIES as readonly string[]).includes(args.priority)) {
+        throw new ToolError(`priority must be one of: ${V1_TICKET_PRIORITIES.join(", ")}`)
+      }
+      const meta: any = {}
+      if (args.status !== undefined) meta.status = args.status
+      if (args.notes !== undefined) meta.notes = args.notes ?? null
+      if (args.priority !== undefined) meta.priority = args.priority ?? null
+      if (args.description !== undefined) {
+        if (args.description !== null && typeof args.description !== "string") throw new ToolError("description must be a string or null")
+        meta.observation = args.description == null ? null : String(args.description).slice(0, 20000)
+      }
+      if (args.assignee !== undefined) {
+        const assignee = normalizeV1Assignee(args.assignee)
+        if (assignee === "") throw new ToolError("assignee must be a valid email address")
+        if (!(await canAssignV1(project, access, assignee))) throw new ToolError("Only project admins can assign tickets to non-members")
+        meta.assignee = assignee
+      }
+      const updated = await updateFeedbackMeta(project, row.id, meta)
+      if (!updated) throw new ToolError("update failed")
+      const writes: Promise<any>[] = []
+      if (meta.status !== undefined && meta.status !== row.status) writes.push(insertActivity({ projectId: project, type: "ticket_status_changed", actorEmail: me || null, feedbackId: row.id, meta: { from: row.status, to: meta.status } }).catch(() => {}))
+      if (meta.priority !== undefined && meta.priority !== row.priority) writes.push(insertActivity({ projectId: project, type: "ticket_priority_changed", actorEmail: me || null, feedbackId: row.id, meta: { from: row.priority, to: meta.priority } }).catch(() => {}))
+      if (meta.assignee !== undefined && meta.assignee !== row.assignee) writes.push(insertActivity({ projectId: project, type: "ticket_assignee_changed", actorEmail: me || null, feedbackId: row.id, meta: { from: row.assignee, to: meta.assignee } }).catch(() => {}))
+      if (writes.length) await Promise.all(writes)
+      const fresh = (await feedbackById(project, row.id).catch(() => null)) || row
+      const labels = await labelsForFeedback(row.id).catch(() => [])
+      return { ok: true, ticket: mapTicketToV1(fresh, labels) }
+    },
+  },
+  {
+    name: "list_comments",
+    description: "List the comments on a ticket.",
+    inputSchema: { type: "object", required: ["project_id", "ticket_id"], properties: {
+      project_id: { type: "string" }, ticket_id: { type: "string" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const row = await loadOwnedTicket(project, args.ticket_id)
+      const comments = (await listTicketComments(row.id)).map(c => ({ id: c.id, author: c.author, body: c.body, created_at: c.createdAt }))
+      return { ticket_id: row.id, comments }
+    },
+  },
+  {
+    name: "add_comment",
+    description: "Add a comment to a ticket.",
+    inputSchema: { type: "object", required: ["project_id", "ticket_id", "body"], properties: {
+      project_id: { type: "string" }, ticket_id: { type: "string" }, body: { type: "string" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const me = actor(ctx)
+      const row = await loadOwnedTicket(project, args.ticket_id)
+      const text = String(args.body || "").trim()
+      if (!text) throw new ToolError("body is required")
+      if (text.length > 5000) throw new ToolError("body must be 5000 characters or fewer")
+      const comment = await insertTicketComment(row.id, me || null, text)
+      return { comment: { id: comment.id, author: comment.author, body: comment.body, created_at: comment.createdAt } }
+    },
+  },
+  {
+    name: "get_ticket_activity",
+    description: "Get a ticket's merged comment/activity/connector-export timeline.",
+    inputSchema: { type: "object", required: ["project_id", "ticket_id"], properties: {
+      project_id: { type: "string" }, ticket_id: { type: "string" } } },
+    async handler(args, ctx) {
+      const project = requireProject(args, ctx)
+      const row = await loadOwnedTicket(project, args.ticket_id)
+      const events = await ticketActivityTimeline(project, row.id)
+      return { ticket_id: row.id, events }
     },
   },
 ]

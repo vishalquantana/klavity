@@ -16,6 +16,7 @@ import { countFoundingAccounts } from "./lib/db"
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
 // real title instead of its body. Wired into every consumer that previously derived title from observation.
 import { effectiveTicketTitle } from "./lib/db"
+import { mapTicketToV1, canAssignV1, normalizeV1Assignee, V1_TICKET_STATUSES, V1_TICKET_PRIORITIES } from "./lib/v1-tickets"
 // #544 round-5 (Codex re-review): the quarantine/non-human source vocabulary is defined ONCE in
 // lib/db.ts (NON_HUMAN_FEEDBACK_SOURCES) and imported here so the request-time intake gate and the
 // DB-layer recurrence head guard can never drift apart. Do not redefine it locally.
@@ -9017,7 +9018,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!parsed.ok) return mcpErr(400, parsed.error)
       const msg = parsed.data as any
       if (!msg || msg.jsonrpc !== "2.0") return mcpErr(400, "invalid JSON-RPC 2.0 message")
-      const reply = await handleMcpMessage(msg, { projectId: mcpInfo.projectId })
+      const reply = await handleMcpMessage(msg, { projectId: mcpInfo.projectId, email: mcpInfo.email })
       if (reply === null) return new Response(null, { status: 202 }) // notification: no body
       return json(reply, 200)
     }
@@ -9280,6 +9281,224 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       return v1err("not_found", "Unknown v1 endpoint.", 404)
+    }
+
+    // ── Project-scoped Tickets REST API (/api/v1/tickets) — token-authed, IDOR-guarded. ──
+    // Mirrors the /api/v1/runs auth/error style: one kci_ bearer check, then sub-route ifs. The token
+    // IS the project (no ?project= param). Every :id route loads the feedback row and 404s if it is
+    // owned by a different project. Permission rules match POST /api/projects/:pid/tickets +
+    // PATCH /api/feedback/:id (any member creates/updates/comments; assigning to a non-member needs admin).
+    if (path === "/api/v1/tickets" || path.startsWith("/api/v1/tickets/")) {
+      const v1err = (code: string, message: string, status: number) =>
+        json({ error: { code, message, request_id: crypto.randomUUID().slice(0, 8) } }, status)
+
+      const tRaw = (req.headers.get("authorization") || "").match(/^Bearer\s+(kci_\S+)$/i)?.[1] ?? ""
+      if (!tRaw) return v1err("unauthorized", "Missing or malformed bearer token.", 401)
+      const tInfo = await getExtensionTokenInfo(tRaw)
+      if (!tInfo || !tInfo.projectId) return v1err("unauthorized", "Invalid or expired token.", 401)
+      const tpid = tInfo.projectId
+      // The token binds to one project; still confirm the owner has LIVE access (revocation → 403).
+      const tAccess = await projectAccess(tInfo.email, tpid)
+      if (!tAccess) return v1err("forbidden", "Token owner no longer has access to this project.", 403)
+
+      // Load a ticket for this token's project. IDOR guard: a feedback id owned by ANOTHER project
+      // resolves to null here (feedbackById is project-scoped), so cross-project ids 404 below.
+      const loadOwned = async (fid: string) => {
+        const row = await feedbackById(tpid, fid).catch(() => null)
+        if (!row || String(row.projectId) !== tpid) return null
+        return row
+      }
+
+      // ── GET /api/v1/tickets — paginated, filterable list (clean v1 shape). ──
+      if (req.method === "GET" && path === "/api/v1/tickets") {
+        const sp = url.searchParams
+        const statuses = sp.get("status") ? sp.get("status")!.split(",").map((s) => s.trim()).filter(Boolean) : []
+        const priorities = sp.get("priority") ? sp.get("priority")!.split(",").map((s) => s.trim()).filter(Boolean) : []
+        const assignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const rawSource = sp.get("source") ?? ""
+        const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
+        const label = sp.get("label")?.trim() || undefined
+        const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
+        const page = Math.max(1, Number(sp.get("page") || "1"))
+        const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
+        try {
+          const result = await listTicketsPaginated(tpid, { statuses, priorities, assignee, source, label, search, page, limit })
+          const ids = result.tickets.map((t: any) => t.id)
+          const labelsMap = await labelsForFeedbackBatch(ids)
+          const tickets = result.tickets.map((t: any) => mapTicketToV1(t, labelsMap[t.id] || []))
+          return json({ tickets, total: result.total, page: result.page, limit })
+        } catch (e) {
+          const o = oops(e, "v1-tickets-list")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
+      }
+
+      // ── POST /api/v1/tickets — create (assignee required, #541). Rate limit 30/min/project. ──
+      if (req.method === "POST" && path === "/api/v1/tickets") {
+        if (!rlAllow(`v1tickets:create:${tpid}`, 30, 60_000)) {
+          return v1err("rate_limited", "Too many ticket creations — slow down and retry shortly.", 429)
+        }
+        const parsed = await readJsonLimited(req, 16 * 1024)
+        if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+        const body = parsed.data as Record<string, any>
+        const title = String(body.title ?? "").trim()
+        if (!title) return v1err("bad_request", "title is required.", 400)
+        if (title.length > 500) return v1err("bad_request", "title must be 500 characters or fewer.", 400)
+        const description = String(body.description ?? "").trim()
+        if (description.length > 5000) return v1err("bad_request", "description must be 5000 characters or fewer.", 400)
+        const priority = (V1_TICKET_PRIORITIES as readonly string[]).includes(body.priority) ? body.priority : "medium"
+        const assignee = normalizeV1Assignee(body.assignee)
+        if (assignee === "") return v1err("bad_request", "assignee must be a valid email address.", 400)
+        if (!assignee) return v1err("bad_request", "assignee is required.", 400)
+        if (!(await canAssignV1(tpid, tAccess, assignee))) {
+          return v1err("forbidden", "Only project admins can assign tickets to non-members.", 403)
+        }
+        try {
+          const id = await insertFeedback({
+            projectId: tpid, actorEmail: tInfo.email, observation: description || null,
+            title, priority, assignee: assignee || null, source: "manual", reportType: "bug",
+          })
+          // insertFeedback does not persist the assignee column — set it (and open status) here.
+          await updateFeedbackMeta(tpid, id, { status: "open", assignee: assignee || null })
+          autoCopyFeedback(id, tpid, tInfo.email, priority)
+          await insertActivity({ projectId: tpid, type: "ticket_created", actorEmail: tInfo.email, feedbackId: id, meta: { title, priority, source: "manual" } })
+            .catch((e: any) => console.warn("v1 ticket_created activity skipped:", e?.message || e))
+          if (assignee) {
+            const proj = await projectById(tpid).catch(() => null)
+            void notifyTicketAssignee({ projectId: tpid, feedbackId: id, assignee, ticketTitle: title, projectName: proj?.name ?? null, assignedBy: tInfo.email })
+          }
+          return json({ ticket_id: id }, 201)
+        } catch (e) {
+          const o = oops(e, "v1-tickets-create")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
+      }
+
+      // ── :id-scoped routes ──
+      const commentsMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)\/comments$/)
+      const activityMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)\/activity$/)
+      const singleMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)$/)
+
+      // GET/POST /api/v1/tickets/:id/comments
+      if (commentsMatch) {
+        const fid = commentsMatch[1]
+        const row = await loadOwned(fid)
+        if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        if (req.method === "GET") {
+          const comments = (await listTicketComments(fid)).map((c) => ({ id: c.id, author: c.author, body: c.body, created_at: c.createdAt }))
+          return json({ ticket_id: fid, comments })
+        }
+        if (req.method === "POST") {
+          const parsed = await readJsonLimited(req, 16 * 1024)
+          if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+          const text = String((parsed.data as any)?.body ?? "").trim()
+          if (!text) return v1err("bad_request", "body is required.", 400)
+          if (text.length > 5000) return v1err("bad_request", "body must be 5000 characters or fewer.", 400)
+          const comment = await insertTicketComment(fid, tInfo.email, text)
+          pushCommentToLinkedIssues(tpid, fid, text, { authorEmail: tInfo.email, klavityCommentId: comment.id, source: "klavity" }).catch(() => {})
+          return json({ comment: { id: comment.id, author: comment.author, body: comment.body, created_at: comment.createdAt } }, 201)
+        }
+        return v1err("not_found", "Unknown tickets route.", 404)
+      }
+
+      // GET /api/v1/tickets/:id/activity — merged comment/activity/export timeline.
+      if (activityMatch && req.method === "GET") {
+        const fid = activityMatch[1]
+        const row = await loadOwned(fid)
+        if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        const events = await ticketActivityTimeline(tpid, fid)
+        return json({ ticket_id: fid, events })
+      }
+
+      // GET (enriched) / PATCH /api/v1/tickets/:id
+      if (singleMatch) {
+        const fid = singleMatch[1]
+        const row = await loadOwned(fid)
+        if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+
+        if (req.method === "GET") {
+          try {
+            const labels = await labelsForFeedback(fid)
+            const base = mapTicketToV1(row, labels)
+            const commentsCount = (await listTicketComments(fid).catch(() => [])).length
+            const attachments = Array.isArray(row.attachments)
+              ? row.attachments.map((a: any) => ({
+                  name: a.filename ?? a.name ?? null,
+                  url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })(),
+                  content_type: a.contentType ?? a.content_type ?? null,
+                }))
+              : []
+            let replayUrl: string | null = null
+            if (db) {
+              const rr = await db.execute({ sql: "SELECT 1 FROM feedback_replays WHERE project_id=? AND feedback_id=? LIMIT 1", args: [tpid, fid] }).catch(() => null)
+              if (rr && rr.rows.length) replayUrl = `/api/v1/tickets/${fid}/replay`
+            }
+            return json({ ...base, comments_count: commentsCount, attachments, replay_url: replayUrl })
+          } catch (e) {
+            const o = oops(e, "v1-tickets-get")
+            return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+          }
+        }
+
+        if (req.method === "PATCH") {
+          const parsed = await readJsonLimited(req, 32 * 1024)
+          if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+          const body = parsed.data as Record<string, any>
+          if (body.status !== undefined && !(V1_TICKET_STATUSES as readonly string[]).includes(body.status)) {
+            return v1err("bad_request", `status must be one of: ${V1_TICKET_STATUSES.join(", ")}`, 400)
+          }
+          if (body.priority !== undefined && body.priority !== null && !(V1_TICKET_PRIORITIES as readonly string[]).includes(body.priority)) {
+            return v1err("bad_request", `priority must be one of: ${V1_TICKET_PRIORITIES.join(", ")}`, 400)
+          }
+          const meta: any = {}
+          if (body.status !== undefined) meta.status = body.status
+          if (body.notes !== undefined) meta.notes = body.notes ?? null
+          if (body.priority !== undefined) meta.priority = body.priority ?? null
+          if (body.description !== undefined) {
+            if (body.description !== null && typeof body.description !== "string") return v1err("bad_request", "description must be a string or null.", 400)
+            meta.observation = body.description == null ? null : String(body.description).slice(0, 20000)
+          }
+          if (body.assignee !== undefined) {
+            const assignee = normalizeV1Assignee(body.assignee)
+            if (assignee === "") return v1err("bad_request", "assignee must be a valid email address.", 400)
+            if (!(await canAssignV1(tpid, tAccess, assignee))) return v1err("forbidden", "Only project admins can assign tickets to non-members.", 403)
+            meta.assignee = assignee
+          }
+          try {
+            const updated = await updateFeedbackMeta(tpid, fid, meta)
+            if (!updated) return v1err("internal", "Update failed.", 500)
+            // Fire the same activity + tracker-sync side effects as PATCH /api/feedback/:id.
+            const writes: Promise<any>[] = []
+            if (meta.status !== undefined && meta.status !== row.status) {
+              writes.push(insertActivity({ projectId: tpid, type: "ticket_status_changed", actorEmail: tInfo.email, feedbackId: fid, meta: { from: row.status, to: meta.status } }).catch(() => {}))
+            }
+            if (meta.priority !== undefined && meta.priority !== row.priority) {
+              writes.push(insertActivity({ projectId: tpid, type: "ticket_priority_changed", actorEmail: tInfo.email, feedbackId: fid, meta: { from: row.priority, to: meta.priority } }).catch(() => {}))
+              syncTicketFields(fid, tpid, tInfo.email, meta.priority ?? null)
+            }
+            if (meta.assignee !== undefined && meta.assignee !== row.assignee) {
+              writes.push(insertActivity({ projectId: tpid, type: "ticket_assignee_changed", actorEmail: tInfo.email, feedbackId: fid, meta: { from: row.assignee, to: meta.assignee } }).catch(() => {}))
+              if (meta.assignee) {
+                const proj = await projectById(tpid).catch(() => null)
+                void notifyTicketAssignee({ projectId: tpid, feedbackId: fid, assignee: meta.assignee, ticketTitle: effectiveTicketTitle(row), projectName: proj?.name ?? null, assignedBy: tInfo.email })
+              }
+            }
+            if (writes.length) await Promise.all(writes)
+            if (meta.status !== undefined && meta.status !== row.status) {
+              autoCopyOnTriageAccept(fid, tpid, row.status, meta.status, meta.priority !== undefined ? meta.priority : row.priority, tInfo.email)
+            }
+            const fresh = (await feedbackById(tpid, fid).catch(() => null)) || row
+            const labels = await labelsForFeedback(fid).catch(() => [])
+            return json({ ok: true, ticket: mapTicketToV1(fresh, labels) })
+          } catch (e) {
+            const o = oops(e, "v1-tickets-update")
+            return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+          }
+        }
+        return v1err("not_found", "Unknown tickets route.", 404)
+      }
+
+      return v1err("not_found", "Unknown tickets route.", 404)
     }
 
     // ── Expectations graduation endpoints (Layer E, Task 6) — project-scoped, authed. ──

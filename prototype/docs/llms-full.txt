@@ -149,6 +149,56 @@ Status enums:
 
 ---
 
+## Tickets
+
+Project-scoped bug/report tickets. The `kci_` token IS the project — do NOT pass a `?project=` param
+on these routes. Every `:id` route is IDOR-guarded: a ticket id owned by another project returns `404`.
+Any project member may create/update tickets and add comments; assigning a ticket to a NON-member
+requires an admin token (→ `403`).
+
+Ticket shape:
+```json
+{ "id": "fb_...", "seq_num": 42, "title": "...", "description": "...",
+  "status": "open", "priority": "high", "assignee": "dev@acme.com",
+  "source": "manual", "labels": [{ "id": "...", "name": "...", "color": "#f00" }],
+  "recurrence": 1, "created_at": 1700000000000, "updated_at": 1700000000000 }
+```
+Enums: `status` = `new | open | in_progress | done | dismissed`; `priority` = `urgent | high | medium | low`;
+`source` = `sim | manual | human`.
+
+### GET /api/v1/tickets
+List tickets. Query filters: `status` (comma-separated), `priority` (comma-separated), `assignee`
+(exact email; empty string = unassigned), `source` (`sim|manual|human`), `label` (label id), `q`
+(free-text search), `page` (default 1), `limit` (≤200, default 50). Response `200`:
+`{ "tickets": [Ticket], "total": 123, "page": 1, "limit": 50 }`.
+
+### POST /api/v1/tickets
+Create a ticket. Body: `{ "title": "…" (≤500, required), "assignee": "dev@acme.com" (email, required),
+"description": "…" (≤5000), "priority": "urgent|high|medium|low" (default medium) }`. Rate limit:
+30/min/project. Response `201`: `{ "ticket_id": "fb_..." }`.
+
+### GET /api/v1/tickets/:id
+Enriched single ticket. Response `200`: the Ticket shape plus
+`{ "comments_count": 3, "attachments": [{ "name": "log.txt", "url": "https://…", "content_type": "text/plain" }],
+"replay_url": "/api/v1/tickets/:id/replay" | null }`. Attachment URLs are short-lived presigned links.
+
+### PATCH /api/v1/tickets/:id
+Update. Body may include any of: `status`, `priority`, `assignee`, `notes`, `description`. Assigning to
+a non-member requires an admin token. Response `200`: `{ "ok": true, "ticket": Ticket }`.
+
+### GET /api/v1/tickets/:id/comments
+Response `200`: `{ "ticket_id": "…", "comments": [{ "id": "…", "author": "…", "body": "…", "created_at": 170… }] }`.
+
+### POST /api/v1/tickets/:id/comments
+Body: `{ "body": "…" (≤5000, required) }`. Comments are pushed to any linked external trackers.
+Response `201`: `{ "comment": { "id": "…", "author": "…", "body": "…", "created_at": 170… } }`.
+
+### GET /api/v1/tickets/:id/activity
+Merged timeline (comments + status/priority/assignee activity + connector exports). Response `200`:
+`{ "ticket_id": "…", "events": [ … ] }`.
+
+---
+
 ## Minimal agent loop (bash)
 
 ```bash

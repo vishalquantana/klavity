@@ -6,8 +6,10 @@ import { MCP_TOOLS, getTool } from "./tools"
 test("registry exposes the expected tools with schemas", () => {
   const names = MCP_TOOLS.map(t => t.name).sort()
   expect(names).toEqual([
-    "get_authored_run", "get_qa_report", "get_qa_run",
-    "list_qa_runs", "start_authored_run", "start_qa_run",
+    "add_comment", "create_ticket",
+    "get_authored_run", "get_qa_report", "get_qa_run", "get_ticket", "get_ticket_activity",
+    "list_comments", "list_qa_runs", "list_tickets",
+    "start_authored_run", "start_qa_run", "update_ticket",
   ])
   for (const t of MCP_TOOLS) {
     expect(typeof t.description).toBe("string")

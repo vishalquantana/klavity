@@ -11,6 +11,10 @@ export const V1_PATHS = [
   "/api/v1/runs/{id}",
   "/api/v1/runs/{id}/report",
   "/api/v1/runs/{id}/cancel",
+  "/api/v1/tickets",
+  "/api/v1/tickets/{id}",
+  "/api/v1/tickets/{id}/comments",
+  "/api/v1/tickets/{id}/activity",
 ] as const
 
 const bearer = [{ kciBearer: [] as string[] }]
@@ -130,6 +134,63 @@ export function buildOpenApiSpec(baseUrl = "https://klavity.in"): Record<string,
             stall_reason: { type: ["string", "null"] },
             created_at: { type: "integer" },
             updated_at: { type: "integer" },
+          },
+        },
+        Label: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            color: { type: "string" },
+          },
+        },
+        Ticket: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            seq_num: { type: ["integer", "null"] },
+            title: { type: "string" },
+            description: { type: ["string", "null"] },
+            status: { type: "string", enum: ["new", "open", "in_progress", "done", "dismissed"] },
+            priority: { type: ["string", "null"], enum: ["urgent", "high", "medium", "low", null] },
+            assignee: { type: ["string", "null"] },
+            source: { type: "string", enum: ["sim", "manual", "human"] },
+            labels: { type: "array", items: { $ref: "#/components/schemas/Label" } },
+            recurrence: { type: "integer" },
+            created_at: { type: "integer" },
+            updated_at: { type: ["integer", "null"] },
+          },
+        },
+        TicketDetail: {
+          allOf: [
+            { $ref: "#/components/schemas/Ticket" },
+            {
+              type: "object",
+              properties: {
+                comments_count: { type: "integer" },
+                attachments: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: ["string", "null"] },
+                      url: { type: ["string", "null"] },
+                      content_type: { type: ["string", "null"] },
+                    },
+                  },
+                },
+                replay_url: { type: ["string", "null"] },
+              },
+            },
+          ],
+        },
+        Comment: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            author: { type: ["string", "null"] },
+            body: { type: "string" },
+            created_at: { type: "integer" },
           },
         },
       },
@@ -306,6 +367,158 @@ export function buildOpenApiSpec(baseUrl = "https://klavity.in"): Record<string,
               },
             },
             "404": errorResponse,
+          },
+        },
+      },
+      "/api/v1/tickets": {
+        get: {
+          summary: "List tickets (bugs/reports) for the token's project",
+          description: "Project comes from the token; do not pass a project param. Filter + paginate.",
+          parameters: [
+            { name: "status", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated statuses" },
+            { name: "priority", in: "query", required: false, schema: { type: "string" }, description: "Comma-separated priorities" },
+            { name: "assignee", in: "query", required: false, schema: { type: "string" }, description: "Exact email; empty = unassigned" },
+            { name: "source", in: "query", required: false, schema: { type: "string", enum: ["sim", "manual", "human"] } },
+            { name: "label", in: "query", required: false, schema: { type: "string" } },
+            { name: "q", in: "query", required: false, schema: { type: "string" } },
+            { name: "page", in: "query", required: false, schema: { type: "integer", minimum: 1, default: 1 } },
+            { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 200, default: 50 } },
+          ],
+          responses: {
+            "200": {
+              description: "OK",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      tickets: { type: "array", items: { $ref: "#/components/schemas/Ticket" } },
+                      total: { type: "integer" }, page: { type: "integer" }, limit: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+            "401": errorResponse, "403": errorResponse,
+          },
+        },
+        post: {
+          summary: "Create a ticket",
+          description: "assignee (email) is required. Rate limit: 30/min/project.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["title", "assignee"],
+                  properties: {
+                    title: { type: "string", maxLength: 500 },
+                    description: { type: "string", maxLength: 5000 },
+                    priority: { type: "string", enum: ["urgent", "high", "medium", "low"], default: "medium" },
+                    assignee: { type: "string", format: "email" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Created",
+              content: { "application/json": { schema: { type: "object", properties: { ticket_id: { type: "string" } } } } },
+            },
+            "400": errorResponse, "401": errorResponse, "403": errorResponse, "429": errorResponse, "500": errorResponse,
+          },
+        },
+      },
+      "/api/v1/tickets/{id}": {
+        get: {
+          summary: "Get an enriched single ticket",
+          parameters: [idPath],
+          responses: {
+            "200": { description: "OK", content: { "application/json": { schema: { $ref: "#/components/schemas/TicketDetail" } } } },
+            "401": errorResponse, "403": errorResponse, "404": errorResponse,
+          },
+        },
+        patch: {
+          summary: "Update a ticket (status/priority/assignee/notes/description)",
+          parameters: [idPath],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    status: { type: "string", enum: ["new", "open", "in_progress", "done", "dismissed"] },
+                    priority: { type: "string", enum: ["urgent", "high", "medium", "low"] },
+                    assignee: { type: ["string", "null"] },
+                    notes: { type: ["string", "null"] },
+                    description: { type: ["string", "null"] },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "OK",
+              content: {
+                "application/json": {
+                  schema: { type: "object", properties: { ok: { type: "boolean" }, ticket: { $ref: "#/components/schemas/Ticket" } } },
+                },
+              },
+            },
+            "400": errorResponse, "401": errorResponse, "403": errorResponse, "404": errorResponse, "500": errorResponse,
+          },
+        },
+      },
+      "/api/v1/tickets/{id}/comments": {
+        get: {
+          summary: "List a ticket's comments",
+          parameters: [idPath],
+          responses: {
+            "200": {
+              description: "OK",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: { ticket_id: { type: "string" }, comments: { type: "array", items: { $ref: "#/components/schemas/Comment" } } },
+                  },
+                },
+              },
+            },
+            "401": errorResponse, "403": errorResponse, "404": errorResponse,
+          },
+        },
+        post: {
+          summary: "Add a comment to a ticket",
+          parameters: [idPath],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object", required: ["body"], properties: { body: { type: "string", maxLength: 5000 } } } } },
+          },
+          responses: {
+            "201": { description: "Created", content: { "application/json": { schema: { type: "object", properties: { comment: { $ref: "#/components/schemas/Comment" } } } } } },
+            "400": errorResponse, "401": errorResponse, "403": errorResponse, "404": errorResponse,
+          },
+        },
+      },
+      "/api/v1/tickets/{id}/activity": {
+        get: {
+          summary: "Get a ticket's activity timeline (comments + activity + connector exports)",
+          parameters: [idPath],
+          responses: {
+            "200": {
+              description: "OK",
+              content: {
+                "application/json": {
+                  schema: { type: "object", properties: { ticket_id: { type: "string" }, events: { type: "array", items: { type: "object" } } } },
+                },
+              },
+            },
+            "401": errorResponse, "403": errorResponse, "404": errorResponse,
           },
         },
       },
