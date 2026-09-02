@@ -9035,7 +9035,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (info.assignee) {
             void (async () => {
               const proj = await projectById(mcpProject).catch(() => null)
-              void notifyTicketAssignee({ projectId: mcpProject, feedbackId: fid, assignee: info.assignee!, ticketTitle: info.title, projectName: proj?.name ?? null, assignedBy: mcpEmail })
+              await notifyTicketAssignee({ projectId: mcpProject, feedbackId: fid, assignee: info.assignee!, ticketTitle: info.title, projectName: proj?.name ?? null, assignedBy: mcpEmail }).catch(() => {})
             })()
           }
         },
@@ -9050,7 +9050,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (meta.assignee !== undefined && meta.assignee !== prevRow.assignee && meta.assignee) {
             void (async () => {
               const proj = await projectById(mcpProject).catch(() => null)
-              void notifyTicketAssignee({ projectId: mcpProject, feedbackId: fid, assignee: meta.assignee, ticketTitle: effectiveTicketTitle(prevRow), projectName: proj?.name ?? null, assignedBy: mcpEmail })
+              await notifyTicketAssignee({ projectId: mcpProject, feedbackId: fid, assignee: meta.assignee, ticketTitle: effectiveTicketTitle(prevRow), projectName: proj?.name ?? null, assignedBy: mcpEmail }).catch(() => {})
             })()
           }
           if (meta.status !== undefined && meta.status !== prevRow.status) {

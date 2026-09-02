@@ -62,6 +62,19 @@ function actor(ctx: McpToolCtx): string {
   return String(ctx.email || "")
 }
 
+// QA C2: fire a side-effect hook WITHOUT ever failing the tool. The DB mutation is already
+// committed by the time a hook runs, so a hook that throws (sync) or rejects (async) must not
+// convert a successful create/update/comment into an isError response. Swallow both.
+function fireHook(fn: (() => unknown) | undefined): void {
+  if (!fn) return
+  try {
+    const r = fn()
+    if (r && typeof (r as any).then === "function") (r as Promise<unknown>).catch(() => {})
+  } catch {
+    /* side-effect failure must not surface as a mutation failure */
+  }
+}
+
 // Coerce a pagination arg to a finite integer (C3-1). NaN/Infinity/garbage → null so the caller
 // rejects with a ToolError instead of passing a poisoned LIMIT/OFFSET binding to the DB.
 function finiteIntArg(v: unknown, dflt: number): number | null {
@@ -239,7 +252,7 @@ export const MCP_TOOLS: McpTool[] = [
       await updateFeedbackMeta(project, id, { status: "open", assignee: assignee || null })
       await insertActivity({ projectId: project, type: "ticket_created", actorEmail: me || null, feedbackId: id, meta: { title, priority, source: "manual" } }).catch(() => {})
       // C2-2: same side effects as REST create — autoCopyFeedback + assignee notification.
-      ctx.hooks?.onTicketCreated?.(id, { priority, assignee: assignee || null, title })
+      fireHook(() => ctx.hooks?.onTicketCreated?.(id, { priority, assignee: assignee || null, title }))
       return { ticket_id: id }
     },
   },
@@ -285,7 +298,7 @@ export const MCP_TOOLS: McpTool[] = [
       if (writes.length) await Promise.all(writes)
       // C2-2: same side effects as REST PATCH — syncTicketFields (priority) + assignee notification +
       // autoCopyOnTriageAccept (status). The hook receives the pre-update row + the applied meta.
-      ctx.hooks?.onTicketUpdated?.(row.id, { prevRow: row, meta })
+      fireHook(() => ctx.hooks?.onTicketUpdated?.(row.id, { prevRow: row, meta }))
       const fresh = (await feedbackById(project, row.id).catch(() => null)) || row
       const labels = await labelsForFeedback(row.id).catch(() => [])
       return { ok: true, ticket: mapTicketToV1(fresh, labels) }
@@ -317,7 +330,7 @@ export const MCP_TOOLS: McpTool[] = [
       if (text.length > 5000) throw new ToolError("body must be 5000 characters or fewer")
       const comment = await insertTicketComment(row.id, me || null, text)
       // C2-2: same side effect as REST comment — push to every linked external tracker.
-      ctx.hooks?.onTicketComment?.(row.id, text, comment.id)
+      fireHook(() => ctx.hooks?.onTicketComment?.(row.id, text, comment.id))
       return { comment: { id: comment.id, author: comment.author, body: comment.body, created_at: comment.createdAt } }
     },
   },

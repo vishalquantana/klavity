@@ -42,6 +42,10 @@ export async function canAssignV1(
   assignee: string | null,
 ): Promise<boolean> {
   if (!assignee) return true
+  // Defense-in-depth (QA C3): an actor with NO live project access can never assign, even to an
+  // existing member. The public /mcp + REST entrypoints already reject null-access tokens, so this
+  // only guards internal/future callers — but it keeps the invariant true regardless of caller.
+  if (!actorAccess) return false
   if (actorAccess === "admin") return true
   return !!(await projectAccess(assignee, projectId).catch(() => null))
 }

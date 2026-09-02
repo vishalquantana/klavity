@@ -113,3 +113,25 @@ test("C1-1: create_ticket with admin actor access can assign a non-member", asyn
   )
   expect(out.ticket_id).toBe("fb_hooktest_1")
 })
+
+// ── QA round-2 C3: null actor access cannot assign even an EXISTING member (canAssignV1 short-circuits
+// on null access BEFORE the assignee lookup). Neg-control: without the `if (!actorAccess) return false`
+// guard, the assignee membership lookup would let this succeed. ──
+test("C3: create_ticket with null actor access cannot assign an in-project member", async () => {
+  const ctx = { projectId: "proj_me", email: "removed@test.local", access: null }
+  await expect(getTool("create_ticket")!.handler(
+    { project_id: "proj_me", title: "T", assignee: "member@test.local" }, ctx as any,
+  )).rejects.toThrow(/admin/i)
+})
+
+// ── QA round-2 C2: a side-effect hook that THROWS must not fail an already-committed mutation. ──
+test("C2: create_ticket succeeds even when onTicketCreated hook throws", async () => {
+  const ctx = {
+    projectId: "proj_me", email: "me@test.local", access: "admin" as const,
+    hooks: { onTicketCreated: () => { throw new Error("boom") } },
+  }
+  const out = await getTool("create_ticket")!.handler(
+    { project_id: "proj_me", title: "Bug", assignee: "assignee@test.local", priority: "low" }, ctx,
+  )
+  expect(out.ticket_id).toBe("fb_hooktest_1")
+})
