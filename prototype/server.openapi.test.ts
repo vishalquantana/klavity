@@ -41,6 +41,7 @@ test("openapi: every documented path+method is a real registered route (drift gu
     "/api/v1/tickets/{id}": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\$/,
     "/api/v1/tickets/{id}/comments": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\\\/comments\$/,
     "/api/v1/tickets/{id}/activity": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\\\/activity\$/,
+    "/api/v1/tickets/{id}/replay": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\\\/replay\$/,
   }
   for (const p of V1_PATHS) {
     expect(anchors[p], `no drift anchor defined for ${p}`).toBeDefined()

@@ -9013,12 +9013,68 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!mcpRaw) return mcpErr(401, "missing kci_ bearer token")
       const mcpInfo = await getExtensionTokenInfo(mcpRaw)
       if (!mcpInfo || !mcpInfo.projectId) return mcpErr(401, "invalid token")
-      if (!rlAllow(`mcp:${mcpInfo.projectId}`, 120, 60_000)) return mcpErr(429, "rate limited")
+      // C1-1: enforce LIVE project membership BEFORE dispatching any tool — mirrors the REST 403 at
+      // the /api/v1/tickets entrypoint. getExtensionTokenInfo only rejects revoked/expired tokens, so
+      // a member removed from project_members keeps an otherwise-live token; without this check that
+      // token would retain read/write through MCP. This closes the bypass for EVERY tool at once.
+      const mcpAccess = await projectAccess(mcpInfo.email, mcpInfo.projectId)
+      if (!mcpAccess) return mcpErr(403, "token owner no longer has access to this project")
+      const mcpProject = mcpInfo.projectId
+      const mcpEmail = mcpInfo.email
+      if (!rlAllow(`mcp:${mcpProject}`, 120, 60_000)) return mcpErr(429, "rate limited")
       const parsed = await readJsonLimited(req, 32 * 1024)
       if (!parsed.ok) return mcpErr(400, parsed.error)
       const msg = parsed.data as any
       if (!msg || msg.jsonrpc !== "2.0") return mcpErr(400, "invalid JSON-RPC 2.0 message")
-      const reply = await handleMcpMessage(msg, { projectId: mcpInfo.projectId, email: mcpInfo.email })
+      // C2-2: inject the SAME tracker/notification side effects the REST ticket routes fire, via
+      // dependency injection (server.ts owns these fns; the mcp lib can't import them without a cycle).
+      // MCP create/update/comment now behave identically to REST create/PATCH/comment.
+      const mcpHooks = {
+        onTicketCreated: (fid: string, info: { priority: string; assignee: string | null; title: string }) => {
+          autoCopyFeedback(fid, mcpProject, mcpEmail, info.priority)
+          if (info.assignee) {
+            void (async () => {
+              const proj = await projectById(mcpProject).catch(() => null)
+              void notifyTicketAssignee({ projectId: mcpProject, feedbackId: fid, assignee: info.assignee!, ticketTitle: info.title, projectName: proj?.name ?? null, assignedBy: mcpEmail })
+            })()
+          }
+        },
+        onTicketComment: (fid: string, text: string, commentId: string) => {
+          pushCommentToLinkedIssues(mcpProject, fid, text, { authorEmail: mcpEmail, klavityCommentId: commentId, source: "klavity" }).catch(() => {})
+        },
+        onTicketUpdated: (fid: string, info: { prevRow: any; meta: Record<string, any> }) => {
+          const { prevRow, meta } = info
+          if (meta.priority !== undefined && meta.priority !== prevRow.priority) {
+            syncTicketFields(fid, mcpProject, mcpEmail, meta.priority ?? null)
+          }
+          if (meta.assignee !== undefined && meta.assignee !== prevRow.assignee && meta.assignee) {
+            void (async () => {
+              const proj = await projectById(mcpProject).catch(() => null)
+              void notifyTicketAssignee({ projectId: mcpProject, feedbackId: fid, assignee: meta.assignee, ticketTitle: effectiveTicketTitle(prevRow), projectName: proj?.name ?? null, assignedBy: mcpEmail })
+            })()
+          }
+          if (meta.status !== undefined && meta.status !== prevRow.status) {
+            autoCopyOnTriageAccept(fid, mcpProject, prevRow.status, meta.status, meta.priority !== undefined ? meta.priority : prevRow.priority, mcpEmail)
+          }
+        },
+        // C3-3: REST parity for get_ticket — attachments (presigned) + replay availability.
+        enrichTicket: async (row: any) => {
+          const attachments = Array.isArray(row.attachments)
+            ? row.attachments.map((a: any) => ({
+                name: a.filename ?? a.name ?? null,
+                url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })(),
+                content_type: a.contentType ?? a.content_type ?? null,
+              }))
+            : []
+          let replay_url: string | null = null
+          if (db) {
+            const rr = await db.execute({ sql: "SELECT 1 FROM feedback_replays WHERE project_id=? AND feedback_id=? LIMIT 1", args: [mcpProject, String(row.id)] }).catch(() => null)
+            if (rr && rr.rows.length) replay_url = `/api/v1/tickets/${String(row.id)}/replay`
+          }
+          return { attachments, replay_url }
+        },
+      }
+      const reply = await handleMcpMessage(msg, { projectId: mcpProject, email: mcpEmail, access: mcpAccess, hooks: mcpHooks })
       if (reply === null) return new Response(null, { status: 202 }) // notification: no body
       return json(reply, 200)
     }
@@ -9319,8 +9375,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
         const label = sp.get("label")?.trim() || undefined
         const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
-        const page = Math.max(1, Number(sp.get("page") || "1"))
-        const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
+        // C3-1: reject non-finite pagination (NaN/Infinity/garbage) with a structured 400 rather than
+        // passing a poisoned LIMIT/OFFSET to the DB; clamp page to a practical max.
+        const pageRaw = Number(sp.get("page") ?? "1")
+        const limitRaw = Number(sp.get("limit") ?? "50")
+        if (!Number.isFinite(pageRaw) || !Number.isFinite(limitRaw)) {
+          return v1err("bad_request", "page and limit must be finite numbers.", 400)
+        }
+        const page = Math.min(100_000, Math.max(1, Math.trunc(pageRaw)))
+        const limit = Math.min(200, Math.max(1, Math.trunc(limitRaw)))
         try {
           const result = await listTicketsPaginated(tpid, { statuses, priorities, assignee, source, label, search, page, limit })
           const ids = result.tickets.map((t: any) => t.id)
@@ -9341,6 +9404,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const parsed = await readJsonLimited(req, 16 * 1024)
         if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
         const body = parsed.data as Record<string, any>
+        // C3-2: a JSON `null` (or non-object) body parses fine but derefs below would throw; reject it.
+        if (!body || typeof body !== "object" || Array.isArray(body)) return v1err("bad_request", "body must be a JSON object.", 400)
         const title = String(body.title ?? "").trim()
         if (!title) return v1err("bad_request", "title is required.", 400)
         if (title.length > 500) return v1err("bad_request", "title must be 500 characters or fewer.", 400)
@@ -9377,7 +9442,32 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // ── :id-scoped routes ──
       const commentsMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)\/comments$/)
       const activityMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)\/activity$/)
+      const replayMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)\/replay$/)
       const singleMatch = path.match(/^\/api\/v1\/tickets\/([^/]+)$/)
+
+      // GET /api/v1/tickets/:id/replay — stream the gzipped rrweb session replay for a ticket (C2-3).
+      // This is the URL the single-ticket GET advertises as replay_url. Token-authed + loadOwned guard
+      // (cross-project id → 404). Mirrors GET /api/feedback/:id/replay exactly: the ALREADY-gzipped
+      // bytes stream out with Content-Encoding: gzip + the x-klv-* meta headers, private + no-store.
+      if (replayMatch && req.method === "GET") {
+        const fid = replayMatch[1]
+        const row = await loadOwned(fid)
+        if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        const raw = await getFeedbackReplayGz(tpid, fid).catch(() => null)
+        if (!raw) return v1err("not_found", "No replay for this ticket.", 404)
+        return withSecurityHeaders(new Response(raw.gz, {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "content-encoding": "gzip",
+            "vary": "accept-encoding",
+            "cache-control": "private, no-store",
+            "x-klv-feedback": fid,
+            "x-klv-nevents": String(raw.nEvents),
+            "x-klv-trimmed": raw.trimmed ? "1" : "0",
+            "x-klv-created": String(raw.createdAt),
+          },
+        }))
+      }
 
       // GET/POST /api/v1/tickets/:id/comments
       if (commentsMatch) {
@@ -9385,18 +9475,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
         if (req.method === "GET") {
-          const comments = (await listTicketComments(fid)).map((c) => ({ id: c.id, author: c.author, body: c.body, created_at: c.createdAt }))
-          return json({ ticket_id: fid, comments })
+          try {
+            const comments = (await listTicketComments(fid)).map((c) => ({ id: c.id, author: c.author, body: c.body, created_at: c.createdAt }))
+            return json({ ticket_id: fid, comments })
+          } catch (e) {
+            const o = oops(e, "v1-tickets-comments-list")
+            return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+          }
         }
         if (req.method === "POST") {
+          // C2-1: throttle comment creation per-project (parity with the create limiter) — a leaked
+          // token must not create unbounded comment rows + outbound sync work.
+          if (!rlAllow(`v1tickets:comment:${tpid}`, 60, 60_000)) {
+            return v1err("rate_limited", "Too many comments — slow down and retry shortly.", 429)
+          }
           const parsed = await readJsonLimited(req, 16 * 1024)
           if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
           const text = String((parsed.data as any)?.body ?? "").trim()
           if (!text) return v1err("bad_request", "body is required.", 400)
           if (text.length > 5000) return v1err("bad_request", "body must be 5000 characters or fewer.", 400)
-          const comment = await insertTicketComment(fid, tInfo.email, text)
-          pushCommentToLinkedIssues(tpid, fid, text, { authorEmail: tInfo.email, klavityCommentId: comment.id, source: "klavity" }).catch(() => {})
-          return json({ comment: { id: comment.id, author: comment.author, body: comment.body, created_at: comment.createdAt } }, 201)
+          try {
+            const comment = await insertTicketComment(fid, tInfo.email, text)
+            pushCommentToLinkedIssues(tpid, fid, text, { authorEmail: tInfo.email, klavityCommentId: comment.id, source: "klavity" }).catch(() => {})
+            return json({ comment: { id: comment.id, author: comment.author, body: comment.body, created_at: comment.createdAt } }, 201)
+          } catch (e) {
+            const o = oops(e, "v1-tickets-comment-create")
+            return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+          }
         }
         return v1err("not_found", "Unknown tickets route.", 404)
       }
@@ -9406,8 +9511,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const fid = activityMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
-        const events = await ticketActivityTimeline(tpid, fid)
-        return json({ ticket_id: fid, events })
+        try {
+          const events = await ticketActivityTimeline(tpid, fid)
+          return json({ ticket_id: fid, events })
+        } catch (e) {
+          const o = oops(e, "v1-tickets-activity")
+          return json({ error: { code: "internal", message: "Something went wrong. Please try again.", request_id: o.id } }, 500)
+        }
       }
 
       // GET (enriched) / PATCH /api/v1/tickets/:id
@@ -9441,9 +9551,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         if (req.method === "PATCH") {
+          if (!rlAllow(`v1tickets:update:${tpid}`, 60, 60_000)) {
+            return v1err("rate_limited", "Too many ticket updates — slow down and retry shortly.", 429)
+          }
           const parsed = await readJsonLimited(req, 32 * 1024)
           if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
           const body = parsed.data as Record<string, any>
+          // C3-2: reject a JSON `null`/non-object body before the field derefs below throw.
+          if (!body || typeof body !== "object" || Array.isArray(body)) return v1err("bad_request", "body must be a JSON object.", 400)
           if (body.status !== undefined && !(V1_TICKET_STATUSES as readonly string[]).includes(body.status)) {
             return v1err("bad_request", `status must be one of: ${V1_TICKET_STATUSES.join(", ")}`, 400)
           }

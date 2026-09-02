@@ -297,3 +297,91 @@ test("GET /api/v1/tickets/:id/activity — timeline includes the comment + statu
   expect(kinds).toContain("comment")
   expect(kinds).toContain("ticket_status_changed")
 })
+
+// ── C3-1 (pagination): non-finite page/limit must 400, not reach the DB (neg-control). ──
+
+test("C3-1: GET /api/v1/tickets?page=NaN → 400 (finite-int guard)", async () => {
+  const r = await fetch(`${BASE}/api/v1/tickets?page=NaN`, { headers: { Authorization: bearer(CI_TOKEN) } })
+  expect(r.status).toBe(400)
+  const b = await r.json() as any
+  expect(b.error.code).toBe("bad_request")
+})
+
+test("C3-1: GET /api/v1/tickets?limit=Infinity → 400", async () => {
+  const r = await fetch(`${BASE}/api/v1/tickets?limit=Infinity`, { headers: { Authorization: bearer(CI_TOKEN) } })
+  expect(r.status).toBe(400)
+})
+
+// ── C3-2 (null body): a JSON `null` body must 400, not throw a 500 (neg-control). ──
+
+test("C3-2: POST /api/v1/tickets with body null → 400", async () => {
+  const r = await fetch(`${BASE}/api/v1/tickets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: bearer(CI_TOKEN) },
+    body: "null",
+  })
+  expect(r.status).toBe(400)
+  const b = await r.json() as any
+  expect(b.error.code).toBe("bad_request")
+})
+
+test("C3-2: PATCH /api/v1/tickets/:id with body null → 400", async () => {
+  const r = await fetch(`${BASE}/api/v1/tickets/${CREATED_ID}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: bearer(CI_TOKEN) },
+    body: "null",
+  })
+  expect(r.status).toBe(400)
+})
+
+// ── C2-3 (replay route): the advertised replay_url must actually stream the gzipped replay. ──
+
+test("C2-3: GET /api/v1/tickets/:id/replay → 200 gzip for a ticket with a replay row", async () => {
+  // Seed a feedback_replays row for the created ticket (gzip of an empty events array).
+  const gzB64 = Buffer.from(Bun.gzipSync(Buffer.from("[]"))).toString("base64")
+  await rawExec(
+    `INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, trimmed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [`rep_${ts}`, CREATED_ID, PROJECT_ID, gzB64, 0, 0, NOW],
+  )
+  const r = await fetch(`${BASE}/api/v1/tickets/${CREATED_ID}/replay`, { headers: { Authorization: bearer(CI_TOKEN) } })
+  expect(r.status).toBe(200)
+  expect((r.headers.get("content-encoding") || "")).toContain("gzip")
+  expect(r.headers.get("x-klv-feedback")).toBe(CREATED_ID)
+  // fetch transparently gunzips; the body decodes to the stored events array.
+  const body = await r.json() as any
+  expect(Array.isArray(body)).toBe(true)
+})
+
+test("C2-3: GET /api/v1/tickets/:id/replay — cross-project id → 404 (IDOR guard)", async () => {
+  const r = await fetch(`${BASE}/api/v1/tickets/${FEEDBACK_B_ID}/replay`, { headers: { Authorization: bearer(CI_TOKEN) } })
+  expect(r.status).toBe(404)
+})
+
+test("C2-3: GET /api/v1/tickets/:id/replay — ticket with no replay → 404", async () => {
+  // A second ticket, no feedback_replays row.
+  const c = await fetch(`${BASE}/api/v1/tickets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: bearer(CI_TOKEN) },
+    body: JSON.stringify({ title: "no replay ticket", assignee: ADMIN_EMAIL }),
+  })
+  const noReplayId = (await c.json() as any).ticket_id
+  const r = await fetch(`${BASE}/api/v1/tickets/${noReplayId}/replay`, { headers: { Authorization: bearer(CI_TOKEN) } })
+  expect(r.status).toBe(404)
+})
+
+// ── C2-1 (rate limit): the comment endpoint must throttle (neg-control — was unlimited). Runs LAST
+// because it deliberately exhausts the per-project comment limiter for the rest of the minute. ──
+
+test("C2-1: POST /api/v1/tickets/:id/comments — exceeding the limit → 429", async () => {
+  let got429 = false
+  // The limiter is 60/min/project; fire enough to cross it.
+  for (let i = 0; i < 75; i++) {
+    const r = await fetch(`${BASE}/api/v1/tickets/${CREATED_ID}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: bearer(CI_TOKEN) },
+      body: JSON.stringify({ body: `spam ${i}` }),
+    })
+    if (r.status === 429) { got429 = true; break }
+  }
+  expect(got429).toBe(true)
+})

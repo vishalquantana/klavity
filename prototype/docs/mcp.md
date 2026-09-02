@@ -28,7 +28,7 @@ argument that does not match the token's project is rejected in-band (`isError: 
 ### Tickets (bugs/reports)
 
 - `list_tickets { project_id, status?, priority?, assignee?, source?, label?, q?, page?, limit? }` → `{ tickets, total, page, limit }`
-- `get_ticket { project_id, ticket_id }` → single ticket (+ `comments_count`)
+- `get_ticket { project_id, ticket_id }` → single ticket (+ `comments_count`, `attachments`, `replay_url`) — same evidence fields as the REST detail endpoint
 - `create_ticket { project_id, title, assignee, description?, priority? }` → `{ ticket_id }` (assignee is required)
 - `update_ticket { project_id, ticket_id, status?, priority?, assignee?, notes?, description? }` → `{ ok, ticket }`
 - `list_comments { project_id, ticket_id }` → `{ ticket_id, comments }`

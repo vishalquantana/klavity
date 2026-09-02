@@ -7526,8 +7526,13 @@ export async function listTicketsPaginated(
     limit?: number           // default 50, max 200
   }
 ): Promise<{ tickets: any[]; total: number; page: number; totalPages: number }> {
-  const page = Math.max(1, opts.page ?? 1)
-  const limit = Math.min(200, Math.max(1, opts.limit ?? 50))
+  // Defense-in-depth (C3-1): coerce to finite integers before these values become LIMIT/OFFSET
+  // bindings. Junk (NaN/Infinity/non-numeric) defaults to page 1 / limit 50; page is capped so a
+  // huge finite value can't produce a runaway OFFSET.
+  const rawPage = Number(opts.page ?? 1)
+  const rawLimit = Number(opts.limit ?? 50)
+  const page = Number.isFinite(rawPage) ? Math.min(100_000, Math.max(1, Math.trunc(rawPage))) : 1
+  const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, Math.trunc(rawLimit))) : 50
   const offset = (page - 1) * limit
 
   const conditions: string[] = ["f.project_id=?"]

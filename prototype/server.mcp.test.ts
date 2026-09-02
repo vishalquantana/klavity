@@ -57,6 +57,14 @@ await rawExec(`INSERT INTO projects (id, account_id, name, status, review_mode, 
 await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [`pm_mcp_${ts}`, PROJECT_ID, ADMIN_EMAIL, "admin", null, NOW])
 await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [ADMIN_SID, ADMIN_EMAIL, NOW, NOW + 86400_000])
 
+// ── A plain project member (C1-1 revocation neg-control): mints a live token, then gets removed. ──
+const MEMBER_EMAIL = `member-mcp-${ts}@test.local`
+const MEMBER_SID = `sess_member_mcp_${ts}`
+await rawExec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, [MEMBER_EMAIL, NOW])
+await rawExec(`INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)`, [`am_mcp_mem_${ts}`, ACCOUNT_ID, MEMBER_EMAIL, "member", NOW])
+await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, invited_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [`pm_mcp_mem_${ts}`, PROJECT_ID, MEMBER_EMAIL, "member", ADMIN_EMAIL, NOW])
+await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [MEMBER_SID, MEMBER_EMAIL, NOW, NOW + 86400_000])
+
 // ── Spawn the server ──
 let serverPort: number
 let serverProc: ReturnType<typeof Bun.spawn>
@@ -140,4 +148,47 @@ test("tools/call get_qa_run with cross-project arg is reported isError, not 500"
   expect(r.status).toBe(200)
   const j = await r.json() as any
   expect(j.result.isError).toBe(true)
+})
+
+// ── C1-1 (authz bypass): a revoked member's still-live token must be rejected by BOTH /mcp and REST.
+// Neg-control: without the projectAccess() check in the /mcp entrypoint, the tools/call below returns
+// a 200 result (read/write succeeds) instead of 403. ──
+test("C1-1: revoked member's live token → 403 on BOTH /mcp and REST (authz parity)", async () => {
+  // Mint a token while the member still belongs to the project.
+  const tr = await fetch(`${BASE}/api/ci/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie(MEMBER_SID) },
+    body: JSON.stringify({ project: PROJECT_ID }),
+  })
+  const memberTok = (await tr.json() as any).token
+  expect(typeof memberTok).toBe("string")
+
+  // Sanity: while still a member, both surfaces work.
+  const okRest = await fetch(`${BASE}/api/v1/tickets`, { headers: { authorization: `Bearer ${memberTok}` } })
+  expect(okRest.status).toBe(200)
+  const okMcp = await rpc({ jsonrpc: "2.0", id: 90, method: "tools/call", params: { name: "list_tickets", arguments: { project_id: PROJECT_ID } } }, memberTok)
+  const okMcpJson = await okMcp.json() as any
+  expect(okMcp.status).toBe(200)
+  expect(okMcpJson.result?.isError).toBeFalsy()
+
+  // Revoke the membership WITHOUT touching the token (it stays live/unexpired).
+  await rawExec(`DELETE FROM project_members WHERE project_id=? AND email=?`, [PROJECT_ID, MEMBER_EMAIL])
+
+  // REST already rejects with 403 …
+  const rest = await fetch(`${BASE}/api/v1/tickets`, { headers: { authorization: `Bearer ${memberTok}` } })
+  expect(rest.status).toBe(403)
+
+  // … and now MCP rejects with 403 too (the fix).
+  const mcp = await rpc({ jsonrpc: "2.0", id: 91, method: "tools/call", params: { name: "list_tickets", arguments: { project_id: PROJECT_ID } } }, memberTok)
+  expect(mcp.status).toBe(403)
+})
+
+// ── C3-1 (pagination): MCP list_tickets with a non-finite page must be reported isError, not reach
+// the DB with a poisoned LIMIT/OFFSET. ──
+test("C3-1: MCP list_tickets with page=NaN → isError", async () => {
+  const r = await rpc({ jsonrpc: "2.0", id: 92, method: "tools/call", params: { name: "list_tickets", arguments: { project_id: PROJECT_ID, page: "NaN" } } })
+  expect(r.status).toBe(200)
+  const j = await r.json() as any
+  expect(j.result.isError).toBe(true)
+  expect(String(j.result.content[0].text)).toMatch(/finite/i)
 })

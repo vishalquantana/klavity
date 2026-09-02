@@ -7,7 +7,7 @@ import { getWalk, listRecentWalks } from "../trails"
 import { buildV1RunStatus, buildV1Report } from "../v1-runs"
 import { buildAuthoredRunStatus } from "../v1-authored"
 import {
-  insertFeedback, updateFeedbackMeta, insertActivity, feedbackById, projectAccess,
+  insertFeedback, updateFeedbackMeta, insertActivity, feedbackById,
   listTicketsPaginated, labelsForFeedbackBatch, labelsForFeedback,
   listTicketComments, insertTicketComment, ticketActivityTimeline,
 } from "../db"
@@ -22,7 +22,25 @@ export { ToolError }
 
 // The acting user's email (from the kci_ token) rides in ctx so ticket create/update/comment tools
 // attribute activity + notifications to a real actor. Optional so run-only callers stay unaffected.
-export interface McpToolCtx { projectId: string; email?: string }
+//
+// `access` is the LIVE project membership ("admin"|"member") resolved by the /mcp entrypoint via
+// projectAccess() (C1-1). The ticket tools use it for canAssignV1 — a null-access actor (revoked
+// member) never reaches here because the entrypoint rejects it, but the tools still refuse to let a
+// null actor assign as defense-in-depth.
+//
+// `hooks` are OPTIONAL side-effect callbacks injected by the server.ts /mcp handler (dependency
+// injection to avoid an import cycle: server.ts owns autoCopyFeedback / notifyTicketAssignee /
+// pushCommentToLinkedIssues / syncTicketFields / autoCopyOnTriageAccept). The tools call
+// ctx.hooks?.onX(...) AFTER their DB writes so MCP create/update/comment fire the SAME tracker +
+// notification side effects as the REST routes (C2-2). Pure run-only callers pass no hooks.
+export interface McpToolHooks {
+  onTicketCreated?(feedbackId: string, info: { priority: string; assignee: string | null; title: string }): void
+  onTicketComment?(feedbackId: string, text: string, commentId: string): void
+  onTicketUpdated?(feedbackId: string, info: { prevRow: any; meta: Record<string, any> }): void
+  // Enrich a ticket row with attachments + replay availability (REST parity for get_ticket, C3-3).
+  enrichTicket?(row: any): Promise<{ attachments: Array<{ name: string | null; url: string | null; content_type: string | null }>; replay_url: string | null }>
+}
+export interface McpToolCtx { projectId: string; email?: string; access?: "admin" | "member" | null; hooks?: McpToolHooks }
 export interface McpTool {
   name: string
   description: string
@@ -42,6 +60,15 @@ function requireProject(args: any, ctx: McpToolCtx): string {
 // The acting user email from the token. Ticket create/update/comment tools attribute to it.
 function actor(ctx: McpToolCtx): string {
   return String(ctx.email || "")
+}
+
+// Coerce a pagination arg to a finite integer (C3-1). NaN/Infinity/garbage → null so the caller
+// rejects with a ToolError instead of passing a poisoned LIMIT/OFFSET binding to the DB.
+function finiteIntArg(v: unknown, dflt: number): number | null {
+  if (v === undefined || v === null || v === "") return dflt
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  return Math.trunc(n)
 }
 
 // Load a ticket scoped to the token's project. feedbackById is project-scoped, so a cross-project
@@ -150,8 +177,11 @@ export const MCP_TOOLS: McpTool[] = [
       const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
       const label = args.label ? String(args.label).trim() : undefined
       const search = args.q ? String(args.q).trim().slice(0, 500) : undefined
-      const page = Math.max(1, Number(args.page || 1))
-      const limit = Math.min(200, Math.max(1, Number(args.limit || 50)))
+      const pageRaw = finiteIntArg(args.page, 1)
+      const limitRaw = finiteIntArg(args.limit, 50)
+      if (pageRaw === null || limitRaw === null) throw new ToolError("page and limit must be finite numbers")
+      const page = Math.min(100_000, Math.max(1, pageRaw))
+      const limit = Math.min(200, Math.max(1, limitRaw))
       const result = await listTicketsPaginated(project, { statuses, priorities, assignee, source, label, search, page, limit })
       const ids = result.tickets.map((t: any) => t.id)
       const labelsMap = await labelsForFeedbackBatch(ids)
@@ -169,7 +199,14 @@ export const MCP_TOOLS: McpTool[] = [
       const row = await loadOwnedTicket(project, args.ticket_id)
       const labels = await labelsForFeedback(row.id)
       const commentsCount = (await listTicketComments(row.id).catch(() => [])).length
-      return { ...mapTicketToV1(row, labels), comments_count: commentsCount }
+      const base = { ...mapTicketToV1(row, labels), comments_count: commentsCount }
+      // C3-3 REST parity: enrich with attachments + replay availability via the injected hook (the
+      // presign/replay logic lives in server.ts). Falls back to the clean shape if no hook is wired.
+      if (ctx.hooks?.enrichTicket) {
+        const extra = await ctx.hooks.enrichTicket(row).catch(() => ({ attachments: [], replay_url: null }))
+        return { ...base, attachments: extra.attachments, replay_url: extra.replay_url }
+      }
+      return base
     },
   },
   {
@@ -181,7 +218,9 @@ export const MCP_TOOLS: McpTool[] = [
     async handler(args, ctx) {
       const project = requireProject(args, ctx)
       const me = actor(ctx)
-      const access = await projectAccess(me, project).catch(() => null)
+      // C1-1: the LIVE access resolved by the /mcp entrypoint. A null-access actor never reaches here
+      // (entrypoint 403s a revoked member), and canAssignV1 refuses to let a null actor assign.
+      const access = ctx.access ?? null
       const title = String(args.title || "").trim()
       if (!title) throw new ToolError("title is required")
       if (title.length > 500) throw new ToolError("title must be 500 characters or fewer")
@@ -199,6 +238,8 @@ export const MCP_TOOLS: McpTool[] = [
       // insertFeedback does not persist the assignee column — set it (and open status) here.
       await updateFeedbackMeta(project, id, { status: "open", assignee: assignee || null })
       await insertActivity({ projectId: project, type: "ticket_created", actorEmail: me || null, feedbackId: id, meta: { title, priority, source: "manual" } }).catch(() => {})
+      // C2-2: same side effects as REST create — autoCopyFeedback + assignee notification.
+      ctx.hooks?.onTicketCreated?.(id, { priority, assignee: assignee || null, title })
       return { ticket_id: id }
     },
   },
@@ -213,7 +254,7 @@ export const MCP_TOOLS: McpTool[] = [
     async handler(args, ctx) {
       const project = requireProject(args, ctx)
       const me = actor(ctx)
-      const access = await projectAccess(me, project).catch(() => null)
+      const access = ctx.access ?? null // C1-1: live membership from the entrypoint (see create_ticket).
       const row = await loadOwnedTicket(project, args.ticket_id)
       if (args.status !== undefined && !(V1_TICKET_STATUSES as readonly string[]).includes(args.status)) {
         throw new ToolError(`status must be one of: ${V1_TICKET_STATUSES.join(", ")}`)
@@ -242,6 +283,9 @@ export const MCP_TOOLS: McpTool[] = [
       if (meta.priority !== undefined && meta.priority !== row.priority) writes.push(insertActivity({ projectId: project, type: "ticket_priority_changed", actorEmail: me || null, feedbackId: row.id, meta: { from: row.priority, to: meta.priority } }).catch(() => {}))
       if (meta.assignee !== undefined && meta.assignee !== row.assignee) writes.push(insertActivity({ projectId: project, type: "ticket_assignee_changed", actorEmail: me || null, feedbackId: row.id, meta: { from: row.assignee, to: meta.assignee } }).catch(() => {}))
       if (writes.length) await Promise.all(writes)
+      // C2-2: same side effects as REST PATCH — syncTicketFields (priority) + assignee notification +
+      // autoCopyOnTriageAccept (status). The hook receives the pre-update row + the applied meta.
+      ctx.hooks?.onTicketUpdated?.(row.id, { prevRow: row, meta })
       const fresh = (await feedbackById(project, row.id).catch(() => null)) || row
       const labels = await labelsForFeedback(row.id).catch(() => [])
       return { ok: true, ticket: mapTicketToV1(fresh, labels) }
@@ -272,6 +316,8 @@ export const MCP_TOOLS: McpTool[] = [
       if (!text) throw new ToolError("body is required")
       if (text.length > 5000) throw new ToolError("body must be 5000 characters or fewer")
       const comment = await insertTicketComment(row.id, me || null, text)
+      // C2-2: same side effect as REST comment — push to every linked external tracker.
+      ctx.hooks?.onTicketComment?.(row.id, text, comment.id)
       return { comment: { id: comment.id, author: comment.author, body: comment.body, created_at: comment.createdAt } }
     },
   },

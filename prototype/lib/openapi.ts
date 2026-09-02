@@ -15,6 +15,7 @@ export const V1_PATHS = [
   "/api/v1/tickets/{id}",
   "/api/v1/tickets/{id}/comments",
   "/api/v1/tickets/{id}/activity",
+  "/api/v1/tickets/{id}/replay",
 ] as const
 
 const bearer = [{ kciBearer: [] as string[] }]
@@ -517,6 +518,20 @@ export function buildOpenApiSpec(baseUrl = "https://klavity.in"): Record<string,
                   schema: { type: "object", properties: { ticket_id: { type: "string" }, events: { type: "array", items: { type: "object" } } } },
                 },
               },
+            },
+            "401": errorResponse, "403": errorResponse, "404": errorResponse,
+          },
+        },
+      },
+      "/api/v1/tickets/{id}/replay": {
+        get: {
+          summary: "Stream a ticket's gzipped rrweb session replay",
+          description: "Returns the recorded session-replay events for a ticket, gzip-encoded (Content-Encoding: gzip; body is a JSON events array). 404 when the ticket has no recording. This is the URL returned as `replay_url` by the single-ticket GET.",
+          parameters: [idPath],
+          responses: {
+            "200": {
+              description: "OK — gzipped JSON events array",
+              content: { "application/json": { schema: { type: "array", items: { type: "object" } } } },
             },
             "401": errorResponse, "403": errorResponse, "404": errorResponse,
           },
