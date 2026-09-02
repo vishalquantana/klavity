@@ -7323,6 +7323,12 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           // Update state
           const tkt = (state.tickets || []).find(x => x.id === ticketId)
           if (tkt) tkt.status = newStatus
+          // Also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it, NOT
+          // state.tickets. Mirrors the optimistic drag path (moveTicketColumn) so onChange's
+          // renderTicketsKanban() moves the card into its new column immediately instead of waiting
+          // up to 15s for the next boardRevTick poll (which is suppressed while the ticket is open).
+          const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
+          if (bt) bt.status = newStatus
           recordLocalEdit(ticketId, { status: newStatus })   // #532
           if (onChange) onChange("status", newStatus)
           // B.7: closing a guard-caught ticket → OFFER the one-click regression-caught receipt (never
