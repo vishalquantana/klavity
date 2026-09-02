@@ -502,5 +502,12 @@
     "excerpt": "Persona-based usability testing runs your product through the eyes of specific user types to find friction before real users hit it. Here's the workflow.",
     "category": "Guides",
     "date": "2026-09-01"
+  },
+  {
+    "slug": "how-to-test-for-accessibility-bugs",
+    "title": "How to Test for Accessibility Bugs: A Practical Checklist",
+    "excerpt": "Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them.",
+    "category": "Guides",
+    "date": "2026-09-02"
   }
 ]

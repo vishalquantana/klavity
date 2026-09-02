@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Test for Accessibility Bugs: A Practical Checklist · Klavity</title>
+<meta name="description" content="Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-test-for-accessibility-bugs">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Test for Accessibility Bugs: A Practical Checklist"><meta property="og:description" content="Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-test-for-accessibility-bugs"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Test for Accessibility Bugs: A Practical Checklist"><meta name="twitter:description" content="Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Test for Accessibility Bugs: A Practical Checklist","description":"Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them.","datePublished":"2026-09-02","dateModified":"2026-09-02","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-test-for-accessibility-bugs","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Test for Accessibility Bugs: A Practical Checklist","item":"https://klavity.in/blog/how-to-test-for-accessibility-bugs"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-test-for-accessibility-bugs"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can accessibility testing be fully automated?","acceptedAnswer":{"@type":"Answer","text":"No. Automated scanners catch machine-checkable issues like missing alt text, low contrast, and missing form labels, but they can't judge whether alt text is meaningful, whether focus order is logical, or whether a screen reader announces a control correctly. Plan on a manual keyboard and screen-reader pass for anything user-facing."}},{"@type":"Question","name":"What is the WCAG contrast requirement?","acceptedAnswer":{"@type":"Answer","text":"WCAG 2.1 Level AA requires a contrast ratio of at least 4.5:1 for normal text and 3:1 for large text (18pt, or 14pt bold), plus 3:1 for UI components and graphical objects. Remember to check text over images and the hover, focus, and disabled states, not just the default state."}},{"@type":"Question","name":"Which screen reader should I test with?","acceptedAnswer":{"@type":"Answer","text":"Start with the free options: NVDA on Windows and VoiceOver on macOS and iOS. If your users skew enterprise, add JAWS. Pair each screen reader with a browser it works well with — NVDA with Firefox or Chrome, VoiceOver with Safari."}},{"@type":"Question","name":"How do I file an accessibility bug so it gets fixed?","acceptedAnswer":{"@type":"Answer","text":"Name the specific WCAG success criterion, the assistive technology and browser you used, the exact steps, and what you expected the tech to announce or do versus what it actually did. Capturing the DOM and console state alongside the report removes the guesswork for the developer."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-02</div>
+    <h1>How to Test for Accessibility Bugs: A Practical Checklist</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>To catch accessibility bugs, run a fixed checklist: keyboard operation, WCAG 2.1 AA contrast (4.5:1 for normal text, 3:1 for large text), visible focus, text alternatives, and form labels, plus one screen-reader pass. Automated scanners only find the machine-checkable subset, so the manual passes are where most real defects surface.</div>
+    <div class="prose"><p>To test for accessibility bugs, work through a fixed checklist covering keyboard operation, color contrast, focus visibility, text alternatives, form labels, and screen-reader output. This matters because most accessibility defects produce no console error and no visible breakage — they only surface when you deliberately check for them against the <a href="https://www.w3.org/WAI/WCAG21/quickref/" rel="noopener" target="_blank">WCAG 2.1 AA</a> success criteria. The passes below take a trained tester a few minutes per screen and catch the issues automated scanners cannot.</p>
+
+<h2>What counts as an accessibility bug?</h2>
+<p>An accessibility bug is any defect that prevents someone using assistive technology — a screen reader, keyboard-only navigation, voice control, or screen magnification — from completing a task that a mouse-and-monitor user can. Unlike a functional bug, it rarely throws an exception. The button still works with a mouse; it just can't be reached with a keyboard, or its purpose is never announced to a screen reader.</p>
+<p>That invisibility is exactly why accessibility issues slip through normal QA. Your team tests with a mouse, sees the happy path work, and moves on. To find these bugs you have to change how you drive the product, not just what you click.</p>
+
+<h2>The accessibility testing checklist</h2>
+<p>Run these passes in order on every user-facing screen. Each maps to real WCAG criteria, so a failure gives you a citable reference for the bug report.</p>
+<ol>
+<li><strong>Keyboard-only pass.</strong> Put the mouse away. Using only Tab, Shift+Tab, Enter, Space, Escape, and arrow keys, complete the primary task on the page. Every interactive element must be reachable, operable, and free of keyboard traps (a place you can Tab into but not out of). Menus, modals, date pickers, and custom dropdowns are where this most often fails.</li>
+<li><strong>Visible focus pass.</strong> As you Tab, confirm you can always see where focus is. A focus indicator that is invisible, or removed with <em>outline: none</em> and never replaced, is a failure — the most common one on custom-styled sites.</li>
+<li><strong>Contrast pass.</strong> Check text and UI colors against WCAG AA: at least 4.5:1 for normal text and 3:1 for large text (18pt, or 14pt bold), plus 3:1 for meaningful icons, borders, and form-field outlines. Don't forget placeholder text, disabled states, and text sitting over background images.</li>
+<li><strong>Text-alternatives pass.</strong> Every image that conveys information needs a meaningful <em>alt</em> attribute; purely decorative images should have an empty <em>alt=""</em> so screen readers skip them. Icon-only buttons need an accessible name via <em>aria-label</em> or visually hidden text.</li>
+<li><strong>Form-labels pass.</strong> Every input, select, and textarea must have a programmatically associated label (a <em>&lt;label&gt;</em>, or <em>aria-label</em>/<em>aria-labelledby</em>). Error messages must be tied to their field and announced, not shown only as red text.</li>
+<li><strong>Structure pass.</strong> Confirm headings are real heading elements in a logical order (no jumping from h1 to h4), that landmarks like nav and main exist, and that content order in the DOM matches the visual order. Screen readers and keyboard users follow DOM order, not CSS position.</li>
+<li><strong>Screen-reader pass.</strong> Turn on NVDA or VoiceOver and complete the task by listening. You are checking that each control announces its name, role, and state — "Submit, button" or "Remember me, checkbox, not checked" — and that dynamic updates (validation errors, loading states) are spoken via live regions.</li>
+<li><strong>Zoom and reflow pass.</strong> Zoom the browser to 200% and confirm nothing is clipped or overlapping; WCAG also expects content to reflow without horizontal scrolling at narrow widths. Check that <em>prefers-reduced-motion</em> is honored for animations.</li>
+</ol>
+
+<h2>Which accessibility tests to automate vs. do manually</h2>
+<p>Automated scanners such as axe or Lighthouse are the right first step, but they only detect the machine-checkable subset of problems: missing alt attributes, low contrast, missing labels, and invalid ARIA. They cannot tell you whether alt text is <em>accurate</em>, whether focus order makes sense, or whether a screen reader announces a widget correctly. Treat automation as a fast filter for obvious regressions, and reserve human time for the keyboard and screen-reader passes above.</p>
+<p>A practical split:</p>
+<ul>
+<li><strong>Automate in CI:</strong> per-page axe scans on your critical routes, so a newly shipped contrast or missing-label regression fails the build immediately. If you already drive end-to-end flows with a tool like <a href="/autosim">AutoSim</a>, add a keyboard-navigation assertion so a broken tab order is caught as a test failure, not a support ticket.</li>
+<li><strong>Do manually each release:</strong> a keyboard-only run and a single screen-reader pass through your top three user journeys. These change slowly, so a short scripted checklist keeps them cheap.</li>
+</ul>
+
+<h2>How to write an accessibility bug report that gets fixed</h2>
+<p>Accessibility bugs get bounced back as "works for me" more than any other kind, because the developer reproduces it with a mouse and sees nothing wrong. Close that gap by giving them everything needed to reproduce it the way you did.</p>
+<ol>
+<li><strong>Name the WCAG criterion.</strong> "Fails WCAG 2.1 SC 2.1.1 Keyboard" turns a subjective complaint into a standard the fix can be verified against.</li>
+<li><strong>State the assistive tech and browser.</strong> "NVDA 2024.x on Firefox" — behavior differs across screen-reader and browser pairings, so the combination matters.</li>
+<li><strong>Give the exact interaction.</strong> Which key you pressed, where focus was, and what you expected to be announced or to happen versus what actually happened.</li>
+<li><strong>Attach the state.</strong> A screenshot shows a visual issue, but keyboard and screen-reader bugs live in the DOM and the accessibility tree. Capturing the page's DOM, console, and network state at the moment you hit the bug — which is exactly what <a href="/snap">Klavity Snap</a> does from a right-click — lets the developer inspect the same markup instead of guessing.</li>
+</ol>
+<p>For the broader format that applies to any defect, see our guide on <a href="/blog/how-to-write-a-bug-report-developers-act-on">writing a bug report developers will act on</a>.</p>
+
+<h2>Where to start if you've never tested accessibility</h2>
+<p>Don't try to audit everything at once. Pick your single most-used flow — sign-up, checkout, or the core action of your product — and run just the keyboard-only pass on it today. It requires no tools, takes minutes, and almost always surfaces at least one real bug. Add the contrast and screen-reader passes next week, then wire an automated axe scan into CI so you stop reintroducing the issues you just fixed. Consistency on one flow beats a one-time audit of the whole app that never gets repeated.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Tab through every page: each control must be reachable, operable, and show a visible focus ring.</li><li>Check contrast against WCAG AA — 4.5:1 for normal text, 3:1 for large text and UI components.</li><li>Run one screen-reader pass (NVDA or VoiceOver) on every user-facing flow, not just the homepage.</li><li>File a11y bugs with the WCAG criterion, the assistive tech and browser, and captured page state.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can accessibility testing be fully automated?</summary><p>No. Automated scanners catch machine-checkable issues like missing alt text, low contrast, and missing form labels, but they can't judge whether alt text is meaningful, whether focus order is logical, or whether a screen reader announces a control correctly. Plan on a manual keyboard and screen-reader pass for anything user-facing.</p></details><details><summary>What is the WCAG contrast requirement?</summary><p>WCAG 2.1 Level AA requires a contrast ratio of at least 4.5:1 for normal text and 3:1 for large text (18pt, or 14pt bold), plus 3:1 for UI components and graphical objects. Remember to check text over images and the hover, focus, and disabled states, not just the default state.</p></details><details><summary>Which screen reader should I test with?</summary><p>Start with the free options: NVDA on Windows and VoiceOver on macOS and iOS. If your users skew enterprise, add JAWS. Pair each screen reader with a browser it works well with — NVDA with Firefox or Chrome, VoiceOver with Safari.</p></details><details><summary>How do I file an accessibility bug so it gets fixed?</summary><p>Name the specific WCAG success criterion, the assistive technology and browser you used, the exact steps, and what you expected the tech to announce or do versus what it actually did. Capturing the DOM and console state alongside the report removes the guesswork for the developer.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
