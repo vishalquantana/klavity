@@ -3171,7 +3171,13 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
             <button class="btn btn-sm" id="ciRevealCopy" type="button"><span data-ki="copy"></span> Copy</button>
           </div>
 
-          <div style="font-size:12px;font-weight:700;margin:10px 0 4px">MCP — <code>.mcp.json</code> (Claude / agents)</div>
+          <!-- One-click "Connect your AI": paste into Claude / Cursor / any agent and it self-configures
+               (reads /llms.txt + /openapi.json, learns to trigger→poll→fetch findings→wire CI/CD). -->
+          <div style="font-size:12px;font-weight:700;margin:6px 0 4px;display:flex;align-items:center;gap:8px">Connect your AI <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— paste into Claude, Cursor, or any agent</span></div>
+          <code id="ciAiPrompt" style="display:block;background:#15110d;border:1px solid rgba(243,236,225,.16);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11px;color:#f3ece1;overflow:auto;white-space:pre-wrap;line-height:1.5"></code>
+          <div style="margin-top:8px"><button class="btn btn-indigo btn-sm" id="ciCopyAiPrompt" type="button"><span data-ki="sparkles"></span> Copy AI setup prompt</button></div>
+
+          <div style="font-size:12px;font-weight:700;margin:14px 0 4px">MCP — <code>.mcp.json</code> (Claude / agents)</div>
           <code id="ciMcpSnippet" style="display:block;background:#15110d;border:1px solid rgba(243,236,225,.16);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11px;color:#f3ece1;overflow:auto;white-space:pre"></code>
 
           <div style="font-size:12px;font-weight:700;margin:14px 0 4px">REST — trigger an authored AutoSim run (cURL)</div>
@@ -12544,8 +12550,24 @@ function ciBuildSnippets(token) {
     '  -H "Authorization: Bearer ' + token + '" \\\n' +
     '  -H "Content-Type: application/json" \\\n' +
     "  -d '" + JSON.stringify({ project_id: pid, objective: "Log in and smoke-test the core flow" }) + "'"
+  // Ready-to-paste prompt so an agent self-configures from the public docs — no hand-holding.
+  var aiPrompt = [
+    "You are connecting to the Klavity AutoSim API to run AI QA walks of a web app.",
+    "",
+    "- API base URL: " + base,
+    "- Auth (every request): Authorization: Bearer " + token,
+    "- Project id: " + pid,
+    "- Read " + base + "/llms.txt for the full API. Machine-readable spec: " + base + "/openapi.json",
+    "",
+    "To run QA: POST " + base + "/api/v1/authored-runs with JSON {project_id, target_url, objective},",
+    "poll the returned status_url until status is terminal, then GET the run's /report for findings to fix.",
+    "For MCP (Claude Code / Cursor), add this to .mcp.json: " + mcp.replace(/\n\s*/g, " "),
+    "You can also wire this into CI/CD — copy the GitHub Actions / GitLab templates from " + base + "/llms-full.txt.",
+  ].join("\n")
   var mcpEl = $("ciMcpSnippet"); if (mcpEl) mcpEl.textContent = mcp
   var curlEl = $("ciCurlSnippet"); if (curlEl) curlEl.textContent = curl
+  var aiEl = $("ciAiPrompt"); if (aiEl) aiEl.textContent = aiPrompt
+  ciBuildSnippets._aiPrompt = aiPrompt
 }
 
 var _ciWired = false
@@ -12596,6 +12618,17 @@ function _wireCi() {
       else if (revealVal) { revealVal.select(); document.execCommand("copy") }
       var old = copyBtn.innerHTML; copyBtn.textContent = "Copied"
       setTimeout(function() { copyBtn.innerHTML = old }, 1400)
+    } catch (e) {}
+  })
+
+  var copyAiBtn = $("ciCopyAiPrompt")
+  if (copyAiBtn) copyAiBtn.addEventListener("click", async function() {
+    var text = ciBuildSnippets._aiPrompt || ($("ciAiPrompt") && $("ciAiPrompt").textContent) || ""
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text) }
+      else { var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta) }
+      var old = copyAiBtn.innerHTML; copyAiBtn.textContent = "Copied ✓"
+      setTimeout(function() { copyAiBtn.innerHTML = old }, 1600)
     } catch (e) {}
   })
 

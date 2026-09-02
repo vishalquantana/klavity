@@ -1,0 +1,256 @@
+# Klavity AutoSim API — full reference
+
+Base URL: `https://klavity.in`
+Auth (every endpoint): `Authorization: Bearer kci_<token>`
+Machine-readable contract: `https://klavity.in/openapi.json` (OpenAPI 3.1)
+
+Klavity AutoSim drives your real web UI with an AI agent, verifies an objective,
+and files structured findings. Two REST surfaces exist:
+
+- `/api/v1/*` — the current contract (use this).
+- `/api/ci/*` — legacy trigger alias, still supported (see /docs/ci-api.md).
+
+There is also an MCP server at `POST /mcp` exposing the same capability as tools
+(see /docs/mcp.md).
+
+---
+
+## Authentication & scoping
+
+- Header: `Authorization: Bearer kci_<token>`. Missing/invalid → `401`.
+- The token is bound to ONE project. Every write takes `project_id` in the body;
+  every read takes `?project=<id>` in the query. A mismatch with the token's
+  project → `403`.
+- Get / revoke tokens: Klavity dashboard → Settings → "API tokens".
+- Error envelope (all errors): `{ "error": { "code": "...", "message": "...", "request_id": "abcd1234" } }`.
+
+---
+
+## Endpoints
+
+### POST /api/v1/authored-runs
+Objective-driven run: give a URL and a plain-English objective; the engine
+authors a Trail AND runs a verification walk. Rate limit: 10/min/project.
+
+Request body:
+```json
+{
+  "project_id": "proj_...",        // required, must match token
+  "target_url": "https://app.example.com/checkout",  // required, http(s), <=500 chars
+  "objective": "Sign in and confirm the checkout total matches the cart",  // required, 10-4000 chars
+  "name": "optional run name",
+  "test_account": { "email": "...", "password": "..." }  // optional, for auth walls
+}
+```
+Optional header `Idempotency-Key: <=200 chars` (safe retries; replay returns 200 with `idempotent_replay: true`).
+
+Response `202`:
+```json
+{ "authored_run_id": "aut_...", "status": "authoring", "status_url": "/api/v1/authored-runs/aut_..." }
+```
+Errors: `400 bad_request`, `402 plan_required`, `403 forbidden`, `409 busy|idempotency_conflict`, `500 internal`.
+
+### GET /api/v1/authored-runs/:id?project=:id
+Response `200`:
+```json
+{
+  "authored_run_id": "aut_...",
+  "status": "authoring|completed|failed|needs_auth|cancelled",
+  "trail_id": "trl_...|null",
+  "verification_run_id": "walk_...|null",
+  "verdict": "green|amber|red|skip|null",
+  "objective_verified": true,
+  "stall_reason": null,
+  "created_at": 0, "updated_at": 0
+}
+```
+When `status == completed`, use `verification_run_id` as the run id for the report endpoint below. `404 not_found` if unknown.
+
+### POST /api/v1/authored-runs/:id/cancel?project=:id
+Best-effort cooperative cancel. Response `200`: authored-run status + `cancel_requested: bool`.
+
+---
+
+### POST /api/v1/runs
+Re-run an existing Trail. Rate limit: 30/min/project.
+
+Request body:
+```json
+{
+  "project_id": "proj_...",   // required, must match token
+  "trail_id": "trl_...",      // required
+  "git": { "sha": "abc123", "pr": "42", "branch": "main" }  // optional metadata
+}
+```
+Optional header `Idempotency-Key`.
+
+Response `202`:
+```json
+{
+  "run_id": "walk_...",
+  "status": "queued",
+  "status_url": "/api/v1/runs/walk_...",
+  "report_url": "/api/v1/runs/walk_.../report",
+  "git": { "sha": "abc123", "pr": "42", "branch": "main" }
+}
+```
+Errors: `400 bad_request`, `403 forbidden`, `404 not_found` (trail), `409 run_busy|trail_paused|plan_locked|idempotency_conflict`, `500 internal`.
+
+### GET /api/v1/runs?project=:id
+List recent runs. Query: `project` (required), `limit` (default 20, 1-100).
+Response `200`:
+```json
+{ "runs": [ { "run_id": "walk_...", "trail_id": "trl_...", "status": "...", "verdict": "...", "started_at": 0, "finished_at": 0 } ] }
+```
+
+### GET /api/v1/runs/:id?project=:id
+Response `200`:
+```json
+{
+  "run_id": "walk_...",
+  "trail_id": "trl_...",
+  "status": "queued|running|completed|failed|cancelled",
+  "verdict": "green|amber|red|skip|null",
+  "summary": { "counts_by_severity": { "C1": 0, "C2": 1, "C3": 2 } },
+  "started_at": 0, "finished_at": 0,
+  "git": { "sha": "...", "pr": "...", "branch": "..." }
+}
+```
+`verdict` is null until terminal. `404 not_found` if unknown.
+
+### GET /api/v1/runs/:id/report?project=:id
+Cursor-paginated findings. Query: `project` (required), `limit` (default 50, 1-200), `cursor` (opaque keyset from `next_cursor`).
+Response `200`:
+```json
+{
+  "run_id": "walk_...",
+  "verdict": "green|amber|red|skip|null",
+  "issues": [
+    {
+      "id": "...",
+      "severity": "C1|C2|C3",
+      "title": "...",
+      "description": "...",
+      "target": { "url": "...", "selector": "..." },
+      "evidence": { "screenshot_url": "...", "replay_url": "..." },
+      "ground_quote": "verbatim UI text the finding is grounded in"
+    }
+  ],
+  "next_cursor": "..."   // pass back as ?cursor= to page; null/absent when done
+}
+```
+
+### POST /api/v1/runs/:id/cancel?project=:id
+Best-effort cancel. Response `200`: `{ "run_id": "...", "status": "...", "cancel_requested": true }`.
+
+Status enums:
+- run `status`: `queued | running | completed | failed | cancelled`
+- `verdict` (terminal): `green` (pass) | `amber` (self-healed drift / warn) | `red` (regression) | `skip` (no steps) | `null` (not terminal yet)
+
+---
+
+## Minimal agent loop (bash)
+
+```bash
+BASE=https://klavity.in
+TOK=kci_YOUR_TOKEN
+PID=proj_YOUR_PROJECT
+
+# 1. Trigger an objective-driven run
+AUT=$(curl -sf -X POST "$BASE/api/v1/authored-runs" \
+  -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d "{\"project_id\":\"$PID\",\"target_url\":\"https://app.example.com\",\"objective\":\"Sign in and reach the dashboard\"}" \
+  | jq -r '.authored_run_id')
+
+# 2. Poll authoring → get the verification run id
+while :; do
+  S=$(curl -sf "$BASE/api/v1/authored-runs/$AUT?project=$PID" -H "Authorization: Bearer $TOK")
+  ST=$(echo "$S" | jq -r '.status'); echo "authored: $ST"
+  [ "$ST" != "authoring" ] && break; sleep 8
+done
+RUN=$(echo "$S" | jq -r '.verification_run_id')
+
+# 3. Poll the run to completion
+while :; do
+  R=$(curl -sf "$BASE/api/v1/runs/$RUN?project=$PID" -H "Authorization: Bearer $TOK")
+  RS=$(echo "$R" | jq -r '.status'); echo "run: $RS"
+  case "$RS" in completed|failed|cancelled) break;; esac; sleep 8
+done
+
+# 4. Pull findings to work on
+curl -sf "$BASE/api/v1/runs/$RUN/report?project=$PID" -H "Authorization: Bearer $TOK" | jq '.issues'
+```
+
+---
+
+## CI/CD templates
+
+### GitHub Actions (.github/workflows/klavity.yml)
+```yaml
+name: Klavity AutoSim
+on: [deployment_status]        # or: workflow_dispatch / push
+jobs:
+  autosim:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Klavity Trail
+        env:
+          BASE: https://klavity.in
+          TOK: ${{ secrets.KLAVITY_CI_TOKEN }}
+          PID: ${{ secrets.KLAVITY_PROJECT_ID }}
+          TRAIL: ${{ secrets.KLAVITY_TRAIL_ID }}
+        run: |
+          RUN=$(curl -sf -X POST "$BASE/api/v1/runs" \
+            -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+            -d "{\"project_id\":\"$PID\",\"trail_id\":\"$TRAIL\",\"git\":{\"sha\":\"$GITHUB_SHA\",\"branch\":\"$GITHUB_REF_NAME\"}}" \
+            | jq -r '.run_id')
+          for i in $(seq 1 40); do
+            V=$(curl -sf "$BASE/api/v1/runs/$RUN?project=$PID" -H "Authorization: Bearer $TOK")
+            ST=$(echo "$V" | jq -r '.status'); echo "status: $ST"
+            case "$ST" in completed|failed|cancelled) break;; esac; sleep 10
+          done
+          VERDICT=$(echo "$V" | jq -r '.verdict')
+          echo "verdict: $VERDICT"
+          curl -sf "$BASE/api/v1/runs/$RUN/report?project=$PID" -H "Authorization: Bearer $TOK" | jq '.issues'
+          [ "$VERDICT" = "red" ] && exit 1 || exit 0   # fail the build on a regression
+```
+
+### GitLab CI (.gitlab-ci.yml)
+```yaml
+klavity_autosim:
+  image: alpine:latest
+  before_script: [ "apk add --no-cache curl jq" ]
+  variables:
+    BASE: "https://klavity.in"
+  script:
+    - |
+      RUN=$(curl -sf -X POST "$BASE/api/v1/runs" \
+        -H "Authorization: Bearer $KLAVITY_CI_TOKEN" -H "Content-Type: application/json" \
+        -d "{\"project_id\":\"$KLAVITY_PROJECT_ID\",\"trail_id\":\"$KLAVITY_TRAIL_ID\",\"git\":{\"sha\":\"$CI_COMMIT_SHA\",\"branch\":\"$CI_COMMIT_REF_NAME\"}}" \
+        | jq -r '.run_id')
+      for i in $(seq 1 40); do
+        V=$(curl -sf "$BASE/api/v1/runs/$RUN?project=$KLAVITY_PROJECT_ID" -H "Authorization: Bearer $KLAVITY_CI_TOKEN")
+        ST=$(echo "$V" | jq -r '.status'); echo "status: $ST"
+        case "$ST" in completed|failed|cancelled) break;; esac; sleep 10
+      done
+      VERDICT=$(echo "$V" | jq -r '.verdict'); echo "verdict: $VERDICT"
+      [ "$VERDICT" = "red" ] && exit 1 || exit 0
+```
+
+Set CI secrets `KLAVITY_CI_TOKEN`, `KLAVITY_PROJECT_ID`, `KLAVITY_TRAIL_ID`
+(create a Trail once in the dashboard, or use `/api/v1/authored-runs` to author
+one on the fly from an objective).
+
+---
+
+## MCP (Claude Code / Cursor)
+
+`POST https://klavity.in/mcp` — JSON-RPC 2.0, same `kci_` bearer. Config:
+```json
+{ "mcpServers": { "klavity-autosim": {
+  "type": "http", "url": "https://klavity.in/mcp",
+  "headers": { "Authorization": "Bearer kci_YOUR_TOKEN" } } } }
+```
+Tools: `start_qa_run`, `start_authored_run`, `get_qa_run`, `get_qa_report`,
+`get_authored_run`, `list_qa_runs`. Every tool takes `project_id`.
+Full details: https://klavity.in/docs/mcp.md

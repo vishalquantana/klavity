@@ -109,6 +109,7 @@ import { runWalkNow } from "./lib/trails-trigger"
 // KLA-550: /api/v1/runs — REST wrapper over the AutoSim/Trail engine (idempotency + git + AI report).
 import { getIdempotentRunId, saveIdempotentRunId, saveWalkGit, getWalkGit } from "./lib/db"
 import { buildV1RunStatus, buildV1Report, v1StatusForWalk } from "./lib/v1-runs"
+import { buildOpenApiSpec } from "./lib/openapi"
 import { buildAuthoredRunStatus } from "./lib/v1-authored"
 import { listRecentWalks } from "./lib/trails"
 import { startTrailScheduler, isValidCron } from "./lib/trails-scheduler"
@@ -291,6 +292,7 @@ const FREETOOL_DAILY_CAP_USD = Number(process.env.KLAV_FREETOOL_DAILY_CAP_USD ||
 const SITE = import.meta.dir + "/../site"
 const PUB = import.meta.dir + "/public"
 const REPO_ROOT = import.meta.dir + "/.."
+const DOCS = import.meta.dir + "/docs"
 const SESSION_DAYS = 90 // 90-day sessions — matches projectCookie precedent in lib/auth.ts
 // KLA-210 (JTBD 7.5): the expiry choices the Share manager offers at mint / extend time.
 const ALLOWED_SHARE_TTL_DAYS = new Set([7, 30, 90])
@@ -3720,6 +3722,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return new Response(Bun.file(SITE + "/app-icon-1024.png"), { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } })
     if (req.method === "GET" && path === "/apple-touch-icon.png")
       return new Response(Bun.file(SITE + "/apple-touch-icon.png"), { headers: { "content-type": "image/png", "cache-control": "public, max-age=31536000, immutable" } })
+
+    // ── public agent/API docs (unauthenticated, curl-able) ──
+    // So an AI agent can bootstrap the API before it has a token: /llms.txt is the
+    // concise index, /llms-full.txt the full reference + CI/CD templates, /openapi.json
+    // the machine contract, and /docs/*.md the prose. MUST stay above the session wall.
+    const docHeaders = (ct: string) => ({ "content-type": ct + "; charset=utf-8", "cache-control": "public, max-age=300" })
+    if (req.method === "GET" && path === "/llms.txt")
+      return new Response(Bun.file(DOCS + "/llms.txt"), { headers: docHeaders("text/plain") })
+    if (req.method === "GET" && path === "/llms-full.txt")
+      return new Response(Bun.file(DOCS + "/llms-full.txt"), { headers: docHeaders("text/plain") })
+    if (req.method === "GET" && path === "/openapi.json")
+      return new Response(JSON.stringify(buildOpenApiSpec(url.origin), null, 2), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" } })
+    if (req.method === "GET" && (path === "/docs/mcp.md" || path === "/docs/ci-api.md")) {
+      const name = path.slice("/docs/".length)   // exact allow-list above → no traversal
+      return new Response(Bun.file(DOCS + "/" + name), { headers: docHeaders("text/markdown") })
+    }
 
     // ── public marketing + login ──
     if (req.method === "GET" && path === "/") return htmlPage(SITE + "/index.html")
