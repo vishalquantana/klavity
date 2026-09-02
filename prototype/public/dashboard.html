@@ -30,6 +30,12 @@
 *{margin:0;padding:0;box-sizing:border-box}
 html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 body{background:var(--ink);color:var(--paper);font-family:var(--body);min-height:100vh}
+/* Global comfort floor for text inputs / textarea / select. The app scopes padding per
+   component, but un-scoped inputs (e.g. the API-token name field) fell back to the browser's
+   cramped default. :where() has zero specificity, so every component rule still overrides this —
+   it only rescues inputs that had NO padding, giving all fields roomy, consistent spacing. */
+input:where([type="text"],[type="email"],[type="url"],[type="password"],[type="number"],[type="search"],[type="tel"],[type="date"],[type="time"],:not([type])),
+textarea:where(*), select:where(*){padding:11px 13px;line-height:1.45;font-size:14px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(80% 50% at 50% -5%,rgba(139,139,245,.08),transparent 60%)}
 a{color:inherit;text-decoration:none}
 .bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
