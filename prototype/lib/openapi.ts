@@ -16,9 +16,16 @@ export const V1_PATHS = [
   "/api/v1/tickets/{id}/comments",
   "/api/v1/tickets/{id}/activity",
   "/api/v1/tickets/{id}/replay",
+  // ── Account-scoped management API (kma_ token) ──
+  "/api/v1/projects",
+  "/api/v1/projects/{id}",
+  "/api/v1/projects/{id}/members",
+  "/api/v1/members",
 ] as const
 
 const bearer = [{ kciBearer: [] as string[] }]
+// Account-scoped management surface uses a distinct kma_ token (see securitySchemes.kmaBearer).
+const kmaBearer = [{ kmaBearer: [] as string[] }]
 
 const errorResponse = {
   description: "Error",
@@ -77,6 +84,12 @@ export function buildOpenApiSpec(baseUrl = "https://klavity.in"): Record<string,
           scheme: "bearer",
           bearerFormat: "kci_<token>",
           description: "Project-scoped token. Header: `Authorization: Bearer kci_...`",
+        },
+        kmaBearer: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "kma_<token>",
+          description: "Account-scoped MANAGEMENT token (Dashboard → Settings → Management API tokens). Header: `Authorization: Bearer kma_...`. Used only by the management endpoints (projects/members).",
         },
       },
       schemas: {
@@ -534,6 +547,93 @@ export function buildOpenApiSpec(baseUrl = "https://klavity.in"): Record<string,
               content: { "application/json": { schema: { type: "array", items: { type: "object" } } } },
             },
             "401": errorResponse, "403": errorResponse, "404": errorResponse,
+          },
+        },
+      },
+      // ── Account-scoped management API (kma_ token) ──
+      "/api/v1/projects": {
+        get: {
+          tags: ["management"],
+          security: kmaBearer,
+          summary: "List projects in the account",
+          description: "Every project in the management token's account. Auth: `Authorization: Bearer kma_...`.",
+          responses: {
+            "200": {
+              description: "OK",
+              content: { "application/json": { schema: { type: "object", properties: {
+                projects: { type: "array", items: { type: "object", properties: {
+                  id: { type: "string" }, name: { type: "string" }, status: { type: "string" }, created_at: { type: "integer" } } } } } } } },
+            },
+            "401": errorResponse, "403": errorResponse,
+          },
+        },
+        post: {
+          tags: ["management"],
+          security: kmaBearer,
+          summary: "Create a project",
+          description: "Owner/admin only. Rate limit: 10/min/account.",
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: {
+              type: "object", required: ["name"],
+              properties: { name: { type: "string", maxLength: 120 }, site_url: { type: "string", maxLength: 500 } } } } },
+          },
+          responses: {
+            "201": { description: "Created", content: { "application/json": { schema: { type: "object", properties: {
+              project: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } } } } } } },
+            "400": errorResponse, "401": errorResponse, "402": errorResponse, "403": errorResponse, "429": errorResponse,
+          },
+        },
+      },
+      "/api/v1/projects/{id}": {
+        get: {
+          tags: ["management"],
+          security: kmaBearer,
+          summary: "Get a project's detail",
+          description: "404 (not found) if the project is not in the token's account (IDOR guard).",
+          parameters: [idPath],
+          responses: {
+            "200": {
+              description: "OK",
+              content: { "application/json": { schema: { type: "object", properties: {
+                id: { type: "string" }, name: { type: "string" }, status: { type: "string" }, created_at: { type: "integer" }, members_count: { type: "integer" } } } } },
+            },
+            "401": errorResponse, "403": errorResponse, "404": errorResponse,
+          },
+        },
+      },
+      "/api/v1/projects/{id}/members": {
+        post: {
+          tags: ["management"],
+          security: kmaBearer,
+          summary: "Invite a member to a project",
+          description: "Owner/admin only. Adds the email to the project (and account) with the given role.",
+          parameters: [idPath],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: {
+              type: "object", required: ["email"],
+              properties: { email: { type: "string", format: "email" }, role: { type: "string", enum: ["admin", "member"], default: "member" } } } } },
+          },
+          responses: {
+            "201": { description: "Created", content: { "application/json": { schema: { type: "object", properties: { ok: { type: "boolean" } } } } } },
+            "400": errorResponse, "401": errorResponse, "403": errorResponse, "404": errorResponse, "429": errorResponse,
+          },
+        },
+      },
+      "/api/v1/members": {
+        get: {
+          tags: ["management"],
+          security: kmaBearer,
+          summary: "List the account's members",
+          description: "Email + native account role (owner|admin|member).",
+          responses: {
+            "200": {
+              description: "OK",
+              content: { "application/json": { schema: { type: "object", properties: {
+                members: { type: "array", items: { type: "object", properties: { email: { type: "string" }, role: { type: "string" } } } } } } } },
+            },
+            "401": errorResponse, "403": errorResponse,
           },
         },
       },

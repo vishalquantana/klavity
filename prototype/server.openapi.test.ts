@@ -42,6 +42,12 @@ test("openapi: every documented path+method is a real registered route (drift gu
     "/api/v1/tickets/{id}/comments": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\\\/comments\$/,
     "/api/v1/tickets/{id}/activity": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\\\/activity\$/,
     "/api/v1/tickets/{id}/replay": /\^\\\/api\\\/v1\\\/tickets\\\/\(\[\^\/\]\+\)\\\/replay\$/,
+    // Account-scoped management API (kma_). The list/create routes are matched by the isMgmtRoute
+    // string check; the :id + /members routes by the pm regex.
+    "/api/v1/projects": /path === "\/api\/v1\/projects"/,
+    "/api/v1/projects/{id}": /\^\\\/api\\\/v1\\\/projects\\\/\(\[\^\/\]\+\?\)\(\\\/members\)\?\$/,
+    "/api/v1/projects/{id}/members": /\^\\\/api\\\/v1\\\/projects\\\/\(\[\^\/\]\+\?\)\(\\\/members\)\?\$/,
+    "/api/v1/members": /path === "\/api\/v1\/members"/,
   }
   for (const p of V1_PATHS) {
     expect(anchors[p], `no drift anchor defined for ${p}`).toBeDefined()
