@@ -34,3 +34,28 @@ argument that does not match the token's project is rejected in-band (`isError: 
 - `list_comments { project_id, ticket_id }` → `{ ticket_id, comments }`
 - `add_comment { project_id, ticket_id, body }` → `{ comment }`
 - `get_ticket_activity { project_id, ticket_id }` → `{ ticket_id, events }` (comments + activity + connector exports)
+
+## Management MCP server (account-scoped)
+
+A SEPARATE MCP endpoint for account/workspace administration — create projects and invite members
+across a whole account, rather than operating inside one project.
+
+Endpoint: `POST https://klavity.in/api/v1/mcp-admin` (JSON-RPC 2.0, same framing as `/mcp`).
+Auth: `Authorization: Bearer <kma_ token>` — an ACCOUNT-scoped management token (Dashboard →
+Settings → Management API tokens). The project-scoped `kci_` token is NOT accepted here, and a
+`kma_` token is NOT accepted on `/mcp` or `/api/v1/tickets`. Server name: `klavity-management`.
+Rate limit: 120 requests/min/account.
+
+```json
+{ "mcpServers": { "klavity-management": {
+  "url": "https://klavity.in/api/v1/mcp-admin",
+  "headers": { "Authorization": "Bearer kma_YOUR_TOKEN" } } } }
+```
+
+### Management tools
+
+- `list_projects {}` → `{ projects: [{ id, name, status, created_at }] }`
+- `create_project { name, site_url? }` → `{ project: { id, name } }` (owner/admin only)
+- `get_project { project_id }` → `{ id, name, status, created_at, members_count }` (404 if not in the account)
+- `invite_member { project_id, email, role? }` → `{ ok: true }` (owner/admin only; role `admin`|`member`)
+- `list_members {}` → `{ members: [{ email, role }] }` (role: `owner`|`admin`|`member`)

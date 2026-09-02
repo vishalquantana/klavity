@@ -304,3 +304,42 @@ one on the fly from an objective).
 Tools: `start_qa_run`, `start_authored_run`, `get_qa_run`, `get_qa_report`,
 `get_authored_run`, `list_qa_runs`. Every tool takes `project_id`.
 Full details: https://klavity.in/docs/mcp.md
+
+---
+
+## Management API (account-scoped kma_ token)
+
+A SEPARATE, account/workspace-scoped surface for administration — create/list
+projects and invite members across a whole account. Auth is a distinct token
+type: a `kma_` MANAGEMENT token (Dashboard → Settings → Management API tokens).
+The project-scoped `kci_` token is NOT accepted on these routes, and a `kma_`
+token is NOT accepted on `/api/v1/tickets`, `/api/v1/runs`, or `/mcp`.
+
+Header: `Authorization: Bearer kma_YOUR_TOKEN`. Base: `https://klavity.in`.
+
+- `GET  /api/v1/projects`              → `{ projects: [{ id, name, status, created_at }] }`
+- `POST /api/v1/projects`              → create `{ name, site_url? }` → `{ project: { id, name } }` (owner/admin; 10/min/account)
+- `GET  /api/v1/projects/{id}`         → `{ id, name, status, created_at, members_count }` (404 if not in the account)
+- `POST /api/v1/projects/{id}/members` → invite `{ email, role? }` (`admin`|`member`) → `{ ok: true }` (owner/admin)
+- `GET  /api/v1/members`               → `{ members: [{ email, role }] }` (role: `owner`|`admin`|`member`)
+
+Errors use the same envelope: `{ error: { code, message, request_id } }`.
+
+Create a project:
+```bash
+curl -X POST https://klavity.in/api/v1/projects \
+  -H "Authorization: Bearer $KLAVITY_MGMT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Acme staging","site_url":"https://staging.acme.com"}'
+```
+
+### Management MCP
+
+`POST https://klavity.in/api/v1/mcp-admin` — JSON-RPC 2.0, `kma_` bearer,
+server name `klavity-management`. Config:
+```json
+{ "mcpServers": { "klavity-management": {
+  "type": "http", "url": "https://klavity.in/api/v1/mcp-admin",
+  "headers": { "Authorization": "Bearer kma_YOUR_TOKEN" } } } }
+```
+Tools: `list_projects`, `create_project`, `get_project`, `invite_member`, `list_members`.

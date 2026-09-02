@@ -3190,6 +3190,57 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </details>
 
+  <!-- ── Management API tokens (account-scoped kma_) — mint/copy/revoke the WORKSPACE-level tokens used
+       to create/list projects and invite members via the management REST API (/api/v1/projects) and the
+       mcp-admin endpoint. Distinct from the project-scoped "API tokens" drawer above. Copy-once. ── -->
+  <details class="drawer hide" id="kmaDrawer" data-view="settings">
+    <summary><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20" /><path d="M2 12h20" /><circle cx="12" cy="12" r="9" /></svg> Management API tokens <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">Account-scoped — create projects &amp; invite members</span> <span class="caret">›</span></summary>
+    <div class="drawer-in">
+      <div id="kmaAdmin" class="hide">
+        <p class="tacc-hint" style="margin-bottom:14px">These tokens are scoped to your whole WORKSPACE (not a single project). Use them to let an agent or script create/list projects and invite members via the management API. Treat each like a password — you'll only see the full token once, at creation.</p>
+
+        <div id="kmaTokenList" style="margin-bottom:16px"></div>
+
+        <button class="btn btn-indigo btn-sm" id="kmaNewTokenBtn" type="button"><span data-ki="plus"></span> New token</button>
+
+        <!-- Inline "new token" form (name -> Create) -->
+        <div id="kmaNewForm" class="hide" style="margin-top:14px;border:1px solid rgba(120,120,140,.22);border-radius:10px;padding:14px 16px;background:rgba(99,102,241,.06)">
+          <label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px">Token name
+            <input type="text" id="kmaTokenName" maxlength="80" placeholder="e.g. Provisioning bot" style="display:block;width:100%;margin-top:6px;font-weight:400" />
+          </label>
+          <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+            <button class="btn btn-indigo btn-sm" id="kmaCreateBtn" type="button">Create token</button>
+            <button class="btn btn-ghost btn-sm" id="kmaCancelNewBtn" type="button">Cancel</button>
+            <span id="kmaNewMsg" class="muted" style="font-size:12px"></span>
+          </div>
+        </div>
+
+        <!-- Copy-once reveal panel -->
+        <div id="kmaReveal" class="hide" style="margin-top:14px;border:1px solid rgba(244,63,94,.35);border-radius:10px;padding:14px 16px;background:rgba(244,63,94,.06)">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;color:var(--rose);margin-bottom:4px"><span data-ki="triangle-alert"></span> Copy this token now</div>
+          <p style="font-size:12px;margin:0 0 10px;color:var(--rose)"><b>You won't be able to see this again.</b> Store it in your secrets or agent config before closing.</p>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+            <input type="text" id="kmaRevealVal" readonly style="flex:1;font-family:var(--mono);font-size:12px" />
+            <button class="btn btn-sm" id="kmaRevealCopy" type="button"><span data-ki="copy"></span> Copy</button>
+          </div>
+
+          <div style="font-size:12px;font-weight:700;margin:6px 0 4px;display:flex;align-items:center;gap:8px">Connect your AI (management) <span class="muted" style="font-weight:400;text-transform:none;letter-spacing:0">— paste into Claude, Cursor, or any agent</span></div>
+          <code id="kmaAiPrompt" style="display:block;background:#15110d;border:1px solid rgba(243,236,225,.16);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11px;color:#f3ece1;overflow:auto;white-space:pre-wrap;line-height:1.5"></code>
+          <div style="margin-top:8px"><button class="btn btn-indigo btn-sm" id="kmaCopyAiPrompt" type="button"><span data-ki="sparkles"></span> Copy AI setup prompt</button></div>
+
+          <div style="font-size:12px;font-weight:700;margin:14px 0 4px">MCP (management) — <code>.mcp.json</code></div>
+          <code id="kmaMcpSnippet" style="display:block;background:#15110d;border:1px solid rgba(243,236,225,.16);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11px;color:#f3ece1;overflow:auto;white-space:pre"></code>
+
+          <div style="font-size:12px;font-weight:700;margin:14px 0 4px">REST — create a project (cURL)</div>
+          <code id="kmaCurlSnippet" style="display:block;background:#15110d;border:1px solid rgba(243,236,225,.16);border-radius:8px;padding:10px;font-family:var(--mono);font-size:11px;color:#f3ece1;overflow:auto;white-space:pre"></code>
+
+          <div style="margin-top:14px"><button class="btn btn-ghost btn-sm" id="kmaRevealDone" type="button">Done</button></div>
+        </div>
+      </div>
+      <div id="kmaUser" class="hide muted">Only workspace owners/admins can manage management tokens.</div>
+    </div>
+  </details>
+
     <!-- ── Recurring Issues view (KLAVITYKLA-2 project-level rollup) ── -->
     <div class="card full" data-view="recurring">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg> Recurring Issues <span class="count" id="recurringCount"></span></h2>
@@ -5107,6 +5158,14 @@ function render(fromCache, poll) {
   $("ciDrawer").classList.toggle("hide", false)
   $("ciAdmin").classList.toggle("hide", !admin)
   $("ciUser").classList.toggle("hide", admin)
+
+  // Management API tokens drawer: account owner/admin-only (state.active.role maps owner/admin->admin).
+  if ($("kmaDrawer")) {
+    $("kmaDrawer").classList.toggle("hide", false)
+    $("kmaAdmin").classList.toggle("hide", !admin)
+    $("kmaUser").classList.toggle("hide", admin)
+    if (admin && typeof kmaRender === "function") kmaRender()
+  }
 
   // AutoSim Filing drawer: admin-only (KLAVITYKLA-248)
   $("trailsAutofileDrawer").classList.toggle("hide", false)
@@ -12676,6 +12735,164 @@ function _wireCi() {
   })
 }
 _wireCi()
+
+// ── Management API tokens (account-scoped kma_) ──────────────────────────────
+// Mint/copy/revoke the WORKSPACE-level kma_ tokens that authenticate the management REST API
+// (/api/v1/projects, /api/v1/members) and the mcp-admin endpoint. Stored HASHED -> copy-once. The
+// list only ever carries id/name/prefix. Backed by /api/account/management-tokens (owner/admin only).
+function kmaRenderList(tokens) {
+  var host = $("kmaTokenList"); if (!host) return
+  tokens = tokens || []
+  if (!tokens.length) {
+    host.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">No management tokens yet. Create one to provision projects or invite members from an agent or script.</p>'
+    return
+  }
+  var rows = tokens.map(function(t) {
+    var revoked = !!t.revoked
+    var meta = 'Created ' + _ciFmtDate(t.createdAt) + ' · Last used ' + _ciFmtDate(t.lastUsedAt)
+    var action = revoked
+      ? '<span class="muted" style="font-size:11.5px;font-weight:600">Revoked</span>'
+      : '<button class="btn btn-ghost btn-sm kma-revoke-btn" type="button" data-kma-revoke="' + esc(String(t.id)) + '" data-kma-name="' + esc(String(t.name || "this token")) + '">Revoke</button>'
+    return '<div class="ci-tok-row" data-kma-row="' + esc(String(t.id)) + '" style="display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(120,120,140,.16)">'
+      + '<div style="min-width:0;' + (revoked ? 'opacity:.55;text-decoration:line-through' : '') + '">'
+      + '<div style="font-weight:600;font-size:13.5px">' + esc(String(t.name || "Management token")) + '</div>'
+      + '<div class="muted" style="font-size:12px"><code style="font-family:var(--mono)">' + esc(String(t.prefix || "kma_…")) + '…</code> · ' + esc(meta) + '</div>'
+      + '</div>'
+      + '<div class="kma-tok-action" style="flex-shrink:0">' + action + '</div>'
+      + '</div>'
+  })
+  host.innerHTML = rows.join("")
+}
+function kmaRender() {
+  var host = $("kmaTokenList"); if (!host) return
+  fetch("/api/account/management-tokens")
+    .then(function(r) { return r.ok ? r.json() : { tokens: [] } })
+    .then(function(d) { kmaRenderList(d.tokens || []) })
+    .catch(function() {})
+}
+function kmaBuildSnippets(token) {
+  var base = location.origin
+  var mcp = JSON.stringify({ mcpServers: { "klavity-management": { type: "http", url: base + "/api/v1/mcp-admin", headers: { Authorization: "Bearer " + token } } } }, null, 2)
+  var curl = 'curl -X POST ' + base + '/api/v1/projects \\\n' +
+    '  -H "Authorization: Bearer ' + token + '" \\\n' +
+    '  -H "Content-Type: application/json" \\\n' +
+    "  -d '" + JSON.stringify({ name: "New project", site_url: "https://example.com" }) + "'"
+  var aiPrompt = [
+    "You are connecting to the Klavity MANAGEMENT API to provision projects and invite members.",
+    "",
+    "- API base URL: " + base,
+    "- Auth (every request): Authorization: Bearer " + token,
+    "- This token is ACCOUNT-scoped (whole workspace), not a single project.",
+    "- Machine-readable spec: " + base + "/openapi.json (see the `management` tag).",
+    "",
+    "Endpoints:",
+    "- GET  " + base + "/api/v1/projects            list projects in the account",
+    "- POST " + base + "/api/v1/projects            create {name, site_url?}",
+    "- GET  " + base + "/api/v1/projects/{id}        project detail",
+    "- POST " + base + "/api/v1/projects/{id}/members  invite {email, role?}",
+    "- GET  " + base + "/api/v1/members             account members",
+    "For MCP (Claude Code / Cursor), add this to .mcp.json: " + mcp.replace(/\n\s*/g, " "),
+  ].join("\n")
+  var mcpEl = $("kmaMcpSnippet"); if (mcpEl) mcpEl.textContent = mcp
+  var curlEl = $("kmaCurlSnippet"); if (curlEl) curlEl.textContent = curl
+  var aiEl = $("kmaAiPrompt"); if (aiEl) aiEl.textContent = aiPrompt
+  kmaBuildSnippets._aiPrompt = aiPrompt
+}
+
+var _kmaWired = false
+function _wireKma() {
+  if (_kmaWired) return; _kmaWired = true
+  var newBtn = $("kmaNewTokenBtn"), form = $("kmaNewForm"), reveal = $("kmaReveal")
+  var nameInput = $("kmaTokenName"), createBtn = $("kmaCreateBtn"), cancelBtn = $("kmaCancelNewBtn")
+  var newMsg = $("kmaNewMsg"), revealVal = $("kmaRevealVal"), copyBtn = $("kmaRevealCopy"), doneBtn = $("kmaRevealDone")
+
+  function showForm(show) {
+    if (form) form.classList.toggle("hide", !show)
+    if (newBtn) newBtn.classList.toggle("hide", show)
+    if (show) { if (reveal) reveal.classList.add("hide"); if (nameInput) { nameInput.value = ""; nameInput.focus() } if (newMsg) newMsg.textContent = "" }
+  }
+
+  if (newBtn) newBtn.addEventListener("click", function() { showForm(true) })
+  if (cancelBtn) cancelBtn.addEventListener("click", function() { showForm(false) })
+
+  if (createBtn) createBtn.addEventListener("click", async function() {
+    var name = (nameInput && nameInput.value || "").trim()
+    if (!name) { if (newMsg) { newMsg.style.color = "var(--rose)"; newMsg.textContent = "Give the token a name." } return }
+    createBtn.disabled = true; createBtn.textContent = "Creating…"
+    try {
+      var r = await fetch("/api/account/management-tokens", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: name })
+      })
+      var res = await r.json().catch(function() { return {} })
+      if (!r.ok) { if (newMsg) { newMsg.style.color = "var(--rose)"; newMsg.textContent = res.error || "Could not create token." } return }
+      if (form) form.classList.add("hide")
+      if (newBtn) newBtn.classList.remove("hide")
+      if (revealVal) revealVal.value = res.token || ""
+      kmaBuildSnippets(res.token || "<TOKEN>")
+      if (reveal) reveal.classList.remove("hide")
+      kmaRender()
+    } catch (e) {
+      if (newMsg) { newMsg.style.color = "var(--rose)"; newMsg.textContent = "Network error." }
+    } finally {
+      createBtn.disabled = false; createBtn.textContent = "Create token"
+    }
+  })
+
+  if (copyBtn) copyBtn.addEventListener("click", async function() {
+    var v = revealVal && revealVal.value || ""
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(v) }
+      else if (revealVal) { revealVal.select(); document.execCommand("copy") }
+      var old = copyBtn.innerHTML; copyBtn.textContent = "Copied"
+      setTimeout(function() { copyBtn.innerHTML = old }, 1400)
+    } catch (e) {}
+  })
+
+  var copyAiBtn = $("kmaCopyAiPrompt")
+  if (copyAiBtn) copyAiBtn.addEventListener("click", async function() {
+    var text = kmaBuildSnippets._aiPrompt || ($("kmaAiPrompt") && $("kmaAiPrompt").textContent) || ""
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text) }
+      else { var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta) }
+      var old = copyAiBtn.innerHTML; copyAiBtn.textContent = "Copied"
+      setTimeout(function() { copyAiBtn.innerHTML = old }, 1600)
+    } catch (e) {}
+  })
+
+  if (doneBtn) doneBtn.addEventListener("click", function() {
+    if (reveal) reveal.classList.add("hide")
+    if (revealVal) revealVal.value = ""
+  })
+
+  var list = $("kmaTokenList")
+  if (list) list.addEventListener("click", async function(e) {
+    var cancel = e.target.closest("[data-kma-cancel]")
+    if (cancel) { kmaRender(); return }
+    var confirm = e.target.closest("[data-kma-confirm]")
+    if (confirm) {
+      var id = confirm.dataset.kmaConfirm
+      confirm.disabled = true; confirm.textContent = "Revoking…"
+      try {
+        var r = await fetch("/api/account/management-tokens/" + encodeURIComponent(id), { method: "DELETE" })
+        if (r.ok) { kmaRender() } else { confirm.disabled = false; confirm.textContent = "Revoke" }
+      } catch (err) { confirm.disabled = false; confirm.textContent = "Revoke" }
+      return
+    }
+    var btn = e.target.closest("[data-kma-revoke]")
+    if (!btn) return
+    var id = btn.dataset.kmaRevoke
+    var name = btn.dataset.kmaName || "this token"
+    var actionCell = btn.closest(".kma-tok-action")
+    if (actionCell) {
+      actionCell.innerHTML = '<span style="display:inline-flex;align-items:center;gap:8px">'
+        + '<span class="muted" style="font-size:11.5px">Revoke ' + esc(name) + '?</span>'
+        + '<button class="btn btn-sm kma-revoke-btn" type="button" data-kma-confirm="' + esc(String(id)) + '" style="border-color:rgba(244,63,94,.45);color:var(--rose)">Revoke</button>'
+        + '<button class="btn btn-ghost btn-sm" type="button" data-kma-cancel="1">Cancel</button>'
+        + '</span>'
+    }
+  })
+}
+_wireKma()
 
 // ── KLAVITYKLA-248: Trails subjective auto-file toggle ──────────────────────────────
 async function loadTrailsAutofile() {

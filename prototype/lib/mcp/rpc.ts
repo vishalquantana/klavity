@@ -2,7 +2,7 @@
 // Handles initialize / notifications/* / tools/list / tools/call. Returns a JSON-RPC response object,
 // or null for notifications (no id → no reply). Tool execution errors are reported IN-BAND as
 // { content, isError:true } per MCP convention; protocol errors use JSON-RPC error codes.
-import { MCP_TOOLS, getTool, type McpToolCtx } from "./tools"
+import { MCP_TOOLS } from "./tools"
 import { ToolError } from "./tool-error"
 import { reportError } from "../error-alert"
 
@@ -24,7 +24,21 @@ function mcpOops(e: unknown, label: string): string {
 const ok = (id: any, result: any) => ({ jsonrpc: "2.0", id, result })
 const err = (id: any, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } })
 
-export async function handleMcpMessage(msg: any, ctx: McpToolCtx): Promise<object | null> {
+// A tool the dispatcher can list + call. Both the project-scoped MCP_TOOLS and the account-scoped
+// MGMT_TOOLS satisfy this; their ctx types differ but the dispatcher passes ctx through opaquely.
+export interface DispatchableTool {
+  name: string
+  description: string
+  inputSchema: object
+  handler(args: any, ctx: any): Promise<any>
+}
+// Options let a SECOND MCP endpoint (e.g. /api/v1/mcp-admin) reuse this exact dispatcher with a
+// different tool registry + serverInfo name. Defaults preserve the original project-scoped /mcp surface.
+export interface McpServerOptions { tools?: DispatchableTool[]; serverName?: string }
+
+export async function handleMcpMessage(msg: any, ctx: any, opts: McpServerOptions = {}): Promise<object | null> {
+  const tools: DispatchableTool[] = opts.tools ?? MCP_TOOLS
+  const serverName = opts.serverName ?? "klavity-autosim"
   const { id, method, params } = msg || {}
   // Notifications (no id) get no reply.
   if (id === undefined || id === null) {
@@ -35,13 +49,13 @@ export async function handleMcpMessage(msg: any, ctx: McpToolCtx): Promise<objec
       return ok(id, {
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "klavity-autosim", version: "1" },
+        serverInfo: { name: serverName, version: "1" },
       })
     case "tools/list":
-      return ok(id, { tools: MCP_TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) })
+      return ok(id, { tools: tools.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) })
     case "tools/call": {
       const name = params?.name
-      const tool = getTool(name)
+      const tool = tools.find(t => t.name === name)
       if (!tool) return err(id, -32602, `unknown tool: ${name}`)
       try {
         const out = await tool.handler(params?.arguments || {}, ctx)

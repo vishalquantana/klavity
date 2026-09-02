@@ -1216,6 +1216,11 @@ export async function applySchema(c: Client) {
   if (needCol("extension_tokens", "kind")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN kind TEXT").catch((e) => console.warn("extension_tokens.kind ALTER skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS ext_tok_id_idx ON extension_tokens (id)").catch((e) => console.warn("ext_tok_id_idx skipped:", e?.message || e))
   await c.execute("CREATE INDEX IF NOT EXISTS ext_tok_proj_kind_idx ON extension_tokens (project_id, kind)").catch((e) => console.warn("ext_tok_proj_kind_idx skipped:", e?.message || e))
+  // Management API tokens (kma_) — ACCOUNT-scoped Bearer for the management REST + mcp-admin surface.
+  // Stored in extension_tokens like ci/ext tokens (same sha256hex hash + revoke/expiry guarantees) but
+  // bound to an ACCOUNT (account_id) rather than a single project; project_id stays NULL. Additive column.
+  if (needCol("extension_tokens", "account_id")) await c.execute("ALTER TABLE extension_tokens ADD COLUMN account_id TEXT").catch((e) => console.warn("extension_tokens.account_id ALTER skipped:", e?.message || e))
+  await c.execute("CREATE INDEX IF NOT EXISTS ext_tok_acct_kind_idx ON extension_tokens (account_id, kind)").catch((e) => console.warn("ext_tok_acct_kind_idx skipped:", e?.message || e))
   // BugHerd sub-project A: opt-in client-error auto-capture. When enabled, the widget/SDK
   // recorder (later task) reports uncaught client errors, deduped via feedback.signature.
   // Default OFF (back-compat) — projects must explicitly turn this on.
@@ -5634,24 +5639,25 @@ export async function issueExtensionToken(email: string, projectId?: string | nu
 // Resolve a Bearer extension token to its owner AND the project it is bound to (null = account-wide).
 // Widget tokens (minted via /api/widget/token) carry a project_id and MUST be constrained to it (F5);
 // the extension's own token is account-wide (project_id null).
-export async function getExtensionTokenInfo(token: string): Promise<{ email: string; projectId: string | null; kind: "ext" | "ci" | "other" } | null> {
+export async function getExtensionTokenInfo(token: string): Promise<{ email: string; projectId: string | null; accountId: string | null; kind: "ext" | "ci" | "kma" | "other" } | null> {
   // E1: look up by hash. Dual-read migration fallback to the raw value keeps tokens minted before E1
   // working until they expire/are revoked. REMOVE the raw fallback once all pre-E1 tokens have aged out.
-  let r = await db!.execute({ sql: "SELECT email, project_id, expires_at, revoked FROM extension_tokens WHERE token=?", args: [sha256hex(token)] })
-  if (!r.rows.length) r = await db!.execute({ sql: "SELECT email, project_id, expires_at, revoked FROM extension_tokens WHERE token=?", args: [token] })
+  let r = await db!.execute({ sql: "SELECT email, project_id, account_id, expires_at, revoked FROM extension_tokens WHERE token=?", args: [sha256hex(token)] })
+  if (!r.rows.length) r = await db!.execute({ sql: "SELECT email, project_id, account_id, expires_at, revoked FROM extension_tokens WHERE token=?", args: [token] })
   if (!r.rows.length) return null
   const x = r.rows[0] as any
   if (Number(x.revoked) === 1) return null
   if (x.expires_at != null && Number(x.expires_at) < Date.now()) return null
   // #534 hardening (Codex re-review): expose the token KIND (derived from the minting prefix) so callers
-  // can tell a user/extension token (ext_) apart from a machine-to-machine CI walk-trigger token (kci_).
-  // Both live in extension_tokens, but only ext_ tokens may authenticate feedback/board-write requests.
-  const kind: "ext" | "ci" | "other" = token.startsWith("ext_") ? "ext" : token.startsWith("kci_") ? "ci" : "other"
+  // can tell a user/extension token (ext_) apart from a machine-to-machine CI walk-trigger token (kci_)
+  // or an ACCOUNT-scoped management token (kma_). All live in extension_tokens, but each surface accepts
+  // only its own kind (only ext_ authenticates feedback/board-write; only kma_ the management API).
+  const kind: "ext" | "ci" | "kma" | "other" = token.startsWith("ext_") ? "ext" : token.startsWith("kci_") ? "ci" : token.startsWith("kma_") ? "kma" : "other"
   // Best-effort last-used stamp for the Settings management UI. Fire-and-forget (never awaited, never
   // blocks/errors the request) — a leaked/expired token has already been short-circuited above, so we
   // only touch valid tokens. Update by hash (+ legacy plaintext) so it works during the E1 dual-read window.
   try { void db!.execute({ sql: "UPDATE extension_tokens SET last_used_at=? WHERE token=? OR token=?", args: [Date.now(), sha256hex(token), token] }).catch(() => {}) } catch { /* never block auth */ }
-  return { email: String(x.email), projectId: x.project_id != null ? String(x.project_id) : null, kind }
+  return { email: String(x.email), projectId: x.project_id != null ? String(x.project_id) : null, accountId: x.account_id != null ? String(x.account_id) : null, kind }
 }
 export async function getExtensionTokenEmail(token: string): Promise<string | null> {
   return (await getExtensionTokenInfo(token))?.email ?? null
@@ -5718,6 +5724,70 @@ export async function revokeCITokenById(projectId: string, id: string): Promise<
     args: [id, projectId],
   })
   return (r.rowsAffected ?? 0) > 0
+}
+
+// ── Management API tokens (kma_) — ACCOUNT-scoped, machine-to-machine Bearer tokens for the
+// management REST API (/api/v1/projects, /api/v1/members) and the mcp-admin surface. Mirror the CI
+// token fns exactly (same sha256hex hash storage, copy-once plaintext, id/name/token_prefix metadata),
+// but bound to an ACCOUNT (account_id) instead of a single project — project_id stays NULL. A kma_ token
+// can create/list projects and invite members across its whole account; it can NOT be replayed on the
+// project-scoped /mcp or /api/v1/tickets surfaces (those require a kci_ project token). ──
+export type MgmtTokenMeta = { id: string; name: string; prefix: string; createdAt: number; lastUsedAt: number | null; revoked: boolean }
+export async function issueManagementTokenNamed(email: string, accountId: string, name: string): Promise<{ id: string; token: string; prefix: string }> {
+  const token = "kma_" + crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "")
+  const id = "kmt_" + crypto.randomUUID().replace(/-/g, "")
+  const prefix = token.slice(0, 10) // e.g. "kma_ab12cd" — display only, NOT the secret
+  const label = (name || "").trim().slice(0, 80) || "Management token"
+  await db!.execute({
+    sql: "INSERT INTO extension_tokens (token,email,project_id,account_id,created_at,expires_at,revoked,id,name,token_prefix,kind) VALUES (?,?,?,?,?,?,0,?,?,?,?)",
+    args: [sha256hex(token), email, null, accountId, Date.now(), null, id, label, prefix, "kma"],
+  })
+  return { id, token, prefix }
+}
+
+// listManagementTokens — metadata ONLY (never the hash) for the account management UI. Scoped to one
+// account; only rows minted via this UI (id present, kind='kma' / kma_ prefix). Revoked rows still shown.
+export async function listManagementTokens(accountId: string): Promise<MgmtTokenMeta[]> {
+  const r = await db!.execute({
+    sql: "SELECT id, name, token_prefix, created_at, last_used_at, revoked FROM extension_tokens WHERE account_id=? AND id IS NOT NULL AND (kind='kma' OR token_prefix LIKE 'kma_%') ORDER BY created_at DESC",
+    args: [accountId],
+  })
+  return r.rows.map((x: any) => ({
+    id: String(x.id),
+    name: x.name != null ? String(x.name) : "Management token",
+    prefix: x.token_prefix != null ? String(x.token_prefix) : "kma_…",
+    createdAt: Number(x.created_at),
+    lastUsedAt: x.last_used_at != null ? Number(x.last_used_at) : null,
+    revoked: Number(x.revoked) === 1,
+  }))
+}
+
+// revokeManagementTokenById — revoke by opaque id, STRICTLY scoped to the account. The account_id
+// predicate is the IDOR guard: a token id belonging to another account matches zero rows → false → 404.
+export async function revokeManagementTokenById(accountId: string, id: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE extension_tokens SET revoked=1 WHERE id=? AND account_id=?",
+    args: [id, accountId],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// listProjectsForAccount — every project in ONE account (the management API's account-scoped list).
+// Distinct from listProjects(email), which fans across all of a user's accounts + explicit memberships.
+export async function listProjectsForAccount(accountId: string): Promise<ProjectRow[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM projects WHERE account_id=? ORDER BY created_at ASC",
+    args: [accountId],
+  })
+  return r.rows.map(rowToProject)
+}
+
+// accountMembersRaw — account roster with the RAW account_role (owner|admin|member) for the management
+// GET /api/v1/members surface (membersOf() maps to legacy admin|user; the management API keeps the
+// native role vocabulary so an integration can tell an owner from an admin).
+export async function accountMembersRaw(accountId: string): Promise<Array<{ email: string; role: string }>> {
+  const r = await db!.execute({ sql: "SELECT email, account_role FROM account_members WHERE account_id=? ORDER BY created_at ASC", args: [accountId] })
+  return r.rows.map((x: any) => ({ email: String(x.email), role: String(x.account_role) }))
 }
 
 // ── /api/sim/review guardrail ordering (§5, binding) ──

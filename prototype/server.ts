@@ -10,7 +10,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -120,6 +120,7 @@ import { WalkBusyError, cancelCurrentWalk, cancelCurrentAuthor, PdfBusyError, wa
 import { mintShareToken, resolveShareToken, renderWalkPdf, revokeShareToken, listShareTokens, extendShareToken, recordShareView, checkSharePasscode } from "./lib/trails-share"
 import { gatherWalkReport } from "./lib/trails-report"
 import { handleMcpMessage } from "./lib/mcp/rpc"
+import { MGMT_TOOLS } from "./lib/mcp/mgmt-tools"
 import { liveWatchSseResponse, openLiveWatchStream } from "./lib/trails-live-watch"
 import { normalizeTrailViewport } from "./lib/trails-viewport"
 import { seedDemoTrails } from "./lib/trails-demo-seed"
@@ -9079,6 +9080,122 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json(reply, 200)
     }
 
+    // ── Account-scoped MANAGEMENT API (/api/v1/projects, /api/v1/members) — kma_ bearer ONLY. ──────────
+    // A NEW public surface with a NEW token type: create/list projects and invite members across a whole
+    // ACCOUNT. Auth is a kma_ management token (Dashboard → Settings → Management API tokens). We reject
+    // kci_/ext_ project tokens here (401) — those are project-scoped and must never reach account ops.
+    // DEFENSE-IN-DEPTH: after resolving the token we re-check LIVE access via accountRole(); a token whose
+    // owner was removed from the account (or demoted) is refused even though the token itself is un-revoked.
+    const isMgmtRoute =
+      path === "/api/v1/projects" || path.startsWith("/api/v1/projects/") ||
+      path === "/api/v1/members" ||
+      path === "/api/v1/mcp-admin"
+    if (isMgmtRoute) {
+      const v1err = (code: string, message: string, status: number) =>
+        json({ error: { code, message, request_id: crypto.randomUUID().slice(0, 8) } }, status)
+
+      // resolveMgmtToken: kma_ bearer → token info → require kind==="kma" && accountId → live accountRole
+      // re-check. Returns { email, accountId, role } or a Response to short-circuit with the right status.
+      const authHeader = req.headers.get("authorization") || ""
+      const kmaRaw = authHeader.match(/^Bearer\s+(kma_\S+)$/i)?.[1] ?? ""
+      if (!kmaRaw) return v1err("unauthorized", "Missing or malformed management bearer token (expected `Bearer kma_...`).", 401)
+      const kmaInfo = await getExtensionTokenInfo(kmaRaw)
+      if (!kmaInfo || kmaInfo.kind !== "kma" || !kmaInfo.accountId) return v1err("unauthorized", "Invalid or expired management token.", 401)
+      const mgAccountId = kmaInfo.accountId
+      const mgEmail = kmaInfo.email
+      // Defense-in-depth: the token being un-revoked is NOT enough — confirm the owner still has a live
+      // account_members row. A removed/demoted owner's token authenticates but is denied here (403).
+      const mgRole = await accountRole(mgAccountId, mgEmail)
+      if (!mgRole) return v1err("forbidden", "Management token owner no longer has access to this account.", 403)
+      const mgIsAdmin = mgRole === "owner" || mgRole === "admin"
+
+      // ── SECOND MCP endpoint: account-scoped mcp-admin (distinct from /mcp). Reuses the shared JSON-RPC
+      // dispatcher with the MGMT_TOOLS registry. Rate-limit 120/min/account. ──
+      if (path === "/api/v1/mcp-admin") {
+        if (req.method !== "POST") return v1err("method_not_allowed", "POST required.", 405)
+        if (!rlAllow(`mcpadmin:${mgAccountId}`, 120, 60_000)) return v1err("rate_limited", "Too many requests — slow down and retry shortly.", 429)
+        const parsed = await readJsonLimited(req, 32 * 1024)
+        if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+        const msg = parsed.data as any
+        if (!msg || msg.jsonrpc !== "2.0") return v1err("bad_request", "invalid JSON-RPC 2.0 message", 400)
+        const reply = await handleMcpMessage(msg, { accountId: mgAccountId, email: mgEmail, role: mgRole }, { tools: MGMT_TOOLS, serverName: "klavity-management" })
+        if (reply === null) return new Response(null, { status: 202 })
+        return json(reply, 200)
+      }
+
+      // ── GET /api/v1/members — the account roster (email + native role owner|admin|member). ──
+      if (path === "/api/v1/members") {
+        if (req.method !== "GET") return v1err("method_not_allowed", "GET required.", 405)
+        const members = await accountMembersRaw(mgAccountId)
+        return json({ members })
+      }
+
+      // ── GET /api/v1/projects — every project in the token's account. ──
+      if (req.method === "GET" && path === "/api/v1/projects") {
+        const projects = await listProjectsForAccount(mgAccountId)
+        return json({ projects: projects.map((p) => ({ id: p.id, name: p.name, status: p.status, created_at: p.createdAt })) })
+      }
+
+      // ── POST /api/v1/projects — create a project (owner/admin). Rate limit 10/min/account. ──
+      if (req.method === "POST" && path === "/api/v1/projects") {
+        if (!mgIsAdmin) return v1err("forbidden", "Only account owners/admins can create projects.", 403)
+        if (!rlAllow(`mgmt:projcreate:${mgAccountId}`, 10, 60_000)) return v1err("rate_limited", "Too many projects created — slow down and retry shortly.", 429)
+        const parsed = await readJsonLimited(req, 8 * 1024)
+        if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+        const body = parsed.data as Record<string, any>
+        const name = String(body.name || "").trim()
+        if (!name) return v1err("bad_request", "name is required.", 400)
+        if (name.length > 120) return v1err("bad_request", "name must be 120 chars or fewer.", 400)
+        let siteUrl: string | null = null
+        if (body.site_url) {
+          const raw = String(body.site_url).trim()
+          if (raw) {
+            if (raw.length > 500 || !/^https?:\/\//i.test(raw)) return v1err("bad_request", "site_url must be an http(s) URL (max 500 chars).", 400)
+            try { new URL(raw) } catch { return v1err("bad_request", "site_url is not a valid URL.", 400) }
+            siteUrl = raw
+          }
+        }
+        // KLA-306: flag-gated project quota (no-op unless KLAV_BILLING_ENFORCEMENT=1).
+        const projQuota = await quotaExceeded(mgAccountId, "projects", async () => (await listProjectsForAccount(mgAccountId)).length)
+        if (projQuota) return json({ error: { code: "quota_exceeded", message: projQuota.error, request_id: crypto.randomUUID().slice(0, 8) } }, 402)
+        const created = await createProject(mgAccountId, name, siteUrl)
+        void capturePosthog(mgEmail, "project_created", { project_id: created.id, account_id: created.accountId, via: "management_api" })
+        return json({ project: { id: created.id, name: created.name } }, 201)
+      }
+
+      // ── /api/v1/projects/:id and /api/v1/projects/:id/members ──
+      const pm = path.match(/^\/api\/v1\/projects\/([^/]+?)(\/members)?$/)
+      if (pm) {
+        const pid = pm[1]
+        const sub = pm[2] || ""
+        // IDOR guard: load the project and 404 unless it belongs to the token's account. A cross-account
+        // project id is indistinguishable from a non-existent one (never leak that it exists).
+        const proj = await projectById(pid).catch(() => null)
+        if (!proj || proj.accountId !== mgAccountId) return v1err("not_found", "Project not found.", 404)
+
+        // GET /api/v1/projects/:id — detail.
+        if (req.method === "GET" && sub === "") {
+          const members = await membersOfProject(pid).catch(() => [])
+          return json({ id: proj.id, name: proj.name, status: proj.status, created_at: proj.createdAt, members_count: members.length })
+        }
+        // POST /api/v1/projects/:id/members — invite (owner/admin).
+        if (req.method === "POST" && sub === "/members") {
+          if (!mgIsAdmin) return v1err("forbidden", "Only account owners/admins can invite members.", 403)
+          if (!rlAllow(`mgmt:invite:${mgAccountId}`, 30, 60_000)) return v1err("rate_limited", "Too many invites — slow down and retry shortly.", 429)
+          const parsed = await readJsonLimited(req, 8 * 1024)
+          if (!parsed.ok) return v1err("bad_request", parsed.error, parsed.status)
+          const body = parsed.data as Record<string, any>
+          const inv = String(body.email || "").trim().toLowerCase()
+          if (!inv.includes("@")) return v1err("bad_request", "a valid email is required.", 400)
+          const role = body.role === "admin" ? "admin" : "member"
+          await addProjectMember(pid, mgAccountId, inv, role, mgEmail)
+          return json({ ok: true }, 201)
+        }
+        return v1err("method_not_allowed", "Method not allowed for this resource.", 405)
+      }
+      return v1err("not_found", "Unknown management route.", 404)
+    }
+
     // KLA-550: objective-driven authored run — wraps the F1 authoring engine (runAuthorNow), which
     // crystallizes a Trail AND runs a verification walk. Result composes with the existing
     // GET /api/v1/runs/:verification_run_id/report. Auth mirrors /api/v1/runs (kci_ bearer + IDOR).
@@ -11398,6 +11515,43 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { domain } = await req.json().catch(() => ({}))
         await setAccountDomain(active.workspaceId, String(domain || "").trim().toLowerCase())
         return json({ ok: true })
+      }
+
+      // ── Management API tokens (kma_) — ACCOUNT owner/admin only, session-authed minting UI backend. ──
+      // These mint/list/revoke the account-scoped kma_ tokens that authenticate the management REST API
+      // (/api/v1/projects, /api/v1/members) and the mcp-admin endpoint. Distinct from the project-scoped
+      // ci-tokens (/api/projects/:id/ci-tokens). Tokens are stored HASHED → the plaintext is returned ONCE.
+      //   GET    /api/account/management-tokens        → { tokens:[metadata…] }  (never the token/hash)
+      //   POST   /api/account/management-tokens {name}  → 201 { id,name,prefix,token }  (token ONCE)
+      //   DELETE /api/account/management-tokens/:id     → revoke by id, scoped to THIS account
+      const mgmtTokMatch = path === "/api/account/management-tokens" ? { id: null as string | null }
+        : (path.match(/^\/api\/account\/management-tokens\/([^/]+)$/) ? { id: path.split("/").pop() as string } : null)
+      if (mgmtTokMatch) {
+        const ms = await membershipsFor(me); const active = ms[0]
+        if (!active) return json({ error: "No account." }, 400)
+        const ar = await accountRole(active.workspaceId, me)
+        if (ar !== "owner" && ar !== "admin") return json({ error: "Only account owners/admins can manage management tokens." }, 403)
+
+        if (req.method === "GET" && mgmtTokMatch.id === null) {
+          return json({ tokens: await listManagementTokens(active.workspaceId) })
+        }
+        if (req.method === "POST" && mgmtTokMatch.id === null) {
+          if (!rlAllow(`kmatoken:mint:${active.workspaceId}:${me}`, 10, 60 * 60 * 1000)) return json({ error: "Too many tokens minted. Try again later." }, 429)
+          const body = await req.json().catch(() => ({}))
+          const name = String(body.name || "").trim().slice(0, 80)
+          if (!name) return json({ error: "A token name is required." }, 400)
+          const { id, token, prefix } = await issueManagementTokenNamed(me, active.workspaceId, name)
+          // The FULL token appears here and NOWHERE else (no log line, never in GET). Copy-once.
+          return json({ id, name, prefix, token }, 201)
+        }
+        if (req.method === "DELETE" && mgmtTokMatch.id) {
+          // IDOR guard: revokeManagementTokenById scopes the UPDATE to this account → a token id from
+          // another account matches zero rows → false → 404 (never a cross-account revoke).
+          const ok = await revokeManagementTokenById(active.workspaceId, mgmtTokMatch.id)
+          if (!ok) return json({ error: "Token not found." }, 404)
+          return json({ ok: true, revoked: true })
+        }
+        return json({ error: "Method not allowed" }, 405)
       }
 
       // ── rename the workspace (account) ──
