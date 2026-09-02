@@ -9,7 +9,29 @@ import { normalizeReferer, coarsenUa } from "./shortlinks"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
-export let db: Client | null = url ? createClient({ url, authToken }) : null
+
+// Slow-query instrumentation. Turso/SQLite has no slow-query log, so we wrap the libSQL client's
+// execute() once — any query slower than KLAV_SLOW_QUERY_MS (default 200ms) is console.warn'd with the
+// SQL + duration (surfaces in prod journalctl). Wall-clock captures network RTT to remote Turso, which is
+// the cost that actually dominates hot paths. Args are deliberately NOT logged (avoid PII/emails/tokens).
+const SLOW_QUERY_MS = Number(process.env.KLAV_SLOW_QUERY_MS) || 200
+function instrumentClient(c: Client): Client {
+  const orig = c.execute.bind(c)
+  ;(c as any).execute = async (stmt: any, ...rest: any[]) => {
+    const t0 = performance.now()
+    try {
+      return await orig(stmt, ...rest)
+    } finally {
+      const ms = performance.now() - t0
+      if (ms >= SLOW_QUERY_MS) {
+        const sql = typeof stmt === "string" ? stmt : stmt?.sql
+        console.warn(`[slow-query] ${ms.toFixed(0)}ms  ${String(sql || "").replace(/\s+/g, " ").trim().slice(0, 300)}`)
+      }
+    }
+  }
+  return c
+}
+export let db: Client | null = url ? instrumentClient(createClient({ url, authToken })) : null
 
 const accountAttributionColumns: Array<[string, string]> = [
   ["first_source", "TEXT"],
@@ -35,7 +57,7 @@ const accountBillingColumns: Array<[string, string]> = [
 // collide on that single DB. Each test file calls reconnectDb(its own file:) in a beforeAll so
 // its tests run against an isolated database. Never called in production.
 export function reconnectDb(dbUrl: string, token?: string): Client {
-  db = createClient({ url: dbUrl, authToken: token })
+  db = instrumentClient(createClient({ url: dbUrl, authToken: token }))
   void tuneFileDb(db, dbUrl)
   return db
 }
