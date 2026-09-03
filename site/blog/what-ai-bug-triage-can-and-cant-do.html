@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Bug Triage: What It Handles Well and Where It Fails · Klavity</title>
+<meta name="description" content="AI bug triage reliably automates dedup, routing, and severity from evidence. It can't set business priority or confirm root cause. Here's the split.">
+<link rel="canonical" href="https://klavity.in/blog/what-ai-bug-triage-can-and-cant-do">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Bug Triage: What It Handles Well and Where It Fails"><meta property="og:description" content="AI bug triage reliably automates dedup, routing, and severity from evidence. It can't set business priority or confirm root cause. Here's the split.">
+<meta property="og:url" content="https://klavity.in/blog/what-ai-bug-triage-can-and-cant-do"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Bug Triage: What It Handles Well and Where It Fails"><meta name="twitter:description" content="AI bug triage reliably automates dedup, routing, and severity from evidence. It can't set business priority or confirm root cause. Here's the split."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Bug Triage: What It Handles Well and Where It Fails","description":"AI bug triage reliably automates dedup, routing, and severity from evidence. It can't set business priority or confirm root cause. Here's the split.","datePublished":"2026-09-03","dateModified":"2026-09-03","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-ai-bug-triage-can-and-cant-do","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Bug Triage: What It Handles Well and Where It Fails","item":"https://klavity.in/blog/what-ai-bug-triage-can-and-cant-do"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-ai-bug-triage-can-and-cant-do"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can AI decide which bug to fix first?","acceptedAnswer":{"@type":"Answer","text":"Not on its own. AI can suggest severity from evidence — how badly the bug breaks the product — but priority depends on business context it doesn't have: which customer is affected, contract commitments, release timing, and roadmap trade-offs. Treat AI severity as an input to a human priority decision, not a replacement for it."}},{"@type":"Question","name":"How does AI deduplicate bug reports?","acceptedAnswer":{"@type":"Answer","text":"It compares the semantic content of reports — error signature, stack trace, and the meaning of the reproduction steps — rather than matching titles literally. That catches near-duplicates that exact-text matching misses, such as two reports of the same crash described in different words. Always keep a human confirm step before auto-merging, because a confident match can still be wrong."}},{"@type":"Question","name":"Does AI bug triage replace QA engineers?","acceptedAnswer":{"@type":"Answer","text":"No. It removes repetitive sorting — tagging, routing, dedup, drafting summaries — so QA engineers spend more time on root-cause analysis, edge cases, and the calls that need product judgment. The role shifts toward supervision and exceptions, not away from the work."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-09-03</div>
+    <h1>AI Bug Triage: What It Handles Well and Where It Fails</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>AI bug triage is strong at the mechanical work of a queue: deduplicating near-identical reports, routing by the code paths in a stack trace, and suggesting severity from captured evidence. It is weak at judgment calls: true business priority, confirmed root cause, and product trade-offs still need a human. Use AI to clear the grunt work so people spend their attention on the decisions only they can make.</div>
+    <div class="prose"><p>AI bug triage reliably automates the mechanical parts of a bug queue — deduplicating near-identical reports, routing a bug to the right team from the code paths in its stack trace, and suggesting a severity level from captured evidence. It does not reliably decide business priority, confirm a root cause, or make product trade-offs; those still need a person. The practical rule: use AI to clear the grunt work so your team spends its attention on the judgment calls only humans can make.</p>
+
+<h2>What is AI bug triage?</h2>
+<p>Bug triage is the step between “a report arrived” and “someone is working on it”: deduplicate, categorize, assign, and rank. AI bug triage applies a language model and pattern matching to that step — reading the report's text, its stack trace, and its attached evidence to propose the routing and ranking a human would otherwise do by hand. Crucially, the good implementations <em>propose</em>; a person still approves. The value is speed and consistency on high-volume, repetitive decisions, not autonomy over the ones that carry risk.</p>
+
+<h2>What AI bug triage does well</h2>
+<p>Three tasks are a genuine fit, because each is pattern-heavy and low-ambiguity when the report carries good evidence.</p>
+<ol>
+<li><strong>Deduplication.</strong> AI compares the <em>meaning</em> of reports — error signature, stack trace, and the semantics of the steps — not just their titles. That surfaces near-duplicates worded differently that exact-text search misses. See our full method in <a href="/blog/how-to-deduplicate-bug-reports">how to deduplicate bug reports</a>.</li>
+<li><strong>Routing and labeling.</strong> The files and functions in a stack trace usually map to a component and its owning team. AI can read that mapping and apply the label or assignment far faster than a human scanning a stack frame, especially in a large codebase where no single person knows every owner.</li>
+<li><strong>Severity suggestion from evidence.</strong> When a report includes console errors, failed network calls, and the affected surface, AI can propose a severity — how badly the product is broken — with a rationale a reviewer can check in seconds. This is a suggestion to confirm, not a verdict.</li>
+</ol>
+<p>All three share a precondition: they only work on <strong>complete evidence</strong>. A one-line “it's broken” report gives AI nothing to match, route, or rank. This is why capture matters more than the model — an in-app report that ships the screenshot, console log, network trace, and exact steps (the job of tools like <a href="/snap">Klavity Snap</a>) is what makes automated triage accurate instead of a guess.</p>
+
+<h2>Where AI bug triage falls short</h2>
+<p>The failures cluster around judgment that depends on context the model can't see, or on investigation it can't perform.</p>
+<ul>
+<li><strong>Business priority.</strong> Severity is a property of the bug; priority is a business decision. A cosmetic bug on the checkout page of your largest account can outrank a crash nobody hits. AI doesn't know your contracts, revenue, or release timing — so it can suggest severity but should not set priority. The distinction is worth getting right; we cover it in <a href="/blog/severity-vs-priority-how-to-classify-a-bug">severity vs. priority</a>.</li>
+<li><strong>Confirmed root cause.</strong> AI can point at a likely area from a stack trace, but confirming the actual cause usually requires reproducing the bug, reading surrounding code, and sometimes bisecting history. A plausible-sounding cause that is wrong wastes more time than no guess at all.</li>
+<li><strong>Confident hallucination.</strong> A model can produce a fluent, specific reproduction or diagnosis that is simply incorrect. Fluency is not accuracy. This is the single strongest reason to keep a human confirm step in front of any irreversible action — auto-merging duplicates or auto-closing tickets — rather than letting the model act unattended.</li>
+</ul>
+
+<h2>How to combine AI triage with human judgment</h2>
+<p>The reliable pattern is AI-drafts, human-decides, scoped so the machine owns the reversible work and people own the consequential calls.</p>
+<ol>
+<li><strong>Automate the reversible.</strong> Let AI apply labels, suggest an owner, propose severity, and flag likely duplicates — all easy to undo if wrong.</li>
+<li><strong>Gate the irreversible.</strong> Require a human confirm before merging duplicates, closing tickets, or committing to a priority. Make the AI's rationale visible so the reviewer can approve in seconds.</li>
+<li><strong>Escalate low confidence.</strong> When the model is uncertain or the evidence is thin, route the report to a person instead of guessing. A held ticket is cheaper than a mis-routed one.</li>
+<li><strong>Close the loop.</strong> Feed human corrections back so the routing map and dedup thresholds improve over time instead of repeating the same mistakes.</li>
+</ol>
+
+<h2>How to measure whether AI triage is working</h2>
+<p>Don't measure success by how many tickets the AI touched — volume is easy to inflate and says nothing about quality. Watch outcomes instead:</p>
+<ul>
+<li><strong>Escaped defects</strong> — bugs that reached users because triage mis-ranked or dropped them. This is the metric that actually protects your product.</li>
+<li><strong>Mis-routes</strong> — how often a bug bounces between teams before landing with the right owner. Rising mis-routes mean the routing map is stale.</li>
+<li><strong>False merges</strong> — distinct bugs closed as duplicates. Even a low rate here erodes trust in the whole system, so watch it closely.</li>
+</ul>
+<p>If those three stay flat or improve while triage time drops, the automation is earning its place. If any of them climb, tighten the confirm gates before widening what the AI is allowed to do unattended. Used this way — mechanical work automated, judgment kept human — AI bug triage is a genuine time saver rather than a new source of quiet mistakes.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Let AI handle dedup, routing, and severity suggestion — keep priority, root cause, and trade-offs with humans</li><li>Feed triage complete evidence (screenshot, console, network, steps) or its suggestions degrade</li><li>Keep a human confirm step before any auto-merge or auto-close</li><li>Measure triage quality by escaped defects and mis-routes, not by how many tickets AI touched</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can AI decide which bug to fix first?</summary><p>Not on its own. AI can suggest severity from evidence — how badly the bug breaks the product — but priority depends on business context it doesn't have: which customer is affected, contract commitments, release timing, and roadmap trade-offs. Treat AI severity as an input to a human priority decision, not a replacement for it.</p></details><details><summary>How does AI deduplicate bug reports?</summary><p>It compares the semantic content of reports — error signature, stack trace, and the meaning of the reproduction steps — rather than matching titles literally. That catches near-duplicates that exact-text matching misses, such as two reports of the same crash described in different words. Always keep a human confirm step before auto-merging, because a confident match can still be wrong.</p></details><details><summary>Does AI bug triage replace QA engineers?</summary><p>No. It removes repetitive sorting — tagging, routing, dedup, drafting summaries — so QA engineers spend more time on root-cause analysis, edge cases, and the calls that need product judgment. The role shifts toward supervision and exceptions, not away from the work.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

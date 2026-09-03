@@ -509,5 +509,12 @@
     "excerpt": "Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them.",
     "category": "Guides",
     "date": "2026-09-02"
+  },
+  {
+    "slug": "what-ai-bug-triage-can-and-cant-do",
+    "title": "AI Bug Triage: What It Handles Well and Where It Fails",
+    "excerpt": "AI bug triage reliably automates dedup, routing, and severity from evidence. It can't set business priority or confirm root cause. Here's the split.",
+    "category": "Insights",
+    "date": "2026-09-03"
   }
 ]
