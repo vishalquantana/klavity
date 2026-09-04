@@ -516,5 +516,12 @@
     "excerpt": "AI bug triage reliably automates dedup, routing, and severity from evidence. It can't set business priority or confirm root cause. Here's the split.",
     "category": "Insights",
     "date": "2026-09-03"
+  },
+  {
+    "slug": "codeless-vs-code-based-test-automation",
+    "title": "Codeless vs. Code-Based Test Automation: How to Choose",
+    "excerpt": "Codeless automation builds tests visually or in plain language; code-based writes them in a framework. Here's how they differ and which to pick.",
+    "category": "Compare",
+    "date": "2026-09-04"
   }
 ]
