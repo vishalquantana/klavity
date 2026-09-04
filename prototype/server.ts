@@ -11406,6 +11406,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Always (re)send the invite/sign-in email, whether this is a brand-new invite or a
         // re-invite of an already-active member — the joinUrl is a sign-in/join link that works
         // for both, so re-inviting must not be a silent no-op just because priorAccess existed.
+        const joinUrl = `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`
         if (process.env.SENDGRID_API_KEY) {
           emailSent = true
           void sendMemberInviteEmail({
@@ -11413,8 +11414,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             projectName: p?.name ?? null,
             invitedBy: me,
             role: wantRole,
-            joinUrl: `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(proj.id)}`,
+            joinUrl,
           }).catch((e: any) => console.warn("member invite email skipped:", e?.message || e))
+        } else if (DEV_SHOW_OTP) {
+          // No SendGrid locally — the membership above still went through, but nothing else surfaces
+          // the join link. Mirrors the OTP dev-fallback so local testing isn't blind to it.
+          console.log(`member invite for ${inv} (project ${proj.id}) → ${joinUrl}`)
         }
         if (priorAccess) {
           logAudit({ action: "role_change", actorEmail: me, targetEmail: inv, projectId: proj.id, ip: clientIp(req, server), meta: { from: priorAccess, to: wantRole, status } })
@@ -14175,6 +14180,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             logAudit({ action: "role_change", actorEmail: me, targetEmail: inv, projectId: pid, ip: clientIp(req, server), meta: { from: priorRole, to: role } })
           } else {
             logAudit({ action: "member_invite", actorEmail: me, targetEmail: inv, projectId: pid, ip: clientIp(req, server), meta: { role } })
+          }
+          // KLAVITY fix: this endpoint (the one the dashboard's "Invite" button actually calls, per
+          // dashboard.html's projPath("/invite")) added the membership but never sent — or even
+          // attempted — an invite email, unlike its newer /api/team/invite sibling. Mirror that
+          // endpoint's send + dev-fallback so an invite here is actually discoverable by the invitee.
+          const inviteJoinUrl = `${BASE.replace(/\/+$/, "")}/login?email=${encodeURIComponent(inv)}&project=${encodeURIComponent(pid)}`
+          if (process.env.SENDGRID_API_KEY) {
+            void sendMemberInviteEmail({
+              to: inv,
+              projectName: proj.name ?? null,
+              invitedBy: me,
+              role,
+              joinUrl: inviteJoinUrl,
+            }).catch((e: any) => console.warn("project invite email skipped:", e?.message || e))
+          } else if (DEV_SHOW_OTP) {
+            console.log(`project invite for ${inv} (project ${pid}) → ${inviteJoinUrl}`)
           }
           return json({ ok: true, members: await membersOfProject(pid) })
         }
