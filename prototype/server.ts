@@ -3363,13 +3363,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // But if a proxy forwarded it still-compressed, or double-encoded it, buf can START with the gzip
         // magic (0x1f 0x8b) — decompress it in-browser so we ALWAYS hand rrweb parsed JSON, never a gzipped
         // blob (which made new rrwebPlayer(...) no-op/throw → the blank, no-iframe mount).
+        // Returns {text, bytes} — bytes is the true UTF-8 byte length of the decoded payload (NOT txt.length,
+        // which is UTF-16 code units and undercounts multibyte content, letting a CJK-heavy replay slip past the
+        // size caps). In the common path buf is already the browser-decompressed UTF-8 bytes, so buf.length is exact.
         + "function decodeToText(buf){"
         + "if(buf&&buf.length>=2&&buf[0]===0x1f&&buf[1]===0x8b){"
         + "if(typeof DecompressionStream==='undefined'){fail('This browser cannot decompress the replay.','error');return Promise.resolve(null)}"
-        + "try{var ds=new DecompressionStream('gzip');return new Response(new Response(buf).body.pipeThrough(ds)).text().catch(function(){fail('Could not decompress the replay.','error');return null})}"
+        + "try{var ds=new DecompressionStream('gzip');return new Response(new Response(buf).body.pipeThrough(ds)).arrayBuffer().then(function(ab){var u=new Uint8Array(ab);return {text:new TextDecoder('utf-8').decode(u),bytes:u.length}}).catch(function(){fail('Could not decompress the replay.','error');return null})}"
         + "catch(e){fail('Could not decompress the replay.','error');return Promise.resolve(null)}"
         + "}"
-        + "return Promise.resolve(new TextDecoder('utf-8').decode(buf))"
+        + "return Promise.resolve({text:new TextDecoder('utf-8').decode(buf),bytes:buf.length})"
         + "}"
         + "function boot(){"
         + "if(retryEl)retryEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
@@ -3403,11 +3406,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // froze with no escape). Re-arm the SAME loadTimer for the mount phase; on expiry it fails honestly unless
         // the player iframe has appeared. With the bounded mount below, control returns fast so this can fire.
         + "if(!buf)return null;done=true;clearLoadTimer();loadTimer=setTimeout(function(){if(document.querySelector('#klvhost iframe'))return;fail('The replay could not be rebuilt in time. Please try again.','timeout')},MOUNT_TIMEOUT);return decodeToText(buf)"
-        + "}).then(function(txt){"
-        + "if(txt==null)return;"
+        + "}).then(function(res){"
+        + "if(res==null)return;var txt=res.text,nbytes=res.bytes;"
         // EXTREME-SIZE DEGRADE (before the synchronous JSON.parse): an absurd payload is skipped outright rather
-        // than parsed+mounted into a freeze.
-        + "if(txt.length>HARD_BYTES_CEIL){toolarge();return}"
+        // than parsed+mounted into a freeze. QA C2-2: compare true UTF-8 BYTES, not txt.length (UTF-16 units).
+        + "if(nbytes>HARD_BYTES_CEIL){toolarge();return}"
         + "var d;try{d=JSON.parse(txt)}catch(e){fail('The replay data was corrupted.','error');return}"
         // KLA replay-mount FIX: the endpoint returns a top-level events ARRAY (meta in x-klv-* headers);
         // tolerate the legacy {events,nEvents,trimmed} envelope too. THE #1 BUG: rrweb-player's Player
@@ -3430,7 +3433,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // few events (e.g. one giant DOM snapshot) would otherwise mount in full and still freeze. If we entered
         // the large branch but the slice couldn't reduce it (sl===ev ⇒ ev.length<=cap ⇒ byte-driven), degrade to
         // toolarge() rather than attempting the unbounded synchronous mount.
-        + "if(ev.length>MOUNT_EVENT_CAP||txt.length>MOUNT_BYTES_CAP){var sl=boundedSlice(ev,MOUNT_EVENT_CAP);if(!sl){toolarge();return}if(sl!==ev){ev=sl;large=true}else{toolarge();return}}"
+        + "if(ev.length>MOUNT_EVENT_CAP||nbytes>MOUNT_BYTES_CAP){var sl=boundedSlice(ev,MOUNT_EVENT_CAP);if(!sl){toolarge();return}if(sl!==ev){ev=sl;large=true}else{toolarge();return}}"
         // Mount with the LOW-LEVEL rrweb Replayer (window.rrweb.Replayer, from klv-buffer.min.js) — the SAME
         // construction that autosims-walk-report.html uses and that renders reliably. The old rrwebPlayer v2
         // Svelte WRAPPER (window.rrwebPlayer) constructed but never rendered an iframe under #klvhost, leaving

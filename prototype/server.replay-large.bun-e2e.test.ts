@@ -95,6 +95,7 @@ let serverPort: number, serverProc: ReturnType<typeof Bun.spawn>, BASE: string, 
 let browser: Browser
 let bigFbId = ""
 let heavyFbId = ""
+let cjkFbId = ""
 
 beforeAll(async () => {
   serverPort = await freePort()
@@ -149,6 +150,19 @@ beforeAll(async () => {
     [heavyFbId, "p1", "owner@test.local", "byte-heavy replay", "open", now])
   await rawExec(`INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, bytes, trimmed, created_at) VALUES (?,?,?,?,?,?,?,?)`,
     ["fr_heavy_" + ts, heavyFbId, "p1", heavyGzB64, heavyEvents.length, heavyJson.length, 0, now])
+
+  // QA C2-2 (round 2): a MULTIBYTE-heavy replay. 3M CJK chars = ~3M UTF-16 code units (UNDER the 6MB/12MB
+  // caps if measured as txt.length) but ~9M UTF-8 BYTES (OVER MOUNT_BYTES_CAP). This slips past the old
+  // char-count thresholds and would still mount+freeze; the byte-accurate check must degrade it to toolarge.
+  cjkFbId = "fb_cjk_" + ts
+  const cjkEvents = JSON.parse(JSON.stringify(heavyEvents))
+  cjkEvents[1].data.node.childNodes[1].childNodes[1].childNodes[0].textContent = "一".repeat(3_000_000)
+  const cjkJson = JSON.stringify(cjkEvents)
+  const cjkGzB64 = Buffer.from(Bun.gzipSync(Buffer.from(cjkJson))).toString("base64")
+  await rawExec(`INSERT INTO feedback (id, project_id, actor_email, observation, status, created_at) VALUES (?,?,?,?,?,?)`,
+    [cjkFbId, "p1", "owner@test.local", "cjk-heavy replay", "open", now])
+  await rawExec(`INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, bytes, trimmed, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    ["fr_cjk_" + ts, cjkFbId, "p1", cjkGzB64, cjkEvents.length, cjkJson.length, 0, now])
 
   browser = await chromium.launch({ headless: true })
 }, 60_000)
@@ -252,5 +266,21 @@ test("a BYTE-HEAVY low-event replay degrades to 'too large' WITHOUT freezing (re
   // No player iframe mounted (we degraded before the rebuild) and no false "Large session" bounded notice.
   expect(await page.$("#klvhost iframe")).toBeNull()
   expect(await page.$("#klvlargenotice")).toBeNull()
+  await ctx.close()
+}, 45_000)
+
+test("a MULTIBYTE-heavy replay (CJK) is bounded by true UTF-8 bytes, not char count (QA C2-2 r2)", async () => {
+  // ~3M CJK chars: under the caps as UTF-16 code units but ~9M UTF-8 bytes. The char-count check (txt.length)
+  // would let it through and freeze; the byte-accurate check degrades it to 'too large'.
+  const cookieName = sessionCookie.split("=")[0]
+  const cookieVal = sessionCookie.slice(cookieName.length + 1)
+  const ctx = await browser.newContext()
+  await ctx.addCookies([{ name: cookieName, value: cookieVal, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }])
+  const page = await ctx.newPage()
+  await page.addInitScript(() => { ;(window as any).__ticks = 0; setInterval(() => { (window as any).__ticks++ }, 50) })
+  await page.goto(`${BASE}/replay-frame?fb=${encodeURIComponent(cjkFbId)}`, { waitUntil: "domcontentloaded" })
+  await page.waitForFunction(() => /too large/i.test(document.body.innerText), { timeout: 8000 })
+  await page.waitForFunction(() => (window as any).__ticks > 2, { timeout: 4000 })
+  expect(await page.$("#klvhost iframe")).toBeNull()
   await ctx.close()
 }, 45_000)
