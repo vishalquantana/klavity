@@ -3418,13 +3418,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "if(!ev){try{console.error('[klv-replay] events is not an array; typeof d=',(d&&typeof d))}catch(e){}fail('The replay data was in an unexpected format.','error');return}"
         + "var nEv=(Array.isArray(d)?(metaN||ev.length):((d&&d.nEvents)||ev.length));"
         + "var trm=(Array.isArray(d)?metaT:!!(d&&d.trimmed));"
-        + "if(ev.length<2){hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
+        // QA C2-1: clear the re-armed mount watchdog on the few-frames terminal path, or 20s later it
+        // wrongly flips this honest 'few frames' state into a timeout/retry error.
+        + "if(ev.length<2){clearLoadTimer();hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
         // KLA-757/759 BOUND THE MOUNT (primary fix). On a large replay, mount only a bounded coherent slice so the
         // synchronous new rrweb.Replayer(...) can never freeze the tab. Keep nEv (the FULL count) for display; the
         // notice below tells the user this is a bounded window. If even the bounded slice is impossible (no full
         // snapshot within the cap) or the byte-size is beyond the hard ceiling, degrade to toolarge().
         + "var large=false;"
-        + "if(ev.length>MOUNT_EVENT_CAP||txt.length>MOUNT_BYTES_CAP){var sl=boundedSlice(ev,MOUNT_EVENT_CAP);if(!sl){toolarge();return}if(sl!==ev){ev=sl;large=true}}"
+        // QA C2-2: bound by BYTES too. boundedSlice only shrinks by event COUNT, so a byte-heavy replay with
+        // few events (e.g. one giant DOM snapshot) would otherwise mount in full and still freeze. If we entered
+        // the large branch but the slice couldn't reduce it (sl===ev ⇒ ev.length<=cap ⇒ byte-driven), degrade to
+        // toolarge() rather than attempting the unbounded synchronous mount.
+        + "if(ev.length>MOUNT_EVENT_CAP||txt.length>MOUNT_BYTES_CAP){var sl=boundedSlice(ev,MOUNT_EVENT_CAP);if(!sl){toolarge();return}if(sl!==ev){ev=sl;large=true}else{toolarge();return}}"
         // Mount with the LOW-LEVEL rrweb Replayer (window.rrweb.Replayer, from klv-buffer.min.js) — the SAME
         // construction that autosims-walk-report.html uses and that renders reliably. The old rrwebPlayer v2
         // Svelte WRAPPER (window.rrwebPlayer) constructed but never rendered an iframe under #klvhost, leaving

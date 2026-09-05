@@ -94,6 +94,7 @@ function largeReplayEvents(nIncremental: number) {
 let serverPort: number, serverProc: ReturnType<typeof Bun.spawn>, BASE: string, sessionCookie = ""
 let browser: Browser
 let bigFbId = ""
+let heavyFbId = ""
 
 beforeAll(async () => {
   serverPort = await freePort()
@@ -123,6 +124,31 @@ beforeAll(async () => {
   fd.set("replay_events", JSON.stringify(largeReplayEvents(20000)))
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { cookie: sessionCookie } })
   const j = await r.json(); bigFbId = String(j.id)
+
+  // QA C3-1: seed a BYTE-HEAVY, LOW-event-count replay — the ACTUAL prod freeze mode (one giant DOM/text
+  // node, not 20k cheap events). This bypasses the server's ~6MB ingest cap by inserting the stored
+  // base64(gzip(JSON)) row directly (same encoding as lib/feedback-replay.ts encodeReplay), so the viewer's
+  // BYTE cap (MOUNT_BYTES_CAP) path — which boundedSlice() can't shrink (few events) — must degrade to toolarge.
+  heavyFbId = "fb_heavy_" + ts
+  const heavyEvents = [
+    { type: 4, timestamp: now, data: { href: "https://test.local/heavy", width: 1280, height: 720 } },
+    { type: 2, timestamp: now + 10, data: { node: { type: 0, id: 1, childNodes: [
+      { type: 1, name: "html", publicId: "", systemId: "", id: 2 },
+      { type: 2, tagName: "html", attributes: {}, id: 3, childNodes: [
+        { type: 2, tagName: "head", attributes: {}, id: 4, childNodes: [] },
+        { type: 2, tagName: "body", attributes: {}, id: 5, childNodes: [
+          { type: 3, textContent: "x".repeat(7_000_000), id: 6 },  // ~7MB text node → JSON > MOUNT_BYTES_CAP (6MB)
+        ] },
+      ] },
+    ] }, initialOffset: { top: 0, left: 0 } } },
+    { type: 3, timestamp: now + 20, data: { source: 1, positions: [{ x: 1, y: 1, id: 5, timeOffset: 0 }] } },
+  ]
+  const heavyJson = JSON.stringify(heavyEvents)
+  const heavyGzB64 = Buffer.from(Bun.gzipSync(Buffer.from(heavyJson))).toString("base64")
+  await rawExec(`INSERT INTO feedback (id, project_id, actor_email, observation, status, created_at) VALUES (?,?,?,?,?,?)`,
+    [heavyFbId, "p1", "owner@test.local", "byte-heavy replay", "open", now])
+  await rawExec(`INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, bytes, trimmed, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    ["fr_heavy_" + ts, heavyFbId, "p1", heavyGzB64, heavyEvents.length, heavyJson.length, 0, now])
 
   browser = await chromium.launch({ headless: true })
 }, 60_000)
@@ -202,5 +228,29 @@ test("a LARGE replay mounts a bounded window WITHOUT freezing the tab (real brow
   const noticeText = await notice.textContent()
   expect(noticeText || "").toContain("Large session")
 
+  await ctx.close()
+}, 45_000)
+
+test("a BYTE-HEAVY low-event replay degrades to 'too large' WITHOUT freezing (real browser, QA C2-2/C3-1)", async () => {
+  // This is the ACTUAL prod freeze mode: few events but a giant DOM/text payload. boundedSlice() can't shrink
+  // it (event count is small), so the fix must degrade to toolarge() instead of the unbounded synchronous mount.
+  const cookieName = sessionCookie.split("=")[0]
+  const cookieVal = sessionCookie.slice(cookieName.length + 1)
+  const ctx = await browser.newContext()
+  await ctx.addCookies([{ name: cookieName, value: cookieVal, domain: "localhost", path: "/", httpOnly: true, sameSite: "Lax" }])
+  const page = await ctx.newPage()
+  await page.addInitScript(() => {
+    ;(window as any).__ticks = 0
+    setInterval(() => { (window as any).__ticks++ }, 50)
+  })
+  await page.goto(`${BASE}/replay-frame?fb=${encodeURIComponent(heavyFbId)}`, { waitUntil: "domcontentloaded" })
+
+  // The honest "too large to play here" message must appear — NOT a frozen tab, NOT a mounted player.
+  await page.waitForFunction(() => /too large/i.test(document.body.innerText), { timeout: 8000 })
+  // Main thread stayed responsive while degrading (the whole point — no synchronous unbounded mount).
+  await page.waitForFunction(() => (window as any).__ticks > 2, { timeout: 4000 })
+  // No player iframe mounted (we degraded before the rebuild) and no false "Large session" bounded notice.
+  expect(await page.$("#klvhost iframe")).toBeNull()
+  expect(await page.$("#klvlargenotice")).toBeNull()
   await ctx.close()
 }, 45_000)
