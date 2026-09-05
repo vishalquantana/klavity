@@ -3329,14 +3329,34 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "<script>(function(){"
         + "var FB=" + JSON.stringify(fbId) + ";"
         + "var DL_TIMEOUT=30000,MOUNT_TIMEOUT=20000;"
+        // KLA-757/759: caps that BOUND the client-side mount so a large replay never freezes the tab. The
+        // recorder/trim guarantee a leading [Meta(type4),Full(type2)] snapshot, so a CONTIGUOUS prefix starting
+        // at index 0 (which contains that snapshot) is a coherent replay window — rrweb applies incrementals
+        // sequentially from the full snapshot. We mount at most MOUNT_EVENT_CAP events (or bail if the payload
+        // is absurd) so the synchronous new rrweb.Replayer(...) returns in well under a second.
+        + "var MOUNT_EVENT_CAP=6000,MOUNT_BYTES_CAP=6000000,HARD_BYTES_CEIL=12000000;"
         + "function post(m){try{parent.postMessage(Object.assign({source:'klv-replay'},m),location.origin)}catch(e){}}"
         + "var statusEl=document.getElementById('klvstatus'),barWrap=document.getElementById('klvbarwrap'),barEl=document.getElementById('klvbar'),retryEl=document.getElementById('klvretry'),msgBox=document.getElementById('klvmsg');"
+        // KLA-757: a SINGLE watchdog timer that runs from fetch start through the mount. It is only cleared once
+        // the player's iframe is confirmed present (real mount) or on an explicit fail()/toolarge(). Because the
+        // mount is now bounded (MOUNT_EVENT_CAP) the main thread yields quickly, so this can actually FIRE on the
+        // pathological large-replay case instead of the tab hanging forever with no escape.
+        + "var loadTimer=null;"
+        + "function clearLoadTimer(){if(loadTimer){clearTimeout(loadTimer);loadTimer=null}}"
         + "function setStatus(t){if(statusEl)statusEl.textContent=t}"
         + "function showBox(){if(msgBox)msgBox.style.display='block'}"
         + "function setPct(p){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.remove('klv-indet');barEl.style.width=Math.max(0,Math.min(100,p))+'%'}}"
         + "function setIndet(){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.add('klv-indet');barEl.style.width=''}}"
         + "function hideBar(){if(barWrap)barWrap.style.display='none'}"
-        + "function fail(t,st){setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:st||'error'})}"
+        + "function fail(t,st){clearLoadTimer();setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:st||'error'})}"
+        // Extreme-size safety net: skip the live rebuild entirely and show an honest message + Retry rather than
+        // attempting a freeze. Posts {status:'toolarge'} so the dashboard can render its own honest state.
+        + "function toolarge(){clearLoadTimer();setStatus('This session is too large to play here.');hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:'toolarge'})}"
+        // Build a BOUNDED, coherent slice for mounting: a contiguous prefix (indices 0..cap-1) that still contains
+        // the FIRST full snapshot (type===2). Returns ev unchanged when already small, or null when no full
+        // snapshot is reachable within the cap (leading prefix alone too large) so the caller degrades to toolarge.
+        // NEVER concatenate the snapshot with a non-contiguous tail — that breaks rrweb node refs.
+        + "function boundedSlice(ev,cap){if(!ev||ev.length<=cap)return ev;var fi=-1;for(var i=0;i<ev.length&&i<cap;i++){var e=ev[i];if(e&&e.type===2){fi=i;break}}if(fi<0)return null;return ev.slice(0,cap)}"
         // KLA replay-mount: decode the response BODY BYTES to text defensively. The stored payload is
         // gzip(JSON.stringify(events)) and the endpoint sends it with Content-Encoding: gzip; browsers
         // normally decompress that transparently (buf is then raw JSON, starting with '['/'{' = 0x5b/0x7b).
@@ -3355,10 +3375,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "if(retryEl)retryEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
         + "var done=false,metaN=0,metaT=false;"
         + "var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;"
-        + "var dlTimer=setTimeout(function(){if(done)return;done=true;if(ctrl){try{ctrl.abort()}catch(e){}}fail('The replay is taking too long to load. Check your connection and try again.','timeout')},DL_TIMEOUT);"
+        + "loadTimer=setTimeout(function(){if(done)return;done=true;if(ctrl){try{ctrl.abort()}catch(e){}}fail('The replay is taking too long to load. Check your connection and try again.','timeout')},DL_TIMEOUT);"
         + "fetch('/api/feedback/'+encodeURIComponent(FB)+'/replay',ctrl?{signal:ctrl.signal}:{}).then(function(r){"
-        + "if(r.status===404){done=true;clearTimeout(dlTimer);hideBar();setStatus('No replay was recorded for this report.');post({status:'none'});return null}"
-        + "if(!r.ok){done=true;clearTimeout(dlTimer);fail('Couldn\\u2019t load the replay.','error');return null}"
+        + "if(r.status===404){done=true;clearLoadTimer();hideBar();setStatus('No replay was recorded for this report.');post({status:'none'});return null}"
+        + "if(!r.ok){done=true;fail('Couldn\\u2019t load the replay.','error');return null}"
         // KLA-759: meta rides in response headers (the body is a gz-encoded events ARRAY).
         + "metaN=parseInt(r.headers.get('x-klv-nevents')||'0',10)||0;metaT=(r.headers.get('x-klv-trimmed')==='1');"
         + "var enc=(r.headers.get('content-encoding')||'').toLowerCase();"
@@ -3378,9 +3398,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "}"
         + "setIndet();setStatus('Downloading replay…');return r.arrayBuffer().then(function(ab){return new Uint8Array(ab)})"
         + "}).then(function(buf){"
-        + "if(!buf)return null;done=true;clearTimeout(dlTimer);return decodeToText(buf)"
+        // Download finished: the abort-based DL watchdog no longer applies (nothing left to abort), but we must
+        // NOT go unguarded through parse+mount (the old bug cleared the timer here and the synchronous mount then
+        // froze with no escape). Re-arm the SAME loadTimer for the mount phase; on expiry it fails honestly unless
+        // the player iframe has appeared. With the bounded mount below, control returns fast so this can fire.
+        + "if(!buf)return null;done=true;clearLoadTimer();loadTimer=setTimeout(function(){if(document.querySelector('#klvhost iframe'))return;fail('The replay could not be rebuilt in time. Please try again.','timeout')},MOUNT_TIMEOUT);return decodeToText(buf)"
         + "}).then(function(txt){"
         + "if(txt==null)return;"
+        // EXTREME-SIZE DEGRADE (before the synchronous JSON.parse): an absurd payload is skipped outright rather
+        // than parsed+mounted into a freeze.
+        + "if(txt.length>HARD_BYTES_CEIL){toolarge();return}"
         + "var d;try{d=JSON.parse(txt)}catch(e){fail('The replay data was corrupted.','error');return}"
         // KLA replay-mount FIX: the endpoint returns a top-level events ARRAY (meta in x-klv-* headers);
         // tolerate the legacy {events,nEvents,trimmed} envelope too. THE #1 BUG: rrweb-player's Player
@@ -3392,6 +3419,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "var nEv=(Array.isArray(d)?(metaN||ev.length):((d&&d.nEvents)||ev.length));"
         + "var trm=(Array.isArray(d)?metaT:!!(d&&d.trimmed));"
         + "if(ev.length<2){hideBar();setStatus('Too few frames to scrub.');post({status:'few'});return}"
+        // KLA-757/759 BOUND THE MOUNT (primary fix). On a large replay, mount only a bounded coherent slice so the
+        // synchronous new rrweb.Replayer(...) can never freeze the tab. Keep nEv (the FULL count) for display; the
+        // notice below tells the user this is a bounded window. If even the bounded slice is impossible (no full
+        // snapshot within the cap) or the byte-size is beyond the hard ceiling, degrade to toolarge().
+        + "var large=false;"
+        + "if(ev.length>MOUNT_EVENT_CAP||txt.length>MOUNT_BYTES_CAP){var sl=boundedSlice(ev,MOUNT_EVENT_CAP);if(!sl){toolarge();return}if(sl!==ev){ev=sl;large=true}}"
         // Mount with the LOW-LEVEL rrweb Replayer (window.rrweb.Replayer, from klv-buffer.min.js) — the SAME
         // construction that autosims-walk-report.html uses and that renders reliably. The old rrwebPlayer v2
         // Svelte WRAPPER (window.rrwebPlayer) constructed but never rendered an iframe under #klvhost, leaving
@@ -3401,9 +3434,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "if(!Replayer){fail('Could not start the player.','error');return}"
         + "setIndet();setStatus('Rebuilding session…');"
         + "var mounted=false;"
-        // Watchdog now detects the Replayer's OWN iframe (#klvhost iframe), not just a flag — the whole point
-        // is that the broken wrapper produced NO iframe. If none appears within the budget, fail honestly.
-        + "var mountTimer=setTimeout(function(){if(mounted||document.querySelector('#klvhost iframe'))return;fail('The replay could not be rebuilt in time. Please try again.','timeout')},MOUNT_TIMEOUT);"
+        // The mount-phase watchdog is the SAME loadTimer re-armed after download (above) — it detects the
+        // Replayer's OWN iframe (#klvhost iframe), not just a flag, since the whole point is that a broken mount
+        // produces NO iframe. Reconciled to a single timer so there is no double-fire and no premature clear.
         // Defer the (heavy, synchronous) rrweb mount one tick so the "Rebuilding session…" indeterminate
         // bar actually paints before the main thread is blocked rebuilding the recorded DOM.
         + "setTimeout(function(){"
@@ -3411,8 +3444,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "try{var player=new window.rrweb.Replayer(ev,{root:host,skipInactive:true,showWarning:false,showDebug:false,mouseTail:true,UNSAFE_replayCanvas:true});player.play();"
         // The Replayer builds its .replayer-wrapper + iframe SYNCHRONOUSLY. If (like the old wrapper) no iframe
         // exists after construction, fail loudly with Retry rather than leaving a silent blank frame.
-        + "if(!host.querySelector('iframe')){clearTimeout(mountTimer);fail('Could not start the player.','error');return}"
-        + "mounted=true;clearTimeout(mountTimer);if(msgBox)msgBox.style.display='none';"
+        + "if(!host.querySelector('iframe')){fail('Could not start the player.','error');return}"
+        + "mounted=true;clearLoadTimer();if(msgBox)msgBox.style.display='none';"
+        // Honest bounded-window notice (KLA-757/759): when we mounted only a leading slice of a large session,
+        // tell the viewer near the controller. Uses \\u2014 (em dash), never emoji (CI emoji guard).
+        + "if(large){try{var _ntc=document.createElement('div');_ntc.id='klvlargenotice';_ntc.className='klv-largenotice';_ntc.textContent='Large session \\u2014 showing the first part of the replay.';_ntc.style.cssText='font:12px/1.5 -apple-system,system-ui,sans-serif;color:#b58bff;background:#241733;border:1px solid #3a2a52;padding:6px 10px;border-radius:0 0 8px 8px;text-align:center';host.insertAdjacentElement('afterend',_ntc)}catch(e){}}"
         // ── Playback controller (ported from autosims-walk-report.html attachPlayerControls) ────────────────
         // The low-level Replayer has NO controller UI, so we build a control bar (play/pause + scrubber + time +
         // speed) below #klvhost, mirroring the .rpl-* controller in autosims-walk-report.html. The frame has no
@@ -3478,10 +3514,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "function _ovr(){try{var f=document.querySelector('#klvhost iframe');if(!f||!f.contentDocument)return;var cd=f.contentDocument;if(cd.getElementById('klv-reveal-fix'))return;var st=cd.createElement('style');st.id='klv-reveal-fix';st.textContent=OVR;(cd.head||cd.documentElement).appendChild(st)}catch(e){}}"
         + "_ovr();var _oi=setInterval(_ovr,500);setTimeout(function(){try{clearInterval(_oi)}catch(e){}},120000);"
         + "post({status:'ok',nEvents:nEv,trimmed:trm})}"
-        + "catch(e){clearTimeout(mountTimer);fail('Could not start the player: '+(e&&e.message?e.message:'error'),'error')}"
+        + "catch(e){fail('Could not start the player: '+(e&&e.message?e.message:'error'),'error')}"
         + "},50)"
         + "}).catch(function(err){"
-        + "if(done)return;done=true;clearTimeout(dlTimer);"
+        + "if(done)return;done=true;clearLoadTimer();"
         + "if(!(err&&err.name==='AbortError'))fail('Network error loading the replay.','error')"
         + "})"
         + "}"
