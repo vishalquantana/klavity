@@ -1,0 +1,107 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is a Race Condition in Software? A Practical Guide · Klavity</title>
+<meta name="description" content="A race condition is a bug where the result depends on the timing of operations running concurrently. Here's how to spot, reproduce, and fix one.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-a-race-condition-in-software">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is a Race Condition in Software? A Practical Guide"><meta property="og:description" content="A race condition is a bug where the result depends on the timing of operations running concurrently. Here's how to spot, reproduce, and fix one.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-a-race-condition-in-software"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is a Race Condition in Software? A Practical Guide"><meta name="twitter:description" content="A race condition is a bug where the result depends on the timing of operations running concurrently. Here's how to spot, reproduce, and fix one."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is a Race Condition in Software? A Practical Guide","description":"A race condition is a bug where the result depends on the timing of operations running concurrently. Here's how to spot, reproduce, and fix one.","datePublished":"2026-09-05","dateModified":"2026-09-05","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-a-race-condition-in-software","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Race Condition in Software? A Practical Guide","item":"https://klavity.in/blog/what-is-a-race-condition-in-software"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-race-condition-in-software"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is a race condition the same as a deadlock?","acceptedAnswer":{"@type":"Answer","text":"No. A race condition is when the result depends on unpredictable timing of concurrent operations, so you occasionally get the wrong answer. A deadlock is when two or more threads each hold a lock the other needs and both freeze forever. Ironically, adding locks to fix a race condition is a common way to introduce a deadlock, so add them in a consistent order and keep critical sections small."}},{"@type":"Question","name":"Why does the bug disappear when I add logging?","acceptedAnswer":{"@type":"Answer","text":"Logging, breakpoints, or extra print statements change the timing of your code — they slow one thread just enough to hide the bad interleaving. A bug that vanishes when you observe it is called a heisenbug, and it's a strong signal you're looking at a race condition rather than a deterministic logic error."}},{"@type":"Question","name":"Can single-threaded JavaScript have race conditions?","acceptedAnswer":{"@type":"Answer","text":"Yes. JavaScript runs one call stack at a time, but async operations (fetch, timers, promises) interleave between tasks. If two async flows both read shared state, await something, then write back based on the stale value they read, you have a race — even without threads. Double-clicking a submit button that fires two overlapping requests is the everyday version."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-09-05</div>
+    <h1>What Is a Race Condition in Software? A Practical Guide</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A race condition is a defect where a program's outcome depends on the relative timing of operations that run concurrently and share state without coordination. Because the interleaving varies run to run, the same code can work thousands of times and fail once. The durable fix is to make the shared operation atomic or serialized, not to add retries.</div>
+    <div class="prose"><p>A <strong>race condition</strong> is a defect where a program's result depends on the relative timing or interleaving of operations that run concurrently — two or more threads, processes, requests, or asynchronous callbacks touching the same shared state without coordination. When those operations happen to interleave in the "wrong" order, you get a corrupted value, a lost update, a duplicated action, or a check that passes against data that has already changed. Because the ordering varies from one run to the next, the same code can work thousands of times and fail once — which is what makes race conditions some of the hardest bugs to reproduce.</p>
+
+<h2>What is a race condition, exactly?</h2>
+<p>The classic shape of a race condition is <strong>check-then-act</strong> or <strong>read-modify-write</strong>: a piece of code reads a shared value, makes a decision or a calculation based on it, then writes back — assuming nothing changed in between. When two flows run that sequence at the same time, one of them is deciding on stale data.</p>
+<p>Consider two withdrawal requests hitting the same account balance of 100:</p>
+<ol>
+<li>Request A reads balance = 100. Request B reads balance = 100.</li>
+<li>Both check "is 100 &gt;= 100?" — both pass.</li>
+<li>Both compute 100 − 100 = 0 and write 0.</li>
+</ol>
+<p>The account is left at 0, but <em>two</em> withdrawals of 100 succeeded against a balance of 100. Neither request did anything wrong on its own; the bug lives in the gap between the read and the write. The same pattern produces lost counter increments, double-charged payments, duplicate records, and files created twice.</p>
+
+<h2>What causes race conditions?</h2>
+<p>Almost every race traces back to <strong>shared mutable state accessed without coordination</strong>. The common sources:</p>
+<ul>
+<li><strong>Non-atomic read-modify-write.</strong> Incrementing a counter, appending to a list, or updating a balance in separate read and write steps.</li>
+<li><strong>Check-then-act (TOCTOU).</strong> "Time of check to time of use" — you verify a file exists, a slot is free, or a username is available, then act on that assumption after it may have changed.</li>
+<li><strong>Unsynchronized threads or processes.</strong> Two workers mutating the same object, cache entry, or row without a lock.</li>
+<li><strong>Async ordering in a single thread.</strong> In JavaScript, two async flows that both read state, <code>await</code> something, then write back based on the value they read before awaiting.</li>
+<li><strong>Double-submit from the UI.</strong> A user double-clicks, or a slow network lets two identical requests overlap.</li>
+<li><strong>Missing transaction isolation.</strong> Concurrent database transactions reading each other's uncommitted or soon-to-change data.</li>
+</ul>
+
+<h2>How do you detect a race condition?</h2>
+<p>The tell is the symptom pattern, not the stack trace. Suspect a race when a bug is <strong>intermittent, load-dependent, order-dependent, or disappears the moment you try to observe it</strong>. A bug that vanishes when you add a log line or attach a debugger is called a <em>heisenbug</em>, and it points squarely at timing.</p>
+<ol>
+<li><strong>Increase concurrency.</strong> Run the suspect path in a tight loop, in parallel, or under load. A race that fires once in 10,000 runs at rest often fires reliably under a burst of concurrent requests.</li>
+<li><strong>Inject artificial delays.</strong> Add a small sleep between the read and the write in the code under test. Widening the window makes a rare interleaving happen almost every time — one of the fastest ways to confirm the hypothesis.</li>
+<li><strong>Use a race detector.</strong> Language tooling can flag unsynchronized shared access directly: Go's <code>-race</code> flag, ThreadSanitizer for C/C++ and Rust, and Java's concurrency-stress tooling instrument memory access and report data races you'd never catch by eye.</li>
+<li><strong>Log with timestamps and identifiers.</strong> Record a request or thread ID plus a high-resolution timestamp at each read and write. Interleaved entries from two IDs around the same value expose the overlap.</li>
+</ol>
+
+<h2>How do you fix a race condition?</h2>
+<p>Retrying, adding a delay, or "just try again" is not a fix — it only narrows the window. Durable fixes remove the unguarded gap between read and write:</p>
+<ol>
+<li><strong>Make the operation atomic.</strong> Use an atomic increment, compare-and-swap, or a single database statement (<code>UPDATE accounts SET balance = balance - 100 WHERE id = ? AND balance &gt;= 100</code>) so the read and write can't be split.</li>
+<li><strong>Lock the critical section.</strong> Wrap the read-modify-write in a mutex or row lock so only one flow is inside it at a time. Keep the section as small as possible and always acquire multiple locks in the same order to avoid deadlocks.</li>
+<li><strong>Push the guarantee into the database.</strong> A unique constraint prevents duplicate rows outright; <code>SELECT ... FOR UPDATE</code> serializes access to a row; optimistic locking (a <code>version</code> column checked on write) rejects an update built on stale data.</li>
+<li><strong>Use idempotency keys.</strong> For double-submits and payments, attach a client-generated key so a repeated request is recognized and processed once, no matter how many times it arrives.</li>
+<li><strong>Eliminate the shared state.</strong> Immutable data, a single-writer design, or serializing the work through a queue removes the contention instead of guarding it.</li>
+</ol>
+<p>After the fix, lock it in with a test that runs the path concurrently — the same reproduction that exposed the race becomes the regression test that keeps it gone.</p>
+
+<h2>Why race conditions look like "cannot reproduce" bugs</h2>
+<p>Because a race depends on timing, a user hits it once and can't make it happen again on demand — so it lands in your tracker as a vague, low-confidence report that a developer marks <em>cannot reproduce</em> and closes. The information that would actually crack it — what else was happening at that instant, which requests overlapped, what the console and network showed — is gone the moment the tab closes.</p>
+<p>That is exactly why capturing full state <em>at the moment of failure</em> matters more for timing bugs than for any other kind. A report that ships with the exact steps, the console log, the network waterfall, and precise timestamps gives you the interleaving to inspect instead of a guess to chase. Klavity's <a href="/snap">right-click bug reports</a> attach that evidence automatically when a person flags the bug, so an intermittent failure arrives with the context a developer needs. For the reproduction workflow itself, see our guides on <a href="/blog/how-to-reproduce-an-intermittent-bug">reproducing an intermittent bug</a> and <a href="/blog/reduce-cannot-reproduce-bug-tickets">cutting &quot;cannot reproduce&quot; tickets</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Suspect a race condition when a bug is intermittent, load-dependent, or vanishes under logging.</li><li>Reproduce it by adding artificial delays or hammering the code path concurrently, not by re-running once.</li><li>Fix the root cause: make the operation atomic, lock the critical section, or enforce it at the database.</li><li>Capture full state (steps, console, network, timestamps) at the moment of failure — retries won't teach you the interleaving.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is a race condition the same as a deadlock?</summary><p>No. A race condition is when the result depends on unpredictable timing of concurrent operations, so you occasionally get the wrong answer. A deadlock is when two or more threads each hold a lock the other needs and both freeze forever. Ironically, adding locks to fix a race condition is a common way to introduce a deadlock, so add them in a consistent order and keep critical sections small.</p></details><details><summary>Why does the bug disappear when I add logging?</summary><p>Logging, breakpoints, or extra print statements change the timing of your code — they slow one thread just enough to hide the bad interleaving. A bug that vanishes when you observe it is called a heisenbug, and it's a strong signal you're looking at a race condition rather than a deterministic logic error.</p></details><details><summary>Can single-threaded JavaScript have race conditions?</summary><p>Yes. JavaScript runs one call stack at a time, but async operations (fetch, timers, promises) interleave between tasks. If two async flows both read shared state, await something, then write back based on the stale value they read, you have a race — even without threads. Double-clicking a submit button that fires two overlapping requests is the everyday version.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

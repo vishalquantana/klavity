@@ -523,5 +523,12 @@
     "excerpt": "Codeless automation builds tests visually or in plain language; code-based writes them in a framework. Here's how they differ and which to pick.",
     "category": "Compare",
     "date": "2026-09-04"
+  },
+  {
+    "slug": "what-is-a-race-condition-in-software",
+    "title": "What Is a Race Condition in Software? A Practical Guide",
+    "excerpt": "A race condition is a bug where the result depends on the timing of operations running concurrently. Here's how to spot, reproduce, and fix one.",
+    "category": "Learn",
+    "date": "2026-09-05"
   }
 ]
