@@ -360,6 +360,22 @@ export async function authorTrail(
   const deadlineAt = Date.now() + driveDeadlineMs
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
+  // KLA (BookJoy login stall): click the single most-likely submit control. Shared by the no-op
+  // stagnation guard AND the repeated-`type` guard — "filled the login form but never submitted it"
+  // is the classic failure (observed live: the model re-typed the email field 4× and never clicked
+  // "Log in"). Returns the selector it clicked, or null if no unique candidate matched.
+  const tryAutoAdvanceSubmit = async (pg: any): Promise<string | null> => {
+    for (const sel of SUBMIT_CANDIDATES) {
+      try {
+        const cnt = await bounded(pg.count(sel), 5_000, "auto-advance count")
+        if (cnt === 1) {
+          await bounded(pg.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
+          return sel
+        }
+      } catch { /* try next candidate */ }
+    }
+    return null
+  }
   // Browser via the adapter seam: local Playwright by default; Puppeteer→remote (Steel) when
   // AUTOSIM_CDP_URL is set (moves the browser off the 1GB box). Behavior-identical on the default.
   const launchArgs = Array.from(new Set([...CHROMIUM_PROD_ARGS, ...(opts.launchArgs ?? [])]))
@@ -444,7 +460,14 @@ export async function authorTrail(
           if (liveShot) opts.onLiveFrame(`data:image/jpeg;base64,${liveShot}`)
         } catch {}
       }
-      const dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      let dom = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
+      // KLA (BookJoy login stall): a mid-navigation / not-yet-rendered page yields an EMPTY snapshot
+      // (observed live: /v2/login captured as sha256("")). Feeding the model a blank observation makes
+      // it flail. Wait a beat and re-capture ONCE before proceeding, so the model acts on real content.
+      if (dom.trim().length < 8) {
+        await new Promise((r) => setTimeout(r, 900))
+        dom = await bounded(page.krefSnapshot(), 15_000, "snapshot re-capture")
+      }
       // No-op stagnation guard: if the page URL + DOM hash hasn't changed since the last iteration
       // the previous action had no visible effect (e.g. re-typing the same field value, clicking
       // something that didn't respond). Inject an escalating nudge so the model tries a different
@@ -693,23 +716,34 @@ export async function authorTrail(
         if (successKey === lastSuccessKey) {
           consecutiveSuccessKey++
           if (consecutiveSuccessKey >= LOOP_STALL_N) {
-            const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
-            entry.ok = true
-            try {
-              const b64 = await page.screenshotJpeg(45, 10_000)
-              if (b64 && b64.length > 0) {
-                try { opts.onLiveFrame?.(`data:image/jpeg;base64,${b64}`) } catch {}
-                const bytes = Buffer.from(b64, "base64")
-                const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
-                entry.screenshotKey = upload.key
-              }
-            } catch {}
-            entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
-            log.push(entry); await opts.onStep?.(log)
-            return await stall(
-              `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`,
-              page.url(),
-            )
+            // KLA (BookJoy login stall): a repeated `type` almost always means the form is filled but
+            // the model never clicked submit (observed live: email re-typed 4× on /v2/login, never
+            // clicked "Log in"). Try the submit control ONCE before failing; if it clicks, the form
+            // advances — reset the loop guard and let the run continue on the new page state.
+            const autoClicked = a.op === "type" ? await tryAutoAdvanceSubmit(page) : null
+            if (autoClicked) {
+              history.push(`(auto-advance: '${a.op}' repeated without progress — clicked the likely submit control "${autoClicked}" to submit the filled form; check the new page state)`)
+              consecutiveSuccessKey = 0
+              lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
+            } else {
+              const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
+              entry.ok = true
+              try {
+                const b64 = await page.screenshotJpeg(45, 10_000)
+                if (b64 && b64.length > 0) {
+                  try { opts.onLiveFrame?.(`data:image/jpeg;base64,${b64}`) } catch {}
+                  const bytes = Buffer.from(b64, "base64")
+                  const upload = opts.shotUploader ? await opts.shotUploader(bytes, "image/jpeg") : await uploadScreenshotMeta(bytes, "image/jpeg")
+                  entry.screenshotKey = upload.key
+                }
+              } catch {}
+              entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
+              log.push(entry); await opts.onStep?.(log)
+              return await stall(
+                `progress stall: '${a.op}' on '${safeSelector ?? a.url ?? "page"}' repeated ${consecutiveSuccessKey + 1}× without state change — refine the objective to include the next step`,
+                page.url(),
+              )
+            }
           }
         } else {
           lastSuccessKey = successKey

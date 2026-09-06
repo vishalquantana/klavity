@@ -285,3 +285,51 @@ test("(D) loop-recovery: auto-advance skips selectors matching >1 element", asyn
     expect(click).not.toBe('form button:not([type="button"])')
   }
 })
+
+// ── (E) BookJoy login stall: DOM CHANGES each type (fill-state {filled:N} count), so the no-op guard
+//        never fires — only the repeated-successKey guard trips. It must auto-submit, not fail. ───────
+test("(E) repeated type where the snapshot keeps changing still auto-advances (BookJoy login fix)", async () => {
+  let snapN = 0
+  let currentUrl = "https://example.com/v2/login"
+  let dom = `<html><body><form>
+    <input type="email" aria-label="Email" id="email" value="a@b.com"/>
+    <button type="submit" id="login">Log in</button>
+  </form></body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => currentUrl,
+    goto: async (u: string) => { currentUrl = u },
+    screenshotJpeg: async () => "",
+    // Each capture is DIFFERENT (mimics the live {filled: N chars} count changing every type), so the
+    // domHash-based no-op guard resets and never auto-advances — the successKey guard must handle it.
+    krefSnapshot: async () => { snapN++; return dom.replace(/<input /, `<input data-kref="e1" data-snap="${snapN}" `).replace(/<button /, '<button data-kref="e2" ') },
+    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel === 'form button:not([type="button"])' ? 2 : sel.includes("email") || sel.includes("Email") ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: sel.includes("email") ? "Email" : null, tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel); if (sel === 'button[type="submit"]') { currentUrl = "https://example.com/dashboard"; dom = `<html><body><p id="ok">Signed in.</p></body></html>` } },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+
+  let calls = 0
+  const model: AuthorModel = async (input) => {
+    calls++
+    // Always try to type the email — the "filled the form but never submitted" fixation. Once the URL
+    // changes (auto-submit worked → /dashboard), declare done.
+    if (input.pageUrl && input.pageUrl.includes("/dashboard")) {
+      return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "logged in" }, costUsd: 0 }
+    }
+    return { action: { op: "type", selector: 'input[aria-label="Email"]', value: "a@b.com", url: null, checkpoint: null, rationale: "type email" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
+
+  const out = await authorTrail("proj_loop_e", { name: "Login", objective: "log in", baseUrl: "https://example.com/v2/login" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+
+  // Neg-control: without the successKey→auto-submit fix, this run STALLS (repeated type never submits).
+  expect(clickLog).toContain('button[type="submit"]') // auto-advance submitted the filled form
+  expect(out.status).toBe("crystallized")
+  expect(out.stallReason).toBeNull()
+})
