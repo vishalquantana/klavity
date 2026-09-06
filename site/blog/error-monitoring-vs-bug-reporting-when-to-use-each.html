@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Error Monitoring vs. Bug Reporting: When You Need Each · Klavity</title>
+<meta name="description" content="Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both.">
+<link rel="canonical" href="https://klavity.in/blog/error-monitoring-vs-bug-reporting-when-to-use-each">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Error Monitoring vs. Bug Reporting: When You Need Each"><meta property="og:description" content="Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both.">
+<meta property="og:url" content="https://klavity.in/blog/error-monitoring-vs-bug-reporting-when-to-use-each"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Error Monitoring vs. Bug Reporting: When You Need Each"><meta name="twitter:description" content="Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Error Monitoring vs. Bug Reporting: When You Need Each","description":"Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both.","datePublished":"2026-09-06","dateModified":"2026-09-06","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/error-monitoring-vs-bug-reporting-when-to-use-each","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Error Monitoring vs. Bug Reporting: When You Need Each","item":"https://klavity.in/blog/error-monitoring-vs-bug-reporting-when-to-use-each"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/error-monitoring-vs-bug-reporting-when-to-use-each"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is error monitoring the same as bug reporting?","acceptedAnswer":{"@type":"Answer","text":"No. Error monitoring automatically detects exceptions and crashes your code throws at runtime and groups them by stack trace. Bug reporting is a person flagging a problem they observed, which includes bugs that throw no error at all — like wrong text, a misaligned button, or a total that's incorrect but still a valid number."}},{"@type":"Question","name":"Can I replace bug reporting with error monitoring?","acceptedAnswer":{"@type":"Answer","text":"Not fully. Error monitoring misses every 'silent' bug — visual defects, wrong-but-valid data, confusing flows, and correctness issues that don't raise an exception. Those only surface when a human notices and reports them, so the two tools cover different failure classes rather than overlapping."}},{"@type":"Question","name":"Do error monitoring and bug reporting work together?","acceptedAnswer":{"@type":"Answer","text":"Yes. A good in-app bug report captures the same technical evidence error monitoring provides — console logs, network requests, and environment — attached to the human context of what the person was trying to do. That lets you link a report to the matching error group and reproduce faster."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-09-06</div>
+    <h1>Error Monitoring vs. Bug Reporting: When You Need Each</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Error monitoring (Sentry, Rollbar, Datadog) automatically catches runtime exceptions and gives you stack traces, but it only sees bugs that throw an error. Bug reporting captures human-observed problems — including silent bugs like wrong copy, broken layout, or plausible-but-wrong data that never raise an exception. Most teams need both: error monitoring for volume and code-level detail, bug reporting for intent and the failures your code never flags.</div>
+    <div class="prose"><p>Error monitoring and bug reporting solve two different halves of the same problem. <strong>Error monitoring</strong> — tools like Sentry, Rollbar, and Datadog — automatically catches exceptions and crashes your code throws at runtime and groups them by stack trace, so you learn about failures without anyone reporting them. <strong>Bug reporting</strong> is a person flagging a problem they observed, which captures failures your code never throws an error for: wrong copy, broken layout, a total that's incorrect but still a valid number, or a flow that technically works but confuses the user. You need error monitoring for volume and code-level detail, and bug reporting for intent and the silent failures monitoring can't see.</p>
+
+<h2>What is the difference between error monitoring and bug reporting?</h2>
+<p>The clearest way to separate them is by <em>who or what notices the problem</em> and <em>what evidence it produces</em>.</p>
+<ul>
+<li><strong>Error monitoring is machine-detected.</strong> An SDK in your app intercepts uncaught exceptions, promise rejections, and logged errors, then ships a structured event — stack trace, breadcrumbs, release version, browser, OS — to a dashboard that de-duplicates identical errors into one group with an occurrence count.</li>
+<li><strong>Bug reporting is human-detected.</strong> Someone sees something wrong and files it. The trigger is a person's judgment, not a thrown exception, so it can capture problems that are invisible to code: a value that looks right to the runtime but is wrong to a human.</li>
+</ul>
+<p>That single distinction — thrown vs. observed — is why one tool cannot replace the other. They catch different classes of failure.</p>
+
+<h2>What does error monitoring catch (and miss)?</h2>
+<p>Error monitoring is excellent at the failures that announce themselves in code, and blind to the ones that don't.</p>
+<p><strong>It catches:</strong> unhandled exceptions, failed network calls that reject, null-reference and type errors, crashes, and performance regressions like slow transactions. Because it runs continuously in production, it sees issues at a scale no manual QA can match, and it tells you <em>how often</em> and <em>since which release</em> an error occurs.</p>
+<p><strong>It misses:</strong> every bug that doesn't raise an error signal. A button styled with the wrong color, a form that submits the wrong field, a price rounded incorrectly, a confusing empty state, or copy that says the opposite of what it means — none of these throw an exception, so error monitoring stays silent. It also can't tell you what the user was <em>trying</em> to do, only what the machine did.</p>
+
+<h2>What does bug reporting catch (and miss)?</h2>
+<p>Bug reporting is the inverse. It depends on a human noticing, but that human notices the things machines can't.</p>
+<p><strong>It catches:</strong> visual and layout defects, wrong-but-valid data, correctness bugs, usability problems, and any mismatch between what the product does and what it should do. Crucially, a good report carries <em>intent</em> — the steps the person took and what they expected — which is exactly the context error monitoring lacks.</p>
+<p><strong>It misses:</strong> anything nobody happens to see. If a bug affects a rarely used path or a small segment of users, it may never be reported. Reports are also only as good as the evidence attached — a report that says "it's broken" with no console, network, or environment data is often unreproducible, which is why teams see so many <a href="/blog/reduce-cannot-reproduce-bug-tickets">"cannot reproduce" tickets</a>.</p>
+
+<h2>When should you use error monitoring vs. bug reporting?</h2>
+<p>Match the tool to the failure class you're worried about.</p>
+<ol>
+<li><strong>Reach for error monitoring</strong> when you need to know about crashes and exceptions the moment they happen, track error rates across releases, or triage a spike after a deploy. It's your early-warning system for anything that throws.</li>
+<li><strong>Reach for bug reporting</strong> when the problem is something a person sees but the code doesn't flag — visual bugs, wrong outputs, and UX issues — or when you need the user's intent and reproduction steps to understand a failure.</li>
+<li><strong>Use both together</strong> for anything user-facing, because most real products fail in both ways: some failures throw, and some just quietly do the wrong thing.</li>
+</ol>
+
+<h2>Do you need both error monitoring and bug reporting?</h2>
+<p>For most teams shipping a user-facing product, yes. Relying only on error monitoring means every silent bug ships until a customer complains through support. Relying only on bug reporting means you don't hear about crashes until someone bothers to file one — and many users just leave. The two are complementary coverage, not competing choices.</p>
+<p>The practical failure mode is treating them as interchangeable. A team that installs Sentry and calls QA "done" will still miss the rounding bug and the broken checkout copy. A team that only has a feedback widget will drown in vague reports and miss the exception storm from last night's release. Coverage comes from running both and connecting them.</p>
+
+<h2>How to connect the two</h2>
+<p>The reports that resolve fastest are the ones that carry the same technical evidence an error event does, attached to the human context only a report can provide.</p>
+<ol>
+<li><strong>Capture evidence automatically at report time.</strong> A bug report should include the console log, recent network requests, the URL, and the browser/OS environment — the same fields error monitoring collects — so a developer doesn't have to ask for them. Capturing this in-app, rather than expecting a screenshot, is what makes a human report reproducible.</li>
+<li><strong>Link a report to its error group.</strong> When a reported bug did throw an exception, the console and network capture usually contains the matching error, letting you tie the human report to the error-monitoring group and its occurrence count for prioritization.</li>
+<li><strong>Route both into one triage flow.</strong> Whether a bug arrived from an SDK or a person, it ends up in the same tracker (Jira, Linear, GitHub) with steps, environment, and evidence — so triage doesn't depend on where it came from.</li>
+</ol>
+<p>This is the gap Klavity <a href="/snap">Snap</a> is built for: a right-click, in-app bug report that automatically attaches the screenshot, console, network, and environment — the technical evidence of an error event plus the intent of a human report — and files it straight to your tracker. It doesn't replace error monitoring; it covers the silent failures error monitoring can't see, and gives your human reports the same reproducibility. See <a href="/blog/session-replay-vs-bug-reports-when-to-use-each">how bug reports compare to session replay</a> for the related trade-off.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Use error monitoring to catch exceptions at scale with stack traces and release tracking</li><li>Use bug reporting to catch silent failures your code never throws an error for</li><li>Attach console, network, and environment to every bug report so it carries the same evidence as an error event</li><li>Link human reports to their matching error group to reproduce and prioritize faster</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is error monitoring the same as bug reporting?</summary><p>No. Error monitoring automatically detects exceptions and crashes your code throws at runtime and groups them by stack trace. Bug reporting is a person flagging a problem they observed, which includes bugs that throw no error at all — like wrong text, a misaligned button, or a total that's incorrect but still a valid number.</p></details><details><summary>Can I replace bug reporting with error monitoring?</summary><p>Not fully. Error monitoring misses every 'silent' bug — visual defects, wrong-but-valid data, confusing flows, and correctness issues that don't raise an exception. Those only surface when a human notices and reports them, so the two tools cover different failure classes rather than overlapping.</p></details><details><summary>Do error monitoring and bug reporting work together?</summary><p>Yes. A good in-app bug report captures the same technical evidence error monitoring provides — console logs, network requests, and environment — attached to the human context of what the person was trying to do. That lets you link a report to the matching error group and reproduce faster.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

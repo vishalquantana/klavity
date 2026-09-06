@@ -530,5 +530,12 @@
     "excerpt": "A race condition is a bug where the result depends on the timing of operations running concurrently. Here's how to spot, reproduce, and fix one.",
     "category": "Learn",
     "date": "2026-09-05"
+  },
+  {
+    "slug": "error-monitoring-vs-bug-reporting-when-to-use-each",
+    "title": "Error Monitoring vs. Bug Reporting: When You Need Each",
+    "excerpt": "Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both.",
+    "category": "Compare",
+    "date": "2026-09-06"
   }
 ]
