@@ -341,6 +341,7 @@ export async function authorTrail(
   let costUsd = cp ? cp.costUsd : 0
   let misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
+  let autoSubmitTriedForKey: string | null = null  // C2-2: auto-submit a stalled form at most ONCE per key
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
   let prevIterDomKey: string | null = null
@@ -645,6 +646,7 @@ export async function authorTrail(
       }
       const entry: AuthorStepLog = { idx: log.length, op: a.op, selector: a.selector, value: a.value, url: page.url(), rationale: a.rationale, ok: false }
       let entryDom = dom
+      let entryLogged = false  // set when a recovery branch already pushed `entry` to the log (avoid double-log)
       let persistSelector: string | null = a.selector ?? null
       let actionFp: any = null
       try {
@@ -720,9 +722,24 @@ export async function authorTrail(
             // the model never clicked submit (observed live: email re-typed 4× on /v2/login, never
             // clicked "Log in"). Try the submit control ONCE before failing; if it clicks, the form
             // advances — reset the loop guard and let the run continue on the new page state.
-            const autoClicked = a.op === "type" ? await tryAutoAdvanceSubmit(page) : null
+            //   C2-1: gate to a LOGIN/AUTH context (page has a Password field or an auth-ish URL) so we
+            //     never auto-click submit on an unrelated form (search / newsletter / destructive confirm).
+            //   C2-2: attempt at most ONCE per stalled key — if the click didn't break the loop and the
+            //     model keeps repeating the same type, fail honestly instead of ping-ponging on budget.
+            const isLoginCtx = /password/i.test(dom) || /(login|sign[-_ ]?in|log[-_ ]?in|\bauth\b)/i.test(page.url())
+            const autoClicked: string | null = (a.op === "type" && isLoginCtx && autoSubmitTriedForKey !== successKey)
+              ? await tryAutoAdvanceSubmit(page) : null
             if (autoClicked) {
-              history.push(`(auto-advance: '${a.op}' repeated without progress — clicked the likely submit control "${autoClicked}" to submit the filled form; check the new page state)`)
+              autoSubmitTriedForKey = successKey
+              // Log the just-executed `type` step, THEN record the recovery CLICK as a REAL trajectory +
+              // log step (C1-1) — crystallize() replays traj, so without this the saved Trail would type
+              // the fields and never submit. Capture the post-click page state for the click's domHash.
+              entry.ok = true; log.push(entry); entryLogged = true
+              const postDom = await bounded(page.krefSnapshot(), 15_000, "post-autosubmit snapshot").catch(() => dom)
+              traj.push({ action: "click", actionValue: undefined, target: { resolvedSelector: autoClicked, domPath: autoClicked }, url: page.url(), domHash: sha256hex(postDom) })
+              log.push({ idx: log.length, op: "click", selector: autoClicked, value: null, url: page.url(), rationale: "auto-advance: submit the filled login form (stall recovery)", ok: true })
+              await opts.onStep?.(log)
+              history.push(`(auto-advance: '${a.op}' repeated without progress on a login form — clicked "${autoClicked}" to submit; check the new page state)`)
               consecutiveSuccessKey = 0
               lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
             } else {
@@ -809,7 +826,7 @@ export async function authorTrail(
         console.warn("[trails-author] step screenshot upload failed:", String(err))
       }
       entry.krefSnapshot = entryDom.length > 50000 ? entryDom.slice(0, 50000) + "\n...[TRUNCATED]" : entryDom
-      log.push(entry)
+      if (!entryLogged) log.push(entry)
       await opts.onStep?.(log)
       // KLA-57: persist checkpoint after each step so a subsequent stall or crash has a recovery point.
       if (opts.onCheckpoint) {

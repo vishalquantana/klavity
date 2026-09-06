@@ -332,4 +332,64 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
   expect(clickLog).toContain('button[type="submit"]') // auto-advance submitted the filled form
   expect(out.status).toBe("crystallized")
   expect(out.stallReason).toBeNull()
+  // C1-1: the recovery CLICK must be PERSISTED in the crystallized trail — else replay types the fields
+  // and never submits. Assert a click step made it into trail_steps.
+  const { createClient } = await import("@libsql/client")
+  const raw = createClient({ url: "file:" + file })
+  const steps = await raw.execute({ sql: "SELECT action FROM trail_steps WHERE trail_id=? ORDER BY idx", args: [out.trailId!] })
+  expect((steps.rows as any[]).map((r) => r.action)).toContain("click")
+})
+
+// ── (F) C2-1: a NON-login context (no password field, non-auth URL) must NOT auto-submit — it stalls. ──
+test("(F) repeated type on a non-login form does NOT auto-submit (C2-1 scope guard)", async () => {
+  let snapN = 0
+  const dom = `<html><body><form><input type="text" aria-label="Search" id="q" value="hi"/><button type="submit" id="go">Search</button></form></body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/search", goto: async () => {}, screenshotJpeg: async () => "",
+    krefSnapshot: async () => { snapN++; return dom.replace(/<input /, `<input data-kref="e1" data-snap="${snapN}" `).replace(/<button /, '<button data-kref="e2" ') },
+    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel.includes("Search") || sel.includes("search") ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Search", tagName: "INPUT", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Search"]', value: "hi", url: null, checkpoint: null, rationale: "search" }, costUsd: 0 })
+  const out = await authorTrail("proj_loop_f", { name: "Search", objective: "search", baseUrl: "https://example.com/search" }, {
+    model, verifier: async () => ({ achieved: false, reason: "", costUsd: 0 }), browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(clickLog).not.toContain('button[type="submit"]') // never auto-submitted a non-login form
+  expect(out.status).toBe("stalled")
+})
+
+// ── (G) C2-2: if the auto-submit click is a NO-OP (page doesn't advance), auto-submit fires at most
+//        ONCE for that stalled key, then the run stalls honestly instead of ping-ponging on budget. ──
+test("(G) a no-op auto-submit is attempted once, then the run stalls (C2-2)", async () => {
+  let snapN = 0
+  const dom = `<html><body><form>
+    <input type="password" aria-label="Password" id="pw" value="x"/>
+    <button type="submit" id="login">Log in</button>
+  </form></body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/v2/login", goto: async () => {}, screenshotJpeg: async () => "",
+    // Snapshot changes each type (filled-count) but the submit click is a NO-OP — page never advances.
+    krefSnapshot: async () => { snapN++; return dom.replace(/<input /, `<input data-kref="e1" data-snap="${snapN}" `).replace(/<button /, '<button data-kref="e2" ') },
+    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel.includes("assword") ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Password", tagName: "INPUT", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) /* NO-OP: never advances */ },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Password"]', value: "x", url: null, checkpoint: null, rationale: "type pw" }, costUsd: 0 })
+  const out = await authorTrail("proj_loop_g", { name: "Login", objective: "log in", baseUrl: "https://example.com/v2/login" }, {
+    model, verifier: async () => ({ achieved: false, reason: "", costUsd: 0 }), browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // Auto-submit is attempted exactly ONCE for the stalled key (no ping-pong), then it stalls honestly.
+  expect(clickLog.filter((c) => c === 'button[type="submit"]').length).toBe(1)
+  expect(out.status).toBe("stalled")
 })
