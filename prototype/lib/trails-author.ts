@@ -342,6 +342,8 @@ export async function authorTrail(
   let misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
   let autoSubmitTriedForKey: string | null = null  // C2-2: auto-submit a stalled form at most ONCE per key
+  let sawPasswordType = false  // C2-1: only auto-submit a stalled form once the run has actually typed a
+                               // password (evidence it's a LOGIN flow) — a search/settings form never trips this
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
   let prevIterDomKey: string | null = null
@@ -687,6 +689,8 @@ export async function authorTrail(
           if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "type") {
             const raw = a.value ?? ""
+            // C2-1: record that the run entered a password (login-flow evidence for the auto-submit guard).
+            if ((fp as any)?.inputType === "password" || /:password\}\}/i.test(raw) || /password/i.test((fp as any)?.ariaLabel ?? "") || /password/i.test(persistSelector ?? "")) sawPasswordType = true
             await page.fill(a.selector!, hasCredRef(raw) ? await credResolver(projectId, raw) : raw, ACTION_TIMEOUT)
           } else if (a.op === "select") await page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT)
           else if (a.op === "assert") await page.assertVisible(a.selector!, ACTION_TIMEOUT)
@@ -722,12 +726,12 @@ export async function authorTrail(
             // the model never clicked submit (observed live: email re-typed 4× on /v2/login, never
             // clicked "Log in"). Try the submit control ONCE before failing; if it clicks, the form
             // advances — reset the loop guard and let the run continue on the new page state.
-            //   C2-1: gate to a LOGIN/AUTH context (page has a Password field or an auth-ish URL) so we
-            //     never auto-click submit on an unrelated form (search / newsletter / destructive confirm).
+            //   C2-1: only fire once the run has actually TYPED A PASSWORD (evidence this is a login flow,
+            //     scoped to the flow — not any page that merely mentions "password"), so we never auto-click
+            //     submit on an unrelated form (search / newsletter / destructive confirm).
             //   C2-2: attempt at most ONCE per stalled key — if the click didn't break the loop and the
             //     model keeps repeating the same type, fail honestly instead of ping-ponging on budget.
-            const isLoginCtx = /password/i.test(dom) || /(login|sign[-_ ]?in|log[-_ ]?in|\bauth\b)/i.test(page.url())
-            const autoClicked: string | null = (a.op === "type" && isLoginCtx && autoSubmitTriedForKey !== successKey)
+            const autoClicked: string | null = (a.op === "type" && sawPasswordType && autoSubmitTriedForKey !== successKey)
               ? await tryAutoAdvanceSubmit(page) : null
             if (autoClicked) {
               autoSubmitTriedForKey = successKey
@@ -737,7 +741,7 @@ export async function authorTrail(
               entry.ok = true; log.push(entry); entryLogged = true
               const postDom = await bounded(page.krefSnapshot(), 15_000, "post-autosubmit snapshot").catch(() => dom)
               traj.push({ action: "click", actionValue: undefined, target: { resolvedSelector: autoClicked, domPath: autoClicked }, url: page.url(), domHash: sha256hex(postDom) })
-              log.push({ idx: log.length, op: "click", selector: autoClicked, value: null, url: page.url(), rationale: "auto-advance: submit the filled login form (stall recovery)", ok: true })
+              log.push({ idx: log.length, op: "click", selector: autoClicked, value: null, url: page.url(), rationale: "auto-advance: submit the filled login form (stall recovery)", ok: true, krefSnapshot: postDom.length > 50000 ? postDom.slice(0, 50000) + "\n...[TRUNCATED]" : postDom })
               await opts.onStep?.(log)
               history.push(`(auto-advance: '${a.op}' repeated without progress on a login form — clicked "${autoClicked}" to submit; check the new page state)`)
               consecutiveSuccessKey = 0

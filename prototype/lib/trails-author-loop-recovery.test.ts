@@ -293,6 +293,7 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
   let currentUrl = "https://example.com/v2/login"
   let dom = `<html><body><form>
     <input type="email" aria-label="Email" id="email" value="a@b.com"/>
+    <input type="password" aria-label="Password" id="pw" value="x"/>
     <button type="submit" id="login">Log in</button>
   </form></body></html>`
   const clickLog: string[] = []
@@ -303,8 +304,8 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
     // Each capture is DIFFERENT (mimics the live {filled: N chars} count changing every type), so the
     // domHash-based no-op guard resets and never auto-advances — the successKey guard must handle it.
     krefSnapshot: async () => { snapN++; return dom.replace(/<input /, `<input data-kref="e1" data-snap="${snapN}" `).replace(/<button /, '<button data-kref="e2" ') },
-    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel === 'form button:not([type="button"])' ? 2 : sel.includes("email") || sel.includes("Email") ? 1 : 0),
-    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: sel.includes("email") ? "Email" : null, tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel === 'form button:not([type="button"])' ? 2 : (sel.includes("email") || sel.includes("Email") || sel.includes("assword")) ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: sel.includes("assword") ? "Password" : sel.includes("email") || sel.includes("Email") ? "Email" : null, tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: sel.includes("assword") ? "password" : null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel); if (sel === 'button[type="submit"]') { currentUrl = "https://example.com/dashboard"; dom = `<html><body><p id="ok">Signed in.</p></body></html>` } },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
@@ -315,11 +316,13 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
   let calls = 0
   const model: AuthorModel = async (input) => {
     calls++
-    // Always try to type the email — the "filled the form but never submitted" fixation. Once the URL
-    // changes (auto-submit worked → /dashboard), declare done.
+    // Call 1: type the PASSWORD (establishes login-flow evidence for the C2-1 auto-submit gate).
+    // Calls 2+: fixate re-typing the EMAIL and never click submit. Once the URL changes (auto-submit
+    // worked → /dashboard), declare done.
     if (input.pageUrl && input.pageUrl.includes("/dashboard")) {
       return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "logged in" }, costUsd: 0 }
     }
+    if (calls === 1) return { action: { op: "type", selector: 'input[aria-label="Password"]', value: "x", url: null, checkpoint: null, rationale: "type password" }, costUsd: 0 }
     return { action: { op: "type", selector: 'input[aria-label="Email"]', value: "a@b.com", url: null, checkpoint: null, rationale: "type email" }, costUsd: 0 }
   }
   const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
@@ -391,5 +394,39 @@ test("(G) a no-op auto-submit is attempted once, then the run stalls (C2-2)", as
   })
   // Auto-submit is attempted exactly ONCE for the stalled key (no ping-pong), then it stalls honestly.
   expect(clickLog.filter((c) => c === 'button[type="submit"]').length).toBe(1)
+  expect(out.status).toBe("stalled")
+})
+
+// ── (H) C2-1 precise repro: the page HAS a password field (e.g. a settings form), but the model repeats
+//        typing in an UNRELATED search box and never types the password. Flow-scoped gate = NO auto-submit. ──
+test("(H) page has a password field but repeated type is in a search box → NOT auto-submitted (C2-1 flow scope)", async () => {
+  let snapN = 0
+  // A password-settings field is present on the page, plus a separate search form with a lone submit.
+  const dom = `<html><body>
+    <form id="settings"><input type="password" aria-label="New password" id="np" value=""/></form>
+    <form id="search"><input type="text" aria-label="Search" id="q" value="hi"/><button type="submit" id="go">Search</button></form>
+  </body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/account/security", goto: async () => {}, screenshotJpeg: async () => "",
+    // data-snap changes each capture (survives the kref-strip) so the DOM-hash NO-OP guard never fires —
+    // this isolates the successKey guard (my change) so the test proves ITS sawPasswordType gate.
+    krefSnapshot: async () => { snapN++; return dom.replace('<input type="text"', `<input type="text" data-kref="e1" data-snap="${snapN}"`).replace('<button ', '<button data-kref="eb" ') },
+    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel.includes("Search") || sel.includes("search") ? 1 : 0),
+    // The model only ever types the SEARCH field — never the password.
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Search", tagName: "INPUT", innerText: "", inputType: "text", dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\w+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Search"]', value: "hi", url: null, checkpoint: null, rationale: "search" }, costUsd: 0 })
+  const out = await authorTrail("proj_loop_h", { name: "Search", objective: "search", baseUrl: "https://example.com/account/security" }, {
+    model, verifier: async () => ({ achieved: false, reason: "", costUsd: 0 }), browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // Even though the page contains a password field, the model never TYPED a password, so the run is not a
+  // login flow → the search form's submit must NOT be auto-clicked.
+  expect(clickLog).not.toContain('button[type="submit"]')
   expect(out.status).toBe("stalled")
 })
