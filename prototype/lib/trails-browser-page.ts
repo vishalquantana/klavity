@@ -193,6 +193,7 @@ function fingerprintBody(el: Element): Fingerprint {
     role: el.getAttribute("role") || roleMap[tag] || undefined,
     accessibleName: accName || undefined, text: text || undefined,
     testId: el.getAttribute("data-testid") || undefined, domPath: path,
+    inputType: tag === "input" ? ((el as HTMLInputElement).type || undefined) : undefined,
   }
 }
 

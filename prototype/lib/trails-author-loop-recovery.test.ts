@@ -305,9 +305,9 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
     // domHash-based no-op guard resets and never auto-advances — the successKey guard must handle it.
     krefSnapshot: async () => { snapN++; return dom.replace(/<input /, `<input data-kref="e1" data-snap="${snapN}" `).replace(/<button /, '<button data-kref="e2" ') },
     count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel === 'form button:not([type="button"])' ? 2 : (sel.includes("email") || sel.includes("Email") || sel === "#pw") ? 1 : 0),
-    // Faithful to PROD: the password selector is POSITIONAL (#pw, no "password" text). Detection must rely
-    // on accessibleName (which the production fingerprint returns), not on the selector text.
-    fingerprint: async (sel: string) => ({ domPath: sel, accessibleName: sel === "#pw" ? "Password" : sel.includes("email") || sel.includes("Email") ? "Email" : "", role: "textbox", tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    // Faithful to PROD + Codex's UNLABELED repro: #pw is a positional selector with NO accessibleName and
+    // NO "password" text — detection must rely on the fingerprint's inputType="password" (the root fix).
+    fingerprint: async (sel: string) => ({ domPath: sel, accessibleName: sel.includes("email") || sel.includes("Email") ? "Email" : "", role: "textbox", tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: sel === "#pw" ? "password" : "text", dataTestId: null, id: null, classNames: [], isInteractive: true }),
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel); if (sel === 'button[type="submit"]') { currentUrl = "https://example.com/dashboard"; dom = `<html><body><p id="ok">Signed in.</p></body></html>` } },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},

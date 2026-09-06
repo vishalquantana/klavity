@@ -33,6 +33,8 @@ export interface Fingerprint {
   domPath?: string
   bbox?: [number, number, number, number]
   screenshotKey?: string
+  inputType?: string  // the input's type attr (e.g. "password") — reliably identifies fields an
+                      // accessible name / positional domPath can't (unlabeled password inputs)
 }
 
 /** KLA-93: named environment override for a trail — e.g. staging vs prod. */

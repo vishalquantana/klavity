@@ -695,8 +695,8 @@ export async function authorTrail(
             // C2-1: AFTER a successful password fill, latch login-flow evidence (recency-bounded). Uses the
             // fields the PRODUCTION fingerprint actually returns (accessibleName/domPath) plus the credential
             // placeholder (test-account logins) and the stable selector — never the missing inputType/ariaLabel.
-            const acc = String((fp as any)?.accessibleName ?? ""), dpath = String((fp as any)?.domPath ?? "")
-            if (/:password\}\}/i.test(raw) || /password/i.test(acc) || /password/i.test(persistSelector ?? "") || /type=["']?password/i.test(dpath) || /password/i.test(dpath)) {
+            const acc = String((fp as any)?.accessibleName ?? "")
+            if ((fp as any)?.inputType === "password" || /:password\}\}/i.test(raw) || /password/i.test(acc) || /password/i.test(persistSelector ?? "")) {
               lastPasswordTypeStep = log.length
             }
           } else if (a.op === "select") await page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT)
