@@ -199,11 +199,18 @@ function fingerprintBody(el: Element): Fingerprint {
 
 function stableSelectorBody(el: Element): string | null {
   const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-  if (el.id) return "#" + CSS.escape(el.id)
-  const tid = el.getAttribute("data-testid")
-  if (tid) return `[data-testid="${esc(tid)}"]`
-  const al = el.getAttribute("aria-label")
-  if (al) return `${el.tagName.toLowerCase()}[aria-label="${esc(al)}"]`
+  const tag = el.tagName.toLowerCase()
+  // Each candidate must resolve to EXACTLY ONE element, else a replay could act on the wrong node.
+  const uniq = (sel: string): boolean => { try { return document.querySelectorAll(sel).length === 1 } catch { return false } }
+  // Ordered most→least robust. Returns null (→ author keeps the positional domPath) only if NONE anchor.
+  // KLA (BookJoy replay locator_drift): sites without id/testid/aria (e.g. CodeIgniter forms) previously
+  // fell straight to a brittle positional path; `name`/`placeholder`/`type` anchor those cleanly.
+  if (el.id) { const s = "#" + CSS.escape(el.id); if (uniq(s)) return s }
+  const tid = el.getAttribute("data-testid"); if (tid) { const s = `[data-testid="${esc(tid)}"]`; if (uniq(s)) return s }
+  const nm = el.getAttribute("name"); if (nm) { const s = `${tag}[name="${esc(nm)}"]`; if (uniq(s)) return s }
+  const al = el.getAttribute("aria-label"); if (al) { const s = `${tag}[aria-label="${esc(al)}"]`; if (uniq(s)) return s }
+  const ph = (el as HTMLInputElement).placeholder; if (ph) { const s = `${tag}[placeholder="${esc(ph)}"]`; if (uniq(s)) return s }
+  if (tag === "input") { const ty = (el as HTMLInputElement).type; if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
   return null
 }
 /* eslint-enable */

@@ -16,6 +16,10 @@ const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><bo
   <button id="go" data-testid="submit">Continue</button>
   <button data-testid="cancel">Cancel</button>
   <a id="tos" href="/tos">Terms</a>
+  <!-- BookJoy-like: NO id/testid/aria — only name / type / placeholder (the positional-drift case) -->
+  <form><input name="loginemail" type="email" /><input name="loginpw" type="password" /></form>
+  <input type="tel" />
+  <input placeholder="Search customers" type="search" />
 </body></html>`)
 
 let handle: BrowserHandle
@@ -65,6 +69,11 @@ describe.if(RUN_BROWSER)("PlaywrightPage adapter (default)", () => {
     expect(await page.stableSelector("#email")).toBe("#email")                       // id wins
     expect(await page.stableSelector("#go")).toBe("#go")                             // id beats testid
     expect(await page.stableSelector('[data-testid="cancel"]')).toBe('[data-testid="cancel"]') // testid when no id
+    // KLA (BookJoy replay locator_drift): elements with NO id/testid/aria still anchor cleanly (not positional).
+    expect(await page.stableSelector('input[name="loginemail"]')).toBe('input[name="loginemail"]') // name anchor
+    expect(await page.stableSelector('input[name="loginpw"]')).toBe('input[name="loginpw"]')         // name anchor
+    expect(await page.stableSelector('input[type="tel"]')).toBe('input[type="tel"]')                 // type anchor (no name/placeholder)
+    expect(await page.stableSelector('input[type="search"]')).toBe('input[placeholder="Search customers"]') // placeholder beats type
     const fp = await page.fingerprint("#email")
     expect(fp.testId).toBeUndefined()
     expect(fp.accessibleName).toBe("Email")
