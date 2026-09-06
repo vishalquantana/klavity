@@ -342,8 +342,10 @@ export async function authorTrail(
   let misses = 0
   let lastSuccessKey: string | null = null, consecutiveSuccessKey = 0
   let autoSubmitTriedForKey: string | null = null  // C2-2: auto-submit a stalled form at most ONCE per key
-  let sawPasswordType = false  // C2-1: only auto-submit a stalled form once the run has actually typed a
-                               // password (evidence it's a LOGIN flow) — a search/settings form never trips this
+  // C2-1: auto-submit a stalled form ONLY when the run typed a password within the last few steps
+  // (evidence it's a LOGIN flow, and recency-bounded so a later unrelated form after login can't trip it).
+  let lastPasswordTypeStep = -999
+  const PASSWORD_RECENCY_STEPS = 8
   // No-op stagnation tracking: detects when the page URL + DOM hash doesn't change across
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
   let prevIterDomKey: string | null = null
@@ -689,9 +691,14 @@ export async function authorTrail(
           if (a.op === "click") await page.click(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "type") {
             const raw = a.value ?? ""
-            // C2-1: record that the run entered a password (login-flow evidence for the auto-submit guard).
-            if ((fp as any)?.inputType === "password" || /:password\}\}/i.test(raw) || /password/i.test((fp as any)?.ariaLabel ?? "") || /password/i.test(persistSelector ?? "")) sawPasswordType = true
             await page.fill(a.selector!, hasCredRef(raw) ? await credResolver(projectId, raw) : raw, ACTION_TIMEOUT)
+            // C2-1: AFTER a successful password fill, latch login-flow evidence (recency-bounded). Uses the
+            // fields the PRODUCTION fingerprint actually returns (accessibleName/domPath) plus the credential
+            // placeholder (test-account logins) and the stable selector — never the missing inputType/ariaLabel.
+            const acc = String((fp as any)?.accessibleName ?? ""), dpath = String((fp as any)?.domPath ?? "")
+            if (/:password\}\}/i.test(raw) || /password/i.test(acc) || /password/i.test(persistSelector ?? "") || /type=["']?password/i.test(dpath) || /password/i.test(dpath)) {
+              lastPasswordTypeStep = log.length
+            }
           } else if (a.op === "select") await page.selectOption(a.selector!, a.value ?? "", ACTION_TIMEOUT)
           else if (a.op === "assert") await page.assertVisible(a.selector!, ACTION_TIMEOUT)
           else if (a.op === "hover") await page.hover(a.selector!, ACTION_TIMEOUT)
@@ -731,7 +738,8 @@ export async function authorTrail(
             //     submit on an unrelated form (search / newsletter / destructive confirm).
             //   C2-2: attempt at most ONCE per stalled key — if the click didn't break the loop and the
             //     model keeps repeating the same type, fail honestly instead of ping-ponging on budget.
-            const autoClicked: string | null = (a.op === "type" && sawPasswordType && autoSubmitTriedForKey !== successKey)
+            const sawPasswordRecently = (log.length - lastPasswordTypeStep) <= PASSWORD_RECENCY_STEPS
+            const autoClicked: string | null = (a.op === "type" && sawPasswordRecently && autoSubmitTriedForKey !== successKey)
               ? await tryAutoAdvanceSubmit(page) : null
             if (autoClicked) {
               autoSubmitTriedForKey = successKey

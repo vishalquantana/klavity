@@ -304,8 +304,10 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
     // Each capture is DIFFERENT (mimics the live {filled: N chars} count changing every type), so the
     // domHash-based no-op guard resets and never auto-advances — the successKey guard must handle it.
     krefSnapshot: async () => { snapN++; return dom.replace(/<input /, `<input data-kref="e1" data-snap="${snapN}" `).replace(/<button /, '<button data-kref="e2" ') },
-    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel === 'form button:not([type="button"])' ? 2 : (sel.includes("email") || sel.includes("Email") || sel.includes("assword")) ? 1 : 0),
-    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: sel.includes("assword") ? "Password" : sel.includes("email") || sel.includes("Email") ? "Email" : null, tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: sel.includes("assword") ? "password" : null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    count: async (sel: string) => (sel === 'button[type="submit"]' ? 1 : sel === 'form button:not([type="button"])' ? 2 : (sel.includes("email") || sel.includes("Email") || sel === "#pw") ? 1 : 0),
+    // Faithful to PROD: the password selector is POSITIONAL (#pw, no "password" text). Detection must rely
+    // on accessibleName (which the production fingerprint returns), not on the selector text.
+    fingerprint: async (sel: string) => ({ domPath: sel, accessibleName: sel === "#pw" ? "Password" : sel.includes("email") || sel.includes("Email") ? "Email" : "", role: "textbox", tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel); if (sel === 'button[type="submit"]') { currentUrl = "https://example.com/dashboard"; dom = `<html><body><p id="ok">Signed in.</p></body></html>` } },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
@@ -322,7 +324,7 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
     if (input.pageUrl && input.pageUrl.includes("/dashboard")) {
       return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "logged in" }, costUsd: 0 }
     }
-    if (calls === 1) return { action: { op: "type", selector: 'input[aria-label="Password"]', value: "x", url: null, checkpoint: null, rationale: "type password" }, costUsd: 0 }
+    if (calls === 1) return { action: { op: "type", selector: '#pw', value: "x", url: null, checkpoint: null, rationale: "type password" }, costUsd: 0 }
     return { action: { op: "type", selector: 'input[aria-label="Email"]', value: "a@b.com", url: null, checkpoint: null, rationale: "type email" }, costUsd: 0 }
   }
   const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
