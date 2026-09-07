@@ -537,5 +537,12 @@
     "excerpt": "Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both.",
     "category": "Compare",
     "date": "2026-09-06"
+  },
+  {
+    "slug": "load-testing-vs-stress-testing",
+    "title": "Load Testing vs. Stress Testing: What's the Difference?",
+    "excerpt": "Load testing checks how your system behaves under expected traffic. Stress testing pushes past the limit to find where it breaks. Here's how to run each.",
+    "category": "Compare",
+    "date": "2026-09-07"
   }
 ]
