@@ -544,5 +544,12 @@
     "excerpt": "Load testing checks how your system behaves under expected traffic. Stress testing pushes past the limit to find where it breaks. Here's how to run each.",
     "category": "Compare",
     "date": "2026-09-07"
+  },
+  {
+    "slug": "reproduce-a-bug-that-only-happens-for-one-user",
+    "title": "How to Reproduce a Bug That Only Happens for One User",
+    "excerpt": "A bug that hits one user and no one else is almost always a state problem. Here are the five kinds of user state to replicate to reproduce it.",
+    "category": "Guides",
+    "date": "2026-09-08"
   }
 ]
