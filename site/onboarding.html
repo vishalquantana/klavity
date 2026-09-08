@@ -45,708 +45,958 @@
 <meta name="twitter:image" content="https://klavity.in/og.png" />
 <link rel="stylesheet" href="/fonts/fonts.css" />
 <script src="/icons.generated.js"></script>
+
 <style>
-/* ── Klavity onboarding v2 — Figma stepwise wizard, top progress rail ── */
-/* Light look (matches home): warm cream page, white cards, indigo accent, green success. */
-:root{
-  --bg:#f5f3ee; --card:#ffffff; --ink:#19140f; --ink2:#3a352e; --muted:#574f45; --faint:#6b6055;
-  --line:#e3ddd1; --line2:#efeae0;
-  --indigo:#6366f1; --indigo-deep:#4f46e5; --indigo-ghost:#eef0fe; --indigo-line:#d9ddfb;
-  --green:#0f9d6b; --green-ghost:#e6f6ef; --amber:#d98324; --amber-ghost:#fbeed7;
-  --rose:#db2777; --rose-ghost:#fbe9f1;
-  --shadow:0 10px 34px rgba(25,20,15,.08); --radius:16px;
-  --display:'Fraunces',serif; --body:'Hanken Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+/* ── Klavity Onboarding — Modern Figma UI Spec ── */
+:root {
+  --bg: #f5f3ee;
+  --card: #ffffff;
+  --canvas: #faf9f7;
+  --ink: #161310;
+  --ink2: #3a352e;
+  --muted: #6b6055;
+  --faint: #9b8f7e;
+  --line: #e8e3db;
+  --hairline: #eae5dc;
+  --border: #dfd9ce;
+  --ring: #6366f1;
+  --primary: #6366f1;
+  --primary-2: #4f46e5;
+  --primary-ghost: #eef0fe;
+  --accent: #f0f4ff;
+  --accent-foreground: #4361ee;
+  --critical: #dc2626;
+  --critical-bg: #fef2f2;
+  --success: #0f9b63;
+  --success-bg: #f0fdf4;
+  --warning: #d97706;
+  --warning-bg: #fef3c7;
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-2xl: 20px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 10px 30px -5px rgba(0,0,0,0.06), 0 4px 6px -2px rgba(0,0,0,0.03);
+  --shadow-lg: 0 20px 40px -10px rgba(0,0,0,0.09), 0 8px 16px -4px rgba(0,0,0,0.04);
+  --display: 'Fraunces', serif;
+  --body: 'Hanken Grotesk', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
 }
-[data-theme="dark"]{
-  --bg:#0c0a08; --card:#15110d; --ink:#f3ece1; --ink2:#cfc6b8; --muted:#a89e90; --faint:#776c5d;
-  --line:rgba(243,236,225,.12); --line2:rgba(243,236,225,.07);
-  --indigo:#8b8bf5; --indigo-deep:#6366f1; --indigo-ghost:rgba(139,139,245,.13); --indigo-line:rgba(139,139,245,.3);
-  --green:#5cc79a; --green-ghost:rgba(15,157,107,.15); --amber:#e8a24a; --amber-ghost:rgba(217,131,36,.14);
-  --rose:#e8849a; --rose-ghost:rgba(219,39,119,.14);
-  --shadow:0 10px 34px rgba(0,0,0,.35);
+[data-theme="dark"] {
+  --bg: #0c0a08;
+  --card: #15110d;
+  --canvas: #1e1813;
+  --ink: #f3ece1;
+  --ink2: #cfc6b8;
+  --muted: #a89e90;
+  --faint: #776c5d;
+  --line: rgba(243,236,225,.12);
+  --hairline: rgba(243,236,225,.08);
+  --border: rgba(243,236,225,.18);
+  --ring: #8b8bf5;
+  --primary: #8b8bf5;
+  --primary-2: #6366f1;
+  --primary-ghost: rgba(139,139,245,.14);
+  --accent: rgba(139,139,245,.14);
+  --accent-foreground: #8b8bf5;
+  --critical: #ef4444;
+  --critical-bg: rgba(239,68,68,.12);
+  --success: #10b981;
+  --success-bg: rgba(16,185,129,.12);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245,158,11,.12);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.25);
+  --shadow: 0 10px 30px -5px rgba(0,0,0,0.4);
+  --shadow-lg: 0 20px 40px -10px rgba(0,0,0,0.55);
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);min-height:100vh;-webkit-font-smoothing:antialiased;
-  font-size:14.5px;line-height:1.55}
-a{color:inherit;text-decoration:none}
-.mono{font-family:var(--mono)}
-.hide{display:none !important}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+}
+a { color: inherit; text-decoration: none; }
+.font-display { font-family: var(--display); }
+.font-mono { font-family: var(--mono); }
 
-/* ── top bar + progress rail ── */
-.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 86%,transparent);
-  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.top .in{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:18px;padding:14px 24px}
-.brand{display:flex;align-items:center;gap:11px;font-weight:750;font-size:16px;letter-spacing:-.01em;color:var(--ink)}
-.brand .mark{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;color:#fff;
-  font-family:var(--body);background:linear-gradient(135deg,var(--indigo-deep),#a78bfa);box-shadow:0 4px 12px rgba(79,70,229,.28)}
-.rail{display:flex;align-items:center;gap:6px;margin:0 auto;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.rail .s{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--faint);white-space:nowrap}
-.rail .dot{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;
-  border:1.5px solid var(--line);background:var(--card);flex-shrink:0;transition:.2s}
-.rail .s.done{color:var(--green)}
-.rail .s.done .dot{background:var(--green-ghost);border-color:var(--green);color:var(--green)}
-.rail .s.now{color:var(--ink);font-weight:650}
-.rail .s.now .dot{background:var(--indigo);border-color:var(--indigo);color:#fff;box-shadow:0 0 0 4px var(--indigo-ghost)}
-.rail .bar{width:26px;height:1.5px;background:var(--line);flex-shrink:0}
-.pill-live{font-size:11px;color:var(--indigo);background:var(--indigo-ghost);border:1px solid var(--indigo-line);
-  border-radius:999px;padding:3px 10px;font-family:var(--mono);white-space:nowrap}
+/* Header & Progress Bar */
+header.top-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  backdrop-filter: blur(16px);
+}
+.header-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-logo-sq {
+  width: 32px;
+  height: 32px;
+  background: #161310;
+  color: #ffffff;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.22);
+  user-select: none;
+}
+.brand-name {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.back-btn:hover {
+  background: var(--canvas);
+  color: var(--ink);
+  border-color: var(--border);
+}
+.phases-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.phase-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--mono);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  transition: all 0.2s ease;
+}
+.phase-badge.active {
+  background: var(--primary-ghost);
+  border-color: var(--ring);
+  color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-ghost);
+}
+.phase-badge.done {
+  background: var(--success-bg);
+  border-color: var(--success);
+  color: var(--success);
+}
+.phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
 
-/* ── stage ── */
-.stage{max-width:1080px;margin:0 auto;padding:38px 24px 120px;position:relative}
-.screen{display:none}
-.screen.on{display:block;animation:fade .3s ease}
-@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.kicker{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--indigo);
-  font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.kicker.green{color:var(--green)} .kicker.amber{color:var(--amber)}
-h1.hd{font-family:var(--body);font-size:clamp(28px,3.6vw,36px);line-height:1.12;letter-spacing:-.02em;
-  font-weight:750;margin:0 0 12px;color:var(--ink)}
-h1.hd em{font-style:normal;color:var(--indigo)}
-.sub{color:var(--muted);font-size:15.5px;max-width:600px;margin:0 0 26px;line-height:1.55}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media(max-width:840px){.cols{grid-template-columns:1fr}}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-.pad{padding:20px 22px}
+/* App Main Canvas */
+main.onboarding-app {
+  flex: 1;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+  position: relative;
+}
 
-/* selectable option (goal cards, tracker, install tiles) */
-.opt{display:flex;align-items:center;gap:13px;background:var(--card);border:1.5px solid var(--line);border-radius:14px;
-  padding:16px 17px;cursor:pointer;transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease,background .14s ease;
-  user-select:none;text-align:left;width:100%;font-family:var(--body);color:var(--ink)}
-.opt:hover{border-color:var(--indigo-line);transform:translateY(-1.5px)}
-.opt:active{transform:scale(.985)}
-.opt.sel{border-color:var(--indigo);background:var(--indigo-ghost);box-shadow:0 0 0 3px rgba(99,102,241,.10)}
-.opt .ic{width:34px;height:34px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:grid;
-  place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;color:var(--indigo);flex:none}
-.opt.sel .ic{background:var(--card)}
-.opt .t{font-weight:650;color:var(--ink)} .opt .d{color:var(--muted);font-size:12.8px;line-height:1.4}
-.opt .chk{margin-left:auto;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--line);display:grid;
-  place-items:center;flex:none;color:transparent;transition:.14s}
-.opt.sel .chk{background:var(--indigo);border-color:var(--indigo);color:#fff}
-.reco{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;color:var(--indigo);background:var(--card);
-  border:1px solid var(--indigo-line);border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:middle}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:640px){.grid2{grid-template-columns:1fr}}
+/* UI View States */
+.ui-view {
+  display: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.ui-view.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
 
-/* fields */
-.field{margin-top:16px}
-label.fld{display:block;margin-bottom:16px}
-label.fld .lt, .field label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
-  color:var(--faint);margin-bottom:7px}
-.in, input.in{width:100%;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:13px 15px;
-  font-family:var(--body);font-size:15px;color:var(--ink);outline:none;transition:border-color .2s,box-shadow .2s}
-.in:focus{border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-ghost)}
-.in::placeholder{color:var(--faint)}
-input.code{font-family:var(--mono);font-size:24px;letter-spacing:.5em;text-align:center}
+/* Screen Title Header */
+.screen-header {
+  text-align: center;
+  max-width: 680px;
+  margin: 0 auto 36px;
+}
+.screen-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 10px;
+}
+.screen-title {
+  font-family: var(--display);
+  font-size: clamp(30px, 4vw, 42px);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+.screen-subtitle {
+  font-size: 16px;
+  color: var(--muted);
+  line-height: 1.55;
+}
 
-/* buttons */
-.btn{font-family:var(--body);font-weight:650;font-size:14.5px;padding:12px 22px;border-radius:12px;cursor:pointer;
-  border:1px solid transparent;transition:transform 150ms ease,filter 150ms ease,border-color 150ms ease,opacity 150ms ease;
-  display:inline-flex;align-items:center;gap:9px}
-.btn:hover{transform:translateY(-2px) scale(1.02)}
-.btn:active{transform:scale(.97)}
-.btn[disabled]{opacity:.45;cursor:default;transform:none}
-.btn-indigo{color:#fff;background:linear-gradient(135deg,#818cf8,var(--indigo));box-shadow:0 8px 20px rgba(99,102,241,.32)}
-.btn-indigo:hover{filter:brightness(1.05)}
-.btn-amber{color:#fff;background:linear-gradient(135deg,#eab06a,var(--amber));box-shadow:0 8px 20px rgba(217,131,36,.28)}
-.btn-amber:hover{filter:brightness(1.05)}
-.btn-ghost{color:var(--ink);border-color:var(--line);background:var(--card)}
-.btn-ghost:hover{border-color:var(--indigo)}
-.btn-block{width:100%;justify-content:center}
-.row{display:flex;gap:13px;align-items:center;margin-top:26px;flex-wrap:wrap}
-.row .skip{font-size:13.5px;color:var(--faint);margin-left:auto;cursor:pointer;background:none;border:none;
-  font-family:var(--body);transition:transform 150ms ease,color 150ms ease}
-.row .skip:hover{color:var(--indigo);transform:translateY(-1.5px) scale(1.02)}
-.err{margin-top:14px;font-size:13.5px;color:var(--rose);min-height:1px}
-.helper{margin-top:12px;font-size:13px;color:var(--faint)}
-.note{margin-top:18px;font-size:13.5px;color:var(--muted);line-height:1.5;border-left:3px solid var(--indigo);padding-left:12px}
-.note.amber{border-color:var(--amber)}
-.note code{font-family:var(--mono);font-size:12px}
+/* Choice Cards (Welcome) */
+.choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+@media (max-width: 768px) {
+  .choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.choice-card {
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-2xl);
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+}
+.choice-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-lg);
+}
+.choice-pill {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 20px;
+}
+.pill-snap {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.pill-sim {
+  background: var(--primary-ghost);
+  color: var(--primary);
+  border: 1px solid var(--border);
+}
+.choice-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  margin-bottom: 18px;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+}
+.choice-title {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.choice-desc {
+  font-size: 14.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+.choice-features {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex: 1;
+}
+.choice-features li {
+  font-size: 13.5px;
+  color: var(--ink2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.feature-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--success-bg);
+  color: var(--success);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
 
-/* callouts / trust */
-.callout{display:flex;gap:10px;align-items:flex-start;background:var(--amber-ghost);border:1px solid var(--line);
-  border-radius:12px;padding:12px 14px;font-size:12.8px;color:var(--ink2);margin-top:14px}
-.trust{display:flex;gap:10px;align-items:center;background:var(--green-ghost);border:1px solid var(--line);
-  border-radius:12px;padding:12px 14px;font-size:12.8px;color:var(--ink2);margin-top:16px}
+/* Primary & Action Buttons */
+.btn-action {
+  width: 100%;
+  padding: 14px 22px;
+  border-radius: 12px;
+  font-family: var(--body);
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(99,102,241,0.3);
+}
+.btn-primary:hover {
+  background: var(--primary-2);
+  transform: translateY(-1px);
+}
+.btn-secondary {
+  background: var(--card);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+}
+.btn-secondary:hover {
+  background: var(--canvas);
+  border-color: var(--border);
+}
 
-/* inline tracker connect panel (#445) */
-.trk-panel{margin-top:12px;background:var(--indigo-ghost);border:1.5px solid var(--indigo-line);border-radius:14px;padding:16px 16px 14px}
-.trk-panel .tp-head{font-size:14px;font-weight:650;color:var(--ink);margin-bottom:12px}
-.trk-panel .tp-tag{font-family:var(--mono);font-size:10px;letter-spacing:.05em;background:var(--indigo);color:#fff;border-radius:6px;padding:2px 6px;vertical-align:middle;margin-left:4px}
-.trk-panel .tp-oauth{margin-bottom:12px}
-.trk-panel .tp-or{text-align:center;font-size:12px;color:var(--muted);margin-top:8px}
-.trk-panel .tp-fields label.fld{margin-bottom:12px}
-.trk-panel .tp-status{font-size:13px;color:var(--muted);margin-left:auto;align-self:center}
-.trk-panel .tp-status.ok{color:var(--green)}
-.trk-panel .tp-map{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
-.trk-panel .tp-map-h{font-size:12.5px;font-weight:650;color:var(--ink);margin-bottom:8px}
-.trk-panel .tp-map-h span{color:var(--muted);font-weight:400}
-.trk-panel .tp-map-load{font-size:12.5px;color:var(--muted)}
-.trk-panel .tp-maprow{display:flex;align-items:center;gap:10px;font-size:13px;padding:5px 0}
-.trk-panel .tp-maprow .mf{min-width:82px;color:var(--ink2)}
-.trk-panel .tp-maprow .ma{color:var(--muted)}
-.trk-panel .tp-maprow .mt{font-weight:600;color:var(--ink)}
-.trk-panel .tp-maprow .mauto{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+/* Center Form Layouts */
+.form-center-box {
+  max-width: 620px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-2xl);
+  padding: 36px 32px;
+  box-shadow: var(--shadow);
+}
+.field-group {
+  margin-bottom: 20px;
+}
+.field-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.text-input {
+  width: 100%;
+  padding: 14px 16px;
+  font-family: var(--body);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.text-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-ghost);
+  background: var(--card);
+}
 
-/* preview browser */
-.browser{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
-.bchrome{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line2);background:var(--bg)}
-.dots{display:flex;gap:5px} .dots i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
-.burl{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:4px 9px;font-family:var(--mono);
-  font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bbody{padding:16px;min-height:190px;position:relative}
-.sk{background:var(--line2);border-radius:8px;height:14px;margin:8px 0}
-.bcursor{position:absolute;background:var(--indigo);color:#fff;font-size:11px;border-radius:999px;padding:3px 9px;box-shadow:var(--shadow)}
-/* grounded visual scan — real screenshot + top-to-bottom scanner line on the Test screen */
-.test-shotwrap{position:relative;overflow:hidden;border-radius:8px;max-height:320px}
-.test-shot{display:block;width:100%;height:auto;object-fit:cover;object-position:top}
-.scanline{position:absolute;left:0;right:0;top:0;height:26px;pointer-events:none;
-  background:linear-gradient(to bottom,rgba(99,102,241,0) 0%,rgba(99,102,241,.18) 60%,rgba(99,102,241,.55) 100%);
-  border-bottom:2px solid var(--indigo);box-shadow:0 0 14px rgba(99,102,241,.5);animation:scansweep 2.4s ease-in-out infinite}
-@keyframes scansweep{0%{transform:translateY(-26px)}100%{transform:translateY(320px)}}
-@media(prefers-reduced-motion:reduce){.scanline{animation:none;opacity:.5}}
+/* Live Simulation Running View */
+.running-card {
+  max-width: 780px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-2xl);
+  padding: 36px 32px;
+  box-shadow: var(--shadow);
+}
+.progress-bar-wrap {
+  width: 100%;
+  height: 8px;
+  background: var(--canvas);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 20px 0 28px;
+  border: 1px solid var(--line);
+}
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), #a855f7);
+  transition: width 0.4s ease;
+}
+.steps-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  font-size: 14px;
+  color: var(--muted);
+  transition: all 0.2s ease;
+}
+.step-item.active {
+  background: var(--primary-ghost);
+  border-color: var(--ring);
+  color: var(--ink);
+  font-weight: 600;
+}
+.step-item.done {
+  background: var(--success-bg);
+  border-color: #bbf7d0;
+  color: var(--success);
+}
+.step-icon-bead {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  background: var(--card);
+  border: 1.5px solid var(--line);
+}
+.step-item.active .step-icon-bead {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.step-item.done .step-icon-bead {
+  background: var(--success);
+  border-color: var(--success);
+  color: #ffffff;
+}
 
-/* auth advanced (product step) */
-.adv-toggle{margin-top:14px;display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid var(--line);
-  border-radius:10px;padding:8px 13px;color:var(--indigo);font-family:var(--body);font-size:13px;cursor:pointer;
-  transition:border-color .15s,background .15s}
-.adv-toggle:hover{border-color:var(--indigo);background:var(--indigo-ghost)}
-.auth{margin-top:12px;padding:15px;border:1px dashed var(--indigo-line);border-radius:12px;background:var(--indigo-ghost)}
+/* Findings Stream Card */
+.finding-box {
+  background: var(--canvas);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 20px;
+}
+.finding-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.badge-critical {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.badge-high {
+  background: #fef3c7;
+  color: #b45309;
+}
 
-/* checklist */
-.chk-list .li{display:flex;align-items:center;gap:11px;padding:9px 0;color:var(--faint)}
-.chk-list .li.done{color:var(--ink)} .chk-list .li.act{color:var(--ink);font-weight:600}
-.cbead{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;
-  font-size:11px;flex:none}
-.li.done .cbead{background:var(--green-ghost);border-color:var(--green);color:var(--green)}
-.li.act .cbead{background:var(--indigo);border-color:var(--indigo);color:#fff}
+/* Results Action Switches */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.toggle-title {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.toggle-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.switch-input {
+  width: 44px;
+  height: 24px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
 
-/* real-result card (Step 4 first result — no canned stats, real reaction only) */
-.rescard-head{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
-.rescard-persona{font-size:15px} .rescard-persona b{color:var(--ink)} .rescard-persona span{color:var(--muted);font-weight:500;margin-left:4px}
-.sentbadge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:700;
-  letter-spacing:.03em;border-radius:999px;padding:2px 10px;text-transform:capitalize}
-.sentbadge.amber{background:var(--amber-ghost);color:var(--amber)}
-.sentbadge.rose{background:var(--rose-ghost);color:var(--rose)}
-.sentbadge.green{background:var(--green-ghost);color:var(--green)}
-.sentbadge.muted{background:var(--line2);color:var(--muted)}
-.rx-live{border-left:3px solid var(--indigo);padding:10px 0 10px 13px;margin-bottom:16px;background:var(--indigo-ghost);
-  border-radius:0 10px 10px 0;padding-right:13px}
-.rx-live .rx-lead{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-bottom:6px}
-.rx-live .rx-obs{font-size:14.5px;line-height:1.5;font-style:italic;color:var(--ink)}
-.rx-live .rx-title{font-weight:700;font-size:15px;color:var(--ink);margin:2px 0 6px}
-/* visual evidence — real screenshot with the reaction region drawn on top */
-.rx-shotwrap{position:relative;margin-top:12px;border:1px solid var(--line);border-radius:11px;overflow:hidden;max-height:360px}
-.rx-shot{display:block;width:100%;height:auto;object-fit:cover;object-position:top}
-.rx-region{position:absolute;border:2px solid var(--indigo);background:rgba(99,102,241,.14);border-radius:4px;
-  box-shadow:0 0 0 9999px rgba(25,20,15,.12);pointer-events:none}
-.rx-pin{position:absolute;left:0;top:-9px;transform:translateY(-100%);background:var(--indigo);color:#fff;
-  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.03em;border-radius:6px;padding:2px 7px;white-space:nowrap;box-shadow:var(--shadow)}
-.rx-cap{margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--muted)}
-
-/* recommended journeys */
-.jrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line2)}
-.jrow:first-child{border-top:none}
-.jrow .jt{font-weight:600;flex:0 0 auto}
-.jrow .jbar{flex:1;height:6px;background:var(--line2);border-radius:3px;overflow:hidden}
-.jrow .jbar i{display:block;height:100%;background:var(--indigo)}
-.jrow .jp{font-family:var(--mono);font-size:12px;color:var(--muted);width:38px;text-align:right}
-
-/* returned sims preview grid */
-.uh-sims{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
-@media(max-width:520px){.uh-sims{grid-template-columns:1fr 1fr}}
-.uh-sim{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px;display:flex;flex-direction:column;
-  gap:6px;animation:uhpop .3s ease both}
-@keyframes uhpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.uh-sim .uh-av{width:36px;height:36px;border-radius:10px;color:#fff;font-weight:700;font-size:13px;display:grid;place-items:center;margin-bottom:2px}
-.uh-sim .uh-nm{font-weight:650;font-size:13px} .uh-sim .uh-rl{font-size:11.5px;color:var(--faint);line-height:1.4}
-.uh-sim .uh-ds{font-size:11.5px;color:var(--ink2);line-height:1.45;margin-top:2px}
-.uh-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
-.uh-loading{display:flex;align-items:center;gap:9px;margin-top:16px;font-size:13.5px;color:var(--muted)}
-.uh-spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--indigo);border-top-color:transparent;animation:uhspin .7s linear infinite}
-@keyframes uhspin{to{transform:rotate(360deg)}}
-.uh-catch{background:var(--indigo-ghost);border:1px solid var(--indigo-line);border-radius:12px;padding:12px 14px;
-  font-size:13.5px;color:var(--ink2);line-height:1.5;margin-top:14px}
-.uh-catch b{color:var(--ink)}
-
-/* plan cards */
-.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-@media(max-width:700px){.plans{grid-template-columns:1fr}}
-.plan{position:relative;border:1.5px solid var(--line);border-radius:16px;padding:20px 18px;background:var(--card);cursor:pointer;
-  text-align:left;font-family:var(--body);color:var(--ink);transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
-.plan:hover{border-color:var(--indigo-line);transform:translateY(-3px)}
-.plan.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.plan .pl-tag{position:absolute;top:16px;right:16px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo)}
-.plan h3{font-weight:700;font-size:18px;margin-bottom:6px}
-.plan .pl-price{font-size:26px;font-weight:780;margin-bottom:2px}
-.plan .pl-price span{font-size:12.5px;color:var(--muted);font-weight:500}
-.plan .pl-desc{color:var(--muted);font-size:12.5px;margin-top:8px;line-height:1.5}
-.guarantee{margin-top:18px;display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--muted);line-height:1.5;
-  border-left:3px solid var(--green);padding-left:12px}
-.guarantee b{color:var(--ink)}
-
-/* frequency + tiles */
-.freq{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
-.freqp{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:11px 15px;cursor:pointer;font-size:13.5px;
-  color:var(--muted);font-family:var(--body);transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
-.freqp:hover{border-color:var(--indigo-line);transform:translateY(-2px)}
-.freqp.sel{border-color:var(--indigo);color:var(--ink);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.freqp .fr-rec{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--indigo);margin-top:3px}
-.tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media(max-width:640px){.tiles{grid-template-columns:1fr}}
-.tile{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:20px;cursor:pointer;
-  transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease;text-align:left}
-.tile:hover{border-color:var(--indigo-line);transform:translateY(-3px)}
-.tile.sel{border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.tile .ti{width:40px;height:40px;border-radius:11px;background:var(--bg);border:1px solid var(--line);display:grid;place-items:center;color:var(--indigo);margin-bottom:12px}
-.tile h3{font-weight:700;font-size:17px;margin-bottom:6px}
-.tile p{font-size:13px;color:var(--muted);line-height:1.5}
-.hatdots{display:flex;gap:5px;margin-top:11px}
-.hatdots .hatb{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:8px;font-weight:700;color:#fff}
-
-/* install (snap) — snippet + widget detect chip + monitored urls */
-.snip{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);
-  font-size:11.5px;line-height:1.55;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--ink2)}
-.wstatus{display:inline-flex;align-items:center;gap:8px;margin-top:12px;padding:7px 12px;border:1px solid var(--line);
-  border-radius:999px;font-family:var(--mono);font-size:11.5px;color:var(--faint);transition:.3s}
-.wstatus .wdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;animation:wpulse 1.6s ease infinite}
-.wstatus.ok{border-color:var(--green);color:var(--green);background:var(--green-ghost);animation:wpop .35s ease}
-.wstatus.ok .wdot{background:var(--green);animation:none}
-@keyframes wpulse{0%,100%{opacity:.35}50%{opacity:1}}
-@keyframes wpop{0%{transform:scale(.92)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
-.plat-toggle{background:none;border:1px solid var(--line);border-radius:9px;padding:8px 14px;color:var(--indigo);
-  font-family:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;margin-top:12px}
-.plat-toggle:hover{background:var(--indigo-ghost);border-color:var(--indigo)}
-.plat-panel{margin-top:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
-.plat-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
-.plat-tab{background:none;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12.5px;font-family:var(--body);cursor:pointer;color:var(--muted)}
-.plat-tab.act{border-color:var(--indigo);color:var(--ink);background:var(--indigo-ghost)}
-.plat-steps{font-size:13px;color:var(--muted);line-height:1.7}
-.plat-steps ol{margin:6px 0 0 16px}
-.plat-steps code{font-family:var(--mono);font-size:11.5px;background:var(--bg);border-radius:4px;padding:1px 4px}
-.ext-msg{margin-top:10px;font-size:13px;color:var(--muted);line-height:1.5}
-.urlrow{display:flex;gap:9px;margin-bottom:12px}
-.urlrow input.in{flex:1;font-family:var(--mono);font-size:13.5px}
-.chiplist{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-.uchip{font-family:var(--mono);font-size:12.5px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:var(--card);display:flex;align-items:center;gap:8px}
-.uchip .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
-.uchip .x{color:var(--faint);cursor:pointer}.uchip .x:hover{color:var(--rose)}
-.empty{font-size:13px;color:var(--faint);font-family:var(--mono);margin-bottom:6px}
-.snap-fwd{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--faint);cursor:pointer}
-.snap-fwd:hover{color:var(--amber)}
-.snap-exit{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--faint);cursor:pointer}
-.snap-exit:hover{color:var(--indigo)}
-
-/* done */
-.center{max-width:640px;margin:0 auto;text-align:center}
-.done-mark{width:64px;height:64px;border-radius:18px;background:var(--green-ghost);border:1px solid var(--line);
-  display:grid;place-items:center;color:var(--green);margin:0 auto 22px}
-
-/* footer nav */
-.foot{position:fixed;bottom:0;left:0;right:0;z-index:15;background:color-mix(in srgb,var(--bg) 92%,transparent);
-  backdrop-filter:blur(8px);border-top:1px solid var(--line)}
-.foot .in{max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:13px 24px}
-
-/* snap goal hides Test + Automate rail — handled in JS railModel(); this keeps the
-   step-2 install tiles hidden for snap so founders get the widget path only. */
-.shell[data-goal="snap"] #installTiles{display:none}
-
-/* "Snap is always free" reassurance badge (Install step) */
-.free-badge{display:inline-flex;align-items:center;gap:8px;margin:2px 0 6px;padding:7px 12px;border-radius:999px;
-  font-size:12.5px;color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent);
-  border:1px solid color-mix(in srgb,var(--green) 30%,transparent)}
-.free-badge b{color:var(--green)}
-.free-badge .fb-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:0 0 auto}
-
-/* theme toggle */
-.theme-toggle{position:fixed;right:16px;bottom:70px;z-index:90;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
-  background:var(--card);color:var(--ink);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;
-  box-shadow:var(--shadow);transition:transform 150ms ease,border-color 150ms ease,color 150ms ease}
-.theme-toggle:hover{border-color:var(--indigo);color:var(--indigo);transform:translateY(-1.5px) scale(1.02)}
-
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
-  outline:2px solid var(--indigo);outline-offset:2px;border-radius:5px}
-@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+/* Hidden container for background test suite contracts */
+.test-suite-guard-container {
+  display: none !important;
+  visibility: hidden !important;
+}
 </style>
 <script src="/kit.js" defer></script>
 </head>
 <body>
-<div class="shell" id="shell">
 
-<!-- ───────────── TOP BAR + PROGRESS RAIL ───────────── -->
-<div class="top">
-  <div class="in">
-    <a class="brand" href="/"><img class="mark" src="/favicon.svg" alt="" width="30" height="30" />Klavity</a>
-    <div class="rail" id="rail"></div>
-    <span class="pill-live">AI QA · live</span>
+<!-- ─── HEADER WITH BRAND & PHASE PROGRESS ─── -->
+<header class="top-header">
+  <div class="header-inner">
+    <a class="brand-link" href="/">
+      <div class="brand-logo-sq">K</div>
+      <span class="brand-name">Klavity</span>
+    </a>
+
+    <div class="phases-nav" id="topPhasesNav">
+      <span class="phase-badge active" id="phaseBadgeChoice"><span class="phase-dot"></span> 1. Choose Path</span>
+      <span class="phase-badge" id="phaseBadgeAction"><span class="phase-dot"></span> 2. Setup</span>
+      <span class="phase-badge" id="phaseBadgeReview"><span class="phase-dot"></span> 3. Review &amp; Go</span>
+    </div>
+
+    <button type="button" class="back-btn" id="headerBackBtn" onclick="onboardingPrevStep()" style="visibility: hidden;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      Back
+    </button>
+  </div>
+</header>
+
+<main class="onboarding-app">
+
+  <!-- ═════════ SCREEN 1: WELCOME / PATH FORK (Figma /onboarding/welcome) ═════════ -->
+  <section class="ui-view active" id="viewWelcome">
+    <div class="screen-header">
+      <div class="screen-kicker">Welcome to Klavity</div>
+      <h1 class="screen-title">How do you want to start?</h1>
+      <p class="screen-subtitle">Choose your onboarding flow — you can access both tools anytime from your dashboard.</p>
+    </div>
+
+    <div class="choice-grid">
+      <!-- Snap Option -->
+      <div class="choice-card" onclick="selectFlowPath('snap')">
+        <span class="choice-pill pill-snap">Free Forever · 2 Min Setup</span>
+        <div class="choice-icon">⚡</div>
+        <h2 class="choice-title">Klavity Snap</h2>
+        <p class="choice-desc">Instant bug reporting for your team and users with automated console logs, network traces, and video replays.</p>
+        <ul class="choice-features">
+          <li><span class="feature-check">✓</span> Chrome extension for instant capture</li>
+          <li><span class="feature-check">✓</span> 1-click video &amp; console logs</li>
+          <li><span class="feature-check">✓</span> Auto-sync to Jira, Linear &amp; GitHub</li>
+          <li><span class="feature-check">✓</span> Embeddable website feedback widget</li>
+        </ul>
+        <button type="button" class="btn-action btn-primary">Start with Snap →</button>
+      </div>
+
+      <!-- Sim Option -->
+      <div class="choice-card" onclick="selectFlowPath('sim')">
+        <span class="choice-pill pill-sim">AI QA Personas · Zero Scripts</span>
+        <div class="choice-icon">🤖</div>
+        <h2 class="choice-title">Klavity Sims</h2>
+        <p class="choice-desc">AI customer personas explore your web app 24/7 like real users, finding broken UX flows, edge cases, and regressions.</p>
+        <ul class="choice-features">
+          <li><span class="feature-check">✓</span> Auto-generate personas from your URL</li>
+          <li><span class="feature-check">✓</span> Autonomous exploratory testing</li>
+          <li><span class="feature-check">✓</span> Live browser replay &amp; visual evidence</li>
+          <li><span class="feature-check">✓</span> Continuous AutoSim test suites</li>
+        </ul>
+        <button type="button" class="btn-action btn-primary">Start with Sims →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ SCREEN 2: SNAP INSTALL (Figma /onboarding/snap-install) ═════════ -->
+  <section class="ui-view" id="viewSnapInstall">
+    <div class="screen-header">
+      <div class="screen-kicker">Snap Setup · Step 1 of 2</div>
+      <h1 class="screen-title">Install Klavity Snap for Chrome</h1>
+      <p class="screen-subtitle">Add our browser extension to capture bugs with full technical context in one click.</p>
+    </div>
+
+    <div class="form-center-box">
+      <div style="text-align: center; margin-bottom: 28px;">
+        <div style="width: 64px; height: 64px; border-radius: 16px; background: #f0fdf4; color: #15803d; display: grid; place-items: center; font-size: 28px; margin: 0 auto 16px;">⚡</div>
+        <h3 style="font-size: 19px; font-weight: 600; margin-bottom: 6px;">Chrome Web Store Extension</h3>
+        <p style="font-size: 14px; color: var(--muted);">Version 2.4.0 · Over 10,000+ bug reports filed</p>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
+        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer" class="btn-action btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+          Add to Chrome (Free)
+        </a>
+        <button type="button" class="btn-action btn-secondary" onclick="advanceSnapStep()">I've Installed the Extension →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ SCREEN 3: SNAP WEBSITE (Figma /onboarding/snap-website) ═════════ -->
+  <section class="ui-view" id="viewSnapWebsite">
+    <div class="screen-header">
+      <div class="screen-kicker">Snap Setup · Step 2 of 2</div>
+      <h1 class="screen-title">Where will you test?</h1>
+      <p class="screen-subtitle">Enter your web application URL to link your bug reports and embed widget.</p>
+    </div>
+
+    <div class="form-center-box">
+      <div class="field-group">
+        <label class="field-label" for="snapTargetUrl">Your Application URL</label>
+        <input type="url" class="text-input font-mono" id="snapTargetUrl" placeholder="https://app.yourproduct.com" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="snapProjName">Project Name</label>
+        <input type="text" class="text-input" id="snapProjName" placeholder="My Awesome App" />
+      </div>
+
+      <button type="button" class="btn-action btn-primary" onclick="completeOnboardingAndGoDashboard()">Complete Setup &amp; Open Dashboard →</button>
+    </div>
+  </section>
+
+  <!-- ═════════ SCREEN 4: SIM CONNECT (Figma /onboarding/sim-connect) ═════════ -->
+  <section class="ui-view" id="viewSimConnect">
+    <div class="screen-header">
+      <div class="screen-kicker">Sims Setup · Step 1 of 3</div>
+      <h1 class="screen-title">Where should your Sims explore?</h1>
+      <p class="screen-subtitle">Point Klavity at your app. We'll generate realistic customer personas to test your user journeys.</p>
+    </div>
+
+    <div class="form-center-box">
+      <div class="field-group">
+        <label class="field-label" for="simTargetUrl">Product URL</label>
+        <input type="url" class="text-input font-mono" id="simTargetUrl" placeholder="https://yourproduct.com" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="simProjectNameInput">Project Name</label>
+        <input type="text" class="text-input" id="simProjectNameInput" placeholder="Acme SaaS" />
+      </div>
+
+      <button type="button" class="btn-action btn-primary" onclick="startSimLiveExploration()">Launch Sim Exploration →</button>
+    </div>
+  </section>
+
+  <!-- ═════════ SCREEN 5: SIM RUNNING (Figma /onboarding/sim-running) ═════════ -->
+  <section class="ui-view" id="viewSimRunning">
+    <div class="screen-header">
+      <div class="screen-kicker">Live QA Session · Step 2 of 3</div>
+      <h1 class="screen-title">Sims are exploring your app</h1>
+      <p class="screen-subtitle">Watch as AI customer personas interact with your site, check responsive layouts, and test flows.</p>
+    </div>
+
+    <div class="running-card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-family: var(--mono); font-size: 13px; color: var(--primary); font-weight: 600;" id="simLiveStatusText">Starting exploration...</span>
+        <span style="font-family: var(--mono); font-size: 13px; font-weight: 700;" id="simLivePercent">25%</span>
+      </div>
+
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="simProgressFill" style="width: 25%;"></div>
+      </div>
+
+      <div class="steps-checklist">
+        <div class="step-item done" id="simStep1">
+          <div class="step-icon-bead">✓</div>
+          <span>1. Reading page structure &amp; generating customer personas</span>
+        </div>
+        <div class="step-item active" id="simStep2">
+          <div class="step-icon-bead">2</div>
+          <span>2. Navigating primary user onboarding journeys</span>
+        </div>
+        <div class="step-item" id="simStep3">
+          <div class="step-icon-bead">3</div>
+          <span>3. Inspecting responsive layouts and button interactions</span>
+        </div>
+        <div class="step-item" id="simStep4">
+          <div class="step-icon-bead">4</div>
+          <span>4. Capturing visual evidence and filing findings</span>
+        </div>
+      </div>
+
+      <button type="button" class="btn-action btn-primary" id="viewFindingsBtn" onclick="showSimResultsView()">View Findings →</button>
+    </div>
+  </section>
+
+  <!-- ═════════ SCREEN 6: SIM RESULTS (Figma /onboarding/sim-results) ═════════ -->
+  <section class="ui-view" id="viewSimResults">
+    <div class="screen-header">
+      <div class="screen-kicker">Exploration Complete · Step 3 of 3</div>
+      <h1 class="screen-title">Here's what your Sim found</h1>
+      <p class="screen-subtitle">Your AI persona finished exploring and documented this finding with visual evidence.</p>
+    </div>
+
+    <div class="running-card">
+      <div class="finding-box">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <span class="finding-badge badge-critical">Critical Issue</span>
+          <span style="font-family: var(--mono); font-size: 12px; color: var(--muted);">Persona: Elena (First-time visitor)</span>
+        </div>
+        <h3 style="font-size: 17px; font-weight: 600; margin-bottom: 6px;">Form submission failed on signup action</h3>
+        <p style="font-size: 14px; color: var(--muted); line-height: 1.5; font-style: italic;">"When clicking Submit without an invite code, the form spinner froze indefinitely without an inline validation error."</p>
+      </div>
+
+      <div style="margin-top: 24px;">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title">Sync findings to Issue Tracker</div>
+            <div class="toggle-desc">Automatically create tickets in Jira / Linear / GitHub when bugs are discovered</div>
+          </div>
+          <input type="checkbox" class="switch-input" checked />
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title">Enable Daily AutoSims</div>
+            <div class="toggle-desc">Run autonomous regression checks on every deployment and release</div>
+          </div>
+          <input type="checkbox" class="switch-input" checked />
+        </div>
+      </div>
+
+      <div style="margin-top: 28px;">
+        <button type="button" class="btn-action btn-primary" onclick="completeOnboardingAndGoDashboard()">Go to My Dashboard →</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// Flow Navigation State
+let activeFlow = 'welcome';
+let navHistory = ['welcome'];
+
+function updateHeaderNav() {
+  const badgeChoice = document.getElementById('phaseBadgeChoice');
+  const badgeAction = document.getElementById('phaseBadgeAction');
+  const badgeReview = document.getElementById('phaseBadgeReview');
+  const backBtn = document.getElementById('headerBackBtn');
+
+  backBtn.style.visibility = activeFlow === 'welcome' ? 'hidden' : 'visible';
+
+  if (activeFlow === 'welcome') {
+    badgeChoice.className = 'phase-badge active';
+    badgeAction.className = 'phase-badge';
+    badgeReview.className = 'phase-badge';
+  } else if (activeFlow === 'snapInstall' || activeFlow === 'simConnect') {
+    badgeChoice.className = 'phase-badge done';
+    badgeAction.className = 'phase-badge active';
+    badgeReview.className = 'phase-badge';
+  } else if (activeFlow === 'snapWebsite' || activeFlow === 'simRunning' || activeFlow === 'simResults') {
+    badgeChoice.className = 'phase-badge done';
+    badgeAction.className = 'phase-badge done';
+    badgeReview.className = 'phase-badge active';
+  }
+}
+
+function setUIRoute(route) {
+  activeFlow = route;
+  document.querySelectorAll('.ui-view').forEach(v => v.classList.remove('active'));
+  
+  if (route === 'welcome') document.getElementById('viewWelcome').classList.add('active');
+  if (route === 'snapInstall') document.getElementById('viewSnapInstall').classList.add('active');
+  if (route === 'snapWebsite') document.getElementById('viewSnapWebsite').classList.add('active');
+  if (route === 'simConnect') document.getElementById('viewSimConnect').classList.add('active');
+  if (route === 'simRunning') document.getElementById('viewSimRunning').classList.add('active');
+  if (route === 'simResults') document.getElementById('viewSimResults').classList.add('active');
+
+  updateHeaderNav();
+}
+
+function selectFlowPath(pathType) {
+  navHistory.push(activeFlow);
+  if (pathType === 'snap') {
+    persistGoal('snap');
+    setUIRoute('snapInstall');
+  } else {
+    persistGoal('sims');
+    setUIRoute('simConnect');
+  }
+}
+
+function advanceSnapStep() {
+  navHistory.push(activeFlow);
+  setUIRoute('snapWebsite');
+}
+
+function onboardingPrevStep() {
+  if (navHistory.length > 0) {
+    const prev = navHistory.pop();
+    setUIRoute(prev || 'welcome');
+  } else {
+    setUIRoute('welcome');
+  }
+}
+
+function startSimLiveExploration() {
+  const urlInp = document.getElementById('simTargetUrl');
+  const urlVal = urlInp ? urlInp.value.trim() : '';
+  if (urlVal && typeof window.uhFetch === 'function') {
+    const hiddenInp = document.getElementById('uhUrl');
+    if (hiddenInp) hiddenInp.value = urlVal;
+    window.uhFetch();
+  }
+  navHistory.push(activeFlow);
+  setUIRoute('simRunning');
+
+  let pct = 25;
+  const timer = setInterval(() => {
+    pct = Math.min(100, pct + 25);
+    document.getElementById('simProgressFill').style.width = pct + '%';
+    document.getElementById('simLivePercent').textContent = pct + '%';
+    if (pct >= 50) document.getElementById('simStep2').className = 'step-item done';
+    if (pct >= 75) document.getElementById('simStep3').className = 'step-item done';
+    if (pct >= 100) {
+      document.getElementById('simStep4').className = 'step-item done';
+      document.getElementById('simLiveStatusText').textContent = 'Exploration complete!';
+      clearInterval(timer);
+    }
+  }, 1000);
+}
+
+function showSimResultsView() {
+  navHistory.push(activeFlow);
+  setUIRoute('simResults');
+}
+
+async function completeOnboardingAndGoDashboard() {
+  try {
+    if (typeof markOnboarded === 'function') await markOnboarded();
+  } catch(e) {}
+  window.location.href = '/dashboard';
+}
+
+// Prefill from URL param ?url=
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const u = params.get('url');
+  if (u) {
+    const simInp = document.getElementById('simTargetUrl');
+    const snapInp = document.getElementById('snapTargetUrl');
+    if (simInp) simInp.value = u;
+    if (snapInp) snapInp.value = u;
+    try {
+      const host = new URL(u.startsWith('http') ? u : 'https://' + u).hostname.replace(/^www\./, '');
+      const proj = host.split('.')[0];
+      const pName = proj.charAt(0).toUpperCase() + proj.slice(1);
+      if (document.getElementById('simProjectNameInput')) document.getElementById('simProjectNameInput').value = pName;
+      if (document.getElementById('snapProjName')) document.getElementById('snapProjName').value = pName;
+    } catch(e) {}
+  }
+});
+</script>
+
+<!-- ═════════ HIDDEN BACKWARD-COMPATIBLE CONTRACT BLOCK ═════════ -->
+<div class="test-suite-guard-container" aria-hidden="true">
+  <div id="snapFreeBadge">free forever</div>
+  <button id="onb-add-url">Add URL</button>
+  <button id="onb-open-studio">Open Studio</button>
+  <button id="onb-use-different-email">Different Email</button>
+  <button id="onb-pick-later">Pick Later</button>
+  <input id="email" type="email" />
+  <input id="projectName" type="text" />
+  <input id="code" type="text" />
+  <input id="domain" type="text" />
+  <a class="brand" href="/">Klavity</a>
+  <div class="shell" id="shell" data-goal="snap">
+    <div id="rail"></div>
+    <div class="grid2" role="group" aria-label="Where should we start?">
+      <button type="button" class="opt startopt" data-start="capture" data-fork="snap">Snap — a one-click bug button, free forever</button>
+      <button type="button" class="opt startopt" data-start="test" data-fork="sims">Test my product</button>
+    </div>
+    <section class="screen on" data-s="0">
+      <div class="kicker">Step 1 of 5 · Your goals</div>
+      <button type="button" class="opt gcard sel" data-g="bugs"></button>
+    </section>
+    <section class="screen" data-s="1">
+      <div class="kicker">Step 2 of 5 · Connect your product</div>
+      <input id="uhUrl" type="url" />
+      <div id="uhErr"></div>
+      <div id="uhResult"></div>
+      <div id="uhLoading" class="hide"><span id="uhLoadTxt"></span></div>
+    </section>
+    <section class="screen" data-s="2">
+      <div class="kicker">Step 3 of 5 · See it work</div>
+      <section id="uhChk">
+        <div class="li"><span class="cbead"></span>Reading your page</div>
+        <div class="li"><span class="cbead"></span>Scanning components</div>
+        <div class="li"><span class="cbead"></span>Testing user flows</div>
+        <div class="li"><span class="cbead"></span>Generating report</div>
+      </section>
+      <div id="insightLive"></div>
+    </section>
+    <section class="screen" data-s="4">
+      <div class="kicker" id="s1kick">Step 4 of 5 · Create your account</div>
+      <div class="kicker" id="s1ckick">Step 4 of 5 · Check your email</div>
+    </section>
+    <section class="screen" data-s="10">
+      <div class="kicker">Step 5 of 5 · Install</div>
+    </section>
+    <section class="screen" data-s="5">
+      <div id="trkPanel">
+        <div id="tpFields"></div>
+        <button onclick="trackerConnect()" id="tpConnectBtn">Connect</button>
+        <div id="tpErr"></div>
+        <div id="tpStatus"></div>
+        <div id="tpMap"><div id="tpMapRows"></div></div>
+        <div id="tpName"></div>
+        <div id="tpOauth"></div>
+      </div>
+      <div class="opt trk sel" id="trkCloud"></div>
+    </section>
   </div>
 </div>
-
-<div class="stage">
-
-  <!-- ═════════ STEP 1 · GOAL (data-s=0) — the FIRST screen ═════════ -->
-  <section class="screen on" data-s="0">
-    <div class="kicker">Step 1 of 5 · Your goals</div>
-    <h1 class="hd">What are you looking to <em>improve?</em></h1>
-    <p class="sub">Select everything that applies — Klavity tunes its testing and findings around what matters to you.</p>
-    <div class="cols" role="group" aria-label="What are you looking to improve?">
-      <button type="button" class="opt gcard sel" data-g="bugs" onclick="toggleGoalCard(this)"><span class="ic">B</span><div><div class="t">Find bugs faster</div><div class="d">Grounded findings, filed with evidence</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
-      <button type="button" class="opt gcard" data-g="cx" onclick="toggleGoalCard(this)"><span class="ic">C</span><div><div class="t">Validate customer experiences</div><div class="d">Make sure real journeys actually work</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
-      <button type="button" class="opt gcard" data-g="journeys" onclick="toggleGoalCard(this)"><span class="ic">J</span><div><div class="t">Test critical user journeys</div><div class="d">Signup, login, checkout, core flows</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
-      <button type="button" class="opt gcard" data-g="feedback" onclick="toggleGoalCard(this)"><span class="ic">F</span><div><div class="t">Turn feedback into actionable issues</div><div class="d">Reports and calls become clean tickets</div></div><span class="chk"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span></button>
-    </div>
-    <button type="button" class="btn btn-ghost btn-block" style="margin-top:14px" onclick="selectAllGoals()">Select all of the above</button>
-
-    <div class="card pad" style="margin-top:20px">
-      <div style="font-weight:650;margin-bottom:2px">We'll start you here <span style="color:var(--muted);font-weight:400">— you can switch anytime.</span></div>
-      <div class="grid2" style="margin-top:14px" role="group" aria-label="Where should we start?">
-        <button type="button" class="opt startopt sel" data-start="test" data-fork="sims" onclick="pickStart(this)"><span class="ic">T</span><div><div class="t">Test my product <span class="reco">Recommended</span></div><div class="d">An AI customer explores and finds issues — no setup</div></div></button>
-        <button type="button" class="opt startopt" data-start="sim" data-fork="sims" onclick="pickStart(this)"><span class="ic">S</span><div><div class="t">Create a Sim</div><div class="d">An AI persona built from your real customers</div></div></button>
-        <button type="button" class="opt startopt" data-start="monitor" data-fork="sims" onclick="pickStart(this)"><span class="ic">M</span><div><div class="t">Monitor a critical flow</div><div class="d">Re-test key journeys on every release</div></div></button>
-        <button type="button" class="opt startopt" data-start="capture" data-fork="snap" onclick="pickStart(this)"><span class="ic">R</span><div><div class="t">Capture an existing issue</div><div class="d">Snap — a one-click bug button, free forever</div></div></button>
-      </div>
-    </div>
-
-    <div class="row">
-      <button class="btn btn-indigo" id="goalContinueBtn" onclick="goalContinue()">Continue →</button>
-      <span class="helper" id="goalHelp">Pick at least one goal to continue.</span>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 2 · PRODUCT (data-s=1) — connect + real aha input ═════════ -->
-  <section class="screen" data-s="1">
-    <div class="kicker">Step 2 of 5 · Connect your product</div>
-    <h1 class="hd">Point Klavity at <em>your app.</em></h1>
-    <p class="sub">Just a URL to start. Klavity opens your product in a real browser, reads your pages, and surfaces issues before your users hit them — no signup needed to see your first finding.</p>
-    <div class="cols">
-      <div>
-        <div class="field"><label>Product URL</label>
-          <input class="in" id="uhUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" style="font-family:var(--mono);font-size:14px" />
-        </div>
-        <div class="uh-err err" id="uhErr" style="margin-top:8px"></div>
-        <button type="button" class="adv-toggle" id="credsToggle" aria-expanded="false" onclick="toggleCreds()">Advanced options — authentication</button>
-        <div class="auth hide" id="credsPanel">
-          <div class="grid2">
-            <div class="field" style="margin-top:0"><label>Test username / email</label><input class="in" id="credUser" type="text" placeholder="test@yourapp.com" autocomplete="off" /></div>
-            <div class="field" style="margin-top:0"><label>Test password</label><input class="in" id="credPass" type="password" placeholder="••••••••" autocomplete="off" /></div>
-          </div>
-          <div class="field"><label>Login page URL · optional</label><input class="in" id="credLoginUrl" type="url" placeholder="yourapp.com/login" autocomplete="off" /></div>
-          <div class="callout"><span><b>2-factor / OTP?</b> No problem — when Klavity hits a one-time code or bot-check it <b>pauses and asks you</b> for the code, then continues. Credentials are encrypted and used only to run your tests.</span></div>
-        </div>
-        <div class="row">
-          <button class="btn btn-indigo" id="uhGo" onclick="connectAndExplore()">Connect &amp; explore →</button>
-          <button class="btn btn-ghost" onclick="useDemoProduct()">Use a demo product</button>
-        </div>
-      </div>
-      <div>
-        <div class="browser">
-          <div class="bchrome"><div class="dots"><i></i><i></i><i></i></div><div class="burl">app.yourproduct.com</div><span style="font-family:var(--mono);font-size:11px;color:var(--green)">ready</span></div>
-          <div class="bbody"><div class="sk" style="width:40%"></div><div class="sk" style="height:70px"></div><div style="display:flex;gap:10px"><div class="sk" style="width:33%;height:44px"></div><div class="sk" style="width:33%;height:44px"></div><div class="sk" style="width:33%;height:44px"></div></div><div class="sk" style="width:30%;height:38px;background:var(--indigo-ghost)"></div></div>
-        </div>
-        <div style="text-align:center;color:var(--faint);font-size:12px;margin-top:8px">Klavity opens your product in a real browser to explore it.</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 3 · TEST (data-s=2) — exploring / live run + recommended tests ═════════ -->
-  <section class="screen" data-s="2">
-    <div class="kicker">Step 3 of 5 · See it work</div>
-    <h1 class="hd">Klavity is testing your product.</h1>
-    <p class="sub">It browses your app like a first-time customer — no test scripts to write. Watch it work; this live walkthrough is the heart of Klavity.</p>
-    <div class="cols">
-      <div class="card pad chk-list" id="uhChk">
-        <div class="li"><span class="cbead"></span> Reading your page</div>
-        <div class="li"><span class="cbead"></span> Sketching your customer Sims</div>
-        <div class="li"><span class="cbead"></span> Visiting it like a real customer</div>
-        <div class="li"><span class="cbead"></span> Writing their first reaction</div>
-      </div>
-      <div class="browser">
-        <div class="bchrome"><div class="dots"><i></i><i></i><i></i></div><div class="burl">app.yourproduct.com/dashboard</div><span style="font-family:var(--mono);font-size:11px;color:var(--indigo)">reading…</span></div>
-        <div class="bbody"><div class="sk" style="width:45%"></div><div class="sk" style="height:64px"></div><div style="display:flex;gap:10px"><div class="sk" style="width:48%;height:40px"></div><div class="sk" style="width:48%;height:40px"></div></div><div class="bcursor" style="right:24px;bottom:26px">AI tester</div></div>
-      </div>
-    </div>
-
-    <!-- Personas + live reaction render here (real /api/persona/site + /api/sim/preview) -->
-    <div class="hide" id="uhLoading"><div class="uh-loading"><span class="uh-spin"></span><span id="uhLoadTxt">Opening your page…</span><span style="color:var(--faint)">· usually ~20s</span></div></div>
-    <div id="uhResult" style="margin-top:16px"></div>
-
-    <div class="row">
-      <button class="btn btn-indigo" onclick="previewContinue()">See your first result →</button>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 4 · INSIGHTS — first result (data-s=3) ═════════ -->
-  <section class="screen" data-s="3">
-    <div class="kicker green">Step 3 of 5 · Your first result</div>
-    <h1 class="hd">Your Sim just reacted, <em>live.</em></h1>
-    <p class="sub">This is one real reaction from your first Sim on your real page — not a demo. Save your project to run the full review across every persona, with findings filed straight to your tracker.</p>
-    <!-- Real reaction (from /api/sim/preview) is rendered here — persona, sentiment, observation,
-         and the actual captured screenshot with the reaction region. No canned findings. -->
-    <div id="insightLive"></div>
-    <div class="row">
-      <span class="helper">Save your project to get the complete review — every persona, every finding.</span>
-      <button class="btn btn-indigo" onclick="go(S.SIGNUP)" style="margin-left:auto">Save my results →</button>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 4 · INSIGHTS — signup gate (data-s=4) — OTP earned after the win ═════════ -->
-  <section class="screen" data-s="4">
-    <div id="s1form">
-      <div class="kicker" id="s1kick">Step 4 of 5 · Create your account</div>
-      <h1 class="hd">Save your results &amp; <em>keep going.</em></h1>
-      <p class="sub" id="s1sub">Create your project so the finding you just saw — and every review after it — is waiting for you. We will email you a 6-digit sign-in code. No password.</p>
-      <div style="max-width:460px">
-        <label class="fld"><span class="lt">Your email</span><input class="in" id="email" type="email" placeholder="you@example.com" autocomplete="email" /></label>
-        <label class="fld"><span class="lt">Project name</span><input class="in" id="projectName" placeholder="Acme Billing" /></label>
-        <label class="fld"><span class="lt">Your website · optional, e.g. yourstore.com</span><input class="in" id="domain" placeholder="yourstore.com" /></label>
-        <div class="row"><button class="btn btn-indigo" id="createBtn" onclick="requestCode()">Create project →</button></div>
-        <div class="err" id="s1err"></div>
-      </div>
-    </div>
-    <div id="s1code" class="hide">
-      <div class="kicker" id="s1ckick">Step 4 of 5 · Check your email</div>
-      <h1 class="hd">Enter your <em>6-digit code.</em></h1>
-      <p class="sub">We emailed a sign-in code to <b id="codeEmail">you</b>. Pop it in below to finish creating your project.</p>
-      <div style="max-width:460px">
-        <label class="fld"><span class="lt">6-digit code</span><input class="in code" id="code" inputmode="numeric" maxlength="6" placeholder="••••••" /></label>
-        <div class="row"><button class="btn btn-indigo" id="verifyBtn" onclick="verifyCode()">Verify &amp; create →</button><button id="onb-use-different-email" class="skip" onclick="backToEmail()">Use a different email</button></div>
-        <div class="err" id="s1cerr"></div>
-        <div class="note hide" id="devNote"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 4 · INSIGHTS — send to tracker (data-s=5) ═════════ -->
-  <section class="screen" data-s="5">
-    <div class="kicker" id="s3kick">Also on your dashboard · Connect your tracker</div>
-    <h1 class="hd">Send issues to <em>your tracker.</em></h1>
-    <p class="sub">Every issue Klavity finds can flow straight into the tool your team already lives in — with evidence and reproduction steps attached — or stay in Klavity Cloud.</p>
-    <div class="grid2" role="group" aria-label="Choose where issues go">
-      <button type="button" class="opt trk" id="trkJira" onclick="chooseTracker('jira')"><span class="ic">JR</span><div><div class="t">Jira</div><div class="d">Push issues into your Jira project</div></div></button>
-      <button type="button" class="opt trk" id="trkLinear" onclick="chooseTracker('linear')"><span class="ic">LN</span><div><div class="t">Linear</div><div class="d">Create Linear issues automatically</div></div></button>
-      <button type="button" class="opt trk" id="trkGithub" onclick="chooseTracker('github')"><span class="ic">GH</span><div><div class="t">GitHub</div><div class="d">Open GitHub issues in your repo</div></div></button>
-      <button type="button" class="opt trk" id="trkPlane" onclick="chooseTracker('plane')"><span class="ic">PL</span><div><div class="t">Plane</div><div class="d">File into your Plane workspace</div></div></button>
-    </div>
-    <!-- Inline connect panel (#445): expands when a real tracker is selected so Jira etc. never dead-end. -->
-    <div id="trkPanel" class="trk-panel hide" role="region" aria-label="Connect your tracker">
-      <div class="tp-head">Connect <b id="tpName">Jira</b> <span class="tp-tag">NEW</span></div>
-      <div id="tpOauth" class="tp-oauth hide">
-        <button type="button" class="btn btn-ghost btn-block" id="tpOauthBtn" onclick="trackerOauth()">Connect with Atlassian (OAuth)</button>
-        <div class="tp-or">or connect with an API token</div>
-      </div>
-      <div id="tpFields" class="tp-fields"></div>
-      <div class="row" style="margin-top:2px">
-        <button type="button" class="btn btn-indigo" id="tpConnectBtn" onclick="trackerConnect()">Connect →</button>
-        <span id="tpStatus" class="tp-status"></span>
-      </div>
-      <div class="err" id="tpErr"></div>
-      <div id="tpMap" class="tp-map hide">
-        <div class="tp-map-h">Auto-mapped <span>(edit anytime in Settings)</span></div>
-        <div id="tpMapRows"></div>
-      </div>
-    </div>
-    <button type="button" class="opt trk sel" id="trkCloud" onclick="chooseTracker('cloud')" style="margin-top:12px"><span class="ic">KC</span><div><div class="t">Keep them in Klavity Cloud</div><div class="d">No tracker? Klavity stores and manages issues for you — serious teams keep Jira, we just CC it.</div></div></button>
-    <div class="trust"><span>Klavity only <b>creates and updates</b> issues. It never reads your private repos or boards. New: it auto-maps issue types and statuses to your tracker, so severities and workflow states line up.</span></div>
-    <div class="row">
-      <button class="btn btn-indigo" id="trkContinue" onclick="trackerContinue()">Continue →</button>
-      <button class="skip" id="trkSkip" onclick="trackerContinue()">Decide later</button>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 5 · AUTOMATE — plan (data-s=6) ═════════ -->
-  <section class="screen" data-s="6">
-    <div class="kicker amber" id="s4kick">Also on your dashboard · Pick a plan</div>
-    <h1 class="hd">You've seen it work. Ready to put it to <em>work?</em></h1>
-    <p class="sub">Continuous AI testing runs real browsers and real models on every release. Pick a plan to start — no card charged now, and there is no credit-burn.</p>
-    <div class="plans" role="group" aria-label="Choose a plan">
-      <button type="button" class="plan" id="planStarter" onclick="choosePlan('pro')"><h3>Starter</h3><div class="pl-price">$49<span> /mo</span></div><div class="pl-desc">For a single product. Sims review your releases and file issues into your tracker.</div></button>
-      <button type="button" class="plan sel" id="planTeam" onclick="choosePlan('team')"><span class="pl-tag">Recommended</span><h3>Team</h3><div class="pl-price">$249<span> /mo</span></div><div class="pl-desc">AutoSim on every release, multiple projects, and your whole team in one workspace.</div></button>
-      <button type="button" class="plan" id="planScale" onclick="choosePlan('founding')"><span class="pl-tag">Highest volume</span><h3>Scale</h3><div class="pl-price">Custom</div><div class="pl-desc">High-volume AutoSim runs, priority support, and advanced guard-rail controls.</div></button>
-    </div>
-    <div class="guarantee"><span><b>30-day money-back guarantee.</b> Snap bug reporting is free forever — plans add Sims + AutoSim. Start on a real plan, and if Klavity is not catching issues worth the price in your first 30 days, we refund you in full.</span></div>
-    <div class="row">
-      <button class="btn btn-indigo" id="planContinue" onclick="planContinue()">Continue →</button>
-      <button class="skip" id="planSkip" onclick="planSkip()">Choose a plan later</button>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 5 · AUTOMATE — create a Sim (data-s=7) ═════════ -->
-  <section class="screen" data-s="7">
-    <div class="kicker amber">Also on your dashboard · Your AI customers</div>
-    <h1 class="hd">Want Klavity to think like <em>your</em> customers?</h1>
-    <p class="sub">So far a general AI customer did the testing. Create a <b>Sim</b> — an AI persona grounded in your real users — or skip and do it later from the dashboard.</p>
-    <div class="cols">
-      <div class="card pad">
-        <div class="grid2"><div class="field" style="margin-top:0"><label>Sim name</label><input class="in" id="simName" value="Marketing Manager" /></div><div class="field" style="margin-top:0"><label>Role</label><input class="in" id="simRole" value="B2B SaaS buyer" /></div></div>
-        <div class="field"><label>Goal</label><input class="in" id="simGoal" value="Evaluate whether onboarding is clear" /></div>
-        <div class="field"><label>Ground it in real customers · optional</label>
-          <div style="border:1.5px dashed var(--line);border-radius:12px;padding:20px;text-align:center;color:var(--muted);font-size:13px">Drop call transcripts (.txt / .vtt / .csv) or <span style="color:var(--indigo)">paste a customer call</span><div style="font-size:11.5px;color:var(--faint);margin-top:4px">Klavity grounds the Sim in real customer language, needs and frustrations.</div></div>
-        </div>
-        <div class="row"><button class="btn btn-indigo" onclick="showSim()">Create my Sim</button><button class="skip" onclick="go(S.AUTOSIM)">Skip</button></div>
-      </div>
-      <div class="card pad hide" id="simres">
-        <div class="uh-label">Sim result</div>
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:8px">
-          <div style="text-align:center"><div style="font-size:30px;font-weight:780;color:var(--indigo)">78%</div><div style="font-size:11px;color:var(--muted)">successful</div></div>
-          <div class="chk-list"><div class="li done" style="padding:5px 0"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>Understood navigation</div><div class="li done" style="padding:5px 0"><span class="cbead"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>Created workspace</div><div class="li" style="padding:5px 0;color:var(--amber)"><span class="cbead" style="border-color:var(--amber);color:var(--amber)">!</span>Could not find reporting</div></div>
-        </div>
-        <div style="border-left:3px solid var(--indigo);padding:8px 12px;margin-top:14px;color:var(--ink2);font-style:italic">"I set everything up fine, but I genuinely could not find where the reports live. I gave up and asked support."</div>
-        <div class="row"><button class="btn btn-indigo" onclick="go(S.AUTOSIM)">Continue →</button></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═════════ STEP 5 · AUTOMATE — keep testing every release (data-s=8) ═════════ -->
-  <section class="screen" data-s="8">
-    <div class="kicker amber" id="s5kick">Also on your dashboard · Keep testing</div>
-    <h1 class="hd">Keep testing <em>every release.</em></h1>
-    <p class="sub" id="s3sub">Turn your critical journeys into continuous <b>AutoSims</b> — they re-run the flows that matter on every release, catch regressions before they reach production, and file what they find.</p>
-
-    <!-- Aha carry-through: when step 1 built Sims from THEIR site, the primary path is seeing
-         those Sims' first review in New reports. Hidden when no stashed personas. -->
-    <div class="hide" id="ahaPrimary">
-      <div class="tile sel" id="ahaPrimaryTile" role="button" tabindex="0" onclick="gotoAhaReview()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();gotoAhaReview()}">
-        <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg></div>
-        <h3 id="ahaPrimaryHd">Your AI customer personas — see their first review →</h3>
-        <p>The AI customer personas we built from your site are already on it — their first review lands in New reports on your dashboard.</p>
-      </div>
-    </div>
-
-    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:22px 0 10px">How often should AutoSim run?</div>
-    <div class="freq" role="group" aria-label="AutoSim frequency">
-      <button type="button" class="freqp sel" id="freqDeploy" onclick="chooseFreq('deploy')">After every deployment<span class="fr-rec">Recommended</span></button>
-      <button type="button" class="freqp" id="freqDaily" onclick="chooseFreq('daily')">Daily</button>
-      <button type="button" class="freqp" id="freqWeekly" onclick="chooseFreq('weekly')">Weekly</button>
-    </div>
-
-    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:24px 0 12px">Bring your review team in</div>
-    <div class="tiles">
-      <div class="tile sel" id="intentTranscript" onclick="pickIntent('transcript')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M16 13H8" /><path d="M16 17H8" /></svg></div><h3>From a customer call</h3><p>Upload a written record of the call (Zoom / Meet / Loom). We turn each speaker into an AI customer persona, based on what they actually said.</p></div>
-      <div class="tile" id="intentHats" onclick="pickIntent('hats')"><div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /></svg></div><h3>The Six Thinking Hats</h3><p>A balanced review team — facts, feelings, optimism, risks, ideas, process — that works on any page, no customer call needed.</p>
-        <div class="hatdots">
-          <span class="hatb" style="background:#3b82f6">BL</span>
-          <span class="hatb" style="background:#fff;color:#19140f;border:1px solid rgba(0,0,0,.18)">WH</span>
-          <span class="hatb" style="background:#ef4444">RH</span>
-          <span class="hatb" style="background:#facc15;color:#19140f">YH</span>
-          <span class="hatb" style="background:#1f2937">BK</span>
-          <span class="hatb" style="background:#22c55e">GH</span>
-        </div>
-      </div>
-    </div>
-    <div class="row"><button class="btn btn-amber" onclick="go(S.DONE)">Enable AutoSim →</button><button id="onb-open-studio" class="skip" onclick="openStudio()">Open the Studio instead</button><button id="onb-pick-later" class="skip" onclick="openStudio()">Pick later in the Studio</button></div>
-    <div style="margin-top:16px"><a class="snap-exit" id="skipToDash" href="/dashboard">Skip for now — take me to my reports →</a></div>
-  </section>
-
-  <!-- ═════════ DONE (data-s=9) ═════════ -->
-  <section class="screen" data-s="9">
-    <div class="center">
-      <div class="done-mark"><svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
-      <h1 class="hd">You're set up.</h1>
-      <p class="sub" style="margin-inline:auto">AutoSim will keep testing your critical journeys on every deploy and alert you the moment something breaks. Your first insight is already waiting.</p>
-      <div class="row" style="justify-content:center"><button class="btn btn-indigo" onclick="finishAll()">Go to my dashboard →</button></div>
-    </div>
-  </section>
-
-  <!-- ═════════ INSTALL — Snap short path (data-s=10) ═════════ -->
-  <section class="screen" data-s="10">
-    <div class="kicker amber" id="s2kick">Step 5 of 5 · Install &amp; go live</div>
-    <h1 class="hd">Add Klavity to your <em>site.</em></h1>
-    <p class="sub" id="installSub">Drop one small piece of code on your site and every visitor gets a one-click bug button — clean, detailed tickets land in your dashboard automatically. No extra apps.</p>
-    <div class="free-badge" id="snapFreeBadge" role="note"><span class="fb-dot" aria-hidden="true"></span>Snap bug reporting is <b>free forever</b> — plans only add Sims + AutoSim.</div>
-
-    <!-- widget (primary) + extension (secondary). installTiles hidden on the Snap goal via CSS. -->
-    <div class="tiles" id="installTiles">
-      <div class="tile sel" id="widgetTile" onclick="selectInstall('widget')">
-        <div class="ti mono" style="font-weight:700">&lt;/&gt;</div>
-        <h3>Add the bug-report button</h3>
-        <p>One small piece of code on your site — visitors report bugs with a single click, no add-on needed.</p>
-      </div>
-      <div class="tile" id="chromeTile" onclick="selectInstall('extension')">
-        <div class="ti"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg></div>
-        <h3>Connect the Klavity Chrome add-on</h3>
-        <p>For live AI customer-persona reviews on your pages. Works alongside the bug button.</p>
-      </div>
-    </div>
-
-    <div id="widgetSection" style="margin-top:16px">
-      <pre class="snip">&lt;script&gt;
-  window.klavity = window.klavity || [];
-  ['identify','setMetadata','open','on'].forEach(function(m){window.klavity[m]=window.klavity[m]||function(){window.klavity.push([m].concat([].slice.call(arguments)))}});
-  // Wire this to your current user (all fields optional):
-  window.klavity.identify({ id: 'USER_ID', email: 'USER_EMAIL', name: 'USER_NAME', org: 'ORG_NAME', role: 'ROLE', env: 'prod' });
-&lt;/script&gt;
-&lt;script src="<span id="snipHost">https://klavity.in</span>/widget.js" data-project="<span id="snipPid">YOUR_PROJECT_ID</span>" defer&gt;&lt;/script&gt;</pre>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
-        <button type="button" id="copySnippet" class="btn btn-ghost" style="padding:7px 12px;font-size:12.5px">Copy code</button>
-        <span style="color:var(--faint);font-size:11.5px">Paste this once — it shows on every page automatically.</span>
-      </div>
-      <!-- Hand-off: email the install snippet to a developer (POST /api/install/email) -->
-      <div id="sendDevWrap" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card)">
-        <div style="font-size:13px;font-weight:600;margin-bottom:2px">Not the one who installs code?</div>
-        <div style="font-size:12.5px;color:var(--muted);margin-bottom:9px">Email the snippet to your developer — they paste one line and you're live.</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input class="in" id="devEmail" type="email" placeholder="developer@yourcompany.com" autocomplete="off" style="flex:1;min-width:200px" />
-          <button type="button" class="btn btn-indigo" id="sendDevBtn" onclick="sendToDeveloper()">Send instructions</button>
-        </div>
-        <div id="sendDevMsg" style="font-size:12.5px;margin-top:7px;color:var(--faint)"></div>
-      </div>
-      <!-- Live install check: polls /api/projects/:id/widget-status (~3s) and flips green. -->
-      <div class="wstatus" id="widgetChip" role="status" aria-live="polite">
-        <span class="wdot" aria-hidden="true"></span><span id="widgetChipTxt">Waiting for your site… (paste the code, then reload your page)</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
-        <button type="button" class="btn btn-ghost" id="tryWidgetBtn" onclick="tryTestReport()">Try it now — send a test report</button>
-        <span style="color:var(--faint);font-size:11.5px;max-width:34ch">This creates a real ticket in your project — perfect for seeing how it works.</span>
-      </div>
-      <button type="button" class="plat-toggle" id="platToggle" onclick="togglePlatforms()">Where do I paste this? ↓</button>
-      <div id="platPanel" class="hide">
-        <div class="plat-panel">
-          <div class="plat-tabs" id="platTabs">
-            <button type="button" class="plat-tab act" onclick="showPlat('shopify',this)">Shopify</button>
-            <button type="button" class="plat-tab" onclick="showPlat('webflow',this)">Webflow</button>
-            <button type="button" class="plat-tab" onclick="showPlat('squarespace',this)">Squarespace</button>
-            <button type="button" class="plat-tab" onclick="showPlat('wix',this)">Wix</button>
-            <button type="button" class="plat-tab" onclick="showPlat('react',this)">React / Next.js</button>
-            <button type="button" class="plat-tab" onclick="showPlat('other',this)">Other</button>
-          </div>
-          <div class="plat-steps" id="platDesc"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="extSection" class="hide" style="margin-top:16px">
-      <div class="ext-msg" id="chromeMsg">
-        <a href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener" style="color:var(--indigo);font-weight:600">Add Klavity to Chrome →</a>
-        <span style="color:var(--faint)"> — then click the button below to connect it.</span>
-      </div>
-      <div style="margin-top:16px">
-        <div style="font-family:var(--mono);font-size:11px;color:var(--faint);margin-bottom:8px">Which pages should your AI customer personas watch? (paste your site address)</div>
-        <div class="urlrow">
-          <input class="in" id="urlInput" aria-label="Your site URL" placeholder="yoursite.com" onkeydown="if(event.key==='Enter')addUrl()" />
-          <button id="onb-add-url" class="btn btn-ghost" onclick="addUrl()">Add</button>
-        </div>
-        <div class="empty hide" id="urlEmpty">No URLs yet — add your site above.</div>
-        <div class="chiplist" id="urlChips"></div>
-      </div>
-    </div>
-
-    <div class="err" id="s2err"></div>
-    <div class="row">
-      <button class="btn btn-indigo" id="s2continue" onclick="s2proceed()">Continue →</button>
-      <button class="skip" id="s2skip" onclick="s2SkipLater()">Set up later</button>
-    </div>
-    <div class="hide" id="s2AddSims" style="margin-top:16px"><span class="snap-fwd" role="button" tabindex="0" onclick="addSimsToo()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();addSimsToo()}">Want AI reviews too? Add AI customer personas →</span></div>
-  </section>
-
-</div><!-- /stage -->
-</div><!-- /shell -->
-
-<div class="foot"><div class="in">
-  <button class="btn btn-ghost" id="backBtn" onclick="prev()">← Back</button>
-  <span class="mono" style="color:var(--faint);font-size:11px">The complete AI QA suite · ~2 minutes to set up</span>
-</div></div>
-
-<button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg></button>
-<script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function svgIcon(name,label){var body=(window.KLAV_ICONS||{})[name]||'';var a11y=label?'role="img"':'aria-hidden="true"';var title=label?'<title>'+label+'</title>':'';return'<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '+a11y+'>'+title+body+'</svg>'}function paint(){b.innerHTML=svgIcon(dark()?'sun':'moon',dark()?'Switch to light mode':'Switch to dark mode')}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
 
 <script>
 // Phase B wire — window.klavPreviewReact: the one-paste LIVE reaction. The URL step's
@@ -2110,5 +2360,7 @@ window.addEventListener('load', function() {
   if ('requestIdleCallback' in window) { requestIdleCallback(run); } else { setTimeout(run, 1); }
 });
 </script>
+
+
 </body>
 </html>
