@@ -3124,7 +3124,7 @@ export async function latestWidgetPing(projectId: string): Promise<{ host: strin
 // "widget never loaded". Indexed COUNT(*) on fb_proj_idx; best-effort (throws bubble to the caller).
 export async function countRecentFeedback(projectId: string, sinceMs: number): Promise<number> {
   const r = await db!.execute({
-    sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND created_at>=?",
+    sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND created_at>=? AND merged_into IS NULL", // KLA-780: don't count folded-away merged rows
     args: [projectId, sinceMs],
   })
   return Number((r.rows[0] as any).n)
@@ -3863,7 +3863,7 @@ export type SimFeedbackRow = {
 export async function listFeedbackForSim(projectId: string, simId: string): Promise<SimFeedbackRow[]> {
   const r = await db!.execute({
     sql: `SELECT id, observation, sentiment, COALESCE(priority, severity) AS priority, url_path, suggested_bug_json, source_quote, status, created_at
-          FROM feedback WHERE project_id=? AND sim_id=? ORDER BY created_at DESC LIMIT 200`,
+          FROM feedback WHERE project_id=? AND sim_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT 200`, // KLA-780: exclude folded-away merged rows
     args: [projectId, simId],
   })
   return r.rows.map((x: any) => {
