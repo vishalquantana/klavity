@@ -14,6 +14,7 @@ import {
   mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds,
   findFeedbackByIssueKey, listRecentFeedbackForDedup,
   insertTicketComment, listTicketComments, listFeedback,
+  listTicketsPaginated, resolveFeedbackRef, db,
 } from "./lib/db"
 import { buildRecurrenceMemory } from "./lib/recurrence-memory"
 import { issueKeyFor, humanReportIssueKeyFor, chooseDedup } from "./lib/dedup"
@@ -268,4 +269,149 @@ test("KLA-780: merge is idempotent and refuses self-merge", async () => {
 
   // A ticket can never be merged into itself.
   expect(await mergeFeedbackClusters(P, survivor, survivor, "op@example.com")).toBeNull()
+})
+
+// ══ KLA-780 round-2 (codex QA) — the fold must be complete: hidden from EVERY board/aggregate/permalink,
+// chain-safe, atomic, and concurrency-safe. One test per finding. ═════════════════════════════════════
+
+test("KLA-780 r2 (C1-1): listTicketsPaginated excludes a merged row even with statuses:['merged']", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/tix", observation: "tickets board survivor", priority: "high",
+    suggestedBug: { title: "Board survivor", body: "b", priority: "high" }, issueKey: keyFor("/tix", "PA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/tix", observation: "tickets board folded dup", priority: "high",
+    suggestedBug: { title: "Board dup", body: "b", priority: "high" }, issueKey: keyFor("/tix", "PB"),
+  })
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+
+  // Default list (status != 'new'): survivor present, folded row absent, and it does not inflate total.
+  const def = await listTicketsPaginated(P, { limit: 200 })
+  const defIds = def.tickets.map((t) => t.id)
+  expect(defIds).toContain(survivor)
+  expect(defIds).not.toContain(folded)
+  expect(def.tickets.every((t) => t.id !== folded)).toBe(true)
+
+  // Even an EXPLICIT statuses:['merged'] filter must not resurface it — the live-row predicate is
+  // independent of the status filter. No merged rows are ever returned, so total is 0.
+  const asMerged = await listTicketsPaginated(P, { statuses: ["merged"], limit: 200 })
+  expect(asMerged.tickets.map((t) => t.id)).not.toContain(folded)
+  expect(asMerged.total).toBe(0)
+})
+
+test("KLA-780 r2 (C1-2): a merge CHAIN resolves to the live root — C's data lands on A, not hidden B", async () => {
+  const A = await insertFeedback({
+    projectId: P, urlPath: "/chain", observation: "root A survivor",
+    suggestedBug: { title: "Root A", body: "b", priority: "high" }, issueKey: keyFor("/chain", "QA"),
+  })
+  const B = await insertFeedback({
+    projectId: P, urlPath: "/chain", observation: "middle B",
+    suggestedBug: { title: "Mid B", body: "b", priority: "high" }, issueKey: keyFor("/chain", "QB"),
+  })
+  const C = await insertFeedback({
+    projectId: P, urlPath: "/chain", observation: "leaf C unique evidence",
+    suggestedBug: { title: "Leaf C", body: "b", priority: "high" }, issueKey: keyFor("/chain", "QC"),
+  })
+  // 1) B folds into A → B is now hidden, merged_into=A.
+  await mergeFeedbackClusters(P, A, B, "op@example.com")
+  expect((await feedbackById(P, B)).mergedInto).toBe(A)
+
+  // 2) Now merge C into the (already-hidden) B. The survivor must resolve to the LIVE root A.
+  const res = await mergeFeedbackClusters(P, B, C, "op@example.com")
+  expect(res).not.toBeNull()
+  expect(res!.survivorId).toBe(A)                       // resolved past hidden B
+  expect((await feedbackById(P, C)).mergedInto).toBe(A) // C points at the live root, not hidden B
+
+  // C's own evidence is carried as an occurrence on A (never stranded on hidden B).
+  const aObs = (await listFeedbackOccurrences(A)).map((o) => o.observation)
+  expect(aObs).toContain("leaf C unique evidence")
+  const bObs = (await listFeedbackOccurrences(B)).map((o) => o.observation)
+  expect(bObs).not.toContain("leaf C unique evidence")
+})
+
+test("KLA-780 r2 (C2-atomicity): a forced re-home failure rolls back — the row is NOT marked merged", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/atomic", observation: "atomic survivor",
+    suggestedBug: { title: "Atomic survivor", body: "b", priority: "high" }, issueKey: keyFor("/atomic", "RA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/atomic", observation: "atomic dup with a comment",
+    suggestedBug: { title: "Atomic dup", body: "b", priority: "high" }, issueKey: keyFor("/atomic", "RB"),
+  })
+  await insertTicketComment(folded, "carol@example.com", "keep my comment safe")
+
+  // Force the absorption transaction to fail by making db.batch throw exactly once.
+  const origBatch = db!.batch.bind(db)
+  let calls = 0
+  ;(db as any).batch = (...a: any[]) => { calls++; throw new Error("forced re-home failure") }
+  let result: any
+  try {
+    result = await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+  } finally {
+    ;(db as any).batch = origBatch
+  }
+  expect(calls).toBe(1)         // the absorption really did attempt the batch
+  expect(result).toBeNull()      // merge reports failure (route → 500), not a false success
+
+  // Row NOT marked merged (claim rolled back): still live, status restored, comment intact on it.
+  const foldedRow = await feedbackById(P, folded)
+  expect(foldedRow.mergedInto).toBeNull()
+  expect(foldedRow.status).not.toBe("merged")
+  expect((await listTicketComments(folded)).length).toBe(1) // comment NOT stranded/lost
+  // Survivor did not silently absorb anything (no head-occurrence for the folded body).
+  const sObs = (await listFeedbackOccurrences(survivor)).map((o) => o.observation)
+  expect(sObs).not.toContain("atomic dup with a comment")
+
+  // And a normal retry now succeeds cleanly.
+  const retry = await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+  expect(retry).not.toBeNull()
+  expect((await feedbackById(P, folded)).mergedInto).toBe(survivor)
+  expect((await listTicketComments(survivor)).map((c) => c.body)).toContain("keep my comment safe")
+})
+
+test("KLA-780 r2 (C2-concurrency): two concurrent merges of the same pair don't double-absorb", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/race", observation: "race survivor",
+    suggestedBug: { title: "Race survivor", body: "b", priority: "high" }, issueKey: keyFor("/race", "SA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/race", observation: "race dup unique body",
+    suggestedBug: { title: "Race dup", body: "b", priority: "high" }, issueKey: keyFor("/race", "SB"),
+  })
+  // Fire both merges of the SAME pair concurrently — only ONE may absorb (guarded claim).
+  const [r1, r2] = await Promise.all([
+    mergeFeedbackClusters(P, survivor, folded, "op@example.com"),
+    mergeFeedbackClusters(P, survivor, folded, "op@example.com"),
+  ])
+  expect(r1).not.toBeNull()
+  expect(r2).not.toBeNull()
+  // The folded row's body is carried as EXACTLY ONE head occurrence on the survivor (never duplicated).
+  const dupHeadOccs = (await listFeedbackOccurrences(survivor)).filter((o) => o.observation === "race dup unique body")
+  expect(dupHeadOccs.length).toBe(1)
+  // Recurrence summed exactly once (1 + 1), not 1 + 1 + 1.
+  expect((await feedbackById(P, survivor)).recurrenceCount).toBe(2)
+  expect((await feedbackById(P, folded)).mergedInto).toBe(survivor)
+})
+
+test("KLA-780 r2 (C2-resolvers): resolveFeedbackRef of a merged ref returns the survivor", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/ref", observation: "ref survivor",
+    suggestedBug: { title: "Ref survivor", body: "b", priority: "high" }, issueKey: keyFor("/ref", "TA2"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/ref", observation: "ref folded",
+    suggestedBug: { title: "Ref folded", body: "b", priority: "high" }, issueKey: keyFor("/ref", "TB2"),
+  })
+  // Before merge, the folded ref resolves to itself.
+  expect((await resolveFeedbackRef(folded))?.id).toBe(folded)
+
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+
+  // An old fb_<folded> deep-link now lands on the canonical survivor, not the hidden folded row.
+  const resolved = await resolveFeedbackRef(folded)
+  expect(resolved).not.toBeNull()
+  expect(resolved!.id).toBe(survivor)
+  expect(resolved!.projectId).toBe(P)
+  // The survivor's own ref still resolves to itself.
+  expect((await resolveFeedbackRef(survivor))?.id).toBe(survivor)
 })
