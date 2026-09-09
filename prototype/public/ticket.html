@@ -219,7 +219,10 @@ function loadTicket() {
   var timeoutP = new Promise(function (_, reject) {
     setTimeout(function () { timedOut = true; if (ctrl) { try { ctrl.abort(); } catch (e) {} } reject(new Error("timeout")); }, 15000);
   });
-  Promise.race([apiFeedback("", ctrl ? { signal: ctrl.signal } : undefined), timeoutP]).then(function (r) {
+  // Race the ENTIRE load (fetch headers AND body parse) against the timeout — not just apiFeedback(). A
+  // stalled response BODY leaves r.json() pending forever, which AbortController can't cancel when absent;
+  // racing the whole chain guarantees the spinner still resolves.
+  var loadWork = apiFeedback("", ctrl ? { signal: ctrl.signal } : undefined).then(function (r) {
     if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); return null; }
     if (r.status === 403) { showErr("You are not a member of this ticket's project."); return null; }
     if (!r.ok) { showErr("Could not load this ticket."); return null; }
@@ -232,7 +235,8 @@ function loadTicket() {
     render();
     loadComments();
     checkReplay();
-  }).catch(function () {
+  });
+  Promise.race([loadWork, timeoutP]).catch(function () {
     showErr(timedOut ? "Loading timed out — please refresh to try again." : "Could not load this ticket.");
   });
 }
