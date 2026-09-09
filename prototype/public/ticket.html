@@ -228,7 +228,7 @@ function loadTicket() {
     if (r.status === 403) { showErr("You are not a member of this ticket's project."); return null; }
     if (!r.ok) { showErr("Could not load this ticket."); return null; }
     // Parse defensively: a body that isn't JSON must surface an error, not a silent stall.
-    return r.json().then(function (j) { return j; }, function () { showErr("Could not load this ticket."); return null; });
+    return r.json().then(function (j) { return j; }, function () { if (timedOut) return null; showErr("Could not load this ticket."); return null; });
   }).then(function (d) {
     if (timedOut) return; // a body that finished AFTER the timeout must NOT render over the timeout error
     if (d === null) return; // already redirected or errored above — spinner is already resolved
