@@ -2313,7 +2313,15 @@ export function buildModal(
   }
 
   function escHandler(e: KeyboardEvent) {
-    if (e.key === 'Escape') { e.stopPropagation(); close(); return }
+    // KLA-773: while the discard-confirm card is open it OWNS the keyboard. Esc = "keep editing" (dismiss);
+    // every other key (crucially the global 'S' submit shortcut) is swallowed so the report can never be
+    // submitted from BEHIND the confirmation. The card's own two buttons still work via native focus/click.
+    if (dismissConfirmClose) {
+      if (e.key === 'Escape') { e.stopPropagation(); dismissConfirmClose() }
+      else if (e.key === 's' || e.key === 'S') { e.stopPropagation() } // block the submit shortcut only
+      return
+    }
+    if (e.key === 'Escape') { e.stopPropagation(); confirmClose(); return }
     // S submits the report — but only when the user isn't typing and no fullscreen editor owns the keys.
     if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       // Real keystrokes are composed:true, so at this document-level capture listener e.target is
@@ -2476,6 +2484,38 @@ export function buildModal(
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
   const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  // KLA-773: closing with unsaved evidence (screenshot / recording / replay / files) used to discard it
+  // silently — X, backdrop click and Esc all called close() unconditionally. Guard those three paths with a
+  // lightweight in-modal confirm (never a blocking window.confirm() — that would freeze the host page). The
+  // minimize button (#klavity-min) stays UNGUARDED: it's non-destructive (the host persists the session).
+  let confirmCloseCard: HTMLElement | null = null
+  let dismissConfirmClose: (() => void) | null = null
+  const confirmClose = () => {
+    if (!hasEvidence()) { close(); return }
+    if (confirmCloseCard) return // already asking
+    const card = document.createElement('div')
+    confirmCloseCard = card
+    card.setAttribute('role', 'alertdialog')
+    card.setAttribute('aria-modal', 'true')
+    card.setAttribute('aria-labelledby', 'kl-cc-title')
+    card.style.cssText = 'position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(12,10,8,.55);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)'
+    card.innerHTML =
+      '<div style="max-width:340px;background:var(--kl-bg,#1c1712);color:var(--kl-fg,#f5f3ee);border:1px solid var(--kl-border,#574f45);border-radius:14px;padding:20px 20px 16px;box-shadow:0 18px 48px rgba(0,0,0,.45);font-family:var(--kl-font,system-ui,sans-serif)">'
+      + '<div id="kl-cc-title" style="font-size:15px;font-weight:600;margin-bottom:6px">Discard this capture?</div>'
+      + '<div style="font-size:13px;opacity:.8;line-height:1.45;margin-bottom:16px">Your screenshot and any annotations, recording or attached files will be lost.</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button id="kl-cc-keep" style="padding:8px 14px;border-radius:9px;border:1px solid var(--kl-border,#574f45);background:transparent;color:inherit;font-size:13px;font-weight:600;cursor:pointer">Keep editing</button>'
+      + '<button id="kl-cc-discard" style="padding:8px 14px;border-radius:9px;border:none;background:#c0392b;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Discard</button>'
+      + '</div></div>'
+    const dismiss = () => { safeRemove(card); if (confirmCloseCard === card) { confirmCloseCard = null; dismissConfirmClose = null } }
+    dismissConfirmClose = dismiss
+    card.addEventListener('click', (e) => { if (e.target === card) dismiss() }) // click the dim to keep editing
+    card.querySelector('#kl-cc-keep')?.addEventListener('click', dismiss)
+    card.querySelector('#kl-cc-discard')?.addEventListener('click', () => { dismiss(); close() })
+    const m = shadowRoot.querySelector('.klavity-modal') as HTMLElement | null
+    ;(m || overlay).appendChild(card)
+    try { (card.querySelector('#kl-cc-keep') as HTMLElement | null)?.focus() } catch { /* jsdom */ }
+  }
   // #529: auto-grow the description so a prefilled or long (>4 line) report shows in full without the
   // reporter dragging the resize handle. Reset to 'auto' first so the box can also shrink, then grow to
   // fit content, capped at 40vh (keeps the modal usable on short viewports). resize:vertical stays as a
@@ -2713,8 +2753,8 @@ export function buildModal(
     })
   }
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
-  modal.querySelector('#klavity-x')?.addEventListener('click', () => close())
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) confirmClose() }) // KLA-773
+  modal.querySelector('#klavity-x')?.addEventListener('click', () => confirmClose())     // KLA-773
   // KLA-412: minimize hands off to the host, which persists the evidence session, closes this composer,
   // and shows the dock. Never let a listener error leave the button dead.
   modal.querySelector('#klavity-min')?.addEventListener('click', () => {

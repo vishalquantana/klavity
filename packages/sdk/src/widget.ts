@@ -1982,7 +1982,9 @@ async function mount() {
       reportArmed = false
       setTimeout(() => { reportArmed = true }, 400)
       showMenu(e.clientX, e.clientY)
-    })
+    }, true)  // KLA-771: CAPTURE phase — some hosts (px4/qa1.px4app.com) stopPropagation() their own
+              // contextmenu handler, which in the bubble phase would stop us reaching document and the
+              // native menu would win. Capture runs before any host bubble/target handler.
   }
 
   const banner = (text: string) => {
