@@ -127,6 +127,32 @@ function displayRef(issueKey: string): string {
   return m ? 'fb_' + m[1] : issueKey
 }
 
+// KLA-766: the reporter-friendly ticket KEY shape (KLA-123, SIM-1520) — a leading letter, up to 9 more
+// key chars, a dash and a sequence number. Matches the SERVER's pretty-permalink key segment
+// (/<slug>/<KEY>-<n>) exactly (server.ts prettyTicketMatch) so we only ever surface a ref the server
+// actually minted — we never invent one.
+const FRIENDLY_KEY_SHAPE = /^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/
+
+/** KLA-766: pull the reporter-friendly ticket key (KLA-123) out of the server's pretty deep-link
+ *  (/<slug>/<KEY>-<n>) when it has one. Returns '' for the opaque /t/<fb_id> fallback, a bare
+ *  /dashboard link, a non-http(s) URL, or anything whose last path segment isn't a real KEY-<n>. */
+export function refFromPrettyUrl(u: string | null | undefined): string {
+  if (!u) return ''
+  try {
+    const p = new URL(u)
+    if (p.protocol !== 'https:' && p.protocol !== 'http:') return ''
+    const seg = p.pathname.split('/').filter(Boolean).pop() || ''
+    return FRIENDLY_KEY_SHAPE.test(seg) ? seg : ''
+  } catch { return '' }
+}
+
+/** KLA-766: what to show as the "Filed as" reference. Prefer the friendly ticket key the server
+ *  embedded in the deep link (KLA-123); fall back to displayRef (a real tracker key passes through,
+ *  an fb_<uuid> is shortened) only when the server gave us nothing friendlier. Never invents a ref. */
+export function friendlyRef(issueKey: string, issueUrl?: string | null): string {
+  return refFromPrettyUrl(issueUrl) || displayRef(issueKey)
+}
+
 /** Only ever link out to a real http(s) URL — issueUrl flows in from the host/server response, so
  *  anything else (empty, javascript:, garbage) renders no link at all. */
 function safeHttpUrl(u: string | null | undefined): string {
@@ -947,7 +973,7 @@ export function buildModal(
     .kl-minimap{position:absolute;right:12px;bottom:12px;z-index:7;border:1px solid rgba(255,255,255,.4);border-radius:6px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.5);background:#0b0f1c;cursor:crosshair;touch-action:none;}
     .kl-minimap[hidden]{display:none;}
     .kl-minimap-img{display:block;width:100%;height:100%;object-fit:fill;opacity:.9;pointer-events:none;user-select:none;-webkit-user-drag:none;}
-    .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6c63ff);background:color-mix(in srgb,var(--kl-accent,#6c63ff) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
+    .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6366f1);background:color-mix(in srgb,var(--kl-accent,#6366f1) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
     .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible,.kl-hlogo:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
     /* #627: zoom −/+ buttons sit tight together as their own group. */
@@ -3920,7 +3946,8 @@ export function buildModal(
           try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
           cropClient = { x: e.clientX, y: e.clientY }
           cropBox = document.createElement('div')
-          cropBox.style.cssText = 'position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
+          // KLA-763 (odd color): brand accent #6366f1 (rgb 99,102,241) — was #6c63ff, an off-brand purple.
+          cropBox.style.cssText = 'position:absolute;border:2px dashed #6366f1;background:rgba(99,102,241,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
           stage.appendChild(cropBox)
           return
         }
@@ -4341,10 +4368,13 @@ export function buildModal(
       const label = document.createElement('span')
       label.textContent = 'Filed as'
       const code = document.createElement('code')
-      code.textContent = displayRef(issueKey)
+      // KLA-766: show the friendly ticket key (KLA-123) the server minted in the deep link, not the
+      // opaque fb_ id — fall back to the shortened fb_ only when the server gave us nothing friendlier.
+      code.textContent = friendlyRef(issueKey, issueUrl)
       ref.append(label, code)
-      // Link only when the server resolved a real http(s) dashboard URL (authed reporters). Anonymous
-      // widget submits get just the quotable ref — matching the pre-#448 themed card contract.
+      // KLA-768: link straight to the specific ISSUE via the server's deep-link permalink
+      // (/<slug>/<KEY>-<n> or the opaque /t/<ref>) — an unauthenticated click resumes to it after login
+      // (the server's loginGate adds ?next=). safeHttpUrl keeps it same-scheme (no open redirect).
       const linkUrl = safeHttpUrl(issueUrl)
       if (linkUrl) {
         const a = document.createElement('a')
@@ -4396,7 +4426,8 @@ export function buildModal(
       const label = document.createElement('span')
       label.textContent = 'Filed as'
       const code = document.createElement('code')
-      code.textContent = displayRef(feedbackId)
+      // KLA-766: friendly ticket key from the deep link (KLA-123), fb_ shortened only as a fallback.
+      code.textContent = friendlyRef(feedbackId, issueUrl)
       ref.append(label, code)
       const linkUrl = safeHttpUrl(issueUrl)
       if (linkUrl) {
@@ -4404,7 +4435,9 @@ export function buildModal(
         a.href = linkUrl
         a.target = '_blank'
         a.rel = 'noopener'
-        a.textContent = 'View in dashboard'
+        // KLA-768: the link now deep-links to the specific ISSUE (server pretty permalink), not the
+        // generic board — label it "Open in Klavity" to match the confirmation card + the pill.
+        a.textContent = 'Open in Klavity'
         ref.appendChild(a)
       }
       wrap.appendChild(ref)
@@ -4659,11 +4692,33 @@ async function fileToDataUrl(file: File): Promise<string> {
   return blobToDataUrl(file)
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
+// KLA-763 (stuck upload): a FileReader can genuinely hang — a truly stuck read never fires onload OR
+// onerror, so the old two-listener promise could sit unresolved forever, freezing the attach ingest
+// (the "Attach"/paste spinner never resolved). Mirror the KLA-767 "always terminate" rule: race the
+// WHOLE read against a hard timeout (covers the body, not just the start), wire onabort too, and ignore
+// any late completion after we've already settled (a stale onload must not double-resolve). The timer is
+// always cleared on settle (no leaked timer). Guarantee: this promise ALWAYS resolves or rejects.
+export const BLOB_READ_TIMEOUT_MS = 30000
+export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { reader.abort() } catch { /* onabort is a no-op once settled */ }
+      reject(new Error('file read timed out'))
+    }, BLOB_READ_TIMEOUT_MS)
+    const settle = (fn: () => void) => {
+      if (settled) return   // a late onload/onerror/onabort after the timeout is ignored (no double-add)
+      settled = true
+      clearTimeout(timer)   // never leak the timer once the read finishes on its own
+      fn()
+    }
+    reader.onload = () => settle(() => resolve(reader.result as string))
+    reader.onerror = () => settle(() => reject(reader.error || new Error('file read failed')))
+    reader.onabort = () => settle(() => reject(reader.error || new Error('file read aborted')))
+    try { reader.readAsDataURL(blob) }
+    catch (e) { settle(() => reject(e instanceof Error ? e : new Error('file read failed'))) }
   })
 }

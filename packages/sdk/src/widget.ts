@@ -96,9 +96,13 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
   return new Promise((resolve) => {
     if (typeof document === "undefined" || !document.body) return resolve(null)
     const box = document.createElement("div")
-    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6d5efc;background:rgba(109,94,252,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
+    // KLA-763 (odd color): the element-picker highlight box + label used #6d5efc / rgba(109,94,252,…),
+    // an off-brand purple that read as a DIFFERENT accent from the rest of the widget/composer (which is
+    // the Klavity brand accent #6366f1 = rgb 99,102,241 everywhere else — pill, FAB, region-drag, chips).
+    // Snap them to the brand accent so the picker matches the composer.
+    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6366f1;background:rgba(99,102,241,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
     const label = document.createElement("div")
-    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6d5efc;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
+    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6366f1;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
     const banner = document.createElement("div")
     banner.setAttribute("role", "status")
     banner.setAttribute("aria-live", "polite")
@@ -185,12 +189,32 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
 // ── KLA-412 multi-page evidence helpers (pure, top-level) ──────────────────────────────────────────
 // The evidence session stores screenshots as Blobs (IndexedDB). The composer works in data URLs (its
 // screenshots[] are data URLs, and submit uploads them). These convert between the two + measure dims.
+// KLA-763 (stuck upload): a stalled FileReader that fires neither onload nor onerror used to leave this
+// promise unsettled forever — the evidence-resume loop (blobToDataUrl on a stored shot) then hung. Mirror
+// the KLA-767 "always terminate" rule: race the whole read against a hard timeout, wire onabort, and ignore
+// any late completion after settle (no double-resolve, no leaked timer). ALWAYS resolves or rejects.
+const BLOB_READ_TIMEOUT_MS = 30000
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const fr = new FileReader()
-    fr.onload = () => resolve(String(fr.result || ""))
-    fr.onerror = () => reject(fr.error || new Error("blob read failed"))
-    fr.readAsDataURL(blob)
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { fr.abort() } catch { /* onabort is a no-op once settled */ }
+      reject(new Error("blob read timed out"))
+    }, BLOB_READ_TIMEOUT_MS)
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    fr.onload = () => settle(() => resolve(String(fr.result || "")))
+    fr.onerror = () => settle(() => reject(fr.error || new Error("blob read failed")))
+    fr.onabort = () => settle(() => reject(fr.error || new Error("blob read aborted")))
+    try { fr.readAsDataURL(blob) }
+    catch (e) { settle(() => reject(e instanceof Error ? e : new Error("blob read failed"))) }
   })
 }
 // Manual data-URL -> Blob (no fetch(), so a strict connect-src CSP can't block it).
@@ -2243,6 +2267,22 @@ function pillDisplayRef(issueKey: string): string {
   const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
   return m ? "fb_" + m[1] : issueKey
 }
+// KLA-766: prefer the reporter-friendly ticket key (KLA-123) the server minted in the deep-link
+// permalink (/<slug>/<KEY>-<n>) over the opaque fb_ id — same shape + rule as the composer's friendlyRef.
+// Falls back to the shortened fb_ (pillDisplayRef) only when the URL carries nothing friendlier.
+const PILL_KEY_SHAPE = /^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/
+function pillRefFromUrl(u: string | null | undefined): string {
+  if (!u) return ""
+  try {
+    const p = new URL(u)
+    if (p.protocol !== "https:" && p.protocol !== "http:") return ""
+    const seg = p.pathname.split("/").filter(Boolean).pop() || ""
+    return PILL_KEY_SHAPE.test(seg) ? seg : ""
+  } catch { return "" }
+}
+function pillFriendlyRef(issueKey: string, issueUrl?: string | null): string {
+  return pillRefFromUrl(issueUrl) || pillDisplayRef(issueKey)
+}
 function pillSafeHttpUrl(u: string | null | undefined): string {
   if (!u) return ""
   try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:" ? p.href : "" } catch { return "" }
@@ -2409,7 +2449,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     // Sub: "Filed as <ref-mono-chip> · <Open in Klavity ↗>" — graceful "We filed it." when neither exists.
     progFill.style.width = "100%"
     sub.textContent = ""
-    const ref = pillDisplayRef(issueKey)
+    const ref = pillFriendlyRef(issueKey, issueUrl)
     const linkUrl = pillSafeHttpUrl(issueUrl)
     if (ref) {
       sub.appendChild(document.createTextNode("Filed as "))

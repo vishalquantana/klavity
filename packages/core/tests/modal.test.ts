@@ -485,7 +485,8 @@ describe('buildModal success reference + dashboard link', () => {
     expect(a.href).toBe(DASH_URL)
     expect(a.target).toBe('_blank')
     expect(a.rel).toBe('noopener')
-    expect(a.textContent).toBe('View in dashboard')
+    // KLA-768: the link now deep-links to the specific issue → labelled "Open in Klavity" (was "View in dashboard").
+    expect(a.textContent).toBe('Open in Klavity')
     // Existing auto-dismiss behavior stays intact: progress bar present, closes after 5s
     // (+700ms genie-out fallback — jsdom fires no animationend).
     expect(q(ctrl, '.klavity-toast-progress')).not.toBeNull()
@@ -518,6 +519,32 @@ describe('buildModal success reference + dashboard link', () => {
     vi.useFakeTimers()
     const ctrl = await submitWith({ issueKey: 'KLAV-123', issueUrl: '' }, { copy: successCopy })
     expect((q(ctrl, '.klavity-ref code') as HTMLElement).textContent).toBe('KLAV-123')
+    ctrl.close()
+    vi.useRealTimers()
+  })
+
+  it('KLA-766: shows the friendly ticket key from the deep link (KLA-142), never the opaque fb_ id', async () => {
+    vi.useFakeTimers()
+    const PRETTY = 'https://klavity.in/quantana/KLA-142'
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: PRETTY }, { copy: successCopy })
+    // The server minted a friendly key in the deep link → surface THAT, not the fb_ id.
+    expect((q(ctrl, '.klavity-ref code') as HTMLElement).textContent).toBe('KLA-142')
+    expect(ctrl.shadowRoot.textContent).not.toContain('fb_')
+    expect(ctrl.shadowRoot.textContent).not.toContain(FB_ID)
+    // KLA-768: link deep-links to that exact issue permalink.
+    const a = q(ctrl, '.klavity-ref a') as HTMLAnchorElement
+    expect(a.href).toBe(PRETTY)
+    expect(a.textContent).toBe('Open in Klavity')
+    ctrl.close()
+    vi.useRealTimers()
+  })
+
+  it('KLA-766: opaque /t/<id> deep link (no friendly key) falls back to the shortened fb_ ref', async () => {
+    vi.useFakeTimers()
+    // The /t/ fallback carries no KEY-n segment → we must NOT surface the fb_ as if it were a key, but the
+    // shortened quotable fb_ is the correct fallback here (nothing friendlier exists).
+    const ctrl = await submitWith({ issueKey: FB_ID, issueUrl: 'https://klavity.in/t/' + FB_ID }, { copy: successCopy })
+    expect((q(ctrl, '.klavity-ref code') as HTMLElement).textContent).toBe('fb_1a2b3c4d')
     ctrl.close()
     vi.useRealTimers()
   })

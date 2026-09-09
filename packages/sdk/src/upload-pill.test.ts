@@ -80,6 +80,28 @@ describe("upload pill states", () => {
     vi.useRealTimers()
   })
 
+  it("KLA-766: success shows the friendly ticket key from the deep-link permalink, not the fb_ id", () => {
+    const p = createUploadPill({ label: "screenshot" })
+    // Server returned a pretty deep link with a friendly KEY-<n> → surface THAT, never the opaque fb_ id.
+    p.success("fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9", "https://klavity.in/quantana/KLA-142")
+    const el = pillEl()
+    expect(el.querySelector(".refc")?.textContent).toBe("KLA-142")
+    expect(el.textContent).not.toContain("fb_")
+    // KLA-768: link deep-links to that exact issue permalink.
+    const a = el.querySelector("a.open") as HTMLAnchorElement
+    expect(a.href).toBe("https://klavity.in/quantana/KLA-142")
+    expect(a.textContent).toContain("Open in Klavity")
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+  })
+
+  it("KLA-766: falls back to the shortened fb_ ref when the deep link has no friendly key (/t/<id>)", () => {
+    const p = createUploadPill({ label: "screenshot" })
+    p.success("fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9", "https://klavity.in/t/fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9")
+    const el = pillEl()
+    expect(el.querySelector(".refc")?.textContent).toBe("fb_1a2b3c4d")
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+  })
+
   it("#651: success falls back to the Klavity 'K' mark tile when no screenshot is available", () => {
     const p = createUploadPill({ label: "screenshot" }) // no thumbnail
     p.success("fb_1a2b3c4d-5e6f-4a81-9203-a4b5c6d7e8f9", "https://klavity.in/dashboard#tickets")
