@@ -386,6 +386,15 @@ export class StreamingDictation {
   static MAX_RECONNECTS = 3
   static BASE_BACKOFF_MS = 500
   static MAX_BACKOFF_MS = 4000
+  // KLA-774: after Stop, how long to keep the socket LIVE waiting for the server to flush its final(s) and
+  // CLOSE the socket before we tear down anyway. Teardown normally happens on that close; this is the safety
+  // net if the server never closes. Generous so a slightly slow CloseStream flush is never cut off (the
+  // transcript is already shown live as finals land).
+  static STOP_GRACE_MS = 2000
+  // KLA-774: last-resort deadline to send the {type:'stop'} flush request if the recorder's onstop never
+  // fires. Deliberately LONG so it never preempts a real MediaRecorder tail (which lands in tens of ms), yet
+  // still leaves headroom under STOP_GRACE_MS for the server to flush + close.
+  static STOP_FLUSH_FALLBACK_MS = 1200
 
   private _url: string
   private _deps: StreamingDeps
@@ -400,6 +409,10 @@ export class StreamingDictation {
   private _sessTimer: any = null
   private _reconnects = 0
   private _stopped = false
+  private _awaitingFinal = false      // KLA-774: Stop sent; keeping socket live for the server's final
+  private _graceTimer: any = null
+  private _flushFallbackTimer: any = null  // KLA-774: last-resort {type:'stop'} timer (if onstop never fires)
+  private _torn = false
 
   constructor(opts: { url: string; deps?: Partial<StreamingDeps> }) {
     this._url = opts.url
@@ -418,10 +431,20 @@ export class StreamingDictation {
 
   async start(): Promise<void> {
     if (this._recording) return
+    // KLA-774: a previous session's STOP grace may still be pending (old socket/stream alive, grace timer
+    // armed, awaiting a final). Finalize it synchronously BEFORE resetting state so its late final/close
+    // can't bleed into this new session and its socket/stream/recorder don't leak. _teardown(false) skips
+    // the prior onStop (this new session now owns the UI). No-op if the prior session already tore down.
+    if (this._awaitingFinal || this._ws || this._stream || this._recorder) { this._teardown(false) }
     this._recording = true
     this._stopped = false
     this._everConnected = false
     this._reconnects = 0
+    this._awaitingFinal = false   // KLA-774: clean grace state on a fresh session (reused instance)
+    this._torn = false
+    this._stopFired = false       // KLA-774: re-arm onStop for a reused instance (a prior session had fired it)
+    if (this._graceTimer != null) { this._deps.clearTimeout(this._graceTimer); this._graceTimer = null }
+    if (this._flushFallbackTimer != null) { this._deps.clearTimeout(this._flushFallbackTimer); this._flushFallbackTimer = null }
     let stream: any
     try {
       stream = await this._deps.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
@@ -477,7 +500,15 @@ export class StreamingDictation {
         if (this._statusShown) { this._statusShown = false; this.onStatus('idle', '') }
       }
       if (msg.type === 'interim') { if (msg.text) this.onInterim(msg.text) }
-      else if (msg.type === 'final') { const t = (msg.text || '').trim(); if (t) this.onTranscript(t) }
+      else if (msg.type === 'final') {
+        // KLA-774: COMMIT every final live and never treat any single one as "the" final. Streaming ASR
+        // emits a final per endpointed segment; the tail after Stop produces another. The server's contract
+        // (deepgram-stream.ts) is: on our {type:'stop'} it sends CloseStream, forwards ALL flushed finals,
+        // then CLOSES the socket. So the authoritative "everything is flushed" signal is the socket close
+        // (handled in onclose via _stopped) — or the grace timeout as a safety net. Tearing down on the
+        // first post-stop final would race an in-flight segment final ahead of the true flush final.
+        const t = (msg.text || '').trim(); if (t) this.onTranscript(t)
+      }
       else if (msg.type === 'error') { /* server relay error → let onclose handle recovery/fallback */ }
       // 'ready' / 'timeout' need no client action beyond the healthy-connection bookkeeping above.
     }
@@ -485,6 +516,10 @@ export class StreamingDictation {
     ws.onclose = () => {
       this._clearConnectTimer()
       this._ws = null
+      // KLA-774: if the socket closes any time during a user Stop (before OR after we've sent the flush
+      // request), finish the graceful stop — full teardown + a single onStop — rather than treating it as a
+      // mid-session drop (which would try to reconnect / fall back).
+      if (this._stopped) { this._finishGrace(); return }
       this._onDrop()
     }
   }
@@ -539,12 +574,75 @@ export class StreamingDictation {
     if (!this._recording) { if (!this._stopped) { this._stopped = true } return }
     this._recording = false
     this._stopped = true
-    // Ask the server to flush the final transcript, then close.
-    try { this._ws?.send?.(JSON.stringify({ type: 'stop' })) } catch { /* no-op */ }
+    const ws = this._ws
+    // KLA-774: previously we sent {type:'stop'} then IMMEDIATELY _teardown() — which nulls onmessage and
+    // closes the socket — so the server's async {type:'final'} never arrived and the last words (emitted
+    // only as 'interim') were lost, leaving the Description empty. Keep the socket + onmessage LIVE for a
+    // bounded grace window so the final is received (→ onTranscript → committed) before teardown.
+    //
+    // Gate on the socket being OPEN, NOT on _connected: the socket can be open and the recorder streaming
+    // before the server has sent its first message (ready/transcript). A very short utterance + fast Stop in
+    // that window still has a tail to flush — it must take the graceful path, not immediate teardown.
+    const open = !!ws && (ws.readyState === 1 || ws.readyState === undefined)
+    if (open) {
+      // Order matters: MediaRecorder.stop() flushes a FINAL async 'dataavailable' (the tail audio) which
+      // ondataavailable still forwards over the live socket. The {type:'stop'} control frame tells the
+      // server "no more audio — flush the final", so it MUST go out AFTER that tail chunk, else the server
+      // can flush before the last words arrive (the very bug we're fixing). Send it on the recorder's
+      // 'onstop' (fires after the final dataavailable). Guard so it's sent exactly once, with fallbacks for
+      // recorders that don't emit onstop / are already inactive.
+      //
+      // CRUCIALLY: _awaitingFinal flips true only INSIDE sendStop(), AFTER the stop frame is sent. Streaming
+      // ASR emits a 'final' per finalized segment (endpointing), so a 'final' can arrive in this window that
+      // is an ordinary segment final, NOT the stop-flush. Committing it (onTranscript) is right, but it must
+      // NOT trigger teardown — that would drop the tail audio + the real flush final. Only a final AFTER we
+      // requested the flush counts as the flush.
+      let stopSent = false
+      const capturedWs = ws
+      const sendStop = () => {
+        // Guard against a STALE fire: the long fallback timer may fire after teardown / a new start(). Only
+        // act if this is still the same live session (socket unchanged, not torn) — otherwise it would send
+        // on a dead socket and corrupt the reused instance's _awaitingFinal.
+        if (stopSent || this._torn || this._ws !== capturedWs) return
+        stopSent = true
+        if (this._flushFallbackTimer != null) { this._deps.clearTimeout(this._flushFallbackTimer); this._flushFallbackTimer = null }
+        try { capturedWs.send(JSON.stringify({ type: 'stop' })) } catch { /* no-op */ }
+        this._awaitingFinal = true   // now the NEXT final is the stop-flush → finish the grace
+      }
+      const rec = this._recorder
+      if (rec && rec.state !== 'inactive') {
+        try { rec.onstop = () => sendStop() } catch { /* no-op */ }
+        this._stopRecorder()           // → final 'dataavailable' (tail sent) → 'onstop' → sendStop()
+        // Last-resort fallback ONLY for a recorder that never fires onstop. Long enough (see constant) that
+        // it never preempts a real tail; sendStop() is idempotent + session-guarded so a normal onstop wins
+        // and a stale fire after teardown is a no-op. Tracked so _teardown()/start() can cancel it.
+        this._flushFallbackTimer = this._deps.setTimeout(sendStop, StreamingDictation.STOP_FLUSH_FALLBACK_MS)
+      } else {
+        this._stopRecorder()
+        sendStop()
+      }
+      this._graceTimer = this._deps.setTimeout(() => this._finishGrace(), StreamingDictation.STOP_GRACE_MS)
+    } else {
+      this._stopRecorder()
+      try { ws?.send?.(JSON.stringify({ type: 'stop' })) } catch { /* no-op */ }
+      this._teardown(true)
+    }
+  }
+
+  // KLA-774: end the post-Stop grace window (final arrived, socket closed, or timeout) and tear down once.
+  private _finishGrace(): void {
+    if (this._graceTimer != null) { this._deps.clearTimeout(this._graceTimer); this._graceTimer = null }
+    if (this._flushFallbackTimer != null) { this._deps.clearTimeout(this._flushFallbackTimer); this._flushFallbackTimer = null }
+    this._awaitingFinal = false
     this._teardown(true)
   }
 
   private _teardown(fireStop: boolean): void {
+    if (this._torn) { if (fireStop) this._finishStop(); return }
+    this._torn = true
+    if (this._graceTimer != null) { this._deps.clearTimeout(this._graceTimer); this._graceTimer = null }
+    if (this._flushFallbackTimer != null) { this._deps.clearTimeout(this._flushFallbackTimer); this._flushFallbackTimer = null }
+    this._awaitingFinal = false
     this._recording = false
     this._clearConnectTimer()
     if (this._sessTimer != null) { this._deps.clearTimeout(this._sessTimer); this._sessTimer = null }

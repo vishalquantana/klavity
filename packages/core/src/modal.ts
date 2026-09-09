@@ -2923,12 +2923,18 @@ export function buildModal(
     // preview (replaced each interim, dropped on stop). onUnavailable cascades to batch, then Web Speech.
     const wireStreaming = (s: StreamingDictation) => {
       const sep = () => (streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : '')
-      s.onTranscript = (text) => { streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
-      s.onInterim = (text) => { desc.value = streamBase + sep() + text; refreshSubmit() }
+      // KLA-774: track the latest interim so that if Stop's grace window expires WITHOUT a server 'final'
+      // (slow/dropped final), we still commit the last spoken words instead of discarding them on onStop.
+      let lastInterim = ''
+      s.onTranscript = (text) => { lastInterim = ''; streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
+      s.onInterim = (text) => { lastInterim = text || ''; desc.value = streamBase + sep() + text; refreshSubmit() }
       s.onStatus = (type, message) => { if (type === 'idle') clearInfoStatus(); else setVoiceStatus('info', message) }
       s.onError = (_, message) => { if (message) setVoiceStatus('err', message, 4000) }
       s.onStop = () => {
-        desc.value = streamBase // drop any uncommitted interim preview
+        // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
+        // final already folded into streamBase and lastInterim is ''.
+        if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = '' }
+        desc.value = streamBase
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }
       s.onUnavailable = () => {
