@@ -256,7 +256,7 @@ export class Annotator {
       ctx.textAlign = 'start'
       ctx.textBaseline = 'alphabetic'
     } else if (shape.type === 'text') {
-      const { x, y, size, maxW } = this.textAnchor(shape)
+      const { x, y, size, maxW } = this.textAnchor(shape, ctx)
       ctx.font = `bold ${size}px sans-serif`
       // KLAVITYKLA-508: draw from the TOP-LEFT (matching the editing <input>'s top-left anchor) instead of
       // the default alphabetic baseline — otherwise committed text sat ~one line-height above the box.
@@ -330,12 +330,24 @@ export class Annotator {
    *  (so a dragged label can't be parked off-canvas) and `maxW` is the room from the anchor to the right edge
    *  (so long text wraps rather than spilling past the bounds). Shared by drawShape + textBounds so the
    *  rendered glyphs and the hit-test box always agree. */
-  private textAnchor(shape: Extract<Shape, { type: 'text' }>): { x: number; y: number; size: number; maxW: number } {
+  private textAnchor(shape: Extract<Shape, { type: 'text' }>, ctx?: CanvasRenderingContext2D | null): { x: number; y: number; size: number; maxW: number } {
     const size = shape.size ?? this.computeFontSize()
     const pad = Math.max(2, size * 0.15)
     const x = Math.max(pad, Math.min(shape.x, Math.max(pad, this.canvas.width - pad)))
-    const y = Math.max(0, Math.min(shape.y, Math.max(0, this.canvas.height - size)))
-    const maxW = Math.max(size, this.canvas.width - x - pad)
+    // Room from the anchor to the right edge. NO `size` floor — forcing a minimum width could push a glyph
+    // past the right bound; instead the text wraps (even to a narrow column) so it never spills horizontally.
+    const maxW = Math.max(1, this.canvas.width - x - pad)
+    // KLA-770: clamp `y` against the FULL wrapped block height, not one line — otherwise a multi-line label
+    // (or a large one) near the bottom spills below the canvas. Measure line count when a 2D context is
+    // available; fall back to a single line in headless/stubbed contexts.
+    const lineHeight = size * 1.25
+    let lineCount = 1
+    if (ctx && typeof ctx.measureText === 'function') {
+      ctx.font = `bold ${size}px sans-serif`
+      lineCount = Math.max(1, wrapTextLines((s) => safeMeasure(ctx, s), shape.text, maxW).length)
+    }
+    const blockH = lineCount * lineHeight
+    const y = Math.max(0, Math.min(shape.y, Math.max(0, this.canvas.height - blockH)))
     return { x, y, size, maxW }
   }
 
@@ -346,13 +358,17 @@ export class Annotator {
     if (shape.type !== 'text') return null
     const ctx = this.canvas.getContext('2d')
     if (!ctx || typeof ctx.measureText !== 'function') return null
-    const { x, y, size, maxW } = this.textAnchor(shape)
+    const { x, y, size, maxW } = this.textAnchor(shape, ctx)
     ctx.font = `bold ${size}px sans-serif`
     const lines = wrapTextLines((s) => safeMeasure(ctx, s), shape.text, maxW)
     let w = 0
     for (const ln of lines) w = Math.max(w, safeMeasure(ctx, ln))
     const lineHeight = size * 1.25
-    return { x, y, w: Math.max(size, w), h: Math.max(lineHeight, lines.length * lineHeight) }
+    // Clamp the hit-box to the canvas so it can't extend past the (clamped) render bounds — the min-size
+    // floor keeps a tiny label grabbable, but never at the cost of a box hanging off the right/bottom edge.
+    const boxW = Math.min(Math.max(size, w), Math.max(1, this.canvas.width - x))
+    const boxH = Math.min(Math.max(lineHeight, lines.length * lineHeight), Math.max(1, this.canvas.height - y))
+    return { x, y, w: boxW, h: boxH }
   }
 
   async save(): Promise<string> {

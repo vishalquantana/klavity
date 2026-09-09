@@ -1732,8 +1732,6 @@ export function buildModal(
         screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
         screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
         screenshotCapture.splice(i, 1) // KLA-621: keep the capture-provenance aligned too
-        // KLA-412: tell the host to drop the matching shot from the evidence session (index-aligned).
-        try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
         // drop the removed image's markup and slide every higher index down by one. Without this, submitting
         // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
@@ -1742,6 +1740,11 @@ export function buildModal(
           annotationsByIndex[key - 1] = annotationsByIndex[key]
           delete annotationsByIndex[key]
         }
+        // KLA-412 + KLA-772: tell the host to drop the matching shot from the evidence session (index-aligned).
+        // MUST run AFTER the annotationsByIndex shift above: the host reads getAnnotations() synchronously to
+        // re-align the session's stored overlays, so it needs the ALREADY-SHIFTED map — otherwise the shot
+        // after the deleted one inherits the deleted shot's overlay (and the last shot's overlay is dropped).
+        try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
         delete undoStacks[i]; delete cropStacks[i]
         for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
@@ -2073,7 +2076,9 @@ export function buildModal(
           screenshotQuality[index] = quality ?? 'real-pixel'
           screenshotSuggestSharp[index] = false // KLAVITYKLA-473: a sharp retake can't be blank/partial
           // Clear any markup on this image — the new capture has different pixels/dimensions.
-          if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index) }
+          // KLA-772: fire the change (→ null) so the PERSISTED overlay is cleared too; otherwise a retake
+          // followed by close+navigate (without a minimize) would restore the OLD overlay onto the new pixels.
+          if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index); fireAnnChanged(index) }
           // #449: the shot was fully replaced — its old undo/crop history no longer matches these pixels.
           delete undoStacks[index]; delete cropStacks[index]
         }

@@ -339,6 +339,24 @@ describe('text wrapping + bounds (KLA-770)', () => {
     expect(a.textBounds({ type: 'rect', color: '#ef4444', x: 0, y: 0, w: 5, h: 5 })).toBeNull()
   })
 
+  it('clamps a MULTI-LINE label against the full wrapped height (never spills below the canvas) (KLA-770)', () => {
+    const ctx: any = { canvas: { width: 200, height: 120 }, font: '', measureText: (s: string) => ({ width: s.length * 10 }) }
+    const canvas = { width: 200, height: 120, getContext: () => ctx } as unknown as HTMLCanvasElement
+    const a = new Annotator(canvas, 'data:image/png;base64,img')
+    // 3 explicit lines placed way off the bottom; size 20 → lineHeight 25 → block height 75.
+    const b = a.textBounds({ type: 'text', color: '#ef4444', x: 20, y: 5000, text: 'aaa\nbbb\nccc', size: 20 })
+    expect(b!.h).toBeGreaterThanOrEqual(75)          // three lines tall
+    expect(b!.y + b!.h).toBeLessThanOrEqual(120)     // the WHOLE block stays inside the canvas
+  })
+
+  it('a label near the right edge wraps into the remaining width (no size-floor overflow) (KLA-770)', () => {
+    const ctx: any = { canvas: { width: 200, height: 120 }, font: '', measureText: (s: string) => ({ width: s.length * 10 }) }
+    const canvas = { width: 200, height: 120, getContext: () => ctx } as unknown as HTMLCanvasElement
+    const a = new Annotator(canvas, 'data:image/png;base64,img')
+    const b = a.textBounds({ type: 'text', color: '#ef4444', x: 190, y: 10, text: 'hello world here', size: 20 })
+    expect(b!.x + b!.w).toBeLessThanOrEqual(200)     // never extends past the right edge
+  })
+
   it('textBounds clamps an off-canvas anchor back inside the image bounds', () => {
     const ctx: any = {
       canvas: { width: 200, height: 120 }, font: '',

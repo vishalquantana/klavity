@@ -59,6 +59,27 @@ describe('modal annotation persistence (KLA-772)', () => {
     c.close()
   })
 
+  it('removing a MIDDLE shot re-aligns overlays BEFORE onShotRemoved reads them (KLA-772 index shift)', () => {
+    // Shots 0/1/2 carry overlays note0/note1/note2. Removing shot 1 must leave the host seeing the SHIFTED
+    // map {0:note0, 1:note2} — not the pre-shift {0,1,2} which would store note1 onto shot2 and drop note2.
+    let seenAtRemoval: any = null
+    const c = buildModal('bug', {
+      onCaptureFull: async () => 'x', onSubmit: ok, onMinimize: () => {},
+      onShotRemoved: () => { seenAtRemoval = c.getAnnotations() }, // host reads getAnnotations() here
+    })
+    c.addScreenshot(PNG, undefined, undefined, undefined, undefined, overlay(0))
+    c.addScreenshot(PNG, undefined, undefined, undefined, undefined, overlay(1))
+    c.addScreenshot(PNG, undefined, undefined, undefined, undefined, overlay(2))
+    const removeBtns = Array.from(c.shadowRoot.querySelectorAll('.klavity-rm')) as HTMLButtonElement[]
+    removeBtns[1].click() // remove the middle shot
+    expect(seenAtRemoval[0]).toEqual(overlay(0))
+    expect(seenAtRemoval[1]).toEqual(overlay(2)) // shot-after-deleted keeps ITS own overlay, not note1
+    expect(seenAtRemoval[2]).toBeUndefined()     // no stale trailing index
+    // And the live map matches.
+    expect(c.getAnnotations()[1]).toEqual(overlay(2))
+    c.close()
+  })
+
   it('fires onAnnotationsChanged(index, null) when the annotator commits a clear', async () => {
     // Seed an overlay so the hero mounts with one shape, then Clear → the modal must re-persist (now empty).
     const onAnnotationsChanged = vi.fn()
