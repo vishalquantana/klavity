@@ -87,8 +87,8 @@ test("KLA-779: renderTicketsKanban triggers the full board fetch when the board 
   expect(fn).toContain("_tktBoardTickets.length === 0 && projId && !_tktBoardState.loading")
   expect(fn).toContain("fetchAndRenderTktBoard()")
   // codex round-2: the trigger MUST be gated so it doesn't fire on the overview (#ticketsKanban exists in
-  // the DOM globally) and doesn't spin on a genuinely-empty project (_tktBoardProjId set on fetch completion).
-  expect(fn).toContain("_tktBoardProjId !== projId")
+  // the DOM globally) and doesn't spin on a genuinely-empty project (loaded-flag set on fetch completion).
+  expect(fn).toContain("_tktBoardLoadedPid !== projId")
   expect(fn).toContain('document.body.getAttribute("data-view") === "tickets"')
   // And the guard must sit BEFORE the sourceTickets fallback so the fetch is kicked off on the cold render.
   const trigIdx = fn.indexOf("fetchAndRenderTktBoard()")
@@ -102,4 +102,17 @@ test("KLA-777: a board-card priority edit re-renders the kanban so an active fil
   // else a High→Low change while the High filter is active leaves the card lingering.
   const i = HTML.indexOf('buildTktDetail(t, admin, () => { renderCard(); renderTicketsKanban(_tktBoardTickets) })')
   expect(i).toBeGreaterThan(-1)
+})
+
+// ── KLA-779 (round-3): an EMPTY project's board must not re-fetch on every render — the warm-cache
+// checks key off a loaded-for-project flag, not _tktBoardTickets.length (codex round-2 spin). ──
+test("KLA-779: loaded-empty board counts as cached (no re-fetch spin on an empty project)", () => {
+  // A dedicated flag is set on fetch completion (even when tickets is []).
+  expect(HTML).toContain("let _tktBoardLoadedPid = null")
+  expect(HTML).toContain("_tktBoardLoadedPid = projId")
+  // renderTicketsView + fetchAndRenderTktBoard warm-cache checks must NOT require _tktBoardTickets.length.
+  const rtv = extractFn(HTML, "function renderTicketsView(")
+  expect(rtv).toContain("_tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets)")
+  const far = extractFn(HTML, "async function fetchAndRenderTktBoard(")
+  expect(far).toContain("const warmCache = projId && _tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets)")
 })
