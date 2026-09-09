@@ -211,11 +211,15 @@ function loadTicket() {
   // server response left the spinner forever, and (b) a silent `return` when the JSON had no `.report`
   // (or failed to parse), which also never resolved the spinner. Fix: bound the request with an
   // AbortController timeout and make every branch resolve the spinner.
+  // AbortController is only an OPTIMIZATION (cancels the socket). The spinner-termination guarantee comes
+  // from RACING the request against a timeout that REJECTS — so a stalled fetch resolves the UI even in a
+  // browser/webview without AbortController (where ctrl is null and abort() can't fire).
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   var timedOut = false;
-  var timer = setTimeout(function () { timedOut = true; if (ctrl) ctrl.abort(); }, 15000);
-  apiFeedback("", ctrl ? { signal: ctrl.signal } : undefined).then(function (r) {
-    clearTimeout(timer);
+  var timeoutP = new Promise(function (_, reject) {
+    setTimeout(function () { timedOut = true; if (ctrl) { try { ctrl.abort(); } catch (e) {} } reject(new Error("timeout")); }, 15000);
+  });
+  Promise.race([apiFeedback("", ctrl ? { signal: ctrl.signal } : undefined), timeoutP]).then(function (r) {
     if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); return null; }
     if (r.status === 403) { showErr("You are not a member of this ticket's project."); return null; }
     if (!r.ok) { showErr("Could not load this ticket."); return null; }
@@ -229,7 +233,6 @@ function loadTicket() {
     loadComments();
     checkReplay();
   }).catch(function () {
-    clearTimeout(timer);
     showErr(timedOut ? "Loading timed out — please refresh to try again." : "Could not load this ticket.");
   });
 }
@@ -422,7 +425,10 @@ function patchTicket(payload, okText) {
   // project members (full access), and the PATCH re-checks member access server-side.
   function openObsEdit() {
     if (!report) return;
-    $("obsInput").value = report.observation || report.notes || "";
+    // KLA-769 (codex round-2): the editable field is the OBSERVATION only — never fall back to report.notes
+    // (internal management notes). If observation was cleared, the textarea must be EMPTY, otherwise Save
+    // would write the internal notes into observation. (The read-only display keeps its own fallback.)
+    $("obsInput").value = report.observation != null ? report.observation : "";
     $("obsEdit").classList.remove("hide");
     $("observation").classList.add("hide");
     $("obsEditBtn").classList.add("hide");

@@ -11250,7 +11250,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // #745: workspace slug + project key are constant for this project-scoped board — resolve
           // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
           // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
-          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null }))
+          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
           const tickets = feedbackTickets.map(f => {
             const p = f.simId ? personaById.get(f.simId) : null
             const meta = ticketMetaRows[f.id] ?? { status: "open", assignee: null, notes: null, recurrence: 1, recurrenceDatesJson: null, lastSeenAt: null, resolvedAt: null, createdAt: f.createdAt }
