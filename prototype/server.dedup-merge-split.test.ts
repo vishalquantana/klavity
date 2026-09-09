@@ -15,6 +15,7 @@ import {
   findFeedbackByIssueKey, listRecentFeedbackForDedup,
   insertTicketComment, listTicketComments, listFeedback,
   listTicketsPaginated, resolveFeedbackRef, db,
+  updateFeedbackMeta, setFeedbackContactEmail,
 } from "./lib/db"
 import { buildRecurrenceMemory } from "./lib/recurrence-memory"
 import { issueKeyFor, humanReportIssueKeyFor, chooseDedup } from "./lib/dedup"
@@ -23,6 +24,14 @@ const ts = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const dbFile = join(tmpdir(), `klav-mergesplit-${ts}.db`)
 const rawClient = createClient({ url: "file:" + dbFile })
 async function rawExec(sql: string, args: any[] = []) { await rawClient.execute({ sql, args }) }
+// Return the first column of the first row (or null) — for asserting a re-homed feedback_id.
+async function rawClientQuery(sql: string, args: any[] = []): Promise<any> {
+  const r = await rawClient.execute({ sql, args })
+  if (!r.rows.length) return null
+  const row = r.rows[0] as any
+  const k = Object.keys(row)[0]
+  return row[k] != null ? String(row[k]) : null
+}
 
 const NOW = Date.now()
 const P = `proj_ms_${ts}`
@@ -414,4 +423,99 @@ test("KLA-780 r2 (C2-resolvers): resolveFeedbackRef of a merged ref returns the 
   expect(resolved!.projectId).toBe(P)
   // The survivor's own ref still resolves to itself.
   expect((await resolveFeedbackRef(survivor))?.id).toBe(survivor)
+})
+
+// ── KLA-780 round-3: data-durability hardening (repair-on-retry, full re-home, mutation redirect) ──
+
+test("KLA-780 r3 (crash window): a claimed-but-unabsorbed row is REPAIRED on retry, not falsely succeeded", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/crash", observation: "crash survivor",
+    suggestedBug: { title: "Crash survivor", body: "b", priority: "high" }, issueKey: keyFor("/crash", "CA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/crash", observation: "crash dup body",
+    suggestedBug: { title: "Crash dup", body: "b", priority: "high" }, issueKey: keyFor("/crash", "CB"),
+  })
+  await insertTicketComment(folded, "carol@example.com", "crash-window comment")
+
+  // Simulate a CRASH between the claim and the absorb: mark folded as merged (claim committed) but move
+  // NO data. This is exactly the stranded state the old code returned "idempotent success" for.
+  await rawExec(`UPDATE feedback SET merged_into=?, status='merged' WHERE id=?`, [survivor, folded])
+  // Precondition: data is still stranded on the hidden folded row (absorb never ran).
+  expect((await listTicketComments(folded)).length).toBe(1)
+  expect((await listFeedbackOccurrences(survivor)).map((o) => o.observation)).not.toContain("crash dup body")
+
+  // Retry the merge — must REPAIR (complete the absorb), not return a bare success.
+  const res = await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+  expect(res).not.toBeNull()
+  expect(res!.survivorId).toBe(survivor)
+  // Comment re-homed + head-occ receipt now on the survivor; folded's data no longer stranded.
+  expect((await listTicketComments(survivor)).map((c) => c.body)).toContain("crash-window comment")
+  expect((await listFeedbackOccurrences(survivor)).map((o) => o.observation)).toContain("crash dup body")
+  expect((await listTicketComments(folded)).length).toBe(0)
+  // Recurrence summed exactly once even though the row was pre-marked merged.
+  expect((await feedbackById(P, survivor)).recurrenceCount).toBe(2)
+
+  // A second retry is a clean no-op (idempotent) — no double count, still exactly one head-occ receipt.
+  const again = await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+  expect(again).not.toBeNull()
+  expect((await feedbackById(P, survivor)).recurrenceCount).toBe(2)
+  const marker = (await listFeedbackOccurrences(survivor)).filter((o) => o.observation === "crash dup body")
+  expect(marker.length).toBe(1)
+})
+
+test("KLA-780 r3 (re-home): exports / labels / replays / activity all follow the survivor after merge", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/rehome", observation: "rehome survivor",
+    suggestedBug: { title: "Rehome survivor", body: "b", priority: "high" }, issueKey: keyFor("/rehome", "HA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/rehome", observation: "rehome dup",
+    suggestedBug: { title: "Rehome dup", body: "b", priority: "high" }, issueKey: keyFor("/rehome", "HB"),
+  })
+  const now = Date.now()
+  await rawExec(`INSERT INTO ticket_exports (id,feedback_id,project_id,connector_id,type,status,created_at) VALUES (?,?,?,?,?,?,?)`,
+    ["exp_r3", folded, P, "conn1", "issue", "done", now])
+  await rawExec(`INSERT INTO ticket_labels (label_id,feedback_id,created_at) VALUES (?,?,?)`, ["lbl_r3", folded, now])
+  await rawExec(`INSERT INTO feedback_replays (id,feedback_id,project_id,events_gz,n_events,bytes,trimmed,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    ["rep_r3", folded, P, "Z", 3, 10, 0, now])
+  await rawExec(`INSERT INTO activity_events (id,project_id,type,feedback_id,created_at) VALUES (?,?,?,?,?)`,
+    ["act_r3", P, "comment", folded, now])
+
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+
+  expect(await rawClientQuery(`SELECT feedback_id FROM ticket_exports WHERE id='exp_r3'`)).toBe(survivor)
+  expect(await rawClientQuery(`SELECT feedback_id FROM ticket_labels WHERE label_id='lbl_r3'`)).toBe(survivor)
+  expect(await rawClientQuery(`SELECT feedback_id FROM feedback_replays WHERE id='rep_r3'`)).toBe(survivor)
+  expect(await rawClientQuery(`SELECT feedback_id FROM activity_events WHERE id='act_r3'`)).toBe(survivor)
+})
+
+test("KLA-780 r3 (mutation redirect): comment / recurrence bump / meta / contact-email on a merged id land on the survivor", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/mut", observation: "mut survivor",
+    suggestedBug: { title: "Mut survivor", body: "b", priority: "high" }, issueKey: keyFor("/mut", "MA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/mut", observation: "mut dup",
+    suggestedBug: { title: "Mut dup", body: "b", priority: "high" }, issueKey: keyFor("/mut", "MB"),
+  })
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+  const baseCount = (await feedbackById(P, survivor)).recurrenceCount
+
+  // Comment on the (now hidden) merged id → lands on survivor.
+  await insertTicketComment(folded, "dan@example.com", "redirected comment")
+  expect((await listTicketComments(survivor)).map((c) => c.body)).toContain("redirected comment")
+  expect((await listTicketComments(folded)).length).toBe(0)
+
+  // Recurrence bump on the merged id → increments the survivor, not the hidden row.
+  await bumpFeedbackRecurrence(folded, Date.now())
+  expect((await feedbackById(P, survivor)).recurrenceCount).toBe(baseCount + 1)
+
+  // Meta edit on the merged id → applies to the survivor.
+  await updateFeedbackMeta(P, folded, { status: "done" })
+  expect((await feedbackById(P, survivor)).status).toBe("done")
+
+  // Contact-email set on the merged id → attaches to the survivor.
+  await setFeedbackContactEmail(folded, P, "erin@example.com")
+  expect((await feedbackById(P, survivor)).contactEmail).toBe("erin@example.com")
 })
