@@ -359,8 +359,8 @@ test("[#745] prettyTicketPath builds the Jira-clean /<slug>/<KEY>-<n> and falls 
   const fid = await insertFeedback({ projectId: P, observation: "pretty path ticket" })
   const seq = Number(((await db!.execute({ sql: "SELECT seq_num FROM feedback WHERE id=?", args: [fid] })).rows[0] as any).seq_num)
 
-  // projectAliasInfo surfaces the slug + key for the client.
-  expect(await projectAliasInfo(P)).toEqual({ slug, ticketKey: "PPP" })
+  // projectAliasInfo surfaces the slug + key + project name (KLA-765) for the client.
+  expect(await projectAliasInfo(P)).toEqual({ slug, ticketKey: "PPP", projectName: "Pretty Path Proj" })
 
   // seq passed in — no extra fetch needed. KEYLESS canonical form, no /t/ segment.
   expect(await prettyTicketPath({ id: fid, projectId: P, seqNum: seq })).toBe(`/${slug}/PPP-${seq}`)
@@ -372,5 +372,5 @@ test("[#745] prettyTicketPath builds the Jira-clean /<slug>/<KEY>-<n> and falls 
   await db!.execute({ sql: "UPDATE projects SET ticket_key=NULL WHERE id=?", args: [P2] })
   const fid2 = await insertFeedback({ projectId: P2, observation: "no key ticket" })
   expect(await prettyTicketPath({ id: fid2, projectId: P2 })).toBe(`/t/${fid2}`)
-  expect(await projectAliasInfo(P2)).toEqual({ slug, ticketKey: null })
+  expect(await projectAliasInfo(P2)).toEqual({ slug, ticketKey: null, projectName: "No Key Proj" })
 })

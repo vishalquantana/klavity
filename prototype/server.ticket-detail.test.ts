@@ -113,6 +113,8 @@ test("GET /api/feedback/:id returns full ticket detail", async () => {
     priority: "high",
     status: "open",
     observation: "Payment fails on mobile Safari",
+    // KLA-765: the owning project's name so the detail view can show a project badge.
+    projectName: "Detail Project",
   })
   // KLA-171: required fields for the detail view
   expect(typeof report.title).toBe("string")

@@ -12244,7 +12244,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             seqNum: fbRow.seqNum ?? null,
             // #745: workspace slug + project ticket_key so the client can build the pretty
             // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
-            ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null }))),
+            ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
             // KLA-603: server-side "AI summary from walkthrough" (post-transcription enrichment). Null when
             // the report had no transcribed video or the reporter's description was already substantial.
             aiWalkthrough: fbRow.aiWalkthrough ?? null,

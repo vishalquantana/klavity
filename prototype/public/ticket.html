@@ -45,7 +45,10 @@
   .grid dt{color:var(--muted)}
   .grid dd{margin:0;word-break:break-word}
   .section-title{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 8px}
-  .body-text{white-space:pre-wrap;word-break:break-word}
+  .body-text{white-space:pre-wrap;word-break:break-word;cursor:text}
+  .bodyhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px}
+  .chip.proj{background:#20233a;border-color:var(--indigo);color:var(--text)}
+  .chip.proj b{color:var(--indigo)}
   .quote{border-left:3px solid var(--indigo);padding:6px 0 6px 12px;color:#c9cde0;font-style:italic;margin:10px 0 0}
   .shot{margin-top:12px}
   .shot img{max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;cursor:zoom-in;
@@ -132,8 +135,19 @@
     </div>
 
     <div class="card" id="bodyCard">
-      <div class="section-title">What was reported</div>
-      <div class="body-text" id="observation"></div>
+      <div class="bodyhead">
+        <div class="section-title" style="margin:0">What was reported</div>
+        <button id="obsEditBtn" class="btn sm" type="button" title="Edit description">Edit</button>
+      </div>
+      <div class="body-text" id="observation" title="Click to edit"></div>
+      <div id="obsEdit" class="hide" style="margin-top:8px">
+        <textarea id="obsInput" maxlength="20000" placeholder="Describe what was reported…"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="obsSaveBtn" class="btn primary sm">Save</button>
+          <button id="obsCancelBtn" class="btn sm">Cancel</button>
+          <span id="obsMsg" class="msg"></span>
+        </div>
+      </div>
       <div class="quote hide" id="quote"></div>
     </div>
 
@@ -192,18 +206,32 @@ function apiFeedback(sub, opts) {
 }
 
 function loadTicket() {
-  apiFeedback("").then(function (r) {
+  // KLA-767: the spinner must ALWAYS terminate — success, login redirect, or a clear error — never an
+  // infinite "Loading ticket…". Root cause of the old hang: (a) a fetch with no timeout, so a stalled
+  // server response left the spinner forever, and (b) a silent `return` when the JSON had no `.report`
+  // (or failed to parse), which also never resolved the spinner. Fix: bound the request with an
+  // AbortController timeout and make every branch resolve the spinner.
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var timedOut = false;
+  var timer = setTimeout(function () { timedOut = true; if (ctrl) ctrl.abort(); }, 15000);
+  apiFeedback("", ctrl ? { signal: ctrl.signal } : undefined).then(function (r) {
+    clearTimeout(timer);
     if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); return null; }
     if (r.status === 403) { showErr("You are not a member of this ticket's project."); return null; }
     if (!r.ok) { showErr("Could not load this ticket."); return null; }
-    return r.json();
+    // Parse defensively: a body that isn't JSON must surface an error, not a silent stall.
+    return r.json().then(function (j) { return j; }, function () { showErr("Could not load this ticket."); return null; });
   }).then(function (d) {
-    if (!d || !d.report) return;
+    if (d === null) return; // already redirected or errored above — spinner is already resolved
+    if (!d.report) { showErr("Could not load this ticket."); return; }
     report = d.report;
     render();
     loadComments();
     checkReplay();
-  }).catch(function () { showErr("Could not load this ticket."); });
+  }).catch(function () {
+    clearTimeout(timer);
+    showErr(timedOut ? "Loading timed out — please refresh to try again." : "Could not load this ticket.");
+  });
 }
 
 function showErr(m) {
@@ -216,8 +244,11 @@ function render() {
   $("title").textContent = t.title || t.observation || "Untitled ticket";
   $("ref").textContent = (t.seqNum ? ("#" + t.seqNum + "  ·  ") : "") + (t.ref || t.id);
 
-  // Chips: status + severity/priority + sentiment.
+  // Chips: project + status + severity/priority + sentiment.
   var chips = "";
+  // KLA-765: which project this ticket belongs to. Resolved server-side from the feedback row's
+  // owning project (never a query param), so a cross-project / shared-link view can't mislabel it.
+  if (t.projectName) chips += '<span class="chip proj" title="Project"><b>' + esc(t.projectName) + "</b></span>";
   chips += '<span class="chip"><b>' + esc(prettyStatus(t.status)) + "</b></span>";
   if (t.priority) chips += '<span class="chip sev-' + esc(t.priority) + '">' + esc(t.priority) + "</span>";
   if (t.sentiment) chips += '<span class="chip">' + esc(t.sentiment) + "</span>";
@@ -383,6 +414,46 @@ function patchTicket(payload, okText) {
         if (res.ok && res.d && res.d.comment) { input.value = ""; setMsg($("cmtMsg"), "Comment added.", "ok"); loadComments(); }
         else { setMsg($("cmtMsg"), (res.d && res.d.error) || "Could not add comment.", "err"); }
       }).catch(function () { $("cmtBtn").removeAttribute("disabled"); setMsg($("cmtMsg"), "Could not add comment.", "err"); });
+  });
+
+  // #769: inline-edit "What was reported" (the report observation), mirroring the dashboard's
+  // click-to-edit description. Optimistic save + revert on failure; PATCHes the SAME ticket via the
+  // existing member-gated PATCH /api/feedback/:id (observation field). ticket.html is only served to
+  // project members (full access), and the PATCH re-checks member access server-side.
+  function openObsEdit() {
+    if (!report) return;
+    $("obsInput").value = report.observation || report.notes || "";
+    $("obsEdit").classList.remove("hide");
+    $("observation").classList.add("hide");
+    $("obsEditBtn").classList.add("hide");
+    setMsg($("obsMsg"), "");
+    $("obsInput").focus();
+  }
+  function closeObsEdit() {
+    $("obsEdit").classList.add("hide");
+    $("observation").classList.remove("hide");
+    $("obsEditBtn").classList.remove("hide");
+  }
+  $("obsEditBtn").addEventListener("click", openObsEdit);
+  $("observation").addEventListener("click", openObsEdit);
+  $("obsCancelBtn").addEventListener("click", closeObsEdit);
+  $("obsSaveBtn").addEventListener("click", function () {
+    var next = $("obsInput").value;
+    var prev = report.observation;
+    // Optimistic: reflect the new text immediately + persist in the background; revert on failure.
+    report.observation = next;
+    $("observation").textContent = next || "(no description)";
+    closeObsEdit();
+    $("obsSaveBtn").setAttribute("disabled", "true");
+    patchTicket({ observation: next }, "Description saved.").then(function (ok) {
+      $("obsSaveBtn").removeAttribute("disabled");
+      if (!ok) {
+        report.observation = prev;
+        $("observation").textContent = (prev || report.notes) || "(no description)";
+        openObsEdit();
+        setMsg($("obsMsg"), "Could not save — reverted.", "err");
+      }
+    });
   });
 })();
 

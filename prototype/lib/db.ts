@@ -6982,22 +6982,25 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
 // ticket API attaches these (plus the already-present seqNum) to each ticket so the CLIENT can build
 // `/<slug>/t/<KEY>-<n>`. Additive, member-gated by the caller; leaks nothing (slug is the public
 // namespace anyway, key is not secret). Callers dedupe by projectId to avoid N queries per list.
-export async function projectAliasInfo(projectId: string): Promise<{ slug: string | null; ticketKey: string | null }> {
+export async function projectAliasInfo(projectId: string): Promise<{ slug: string | null; ticketKey: string | null; projectName: string | null }> {
   try {
     const r = await db!.execute({
-      sql: `SELECT a.slug AS slug, p.ticket_key AS ticket_key
+      sql: `SELECT a.slug AS slug, p.ticket_key AS ticket_key, p.name AS project_name
               FROM projects p LEFT JOIN accounts a ON a.id = p.account_id
              WHERE p.id = ? LIMIT 1`,
       args: [projectId],
     })
-    if (!r.rows.length) return { slug: null, ticketKey: null }
+    if (!r.rows.length) return { slug: null, ticketKey: null, projectName: null }
     const row = r.rows[0] as any
     return {
       slug: row.slug != null ? String(row.slug) : null,
       ticketKey: row.ticket_key != null ? String(row.ticket_key) : null,
+      // KLA-765: project name for the ticket-detail project badge (resolved server-side from the
+      // feedback row's owning project — a query param is never trusted, so no wrong-project label).
+      projectName: row.project_name != null ? String(row.project_name) : null,
     }
   } catch {
-    return { slug: null, ticketKey: null }
+    return { slug: null, ticketKey: null, projectName: null }
   }
 }
 
