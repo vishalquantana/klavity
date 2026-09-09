@@ -551,5 +551,12 @@
     "excerpt": "A bug that hits one user and no one else is almost always a state problem. Here are the five kinds of user state to replicate to reproduce it.",
     "category": "Guides",
     "date": "2026-09-08"
+  },
+  {
+    "slug": "how-to-design-a-bug-report-template",
+    "title": "How to Design a Bug Report Template Teams Actually Use",
+    "excerpt": "A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish.",
+    "category": "Guides",
+    "date": "2026-09-09"
   }
 ]
