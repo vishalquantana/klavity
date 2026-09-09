@@ -13,6 +13,7 @@ import {
   insertFeedbackOccurrence, listFeedbackOccurrences,
   mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds,
   findFeedbackByIssueKey, listRecentFeedbackForDedup,
+  insertTicketComment, listTicketComments, listFeedback,
 } from "./lib/db"
 import { buildRecurrenceMemory } from "./lib/recurrence-memory"
 import { issueKeyFor, humanReportIssueKeyFor, chooseDedup } from "./lib/dedup"
@@ -70,11 +71,16 @@ test("merge sums recurrence counts and unions every reporter email across the su
   // Combined recurrence count == sum of both cluster counts.
   expect(result!.recurrenceCount).toBe(4)
 
-  // Survivor row now carries the summed count; merged row is gone.
+  // Survivor row now carries the summed count.
   const survRow = await feedbackById(P, survivor)
   expect(survRow.recurrenceCount).toBe(4)
   expect(survRow.issueKey).toBe(keyFor("/pay", "TA"))   // survivor keeps its key for future intake dedup
-  expect(await feedbackById(P, missed)).toBeNull()
+  // KLA-780: the merged ticket is NOT deleted — it survives, marked 'merged' with a merged_into pointer
+  // to the survivor (non-destructive fold, reversible), so nothing is lost.
+  const mergedRow = await feedbackById(P, missed)
+  expect(mergedRow).not.toBeNull()
+  expect(mergedRow.status).toBe("merged")
+  expect(mergedRow.mergedInto).toBe(survivor)
 
   // Every reporter email (survivor contact + both occurrence reporters + merged contact) is preserved.
   expect(result!.contactEmails.sort()).toEqual(
@@ -181,4 +187,85 @@ test("addDedupExclusion is order-independent (either side lookup hits)", async (
   await addDedupExclusion(P, a, b, { reason: "manual-split", createdBy: "op@example.com" })
   expect((await excludedDedupIds(P, a)).has(b)).toBe(true)
   expect((await excludedDedupIds(P, b)).has(a)).toBe(true)
+})
+
+// KLA-780: merging must FOLD one ticket into another, never DESTROY it. These tests pin the
+// non-destructive contract: comments/occurrences absorbed onto the survivor, the merged row marked
+// (not deleted) so the fold is reversible, hidden from the board + dedup, and idempotent on re-run.
+test("KLA-780: merge re-homes the merged ticket's comments onto the survivor (no comment loss)", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/reports", observation: "report export fails",
+    suggestedBug: { title: "Export fails", body: "b", priority: "high" }, issueKey: keyFor("/reports", "CA"),
+  })
+  const doomed = await insertFeedback({
+    projectId: P, urlPath: "/reports", observation: "download button does nothing",
+    suggestedBug: { title: "Download dead", body: "b", priority: "high" }, issueKey: keyFor("/reports", "CB"),
+  })
+  await insertTicketComment(survivor, "op@example.com", "looking into the export path")
+  await insertTicketComment(doomed, "carol@example.com", "same for me on Safari")
+  await insertTicketComment(doomed, "op@example.com", "repro'd, tracking here")
+
+  const result = await mergeFeedbackClusters(P, survivor, doomed, "op@example.com")
+  expect(result).not.toBeNull()
+
+  // Both of the merged ticket's comments now live on the survivor (survivor had 1, gains 2 → 3), in order.
+  const survComments = await listTicketComments(survivor)
+  expect(survComments.length).toBe(3)
+  const bodies = survComments.map((c) => c.body)
+  expect(bodies).toContain("same for me on Safari")
+  expect(bodies).toContain("repro'd, tracking here")
+  // The merged row keeps none of its own comments (they moved to the survivor) and is not deleted.
+  expect(await listTicketComments(doomed)).toHaveLength(0)
+  const doomedRow = await feedbackById(P, doomed)
+  expect(doomedRow).not.toBeNull()
+  expect(doomedRow.mergedInto).toBe(survivor)
+})
+
+test("KLA-780: a merged ticket is hidden from the board list and never a dedup target", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/nav", observation: "nav menu overlaps content",
+    suggestedBug: { title: "Nav overlap", body: "b", priority: "medium" }, issueKey: keyFor("/nav", "DA"),
+  })
+  const dupKey = keyFor("/nav", "DB")
+  const dup = await insertFeedback({
+    projectId: P, urlPath: "/nav", observation: "menu covers the page on mobile",
+    suggestedBug: { title: "Menu covers page", body: "b", priority: "medium" }, issueKey: dupKey,
+  })
+  // Before merge, the dup's exact key resolves to itself.
+  expect((await findFeedbackByIssueKey(P, dupKey))?.id).toBe(dup)
+
+  await mergeFeedbackClusters(P, survivor, dup, "op@example.com")
+
+  // The merged row no longer appears on the board list…
+  const boardIds = (await listFeedback(P, { limit: 500 })).map((f) => f.id)
+  expect(boardIds).toContain(survivor)
+  expect(boardIds).not.toContain(dup)
+  // …and a repeat report on its exact key must NOT re-collapse onto the dead ticket.
+  expect(await findFeedbackByIssueKey(P, dupKey)).toBeNull()
+  const recentIds = (await listRecentFeedbackForDedup(P, 500)).map((r) => r.id)
+  expect(recentIds).not.toContain(dup)
+})
+
+test("KLA-780: merge is idempotent and refuses self-merge", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/cart", observation: "cart total wrong",
+    suggestedBug: { title: "Cart total", body: "b", priority: "high" }, issueKey: keyFor("/cart", "EA"),
+  })
+  const other = await insertFeedback({
+    projectId: P, urlPath: "/cart", observation: "quantity resets to 1",
+    suggestedBug: { title: "Qty resets", body: "b", priority: "high" }, issueKey: keyFor("/cart", "EB"),
+  })
+  await bumpFeedbackRecurrence(other, NOW + 86_400_000) // other = count 2
+
+  const first = await mergeFeedbackClusters(P, survivor, other, "op@example.com")
+  expect(first!.recurrenceCount).toBe(3) // 1 (survivor) + 2 (other)
+  const afterFirst = (await feedbackById(P, survivor)).recurrenceCount
+
+  // Re-running the SAME merge must not double-absorb — survivor count is unchanged.
+  const second = await mergeFeedbackClusters(P, survivor, other, "op@example.com")
+  expect(second).not.toBeNull()
+  expect((await feedbackById(P, survivor)).recurrenceCount).toBe(afterFirst)
+
+  // A ticket can never be merged into itself.
+  expect(await mergeFeedbackClusters(P, survivor, survivor, "op@example.com")).toBeNull()
 })
