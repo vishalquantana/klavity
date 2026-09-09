@@ -1,5 +1,48 @@
 import type { Shape } from './types'
 
+/** KLA-770: word-wrap `text` into lines that each fit within `maxWidth`, measured by the caller-supplied
+ *  `measure` fn (so it's pure + unit-testable without a real canvas). Honours explicit '\n' breaks. A single
+ *  word longer than the limit is hard-broken by character (binary-searched prefix) so nothing ever overflows.
+ *  `maxWidth <= 0` / non-finite means "no limit" → one line per paragraph. Always returns at least ['']. */
+export function wrapTextLines(measure: (s: string) => number, text: string, maxWidth: number): string[] {
+  const limit = maxWidth > 0 && Number.isFinite(maxWidth) ? maxWidth : Infinity
+  const lines: string[] = []
+  for (const para of String(text ?? '').split('\n')) {
+    if (!para.length) { lines.push(''); continue }
+    let line = ''
+    for (const rawWord of para.split(' ')) {
+      let word = rawWord
+      const sep = line ? ' ' : ''
+      if (line && measure(line + sep + word) <= limit) { line += sep + word; continue }
+      if (line) { lines.push(line); line = '' }
+      // Hard-break a word that alone exceeds the limit, one fitted chunk at a time.
+      while (word.length > 1 && measure(word) > limit) {
+        let lo = 1, hi = word.length, fit = 1
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1
+          if (measure(word.slice(0, mid)) <= limit) { fit = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        lines.push(word.slice(0, fit))
+        word = word.slice(fit)
+      }
+      line = word
+    }
+    lines.push(line)
+  }
+  return lines.length ? lines : ['']
+}
+
+/** Measure text width via a 2D context, defensively: returns 0 when measureText is missing or yields no
+ *  numeric width (stubbed/headless contexts) so wrapping degrades to a single line instead of throwing. */
+function safeMeasure(ctx: CanvasRenderingContext2D, s: string): number {
+  try {
+    if (typeof ctx.measureText !== 'function') return 0
+    const m = ctx.measureText(s) as { width?: number } | null
+    const w = m && m.width
+    return typeof w === 'number' && Number.isFinite(w) ? w : 0
+  } catch { return 0 }
+}
+
 /** Parse a #rgb / #rrggbb / rgb() colour to [r,g,b] (0-255), or null if it can't be read. */
 export function parseColor(color: string): [number, number, number] | null {
   const c = (color || '').trim()
@@ -213,20 +256,29 @@ export class Annotator {
       ctx.textAlign = 'start'
       ctx.textBaseline = 'alphabetic'
     } else if (shape.type === 'text') {
-      const size = shape.size ?? this.computeFontSize()
+      const { x, y, size, maxW } = this.textAnchor(shape)
       ctx.font = `bold ${size}px sans-serif`
       // KLAVITYKLA-508: draw from the TOP-LEFT (matching the editing <input>'s top-left anchor) instead of
       // the default alphabetic baseline — otherwise committed text sat ~one line-height above the box.
       ctx.textBaseline = 'top'
+      // KLA-770: WRAP long text to the image's right edge and step down per line so it never overflows the
+      // canvas bounds; the anchor is clamped inside the image (see textAnchor) so moved text stays visible.
+      // Guard measureText (some stubbed/headless contexts lack it or return no width) → treat as 0 so text
+      // stays on one line per paragraph rather than throwing.
+      const lines = wrapTextLines((s) => safeMeasure(ctx, s), shape.text, maxW)
+      const lineHeight = size * 1.25
       const outline = shape.outline ?? 'none'
-      if (outline !== 'none') {
-        ctx.lineJoin = 'round'
-        ctx.lineWidth = Math.max(3, size * 0.18)
-        ctx.strokeStyle = outline === 'white' ? '#ffffff' : '#111111'
-        ctx.strokeText(shape.text, shape.x, shape.y)
+      lines.forEach((ln, i) => {
+        const ly = y + i * lineHeight
+        if (outline !== 'none') {
+          ctx.lineJoin = 'round'
+          ctx.lineWidth = Math.max(3, size * 0.18)
+          ctx.strokeStyle = outline === 'white' ? '#ffffff' : '#111111'
+          ctx.strokeText(ln, x, ly)
+        }
         ctx.fillStyle = shape.color
-      }
-      ctx.fillText(shape.text, shape.x, shape.y)
+        ctx.fillText(ln, x, ly)
+      })
       ctx.textBaseline = 'alphabetic'
     } else if (shape.type === 'pixelate') {
       this.drawPixelate(ctx, shape)
@@ -272,6 +324,35 @@ export class Annotator {
         ctx.fillRect(x + bx, y + by, maxX - bx, maxY - by)
       }
     }
+  }
+
+  /** KLA-770: the clamped top-left anchor + wrap width for a text shape. The anchor is kept inside the image
+   *  (so a dragged label can't be parked off-canvas) and `maxW` is the room from the anchor to the right edge
+   *  (so long text wraps rather than spilling past the bounds). Shared by drawShape + textBounds so the
+   *  rendered glyphs and the hit-test box always agree. */
+  private textAnchor(shape: Extract<Shape, { type: 'text' }>): { x: number; y: number; size: number; maxW: number } {
+    const size = shape.size ?? this.computeFontSize()
+    const pad = Math.max(2, size * 0.15)
+    const x = Math.max(pad, Math.min(shape.x, Math.max(pad, this.canvas.width - pad)))
+    const y = Math.max(0, Math.min(shape.y, Math.max(0, this.canvas.height - size)))
+    const maxW = Math.max(size, this.canvas.width - x - pad)
+    return { x, y, size, maxW }
+  }
+
+  /** KLA-770: the image-pixel bounding box of a committed text shape (accounting for the clamp + wrap), used
+   *  by the inline annotator to hit-test a click for drag/resize. Returns null for non-text shapes or when no
+   *  2D context is available (headless envs). */
+  textBounds(shape: Shape): { x: number; y: number; w: number; h: number } | null {
+    if (shape.type !== 'text') return null
+    const ctx = this.canvas.getContext('2d')
+    if (!ctx || typeof ctx.measureText !== 'function') return null
+    const { x, y, size, maxW } = this.textAnchor(shape)
+    ctx.font = `bold ${size}px sans-serif`
+    const lines = wrapTextLines((s) => safeMeasure(ctx, s), shape.text, maxW)
+    let w = 0
+    for (const ln of lines) w = Math.max(w, safeMeasure(ctx, ln))
+    const lineHeight = size * 1.25
+    return { x, y, w: Math.max(size, w), h: Math.max(lineHeight, lines.length * lineHeight) }
   }
 
   async save(): Promise<string> {

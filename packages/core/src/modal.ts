@@ -500,6 +500,10 @@ export interface ModalCallbacks {
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
+  // KLA-772: fired whenever the inline annotator commits/edits/reverts the drawn overlay for a shot, with the
+  // shot's strip index and a JSON-safe copy of its markup ({ w, h, shapes } or null when cleared). The host
+  // persists it onto the matching EvidenceShot so annotations survive minimize + navigation. Absent => no-op.
+  onAnnotationsChanged?: (index: number, annotations: any | null) => void
   // #638: when true, render a small "Attach console logs" toggle just above Submit. It is CHECKED (ON) by
   // default now (founder ask 2026-08-30) — console logs ride most reports since they're high-signal for
   // debugging; the reporter can still uncheck it to withhold them. The chosen state rides the submit payload
@@ -520,7 +524,9 @@ export interface ModalController {
   // shows for it too (e.g. a right-click-drag region shot the host detected was partial). Defaults false.
   // KLA-621: an optional 5th arg carries the shot's capture provenance (region rect / picked element selector)
   // so Retake redoes that exact selection instead of a full-frame grab. Backward compatible.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
+  // KLA-772: an optional 6th arg re-seeds the shot's saved annotation overlay ({ w, h, shapes }) so a report
+  // restored after navigation repaints the shapes the reporter drew. Absent => the shot seeds with no overlay.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => void
   // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
   // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
   // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
@@ -528,6 +534,9 @@ export interface ModalController {
   // the fresh capture, not the first seeded one. (addScreenshot leaves activeIndex alone for silent seeds.)
   addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
   close: () => void
+  // KLA-772: a JSON-safe snapshot of every shot's drawn overlay (strip index → { w, h, shapes }). The host
+  // reads it on minimize to persist all annotations into the evidence session in one pass. Empty => {}.
+  getAnnotations: () => Record<number, any>
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
   setReplayState: (state: 'attached' | 'unavailable') => void
@@ -805,6 +814,22 @@ export function buildModal(
   const undoStacks: Record<number, UndoSnap[]> = {}
   const cropStacks: Record<number, Array<{ snap: UndoSnap; mark: number }>> = {}
   const cloneAnn = (a: any): any => (a ? JSON.parse(JSON.stringify(a)) : null)
+  // KLA-772: notify the host that the per-image markup for `index` changed, so it can persist the overlay
+  // into the EvidenceShot (survives minimize + navigation). Always hands over a JSON-safe deep clone (never a
+  // live reference to annotationsByIndex) so a later in-place edit can't mutate what the host already stored.
+  const fireAnnChanged = (index: number) => {
+    try { callbacks.onAnnotationsChanged?.(index, cloneAnn(annotationsByIndex[index])) } catch { /* host persistence best-effort */ }
+  }
+  // KLA-772: a JSON-safe snapshot of the FULL per-image markup map (index → { w, h, shapes }). The host reads
+  // this on minimize to persist every shot's overlay in one pass. Empty entries are omitted.
+  const getAnnotationsSnapshot = (): Record<number, any> => {
+    const out: Record<number, any> = {}
+    for (const k of Object.keys(annotationsByIndex)) {
+      const v = annotationsByIndex[k as any]
+      if (v) out[Number(k)] = cloneAnn(v)
+    }
+    return out
+  }
   const snapshotShot = (index: number): UndoSnap => ({
     url: screenshots[index],
     compressed: screenshotCompressed[index],
@@ -829,6 +854,7 @@ export function buildModal(
     const cs = cropStacks[index]
     while (cs && cs.length && cs[cs.length - 1].mark >= st.length) cs.pop()
     restoreShot(index, snap)
+    fireAnnChanged(index) // KLA-772: an undo changed the overlay → re-persist it
     updateStrip()
     return true
   }
@@ -840,6 +866,7 @@ export function buildModal(
     const { snap, mark } = cs.pop()!
     if (undoStacks[index]) undoStacks[index].length = Math.min(undoStacks[index].length, mark)
     restoreShot(index, snap)
+    fireAnnChanged(index) // KLA-772: revert changed the overlay → re-persist it
     updateStrip()
     return true
   }
@@ -1659,10 +1686,12 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture, annotations),
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
     addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
+    // KLA-772: expose the full per-image overlay map so the host can persist it on minimize.
+    getAnnotations: getAnnotationsSnapshot,
     setReplayState,
     // KLA-591: mirror the aggregate upload percent onto every video tile + file chip while a submit is in
     // flight. Re-renders the strip + chips so the bars paint; passing null clears them.
@@ -1989,12 +2018,18 @@ export function buildModal(
   // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
   // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
   // shots it already tracks (no re-persist, explicit page tag carried through).
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
     blankCaptureHint = false // a real shot landed → drop the "couldn't capture" empty-state steer
     screenshots.push(dataUrl)
+    // KLA-772: re-seed a restored shot's saved overlay so the inline annotator repaints the drawn shapes when
+    // the hero mounts. Cloned so the persisted copy and the live editing map can't alias each other.
+    const seedIndex = screenshots.length - 1
+    if (annotations && Array.isArray(annotations.shapes) && annotations.shapes.length) {
+      annotationsByIndex[seedIndex] = cloneAnn(annotations)
+    }
     // Kick off compression immediately — by submit time the Promise is settled (user was typing).
     screenshotCompressed.push(callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl))
     screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
@@ -3592,6 +3627,7 @@ export function buildModal(
       }
       ;(undoStacks[index] ??= []).push(preSnap)
       ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
+      fireAnnChanged(index) // KLA-772: a crop rebases the overlay coords → re-persist it
       updateStrip()
     }
     src.src = srcUrl
@@ -3644,6 +3680,7 @@ export function buildModal(
       const persist = () => {
         if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
         else delete annotationsByIndex[index]
+        fireAnnChanged(index) // KLA-772: mirror the drawn overlay into the persisted evidence shot
       }
       const selectTool = (t: string) => {
         activeTool = t
@@ -3838,6 +3875,31 @@ export function buildModal(
       // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
       let cropBox: HTMLDivElement | null = null
       let cropClient = { x: 0, y: 0 }
+      // KLA-770: text move/resize state. When the Text tool presses ON an existing text shape we drag it
+      // (reposition) or, from its bottom-right corner, resize the font — instead of dropping a new label.
+      type TextShape = Extract<Shape, { type: 'text' }>
+      let textDrag: { shape: TextShape; mode: 'move' | 'resize'; grabX: number; grabY: number; origX: number; origY: number; origSize: number } | null = null
+      // The size (image px) of the invisible resize hot-zone at a text box's bottom-right corner.
+      const textHandleSize = () => Math.max(14, annotator.computeFontSize() * 0.6)
+      // Topmost text shape (+ interaction mode) under an image-space point, or null. Grabbing the bottom-right
+      // corner resizes; anywhere else inside the (padded) box moves.
+      const hitTextShape = (px: number, py: number): { shape: TextShape; mode: 'move' | 'resize' } | null => {
+        for (let i = annotator.shapes.length - 1; i >= 0; i--) {
+          const s = annotator.shapes[i]
+          if (s.type !== 'text') continue
+          const b = annotator.textBounds(s)
+          if (!b) continue
+          const hz = textHandleSize()
+          if (px >= b.x + b.w - hz && px <= b.x + b.w + hz && py >= b.y + b.h - hz && py <= b.y + b.h + hz) {
+            return { shape: s as TextShape, mode: 'resize' }
+          }
+          const pad = 6
+          if (px >= b.x - pad && px <= b.x + b.w + pad && py >= b.y - pad && py <= b.y + b.h + pad) {
+            return { shape: s as TextShape, mode: 'move' }
+          }
+        }
+        return null
+      }
       canvas.addEventListener('pointerdown', (e) => {
         // Shift+drag pans the zoomed image instead of drawing.
         if (e.shiftKey && zoom > 1) {
@@ -3858,6 +3920,16 @@ export function buildModal(
           return
         }
         if (activeTool === 'text') {
+          // KLA-770: pressing on an existing text label grabs it for move/resize instead of starting a new one.
+          const hit = hitTextShape(pt.x, pt.y)
+          if (hit) {
+            pushUndo(index) // one undo step for the whole move/resize gesture
+            textDrag = { shape: hit.shape, mode: hit.mode, grabX: pt.x, grabY: pt.y, origX: hit.shape.x, origY: hit.shape.y, origSize: hit.shape.size ?? annotator.computeFontSize() }
+            try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+            canvas.style.cursor = hit.mode === 'resize' ? 'nwse-resize' : 'move'
+            e.preventDefault()
+            return
+          }
           const input = document.createElement('input')
           const shadow = textOutline === 'none' ? 'none' : `0 0 2px ${textOutline}, 0 0 2px ${textOutline}`
           // KLAVITYKLA-508: the on-screen input must match the COMMITTED render. The committed text is drawn
@@ -3897,6 +3969,25 @@ export function buildModal(
       })
       canvas.addEventListener('pointermove', (e) => {
         if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        // KLA-770: live text move/resize — mutate the grabbed shape and repaint (base + committed) each move.
+        if (textDrag) {
+          const pt = toImg(e)
+          if (textDrag.mode === 'move') {
+            textDrag.shape.x = textDrag.origX + (pt.x - textDrag.grabX)
+            textDrag.shape.y = textDrag.origY + (pt.y - textDrag.grabY)
+          } else {
+            // Resize: dragging down/right grows the font; clamp to a sane range.
+            textDrag.shape.size = Math.max(10, Math.min(240, textDrag.origSize + (pt.y - textDrag.grabY)))
+          }
+          annotator.redraw()
+          return
+        }
+        // KLA-770: hovering a text label with the Text tool hints it's draggable/resizable.
+        if (activeTool === 'text' && !drawing) {
+          const hp = toImg(e)
+          const h = hitTextShape(hp.x, hp.y)
+          canvas.style.cursor = h ? (h.mode === 'resize' ? 'nwse-resize' : 'move') : 'crosshair'
+        }
         if (!drawing) return
         if (activeTool === 'pen') {
           penPoints.push(toImg(e))
@@ -3923,6 +4014,15 @@ export function buildModal(
       })
       canvas.addEventListener('pointerup', (e) => {
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
+        // KLA-770: finish a text move/resize — commit the shape's new position/size into the overlay.
+        if (textDrag) {
+          textDrag = null
+          try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
+          canvas.style.cursor = 'crosshair'
+          annotator.redraw()
+          persist()
+          return
+        }
         if (!drawing) return
         drawing = false
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
@@ -3952,6 +4052,9 @@ export function buildModal(
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
         if (cropBox) { safeRemove(cropBox); cropBox = null }
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair' }
+        // KLA-770: an interrupted text drag keeps its last position (already mutated); commit + clear state so
+        // the gesture can't get stuck holding the shape.
+        if (textDrag) { textDrag = null; canvas.style.cursor = 'crosshair'; annotator.redraw(); persist() }
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
@@ -4151,6 +4254,7 @@ export function buildModal(
         } else {
           delete annotationsByIndex[index]
         }
+        fireAnnChanged(index) // KLA-772: full-screen editor save → re-persist the overlay
         close()
         updateStrip()
       })

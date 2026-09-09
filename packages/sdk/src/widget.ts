@@ -22,7 +22,7 @@ import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
-  makeShotId, pageCount, MAX_SHOTS,
+  makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -906,14 +906,41 @@ async function mount() {
   }
   // Remove the session shot at a composer strip index (indices stay aligned with seed+append order).
   function removeEvShotAt(index: number): void {
+    // KLA-772: the modal shifts its per-image overlay map down on a mid-strip delete; snapshot the composer's
+    // (already-shifted) overlays synchronously so we can re-align the session's stored annotations after the
+    // removal, keeping shot ↔ overlay in lock-step (no misaligned or orphaned overlays after a restore).
+    let byIndex: Record<number, unknown> = {}
+    try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
     void queueEvWrite(async () => {
       const latest = await getActiveSession(cfg.projectId, evOrigin)
       if (!latest) return
       const target = latest.shots[index]
       if (!target) return
       evSession = await removeShot(latest.id, target.id)
+      if (evSession) await persistAllAnnotations(evSession.id, byIndex)
       updateEvDock()
     })
+  }
+  // KLA-772: persist the drawn overlays for EVERY shot into the session in one pass (composer strip order ==
+  // session shot order). Called on minimize (and after a shot removal re-aligns the strip) so annotations
+  // survive teardown + navigation. Reads a JSON-safe snapshot from the modal; each index writes/clears its
+  // shot's `annotations`. Serialized via queueEvWrite by callers to avoid a lost-update race.
+  async function persistAllAnnotations(sessionId: string, byIndex: Record<number, unknown>): Promise<void> {
+    try {
+      const latest = await getActiveSession(cfg.projectId, evOrigin)
+      if (!latest) return
+      for (let i = 0; i < latest.shots.length; i++) {
+        // Undefined => this shot has no overlay; pass null so a previously-saved overlay is cleared on undo.
+        const ann = Object.prototype.hasOwnProperty.call(byIndex, i) ? byIndex[i] : null
+        evSession = await updateShotAnnotations(sessionId, i, ann) ?? evSession
+      }
+    } catch { /* best-effort: a failed annotation persist must never break minimize/navigation */ }
+  }
+  // KLA-772: snapshot the open composer's overlays and persist them (used on minimize + post-removal re-align).
+  function persistComposerAnnotations(sessionId: string): void {
+    let byIndex: Record<number, unknown> = {}
+    try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
+    void queueEvWrite(() => persistAllAnnotations(sessionId, byIndex))
   }
   function buildPagesTrail(shots: EvidenceShot[]): string {
     if (!shots || !shots.length) return ""
@@ -1033,6 +1060,9 @@ async function mount() {
   // Minimize the open composer to the dock WITHOUT losing evidence (called from the composer's onMinimize).
   function minimizeToDock() {
     evMinimizing = true
+    // KLA-772: capture the open composer's drawn overlays BEFORE close() (which detaches the modal + nulls the
+    // composer ref) and persist them into the session, so the shapes survive the dock + a page navigation.
+    if (evSession) persistComposerAnnotations(evSession.id)
     void queueEvWrite(async () => {
       try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep copy */ }
       showEvDock()
@@ -1569,6 +1599,12 @@ async function mount() {
       onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
+      // KLA-772: persist a shot's drawn overlay incrementally as the reporter draws/edits/undoes it, so the
+      // annotations survive even a navigation that happens without an explicit minimize. Serialized so it can't
+      // race the shot add/remove writes. `annotations` is a JSON-safe { w, h, shapes } (or null when cleared).
+      onAnnotationsChanged: ev ? (index: number, annotations: unknown) => {
+        void queueEvWrite(async () => { evSession = await updateShotAnnotations(ev.id, index, annotations) ?? evSession })
+      } : undefined,
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
       onClose: (reason?: 'submitted') => {
         emit("close", {})
@@ -1626,7 +1662,8 @@ async function mount() {
       void (async () => {
         for (const shot of ev.shots) {
           try {
-            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label })
+            // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
+            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
           } catch { /* skip an unreadable shot */ }
         }
         if (opts?.initialShot) {
