@@ -38,7 +38,13 @@ input:where([type="text"],[type="email"],[type="url"],[type="password"],[type="n
 textarea:where(*), select:where(*){padding:11px 13px;line-height:1.45;font-size:14px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(80% 50% at 50% -5%,rgba(139,139,245,.08),transparent 60%)}
 a{color:inherit;text-decoration:none}
-.bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
+/* KLA-781 [PERF] scroll stutter: the sticky top bar had backdrop-filter:blur(12px) over a FULLY OPAQUE
+   background (--ink-2 = #ffffff / #15110d). The blur was therefore never visible, yet the browser
+   snapshot+Gaussian-blurred the full-width strip behind the bar on every scroll frame — a costly
+   per-frame compositor step for zero visual benefit. Dropping it removes that work with no visible
+   change. (No paint containment here — the bar hosts the project-picker popover, which overflows
+   below it and must not be clipped.) */
+.bar{position:sticky;top:0;z-index:10;background:var(--ink-2);border-bottom:1px solid var(--line)}
 .bar-in{margin-left:214px;padding:0 30px;height:60px;display:flex;align-items:center;gap:14px;transition:margin-left .2s ease}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.02em}
 /* #719: the brand mark is the REAL Klavity logo (favicon.svg dot-grid), not the letter "K".
@@ -1178,7 +1184,9 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* Tickets kanban board */
 /* #636: Jira-style horizontal scroll — columns keep a fixed width and the board scrolls sideways
    instead of every column squishing when many statuses are present. */
-.kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:flex-start;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+/* KLA-776: align-items:stretch makes every column the height of the tallest one, so a short/empty
+   column's swim lane is still a full-height drop target (paired with .kb-list{flex:1}). */
+.kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:stretch;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 /* #676: columns GROW to fill the board when there's room (no dead space with few columns) but keep a
    MIN width so a crowded board still scrolls sideways instead of squishing. */
 .kb-col{flex:1 1 300px;min-width:300px;max-width:none;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
@@ -1189,7 +1197,9 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .kb-head .kb-n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 8px}
 .kb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
 .kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-done{background:var(--green)}.kb-dot-dismissed{background:var(--paper-faint)}
-.kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px}
+/* KLA-776: flex:1 lets the card list fill the column's stretched height so the empty area below the
+   last card is part of the swim lane and accepts drops. */
+.kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px;flex:1 1 auto}
 /* #alignment-fix: .kb-card is a flex item of .kb-list (column flex) and defaults to min-width:auto,
    letting a long nowrap card-description (e.g. a raw ticket URL) stretch the card — and the whole
    .kb-col — past its neighbors instead of actually eliding via .kb-card-d's text-overflow:ellipsis. */
@@ -1206,9 +1216,13 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* #alignment-fix: card titles often embed a raw ticket URL (no spaces) — without a break-anywhere
    rule that single "word" can refuse to wrap and spill past the card's own right edge. Not
    overflow:hidden on .kb-card itself — that would clip the hover box-shadow (.kb-card:hover). */
-.kb-card-t{font-size:13px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
+/* KLA-775: make the "what" (title/summary) the visually dominant, clearly separated block on the card. */
+.kb-card-t{font-size:13.5px;font-weight:600;line-height:1.35;overflow-wrap:anywhere;color:var(--paper)}
 .kb-card-d{font-size:11px;color:var(--paper-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kb-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+/* KLA-775: a hairline divider separates the "what" (title/summary above) from the chips/labels row.
+   :not(:empty) keeps cards with no meta (no priority/source/assignee/labels) free of a stray line. */
+.kb-card-meta:not(:empty){margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
 /* #739: Sim Reports board reuses the ticket kanban card look. Priority-keyed column dots + the
    report-card extras (quote line, thumbnail, card actions, always-reachable select checkbox). */
 .kb-dot-urgent{background:#dc2626}.kb-dot-high{background:var(--rose)}.kb-dot-medium{background:var(--amber)}.kb-dot-low{background:var(--paper-faint)}
@@ -10086,10 +10100,12 @@ async function moveTicketColumn(ticketId, fromKey, toKey) {
 // Used by renderCard AND the optimistic bulk-action DOM update so both stay in lockstep.
 function kbCardMetaHtml(t) {
   const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
-  const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
+  // KLA-775: the per-card STATUS chip is dropped from the board card face — the kanban column the card
+  // sits in already communicates its status, so the chip was redundant clutter. (Other views build
+  // their own status label; this only affects the board card meta row.)
   const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
   const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
-  return `${stChip}${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
+  return `${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
 }
 // #704: after moving cards between columns, recompute each column's count badge + restore the "—"
 // empty placeholder (or drop it) — cheaply, without a full board rebuild.
@@ -10186,9 +10202,14 @@ function renderTicketsKanban(boardTickets) {
     const list = document.createElement("div")
     list.className = "kb-list"
     list.setAttribute("data-key", col.key)
-    list.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
-    list.addEventListener("dragleave", ev => { if (!list.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
-    list.addEventListener("drop", ev => {
+    // KLA-776: the ENTIRE column (swim lane) is the drop target, not just the card list. Wiring
+    // dragover/dragleave/drop on colEl (which stretches full-height via .kanban{align-items:stretch}
+    // + .kb-list{flex:1}) means the header, padding, and the empty space below the last card all
+    // accept a drop. The drop still fires exactly once (single colEl handler; events from cards
+    // bubble up) and moveTicketColumn keeps the status-change behaviour unchanged.
+    colEl.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
+    colEl.addEventListener("dragleave", ev => { if (!colEl.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
+    colEl.addEventListener("drop", ev => {
       ev.preventDefault()
       colEl.classList.remove("drag-over")
       const ticketId = ev.dataTransfer.getData("text/plain")
@@ -10219,7 +10240,10 @@ function renderTicketsKanban(boardTickets) {
         cardEl.classList.remove("dragging")
         boardEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
       })
-      const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
+      // KLA-775: drop the URL/path from the board card face — it added a long, low-signal line that
+      // pushed the "what" (title) around. The full path still lives in the ticket detail panel. Keep
+      // the concise provenance ("by <Sim>") + relative age.
+      const sub = [t.simName ? ("by " + t.simName) : "", ticketAgo(t)].filter(Boolean).join(" · ")
       const renderCard = () => { cardEl.querySelector(".kb-card-meta").innerHTML = kbCardMetaHtml(t) }
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
@@ -12074,8 +12098,11 @@ async function loadLabels(admin) {
   const d = await r.json().catch(() => ({}))
   state._labels = d.labels || []
   refreshTicketLabelOptions()
+  // KLA-778: label management is available to any project member (not admin-only), mirroring the
+  // member-accessible ticket mutations + the relaxed server label routes. `admin` is kept as an
+  // arg for call-site compatibility but no longer gates the affordance.
   const btn = document.getElementById("manageLabelsBtn")
-  if (btn) btn.style.display = admin ? "" : "none"
+  if (btn) btn.style.display = ""
 }
 
 let _mlBound = false

@@ -14147,9 +14147,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ labels: await listLabels(proj.id) })
         }
 
-        // POST /api/projects/:id/labels — create label (admin only) { name, color? }
+        // POST /api/projects/:id/labels — create label { name, color? }
+        // KLA-778: any project member may manage labels (create/edit/delete) — mirrors the
+        // member-accessible bulk ticket mutations (status/priority/assignee/label attach) which
+        // are NOT admin-gated. Still authed + project-scoped: `access` (any member) is required
+        // by the route entry above, and outsiders never reach here (projectAccess → 403).
         if (req.method === "POST" && sub === "/labels") {
-          if (access !== "admin") return json({ error: "Only project admins can create labels." }, 403)
           const body = await req.json().catch(() => ({}))
           const name = String(body.name ?? "").trim()
           if (!name) return json({ error: "name is required." }, 400)
@@ -14159,12 +14162,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ label }, 201)
         }
 
-        // PATCH /api/projects/:id/labels/:lid — update label (admin only) { name?, color? }
+        // PATCH /api/projects/:id/labels/:lid — update label { name?, color? }
+        // KLA-778: member-accessible (see POST above) — authed + project-scoped, outsiders 403 at route entry.
         const labelSubMatch = sub.match(/^\/labels\/([^/]+)$/)
         if (labelSubMatch) {
           const lid = labelSubMatch[1]
           if (req.method === "PATCH") {
-            if (access !== "admin") return json({ error: "Only project admins can update labels." }, 403)
             const body = await req.json().catch(() => ({}))
             const name = String(body.name ?? "").trim()
             if (!name) return json({ error: "name is required." }, 400)
@@ -14175,7 +14178,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             return json({ ok: true })
           }
           if (req.method === "DELETE") {
-            if (access !== "admin") return json({ error: "Only project admins can delete labels." }, 403)
+            // KLA-778: member-accessible (see POST above) — authed + project-scoped.
             const ok = await deleteLabel(proj.id, lid)
             if (!ok) return json({ error: "Label not found." }, 404)
             return json({ ok: true })
