@@ -3742,17 +3742,22 @@ async function load() {
     // blank the project switcher to "—" (only browser-Back — via bfcache — could recover it). Retry
     // a hard failure a couple of times before giving up so one flaky fetch can't wipe the switcher.
     for (let attempt = 0; attempt < 3; attempt++) {
-      const r = await fetchWithTimeout(dashUrl)
-      if (r.status === 401) { location.href = "/login"; redirected = true; break }
-      data = await r.json().catch(() => null)
-      // If the stored project id is stale/inaccessible, clear it and retry without a project param
-      // so the server falls back to the user's first accessible project rather than erroring out.
-      if (data && data.error && pid && pid !== activeProjectParam()) {
-        try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
-        const r2 = await fetchWithTimeout("/api/dashboard")
-        if (r2.status === 401) { location.href = "/login"; redirected = true; break }
-        data = await r2.json().catch(() => null)
-      }
+      // KLA-764: the fetch itself must be INSIDE the try so a REJECTED request (network drop / timeout /
+      // abort — the most common transient failure) retries instead of escaping to the outer catch and
+      // failing on the first blip. A resolved-but-error response is handled below the same way.
+      try {
+        const r = await fetchWithTimeout(dashUrl)
+        if (r.status === 401) { location.href = "/login"; redirected = true; break }
+        data = await r.json().catch(() => null)
+        // If the stored project id is stale/inaccessible, clear it and retry without a project param
+        // so the server falls back to the user's first accessible project rather than erroring out.
+        if (data && data.error && pid && pid !== activeProjectParam()) {
+          try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+          const r2 = await fetchWithTimeout("/api/dashboard")
+          if (r2.status === 401) { location.href = "/login"; redirected = true; break }
+          data = await r2.json().catch(() => null)
+        }
+      } catch (e) { data = null } // rejected/timed-out fetch → fall through to the backoff + retry
       // Retry only true failures (no payload / server error). A well-formed empty payload
       // (genuinely-zero-projects new user) is a valid terminal state — don't spin on it.
       if (data && !data.error) break
@@ -10123,11 +10128,16 @@ function renderTicketsKanban(boardTickets) {
   }
   refreshAssigneeOptions()
   // KLA-779: if we're about to render the board from the TINY state.tickets fallback (the board cache is
-  // cold — first entry / new project / cleared cache), kick off the full 200-row board fetch so filters like
-  // "My items"/assignee run over the COMPLETE set, not a truncated preview (the reported "only 5 of 20+").
-  // fetchAndRenderTktBoard() no-ops unless #ticketsKanban is present (so this never fires on the overview),
-  // is guarded against concurrent loads, and re-invokes this render with _tktBoardTickets when it resolves.
-  if (!Array.isArray(boardTickets) && _tktBoardTickets.length === 0 && projId && !_tktBoardState.loading) {
+  // cold), kick off the full 200-row board fetch so filters like "My items"/assignee run over the COMPLETE
+  // set, not a truncated preview (the reported "only 5 of 20+"). Gated tightly to avoid a fetch spin:
+  //  - `_tktBoardProjId !== projId`: the board has NEVER been fetched for this project. fetchAndRenderTktBoard
+  //    sets _tktBoardProjId=projId on completion EVEN for an empty result, so a genuinely-empty project is
+  //    fetched once, not on every render/poll.
+  //  - only on the active tickets view: #ticketsKanban exists in the DOM globally (just hidden), so the
+  //    overview's renderTicketsKanban() call must NOT trigger a board fetch.
+  if (!Array.isArray(boardTickets) && _tktBoardTickets.length === 0 && projId && !_tktBoardState.loading
+      && _tktBoardProjId !== projId
+      && document.body.getAttribute("data-view") === "tickets") {
     fetchAndRenderTktBoard()
   }
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
@@ -10243,7 +10253,10 @@ function renderTicketsKanban(boardTickets) {
       }
 
       // Detail is built for the "Copy to AI" action; the card itself opens the single-ticket view.
-      const detailEl = buildTktDetail(t, admin, () => renderCard())
+      // KLA-777: after an edit (e.g. a priority change) also re-render the board so an active filter can
+      // evict/re-bucket the card — renderCard() alone only repaints this one card's metadata in place, so a
+      // ticket changed out of the current filter (High→Low while "High priority" is on) would wrongly linger.
+      const detailEl = buildTktDetail(t, admin, () => { renderCard(); renderTicketsKanban(_tktBoardTickets) })
       const cardCopyIcon = cardEl.querySelector(".copy-ai-icon")
       if (cardCopyIcon) cardCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, cardCopyIcon, detailEl) })
       // #678: no inline assign on cards anymore — the assignee shows READ-ONLY via kbCardMetaHtml's

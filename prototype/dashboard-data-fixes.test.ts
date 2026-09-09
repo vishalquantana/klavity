@@ -36,6 +36,20 @@ test("KLA-764: load() never overwrites good state with a transient EMPTY payload
   expect(guardIdx).toBeLessThan(assignIdx)
 })
 
+test("KLA-764: a REJECTED fetch/timeout retries (fetch is inside the loop's try) — codex round-2", () => {
+  const fn = extractFn(HTML, "async function load()")
+  const forIdx = fn.indexOf("for (let attempt = 0; attempt < 3; attempt++)")
+  const region = fn.slice(forIdx, forIdx + 1600)
+  // The per-attempt fetch must be inside a try whose catch nulls data and falls through to the backoff,
+  // so a rejected request retries rather than escaping to the outer catch and failing on the first blip.
+  const tryIdx = region.indexOf("try {")
+  const fetchIdx = region.indexOf("await fetchWithTimeout(dashUrl)")
+  const catchIdx = region.indexOf("catch (e) { data = null }")
+  expect(tryIdx).toBeGreaterThan(-1)
+  expect(fetchIdx).toBeGreaterThan(tryIdx)      // fetch is INSIDE the try
+  expect(catchIdx).toBeGreaterThan(fetchIdx)    // and a catch follows it, inside the loop
+})
+
 test("KLA-764: load() retries a hard failure instead of blanking the switcher on the first blip", () => {
   const fn = extractFn(HTML, "async function load()")
   // A bounded retry loop (not a single fetch) so one flaky response can't wipe the switcher.
@@ -72,9 +86,20 @@ test("KLA-779: renderTicketsKanban triggers the full board fetch when the board 
   // fetch is in flight, it kicks off fetchAndRenderTktBoard() so filters run over the 200-row set.
   expect(fn).toContain("_tktBoardTickets.length === 0 && projId && !_tktBoardState.loading")
   expect(fn).toContain("fetchAndRenderTktBoard()")
+  // codex round-2: the trigger MUST be gated so it doesn't fire on the overview (#ticketsKanban exists in
+  // the DOM globally) and doesn't spin on a genuinely-empty project (_tktBoardProjId set on fetch completion).
+  expect(fn).toContain("_tktBoardProjId !== projId")
+  expect(fn).toContain('document.body.getAttribute("data-view") === "tickets"')
   // And the guard must sit BEFORE the sourceTickets fallback so the fetch is kicked off on the cold render.
   const trigIdx = fn.indexOf("fetchAndRenderTktBoard()")
   const srcIdx = fn.indexOf("const sourceTickets =")
   expect(trigIdx).toBeGreaterThan(-1)
   expect(srcIdx).toBeGreaterThan(trigIdx)
+})
+
+test("KLA-777: a board-card priority edit re-renders the kanban so an active filter evicts it — codex round-2", () => {
+  // The board card builds its detail with a callback that must re-render the board (not just the card),
+  // else a High→Low change while the High filter is active leaves the card lingering.
+  const i = HTML.indexOf('buildTktDetail(t, admin, () => { renderCard(); renderTicketsKanban(_tktBoardTickets) })')
+  expect(i).toBeGreaterThan(-1)
 })
