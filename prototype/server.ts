@@ -11136,7 +11136,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const [personas, feedbackTickets, activityRows, simObservations] = await Promise.all([
             listPersonas(wid),
             // All recent feedback (not just withTicketOnly) — Klavity Cloud is the primary ticket system.
-            listFeedback(projectId, { limit: 12 }),
+            // KLA-779: this array becomes `state.tickets` on the client — the source the overview "Recent
+            // tickets" preview and, crucially, the kanban's fallback (renderTicketsKanban → sourceTickets)
+            // read from. A 12-row cap starved the "My items"/assignee filter to a handful even when 20+ were
+            // assigned. Raise to a bounded 50 (matches the list view's page size, well under the board's 200)
+            // so quick-filters over state.tickets can surface 20+ without an unbounded per-poll payload.
+            listFeedback(projectId, { limit: 50 }),
             // Non-admins see only their own activity (own-rows-only); admins see all.
             listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
             // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.

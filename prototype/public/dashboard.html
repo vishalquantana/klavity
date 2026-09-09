@@ -3733,22 +3733,39 @@ async function load() {
   // KLAVITYKLA-299: use dashTargetProjId() (URL param || localStorage last) so the user's
   // chosen project sticks across reloads/navigation, not just when ?project= is in the URL.
   let data
+  let redirected = false
   kbar.start()
   try {
     const pid = dashTargetProjId()
-    const r = await fetchWithTimeout("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""))
-    if (r.status === 401) { location.href = "/login"; return }
-    data = await r.json()
-    // If the stored project id is stale/inaccessible, clear it and retry without a project param
-    // so the server falls back to the user's first accessible project rather than erroring out.
-    if (data && data.error && pid && pid !== activeProjectParam()) {
-      try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
-      const r2 = await fetchWithTimeout("/api/dashboard")
-      if (r2.status === 401) { location.href = "/login"; return }
-      data = await r2.json()
+    const dashUrl = "/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : "")
+    // KLA-764: a transient network blip or a racey empty payload used to overwrite good state and
+    // blank the project switcher to "—" (only browser-Back — via bfcache — could recover it). Retry
+    // a hard failure a couple of times before giving up so one flaky fetch can't wipe the switcher.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await fetchWithTimeout(dashUrl)
+      if (r.status === 401) { location.href = "/login"; redirected = true; break }
+      data = await r.json().catch(() => null)
+      // If the stored project id is stale/inaccessible, clear it and retry without a project param
+      // so the server falls back to the user's first accessible project rather than erroring out.
+      if (data && data.error && pid && pid !== activeProjectParam()) {
+        try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+        const r2 = await fetchWithTimeout("/api/dashboard")
+        if (r2.status === 401) { location.href = "/login"; redirected = true; break }
+        data = await r2.json().catch(() => null)
+      }
+      // Retry only true failures (no payload / server error). A well-formed empty payload
+      // (genuinely-zero-projects new user) is a valid terminal state — don't spin on it.
+      if (data && !data.error) break
+      if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)))
     }
   } catch (e) { data = null }
   finally { kbar.done() }
+  if (redirected) return
+  // KLA-764: never let a transient EMPTY payload ({active:null, projects:[]}) blank an already-loaded
+  // switcher (same guard as refreshAll's KLA-717). load() re-runs while state is populated (e.g. after a
+  // plan-override change), so a racey empty revalidation could paint "—"; keep the good state instead.
+  if (data && Array.isArray(data.projects) && data.projects.length === 0 && !data.active
+      && state && Array.isArray(state.projects) && state.projects.length > 0) return
   if (!data || data.error) {
     // Keep whatever we painted from cache; only surface the error on a true cold miss.
     if (state === null) {
@@ -7436,8 +7453,14 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           d = r ? await r.json().catch(() => ({})) : {}
         } finally { window.__klavMutating--; priSelEl.disabled = false; priSelEl.removeAttribute("aria-busy") }
         if (d.ok) {
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
           if (tkt) tkt.priority = newPri
+          // KLA-777: also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it,
+          // NOT state.tickets. Mirrors the status handler above so onChange's renderTicketsKanban()
+          // re-buckets the card (priority columns / High-priority filter), recolors its severity rail
+          // and re-sorts immediately, instead of waiting up to 15s for the next boardRevTick poll.
+          const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
+          if (bt) bt.priority = newPri
           recordLocalEdit(ticketId, { priority: newPri })   // #532
           // #653: repaint the priority severity square.
           const _sq = detailEl.querySelector(".prop-sq")
