@@ -1091,7 +1091,7 @@ export function showCtxMenu(x: number, y: number) {
 
 function handleContextMenu(e: MouseEvent) {
   if (!isContextValid()) {
-    document.removeEventListener('contextmenu', handleContextMenu)
+    document.removeEventListener('contextmenu', handleContextMenu, true)
     showToast('Extension reloaded. Please refresh the page.')
     return
   }
@@ -1127,7 +1127,11 @@ const regionDrag = installRegionDrag({
   },
 })
 
-document.addEventListener('contextmenu', handleContextMenu)
+document.addEventListener('contextmenu', handleContextMenu, true)  // KLA-771: CAPTURE phase — some hosts
+// (px4/qa1.px4app.com) stopPropagation() their own contextmenu handler, which in the bubble phase would stop
+// us reaching document and the native menu would win. Capture runs before any host bubble/target handler.
+// Mirrors the widget's fix in packages/sdk/src/widget.ts. All pass-through guards (widget-present, shift,
+// editable, region-drag) still short-circuit BEFORE preventDefault, so links/fields/shift/own-UI keep the native menu.
 
 // If the widget announces itself after we initialised, tear down our report UI AND
 // the live-activation surface (indicator + comment bubbles); widget wins. This covers
