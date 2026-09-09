@@ -5421,18 +5421,24 @@ function Gf(e, t) {
 }
 const Xf = 2e4;
 async function Ma(e) {
-  if (e.type === "image/heic" || e.type === "image/heif" || e.name.endsWith(".heic") || e.name.endsWith(".heif"))
+  if (e.type === "image/heic" || e.type === "image/heif" || e.name.endsWith(".heic") || e.name.endsWith(".heif")) {
+    let t;
     try {
-      const t = await Promise.race([
+      const r = await Promise.race([
         (async () => {
-          const r = (await import("./heic2any-D6xzzX7R.js").then((n) => n.h)).default;
-          return await r({ blob: e, toType: "image/jpeg", quality: 0.85 });
+          const n = (await import("./heic2any-D6xzzX7R.js").then((i) => i.h)).default;
+          return await n({ blob: e, toType: "image/jpeg", quality: 0.85 });
         })(),
-        new Promise((r, n) => setTimeout(() => n(new Error("heic-convert-timeout")), Xf))
+        new Promise((n, i) => {
+          t = setTimeout(() => i(new Error("heic-convert-timeout")), Xf);
+        })
       ]);
-      return Ra(t);
+      return Ra(r);
     } catch {
+    } finally {
+      t && clearTimeout(t);
     }
+  }
   return Ra(e);
 }
 const Kf = 3e4;

@@ -4686,6 +4686,7 @@ async function fileToDataUrl(file: File): Promise<string> {
     // bundled into the embeddable widget IIFE (externalized in vite.widget.config.ts); the extension,
     // which runs outside customer CSP, still bundles it. When it's unavailable OR conversion/CSP fails,
     // degrade gracefully to uploading the raw file rather than throwing.
+    let heicTimer: ReturnType<typeof setTimeout> | undefined
     try {
       // KLA-763: the dynamic import + WASM conversion can STALL (slow/hung fetch of the heic2any chunk, or
       // a wedged libheif run) — that happens BEFORE blobToDataUrl's own reader watchdog, so without a bound
@@ -4696,10 +4697,11 @@ async function fileToDataUrl(file: File): Promise<string> {
           const heic2any = (await import('heic2any')).default
           return await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob
         })(),
-        new Promise<Blob>((_, reject) => setTimeout(() => reject(new Error('heic-convert-timeout')), HEIC_CONVERT_TIMEOUT_MS)),
+        new Promise<Blob>((_, reject) => { heicTimer = setTimeout(() => reject(new Error('heic-convert-timeout')), HEIC_CONVERT_TIMEOUT_MS) }),
       ])
       return blobToDataUrl(blob)
     } catch { /* heic2any absent (widget) / conversion failed / timed out — fall back to the raw file */ }
+    finally { if (heicTimer) clearTimeout(heicTimer) } // KLA-763: never leak the deadline timer (fast path or fail)
   }
   return blobToDataUrl(file)
 }
