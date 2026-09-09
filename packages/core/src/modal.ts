@@ -4675,6 +4675,9 @@ function mountRegionOverlay(
   })
 }
 
+// KLA-763: bound the HEIC→JPEG convert (dynamic import + WASM) so a stalled convert can't hang the attach
+// flow before blobToDataUrl's own reader watchdog. Generous — a real convert is well under this.
+const HEIC_CONVERT_TIMEOUT_MS = 20000
 async function fileToDataUrl(file: File): Promise<string> {
   if (file.type === 'image/heic' || file.type === 'image/heif' || file.name.endsWith('.heic') || file.name.endsWith('.heif')) {
     // HEIC→JPEG conversion uses heic2any (libheif compiled to WASM). Its Emscripten/embind glue calls
@@ -4684,10 +4687,19 @@ async function fileToDataUrl(file: File): Promise<string> {
     // which runs outside customer CSP, still bundles it. When it's unavailable OR conversion/CSP fails,
     // degrade gracefully to uploading the raw file rather than throwing.
     try {
-      const heic2any = (await import('heic2any')).default
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob
+      // KLA-763: the dynamic import + WASM conversion can STALL (slow/hung fetch of the heic2any chunk, or
+      // a wedged libheif run) — that happens BEFORE blobToDataUrl's own reader watchdog, so without a bound
+      // here the attach spinner hangs forever. Race the whole convert against a deadline; on timeout/failure
+      // fall through to uploading the raw file (which is itself guarded by blobToDataUrl's timeout).
+      const blob = await Promise.race([
+        (async () => {
+          const heic2any = (await import('heic2any')).default
+          return await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob
+        })(),
+        new Promise<Blob>((_, reject) => setTimeout(() => reject(new Error('heic-convert-timeout')), HEIC_CONVERT_TIMEOUT_MS)),
+      ])
       return blobToDataUrl(blob)
-    } catch { /* heic2any absent (widget) or conversion failed — fall back to the raw file */ }
+    } catch { /* heic2any absent (widget) / conversion failed / timed out — fall back to the raw file */ }
   }
   return blobToDataUrl(file)
 }

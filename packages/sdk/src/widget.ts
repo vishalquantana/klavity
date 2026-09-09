@@ -1684,11 +1684,20 @@ async function mount() {
       // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
       // region-initial shot as a NEW capture — seed it visually AND persist it to the session.
       void (async () => {
+        let failedRestores = 0
         for (const shot of ev.shots) {
           try {
             // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
             ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
-          } catch { /* skip an unreadable shot */ }
+          } catch { failedRestores++ /* KLA-763: unreadable/corrupt persisted blob or read timeout */ }
+        }
+        // KLA-763 (codex round-2): don't SILENTLY drop persisted evidence on resume — a shot whose blob
+        // won't read (corrupt / reader timeout) would otherwise vanish while the report still submits, with
+        // no signal. Make the loss explicit so the reporter knows to re-capture.
+        if (failedRestores > 0) {
+          evBanner(failedRestores === 1
+            ? "1 saved screenshot couldn't be restored — please re-capture it if needed."
+            : `${failedRestores} saved screenshots couldn't be restored — please re-capture them if needed.`)
         }
         if (opts?.initialShot) {
           // Bug 3 (wrong image selected): seed the freshly-captured region shot as a GENUINE capture
