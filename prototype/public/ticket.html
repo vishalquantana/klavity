@@ -223,12 +223,14 @@ function loadTicket() {
   // stalled response BODY leaves r.json() pending forever, which AbortController can't cancel when absent;
   // racing the whole chain guarantees the spinner still resolves.
   var loadWork = apiFeedback("", ctrl ? { signal: ctrl.signal } : undefined).then(function (r) {
+    if (timedOut) return null; // late completion after the timeout already showed its error — ignore
     if (r.status === 401) { location.href = "/login?next=" + encodeURIComponent(location.pathname); return null; }
     if (r.status === 403) { showErr("You are not a member of this ticket's project."); return null; }
     if (!r.ok) { showErr("Could not load this ticket."); return null; }
     // Parse defensively: a body that isn't JSON must surface an error, not a silent stall.
     return r.json().then(function (j) { return j; }, function () { showErr("Could not load this ticket."); return null; });
   }).then(function (d) {
+    if (timedOut) return; // a body that finished AFTER the timeout must NOT render over the timeout error
     if (d === null) return; // already redirected or errored above — spinner is already resolved
     if (!d.report) { showErr("Could not load this ticket."); return; }
     report = d.report;
