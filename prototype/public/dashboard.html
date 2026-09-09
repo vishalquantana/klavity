@@ -10122,6 +10122,14 @@ function renderTicketsKanban(boardTickets) {
     })
   }
   refreshAssigneeOptions()
+  // KLA-779: if we're about to render the board from the TINY state.tickets fallback (the board cache is
+  // cold — first entry / new project / cleared cache), kick off the full 200-row board fetch so filters like
+  // "My items"/assignee run over the COMPLETE set, not a truncated preview (the reported "only 5 of 20+").
+  // fetchAndRenderTktBoard() no-ops unless #ticketsKanban is present (so this never fires on the overview),
+  // is guarded against concurrent loads, and re-invokes this render with _tktBoardTickets when it resolves.
+  if (!Array.isArray(boardTickets) && _tktBoardTickets.length === 0 && projId && !_tktBoardState.loading) {
+    fetchAndRenderTktBoard()
+  }
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
   // #536: the board caches the FULL project set and filters client-side, so status/priority/label/
   // assignee/source/search are applied here (tktMatchesSelectFilters mirrors the server, matching

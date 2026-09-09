@@ -63,3 +63,18 @@ test("KLA-779: /api/dashboard ticket feed is raised from 12 so assignee filters 
   expect(SERVER).not.toContain("listFeedback(projectId, { limit: 12 })")
   expect(SERVER).toContain("listFeedback(projectId, { limit: 50 })")
 })
+
+// ── KLA-779 (structural): a cold board must load the FULL 200-row set before "My items"/assignee
+// filters render, instead of filtering the tiny state.tickets fallback (opencode round-1 finding). ──
+test("KLA-779: renderTicketsKanban triggers the full board fetch when the board cache is cold", () => {
+  const fn = extractFn(HTML, "function renderTicketsKanban(")
+  // When called with no boardTickets arg AND the board cache is empty AND a project is selected AND no
+  // fetch is in flight, it kicks off fetchAndRenderTktBoard() so filters run over the 200-row set.
+  expect(fn).toContain("_tktBoardTickets.length === 0 && projId && !_tktBoardState.loading")
+  expect(fn).toContain("fetchAndRenderTktBoard()")
+  // And the guard must sit BEFORE the sourceTickets fallback so the fetch is kicked off on the cold render.
+  const trigIdx = fn.indexOf("fetchAndRenderTktBoard()")
+  const srcIdx = fn.indexOf("const sourceTickets =")
+  expect(trigIdx).toBeGreaterThan(-1)
+  expect(srcIdx).toBeGreaterThan(trigIdx)
+})
