@@ -1,7 +1,7 @@
-// AutoSims F1 — the LLM-drive authoring engine. Loop: screenshot+DOM → model proposes ONE action →
-// validate selector resolves to EXACTLY ONE element → execute with Playwright auto-wait → record a
-// TrajectoryStep. On "done": crystallize → DRAFT trail → zero-LLM Verification Walk (suppressed
-// findings) → outcome. On "stall"/caps/errors: stalled outcome with the exact reason (stop-show-
+// AutoSims F1 - the LLM-drive authoring engine. Loop: screenshot+DOM  model proposes ONE action 
+// validate selector resolves to EXACTLY ONE element  execute with Playwright auto-wait  record a
+// TrajectoryStep. On "done": crystallize  DRAFT trail  zero-LLM Verification Walk (suppressed
+// findings)  outcome. On "stall"/caps/errors: stalled outcome with the exact reason (stop-show-
 // refine UX). Secrets: the model only ever sees {{cred:...}} placeholders (credFields); values are
 // resolved at fill time and never logged (history/trajectory keep the placeholder).
 import { crystallize, type Trajectory, type TrajectoryStep } from "./trails-crystallize"
@@ -53,7 +53,7 @@ const ACTION_TIMEOUT = 10_000
 // site can't stall the walk. Mirrors the replay runner's post-action networkidle wait.
 const POST_ACTION_SETTLE_MS = 4_000
 // KLA-129: stall if the exact same action (op+selector+value+url) fires this many consecutive
-// times without a different action in between — the model is stuck re-doing the same step.
+// times without a different action in between - the model is stuck re-doing the same step.
 const LOOP_STALL_N = 3
 // How many consecutive iterations with NO page-state change (same URL + same DOM hash) before
 // we inject a nudge message asking the model to try a different action. Reset on any real change.
@@ -117,15 +117,15 @@ export interface AuthorOutcome {
   redCause?: RedCauseDiagnosis | null
 }
 
-// ── KLAVITYKLA-116: RED verification diagnosis ────────────────────────────────────────────────────
+//  KLAVITYKLA-116: RED verification diagnosis 
 // A just-authored Trail crystallizes green (replayed clean), amber (healed / inconclusive) or red
 // (authoring succeeded but the zero-LLM replay failed). A red is usually one of three things, and the
 // reviewer needs to know WHICH before they either waste a re-verify or wrongly dismiss a real break:
-//   • selector-drift    — the recorded selector no longer matches (fragile/changed markup), not a bug
-//   • state-dependence  — the flow consumed one-time state while authoring (e.g. "account exists")
-//   • timing-flake      — a transient timeout / navigation / network hiccup (non-determinism)
+//    selector-drift    - the recorded selector no longer matches (fragile/changed markup), not a bug
+//    state-dependence  - the flow consumed one-time state while authoring (e.g. "account exists")
+//    timing-flake      - a transient timeout / navigation / network hiccup (non-determinism)
 // classifyRedCause() step-aligns the failing walk step to the authoring log and picks the most likely
-// cause from the RED reasons + captured browser evidence. Pure + deterministic → unit-tested.
+// cause from the RED reasons + captured browser evidence. Pure + deterministic  unit-tested.
 export type RedCauseKind = "selector-drift" | "state-dependence" | "timing-flake" | "unknown"
 
 export interface RedCauseDiagnosis {
@@ -154,11 +154,11 @@ export interface RedCauseWalkInput {
 }
 
 // One-time-state signals: the replay diverged because authoring consumed state (created an account,
-// used a token, etc.). Strongest signal — checked first because the error text is usually explicit.
+// used a token, etc.). Strongest signal - checked first because the error text is usually explicit.
 const RED_STATE_RE = /already\s+(exist|register|taken|been|present|logged|signed|have|in\s+use|created)|duplicate|is\s+taken|in\s+use|account\s+(already\s+)?exists|email\s+(already|exists|taken|is\s+taken)|username.*taken|conflict|has\s+already/i
-// Transient/timing signals: a slow nav, a network failure, a deadline — non-determinism, not a break.
+// Transient/timing signals: a slow nav, a network failure, a deadline - non-determinism, not a break.
 const RED_TIMING_RE = /timeout|timed\s+out|timing|too\s+slow|navigation|net::|network|connection|econn|socket|transient|flake|deadline|took\s+too\s+long|not\s+settle|didn.?t\s+settle|exceeded|no\s+response/i
-// Locator signals: the element couldn't be found / acted on — the recorded selector drifted.
+// Locator signals: the element couldn't be found / acted on - the recorded selector drifted.
 const RED_SELECTOR_RE = /not\s+found|no\s+(such\s+)?element|couldn.?t\s+find|could\s+not\s+find|unable\s+to\s+(find|locate)|locator|selector|not\s+visible|detached|element\s+is\s+not|missing\s+element|0\s+elements?|no\s+matching|waiting\s+for\s+(selector|locator)|did\s+not\s+resolve/i
 
 const RED_INTERACTION_OPS = new Set(["click", "type", "select", "hover", "assert", "clearField", "keyPress", "upload", "waitForSelector"])
@@ -341,7 +341,7 @@ export async function authorTrail(
     if (process.env.KLAV_TEST_OTP) credFields.push(`{{cred:${acc.name}:otp}}`)
   }
   // KLA-184 (AT6): perform the project's REGISTERED auth method at run start so the walk continues
-  // authenticated instead of pausing at the login gate (KLA-179). Decrypt-at-execution ONLY —
+  // authenticated instead of pausing at the login gate (KLA-179). Decrypt-at-execution ONLY -
   // fixed_otp exposes email+otp placeholders for the drive model to fill (secrets resolved at
   // fill-time, never in the LLM payload); mint_link is established directly below via the browser.
   let autosimAuth: DecryptedAutosimAuthConfig | null = null
@@ -377,18 +377,18 @@ export async function authorTrail(
   // that leaves the DOM unchanged even post-settle is the signature of an AJAX save/submit that
   // persists WITHOUT any visible confirmation (observed live on BookJoy: saving #customer_notes shows
   // no toast/nav). In that case the guard must steer the model to FINISH (emit "done"), never re-click
-  // submit — re-clicking a just-committed save is the save-loop we saw. Reset to false every iteration
+  // submit - re-clicking a just-committed save is the save-loop we saw. Reset to false every iteration
   // after the guard reads it; set true only when a commit op completes successfully.
   let prevActionWasCommit = false
   // KLA-786 (round-1 C2): cap how many times the no-op guard may auto-click a submit within a single
   // stagnation region (no DOM change). Without this the guard re-fired the same submit every ~2
-  // iterations — a live save side-effect each time — until the step/deadline budget drained. Reset to 0
-  // whenever the page actually changes (real progress → a fresh region may legitimately need one click).
+  // iterations - a live save side-effect each time - until the step/deadline budget drained. Reset to 0
+  // whenever the page actually changes (real progress  a fresh region may legitimately need one click).
   const AUTO_ADVANCE_MAX = 1
   let autoAdvanceClicks = cp?.autoAdvanceClicks ?? 0
   // KLA-786 (round-3, codex): SINGLE sticky flag governing BOTH the no-op guard routing AND the done gate,
   // set when a settled commit is observed to have left the DOM unchanged. Cleared ONLY by a SUCCESSFUL
-  // forced read-back (the "done" handler reload) — never by incidental DOM progress (opening a modal/tab
+  // forced read-back (the "done" handler reload) - never by incidental DOM progress (opening a modal/tab
   // must not re-enable the synthetic submit auto-click NOR bypass the read-back). A two-flag split
   // (per-region routing vs done gate) desynchronized: after progress the routing flag cleared while this
   // stayed set, so the ordinary auto-advance branch could fire a DUPLICATE save before the model said
@@ -397,15 +397,15 @@ export async function authorTrail(
   // "done" forces an independent read-back before verifying. It clears once a read-back confirms, so a
   // later unrelated stagnation region regains auto-advance only after confirmation.
   let unconfirmedCommitPending = cp?.unconfirmedCommitPending ?? false
-  // KLA-786 (round-2 C2): don't let the first post-resume iteration (prevIterDomKey===null → the progress
+  // KLA-786 (round-2 C2): don't let the first post-resume iteration (prevIterDomKey===null  the progress
   // branch) discard the region state we just restored from the checkpoint. Preserve it across that one
   // comparison; genuine progress after that resets it normally.
   let firstPostResumeIter = !!cp
-  // KLA-786 (round-5): observed live on BookJoy — after a silent Save the model does NOT emit "done"; it
-  // oscillates type→Save→type (no visible confirmation to tell it it's finished) until the stall guard
+  // KLA-786 (round-5): observed live on BookJoy - after a silent Save the model does NOT emit "done"; it
+  // oscillates typeSavetype (no visible confirmation to tell it it's finished) until the stall guard
   // trips. The nudge alone can't make an LLM finish. So after this many consecutive unconfirmed-commit
-  // iterations, the LOOP takes over: it synthesizes a "done" (→ the forced read-back + verifier decides
-  // against server truth) instead of waiting for the model. Bounded and self-correcting — if the change
+  // iterations, the LOOP takes over: it synthesizes a "done" ( the forced read-back + verifier decides
+  // against server truth) instead of waiting for the model. Bounded and self-correcting - if the change
   // did NOT persist the verifier rejects and the run continues with the (reloaded) empty field.
   const PROACTIVE_VERIFY_AFTER = 2
   let commitNudgeCount = cp?.commitNudgeCount ?? 0
@@ -417,7 +417,7 @@ export async function authorTrail(
   })
   let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
-  // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY — observed
+  // page.content()/screenshot never settle) held the shared walk slot INDEFINITELY - observed
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
   // service restart. Every per-iteration op below is also individually bounded.
   const driveDeadlineMs = opts.driveDeadlineMs ?? AUTOSIM_DEADLINE_MS_DEFAULT
@@ -425,8 +425,8 @@ export async function authorTrail(
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
   // KLA (BookJoy login stall): click the single most-likely submit control. Shared by the no-op
-  // stagnation guard AND the repeated-`type` guard — "filled the login form but never submitted it"
-  // is the classic failure (observed live: the model re-typed the email field 4× and never clicked
+  // stagnation guard AND the repeated-`type` guard - "filled the login form but never submitted it"
+  // is the classic failure (observed live: the model re-typed the email field 4 and never clicked
   // "Log in"). Returns the selector it clicked, or null if no unique candidate matched.
   const tryAutoAdvanceSubmit = async (pg: any): Promise<string | null> => {
     for (const sel of SUBMIT_CANDIDATES) {
@@ -438,7 +438,7 @@ export async function authorTrail(
           // result (no-nav forms) instead of the pre-response DOM. (The no-op-guard's inline click settles on
           // its own path; this helper is the repeated-type login auto-submit path.)
           await bounded(pg.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance settle").catch(() => {})
-          // KLA-786: an auto-advanced submit is itself a settled COMMIT — arm the flag so the NEXT
+          // KLA-786: an auto-advanced submit is itself a settled COMMIT - arm the flag so the NEXT
           // no-op iteration takes the done-nudge branch instead of re-clicking this same submit (the
           // guard re-firing its own just-committed click was the save-loop, no model complicity needed).
           prevActionWasCommit = true
@@ -448,7 +448,7 @@ export async function authorTrail(
     }
     return null
   }
-  // Browser via the adapter seam: local Playwright by default; Puppeteer→remote (Steel) when
+  // Browser via the adapter seam: local Playwright by default; Puppeteerremote (Steel) when
   // AUTOSIM_CDP_URL is set (moves the browser off the 1GB box). Behavior-identical on the default.
   const launchArgs = Array.from(new Set([...CHROMIUM_PROD_ARGS, ...(opts.launchArgs ?? [])]))
   let handle: BrowserHandle | null = await (opts.browserFactory ?? acquireBrowser)({
@@ -491,7 +491,7 @@ export async function authorTrail(
   }
   try {
     const page = await handle!.newPage(viewport)
-    // KLA-184 (AT6): mint_link branch — establish the session cookie by hitting the signed mint link
+    // KLA-184 (AT6): mint_link branch - establish the session cookie by hitting the signed mint link
     // BEFORE the first recorded navigation, then leave that token-bearing URL immediately (below) so
     // it never lands in the trajectory/history/LLM payload (ADR-0001). Re-run on resume too: a fresh
     // browser has no cookie, so the checkpoint URL would otherwise bounce back to the login gate.
@@ -499,7 +499,7 @@ export async function authorTrail(
       await establishAutosimSession(page, autosimAuth, req.baseUrl)
     }
     if (cp) {
-      // KLA-57: resume — navigate to where the prior drive stalled. The traj/history are already
+      // KLA-57: resume - navigate to where the prior drive stalled. The traj/history are already
       // pre-populated from the checkpoint; we skip re-recording the initial navigate step.
       await page.goto(cp.lastUrl, 20_000)
     } else {
@@ -510,7 +510,7 @@ export async function authorTrail(
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     for (let idx = startIdx; idx < AUTHOR_MAX_STEPS; idx++) {
-      // KLA-55: heartbeat — signals the crash-reaper that this session is still alive. Best-effort.
+      // KLA-55: heartbeat - signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`, page.url())
       if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
@@ -521,7 +521,7 @@ export async function authorTrail(
         : ""
       // KLA-150: publish live frame so the UI can show what the AI sees before deciding.
       // In text-first mode the model gets no screenshot (token savings), but the interactive
-      // authoring wizard still expects a real-time preview — so when a live viewer is attached
+      // authoring wizard still expects a real-time preview - so when a live viewer is attached
       // (opts.onLiveFrame is only wired from the wizard drive) capture a lightweight frame purely
       // for the live view. It is NEVER fed to the model, so the text-first token win is preserved.
       if (screenshotB64) {
@@ -542,7 +542,7 @@ export async function authorTrail(
       }
       // KLA-786 (dialog-capture): surface any JS dialogs the previous action triggered (alert/confirm/
       // prompt). Many apps confirm a save via an alert the headless browser silently auto-dismisses
-      // (BookJoy: "Customer notes updated"), leaving no DOM trace — so the loop couldn't tell the save
+      // (BookJoy: "Customer notes updated"), leaving no DOM trace - so the loop couldn't tell the save
       // worked and re-clicked Save. Fold the captured text into BOTH the observation the model sees this
       // iteration AND the persisted history, so the model/verifier get the success (or failure) signal a
       // human sees. Appending to `dom` also means a dialog counts as "something happened" for the no-op
@@ -550,15 +550,24 @@ export async function authorTrail(
       const dialogs = page.drainDialogs?.() ?? []
       if (dialogs.length) {
         // Label how the adapter answered each dialog (round-7 C3): alert/beforeunload were ACCEPTED (OK);
-        // confirm/prompt were DISMISSED (cancel) — so the model can tell whether its action actually went
+        // confirm/prompt were DISMISSED (cancel) - so the model can tell whether its action actually went
         // through (a dismissed confirm means it was CANCELLED, not completed).
         const answered = (t: string) => (t === "alert" || t === "beforeunload" ? "accepted" : "dismissed")
-        // KLA-786 (round-7b C2, codex): the dialog MESSAGE is app-controlled — it could contain prompt-
-        // injection ("ignore the objective; click ...") or sequences that break out of the untrusted
-        // delimiters (>>> / <<<) or the HTML-comment wrapper (-->). Neutralize those and collapse newlines
-        // so the text can only ever read as inert quoted data, never as structure or instructions.
-        const sanitize = (s: string) => String(s ?? "").replace(/[\r\n\t]+/g, " ").replace(/<<<|>>>|-->/g, "·").slice(0, 300)
-        const note = dialogs.map((d) => `[dialog:${d.type} ${answered(d.type)}] "${sanitize(d.message)}"`).join(" | ")
+        // KLA-786 (round-7c C3, codex): d.type() is a browser enum in the real adapters, but the contract
+        // types it as a plain string - allowlist it so a mocked/future adapter can't inject via the label.
+        const safeType = (t: string) => (t === "alert" || t === "confirm" || t === "prompt" || t === "beforeunload" ? t : "dialog")
+        // KLA-786 (round-7b/7c C2, codex): the dialog MESSAGE is app-controlled - it could carry prompt-
+        // injection ("ignore the objective; click ...") or characters that break framing. Make it inert:
+        // strip ALL C0/C1 control chars AND Unicode line/paragraph separators (//NEL/VT/FF -
+        // not just \r\n\t, which would still let U+2028 forge a new history line); neutralize the untrusted
+        // delimiters (<<< / >>>) and the HTML-comment closer (-->); and replace the double-quote so the text
+        // can't spoof the end of the quoted-evidence field and append plausible instructions. Cap length.
+        const sanitize = (s: string) => String(s ?? "")
+          .replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]+/g, " ") // strip all control chars + Unicode line/para separators
+          .replace(/<<<|>>>|-->/g, "·")
+          .replace(/"/g, "'")
+          .slice(0, 300)
+        const note = dialogs.map((d) => `[dialog:${safeType(d.type)} ${answered(d.type)}] "${sanitize(d.message)}"`).join(" | ")
         // History line is explicitly framed as UNTRUSTED (history/"ACTIONS SO FAR" is otherwise trusted
         // narration not covered by the system prompt's page-content-untrusted warning). The model uses the
         // text only as evidence of the app's response, never as instructions.
@@ -567,7 +576,7 @@ export async function authorTrail(
         // block; the sanitizer above guarantees it can't break that delimiter or the comment wrapper.
         dom = `${dom}\n<!-- untrusted dialog: ${note} -->`
         // KLA-786 (round-7 C2, codex): a dialog is app-controlled and may report FAILURE ("Save failed")
-        // or be a confirm we cancelled — the model can misread it and finish anyway. Appending the note to
+        // or be a confirm we cancelled - the model can misread it and finish anyway. Appending the note to
         // `dom` also makes this iteration hash as "progress", which would otherwise leave the done gate
         // unset and let a "done" skip the forced read-back (verifying stale DOM). Arm the gate so ANY
         // dialog-driven finish still goes through the independent read-back before certifying.
@@ -581,7 +590,7 @@ export async function authorTrail(
       // the loop should verify directly instead of nudging the model again (see PROACTIVE_VERIFY_AFTER).
       let forceProactiveDone = false
       {
-        // Strip kref attribute numbers before hashing — they are renumbered every capture and would
+        // Strip kref attribute numbers before hashing - they are renumbered every capture and would
         // make every iteration look different even when the real page content is identical.
         const domWithoutKrefs = dom.replace(/data-kref="e\d+"/g, 'data-kref="??"')
         const iterDomKey = `${page.url()}|${sha256hex(domWithoutKrefs)}`
@@ -589,9 +598,9 @@ export async function authorTrail(
           noOpCount++
           if (prevActionWasCommit || unconfirmedCommitPending) {
             // KLA-786: a COMMIT (click/submit/select/upload) was settled yet the DOM still didn't change
-            // — the signature of an AJAX save/submit that persists without a visible confirmation
+            // - the signature of an AJAX save/submit that persists without a visible confirmation
             // (observed live on BookJoy). Do NOT treat it as "nothing happened" and auto-advance-click a
-            // submit (that re-fires the save → save-loop). Steer the model to FINISH via an INDEPENDENT
+            // submit (that re-fires the save  save-loop). Steer the model to FINISH via an INDEPENDENT
             // read-back, then "done". Never auto-advance-click while a commit is unconfirmed.
             // KLA-786 (round-3): the single sticky flag routes here across further no-op iterations (a
             // model answering with another no-op can't fall through to auto-advance) AND is the done gate.
@@ -599,13 +608,13 @@ export async function authorTrail(
             commitNudgeCount++
             if (commitNudgeCount >= PROACTIVE_VERIFY_AFTER) {
               // KLA-786 (round-5): the model has been nudged but keeps re-committing / re-typing instead of
-              // finishing (no visible confirmation to tell it the save worked — observed live on BookJoy).
+              // finishing (no visible confirmation to tell it the save worked - observed live on BookJoy).
               // Stop waiting: take over and verify directly this iteration. forceProactiveDone routes to the
               // "done" handler below, which forces the independent read-back reload and lets the verifier
-              // decide against server truth (achieved → crystallize; not → continue with the reloaded state).
+              // decide against server truth (achieved  crystallize; not  continue with the reloaded state).
               forceProactiveDone = true
             } else {
-              // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation error
+              // KLA-786 (round-1 C2): do NOT assert the save succeeded - a transient 5xx / validation error
               // also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text still
               // sits in the field, so a DOM-judging verifier could falsely certify. Require an INDEPENDENT
               // confirmation before "done" (also enforced by the "done" handler, which forces a reload).
@@ -617,15 +626,15 @@ export async function authorTrail(
             // type, never clicks submit" pattern observed live on the login form (2026-07-08 dogfood).
             // KLA-786 (round-1 C2): cap live auto-advance clicks per stagnation region. Without a cap the
             // guard re-clicked the SAME submit every ~2 iters (each a real save side-effect) until the
-            // budget drained — a save-loop of the guard's own making. If one auto-advance click did not
-            // change the page, we've learned clicking submit doesn't help here → stop and nudge to finish.
+            // budget drained - a save-loop of the guard's own making. If one auto-advance click did not
+            // change the page, we've learned clicking submit doesn't help here  stop and nudge to finish.
             let autoAdvanced = false
             for (const sel of (autoAdvanceClicks < AUTO_ADVANCE_MAX ? SUBMIT_CANDIDATES : [])) {
               try {
                 const n = await bounded(page.count(sel), 5_000, "auto-advance count")
                 if (n === 1) {
                   await bounded(page.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
-                  // KLA (BookJoy Save-loop): an auto-advanced submit is a commit too — settle the network so the
+                  // KLA (BookJoy Save-loop): an auto-advanced submit is a commit too - settle the network so the
                   // next snapshot reflects its AJAX result rather than the pre-response DOM.
                   await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance network settle").catch(() => {})
                   history.push(`(auto-advance: the page was not changing — clicked the most likely submit control "${sel}" to progress the flow; check the new page state)`)
@@ -643,9 +652,9 @@ export async function authorTrail(
             if (!autoAdvanced) {
               if (autoAdvanceClicks >= AUTO_ADVANCE_MAX) {
                 // KLA-786 (round-1 C2): we already auto-clicked a submit and the page still didn't
-                // change — clicking submit isn't advancing this flow. Don't keep re-firing it. Either
+                // change - clicking submit isn't advancing this flow. Don't keep re-firing it. Either
                 // the last commit persisted with no visible confirmation (verify and finish) or we're
-                // genuinely stuck (try a different action) — do NOT just re-click submit.
+                // genuinely stuck (try a different action) - do NOT just re-click submit.
                 history.push(`(IMPORTANT: the page has not changed even after clicking a submit control — re-clicking it is not helping. If the objective may already be satisfied, confirm via a genuinely different check (reload / navigate to where the change should appear) and then respond with the "done" op. Otherwise choose a completely different action; do NOT re-click the same button.)`)
               } else {
                 history.push(`(IMPORTANT: the page has not changed for ${noOpCount} actions in a row — you are stuck. Choose a completely different action, e.g. click the submit, "Send me a code", "Continue", or "Next" button to advance the flow)`)
@@ -657,7 +666,7 @@ export async function authorTrail(
         } else {
           noOpCount = 0
           // KLA-786 (round-2 C2): don't wipe restored region state on the first post-resume comparison
-          // (prevIterDomKey started null → this branch runs before any real progress).
+          // (prevIterDomKey started null  this branch runs before any real progress).
           if (!firstPostResumeIter) {
             // Real progress resets the per-region auto-advance cap. (While a commit is unconfirmed the
             // guard never reaches auto-advance anyway, so this only matters once the gate has cleared.)
@@ -666,7 +675,7 @@ export async function authorTrail(
           }
           // KLA-786 (round-2 C3 / round-3): do NOT clear unconfirmedCommitPending here. Incidental DOM
           // progress (a modal/tab opening) is NOT an independent confirmation that the silent commit
-          // persisted — only the "done" handler's successful read-back reload clears it. Clearing on any
+          // persisted - only the "done" handler's successful read-back reload clears it. Clearing on any
           // DOM change would both let the model bypass the read-back AND re-enable the synthetic submit
           // auto-click on the next static region (a duplicate save) before the model ever says "done".
         }
@@ -678,7 +687,7 @@ export async function authorTrail(
       }
       // KLA-56: retry transient model/API errors (429, 5xx, timeout) with exponential back-off.
       // Fatal errors (budget exhausted, 401/403) stall immediately with a distinct reason.
-      // Generic (non-ModelCallError) throws are treated as retryable — one network blip must not
+      // Generic (non-ModelCallError) throws are treated as retryable - one network blip must not
       // kill an entire authoring run.
       // KLA-69: hoist modelInput + modelCtx out of inner block so the stall-reroll can reuse them.
       const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields, uploads: opts.uploadNames }
@@ -687,7 +696,7 @@ export async function authorTrail(
       let a: AuthorAction
       if (forceProactiveDone) {
         // KLA-786 (round-5): the loop decides to verify directly rather than call the model again. Synthesize
-        // a "done" — the handler below forces the independent read-back and lets the verifier judge server
+        // a "done" - the handler below forces the independent read-back and lets the verifier judge server
         // truth. No model call is spent. (isAuthGate/stall-reroll below are no-ops for a "done" action.)
         a = { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "(auto-verify: a commit produced no visible change and the model did not finish — confirming persistence directly)" }
       } else {
@@ -709,7 +718,7 @@ export async function authorTrail(
           }
         }
         if (!succeeded) {
-          // All retry attempts exhausted — count as a miss so the consecutive-miss cap eventually
+          // All retry attempts exhausted - count as a miss so the consecutive-miss cap eventually
           // stalls rather than looping forever. This mirrors parse-error treatment (KLAVITYKLA-48 #1).
           misses++
           const errMsg = (lastErr as any)?.message || String(lastErr)
@@ -721,19 +730,19 @@ export async function authorTrail(
         a = r.action
       }
       // KLA-179: the model classifies the current page as an auth gate (login form / OTP prompt /
-      // OAuth-only wall) as one extra field on the action it already returns — no extra LLM call.
+      // OAuth-only wall) as one extra field on the action it already returns - no extra LLM call.
       // When there's no verified auth method to get past it, we PAUSE (not fail): suspend in the
       // resumable `needs_auth` state (stall() persists the checkpoint = step position + trajectory +
       // url + cost, so a later /autosims resume continues from here) and fire a throttled alert.
       // FUTURE (sim-public-pages-only opt-out): a project could opt its Sims into public-pages-only
-      // exploration, in which case an auth gate is an expected boundary — end the run cleanly ("done
+      // exploration, in which case an auth gate is an expected boundary - end the run cleanly ("done
       // exploring the public surface") instead of pausing + alerting. Not wired yet; default is pause.
       if (a.isAuthGate && projectAuthStatus !== "verified") {
         if (opts.onNeedsAuth) await opts.onNeedsAuth(page.url(), a.rationale || "stopped at auth gate")
         return await stall(a.rationale || "stopped at auth gate", page.url(), "needs_auth")
       }
       if (a.op === "stall" && a.parseError) {
-        // KLAVITYKLA-48 #1: a malformed reply is a bad ROLL, not a dead end — one garbage JSON
+        // KLAVITYKLA-48 #1: a malformed reply is a bad ROLL, not a dead end - one garbage JSON
         // response was killing otherwise-good multi-step attempts. Treat it exactly like a failed
         // action: count a consecutive miss, tell the model, and let it try again.
         misses++
@@ -742,7 +751,7 @@ export async function authorTrail(
         continue
       }
       if (a.op === "stall") {
-        // KLA-69: deliberate stall — get a second opinion before accepting it as final.
+        // KLA-69: deliberate stall - get a second opinion before accepting it as final.
         // One spurious stall (model confused by a loading state, ambiguous page) must not kill an
         // otherwise-green walk. Re-roll once with a nudge; cap at one retry to bound cost.
         const firstRationale = a.rationale || "model stalled"
@@ -752,32 +761,32 @@ export async function authorTrail(
           llmCalls++; costUsd += r2.costUsd || 0
           if (r2.action.op !== "stall") {
             if (r2.action.parseError) {
-              // Reroll returned a parse-error stall — count as miss and continue outer loop.
+              // Reroll returned a parse-error stall - count as miss and continue outer loop.
               misses++
               history.push(`(reroll reply was invalid: ${r2.action.rationale} — respond with ONE strict JSON action object)`)
               if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} malformed model replies; last: ${r2.action.rationale}`, page.url())
               continue
             }
-            // Reroll produced a valid action — proceed with it instead of stalling.
+            // Reroll produced a valid action - proceed with it instead of stalling.
             a = r2.action
           } else {
-            // Both rolls say stall — accept the second roll's rationale as the final word.
+            // Both rolls say stall - accept the second roll's rationale as the final word.
             return await stall(r2.action.rationale || firstRationale, page.url())
           }
         } catch {
-          // Reroll itself threw (network/timeout/budget) — accept the original stall rather than
+          // Reroll itself threw (network/timeout/budget) - accept the original stall rather than
           // spending more budget on a broken path.
           return await stall(firstRationale, page.url())
         }
       }
       if (a.op === "done") {
         // KLA-786 (round-2 C2): if the last commit produced no visible change and has not yet been
-        // independently confirmed, the current snapshot is the SAME pre/post-commit DOM — verifying
+        // independently confirmed, the current snapshot is the SAME pre/post-commit DOM - verifying
         // against it can falsely certify typed-but-unsaved input (and the default verifier returns
         // achieved:true when no OPENROUTER_API_KEY is set). Force ONE server-truth read-back (reload the
         // current URL) so the verifier judges what actually persisted, not the still-filled form. This is
         // done by the SYSTEM, not left to the model obeying the nudge. Clearing the flag makes it fire at
-        // most once per unconfirmed-commit region (a later fresh commit re-arms it); bounded — a failed
+        // most once per unconfirmed-commit region (a later fresh commit re-arms it); bounded - a failed
         // verify just continues to misses/stall as before.
         let didForcedReadBack = false
         if (unconfirmedCommitPending) {
@@ -789,7 +798,7 @@ export async function authorTrail(
             readBackOk = true
           } catch { /* reload/snapshot failed — see below */ }
           if (!readBackOk) {
-            // KLA-786 (round-2 C2): the read-back FAILED, so we have no server truth — verifying against the
+            // KLA-786 (round-2 C2): the read-back FAILED, so we have no server truth - verifying against the
             // pre-commit snapshot could falsely certify (and the default verifier returns achieved:true when
             // unconfigured). Do NOT clear the gate and do NOT verify; count a miss and retry/stall. This keeps
             // the gate a real safety barrier instead of a best-effort no-op on the failure path.
@@ -817,14 +826,14 @@ export async function authorTrail(
           costUsd += verifyResult.costUsd || 0
           // KLA-786 (round-3, codex): the forced read-back is only a real safeguard if the verifier
           // actually EXAMINES the reloaded DOM. The unconfigured default verifier returns achieved:true
-          // unconditionally (reason "OPENROUTER_API_KEY not set (auto-verify)") — a rubber stamp that would
+          // unconditionally (reason "OPENROUTER_API_KEY not set (auto-verify)") - a rubber stamp that would
           // certify a silently-FAILED save right after a successful reload. For this safety-critical path
           // only, refuse an auto-verify stub: treat it as unconfirmed and stall rather than falsely finish.
           // (No-op in prod, where the key is set and a real LLM verifier judges the reloaded page; custom
           // injected verifiers don't emit this marker, so they're honored.)
           if (didForcedReadBack && verifyResult.achieved && /OPENROUTER_API_KEY not set/i.test(verifyResult.reason || "")) {
             // KLA-786 (round-6, codex): the read-back block already cleared unconfirmedCommitPending before
-            // we got here, so stalling now would persist a checkpoint with the gate OFF — a resume could
+            // we got here, so stalling now would persist a checkpoint with the gate OFF - a resume could
             // then accept "done" with no forced read-back and the same stub would crystallize the unsaved
             // change. Re-arm the gate so the persisted checkpoint keeps it: a resume re-forces the read-back
             // (and re-refuses the stub, or verifies for real once a key is configured) instead of bypassing.
@@ -887,7 +896,7 @@ export async function authorTrail(
           traj.push({ action: "navigate", actionValue: a.url!, url: page.url(), domHash: sha256hex(dom) })
         } else if (a.op === "waitForSelector") {
           // Wait for dynamic content to appear (e.g. a chatbot reply rendering). Unlike the strict
-          // selector ops below this MUST NOT require exactly-1 match up front — the element may not
+          // selector ops below this MUST NOT require exactly-1 match up front - the element may not
           // exist yet; waitForSelector is precisely the primitive that waits for it to show up.
           await page.waitForSelector(a.selector!, ACTION_TIMEOUT)
           let waitSel = a.selector!
@@ -901,7 +910,7 @@ export async function authorTrail(
           const fp = await bounded(page.fingerprint(a.selector!), 10_000, "fingerprint capture")
           actionFp = fp
           // Stabilize the selector BEFORE the action so we never persist a brittle path.
-          // kref attrs are ephemeral (renumbered every capture) — MUST replace.
+          // kref attrs are ephemeral (renumbered every capture) - MUST replace.
           // Non-kref selectors emitted by the model (e.g. `.submit-btn`) can also be fragile;
           // prefer id / data-testid / aria-label anchors when stableSelector finds one.
           const stable = await bounded(page.stableSelector(a.selector!), 10_000, "stable selector").catch(() => null)
@@ -914,7 +923,7 @@ export async function authorTrail(
             await page.fill(a.selector!, hasCredRef(raw) ? await credResolver(projectId, raw) : raw, ACTION_TIMEOUT)
             // C2-1: AFTER a successful password fill, latch login-flow evidence (recency-bounded). Uses the
             // fields the PRODUCTION fingerprint actually returns (accessibleName/domPath) plus the credential
-            // placeholder (test-account logins) and the stable selector — never the missing inputType/ariaLabel.
+            // placeholder (test-account logins) and the stable selector - never the missing inputType/ariaLabel.
             const acc = String((fp as any)?.accessibleName ?? "")
             if ((fp as any)?.inputType === "password" || /:password\}\}/i.test(raw) || /password/i.test(acc) || /password/i.test(persistSelector ?? "")) {
               lastPasswordTypeStep = log.length
@@ -932,8 +941,8 @@ export async function authorTrail(
           }
           // KLA (BookJoy Save-loop): after a commit-style action, let the network settle so the NEXT top-of-loop
           // snapshot captures the AJAX result (a "Saved" toast / updated list). Without this, an AJAX save with
-          // no page navigation leaves the DOM looking unchanged → the no-op stagnation guard fires → the model
-          // is nudged to re-click Save → Save-loop. (type/hover/fill/assert don't commit, so skip them.)
+          // no page navigation leaves the DOM looking unchanged  the no-op stagnation guard fires  the model
+          // is nudged to re-click Save  Save-loop. (type/hover/fill/assert don't commit, so skip them.)
           if (a.op === "click" || a.op === "keyPress" || a.op === "select" || a.op === "upload") {
             await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-action network settle").catch(() => {})
             // KLA-786: mark this as a settled commit so next iteration's no-op guard nudges the model
@@ -950,23 +959,23 @@ export async function authorTrail(
           entry.selector = persistSelector
         }
         // Loop guard (KLA-129): if the same action fires LOOP_STALL_N consecutive times without a
-        // different action in between, the model is stuck re-doing the same step — break out now
+        // different action in between, the model is stuck re-doing the same step - break out now
         // rather than spinning to AUTHOR_MAX_STEPS and crystallizing a useless trail.
         // Use persistSelector (stable, non-kref) + current page URL so kref renumbering across
-        // iterations doesn't defeat this guard — `a.selector` carries ephemeral kref refs that
+        // iterations doesn't defeat this guard - `a.selector` carries ephemeral kref refs that
         // change every capture even when the targeted element is logically the same.
         const successKey = `${a.op}|${persistSelector ?? a.selector ?? ""}|${a.value ?? ""}|${page.url()}`
         if (successKey === lastSuccessKey) {
           consecutiveSuccessKey++
           if (consecutiveSuccessKey >= LOOP_STALL_N) {
             // KLA (BookJoy login stall): a repeated `type` almost always means the form is filled but
-            // the model never clicked submit (observed live: email re-typed 4× on /v2/login, never
+            // the model never clicked submit (observed live: email re-typed 4 on /v2/login, never
             // clicked "Log in"). Try the submit control ONCE before failing; if it clicks, the form
-            // advances — reset the loop guard and let the run continue on the new page state.
+            // advances - reset the loop guard and let the run continue on the new page state.
             //   C2-1: only fire once the run has actually TYPED A PASSWORD (evidence this is a login flow,
-            //     scoped to the flow — not any page that merely mentions "password"), so we never auto-click
+            //     scoped to the flow - not any page that merely mentions "password"), so we never auto-click
             //     submit on an unrelated form (search / newsletter / destructive confirm).
-            //   C2-2: attempt at most ONCE per stalled key — if the click didn't break the loop and the
+            //   C2-2: attempt at most ONCE per stalled key - if the click didn't break the loop and the
             //     model keeps repeating the same type, fail honestly instead of ping-ponging on budget.
             const sawPasswordRecently = (log.length - lastPasswordTypeStep) <= PASSWORD_RECENCY_STEPS
             const autoClicked: string | null = (a.op === "type" && sawPasswordRecently && autoSubmitTriedForKey !== successKey)
@@ -974,7 +983,7 @@ export async function authorTrail(
             if (autoClicked) {
               autoSubmitTriedForKey = successKey
               // Log the just-executed `type` step, THEN record the recovery CLICK as a REAL trajectory +
-              // log step (C1-1) — crystallize() replays traj, so without this the saved Trail would type
+              // log step (C1-1) - crystallize() replays traj, so without this the saved Trail would type
               // the fields and never submit. Capture the post-click page state for the click's domHash.
               entry.ok = true; log.push(entry); entryLogged = true
               const postDom = await bounded(page.krefSnapshot(), 15_000, "post-autosubmit snapshot").catch(() => dom)
@@ -1081,7 +1090,7 @@ export async function authorTrail(
     const { trailId } = await crystallize(projectId, trajectory)
     await setTrailStatus(projectId, trailId, "draft")
     // Verification Walk: zero-LLM rehearsal; draft status suppresses findings (Task 4), but pass
-    // the flag explicitly too — a Verification Walk never files regardless of trail status.
+    // the flag explicitly too - a Verification Walk never files regardless of trail status.
     const vision = opts.verificationVision === false ? undefined : (opts.verificationVision ?? configuredVisionResolver())
     let v: Awaited<ReturnType<typeof walkTrail>>
     try {
@@ -1102,7 +1111,7 @@ export async function authorTrail(
       const reason = String(verificationErr?.message || verificationErr)
       return { status: "failed", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: reason, llmCalls, costUsd, objectiveVerified }
     }
-    // I1: skip means "inconclusive / no steps ran" — map to amber, not red, so an empty
+    // I1: skip means "inconclusive / no steps ran" - map to amber, not red, so an empty
     // Verification Walk never looks like a regression to the reviewer.
     const mappedVerdict = v.verdict === "skip" ? "amber" : v.verdict
     // KLAVITYKLA-116: a bare RED gives the reviewer no way to tell flake from real breakage. Step-align
@@ -1119,7 +1128,7 @@ export async function authorTrail(
   }
 }
 
-// ── author sessions (poll surface for the UI) ────────────────────────────────────────────────
+//  author sessions (poll surface for the UI) 
 export interface AuthorSession {
   id: string; projectId: string; name: string; objective: string; baseUrl: string
   testAccount: string | null
@@ -1313,7 +1322,7 @@ export async function runAuthorNow(
   req: AuthorRequest,
   deps?: { model?: AuthorModel; author?: typeof authorTrail; resumeSessionId?: string },
 ): Promise<{ sessionId: string }> {
-  // Snap-only project gating: a locked project must never launch an authoring drive — covers the
+  // Snap-only project gating: a locked project must never launch an authoring drive - covers the
   // MCP start_authored_run tool, the REST authored-runs route, and any future non-HTTP caller. This
   // is the single engine-level enforcement point (mirrors runWalkNow's snap-lock check) so the Snap
   // plan gate can't be bypassed by calling the engine directly and burning AI spend. Throw BEFORE
@@ -1378,7 +1387,7 @@ export async function runAuthorNow(
         abortSignal: getCurrentAuthorAbortSignal() ?? undefined,
         // KLA-150: publish each step screenshot as a live screencast frame.
         onLiveFrame: (dataUrl) => { try { publishLiveWatchFrame(projectId, sessionId, dataUrl) } catch {} },
-        // KLA-179: the driver hit an auth gate with no verified auth method — the outcome will be
+        // KLA-179: the driver hit an auth gate with no verified auth method - the outcome will be
         // `needs_auth` (paused, resumable). Fire the throttled founder-style "give it a key" alert.
         // Best-effort: a notification failure must never affect the run or its persisted status.
         onNeedsAuth: async (url, rationale) => {
