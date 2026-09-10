@@ -1078,7 +1078,7 @@ test("(W) KLA-786: a silent (no DOM change) save that never persists is bounded 
   })
   expect(out.status).toBe("stalled")
   expect(out.objectiveVerified).toBeFalsy()
-  expect(gotoCount).toBeLessThanOrEqual(5) // initial nav + at most MAX_PROACTIVE_VERIFY_FAILS read-backs
+  expect(gotoCount).toBeLessThanOrEqual(4) // initial nav (1) + at most MAX_PROACTIVE_VERIFY_FAILS (3) read-backs
 })
 
 // ── (X) KLA-786 (round-9g, codex): forced verify that ERRORS/times out is bounded too ───────────────
@@ -1107,5 +1107,42 @@ test("(X) KLA-786: a never-persists save whose verifier keeps throwing is still 
   })
   expect(out.status).toBe("stalled")
   expect(out.objectiveVerified).toBeFalsy()
-  expect(gotoCount).toBeLessThanOrEqual(5)
+  expect(gotoCount).toBeLessThanOrEqual(4) // initial nav (1) + at most MAX_PROACTIVE_VERIFY_FAILS (3) read-backs
+})
+
+// ── (Y) KLA-786 (round-9g C3, codex): read-back-FAILURE path counts toward the cap + persists ───────
+
+test("(Y) KLA-786: repeated read-back reload failures are bounded by the fail cap and checkpointed", async () => {
+  // The forced read-back's goto THROWS every time (reload failure). The model keeps clicking a no-change
+  // Save (misses resets on each successful click), so only the failed-verify cap can bound it. Assert it
+  // stalls with exactly the initial nav + MAX_PROACTIVE_VERIFY_FAILS read-back attempts, and that the
+  // incremented counter is checkpointed (so a resume can't regain attempts).
+  const FILLED = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  let gotoCount = 0
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { gotoCount++; if (gotoCount > 1) throw new Error("reload timeout") }, // initial nav ok; read-backs fail
+    screenshotJpeg: async () => "",
+    krefSnapshot: async () => FILLED,
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: "BUTTON", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel,
+    click: async () => {}, fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 })
+  const caps: number[] = []
+  const out = await authorTrail("proj_loop_y", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier: async () => ({ achieved: false, reason: "n/a", costUsd: 0 }),
+    onCheckpoint: (cp: any) => { caps.push(cp.proactiveVerifyFails ?? 0) },
+    browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+  // Read-back attempts bounded: initial nav (1) + MAX_PROACTIVE_VERIFY_FAILS (3) failing reloads.
+  expect(gotoCount).toBeLessThanOrEqual(4)
+  // The incremented counter was checkpointed each time — the cap value (3) was persisted.
+  expect(Math.max(0, ...caps)).toBe(3)
 })
