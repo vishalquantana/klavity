@@ -911,11 +911,19 @@ export async function authorTrail(
         let verifyResult: ObjectiveVerificationResult
         try {
           const verifier = opts.verifier ?? openRouterObjectiveVerifier
-          verifyResult = await bounded(verifier({
+          // KLA-788: verification needs the post-read-back view as well as the DOM projection.
+          // A screenshot capture failure is non-fatal; the text-only verifier remains usable.
+          let screenshotB64 = ""
+          try {
+            screenshotB64 = await bounded(page.screenshotJpeg(60, 15_000), 20_000, "objective verification screenshot")
+          } catch { /* fall back to text-only verification */ }
+          const verifyInput = {
             objective: req.objective,
             pageUrl: page.url(),
             domSnapshot: dom,
-          }, { projectId, email: req.createdBy ?? null }), 120_000, "objective verification call")
+            ...(screenshotB64 ? { screenshotB64, mediaType: "image/jpeg" } : {}),
+          }
+          verifyResult = await bounded(verifier(verifyInput, { projectId, email: req.createdBy ?? null }), 120_000, "objective verification call")
           llmCalls++
           costUsd += verifyResult.costUsd || 0
           // KLA-786 (round-3, codex): the forced read-back is only a real safeguard if the verifier

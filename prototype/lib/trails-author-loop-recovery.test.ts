@@ -30,6 +30,7 @@ const { reconnectDb, applySchema, migrateV2 } = await import("./db")
 beforeAll(async () => { const db = reconnectDb("file:" + file); await applySchema(db); await migrateV2(db) })
 
 const { authorTrail } = await import("./trails-author")
+const { buildVerifyMessages, selectVerifierModel, LITE_MODEL } = await import("./trails-author-model")
 
 // ── Shared mock infra ─────────────────────────────────────────────────────────────────────────────
 
@@ -1187,4 +1188,35 @@ test("(R10-B) KLA-786: deadline-triggered read-backs stop after the failed-verif
   expect(out.status).toBe("stalled")
   expect(out.objectiveVerified).toBeFalsy()
   expect(state.gotoCount).toBeLessThanOrEqual(5) // initial navigation + at most three forced read-backs
+})
+
+// ── KLA-788: screenshot-backed objective verification ───────────────────────────────────────────
+
+test("KLA-788: the done verifier receives a bounded screenshot payload", async () => {
+  const { page } = notesPage()
+  page.screenshotJpeg = async () => "c2NyZWVuc2hvdA=="
+  let seen: any = null
+  const model: AuthorModel = async () => ({ action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "done" }, costUsd: 0 })
+  const verifier = async (input: any) => {
+    seen = input
+    return { achieved: true, evidenceSelector: null, reason: "confirmed", costUsd: 0 }
+  }
+  const out = await authorTrail("proj_kla788_shot", { name: "Verify screenshot", objective: "confirm the note is saved", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => ({ newPage: async () => page, close: async () => {}, kind: "local" } as any),
+    shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("crystallized")
+  expect(seen?.screenshotB64).toBe("c2NyZWVuc2hvdA==")
+  expect(seen?.mediaType).toBe("image/jpeg")
+})
+
+test("KLA-788: screenshot verification messages contain an image block and avoid text-lite routing", () => {
+  const withShot = buildVerifyMessages({ objective: "save it", pageUrl: "https://example.com", domSnapshot: "<p>saved</p>", screenshotB64: "YWJj", mediaType: "image/jpeg" })
+  expect(Array.isArray(withShot[1].content)).toBe(true)
+  expect(withShot[1].content[1]).toEqual({ type: "image_url", image_url: { url: "data:image/jpeg;base64,YWJj" } })
+
+  const textOnly = selectVerifierModel({ screenshotB64: "" }, true, 0.5)
+  const vision = selectVerifierModel({ screenshotB64: "YWJj" }, true, 0.5)
+  expect(textOnly).toBe(LITE_MODEL)
+  expect(vision).not.toBe(LITE_MODEL)
 })
