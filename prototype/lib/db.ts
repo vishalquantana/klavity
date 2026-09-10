@@ -4171,6 +4171,15 @@ export async function excludedDedupIds(projectId: string, feedbackId: string): P
 // permalinks/refs to a folded row resolve to the canonical survivor. Cycle-guarded (a corrupt A→B→A
 // loop stops at the last visited node instead of spinning) and depth-bounded (≤16 hops). Returns the
 // input id unchanged when it is already live, missing, or the chain can't be followed.
+// KLA-780 round-4 (codex C2 + Muse C4-4/C4-6): exported route-boundary resolver. HTTP handlers call this
+// ONCE at the top of a feedback-mutation route to redirect a merged ticket id to its live survivor root,
+// then use the returned id for EVERY downstream side-effect (tracker sync, activity/audit, notifications,
+// response reload/labels) — not just the DB write (the mutators already redirect internally). Thin wrapper
+// over the internal resolveLiveRoot so callers outside this module don't reach into private chain-follow.
+export async function liveFeedbackId(projectId: string, id: string): Promise<string> {
+  return resolveLiveRoot(projectId, id)
+}
+
 async function resolveLiveRoot(projectId: string, id: string): Promise<string> {
   let cur = String(id)
   const seen = new Set<string>([cur])
@@ -4308,6 +4317,59 @@ export async function mergeFeedbackClusters(
       return { survivorId: sId, recurrenceCount: Math.max(1, Number(s?.recurrenceCount ?? survivorRow.recurrenceCount ?? 1)), contactEmails: await emailsFor(s ?? survivorRow) }
     }
 
+    // KLA-780 round-4 (Muse C4-2, checklist P): carry the merged row's ARTIFACT columns onto the survivor.
+    // attachments_json/recordings_json/annotations_json live on the feedback row itself (not an FK table),
+    // so re-homing the child tables above does NOT move them — the survivor's timeline would otherwise show
+    // none of the folded ticket's attachments/recordings. Read both rows' raw JSON, then within the atomic
+    // batch: UNION attachments (dedup by key||url) and recordings (dedup by id||key), and carry annotations
+    // onto the survivor only when the survivor lacks its own (survivor's own markup layer wins if present).
+    const artRows = await db!.execute({
+      sql: "SELECT id, attachments_json, recordings_json, annotations_json FROM feedback WHERE project_id=? AND id IN (?,?)",
+      args: [projectId, sId, mId],
+    }).catch(() => ({ rows: [] as any[] }))
+    const artOf = (rid: string) => (artRows.rows as any[]).find((r) => String(r.id) === rid) || {}
+    const survArt = artOf(sId)
+    const mergedArt = artOf(mId)
+    const parseArr = (v: any): any[] => { const p = safeJsonParse(v == null ? null : String(v)); return Array.isArray(p) ? p : [] }
+    const unionBy = (a: any[], b: any[], keyOf: (x: any) => string): any[] => {
+      const out: any[] = []
+      const seen = new Set<string>()
+      for (const item of [...a, ...b]) {
+        const k = keyOf(item)
+        if (k && seen.has(k)) continue
+        if (k) seen.add(k)
+        out.push(item)
+      }
+      return out
+    }
+    const artStmts: Array<{ sql: string; args: any[] }> = []
+    // attachments: union survivor + merged, dedup by key (fallback url), keep survivor's order first.
+    {
+      const merged = parseArr(mergedArt.attachments_json)
+      if (merged.length) {
+        const surv = parseArr(survArt.attachments_json)
+        const u = unionBy(surv, merged, (x) => String(x?.key ?? x?.url ?? ""))
+        artStmts.push({ sql: `UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?`, args: [JSON.stringify(u), sId, projectId] })
+      }
+    }
+    // recordings: union survivor + merged, dedup by id (fallback key).
+    {
+      const merged = parseArr(mergedArt.recordings_json)
+      if (merged.length) {
+        const surv = parseArr(survArt.recordings_json)
+        const u = unionBy(surv, merged, (x) => String(x?.id ?? x?.key ?? ""))
+        artStmts.push({ sql: `UPDATE feedback SET recordings_json=? WHERE id=? AND project_id=?`, args: [JSON.stringify(u), sId, projectId] })
+      }
+    }
+    // annotations (markup overlay, singular per ticket): carry merged's only when the survivor has none.
+    {
+      const survAnn = survArt.annotations_json == null ? "" : String(survArt.annotations_json).trim()
+      const mergedAnn = mergedArt.annotations_json == null ? "" : String(mergedArt.annotations_json).trim()
+      if (!survAnn && mergedAnn) {
+        artStmts.push({ sql: `UPDATE feedback SET annotations_json=? WHERE id=? AND project_id=?`, args: [mergedAnn, sId, projectId] })
+      }
+    }
+
     // Compute the combined recurrence from the CURRENT (pristine, un-absorbed) survivor + merged rows.
     const survCount = Math.max(1, Number(survivorRow.recurrenceCount ?? 1))
     const mergedCount = Math.max(1, Number(mergedRow.recurrenceCount ?? 1))
@@ -4342,11 +4404,19 @@ export async function mergeFeedbackClusters(
       // share-viewer grants — UNIQUE(feedback_id, email): OR IGNORE, then clean leftover dupes.
       { sql: `UPDATE OR IGNORE ticket_viewers SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
       { sql: `DELETE FROM ticket_viewers WHERE feedback_id=?`, args: [mId] },
-      // pending assignment invites — UNIQUE(project_id, email): OR IGNORE onto the survivor.
+      // pending assignment invites — UNIQUE(project_id, email): OR IGNORE onto the survivor, then DROP the
+      // leftover colliding rows still on the hidden id (KLA-780 round-4, codex C2 + Muse C4-3). Without the
+      // DELETE an invite for the same (project,email) that lost the OR IGNORE stays attached to the hidden
+      // ticket → invite lookup could accept against a merged ticket.
       { sql: `UPDATE OR IGNORE ticket_assignment_invites SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      { sql: `DELETE FROM ticket_assignment_invites WHERE feedback_id=?`, args: [mId] },
       // export request/outbox pipeline — outbox has partial UNIQUE(feedback_id,connector_id) WHERE pending.
       { sql: `UPDATE export_requests SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      // outbox: OR IGNORE moves non-colliding rows; then DROP the leftover pending rows still on the hidden
+      // id (KLA-780 round-4, codex C2 + Muse C4-3). Without the DELETE a colliding pending row survives on
+      // the merged ticket and the sweep (server.ts) can double-file the same external issue.
       { sql: `UPDATE OR IGNORE export_outbox SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      { sql: `DELETE FROM export_outbox WHERE feedback_id=?`, args: [mId] },
       // Persist the summed count + unioned dates onto the survivor (commits with the unique receipt above).
       { sql: `UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=? AND project_id=?`, args: [combinedCount, JSON.stringify(dates), lastSeen, sId, projectId] },
     ]
@@ -4364,6 +4434,8 @@ export async function mergeFeedbackClusters(
         args: [survivorRow.issueKey, projectId, mergedRow.issueKey, projectId, survivorRow.issueKey],
       })
     }
+    // Fold in the artifact-carry UPDATEs (attachments/recordings/annotations) computed above — same batch.
+    for (const s of artStmts) stmts.push(s)
 
     try {
       await db!.batch(stmts, "write")

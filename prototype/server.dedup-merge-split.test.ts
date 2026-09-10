@@ -15,7 +15,7 @@ import {
   findFeedbackByIssueKey, listRecentFeedbackForDedup,
   insertTicketComment, listTicketComments, listFeedback,
   listTicketsPaginated, resolveFeedbackRef, db,
-  updateFeedbackMeta, setFeedbackContactEmail,
+  updateFeedbackMeta, setFeedbackContactEmail, liveFeedbackId,
 } from "./lib/db"
 import { buildRecurrenceMemory } from "./lib/recurrence-memory"
 import { issueKeyFor, humanReportIssueKeyFor, chooseDedup } from "./lib/dedup"
@@ -518,4 +518,113 @@ test("KLA-780 r3 (mutation redirect): comment / recurrence bump / meta / contact
   // Contact-email set on the merged id → attaches to the survivor.
   await setFeedbackContactEmail(folded, P, "erin@example.com")
   expect((await feedbackById(P, survivor)).contactEmail).toBe("erin@example.com")
+})
+
+test("KLA-780 r4 (route-boundary live-id): liveFeedbackId redirects a merged id (and a chain) to the live survivor", async () => {
+  // This is the id the HTTP handlers now resolve ONCE at the route boundary and feed to EVERY downstream
+  // side-effect (pushCommentToLinkedIssues, insertActivity, syncTicketFields, notify, v1 response reload).
+  const A = await insertFeedback({
+    projectId: P, urlPath: "/live", observation: "live root A",
+    suggestedBug: { title: "Live A", body: "b", priority: "high" }, issueKey: keyFor("/live", "LA"),
+  })
+  const B = await insertFeedback({
+    projectId: P, urlPath: "/live", observation: "live mid B",
+    suggestedBug: { title: "Live B", body: "b", priority: "high" }, issueKey: keyFor("/live", "LB"),
+  })
+  const C = await insertFeedback({
+    projectId: P, urlPath: "/live", observation: "live leaf C",
+    suggestedBug: { title: "Live C", body: "b", priority: "high" }, issueKey: keyFor("/live", "LC"),
+  })
+  // A live id resolves to itself.
+  expect(await liveFeedbackId(P, A)).toBe(A)
+  // B folds into A → the merged id B now resolves to survivor A.
+  await mergeFeedbackClusters(P, A, B, "op@example.com")
+  expect(await liveFeedbackId(P, B)).toBe(A)
+  // Chain: C folds into (hidden) B → resolves past B to the live root A.
+  await mergeFeedbackClusters(P, B, C, "op@example.com")
+  expect(await liveFeedbackId(P, C)).toBe(A)
+
+  // Concretely: a comment POSTed to the merged id B lands on the survivor A, and the id the route uses for
+  // pushCommentToLinkedIssues/insertActivity (liveFeedbackId(B)) is A — so the linked-issue push + the
+  // activity/audit event target the survivor, never the hidden id.
+  const comment = await insertTicketComment(B, "carl@example.com", "boundary comment")
+  const routeId = await liveFeedbackId(P, B)
+  expect(routeId).toBe(A)
+  expect((await listTicketComments(routeId)).map((c) => c.id)).toContain(comment.id)
+  expect((await listTicketComments(B)).length).toBe(0)
+
+  // A PATCH-equivalent status change on the merged id updates the survivor, and the v1 response reload
+  // (feedbackById on the resolved id) reflects the survivor's new status — never the hidden row.
+  await updateFeedbackMeta(P, B, { status: "wont_fix" })
+  expect((await feedbackById(P, routeId)).status).toBe("wont_fix")
+})
+
+test("KLA-780 r4 (leftover cleanup): pending export_outbox + assignment-invite rows on the hidden id are DELETED (no double-file)", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/leftover", observation: "leftover survivor",
+    suggestedBug: { title: "Leftover survivor", body: "b", priority: "high" }, issueKey: keyFor("/leftover", "OA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/leftover", observation: "leftover dup",
+    suggestedBug: { title: "Leftover dup", body: "b", priority: "high" }, issueKey: keyFor("/leftover", "OB"),
+  })
+  const now = Date.now()
+  // Colliding PENDING outbox rows for the SAME connector on BOTH tickets: the survivor's row wins the
+  // partial-unique OR IGNORE; the folded row must be DELETED, not stranded on the hidden id (else the
+  // project/status-scoped sweep would double-file the same external issue).
+  await rawExec(`INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["ob_surv", survivor, P, "conn_x", "issue", "pending", now, now, now])
+  await rawExec(`INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["ob_fold", folded, P, "conn_x", "issue", "pending", now, now, now])
+  // Assignment invites: the schema's global UNIQUE(project_id,email) makes a same-email collision on two
+  // rows physically unreachable, so the leftover-DELETE is defensive there. With distinct emails the folded
+  // invite must re-home onto the survivor and leave NO orphan on the hidden id (invite lookup by (project,
+  // email) must never resolve to a merged ticket).
+  await rawExec(`INSERT INTO ticket_assignment_invites (id,project_id,email,feedback_id,status,created_at) VALUES (?,?,?,?,?,?)`,
+    ["inv_surv", P, "surv-assignee@example.com", survivor, "pending", now])
+  await rawExec(`INSERT INTO ticket_assignment_invites (id,project_id,email,feedback_id,status,created_at) VALUES (?,?,?,?,?,?)`,
+    ["inv_fold", P, "fold-assignee@example.com", folded, "pending", now])
+
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+
+  // No outbox/invite row remains on the hidden folded id.
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM export_outbox WHERE feedback_id=?`, [folded])).toBe("0")
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM ticket_assignment_invites WHERE feedback_id=?`, [folded])).toBe("0")
+  // The survivor keeps its own pending outbox row (the folded outbox row COLLIDED on the partial unique and
+  // was DELETED, not double-filed), and now owns both re-homed invites.
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM export_outbox WHERE feedback_id=? AND status='pending'`, [survivor])).toBe("1")
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM ticket_assignment_invites WHERE feedback_id=?`, [survivor])).toBe("2")
+})
+
+test("KLA-780 r4 (artifact carry): merged ticket's attachments/recordings union onto the survivor; annotations carried when survivor has none", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/artifacts", observation: "artifacts survivor",
+    suggestedBug: { title: "Artifacts survivor", body: "b", priority: "high" }, issueKey: keyFor("/artifacts", "PA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/artifacts", observation: "artifacts dup",
+    suggestedBug: { title: "Artifacts dup", body: "b", priority: "high" }, issueKey: keyFor("/artifacts", "PB"),
+  })
+  // Survivor already has one attachment + one recording; the folded ticket has distinct ones + annotations.
+  await rawExec(`UPDATE feedback SET attachments_json=?, recordings_json=?, annotations_json=NULL WHERE id=?`,
+    [JSON.stringify([{ key: "surv-a", filename: "s.png" }]), JSON.stringify([{ id: "surv-rec" }]), survivor])
+  await rawExec(`UPDATE feedback SET attachments_json=?, recordings_json=?, annotations_json=? WHERE id=?`,
+    [JSON.stringify([{ key: "fold-a", filename: "f.png" }, { key: "surv-a", filename: "dupe" }]),
+     JSON.stringify([{ id: "fold-rec" }]),
+     JSON.stringify({ w: 100, h: 50, shapes: [{ type: "rect", x: 1, y: 2 }] }), folded])
+
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+
+  const surv = await feedbackById(P, survivor)
+  // Attachments: union survivor + folded, deduped by key → surv-a, fold-a (the "surv-a" dupe collapses).
+  const attKeys = (surv.attachments as any[]).map((a) => a.key).sort()
+  expect(attKeys).toEqual(["fold-a", "surv-a"])
+  // Recordings: union survivor + folded, deduped by id.
+  const recIds = (surv.recordings as any[]).map((r) => r.id).sort()
+  expect(recIds).toEqual(["fold-rec", "surv-rec"])
+  // Annotations: survivor had none → the folded ticket's markup layer is carried onto the survivor.
+  // (feedbackById doesn't surface annotations, so read the raw column.)
+  const survAnnRaw = await rawClientQuery(`SELECT annotations_json FROM feedback WHERE id=?`, [survivor])
+  expect(survAnnRaw).not.toBeNull()
+  expect(JSON.parse(survAnnRaw!).shapes[0].type).toBe("rect")
 })

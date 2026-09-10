@@ -11,7 +11,7 @@ import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
-import { countFoundingAccounts } from "./lib/db"
+import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
 // real title instead of its body. Wired into every consumer that previously derived title from observation.
@@ -9528,9 +9528,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // Load a ticket for this token's project. IDOR guard: a feedback id owned by ANOTHER project
       // resolves to null here (feedbackById is project-scoped), so cross-project ids 404 below.
-      const loadOwned = async (fid: string) => {
-        const row = await feedbackById(tpid, fid).catch(() => null)
+      // KLA-780 round-4 (codex C2 + Muse C4-4/C4-6): resolve a merged ticket id to its LIVE survivor root
+      // here so every v1 handler acts on the survivor. Callers reassign `fid = row.id` after this returns,
+      // so all downstream side-effects (comment sync, activity, PATCH meta, response reload/labels) use the
+      // survivor id — not the hidden merged row the token holder addressed.
+      const loadOwned = async (fidIn: string) => {
+        let row = await feedbackById(tpid, fidIn).catch(() => null)
         if (!row || String(row.projectId) !== tpid) return null
+        if (row.mergedInto) {
+          const liveId = await liveFeedbackId(tpid, fidIn).catch(() => fidIn)
+          if (liveId && liveId !== fidIn) {
+            const liveRow = await feedbackById(tpid, liveId).catch(() => null)
+            if (liveRow && String(liveRow.projectId) === tpid) row = liveRow
+          }
+        }
         return row
       }
 
@@ -9619,9 +9630,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // (cross-project id → 404). Mirrors GET /api/feedback/:id/replay exactly: the ALREADY-gzipped
       // bytes stream out with Content-Encoding: gzip + the x-klv-* meta headers, private + no-store.
       if (replayMatch && req.method === "GET") {
-        const fid = replayMatch[1]
+        let fid = replayMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: merged id → survivor replay.
         const raw = await getFeedbackReplayGz(tpid, fid).catch(() => null)
         if (!raw) return v1err("not_found", "No replay for this ticket.", 404)
         return withSecurityHeaders(new Response(raw.gz, {
@@ -9640,9 +9652,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET/POST /api/v1/tickets/:id/comments
       if (commentsMatch) {
-        const fid = commentsMatch[1]
+        let fid = commentsMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: redirect merged id → survivor for all downstream ops.
         if (req.method === "GET") {
           try {
             const comments = (await listTicketComments(fid)).map((c) => ({ id: c.id, author: c.author, body: c.body, created_at: c.createdAt }))
@@ -9677,9 +9690,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET /api/v1/tickets/:id/activity — merged comment/activity/export timeline.
       if (activityMatch && req.method === "GET") {
-        const fid = activityMatch[1]
+        let fid = activityMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: merged id → survivor timeline.
         try {
           const events = await ticketActivityTimeline(tpid, fid)
           return json({ ticket_id: fid, events })
@@ -9691,9 +9705,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET (enriched) / PATCH /api/v1/tickets/:id
       if (singleMatch) {
-        const fid = singleMatch[1]
+        let fid = singleMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: merged id → survivor for GET enrich + PATCH side-effects.
 
         if (req.method === "GET") {
           try {
@@ -11975,7 +11990,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Resolve the feedback's project via feedbackById across accessible projects.
       const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
-        const fid = feedbackIdMatch[1]
+        let fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
         const labelIdParam = feedbackIdMatch[3] || null
         const isExport = feedbackSubroute === "/export"
@@ -12024,6 +12039,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         if (!fbRow) return json({ error: "Feedback not found or not accessible." }, 404)
+
+        // KLA-780 round-4 (codex C2 + Muse C4-4/C4-6): route-boundary live-id resolution. If this ticket
+        // was merged into a survivor, redirect fid + fbRow to the LIVE root ONCE here so every downstream
+        // side-effect below — comment insert + pushCommentToLinkedIssues, annotations, attachments,
+        // label attach/detach + syncTicketFields, PATCH meta + activity/audit + notify + autoCopy, and the
+        // reload/response — acts on the survivor, not the hidden merged row. Skipped for /merge and /split,
+        // which manage merged-state themselves (merge resolves the survivor internally; split operates on
+        // the head the caller named). Reads follow to the survivor too (old permalink → survivor timeline).
+        if (fbRow.mergedInto && !isMerge && !isSplit) {
+          const liveId = await liveFeedbackId(fbRow.projectId, fid).catch(() => fid)
+          if (liveId && liveId !== fid) {
+            const liveRow = await feedbackById(fbRow.projectId, liveId).catch(() => null)
+            if (liveRow) { fid = liveId; fbRow = liveRow }
+          }
+        }
 
         // GET /api/feedback/:id/replay — the stored rrweb session-replay events for a ticket, so the
         // dashboard viewer can play them. Project-scoped (access already verified via fbRow above);
@@ -12459,7 +12489,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const result = await mergeFeedbackClusters(fbRow.projectId, fid, mergeId, me)
           if (!result) return json({ error: "Merge failed." }, 500)
           await insertActivity({
-            projectId: fbRow.projectId, type: "ticket_merged", actorEmail: me, feedbackId: fid,
+            // KLA-780 round-4 (Muse C4-4): log the event on the LIVE survivor (result.survivorId), not the
+            // request's fid — in a chain (requested survivor was itself hidden), fid resolves inside the
+            // merge to a different root, so logging fid would strand the ticket_merged event on a hidden row
+            // that the survivor's timeline (queried by feedback_id) never shows.
+            projectId: fbRow.projectId, type: "ticket_merged", actorEmail: me, feedbackId: result.survivorId,
             meta: { mergedFrom: mergeId, recurrenceCount: result.recurrenceCount },
           }).catch((e: any) => console.warn("ticket merge activity skipped:", e?.message || e))
           return json({ ok: true, survivorId: result.survivorId, recurrenceCount: result.recurrenceCount, contactEmails: result.contactEmails })
