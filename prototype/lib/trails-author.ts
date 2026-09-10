@@ -243,6 +243,18 @@ export interface AuthorCheckpoint {
   costUsd: number
   /** URL the browser was at when the checkpoint was written. Resume navigates here first. */
   lastUrl: string
+  /**
+   * KLA-786 (round-2 C2): live auto-advance submit clicks already spent in the current stagnation
+   * region. Persisted so a resumed drive can't regain its one allowed synthetic submit-click and
+   * re-fire a save. Optional for back-compat with checkpoints written before this field existed.
+   */
+  autoAdvanceClicks?: number
+  /**
+   * KLA-786 (round-2 C2): a settled commit produced no visible DOM change and has not yet been
+   * independently confirmed. Persisted so a resumed drive still forces a read-back before it accepts
+   * "done" (rather than certifying a possibly-unsaved change). Optional for back-compat.
+   */
+  unconfirmedCommitPending?: boolean
 }
 
 const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", waitForSelector: "waitForSelector", upload: "upload", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
@@ -367,12 +379,18 @@ export async function authorTrail(
   // iterations — a live save side-effect each time — until the step/deadline budget drained. Reset to 0
   // whenever the page actually changes (real progress → a fresh region may legitimately need one click).
   const AUTO_ADVANCE_MAX = 1
-  let autoAdvanceClicks = 0
+  let autoAdvanceClicks = cp?.autoAdvanceClicks ?? 0
+  // KLA-786 (round-2 C2/C3): STICKY — set once a settled commit is observed to have left the DOM
+  // unchanged, and kept set across further no-op iterations until real progress (a genuine DOM change)
+  // or an independent read-back. While set, the no-op guard never auto-clicks a submit (so a model that
+  // answers the finish nudge with another no-op can't trip a duplicate save), and the "done" handler
+  // forces a page reload before verifying so the verifier judges server truth, not the still-filled form.
+  let unconfirmedCommitPending = cp?.unconfirmedCommitPending ?? false
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
     traj: [...traj], history: [...history], stepIdx: log.length,
-    llmCalls, costUsd, lastUrl: url,
+    llmCalls, costUsd, lastUrl: url, autoAdvanceClicks, unconfirmedCommitPending,
   })
   let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
@@ -510,18 +528,21 @@ export async function authorTrail(
         const iterDomKey = `${page.url()}|${sha256hex(domWithoutKrefs)}`
         if (prevIterDomKey !== null && iterDomKey === prevIterDomKey && log.length > 0) {
           noOpCount++
-          if (prevActionWasCommit) {
-            // KLA-786: the previous action was a COMMIT (click/submit/select/upload) that we already
-            // settled the network for, yet the DOM still didn't change — the signature of an AJAX
-            // save/submit that persists without a visible confirmation. Do NOT treat it as "nothing
-            // happened" and auto-advance-click a submit (that re-fires the save → save-loop). Steer
-            // the model to FINISH: if the objective is now met it should emit the "done" op to verify;
-            // otherwise move to a genuinely different step. Never auto-advance-click on this path.
-            // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation
-            // error also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text
-            // still sits in the field, so a DOM-judging verifier could falsely certify. Instead require
-            // an INDEPENDENT confirmation (reload / navigate to where the change should appear) before
-            // "done"; never blindly re-click, never blindly finish.
+          if (prevActionWasCommit || unconfirmedCommitPending) {
+            // KLA-786: a COMMIT (click/submit/select/upload) was settled yet the DOM still didn't change
+            // — the signature of an AJAX save/submit that persists without a visible confirmation
+            // (observed live on BookJoy). Do NOT treat it as "nothing happened" and auto-advance-click a
+            // submit (that re-fires the save → save-loop). Steer the model to FINISH via an INDEPENDENT
+            // read-back, then "done". Never auto-advance-click on this path.
+            // KLA-786 (round-2 C3): STICKY — keep this state set across further no-op iterations so a
+            // model that answers the finish nudge with another no-op (assert / repeated type) can't fall
+            // through to the auto-advance branch and trip a DUPLICATE save. Only real progress (the else
+            // branch below) or an independent read-back clears it.
+            unconfirmedCommitPending = true
+            // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation error
+            // also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text still
+            // sits in the field, so a DOM-judging verifier could falsely certify. Require an INDEPENDENT
+            // confirmation before "done" (also enforced by the "done" handler, which forces a reload).
             history.push(`(NOTICE: your last action (a click/submit) completed but the page did not visibly change. This may mean an AJAX save/submit persisted without a visible confirmation, OR that it silently failed. Do NOT blindly repeat the same action. Confirm it actually took effect via a genuinely DIFFERENT check — e.g. reload the page or navigate to where the change should appear and read it back. Only once you have confirmed it, respond with the "done" op to verify and finish.)`)
           } else if (noOpCount >= NO_OP_AUTO_ADVANCE_AFTER) {
             // 2nd+ consecutive no-change iteration (NO_OP_AUTO_ADVANCE_AFTER): try clicking the most
@@ -570,6 +591,9 @@ export async function authorTrail(
           noOpCount = 0
           // KLA-786 (round-1 C2): real progress — allow a fresh auto-advance in the next stagnation region.
           autoAdvanceClicks = 0
+          // KLA-786 (round-2 C3): the DOM actually changed — that IS the independent read-back / progress,
+          // so any previously-unconfirmed commit is now resolved. Clear the sticky pending state.
+          unconfirmedCommitPending = false
         }
         prevIterDomKey = iterDomKey
         // KLA-786: reset every iteration AFTER the guard has read it; re-armed below only when a
@@ -665,6 +689,24 @@ export async function authorTrail(
         }
       }
       if (a.op === "done") {
+        // KLA-786 (round-2 C2): if the last commit produced no visible change and has not yet been
+        // independently confirmed, the current snapshot is the SAME pre/post-commit DOM — verifying
+        // against it can falsely certify typed-but-unsaved input (and the default verifier returns
+        // achieved:true when no OPENROUTER_API_KEY is set). Force ONE server-truth read-back (reload the
+        // current URL) so the verifier judges what actually persisted, not the still-filled form. This is
+        // done by the SYSTEM, not left to the model obeying the nudge. Clearing the flag makes it fire at
+        // most once per unconfirmed-commit region (a later fresh commit re-arms it); bounded — a failed
+        // verify just continues to misses/stall as before.
+        if (unconfirmedCommitPending) {
+          try {
+            await page.goto(page.url(), 20_000)
+            await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-confirm settle").catch(() => {})
+            dom = await bounded(page.krefSnapshot(), 15_000, "post-confirm snapshot")
+          } catch { /* reload best-effort; fall through to verify on whatever we have */ }
+          unconfirmedCommitPending = false
+          prevIterDomKey = null // the reload is real progress; don't let the next guard treat it as a no-op
+          history.push(`(confirmation: reloaded the page to independently verify the change persisted before finishing)`)
+        }
         let verifyResult: ObjectiveVerificationResult
         try {
           const verifier = opts.verifier ?? openRouterObjectiveVerifier

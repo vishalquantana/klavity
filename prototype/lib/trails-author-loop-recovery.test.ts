@@ -456,9 +456,10 @@ test("(E) KLA-786: a commit that leaves the DOM unchanged nudges the model to fi
   </form></body></html>`
   const clickLog: string[] = []
   let settleCount = 0
+  let gotoCount = 0
   const page: any = {
     url: () => "https://example.com/customer/42",
-    goto: async () => {}, screenshotJpeg: async () => "",
+    goto: async () => { gotoCount++ }, screenshotJpeg: async () => "",
     // DOM NEVER changes on click — the AJAX save has no visible confirmation.
     krefSnapshot: async () => NOTES_DOM.replace(/<textarea /g, '<textarea data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
     count: async (sel: string) => (sel === '#cus_notes' || sel === 'button[type="submit"]' || sel === '#customer_notes' ? 1 : 0),
@@ -503,6 +504,60 @@ test("(E) KLA-786: a commit that leaves the DOM unchanged nudges the model to fi
     h.toLowerCase().includes("did not visibly change") && h.toLowerCase().includes('"done"')
   )
   expect(sawDoneNudge).toBe(true)
+  // KLA-786 (round-2 C2): the "done" was gated on an independent read-back — the page was reloaded
+  // (goto called again beyond the initial navigation) before the verifier ran, so it judged server truth.
+  expect(gotoCount).toBeGreaterThanOrEqual(2)
+})
+
+// ── (G) KLA-786 (round-2 C2): a silently-FAILED save is not falsely certified as done ────────────────
+
+test("(G) KLA-786: a silent save failure is caught by the forced read-back, not certified", async () => {
+  // The model clicks Save (a commit) but the save FAILS server-side with no visible change. When it emits
+  // "done", the forced reload fetches server truth (the note is NOT there), and a verifier that judges the
+  // reloaded DOM must reject → the run stalls rather than falsely crystallizing an unsaved note. Before the
+  // round-2 gate, "done" verified against the still-filled pre-commit DOM and could certify.
+  const UNSAVED_DOM = `<html><body><form>
+    <textarea aria-label="Notes" id="customer_notes">test note</textarea>
+    <button type="submit" id="cus_notes">Save</button>
+  </form></body></html>`
+  // After reload the server shows the note was NOT persisted (textarea empty) — this is what an
+  // independent read-back reveals for a failed save.
+  const RELOADED_DOM = `<html><body><form>
+    <textarea aria-label="Notes" id="customer_notes"></textarea>
+    <button type="submit" id="cus_notes">Save</button>
+  </form></body></html>`
+  let reloaded = false
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { reloaded = true }, screenshotJpeg: async () => "",
+    krefSnapshot: async () => (reloaded ? RELOADED_DOM : UNSAVED_DOM).replace(/<textarea /g, '<textarea data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: sel.includes("cus_notes") ? "BUTTON" : "TEXTAREA", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async () => { /* save fails silently: no DOM change pre-reload */ },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let callCount = 0
+  const model: AuthorModel = async () => {
+    callCount++
+    // Click Save until the commit-no-change nudge appears, then declare done (prematurely).
+    if (callCount < 3) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "note saved" }, costUsd: 0 }
+  }
+  // A verifier that judges server truth: achieved only if the notes field still holds the note text.
+  const verifier = async (input: any) => ({ achieved: /test note/.test(String(input.domSnapshot)), reason: "notes empty after reload", costUsd: 0 })
+
+  const out = await authorTrail("proj_loop_g", { name: "Save note", objective: "save a note on the customer", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+
+  // The forced read-back happened and the unsaved note was NOT certified — the run stalls, not crystallizes.
+  expect(reloaded).toBe(true)
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
 })
 
 // ── (F) KLA-786 (round-1 C2): the no-op guard auto-advances a submit AT MOST ONCE per stagnation ─────
