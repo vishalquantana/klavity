@@ -362,6 +362,12 @@ export async function authorTrail(
   // submit — re-clicking a just-committed save is the save-loop we saw. Reset to false every iteration
   // after the guard reads it; set true only when a commit op completes successfully.
   let prevActionWasCommit = false
+  // KLA-786 (round-1 C2): cap how many times the no-op guard may auto-click a submit within a single
+  // stagnation region (no DOM change). Without this the guard re-fired the same submit every ~2
+  // iterations — a live save side-effect each time — until the step/deadline budget drained. Reset to 0
+  // whenever the page actually changes (real progress → a fresh region may legitimately need one click).
+  const AUTO_ADVANCE_MAX = 1
+  let autoAdvanceClicks = 0
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
@@ -391,6 +397,10 @@ export async function authorTrail(
           // result (no-nav forms) instead of the pre-response DOM. (The no-op-guard's inline click settles on
           // its own path; this helper is the repeated-type login auto-submit path.)
           await bounded(pg.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance settle").catch(() => {})
+          // KLA-786: an auto-advanced submit is itself a settled COMMIT — arm the flag so the NEXT
+          // no-op iteration takes the done-nudge branch instead of re-clicking this same submit (the
+          // guard re-firing its own just-committed click was the save-loop, no model complicity needed).
+          prevActionWasCommit = true
           return sel
         }
       } catch { /* try next candidate */ }
@@ -507,13 +517,22 @@ export async function authorTrail(
             // happened" and auto-advance-click a submit (that re-fires the save → save-loop). Steer
             // the model to FINISH: if the objective is now met it should emit the "done" op to verify;
             // otherwise move to a genuinely different step. Never auto-advance-click on this path.
-            history.push(`(NOTICE: your last action (a click/submit) completed but the page did not visibly change — this is normal for AJAX saves/submits that persist without a confirmation message, so it likely SUCCEEDED. Do NOT repeat the same action. If the objective is now satisfied, respond with the "done" op to verify and finish; otherwise choose a genuinely different next step.)`)
+            // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation
+            // error also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text
+            // still sits in the field, so a DOM-judging verifier could falsely certify. Instead require
+            // an INDEPENDENT confirmation (reload / navigate to where the change should appear) before
+            // "done"; never blindly re-click, never blindly finish.
+            history.push(`(NOTICE: your last action (a click/submit) completed but the page did not visibly change. This may mean an AJAX save/submit persisted without a visible confirmation, OR that it silently failed. Do NOT blindly repeat the same action. Confirm it actually took effect via a genuinely DIFFERENT check — e.g. reload the page or navigate to where the change should appear and read it back. Only once you have confirmed it, respond with the "done" op to verify and finish.)`)
           } else if (noOpCount >= NO_OP_AUTO_ADVANCE_AFTER) {
-            // Third+ no-change iteration: try clicking the most likely submit control before
-            // falling back to model guidance. This handles the "stuck on type, never clicks submit"
-            // pattern observed live on the login form (2026-07-08 dogfood session).
+            // 2nd+ consecutive no-change iteration (NO_OP_AUTO_ADVANCE_AFTER): try clicking the most
+            // likely submit control before falling back to model guidance. This handles the "stuck on
+            // type, never clicks submit" pattern observed live on the login form (2026-07-08 dogfood).
+            // KLA-786 (round-1 C2): cap live auto-advance clicks per stagnation region. Without a cap the
+            // guard re-clicked the SAME submit every ~2 iters (each a real save side-effect) until the
+            // budget drained — a save-loop of the guard's own making. If one auto-advance click did not
+            // change the page, we've learned clicking submit doesn't help here → stop and nudge to finish.
             let autoAdvanced = false
-            for (const sel of SUBMIT_CANDIDATES) {
+            for (const sel of (autoAdvanceClicks < AUTO_ADVANCE_MAX ? SUBMIT_CANDIDATES : [])) {
               try {
                 const n = await bounded(page.count(sel), 5_000, "auto-advance count")
                 if (n === 1) {
@@ -523,19 +542,34 @@ export async function authorTrail(
                   await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance network settle").catch(() => {})
                   history.push(`(auto-advance: the page was not changing — clicked the most likely submit control "${sel}" to progress the flow; check the new page state)`)
                   noOpCount = 0
+                  // KLA-786 (round-1 C2): bound live auto-advance re-clicks. This click is itself a
+                  // settled commit; counting it means if the page STILL doesn't change we STOP
+                  // auto-clicking (see the autoAdvanceClicks cap above) and switch to the done-nudge,
+                  // instead of re-firing the same submit every ~2 iters until the budget drains.
+                  autoAdvanceClicks++
                   autoAdvanced = true
                   break
                 }
               } catch { /* try next candidate */ }
             }
             if (!autoAdvanced) {
-              history.push(`(IMPORTANT: the page has not changed for ${noOpCount} actions in a row — you are stuck. Choose a completely different action, e.g. click the submit, "Send me a code", "Continue", or "Next" button to advance the flow)`)
+              if (autoAdvanceClicks >= AUTO_ADVANCE_MAX) {
+                // KLA-786 (round-1 C2): we already auto-clicked a submit and the page still didn't
+                // change — clicking submit isn't advancing this flow. Don't keep re-firing it. Either
+                // the last commit persisted with no visible confirmation (verify and finish) or we're
+                // genuinely stuck (try a different action) — do NOT just re-click submit.
+                history.push(`(IMPORTANT: the page has not changed even after clicking a submit control — re-clicking it is not helping. If the objective may already be satisfied, confirm via a genuinely different check (reload / navigate to where the change should appear) and then respond with the "done" op. Otherwise choose a completely different action; do NOT re-click the same button.)`)
+              } else {
+                history.push(`(IMPORTANT: the page has not changed for ${noOpCount} actions in a row — you are stuck. Choose a completely different action, e.g. click the submit, "Send me a code", "Continue", or "Next" button to advance the flow)`)
+              }
             }
           } else {
             history.push(`(NOTICE: the previous action did not change the page — it may have had no effect. Choose a DIFFERENT action to progress, e.g. click the form submit or "Send me a code" button instead of re-entering the same field)`)
           }
         } else {
           noOpCount = 0
+          // KLA-786 (round-1 C2): real progress — allow a fresh auto-advance in the next stagnation region.
+          autoAdvanceClicks = 0
         }
         prevIterDomKey = iterDomKey
         // KLA-786: reset every iteration AFTER the guard has read it; re-armed below only when a

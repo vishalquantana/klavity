@@ -504,3 +504,43 @@ test("(E) KLA-786: a commit that leaves the DOM unchanged nudges the model to fi
   )
   expect(sawDoneNudge).toBe(true)
 })
+
+// ── (F) KLA-786 (round-1 C2): the no-op guard auto-advances a submit AT MOST ONCE per stagnation ─────
+
+test("(F) KLA-786: auto-advance does not re-fire the same submit every couple of iterations", async () => {
+  // A model that never self-recovers on a page whose submit does NOT advance it (the auto-advance click
+  // has no visible effect). Before the cap, the guard re-clicked the submit every ~2 iterations — a live
+  // save side-effect each time — until the step/deadline budget drained. With AUTO_ADVANCE_MAX=1 the guard
+  // clicks submit at most once, then switches to the done/different-check nudge. The run stays bounded.
+  const STATIC_DOM = `<html><body><form>
+    <input type="email" aria-label="Email" id="email" value="x@y.com"/>
+    <button type="submit" id="go">Go</button>
+  </form></body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/stuck",
+    goto: async () => {}, screenshotJpeg: async () => "",
+    krefSnapshot: async () => STATIC_DOM.replace(/<input /g, '<input data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
+    count: async (sel: string) => (sel === 'button[type="submit"]' || sel.includes("Email") || sel.includes("email") ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Email", tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: sel.includes("button") ? null : "text", dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) /* submit has no visible effect on this page */ },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  // The model NEVER changes action and never declares done — it just re-types the same field forever.
+  const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Email"]', value: "x@y.com", url: null, checkpoint: null, rationale: "typing" }, costUsd: 0 })
+  const verifier = async () => ({ achieved: false, reason: "not yet", costUsd: 0 })
+
+  const out = await authorTrail("proj_loop_f", { name: "Stuck", objective: "do the thing", baseUrl: "https://example.com/stuck" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+
+  // Bounded — the run stalls rather than looping forever.
+  expect(out.status).toBe("stalled")
+  // The submit was auto-clicked AT MOST ONCE despite many stagnant iterations (the cap held).
+  const submitClicks = clickLog.filter((s) => s === 'button[type="submit"]').length
+  expect(submitClicks).toBeLessThanOrEqual(1)
+})
