@@ -1,2 +1,5 @@
 [test]
 maxConcurrency = 1
+# KLA-791: sweep per-run temp SQLite DBs (klav-*.db*) the suite leaves in the OS tmpdir on process exit,
+# so repeated `bun test` runs don't fill the disk. See lib/test-tmpdb-cleanup.ts.
+preload = ["./lib/test-tmpdb-cleanup.ts"]
