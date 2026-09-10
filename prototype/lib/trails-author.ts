@@ -416,6 +416,11 @@ export async function authorTrail(
   // a timing fluke where no modal was captured). So track the last COMMIT step and, when about to stall on
   // a repeated action within a few steps of a commit, verify (independent read-back) before giving up.
   let lastCommitStep = -999
+  // Recency is measured in pushed LOG ENTRIES (log.length), not loop iterations — an iteration may push 0
+  // (early continue) or 2 (auto-submit) entries. Both directions fail safe: too-narrow → a plain stall;
+  // too-wide → an extra read-back that a failed verify still miss-bounds. Not checkpointed (resume rebuilds
+  // log with different length semantics; re-earned by the first post-resume commit, and defer=false on
+  // resume risks no false-cert).
   const COMMIT_RECENCY_STEPS = 6
   // Set at a stall point to make the NEXT iteration take over with a proactive read-back + verify instead.
   let deferProactiveVerify = false
