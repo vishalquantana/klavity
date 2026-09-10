@@ -86,14 +86,50 @@ function krefSnapshotBody(): string {
   document.querySelectorAll("[data-kref]").forEach((el) => el.removeAttribute("data-kref"))
   let n = 0
   const lines: string[] = []
+  // Keep the allocation bounded inside the page context. The adapter's outer cap only truncates the
+  // returned string; a hostile notice with many leaves could otherwise allocate a large array first.
+  let totalChars = 0, truncated = false
+  const MAX_SNAP_CHARS = 24_000
+  const push = (line: string) => {
+    if (truncated) return
+    totalChars += line.length + 1
+    if (totalChars > MAX_SNAP_CHARS) { truncated = true; return }
+    lines.push(line)
+  }
+  // Page-controlled text is embedded in the model's untrusted <<< >>> snapshot block. Neutralize the
+  // delimiters everywhere they can enter the emitted snapshot, including names and notice text.
+  const clean = (s: string) => s.replace(/<<<|>>>/g, "·")
   const SKIP = new Set(["script", "style", "noscript", "svg", "template", "iframe"])
   const INTERACTIVE = new Set(["a", "button", "input", "select", "textarea", "summary", "option"])
   const TEXTUAL = new Set(["label", "p", "li", "td", "th", "figcaption", "blockquote"])
+  // Generic container text is useful for modal/toast confirmations, but only within a recognizable notice
+  // context so ordinary page divs do not bloat the model observation.
+  const NOTICE_SEL = '[role="dialog"],[role="alertdialog"],[role="alert"],[role="status"],[aria-live],[aria-modal="true"],' +
+    '[class*="modal" i],[class*="dialog" i],[class*="toast" i],[class*="snackbar" i],[class*="notif" i],' +
+    '[class*="alert" i],[class*="popup" i],[class*="swal" i],[id*="modal" i],[id*="dialog" i],[id*="popup" i]'
+  const pageHasNotice = (() => { try { return !!document.querySelector(NOTICE_SEL) } catch { return false } })()
+  const inNoticeContext = (el: Element): boolean => {
+    if (!pageHasNotice) return false
+    try { return !!el.closest(NOTICE_SEL) } catch { return false }
+  }
+  // Shared visibility gate: reject hidden/inert/aria-hidden and wholly offscreen content. Do not reject
+  // below-the-fold content; the snapshot is intentionally allowed to include it.
   const visible = (el: Element): boolean => {
     const r = (el as HTMLElement).getBoundingClientRect?.()
     if (!r || (r.width === 0 && r.height === 0)) return false
     const s = getComputedStyle(el as HTMLElement)
-    return s.display !== "none" && s.visibility !== "hidden"
+    if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false
+    try {
+      if (el.closest('[aria-hidden="true"],[inert]')) return false
+      if (r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth) return false
+      let a: Element | null = el.parentElement, hops = 0
+      while (a && hops++ < 25) {
+        const cs = getComputedStyle(a as HTMLElement)
+        if (cs.opacity === "0" || cs.visibility === "hidden" || cs.display === "none") return false
+        a = a.parentElement
+      }
+    } catch { /* own box/style checks above still apply */ }
+    return true
   }
   const roleOf = (el: Element): string | null => {
     const explicit = el.getAttribute("role")
@@ -133,10 +169,12 @@ function krefSnapshotBody(): string {
         el.getAttribute("name") || el.getAttribute("title") || ""
       : el.getAttribute("aria-label") || (el as HTMLImageElement).alt || (el.textContent || "").trim() ||
         el.getAttribute("name") || el.getAttribute("title") || ""
-    return cand.replace(/\s+/g, " ").slice(0, 80)
+    return clean(cand.replace(/\s+/g, " ").slice(0, 80))
   }
   const walk = (el: Element, depth: number) => {
+    if (truncated) return
     for (const child of Array.from(el.children)) {
+      if (truncated) return
       const t = child.tagName.toLowerCase()
       if (SKIP.has(t)) continue
       let emitted = false
@@ -144,7 +182,7 @@ function krefSnapshotBody(): string {
         const role = roleOf(child)
         const indent = "  ".repeat(Math.min(depth, 6))
         if (role) {
-          let line = `${indent}${role} "${nameOf(child)}"`
+          let line = `${indent}${clean(role)} "${nameOf(child)}"`
           if ((child as HTMLInputElement).disabled) line += " {disabled}"
           // Fill-state signal (KLA: criticalpath1 stall): without it the model cannot see that its
           // own `type` succeeded (the accessible name is just the placeholder) and loops re-typing.
@@ -154,7 +192,7 @@ function krefSnapshotBody(): string {
             if (role === "checkbox" || role === "radio") { if (iv.checked) line += " {checked}" }
             else if (child.tagName.toLowerCase() === "select") {
               const sel = child as unknown as HTMLSelectElement
-              const optText = (sel.selectedOptions?.[0]?.textContent || "").trim().slice(0, 40)
+              const optText = clean((sel.selectedOptions?.[0]?.textContent || "").trim().slice(0, 40))
               if (optText) line += ` {selected: "${optText}"}`
             }
             else if (typeof iv.value === "string" && iv.value.length) line += ` {filled: ${iv.value.length} chars}`
@@ -164,13 +202,16 @@ function krefSnapshotBody(): string {
             child.setAttribute("data-kref", ref)
             line += ` [ref=${ref}]`
           }
-          lines.push(line)
+          push(line)
           emitted = true
-        } else if (TEXTUAL.has(t)) {
-          const own = (child.textContent || "").trim().replace(/\s+/g, " ")
-          if (own && own.length >= 3 && child.children.length === 0) {
-            lines.push(`${indent}text "${own.slice(0, 80)}"`)
-            emitted = true
+        } else {
+          const isNotice = inNoticeContext(child)
+          if (TEXTUAL.has(t) || isNotice) {
+            const own = (child.textContent || "").trim().replace(/\s+/g, " ")
+            if (own && own.length >= 3 && child.children.length === 0) {
+              push(`${indent}${isNotice ? "notice" : "text"} "${clean(own.slice(0, 80))}"`)
+              emitted = true
+            }
           }
         }
       }
