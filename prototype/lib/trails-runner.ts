@@ -22,7 +22,8 @@ import {
   startWalk, addRunStep, mergeRunStepEvidence, finishWalk, recordFinding,
   resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
 } from "./trails"
-import { touchWalkHeartbeat, db, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
+import { touchWalkHeartbeat, db, incrementUsageMeter, accountIdForAiCall, accountPlan, getProjectA11yEnabled } from "./db"
+import { runA11yScan, a11yUrlKey } from "./trails-a11y"
 import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { recordBrowserMinutes } from "./cost-events"
@@ -68,6 +69,15 @@ export interface WalkOptions {
    * Layer C/D (no context, no binding, no extra work) so the engine suite is unchanged.
    */
   replay?: boolean
+  /**
+   * KLA-800 — OPT-IN, DEFAULT-OFF accessibility (WCAG) audit. When `enabled`, the runner injects
+   * axe-core once per unique URL reached during the walk and records violations as advisory
+   * `accessibility` Findings (never changes the walk verdict, never auto-files). When omitted, the
+   * default is resolved from the project's a11yAuditEnabled flag. Best-effort/try-caught: any
+   * injection/scan failure yields zero findings and never fails or reddens the walk. Behavior is
+   * byte-identical to today when disabled (no axe injection, no findings).
+   */
+  a11y?: { enabled: boolean; tags?: string[] }
   /**
    * Plan G — prod-safety. Extra args forwarded to `chromium.launch({ args })`; production callers
    * pass CHROMIUM_PROD_ARGS (--single-process, --no-sandbox, --disable-dev-shm-usage,
@@ -959,6 +969,27 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     let segUrl = page.url()
     let segIdx = 0
 
+    // ── KLA-800: accessibility (WCAG) audit — OPT-IN, DEFAULT-OFF. Resolve enabled from WalkOptions
+    // (explicit wins) else the project flag. Scan axe-core once per unique URL, best-effort. a11y
+    // findings are advisory (recorded `queued`, never touch walkVerdict/redReasons). Skipped entirely
+    // for draft/verification walks (suppressFindings) and when the walk deadline is tight.
+    let a11yEnabled = opts.a11y?.enabled ?? false
+    if (opts.a11y === undefined && !opts.suppressFindings) {
+      try { a11yEnabled = await getProjectA11yEnabled(projectId) } catch { a11yEnabled = false }
+    }
+    const a11yTags = opts.a11y?.tags
+    const a11yScanned = new Set<string>()
+    const maybeScanA11y = async (stepId?: string) => {
+      if (!a11yEnabled || opts.suppressFindings) return
+      if (deadline !== Infinity && deadline - Date.now() < 20_000) return // never eat the walk deadline
+      const key = a11yUrlKey(page.url())
+      if (a11yScanned.has(key)) return
+      a11yScanned.add(key)
+      try { await runA11yScan(page as any, { projectId, runId, trailId: trail.id, stepId, urlPath: key, tags: a11yTags }) }
+      catch (e) { console.warn("[a11y] walk scan error (non-fatal):", String(e)) }
+    }
+    await maybeScanA11y() // initial landed page
+
     for (const step of steps) {
       // KLA-55: heartbeat — updated at the top of each step so the stale reaper knows this walk
       // is still alive. Best-effort: a failed touch never stops the walk.
@@ -1014,6 +1045,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
           console.warn("[trails-replay] segment flush failed (continuing):", String(e))
         }
       }
+
+      // KLA-800: scan the current page for WCAG issues. URL-deduped, so a multi-step trail on one
+      // route scans once; a route change re-scans. No-op unless a11y is enabled.
+      await maybeScanA11y(step.id)
     }
 
     // Seal the final page (still loaded → poll the live page so its async snapshot is captured).

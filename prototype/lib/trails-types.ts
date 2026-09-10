@@ -13,7 +13,7 @@ export type FailureKind = "crash" | "regression"
 export type FailureClass =
   | "locator_drift" | "timing" | "test_data" | "runtime_error"
   | "visual" | "interaction_change" | "regression" | "unknown"
-export type FindingKind = "regression" | "visual" | "amber_heal"
+export type FindingKind = "regression" | "visual" | "amber_heal" | "accessibility"
 export type FindingStatus = "queued" | "auto_filed" | "filed" | "dismissed"
 export type TrailViewportPreset = "desktop" | "mobile"
 

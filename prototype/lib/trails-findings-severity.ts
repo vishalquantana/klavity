@@ -24,9 +24,12 @@ function clamp(idx: number): FindingSeverity {
 
 /** Base severity by finding kind — the floor before signal adjustments. */
 const BASE_SEVERITY: Record<FindingKind, FindingSeverity> = {
-  regression: "high",   // a real test-step breakage
-  amber_heal: "medium", // healed but suspect — needs review
-  visual:     "low",    // cosmetic / non-blocking
+  regression:    "high",   // a real test-step breakage
+  amber_heal:    "medium", // healed but suspect — needs review
+  visual:        "low",    // cosmetic / non-blocking
+  // KLA-800: floor only — a11y findings pass an explicit impact-derived `priority` to recordFinding
+  // (critical→urgent … minor→low), so this base is a fallback for a row recorded without one.
+  accessibility: "low",
 }
 
 /**

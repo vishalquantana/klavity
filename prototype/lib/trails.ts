@@ -1,7 +1,7 @@
 import { db } from "./db"
 import type { Trail, TrailEnvironment, TrailStep, TrailStatus, StepAction, Fingerprint, TrailViewport, Checkpoint, PersonaVerdict } from "./trails-types"
 import type { WalkJudgment } from "./trails-judge"
-import { computeFindingSeverity } from "./trails-findings-severity"
+import { computeFindingSeverity, type FindingSeverity } from "./trails-findings-severity"
 import { normalizeTrailViewport, parseTrailViewportJson } from "./trails-viewport"
 
 function uid(prefix: string): string { return prefix + crypto.randomUUID() }
@@ -513,7 +513,7 @@ function rowToFinding(r: any): Finding {
 
 export async function recordFinding(
   projectId: string,
-  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; groundQuoteVerified?: boolean | null; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus; urlPath?: string | null },
+  input: { runId: string; trailId: string; stepId?: string; kind: FindingKind; title: string; evidence?: Record<string, unknown>; groundQuote?: string; groundQuoteVerified?: boolean | null; confidence: number; dedupKey: string; contentSig?: string | null; status?: FindingStatus; urlPath?: string | null; priority?: FindingSeverity },
 ): Promise<{ id: string; deduped: boolean; recurrence: number }> {
   // ── Cross-trail content dedup (KLA-77) ─────────────────────────────────────
   // If a content sig matches an existing finding in this project (regardless of which Trail or
@@ -530,7 +530,8 @@ export async function recordFinding(
       const now = Date.now()
       const recurrence = Number(row.recurrence) + 1
       // KLA-81: recompute priority with the updated recurrence count.
-      const severity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence })
+      // KLA-800: an explicit priority (a11y impact-derived) is authoritative and stable across recurrences.
+      const severity = input.priority ?? computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence })
       await db!.execute({
         sql: `UPDATE findings SET recurrence=?, priority=?, updated_at=? WHERE id=?`,
         args: [recurrence, severity, now, String(row.id)],
@@ -555,7 +556,7 @@ export async function recordFinding(
   // The UNIQUE INDEX finding_dedup_uq (added in applySchema migration) makes this atomic.
   const candidateId = uid("find_"); const now = Date.now()
   // KLA-81: compute initial priority (recurrence=1 for new rows; bumped rows recompute below).
-  const initialSeverity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence: 1 })
+  const initialSeverity = input.priority ?? computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence: 1 })
   // B.13: ground_quote_verified is 1 only when the caller has verified the quote against captured
   // page text; NULL when unknown/self-referential so the ticket body relabels it "Reason:" not "Grounded:".
   const gqVerified = input.groundQuoteVerified == null ? null : (input.groundQuoteVerified ? 1 : 0)
@@ -576,7 +577,7 @@ export async function recordFinding(
   const deduped = id !== candidateId
   // KLA-81: if this was a dedup bump, recompute priority with the new recurrence count.
   if (deduped) {
-    const severity = computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence })
+    const severity = input.priority ?? computeFindingSeverity({ kind: input.kind, confidence: input.confidence, recurrence })
     await db!.execute({ sql: `UPDATE findings SET priority=? WHERE id=?`, args: [severity, id] })
   }
   try {

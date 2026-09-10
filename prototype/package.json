@@ -11,6 +11,7 @@
     "@libsql/client": "^0.17.4",
     "@node-saml/node-saml": "^5.1.0",
     "@xmldom/xmldom": "0.8.13",
+    "axe-core": "^4.13.0",
     "rrweb": "^2.0.1",
     "rrweb-player": "^2.0.1",
     "xpath": "0.0.34",
