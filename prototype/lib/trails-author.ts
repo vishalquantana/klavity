@@ -879,6 +879,11 @@ export async function authorTrail(
         if (unconfirmedCommitPending) {
           let readBackOk = false
           try {
+            // KLA-788b: the forced read-back + (vision) verify runs entirely WITHIN this one loop iteration,
+            // and onHeartbeat only fires at the top of the loop. A slow vision-model verify (bounded 120s) +
+            // reload can exceed the 3-min stale-heartbeat window with no beat in between → the reaper falsely
+            // kills the run mid-verify. Beat before each long await so the stale clock resets ahead of it.
+            opts.onHeartbeat?.()
             await page.goto(page.url(), 20_000)
             await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-confirm settle").catch(() => {})
             dom = await bounded(page.krefSnapshot(), 15_000, "post-confirm snapshot")
@@ -917,6 +922,8 @@ export async function authorTrail(
           try {
             screenshotB64 = await bounded(page.screenshotJpeg(60, 15_000), 20_000, "objective verification screenshot")
           } catch { /* fall back to text-only verification */ }
+          opts.onHeartbeat?.() // KLA-788b: reset the stale clock right before the (slow, vision) verify call
+
           const verifyInput = {
             objective: req.objective,
             pageUrl: page.url(),

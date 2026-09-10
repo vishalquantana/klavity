@@ -1220,3 +1220,31 @@ test("KLA-788: screenshot verification messages contain an image block and avoid
   expect(textOnly).toBe(LITE_MODEL)
   expect(vision).not.toBe(LITE_MODEL)
 })
+
+// ── KLA-788b: heartbeat is pumped during the read-back + verify so a slow vision verify isn't reaped ──
+
+test("KLA-788b: the done read-back + verify path pumps onHeartbeat (not just top-of-loop)", async () => {
+  // The forced read-back + (slow vision) verify runs within one loop iteration; onHeartbeat only fired at
+  // the loop top, so a >3min verify could trip the stale-heartbeat reaper. Assert the done-handler beats
+  // before the read-back AND before the verify — so the stale clock resets ahead of each long await.
+  const { page } = notesPage()
+  let beats = 0
+  let beatsAtVerify = -1
+  // A model that clicks Save once (arms the read-back gate), then declares done.
+  let n = 0
+  const model2: AuthorModel = async () => {
+    n++
+    if (n === 1) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "saved" }, costUsd: 0 }
+  }
+  const verifier = async (input: any) => { beatsAtVerify = beats; return { achieved: /test note/.test(String(input.domSnapshot)), reason: "ok", costUsd: 0 } }
+  const out = await authorTrail("proj_kla788b", { name: "hb", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model: model2, verifier, onHeartbeat: () => { beats++ },
+    browserFactory: async () => ({ newPage: async () => page, close: async () => {}, kind: "local" } as any),
+    shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("crystallized")
+  // Top-of-loop beats give ~2 (iter1 + iter2); the two done-handler pumps (pre-read-back, pre-verify) add
+  // more, so by verify time we've seen strictly more than the top-of-loop-only baseline.
+  expect(beatsAtVerify).toBeGreaterThanOrEqual(3)
+})
