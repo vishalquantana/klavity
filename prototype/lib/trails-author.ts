@@ -452,7 +452,23 @@ export async function authorTrail(
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
   // service restart. Every per-iteration op below is also individually bounded.
   const driveDeadlineMs = opts.driveDeadlineMs ?? AUTOSIM_DEADLINE_MS_DEFAULT
-  const deadlineAt = Date.now() + driveDeadlineMs
+  let deadlineAt = Date.now() + driveDeadlineMs
+  // KLA-786 (round-10): a recent commit deserves one bounded server-truth check even when the
+  // normal drive deadline is reached. The failed-verify cap still bounds the number of extensions.
+  const PROACTIVE_VERIFY_WINDOW_MS = 150_000
+  const wantVerifyBeforeGiveUp = () =>
+    (log.length - lastCommitStep) <= COMMIT_RECENCY_STEPS &&
+    !deferProactiveVerify &&
+    proactiveVerifyFails < MAX_PROACTIVE_VERIFY_FAILS
+  const armProactiveVerify = () => {
+    if (!wantVerifyBeforeGiveUp()) return false
+    unconfirmedCommitPending = true
+    deferProactiveVerify = true
+    return true
+  }
+  const extendDeadlineForPendingVerify = () => {
+    deadlineAt = Date.now() + PROACTIVE_VERIFY_WINDOW_MS
+  }
   const bounded = <T>(p: Promise<T>, ms: number, what: string): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms))])
   // KLA (BookJoy login stall): click the single most-likely submit control. Shared by the no-op
@@ -541,12 +557,33 @@ export async function authorTrail(
       const initSnap = await bounded(page.krefSnapshot(), 15_000, "snapshot capture")
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
-    for (let idx = startIdx; idx < AUTHOR_MAX_STEPS; idx++) {
+    let stepLimit = AUTHOR_MAX_STEPS
+    for (let idx = startIdx; idx < stepLimit; idx++) {
       // KLA-55: heartbeat - signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
       if (costUsd >= AUTHOR_MAX_COST_USD) return await stall(`authoring budget cap $${AUTHOR_MAX_COST_USD} reached after ${llmCalls} model calls`, page.url())
       if (opts.abortSignal?.aborted) return await stall("cancelled by user", page.url())
-      if (Date.now() > deadlineAt) return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`, page.url())
+      if (Date.now() > deadlineAt) {
+        // If the repeated-action hook armed a verify on the preceding iteration, do not discard it
+        // merely because the original deadline elapsed before this iteration could consume it.
+        if (deferProactiveVerify) {
+          extendDeadlineForPendingVerify()
+        } else if (armProactiveVerify()) {
+          extendDeadlineForPendingVerify()
+        } else {
+          return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`, page.url())
+        }
+      }
+      // KLA-786 (round-10): reserve one loop slot for the forced done when the step budget itself is
+      // the give-up boundary. A forced failure can reserve another slot, but the persisted fail cap
+      // prevents this from extending the run indefinitely.
+      if (idx === stepLimit - 1) {
+        if (deferProactiveVerify) {
+          stepLimit++
+        } else if (armProactiveVerify()) {
+          stepLimit++
+        }
+      }
       const includeShot = !textFirst || misses > 0
       const screenshotB64 = includeShot
         ? await bounded(page.screenshotJpeg(60, 15_000), 20_000, "screenshot")
@@ -1060,8 +1097,7 @@ export async function authorTrail(
               history.push(`(auto-advance: '${a.op}' repeated without progress on a login form — clicked "${autoClicked}" to submit; check the new page state)`)
               consecutiveSuccessKey = 0
               lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
-            } else if ((log.length - lastCommitStep) <= COMMIT_RECENCY_STEPS && !deferProactiveVerify
-                       && proactiveVerifyFails < MAX_PROACTIVE_VERIFY_FAILS) {
+            } else if (armProactiveVerify()) {
               // KLA-786 (round-9): about to give up on a repeated action, but a COMMIT (Save/submit) fired
               // within the last few steps — the change may ALREADY have persisted (BookJoy's Save pops a
               // modal, so the model oscillates and re-types instead of finishing). Don't stall yet: log this
@@ -1074,8 +1110,6 @@ export async function authorTrail(
               entry.ok = true
               entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
               log.push(entry); await opts.onStep?.(log)
-              unconfirmedCommitPending = true
-              deferProactiveVerify = true
               consecutiveSuccessKey = 0
               // KLA-786 (round-9b C2, codex): persist the armed gate NOW (before continue) so a crash/resume
               // in this window can't drop unconfirmedCommitPending and let a resumed "done" skip the read-back.
@@ -1169,10 +1203,16 @@ export async function authorTrail(
       entry.krefSnapshot = entryDom.length > 50000 ? entryDom.slice(0, 50000) + "\n...[TRUNCATED]" : entryDom
       if (!entryLogged) log.push(entry)
       await opts.onStep?.(log)
+      // Arm before persisting the final ordinary step so a crash/resume cannot lose the pending
+      // read-back that was earned at the max-step boundary.
+      const armedAtStepLimit = idx === stepLimit - 1 && armProactiveVerify()
       // KLA-57: persist checkpoint after each step so a subsequent stall or crash has a recovery point.
       if (opts.onCheckpoint) {
         try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {}
       }
+      // The action just consumed the last ordinary step. If it was a recent commit, reserve a final
+      // iteration for the same forced read-back before the authoring loop crystallizes a partial trail.
+      if (armedAtStepLimit) stepLimit++
     }
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }

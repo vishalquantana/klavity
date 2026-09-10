@@ -1146,3 +1146,45 @@ test("(Y) KLA-786: repeated read-back reload failures are bounded by the fail ca
   // The incremented counter was checkpointed each time — the cap value (3) was persisted.
   expect(Math.max(0, ...caps)).toBe(3)
 })
+
+// ── (R10-A) KLA-786: a recent commit is verified before the drive deadline gives up ───────────────
+
+test("(R10-A) KLA-786: deadline give-up grants a forced read-back for a recent persisted Save", async () => {
+  const { page, state } = notesPage({})
+  let clicks = 0
+  page.click = async () => {
+    clicks++
+    // Let the action finish after the ordinary deadline, while leaving the page's server truth saved.
+    if (clicks === 1) await new Promise((resolve) => setTimeout(resolve, 1_800))
+  }
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 })
+  const verifier = async (input: any) => ({ achieved: /test note/.test(String(input.domSnapshot)), reason: "note present after deadline read-back", costUsd: 0 })
+  const out = await authorTrail("proj_loop_r10a", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => ({ newPage: async () => page, close: async () => {}, kind: "local" } as any),
+    shotUploader: async () => ({ key: "t" }), ...noSleepOpts, driveDeadlineMs: 1_500, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("crystallized")
+  expect(out.objectiveVerified).toBeTruthy()
+  expect(state.gotoCount).toBeGreaterThanOrEqual(2) // initial navigation + proactive server-truth read-back
+})
+
+// ── (R10-B) KLA-786: the deadline extension remains bounded when the Save never persists ──────────
+
+test("(R10-B) KLA-786: deadline-triggered read-backs stop after the failed-verify cap", async () => {
+  const EMPTY = '<html><body><form><textarea aria-label="Notes" id="customer_notes"></textarea><button type="submit" id="cus_notes">Save</button></form></body></html>'
+  const { page, state } = notesPage({ reloadedDom: EMPTY })
+  let clicks = 0
+  page.click = async () => {
+    clicks++
+    if (clicks === 1) await new Promise((resolve) => setTimeout(resolve, 1_800))
+  }
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 })
+  const verifier = async () => ({ achieved: false, reason: "note absent after reload", costUsd: 0 })
+  const out = await authorTrail("proj_loop_r10b", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => ({ newPage: async () => page, close: async () => {}, kind: "local" } as any),
+    shotUploader: async () => ({ key: "t" }), ...noSleepOpts, driveDeadlineMs: 1_500, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+  expect(state.gotoCount).toBeLessThanOrEqual(5) // initial navigation + at most three forced read-backs
+})
