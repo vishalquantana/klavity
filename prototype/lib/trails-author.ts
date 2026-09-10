@@ -930,7 +930,9 @@ export async function authorTrail(
             domSnapshot: dom,
             ...(screenshotB64 ? { screenshotB64, mediaType: "image/jpeg" } : {}),
           }
-          verifyResult = await bounded(verifier(verifyInput, { projectId, email: req.createdBy ?? null }), 120_000, "objective verification call")
+          // KLA-820: the verifier gets the same per-project instructions the driver does, so
+          // app-specific success signals (e.g. a dismissable "X updated" toast) steer the verdict.
+          verifyResult = await bounded(verifier(verifyInput, { projectId, email: req.createdBy ?? null, projectInstructions }), 120_000, "objective verification call")
           llmCalls++
           costUsd += verifyResult.costUsd || 0
           // KLA-786 (round-3, codex): the forced read-back is only a real safeguard if the verifier

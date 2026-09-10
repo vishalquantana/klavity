@@ -555,6 +555,12 @@ export async function applySchema(c: Client) {
        id TEXT PRIMARY KEY, persona_id TEXT NOT NULL, project_id TEXT NOT NULL,
        field TEXT NOT NULL, before_val TEXT, after_val TEXT, actor TEXT NOT NULL, created_at INTEGER NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS persona_edits_idx ON persona_edits (persona_id, created_at)`,
+    // KLA-820: append-only audit of edits to a project's AutoSim instructions (projects.instructions_md).
+    // One row per save, tagged with the actor email — mirrors persona_edits.
+    `CREATE TABLE IF NOT EXISTS project_instruction_edits (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+       before_val TEXT, after_val TEXT, actor TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS project_instruction_edits_idx ON project_instruction_edits (project_id, created_at)`,
     // ── Klavity OS "Trails" (test automation): authored flows, steps, locator cache, walks, run-steps, findings ──
     `CREATE TABLE IF NOT EXISTS trails (
        id TEXT PRIMARY KEY,
@@ -5676,6 +5682,28 @@ export async function listPersonaEdits(personaId: string): Promise<PersonaEditRo
   return r.rows.map((x: any) => ({ id: String(x.id), personaId: String(x.persona_id), projectId: String(x.project_id),
     field: String(x.field), beforeVal: x.before_val != null ? String(x.before_val) : null,
     afterVal: x.after_val != null ? String(x.after_val) : null, actor: String(x.actor), createdAt: Number(x.created_at) }))
+}
+
+// ── KLA-820: per-project AutoSim instructions (projects.instructions_md) writer + append-only audit. ──
+export type ProjectInstructionEditRow = { id: string; projectId: string; beforeVal: string | null; afterVal: string | null; actor: string; createdAt: number }
+// Set the project's AutoSim instructions and record one audit row (before/after/actor). Mirrors
+// setProjectModalConfig; the caller owns validation (length cap, secret-shape rejection, entitlement).
+export async function setProjectInstructions(projectId: string, md: string | null, actor: string): Promise<void> {
+  const before = (await db!.execute({ sql: "SELECT instructions_md FROM projects WHERE id=?", args: [projectId] })).rows[0]
+  const beforeVal = before && before.instructions_md != null ? String(before.instructions_md) : null
+  const afterVal = md && md.trim() ? md : null
+  const now = Date.now()
+  await db!.execute({ sql: "UPDATE projects SET instructions_md=?, updated_at=? WHERE id=?", args: [afterVal, now, projectId] })
+  await db!.execute({
+    sql: `INSERT INTO project_instruction_edits (id,project_id,before_val,after_val,actor,created_at) VALUES (?,?,?,?,?,?)`,
+    args: ["pie_" + crypto.randomUUID(), projectId, beforeVal, afterVal, actor, now],
+  })
+}
+export async function listProjectInstructionEdits(projectId: string): Promise<ProjectInstructionEditRow[]> {
+  const r = await db!.execute({ sql: "SELECT * FROM project_instruction_edits WHERE project_id=? ORDER BY created_at ASC", args: [projectId] })
+  return r.rows.map((x: any) => ({ id: String(x.id), projectId: String(x.project_id),
+    beforeVal: x.before_val != null ? String(x.before_val) : null, afterVal: x.after_val != null ? String(x.after_val) : null,
+    actor: String(x.actor), createdAt: Number(x.created_at) }))
 }
 
 function rowToTraitEvent(x: any): TraitEventRow {

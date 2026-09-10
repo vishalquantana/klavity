@@ -3204,6 +3204,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     </div>
   </details>
 
+  <!-- ── KLA-820: AutoSim instructions — freeform per-project app guidance injected into BOTH the AutoSim
+       driver AND the pass/fail objective verifier. Steers app-specific conventions (a save that confirms
+       via a dismissable toast, a nav behind a hamburger, "dismiss the cookie banner first") with zero
+       code. Admin-only write, gated by the AI-settings plan entitlement; every save is audited. ── -->
+  <details class="drawer hide" id="aiInstrDrawer" data-view="settings">
+    <summary><span data-ki="sparkles"></span> AutoSim instructions <span class="muted" style="font-size:11px;text-transform:none;letter-spacing:0">App hints that steer the driver &amp; the pass/fail verifier</span> <span class="caret">›</span></summary>
+    <div class="drawer-in">
+      <div id="aiInstrLocked" class="hide muted" style="font-size:12.5px">AutoSim instructions are available on plans with AI settings. Upgrade to steer AutoSim with app-specific guidance.</div>
+      <div id="aiInstrBody" class="hide">
+        <p class="tacc-hint" style="margin-bottom:12px">Freeform notes about <b>your</b> app that steer both the AutoSim driver and the pass/fail verifier — e.g. "save confirmations show as a dismissable toast; treat that as success", "the primary nav is a hamburger top-left", "dismiss the cookie banner first". These are hints, not scripts, and never a place for passwords (use Test Accounts).</p>
+        <textarea id="aiInstrText" maxlength="4000" rows="10" placeholder="Success signals, navigation quirks, glossary, do &amp; don't…" style="display:block;width:100%;font-family:var(--mono);font-size:12.5px;line-height:1.5;padding:10px;border-radius:8px"></textarea>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+          <button class="btn btn-indigo btn-sm" id="aiInstrSave" type="button"><span data-ki="check"></span> Save</button>
+          <button class="btn btn-ghost btn-sm" id="aiInstrTemplate" type="button"><span data-ki="copy"></span> Insert starter template</button>
+          <span id="aiInstrCount" class="muted" style="font-size:11.5px;margin-left:auto">0 / 4000</span>
+          <span id="aiInstrMsg" class="muted" style="font-size:12px"></span>
+        </div>
+      </div>
+    </div>
+  </details>
+
   <!-- ── Management API tokens (account-scoped kma_) — mint/copy/revoke the WORKSPACE-level tokens used
        to create/list projects and invite members via the management REST API (/api/v1/projects) and the
        mcp-admin endpoint. Distinct from the project-scoped "API tokens" drawer above. Copy-once. ── -->
@@ -12805,6 +12826,61 @@ function _wireCi() {
   })
 }
 _wireCi()
+
+// ── KLA-820: AutoSim instructions editor (steers the driver + the pass/fail verifier) ──
+// Loads lazily when the drawer opens; gated by canAiSettings (from the GET). Server enforces
+// admin + entitlement on write, so we surface its error rather than duplicate the gate here.
+var AI_INSTR_TEMPLATE = [
+  "# Success signals",
+  "- e.g. Saves confirm via a dismissable toast (\"X updated\") — treat that as success even if it has dismissed by the time you check.",
+  "# Navigation",
+  "- e.g. Primary nav is a hamburger menu, top-left. Dismiss the cookie banner before anything else.",
+  "# Glossary",
+  "- e.g. A \"peel\" is a saved board.",
+  "# Expected states",
+  "- e.g. Test-account data resets nightly, so an empty list is expected — not a failure.",
+  "# Do / Don't",
+  "- Don't put passwords here — use Test Accounts."
+].join("\n")
+function _wireAiInstructions() {
+  var drawer = $("aiInstrDrawer"); if (!drawer) return
+  var text = $("aiInstrText"), save = $("aiInstrSave"), msg = $("aiInstrMsg"), count = $("aiInstrCount")
+  var locked = $("aiInstrLocked"), body = $("aiInstrBody"), loaded = false
+  function updateCount() { if (count && text) count.textContent = text.value.length + " / 4000" }
+  if (text) text.addEventListener("input", function() { updateCount(); if (msg) msg.textContent = "" })
+  async function load() {
+    var pid = projParam(); if (!pid) return
+    try {
+      var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/ai-instructions", { credentials: "include" })
+      var d = await r.json().catch(function() { return {} })
+      if (d && d.canAiSettings) { if (locked) locked.classList.add("hide"); if (body) body.classList.remove("hide") }
+      else { if (body) body.classList.add("hide"); if (locked) locked.classList.remove("hide") }
+      if (text) { text.value = (d && typeof d.instructions === "string") ? d.instructions : ""; updateCount() }
+    } catch (e) {}
+  }
+  drawer.addEventListener("toggle", function() { if (drawer.open && !loaded) { loaded = true; load() } })
+  if (save) save.addEventListener("click", async function() {
+    var pid = projParam(); if (!pid || !text) return
+    save.disabled = true; if (msg) { msg.textContent = "Saving…"; msg.style.color = "" }
+    try {
+      var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/ai-instructions", {
+        method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ instructions: text.value })
+      })
+      var d = await r.json().catch(function() { return {} })
+      if (r.ok) { if (msg) { msg.textContent = "Saved"; msg.style.color = "var(--green,#16a34a)" } }
+      else { if (msg) { msg.textContent = (d && d.error) || ("Error " + r.status); msg.style.color = "var(--rose)" } }
+    } catch (e) { if (msg) { msg.textContent = "Network error"; msg.style.color = "var(--rose)" } }
+    finally { save.disabled = false; setTimeout(function() { if (msg && msg.textContent === "Saved") msg.textContent = "" }, 2000) }
+  })
+  var tpl = $("aiInstrTemplate")
+  if (tpl) tpl.addEventListener("click", function() {
+    if (!text) return
+    text.value = text.value.trim() ? (text.value.replace(/\s+$/, "") + "\n\n" + AI_INSTR_TEMPLATE) : AI_INSTR_TEMPLATE
+    updateCount(); text.focus(); if (msg) msg.textContent = "Template inserted — edit, then Save."
+  })
+}
+_wireAiInstructions()
 
 // ── Management API tokens (account-scoped kma_) ──────────────────────────────
 // Mint/copy/revoke the WORKSPACE-level kma_ tokens that authenticate the management REST API
