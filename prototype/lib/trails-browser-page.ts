@@ -200,8 +200,11 @@ function fingerprintBody(el: Element): Fingerprint {
 function stableSelectorBody(el: Element): string | null {
   const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
   const tag = el.tagName.toLowerCase()
-  // Each candidate must resolve to EXACTLY ONE element, else a replay could act on the wrong node.
-  const uniq = (sel: string): boolean => { try { return document.querySelectorAll(sel).length === 1 } catch { return false } }
+  // Each candidate must resolve to EXACTLY ONE element AND that element must be `el` itself — else a replay
+  // could act on the wrong node. The `=== el` check is defense-in-depth: it guarantees a candidate built from
+  // a normalized IDL property (which can diverge from the matching content attribute) can never anchor onto a
+  // different element that merely happens to be unique.
+  const uniq = (sel: string): boolean => { try { return document.querySelectorAll(sel).length === 1 && document.querySelector(sel) === el } catch { return false } }
   // Ordered most→least robust. Returns null (→ author keeps the positional domPath) only if NONE anchor.
   // KLA (BookJoy replay locator_drift): sites without id/testid/aria (e.g. CodeIgniter forms) previously
   // fell straight to a brittle positional path; `name`/`placeholder`/`type` anchor those cleanly.
@@ -210,7 +213,10 @@ function stableSelectorBody(el: Element): string | null {
   const nm = el.getAttribute("name"); if (nm) { const s = `${tag}[name="${esc(nm)}"]`; if (uniq(s)) return s }
   const al = el.getAttribute("aria-label"); if (al) { const s = `${tag}[aria-label="${esc(al)}"]`; if (uniq(s)) return s }
   const ph = (el as HTMLInputElement).placeholder; if (ph) { const s = `${tag}[placeholder="${esc(ph)}"]`; if (uniq(s)) return s }
-  if (tag === "input") { const ty = (el as HTMLInputElement).type; if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
+  // Read the content ATTRIBUTE, not the IDL `.type` property (which normalizes a missing/invalid type to
+  // "text") — otherwise a bare `<input>` would build `input[type="text"]` and could anchor onto a DIFFERENT
+  // explicit text input. Absent/invalid attribute → skip (fall through to the positional path).
+  if (tag === "input") { const ty = el.getAttribute("type"); if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
   return null
 }
 /* eslint-enable */

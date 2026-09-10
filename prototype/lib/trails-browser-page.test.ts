@@ -20,6 +20,10 @@ const FIXTURE = "data:text/html," + encodeURIComponent(`<!doctype html><html><bo
   <form><input name="loginemail" type="email" /><input name="loginpw" type="password" /></form>
   <input type="tel" />
   <input placeholder="Search customers" type="search" />
+  <!-- wrong-node guard: a BARE untyped input must NOT steal a DIFFERENT explicit type="text" input
+       (its IDL .type reports "text"). Selected via class (the builder ignores class). -->
+  <input class="bare-probe" />
+  <input type="text" name="theonlytext" />
 </body></html>`)
 
 let handle: BrowserHandle
@@ -74,6 +78,10 @@ describe.if(RUN_BROWSER)("PlaywrightPage adapter (default)", () => {
     expect(await page.stableSelector('input[name="loginpw"]')).toBe('input[name="loginpw"]')         // name anchor
     expect(await page.stableSelector('input[type="tel"]')).toBe('input[type="tel"]')                 // type anchor (no name/placeholder)
     expect(await page.stableSelector('input[type="search"]')).toBe('input[placeholder="Search customers"]') // placeholder beats type
+    // wrong-node guard (codex/Muse): a BARE untyped input's IDL .type is "text", but it has no type ATTRIBUTE,
+    // so it must NOT anchor onto the DIFFERENT explicit type="text" input — it falls through to a positional path.
+    expect(await page.stableSelector(".bare-probe")).not.toBe('input[type="text"]')
+    expect(await page.stableSelector('input[name="theonlytext"]')).toBe('input[name="theonlytext"]') // the real text input anchors by name
     const fp = await page.fingerprint("#email")
     expect(fp.testId).toBeUndefined()
     expect(fp.accessibleName).toBe("Email")
