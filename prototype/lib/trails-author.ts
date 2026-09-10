@@ -847,6 +847,13 @@ export async function authorTrail(
             // unconfigured). Do NOT clear the gate and do NOT verify; count a miss and retry/stall. This keeps
             // the gate a real safety barrier instead of a best-effort no-op on the failure path.
             misses++
+            // KLA-786 (round-9g, codex): a LOOP-FORCED recovery whose READ-BACK failed is also a failed
+            // proactive attempt — count it toward the cap (persist immediately) so a never-persisting save
+            // whose reload keeps failing can't bypass the bound via misses resetting on the next click.
+            if (forceProactiveDone) {
+              proactiveVerifyFails++
+              if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+            }
             history.push(`(could not reload the page to independently confirm the change persisted — not finishing yet; will retry)`)
             if (misses >= MAX_CONSECUTIVE_MISSES) return await stall("could not confirm the change persisted before finishing", page.url())
             continue
@@ -886,6 +893,14 @@ export async function authorTrail(
           }
         } catch (verifyErr: any) {
           misses++
+          // KLA-786 (round-9g, codex): a LOOP-FORCED verify that ERRORS/times out counts toward the cap too
+          // — else a never-persisting save whose verifier keeps throwing bypasses it (misses resets on the
+          // model's next successful click). Persist immediately so a crash/resume in this window can't regain
+          // the attempt (round-9g C3).
+          if (forceProactiveDone) {
+            proactiveVerifyFails++
+            if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+          }
           const errMsg = verifyErr?.message || String(verifyErr)
           history.push(`(objective verification failed: ${errMsg} — retrying done from last state)`)
           if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after verifier error: ${errMsg}`, page.url())
@@ -918,7 +933,11 @@ export async function authorTrail(
           misses++
           // KLA-786 (round-9e): count a FAILED verify that the LOOP forced (not one the model chose) toward
           // the verify-before-stall budget, so a never-persisting save can't keep re-triggering read-backs.
-          if (forceProactiveDone) proactiveVerifyFails++
+          // (round-9g C3) persist immediately so a crash/resume in this window can't regain the attempt.
+          if (forceProactiveDone) {
+            proactiveVerifyFails++
+            if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
+          }
           history.push(`(verification failed: your proposed 'done' action was rejected because the objective has not been achieved yet: ${verifyResult.reason || "unknown reason"} — continue until the objective is fully achieved)`)
           if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed verification attempts; last: ${verifyResult.reason}`, page.url())
           continue

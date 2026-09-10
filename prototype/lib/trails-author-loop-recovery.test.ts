@@ -1080,3 +1080,32 @@ test("(W) KLA-786: a silent (no DOM change) save that never persists is bounded 
   expect(out.objectiveVerified).toBeFalsy()
   expect(gotoCount).toBeLessThanOrEqual(5) // initial nav + at most MAX_PROACTIVE_VERIFY_FAILS read-backs
 })
+
+// ── (X) KLA-786 (round-9g, codex): forced verify that ERRORS/times out is bounded too ───────────────
+
+test("(X) KLA-786: a never-persists save whose verifier keeps throwing is still bounded by the fail cap", async () => {
+  // A loop-forced verify that ERRORS (timeout) must also count toward MAX_PROACTIVE_VERIFY_FAILS — else a
+  // never-persisting Save whose verifier keeps throwing bypasses the cap (misses resets on the next click).
+  const FILLED = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  let gotoCount = 0
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { gotoCount++ }, screenshotJpeg: async () => "",
+    krefSnapshot: async () => FILLED,
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: "BUTTON", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel,
+    click: async () => {}, fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 })
+  const verifier = async () => { throw new Error("verifier timeout") }
+  const out = await authorTrail("proj_loop_x", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+  expect(gotoCount).toBeLessThanOrEqual(5)
+})
