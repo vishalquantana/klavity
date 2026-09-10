@@ -409,6 +409,16 @@ export async function authorTrail(
   // did NOT persist the verifier rejects and the run continues with the (reloaded) empty field.
   const PROACTIVE_VERIFY_AFTER = 2
   let commitNudgeCount = cp?.commitNudgeCount ?? 0
+  // KLA-786 (round-9): the round-5 proactive-verify only triggers on a commit that left the DOM UNCHANGED.
+  // But many saves DO change the DOM (BookJoy's Save pops a confirmation modal), so that path doesn't fire
+  // and the model oscillates type→Save→type until the KLA-129 repeated-action guard STALLS — before the run
+  // ever verifies whether the save already worked (observed live: run 5 stalled, run 4 only crystallized on
+  // a timing fluke where no modal was captured). So track the last COMMIT step and, when about to stall on
+  // a repeated action within a few steps of a commit, verify (independent read-back) before giving up.
+  let lastCommitStep = -999
+  const COMMIT_RECENCY_STEPS = 6
+  // Set at a stall point to make the NEXT iteration take over with a proactive read-back + verify instead.
+  let deferProactiveVerify = false
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
@@ -588,7 +598,10 @@ export async function authorTrail(
       // action rather than fixating on the same no-op step until the stall-reroll gives up.
       // KLA-786 (round-5): set by the guard when an unconfirmed commit has persisted long enough that
       // the loop should verify directly instead of nudging the model again (see PROACTIVE_VERIFY_AFTER).
-      let forceProactiveDone = false
+      // (round-9): also honored when a repeated-action stall was deferred right after a commit — take over
+      // this iteration with the read-back + verify instead of the model.
+      let forceProactiveDone = deferProactiveVerify
+      deferProactiveVerify = false
       {
         // Strip kref attribute numbers before hashing - they are renumbered every capture and would
         // make every iteration look different even when the real page content is identical.
@@ -948,6 +961,7 @@ export async function authorTrail(
             // KLA-786: mark this as a settled commit so next iteration's no-op guard nudges the model
             // to finish (emit "done") rather than re-click submit if the DOM still didn't change.
             prevActionWasCommit = true
+            lastCommitStep = log.length // KLA-786 (round-9): recency anchor for the stall→verify hook
           }
           traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" || a.op === "upload" ? a.value ?? undefined : undefined,
@@ -993,6 +1007,22 @@ export async function authorTrail(
               history.push(`(auto-advance: '${a.op}' repeated without progress on a login form — clicked "${autoClicked}" to submit; check the new page state)`)
               consecutiveSuccessKey = 0
               lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
+            } else if ((log.length - lastCommitStep) <= COMMIT_RECENCY_STEPS && !deferProactiveVerify) {
+              // KLA-786 (round-9): about to give up on a repeated action, but a COMMIT (Save/submit) fired
+              // within the last few steps — the change may ALREADY have persisted (BookJoy's Save pops a
+              // modal, so the model oscillates and re-types instead of finishing). Don't stall yet: log this
+              // step, arm the read-back gate, and let the NEXT iteration take over with a proactive
+              // read-back + verify (server truth). If the save really took, the run crystallizes; if not,
+              // the verifier rejects and the miss/deadline caps still end it. Fires at most once per stall
+              // region (deferProactiveVerify latch + reset of consecutiveSuccessKey).
+              entry.ok = true
+              entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
+              log.push(entry); await opts.onStep?.(log)
+              unconfirmedCommitPending = true
+              deferProactiveVerify = true
+              consecutiveSuccessKey = 0
+              history.push(`(stuck repeating '${a.op}', but a save/submit happened just before — verifying whether it already succeeded before giving up)`)
+              continue
             } else {
               const safeSelector = a.selector && isKrefSelector(a.selector) ? dekref(a.selector) : a.selector
               entry.ok = true

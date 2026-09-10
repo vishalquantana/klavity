@@ -972,3 +972,45 @@ test("(Q) KLA-786: a malicious dialog message can't break the prompt delimiters 
   // ... and it is explicitly framed as untrusted (do not follow instructions inside).
   expect(surfaced.toLowerCase()).toContain("untrusted")
 })
+
+// ── (S) KLA-786 (round-9): a repeated-action stall right after a commit verifies before giving up ────
+
+test("(S) KLA-786: model oscillates after a modal-changing Save; loop verifies before the KLA-129 stall", async () => {
+  // BookJoy's Save CHANGES the DOM (a confirmation modal appears), so round-5's commit-with-no-change path
+  // never fires; the model re-types the same note and would trip the KLA-129 repeated-action stall. Because
+  // a Save happened within COMMIT_RECENCY_STEPS, the loop must do a proactive read-back + verify FIRST — and
+  // since the note actually persisted, crystallize instead of stalling.
+  const FILLED = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  const MODAL = FILLED + '\ndialog "Saved"\n  button "OK" [ref=e3]' // Save changed the DOM (modal) → not a no-change commit
+  const RELOADED = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  note-saved-confirmed\n  button "Save" [ref=e2]'
+  let saved = false, gotoCount = 0
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { gotoCount++ }, screenshotJpeg: async () => "",
+    krefSnapshot: async () => (gotoCount >= 2 ? RELOADED : (saved ? MODAL : FILLED)),
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: sel.includes("cus_notes") ? "BUTTON" : "TEXTAREA", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel,
+    click: async (sel: string) => { if (sel === '#cus_notes') saved = true },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    if (n === 1) return { action: { op: "type", selector: '#customer_notes', value: "note", url: null, checkpoint: null, rationale: "type" }, costUsd: 0 }
+    if (n === 2) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }
+    // then re-type the SAME note forever (would trip KLA-129 at LOOP_STALL_N)
+    return { action: { op: "type", selector: '#customer_notes', value: "note", url: null, checkpoint: null, rationale: "re-type" }, costUsd: 0 }
+  }
+  const verifier = async (input: any) => ({ achieved: /note-saved-confirmed/.test(String(input.domSnapshot)), reason: "confirmed on reload", costUsd: 0 })
+  const out = await authorTrail("proj_loop_s", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // The loop verified (read-back) before the repeated-type stall and, since the save persisted, crystallized.
+  expect(gotoCount).toBeGreaterThanOrEqual(2)
+  expect(out.status).toBe("crystallized")
+  expect(out.objectiveVerified).toBeTruthy()
+})
