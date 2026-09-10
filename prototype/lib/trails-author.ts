@@ -380,16 +380,16 @@ export async function authorTrail(
   // whenever the page actually changes (real progress → a fresh region may legitimately need one click).
   const AUTO_ADVANCE_MAX = 1
   let autoAdvanceClicks = cp?.autoAdvanceClicks ?? 0
-  // KLA-786 (round-2 C3): PER-REGION routing flag — set when a settled commit is observed to have left
-  // the DOM unchanged; kept set across further no-op iterations so a model that answers the finish nudge
-  // with another no-op can't fall through to the auto-advance branch and trip a DUPLICATE save. Cleared
-  // on real progress (a genuine DOM change → a later unrelated stagnation region may legitimately need
-  // auto-advance again). This governs ONLY the no-op guard's routing, NOT the done gate.
-  let regionCommitNoChange = false
-  // KLA-786 (round-2 C2): the DONE GATE — sticky "a silent commit has not been independently confirmed".
-  // Distinct from regionCommitNoChange: cleared ONLY by a SUCCESSFUL forced read-back (the "done" handler
-  // reload), never by incidental DOM progress (opening a modal/tab must not bypass the read-back — round-2
-  // C3). Persisted in the checkpoint so a resumed drive still forces a read-back before it accepts "done".
+  // KLA-786 (round-3, codex): SINGLE sticky flag governing BOTH the no-op guard routing AND the done gate,
+  // set when a settled commit is observed to have left the DOM unchanged. Cleared ONLY by a SUCCESSFUL
+  // forced read-back (the "done" handler reload) — never by incidental DOM progress (opening a modal/tab
+  // must not re-enable the synthetic submit auto-click NOR bypass the read-back). A two-flag split
+  // (per-region routing vs done gate) desynchronized: after progress the routing flag cleared while this
+  // stayed set, so the ordinary auto-advance branch could fire a DUPLICATE save before the model said
+  // "done". One flag can't desync. Persisted in the checkpoint so a resumed drive keeps both protections.
+  // While set, the guard never auto-clicks a submit (avoids duplicate saves of an unconfirmed commit) and
+  // "done" forces an independent read-back before verifying. It clears once a read-back confirms, so a
+  // later unrelated stagnation region regains auto-advance only after confirmation.
   let unconfirmedCommitPending = cp?.unconfirmedCommitPending ?? false
   // KLA-786 (round-2 C2): don't let the first post-resume iteration (prevIterDomKey===null → the progress
   // branch) discard the region state we just restored from the checkpoint. Preserve it across that one
@@ -537,17 +537,14 @@ export async function authorTrail(
         const iterDomKey = `${page.url()}|${sha256hex(domWithoutKrefs)}`
         if (prevIterDomKey !== null && iterDomKey === prevIterDomKey && log.length > 0) {
           noOpCount++
-          if (prevActionWasCommit || regionCommitNoChange) {
+          if (prevActionWasCommit || unconfirmedCommitPending) {
             // KLA-786: a COMMIT (click/submit/select/upload) was settled yet the DOM still didn't change
             // — the signature of an AJAX save/submit that persists without a visible confirmation
             // (observed live on BookJoy). Do NOT treat it as "nothing happened" and auto-advance-click a
             // submit (that re-fires the save → save-loop). Steer the model to FINISH via an INDEPENDENT
-            // read-back, then "done". Never auto-advance-click on this path.
-            // KLA-786 (round-2 C3): regionCommitNoChange is STICKY across further no-op iterations so a
-            // model that answers the finish nudge with another no-op (assert / repeated type) can't fall
-            // through to the auto-advance branch and trip a DUPLICATE save. unconfirmedCommitPending is the
-            // separate done-gate (cleared only by a successful read-back, not by incidental progress).
-            regionCommitNoChange = true
+            // read-back, then "done". Never auto-advance-click while a commit is unconfirmed.
+            // KLA-786 (round-3): the single sticky flag routes here across further no-op iterations (a
+            // model answering with another no-op can't fall through to auto-advance) AND is the done gate.
             unconfirmedCommitPending = true
             // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation error
             // also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text still
@@ -602,14 +599,15 @@ export async function authorTrail(
           // KLA-786 (round-2 C2): don't wipe restored region state on the first post-resume comparison
           // (prevIterDomKey started null → this branch runs before any real progress).
           if (!firstPostResumeIter) {
-            // Real progress — allow a fresh auto-advance and re-route the no-op guard in the next region.
+            // Real progress resets the per-region auto-advance cap. (While a commit is unconfirmed the
+            // guard never reaches auto-advance anyway, so this only matters once the gate has cleared.)
             autoAdvanceClicks = 0
-            regionCommitNoChange = false
           }
-          // KLA-786 (round-2 C3): do NOT clear unconfirmedCommitPending here. Incidental DOM progress
-          // (a modal/tab opening) is NOT an independent confirmation that the silent commit persisted —
-          // only the "done" handler's successful read-back reload clears the done gate. Clearing it on any
-          // DOM change would let the model bypass the read-back by changing the page then finishing.
+          // KLA-786 (round-2 C3 / round-3): do NOT clear unconfirmedCommitPending here. Incidental DOM
+          // progress (a modal/tab opening) is NOT an independent confirmation that the silent commit
+          // persisted — only the "done" handler's successful read-back reload clears it. Clearing on any
+          // DOM change would both let the model bypass the read-back AND re-enable the synthetic submit
+          // auto-click on the next static region (a duplicate save) before the model ever says "done".
         }
         prevIterDomKey = iterDomKey
         firstPostResumeIter = false
@@ -714,6 +712,7 @@ export async function authorTrail(
         // done by the SYSTEM, not left to the model obeying the nudge. Clearing the flag makes it fire at
         // most once per unconfirmed-commit region (a later fresh commit re-arms it); bounded — a failed
         // verify just continues to misses/stall as before.
+        let didForcedReadBack = false
         if (unconfirmedCommitPending) {
           let readBackOk = false
           try {
@@ -733,6 +732,8 @@ export async function authorTrail(
             continue
           }
           unconfirmedCommitPending = false
+          didForcedReadBack = true
+          autoAdvanceClicks = 0 // the reload is a fresh region — restore the per-region auto-advance budget
           prevIterDomKey = null // the reload is real progress; don't let the next guard treat it as a no-op
           history.push(`(confirmation: reloaded the page to independently verify the change persisted before finishing)`)
         }
@@ -746,6 +747,16 @@ export async function authorTrail(
           }, { projectId, email: req.createdBy ?? null }), 120_000, "objective verification call")
           llmCalls++
           costUsd += verifyResult.costUsd || 0
+          // KLA-786 (round-3, codex): the forced read-back is only a real safeguard if the verifier
+          // actually EXAMINES the reloaded DOM. The unconfigured default verifier returns achieved:true
+          // unconditionally (reason "OPENROUTER_API_KEY not set (auto-verify)") — a rubber stamp that would
+          // certify a silently-FAILED save right after a successful reload. For this safety-critical path
+          // only, refuse an auto-verify stub: treat it as unconfirmed and stall rather than falsely finish.
+          // (No-op in prod, where the key is set and a real LLM verifier judges the reloaded page; custom
+          // injected verifiers don't emit this marker, so they're honored.)
+          if (didForcedReadBack && verifyResult.achieved && /OPENROUTER_API_KEY not set/i.test(verifyResult.reason || "")) {
+            return await stall("cannot confirm the change persisted: no objective verifier configured for the post-save read-back", page.url())
+          }
         } catch (verifyErr: any) {
           misses++
           const errMsg = verifyErr?.message || String(verifyErr)

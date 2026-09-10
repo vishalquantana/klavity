@@ -673,6 +673,70 @@ test("(J) KLA-786: a resumed run does not regain its spent auto-advance click", 
   expect(clickLog).not.toContain('button[type="submit"]')
 })
 
+// ── (K) KLA-786 (round-3, codex): resume with a PENDING commit must not regain auto-advance ──────────
+
+test("(K) KLA-786: a resumed run with unconfirmedCommitPending routes to finish, not a synthetic submit", async () => {
+  // codex's desync repro: checkpoint {unconfirmedCommitPending:true, autoAdvanceClicks:0} on a static page.
+  // With the old two-flag split, the routing flag (regionCommitNoChange) was false on resume, so a repeated
+  // no-op reached the auto-advance branch and fired a synthetic submit before the model ever said "done".
+  // With the single sticky flag, routing keys off unconfirmedCommitPending → the commit branch, never auto-advance.
+  const STATIC_DOM = `<html><body><form><input type="email" aria-label="Email" id="email" value="x@y.com"/><button type="submit" id="go">Go</button></form></body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/stuck",
+    goto: async () => {}, screenshotJpeg: async () => "",
+    krefSnapshot: async () => STATIC_DOM.replace(/<input /g, '<input data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
+    count: async (sel: string) => (sel === 'button[type="submit"]' || sel.includes("Email") || sel.includes("email") ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Email", tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: sel.includes("button") ? null : "text", dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Email"]', value: "x@y.com", url: null, checkpoint: null, rationale: "typing" }, costUsd: 0 })
+  const checkpoint: any = {
+    traj: [
+      { action: "navigate", actionValue: "https://example.com/stuck", url: "https://example.com/stuck", domHash: "a" },
+      { action: "click", target: { resolvedSelector: '#save' }, url: "https://example.com/stuck", domHash: "b" },
+    ],
+    history: [], stepIdx: 2, llmCalls: 0, costUsd: 0, lastUrl: "https://example.com/stuck",
+    autoAdvanceClicks: 0, unconfirmedCommitPending: true,
+  }
+  const out = await authorTrail("proj_loop_k", { name: "Resume", objective: "finish", baseUrl: "https://example.com/stuck" }, {
+    model, verifier: async () => ({ achieved: false, reason: "", costUsd: 0 }), checkpoint, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  // The restored pending gate routed every no-op to the finish nudge → no synthetic submit auto-click.
+  expect(clickLog).not.toContain('button[type="submit"]')
+})
+
+// ── (L) KLA-786 (round-3, codex): the no-key stub verifier is refused on the read-back path ──────────
+
+test("(L) KLA-786: an auto-verify stub (no OPENROUTER_API_KEY) does not certify after a forced read-back", async () => {
+  // The forced reload only protects if the verifier examines the reloaded DOM. The unconfigured default
+  // verifier returns achieved:true with reason "OPENROUTER_API_KEY not set (auto-verify)". On the safety-
+  // critical read-back path that stub must be REFUSED (stall), not treated as confirmation.
+  const { page, state } = notesPage({}) // reloadedDom omitted → reload returns the same still-filled NOTES_DOM
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    if (n < 3) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "saved" }, costUsd: 0 }
+  }
+  // Simulate the unconfigured default verifier's rubber-stamp.
+  const verifier = async () => ({ achieved: true, evidenceSelector: null, reason: "OPENROUTER_API_KEY not set (auto-verify)", costUsd: 0 })
+  const out = await authorTrail("proj_loop_l", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // The read-back happened but the stub verdict was refused → not certified.
+  expect(state.gotoCount).toBeGreaterThanOrEqual(2)
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+})
+
 // ── (F) KLA-786 (round-1 C2): the no-op guard auto-advances a submit AT MOST ONCE per stagnation ─────
 
 test("(F) KLA-786: auto-advance does not re-fire the same submit every couple of iterations", async () => {
