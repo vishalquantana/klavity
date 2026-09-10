@@ -23,7 +23,7 @@ import {
   resolveEnvironmentUrl, pauseWalk, resumeWalk, getWalk,
 } from "./trails"
 import { touchWalkHeartbeat, db, incrementUsageMeter, accountIdForAiCall, accountPlan, getProjectA11yEnabled } from "./db"
-import { runA11yScan, a11yUrlKey } from "./trails-a11y"
+import { runA11yScan, a11yUrlKey, AXE_SCAN_BUDGET_MS } from "./trails-a11y"
 import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { recordBrowserMinutes } from "./cost-events"
@@ -981,7 +981,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     const a11yScanned = new Set<string>()
     const maybeScanA11y = async (stepId?: string) => {
       if (!a11yEnabled || opts.suppressFindings) return
-      if (deadline !== Infinity && deadline - Date.now() < 20_000) return // never eat the walk deadline
+      // Reserve strictly MORE than the scan's hard wall-time budget (+8s safety) so a scan that runs
+      // to its full budget still leaves margin — it can never push the walk past its deadline and flip
+      // the verdict to red (KLA-800 review C1: the old flat 20s equalled the worst-case scan cost).
+      if (deadline !== Infinity && deadline - Date.now() < AXE_SCAN_BUDGET_MS + 8_000) return
       const key = a11yUrlKey(page.url())
       if (a11yScanned.has(key)) return
       a11yScanned.add(key)

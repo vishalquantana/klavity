@@ -25,6 +25,16 @@ export const AXE_DEFAULT_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "be
 
 const AXE_INJECT_TIMEOUT_MS = 5_000
 const AXE_RUN_TIMEOUT_MS = 15_000
+/** Time budget for the record loop (DB writes) AFTER inject+run, so the whole scan is bounded. */
+const AXE_RECORD_BUDGET_MS = 5_000
+/**
+ * Hard upper bound on the WALL TIME a single scan may consume (inject + run + record loop).
+ * Exported so the walk runner can reserve strictly MORE than this before starting a scan — the
+ * scan must never be able to push the walk past its own deadline (KLA-800 review C1: the flat 20s
+ * reserve equalled the worst-case inject+run with zero slack, and the record loop was untimed, so an
+ * opted-in a11y scan could overrun and flip a green walk to red via deadline_exceeded).
+ */
+export const AXE_SCAN_BUDGET_MS = AXE_INJECT_TIMEOUT_MS + AXE_RUN_TIMEOUT_MS + AXE_RECORD_BUDGET_MS
 /** Cap findings per scan so a pathological page can't flood the findings table. */
 const A11Y_MAX_FINDINGS = 50
 
@@ -83,6 +93,8 @@ export interface A11yScanCtx {
   urlPath: string
   tags?: string[]
   maxFindings?: number
+  /** Override the record-loop wall-time budget (ms). Defaults to AXE_RECORD_BUDGET_MS; used by tests. */
+  recordBudgetMs?: number
 }
 
 /** Optional injectable recorder for unit tests; defaults to the real recordFinding. */
@@ -100,6 +112,7 @@ export async function runA11yScan(
   ctx: A11yScanCtx,
   deps?: { recordFinding?: FindingRecorder },
 ): Promise<number> {
+  let recorded = 0
   try {
     const src = await loadAxeSource()
     if (!src) return 0
@@ -117,8 +130,9 @@ export async function runA11yScan(
 
     const record: FindingRecorder = deps?.recordFinding ?? (await import("./trails")).recordFinding
     const cap = ctx.maxFindings ?? A11Y_MAX_FINDINGS
-    let recorded = 0
-    for (const v of violations) {
+    // Bound the record loop's wall time so slow DB writes can't push the scan past its budget.
+    const recordDeadline = Date.now() + (ctx.recordBudgetMs ?? AXE_RECORD_BUDGET_MS)
+    for (const v of violations.slice(0, cap)) {
       const ruleId = String(v?.id ?? "unknown")
       const impact = String(v?.impact ?? "minor")
       const priority = impactToPriority(impact)
@@ -126,7 +140,7 @@ export async function runA11yScan(
       const helpUrl = String(v?.helpUrl ?? "")
       const nodes: any[] = Array.isArray(v?.nodes) ? v.nodes : []
       for (const node of nodes) {
-        if (recorded >= cap) return recorded
+        if (recorded >= cap || Date.now() >= recordDeadline) return recorded
         const target = Array.isArray(node?.target) ? node.target.map(String).join(" ") : String(node?.target ?? "")
         const html = String(node?.html ?? "").slice(0, 500)
         const failureSummary = String(node?.failureSummary ?? "").slice(0, 800)
@@ -153,7 +167,7 @@ export async function runA11yScan(
     return recorded
   } catch (e) {
     console.warn("[a11y] scan failed (non-fatal):", String(e))
-    return 0
+    return recorded
   }
 }
 

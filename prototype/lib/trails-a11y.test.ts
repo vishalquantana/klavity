@@ -65,6 +65,28 @@ test("runA11yScan maps violations → findings with impact-derived priority + de
   expect(byRule["color-contrast"].evidence.a11y.helpUrl).toBe("https://h/color-contrast")
 })
 
+test("(C1) runA11yScan record loop is wall-time bounded — a slow recorder stops at the budget, returns the partial count, never throws", async () => {
+  // 100 single-node violations; a recorder that sleeps 10ms/call; a tiny 120ms record budget.
+  // Without the time bound this would do all 100 writes (~1s+); with it, it stops early.
+  const many = { violations: Array.from({ length: 100 }, (_v, i) => ({
+    id: `rule-${i}`, impact: "minor", help: "x", helpUrl: "h", tags: ["best-practice"],
+    nodes: [{ target: [`#n${i}`], html: `<div id=n${i}>`, failureSummary: "f" }] })) }
+  let calls = 0
+  const n = await A.runA11yScan(fakePage(many) as any,
+    { projectId: "p_b", runId: "run_b", trailId: "trl_b", urlPath: "https://app.test/x", recordBudgetMs: 120 },
+    { recordFinding: async () => { calls++; await new Promise(r => setTimeout(r, 10)); return { id: "f" + calls, deduped: false, recurrence: 1 } } })
+  expect(n).toBeGreaterThan(0)          // it did record some
+  expect(n).toBeLessThan(50)            // cut off by the 120ms budget BEFORE the 50-finding cap — proves the time bound, not the count cap
+  expect(n).toBe(calls)                 // partial count is reported accurately (not 0)
+})
+
+test("(C2) severityForKind floors accessibility at 'low' (matches BASE_SEVERITY), not the 'medium' default", async () => {
+  const { severityForKind } = await import("./trails-findings-gate")
+  expect(severityForKind("accessibility" as any)).toBe("low")
+  expect(severityForKind("visual" as any)).toBe("low")
+  expect(severityForKind("regression" as any)).toBe("high")
+})
+
 test("runA11yScan is non-fatal: a throwing page yields 0 findings and never throws", async () => {
   const boom = { url: () => "https://app.test/x", evaluate: async () => { throw new Error("page gone") } }
   const rec: any[] = []

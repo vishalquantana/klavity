@@ -183,7 +183,10 @@ export async function dismissFinding(projectId: string, findingId: string): Prom
 // KLA-81: severity uses the pre-computed finding.severity when present; falls back to kind-only
 // derivation for legacy rows that pre-date the severity column.
 export function severityForKind(kind: Finding["kind"]): string {
-  return kind === "regression" ? "high" : kind === "visual" ? "low" : "medium"
+  // accessibility floors at "low" (matches BASE_SEVERITY in trails-findings-severity.ts) — without
+  // this it fell through to "medium", mis-ranking a11y rows in the public /api/v1/runs surface if
+  // ever derived without a stored priority (KLA-800 review C2).
+  return kind === "regression" ? "high" : kind === "visual" || kind === "accessibility" ? "low" : "medium"
 }
 
 // KLA-231 (JTBD 1.14): the DOM selector of the affected element, pulled from whichever evidence key
