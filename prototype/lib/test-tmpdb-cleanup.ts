@@ -1,3 +1,6 @@
+// @ts-nocheck -- test-only bun preload. The merge-train tsc gate runs with `--lib es2022,dom` and
+// no node types, so `process` and node: builtins here are untyped under it; correctness is covered
+// by the actual `bun test` runs, not the type gate. (KLA-791)
 // KLA-791: bun-test preload giving each test process its OWN temp dir, then removing it at the end.
 //
 // Many tests do `join(tmpdir(), `klav-...-${Date.now()}-${rand}.db`)` and set TURSO_DATABASE_URL to it, but
