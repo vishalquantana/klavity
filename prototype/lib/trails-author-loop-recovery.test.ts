@@ -1014,3 +1014,40 @@ test("(S) KLA-786: model oscillates after a modal-changing Save; loop verifies b
   expect(out.status).toBe("crystallized")
   expect(out.objectiveVerified).toBeTruthy()
 })
+
+// ── (T) KLA-786 (round-9b C2, codex): never-persisting save is bounded, not dozens of live re-saves ──
+
+test("(T) KLA-786: a save that never persists stalls after a bounded number of verify attempts", async () => {
+  // Model always clicks Save; the page never persists (reload still shows no confirmation) and the verifier
+  // always rejects. Each Save refreshes the recency anchor, so every repeated-action stall looks 'recent' —
+  // without the hard cap this would issue live Saves until the step/deadline cap. The cap must bound the
+  // verify-before-stall recoveries and then plain-stall.
+  const NOTES = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  let saved = false, gotoCount = 0
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { gotoCount++; saved = false }, screenshotJpeg: async () => "",
+    krefSnapshot: async () => (saved ? NOTES + '\ndialog "Saved"\n  button "OK" [ref=e3]' : NOTES),
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: "BUTTON", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel,
+    click: async (sel: string) => { clickLog.push(sel); if (sel === '#cus_notes') saved = true },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 })
+  const verifier = async () => ({ achieved: false, reason: "never persists", costUsd: 0 }) // real verifier, always rejects
+  const out = await authorTrail("proj_loop_t", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+  // The proactive read-backs are hard-capped (MAX_PROACTIVE_VERIFY_BEFORE_STALL=2), so only a bounded
+  // number of reloads happened — NOT one per Save through the whole step budget.
+  expect(gotoCount).toBeLessThanOrEqual(4) // initial nav(s) + at most 2 proactive read-backs
+  // Live Save clicks stay bounded (roughly cap × LOOP_STALL_N), not dozens up to AUTHOR_MAX_STEPS.
+  expect(clickLog.filter((s) => s === '#cus_notes').length).toBeLessThanOrEqual(20)
+})

@@ -424,6 +424,14 @@ export async function authorTrail(
   const COMMIT_RECENCY_STEPS = 6
   // Set at a stall point to make the NEXT iteration take over with a proactive read-back + verify instead.
   let deferProactiveVerify = false
+  // KLA-786 (round-9b C2, codex): HARD cap on verify-before-stall recoveries for the whole run. Without it
+  // a never-persisting save loops: each Save refreshes lastCommitStep so every repeated-action stall looks
+  // "recent" → read-back → failed verify (misses++), but the next successful action resets misses=0, so the
+  // 3-miss termination never accumulates and the run issues dozens of live Saves until the step/deadline
+  // cap. Capping the recoveries (no reset — a legit run needs ≤ this many) bounds live re-saves to roughly
+  // cap × LOOP_STALL_N, then a plain stall.
+  let proactiveVerifyBeforeStall = 0
+  const MAX_PROACTIVE_VERIFY_BEFORE_STALL = 2
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
@@ -457,6 +465,7 @@ export async function authorTrail(
           // no-op iteration takes the done-nudge branch instead of re-clicking this same submit (the
           // guard re-firing its own just-committed click was the save-loop, no model complicity needed).
           prevActionWasCommit = true
+          lastCommitStep = log.length // KLA-786 (round-9b C2, codex): auto-submit is a commit → anchor recency
           return sel
         }
       } catch { /* try next candidate */ }
@@ -657,6 +666,11 @@ export async function authorTrail(
                   await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance network settle").catch(() => {})
                   history.push(`(auto-advance: the page was not changing — clicked the most likely submit control "${sel}" to progress the flow; check the new page state)`)
                   noOpCount = 0
+                  // NOTE (round-9b): deliberately do NOT set lastCommitStep here. Unlike the login
+                  // auto-submit (tryAutoAdvanceSubmit — a genuine form submit), this inline stall-recovery
+                  // click is not a user-intent commit; anchoring it would let a following type-stall trigger
+                  // verify-before-stall, whose read-back resets autoAdvanceClicks and re-fires this very
+                  // auto-advance (regressed test F). The stall→verify hook is for real saves only.
                   // KLA-786 (round-1 C2): bound live auto-advance re-clicks. This click is itself a
                   // settled commit; counting it means if the page STILL doesn't change we STOP
                   // auto-clicking (see the autoAdvanceClicks cap above) and switch to the done-nudge,
@@ -1012,20 +1026,27 @@ export async function authorTrail(
               history.push(`(auto-advance: '${a.op}' repeated without progress on a login form — clicked "${autoClicked}" to submit; check the new page state)`)
               consecutiveSuccessKey = 0
               lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
-            } else if ((log.length - lastCommitStep) <= COMMIT_RECENCY_STEPS && !deferProactiveVerify) {
+            } else if ((log.length - lastCommitStep) <= COMMIT_RECENCY_STEPS && !deferProactiveVerify
+                       && proactiveVerifyBeforeStall < MAX_PROACTIVE_VERIFY_BEFORE_STALL) {
               // KLA-786 (round-9): about to give up on a repeated action, but a COMMIT (Save/submit) fired
               // within the last few steps — the change may ALREADY have persisted (BookJoy's Save pops a
               // modal, so the model oscillates and re-types instead of finishing). Don't stall yet: log this
               // step, arm the read-back gate, and let the NEXT iteration take over with a proactive
               // read-back + verify (server truth). If the save really took, the run crystallizes; if not,
               // the verifier rejects and the miss/deadline caps still end it. Fires at most once per stall
-              // region (deferProactiveVerify latch + reset of consecutiveSuccessKey).
+              // region (deferProactiveVerify latch + reset of consecutiveSuccessKey) and at most
+              // MAX_PROACTIVE_VERIFY_BEFORE_STALL times per run (round-9b C2: hard-bounds live re-saves on a
+              // never-persisting page — after the cap, fall through to a plain stall).
+              proactiveVerifyBeforeStall++
               entry.ok = true
               entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
               log.push(entry); await opts.onStep?.(log)
               unconfirmedCommitPending = true
               deferProactiveVerify = true
               consecutiveSuccessKey = 0
+              // KLA-786 (round-9b C2, codex): persist the armed gate NOW (before continue) so a crash/resume
+              // in this window can't drop unconfirmedCommitPending and let a resumed "done" skip the read-back.
+              if (opts.onCheckpoint) { try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {} }
               history.push(`(stuck repeating '${a.op}', but a save/submit happened just before — verifying whether it already succeeded before giving up)`)
               continue
             } else {
@@ -1077,6 +1098,7 @@ export async function authorTrail(
               entry.ok = true
               misses = 0
               entryDom = afterDom
+              lastCommitStep = log.length // KLA-786 (round-9b C3, codex): a click that timed out but took effect is still a commit → anchor recency
               history.push(`${a.op}${entry.selector ? " " + entry.selector : ""} — ok (page changed after action timeout)`)
               recoveredSideEffect = true
             }
