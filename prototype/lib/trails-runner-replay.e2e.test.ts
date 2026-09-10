@@ -308,3 +308,30 @@ test("replay capping: browser-side capped batches keep the truncated marker", as
     process.env.KLAV_REPLAY_MAX_TOTAL_EVENTS = origTotal
   }
 }, 30000)
+
+
+// KLA-790: a step that targets an element rendered ASYNC (after 'load') must not red as selector-drift on
+// replay. The runner's Tier-0 count() is instantaneous; before the bounded attach-wait + post-nav settle,
+// #email (inserted ~700ms after load here) read as count 0 → ElementGone → red "selector-drift" at idx 0.
+const LATE_EMAIL_URL = "data:text/html,%3C%21doctype%20html%3E%3Chtml%3E%3Cbody%3E%3Ch1%3ELogin%3C/h1%3E%3Cscript%3EsetTimeout%28function%28%29%7Bvar%20i%3Ddocument.createElement%28%27input%27%29%3Bi.id%3D%27email%27%3Bi.setAttribute%28%27aria-label%27%2C%27Email%27%29%3Bdocument.body.appendChild%28i%29%3B%7D%2C1800%29%3C/script%3E%3C/body%3E%3C/html%3E"
+
+test("KLA-790: a late-rendered target resolves on replay instead of reding as selector-drift", async () => {
+  const projectId = "proj_kla790_latefield"
+  const { trailId } = await crystallize(projectId, {
+    name: "type into a late-rendered login field",
+    intent: "type an email into a field that renders asynchronously after load",
+    baseUrl: LATE_EMAIL_URL,
+    authorKind: "llm" as const,
+    createdBy: "agent@klavity",
+    steps: [
+      { action: "type" as const, actionValue: "buyer@test.dev", url: LATE_EMAIL_URL, domHash: "login",
+        target: { role: "textbox", accessibleName: "Email", resolvedSelector: "#email" } },
+      { action: "assert" as const, checkpoint: { description: "email field present" }, url: LATE_EMAIL_URL, domHash: "login",
+        target: { role: "textbox", accessibleName: "Email", resolvedSelector: "#email" } },
+    ],
+  })
+  const summary = await walkTrail(projectId, trailId, { fixtureUrl: LATE_EMAIL_URL, replay: true })
+  // With the KLA-790 attach-wait, the field is found once it renders → green (no selector-drift).
+  expect(summary.verdict).toBe("green")
+  expect(summary.llmCalls).toBe(0)
+}, 60000)

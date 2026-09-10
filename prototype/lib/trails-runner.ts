@@ -263,6 +263,12 @@ export interface WalkSummary {
 }
 
 const CACHE_CONFIDENCE = 1.0
+// KLA-790: bounded attach-wait for the cached selector in Tier-0 resolution. locator.count() is
+// instantaneous (no auto-wait), so on replay a step that fires before the page finishes rendering
+// (BookJoy's /v2/login renders its form async after 'load') reads the element as count 0 → falsely
+// treated as drift → ElementGone → red "selector-drift" (KLA-790). Give the cached selector a short
+// chance to attach first; if it never does we fall through to the same heal/gone path as before.
+const RESOLVE_ATTACH_MS = 2_500
 // KLA-68: fixed backoff between per-step retries (ms). Short enough not to blow the walk deadline
 // while giving a transiently-slow page time to settle before the next attempt.
 export const STEP_RETRY_BACKOFF_MS = 500
@@ -495,6 +501,10 @@ export async function resolveTarget(
   // Tier 0: the cached concrete selector, verbatim. Zero work, zero heal.
   if (cachedSelector) {
     const loc = page.locator(cachedSelector)
+    // KLA-790: bounded attach-wait before the instantaneous count() so a not-yet-rendered element (common
+    // on replay right after a navigation) isn't mistaken for drift. Never throws; on timeout we proceed to
+    // count()/heal exactly as before, so ambiguous (>1) and genuinely-gone (0) semantics are unchanged.
+    try { await loc.first().waitFor({ state: "attached", timeout: RESOLVE_ATTACH_MS }) } catch { /* fall through */ }
     const count = await loc.count()
     if (count === 1) {
       return { tier: "cache", selector: cachedSelector, locator: loc, healed: false, confidence: CACHE_CONFIDENCE }
@@ -933,6 +943,10 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
       })
     }
     await page.goto(opts.fixtureUrl, { timeout: opTimeout })
+    // KLA-790: goto only waits for 'load'; many apps render key UI async after that (BookJoy's login
+    // form). Settle the network so the first step resolves against a rendered page — mirroring authoring's
+    // post-action settleNetwork that the replay path otherwise lacked. Best-effort (never blocks the walk).
+    await page.waitForLoadState("networkidle", { timeout: Math.min(opTimeout, 8_000) }).catch(() => {})
 
     // Track the document URL across steps so a full-page navigation (click-driven or explicit
     // navigate) becomes a segment boundary: flush the page just LEFT, tagged with the idx of the
@@ -1233,6 +1247,9 @@ async function runOneStep(
     // In Layer C the whole walk is scoped to fixtureUrl; re-navigate to it (origin already loaded).
     // Bound the nav at opTimeout (Plan G) so a live-network navigate step can't hang on the 30s default.
     await page.goto(step.actionValue && /^https?:|^file:/.test(step.actionValue) ? step.actionValue : fixtureUrl, { timeout: currentTimeout })
+    // KLA-790: settle after the navigate too (goto waits only for 'load'), so the NEXT step resolves
+    // against a rendered page instead of tripping the drift path on async-rendered UI. Best-effort.
+    await page.waitForLoadState("networkidle", { timeout: Math.min(currentTimeout, 8_000) }).catch(() => {})
     await addStepRun({
       runId, trailId, stepId: step.id, idx: step.idx, tier: "none", verdict: "green", confidence: 1, healed: false,
       evidence: { action: "navigate", recordedStep: recordedStep(null, null), resultUrl: page.url() },
