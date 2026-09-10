@@ -286,7 +286,14 @@ export function buildVerifyMessages(input: ObjectiveVerificationInput): any[] {
   ]
 }
 
-/** Select the verifier model without allowing the text-lite mix to receive an image. */
+/**
+ * Select the verifier model. With a screenshot it MUST resolve to a vision-capable model.
+ * INVARIANT (KLA-788): every model weighted by DEFAULT_WEIGHTS must be MULTIMODAL — the screenshot
+ * branch routes through it, so adding a text-only model there would silently send an image to a model
+ * that drops/rejects it. (Today: qwen3-vl, gemini-2.5-flash, gemini-3.1-flash-lite — all multimodal.)
+ * If a text-only model is ever added to the mix, introduce a dedicated all-vision VISION_WEIGHTS here.
+ * The text branch keeps the cheaper lite pick since it has no image.
+ */
 export function selectVerifierModel(input: Pick<ObjectiveVerificationInput, "screenshotB64">, enabled: boolean, rnd = Math.random()): string {
   const hasScreenshot = !!input.screenshotB64
   return pickModel(
