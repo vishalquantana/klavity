@@ -256,6 +256,14 @@ export interface BrowserPage {
   assertElementCount(selector: string, expected: number, timeoutMs: number): Promise<void>
   waitMs(ms: number): Promise<void>
   /**
+   * KLA (BookJoy Save-loop): wait (bounded) for in-flight network requests to settle. Used by AUTHORING
+   * after a commit-style action (click/submit/select/upload) so the NEXT snapshot captures the AJAX result
+   * (a "Saved" toast / updated list) instead of the pre-response DOM — otherwise a no-page-nav AJAX save
+   * looks unchanged and trips the no-op stagnation guard into re-clicking Save. Never throws; on timeout it
+   * just returns (best-effort). Mirrors the replay runner's post-action networkidle wait.
+   */
+  settleNetwork(timeoutMs: number): Promise<void>
+  /**
    * KLA-111: Install network mocks before navigating. Subsequent requests whose URL matches a mock
    * rule are either stubbed with a canned response or aborted (blocked). Call before goto() so
    * mocks are in place for the initial page load. Calling again REPLACES all previously installed
@@ -349,6 +357,7 @@ class PlaywrightPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async settleNetwork(timeoutMs: number) { await this.page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {}) }
   async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
     // Remove any previously installed Klavity route handlers before installing fresh ones.
     await this.page.unroute("**/*").catch(() => {})
@@ -503,6 +512,10 @@ class PuppeteerPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async settleNetwork(timeoutMs: number) {
+    // Puppeteer's waitForNetworkIdle (idleTime 500ms); fall back to a short flat wait on older builds.
+    try { await this.page.waitForNetworkIdle({ timeout: timeoutMs, idleTime: 500 }) } catch { await this.waitMs(Math.min(timeoutMs, 800)) }
+  }
   async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
     // Puppeteer: enable request interception and handle each request against the mock list.
     // setRequestInterception(true) is idempotent in Puppeteer; safe to call repeatedly.
