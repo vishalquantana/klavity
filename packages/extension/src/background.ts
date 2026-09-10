@@ -7,7 +7,7 @@ import { dispatchSubmit } from '@klavity/core/submit'
 // KLA-720: client-direct tracker submitters (jira/linear/github/plane) removed — persist-first only.
 import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 import { EVIDENCE_KEY } from './evidence-store'
-import { monitoredHost, grantedRegistrablePatterns } from './roam-scope'
+import { monitoredHost, registrablePatterns } from './roam-scope'
 
 // Safety net: messaging a tab/port that has no listener (e.g. a tab with no
 // content script) rejects with "Could not establish connection / Receiving end
@@ -248,12 +248,13 @@ async function reconcileDynamicScripts(): Promise<void> {
   if (!chrome.scripting?.registerContentScripts) return
   const config = await getConfig()
   const hosts = monitoredHosts(config)
-  // Check each host's concrete scheme candidates; register with whatever scheme the user
-  // actually granted so grant/check/register stay scheme-consistent (KLA-783).
-  const granted = await grantedRegistrablePatterns(
-    hosts,
-    (pat) => chrome.permissions.contains({ origins: [pat] }),
-  )
+  // KLA-783 (round-2): register the origins the user has ACTUALLY granted (permissions.getAll)
+  // that match a monitored host glob — not guessed candidate patterns. Covers exact single-scheme
+  // grants, both schemes granted, and wildcard-subdomain monitored patterns; each registered
+  // pattern is verbatim a granted one, so registration can't fail on an ungranted scheme.
+  let grantedOrigins: string[] = []
+  try { grantedOrigins = (await chrome.permissions.getAll())?.origins ?? [] } catch { grantedOrigins = [] }
+  const granted = registrablePatterns(hosts, grantedOrigins)
   let existing: chrome.scripting.RegisteredContentScript[] = []
   try { existing = await chrome.scripting.getRegisteredContentScripts() } catch { /* ignore */ }
   const ours = existing.filter((s) => s.id.startsWith('klav-')).map((s) => s.id)

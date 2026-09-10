@@ -1,74 +1,66 @@
-// @vitest-environment jsdom
+// KLA-783 — roaming-Sim dynamic-registration scope. Round-2: register the origins the user
+// actually granted (permissions.getAll) that match a monitored host glob, covering exact
+// single-scheme grants, both schemes, and wildcard-subdomain monitored patterns.
 import { describe, it, expect } from 'vitest'
-import { monitoredHost, scopeCandidates, grantedRegistrablePatterns } from './roam-scope'
+import { monitoredHost, originHost, hostMatchesGlob, registrablePatterns } from './roam-scope'
 
-describe('monitoredHost — strips scheme + path from a monitored URL pattern', () => {
-  it('handles bare host/path, http(s):// and *:// forms', () => {
-    expect(monitoredHost('customer.example/app*')).toBe('customer.example')
-    expect(monitoredHost('https://customer.example/app*')).toBe('customer.example')
-    expect(monitoredHost('http://customer.example/')).toBe('customer.example')
-    expect(monitoredHost('*://customer.example/*')).toBe('customer.example')
-    expect(monitoredHost('customer.example')).toBe('customer.example')
+describe('monitoredHost', () => {
+  it('strips scheme/path/port, preserves *. subdomain glob and bare *', () => {
+    expect(monitoredHost('host/path*')).toBe('host')
+    expect(monitoredHost('https://host/x')).toBe('host')
+    expect(monitoredHost('*://host/*')).toBe('host')
+    expect(monitoredHost('*.example.com/*')).toBe('*.example.com')
+    expect(monitoredHost('  https://h:8080/app ')).toBe('h')
+    expect(monitoredHost('*://*/*')).toBe('*')
   })
 })
 
-describe('scopeCandidates — most-permissive scheme first', () => {
-  it('offers broad, then https, then http', () => {
-    expect(scopeCandidates('host.tld')).toEqual([
-      '*://host.tld/*',
-      'https://host.tld/*',
-      'http://host.tld/*',
+describe('originHost', () => {
+  it('extracts the host from a granted match pattern', () => {
+    expect(originHost('https://app.example.com/*')).toBe('app.example.com')
+    expect(originHost('*://host/*')).toBe('host')
+    expect(originHost('http://h:3000/*')).toBe('h')
+  })
+})
+
+describe('hostMatchesGlob', () => {
+  it('exact host', () => { expect(hostMatchesGlob('a.com', 'a.com')).toBe(true); expect(hostMatchesGlob('b.com', 'a.com')).toBe(false) })
+  it('*.base matches base + any subdomain', () => {
+    expect(hostMatchesGlob('example.com', '*.example.com')).toBe(true)
+    expect(hostMatchesGlob('app.example.com', '*.example.com')).toBe(true)
+    expect(hostMatchesGlob('deep.app.example.com', '*.example.com')).toBe(true)
+    expect(hostMatchesGlob('example.com.evil.com', '*.example.com')).toBe(false)
+    expect(hostMatchesGlob('notexample.com', '*.example.com')).toBe(false)
+  })
+  it('bare * matches any host', () => { expect(hostMatchesGlob('anything.io', '*')).toBe(true) })
+})
+
+describe('registrablePatterns', () => {
+  const globs = ['customer.example', '*.wild.com']
+
+  it('registers a freshly-granted HTTPS-only exact origin (the KLA-783 repro)', () => {
+    expect(registrablePatterns(globs, ['https://customer.example/*'])).toEqual(['https://customer.example/*'])
+  })
+  it('registers BOTH schemes when both are granted (dual-scheme, codex case)', () => {
+    expect(registrablePatterns(globs, ['https://customer.example/*', 'http://customer.example/*']))
+      .toEqual(['https://customer.example/*', 'http://customer.example/*'])
+  })
+  it('registers an exact-subdomain grant against a wildcard-subdomain monitored pattern (codex case)', () => {
+    expect(registrablePatterns(globs, ['https://app.wild.com/*'])).toEqual(['https://app.wild.com/*'])
+  })
+  it('preserves a broad *://host/* grant verbatim', () => {
+    expect(registrablePatterns(globs, ['*://customer.example/*'])).toEqual(['*://customer.example/*'])
+  })
+  it('omits granted origins that match NO monitored pattern (e.g. the extension manifest hosts)', () => {
+    expect(registrablePatterns(globs, ['https://klavity.in/*', 'https://other.site/*'])).toEqual([])
+  })
+  it('dedups and keeps only matching origins from a mixed grant set', () => {
+    const out = registrablePatterns(globs, [
+      'https://klavity.in/*',          // manifest host — omit
+      'https://customer.example/*',    // exact match — keep
+      'https://customer.example/*',    // dup — collapse
+      'https://sub.wild.com/*',        // wildcard subdomain — keep
     ])
-  })
-})
-
-describe('grantedRegistrablePatterns — KLA-783 scheme-consistent registration', () => {
-  // Simulate chrome.permissions.contains() semantics: an exact https grant does NOT satisfy
-  // a `*://host/*` (both-schemes) query — the very mismatch that broke roaming registration.
-  const containsFrom = (granted: string[]) => async (pattern: string) => granted.includes(pattern)
-
-  it('registers a freshly-granted https origin (the bug: was previously skipped)', async () => {
-    // Popup granted the EXACT active origin only.
-    const contains = containsFrom(['https://customer.example/*'])
-    const patterns = await grantedRegistrablePatterns(['customer.example'], contains)
-    expect(patterns).toEqual(['https://customer.example/*'])
-    // And the pattern we register is one contains() actually confirms → it WILL register.
-    expect(await contains(patterns[0])).toBe(true)
-  })
-
-  it('regression guard: the old `*://host/*`-only check would have registered nothing', async () => {
-    const contains = containsFrom(['https://customer.example/*'])
-    // Old behaviour checked only the broad pattern:
-    expect(await contains('*://customer.example/*')).toBe(false)
-  })
-
-  it('an http-only granted site still registers under http', async () => {
-    const contains = containsFrom(['http://legacy.example/*'])
-    const patterns = await grantedRegistrablePatterns(['legacy.example'], contains)
-    expect(patterns).toEqual(['http://legacy.example/*'])
-  })
-
-  it('a broad `*://host/*` grant (admin/manifest) is preserved as the registered pattern', async () => {
-    const contains = containsFrom(['*://broad.example/*'])
-    const patterns = await grantedRegistrablePatterns(['broad.example'], contains)
-    expect(patterns).toEqual(['*://broad.example/*'])
-  })
-
-  it('omits hosts with no granted permission', async () => {
-    const contains = containsFrom(['https://a.example/*'])
-    const patterns = await grantedRegistrablePatterns(['a.example', 'b.example'], contains)
-    expect(patterns).toEqual(['https://a.example/*'])
-  })
-
-  it('one pattern per host — most permissive wins when both broad and concrete are granted', async () => {
-    const contains = containsFrom(['*://x.example/*', 'https://x.example/*'])
-    const patterns = await grantedRegistrablePatterns(['x.example'], contains)
-    expect(patterns).toEqual(['*://x.example/*'])
-  })
-
-  it('a rejecting contains() never throws and yields no patterns', async () => {
-    const contains = async () => { throw new Error('permission API blew up') }
-    const patterns = await grantedRegistrablePatterns(['boom.example'], contains)
-    expect(patterns).toEqual([])
+    expect(out).toEqual(['https://customer.example/*', 'https://sub.wild.com/*'])
   })
 })
