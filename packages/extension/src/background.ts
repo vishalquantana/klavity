@@ -7,6 +7,7 @@ import { dispatchSubmit } from '@klavity/core/submit'
 // KLA-720: client-direct tracker submitters (jira/linear/github/plane) removed — persist-first only.
 import { submitReport as backendSubmit } from '@klavity/core/integrations/backend'
 import { EVIDENCE_KEY } from './evidence-store'
+import { monitoredHost, grantedRegistrablePatterns } from './roam-scope'
 
 // Safety net: messaging a tab/port that has no listener (e.g. a tab with no
 // content script) rejects with "Could not establish connection / Receiving end
@@ -224,13 +225,17 @@ function contentFiles(): { js: string[]; css: string[] } {
   return { js: cs?.js ?? [], css: cs?.css ?? [] }
 }
 
-// Monitored URL patterns ("host/path*") → host-scoped match patterns ("*://host/*").
-function monitoredOrigins(config: KlavConfig | null): string[] {
+// Monitored URL patterns ("host/path*") → bare hosts. reconcileDynamicScripts() maps each
+// host to a scheme-consistent match pattern (see roam-scope.ts): the popup grants the exact
+// active origin (e.g. https://host/*), so we must check/register that concrete scheme rather
+// than the broad `*://host/*` (which permissions.contains() won't confirm from an https-only
+// grant — the KLA-783 bug that left roaming Sims unregistered).
+function monitoredHosts(config: KlavConfig | null): string[] {
   const set = new Set<string>()
   for (const p of config?.projects ?? []) {
     for (const pat of p.monitoredUrls ?? []) {
-      const host = String(pat).replace(/^[a-z]+:\/\//i, '').split('/')[0].trim()
-      if (host) set.add(`*://${host}/*`)
+      const host = monitoredHost(pat)
+      if (host) set.add(host)
     }
   }
   return [...set]
@@ -242,11 +247,13 @@ function monitoredOrigins(config: KlavConfig | null): string[] {
 async function reconcileDynamicScripts(): Promise<void> {
   if (!chrome.scripting?.registerContentScripts) return
   const config = await getConfig()
-  const desired = monitoredOrigins(config)
-  const granted: string[] = []
-  for (const o of desired) {
-    try { if (await chrome.permissions.contains({ origins: [o] })) granted.push(o) } catch { /* ignore */ }
-  }
+  const hosts = monitoredHosts(config)
+  // Check each host's concrete scheme candidates; register with whatever scheme the user
+  // actually granted so grant/check/register stay scheme-consistent (KLA-783).
+  const granted = await grantedRegistrablePatterns(
+    hosts,
+    (pat) => chrome.permissions.contains({ origins: [pat] }),
+  )
   let existing: chrome.scripting.RegisteredContentScript[] = []
   try { existing = await chrome.scripting.getRegisteredContentScripts() } catch { /* ignore */ }
   const ours = existing.filter((s) => s.id.startsWith('klav-')).map((s) => s.id)
