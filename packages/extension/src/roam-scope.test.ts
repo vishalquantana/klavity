@@ -54,6 +54,18 @@ describe('registrablePatterns', () => {
   it('omits granted origins that match NO monitored pattern (e.g. the extension manifest hosts)', () => {
     expect(registrablePatterns(globs, ['https://klavity.in/*', 'https://other.site/*'])).toEqual([])
   })
+  it('collapses a broad *://host/* over same-host concrete grants (no double-registration) — codex C2', () => {
+    expect(registrablePatterns(globs, ['*://customer.example/*', 'https://customer.example/*']))
+      .toEqual(['*://customer.example/*'])
+  })
+  it('keeps BOTH concrete schemes when no broad grant exists (https+http do not overlap)', () => {
+    expect(registrablePatterns(globs, ['https://customer.example/*', 'http://customer.example/*']))
+      .toEqual(['https://customer.example/*', 'http://customer.example/*'])
+  })
+  it('matches case-insensitively (codex C3)', () => {
+    expect(registrablePatterns(['Example.COM'], ['https://example.com/*'])).toEqual(['https://example.com/*'])
+    expect(hostMatchesGlob('APP.example.com', '*.Example.com')).toBe(true)
+  })
   it('dedups and keeps only matching origins from a mixed grant set', () => {
     const out = registrablePatterns(globs, [
       'https://klavity.in/*',          // manifest host — omit
