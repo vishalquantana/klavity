@@ -116,7 +116,7 @@ function krefSnapshotBody(): string {
   // below-the-fold content; the snapshot is intentionally allowed to include it.
   const visible = (el: Element): boolean => {
     const r = (el as HTMLElement).getBoundingClientRect?.()
-    if (!r || (r.width === 0 && r.height === 0)) return false
+    if (!r || r.width === 0 || r.height === 0) return false
     const s = getComputedStyle(el as HTMLElement)
     if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false
     try {
@@ -182,7 +182,7 @@ function krefSnapshotBody(): string {
         const role = roleOf(child)
         const indent = "  ".repeat(Math.min(depth, 6))
         if (role) {
-          let line = `${indent}${clean(role)} "${nameOf(child)}"`
+          let line = `${indent}${clean(role.replace(/\s+/g, " "))} "${nameOf(child)}"`
           if ((child as HTMLInputElement).disabled) line += " {disabled}"
           // Fill-state signal (KLA: criticalpath1 stall): without it the model cannot see that its
           // own `type` succeeded (the accessible name is just the placeholder) and loops re-typing.
