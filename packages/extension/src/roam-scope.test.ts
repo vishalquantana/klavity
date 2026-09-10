@@ -87,6 +87,12 @@ describe('registrablePatterns', () => {
     expect(registrablePatterns(['*.example.com'], ['*://*.example.com/*', '*://*.sub.example.com/*']))
       .toEqual(['*://*.example.com/*'])
   })
+  it('mutual-coverage tie keeps the FIRST (never drops both) — codex round-5', () => {
+    // Two port-distinct grants both reduce to host `localhost`; they mutually cover, but exactly one must
+    // survive so something registers (the content script then gates the actual port).
+    expect(registrablePatterns(['localhost'], ['http://localhost:3000/*', 'http://localhost:4000/*']))
+      .toEqual(['http://localhost:3000/*'])
+  })
   it('dedups and keeps only matching origins from a mixed grant set', () => {
     const out = registrablePatterns(globs, [
       'https://klavity.in/*',          // manifest host — omit

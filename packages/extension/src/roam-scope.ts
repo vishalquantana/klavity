@@ -93,9 +93,12 @@ export function registrablePatterns(monitoredGlobs: Iterable<string>, grantedOri
     seen.add(o); matched.push(o)
   }
   // Collapse by COVERAGE (not just identical host): registering both a pattern and one it covers would run
-  // the content script twice on any page the narrower matches. Keep only the MAXIMAL patterns — drop any
-  // pattern that ANOTHER matched pattern covers. Order-independent (no reliance on a specificity sort, which
-  // ties for nested wildcards like *.sub.example.com vs *.example.com); coverage is transitive so a chain
-  // A⊇B⊇C collapses to A. Exact-string dups were already removed above, so mutual coverage can't drop both.
-  return matched.filter((o) => !matched.some((k) => k !== o && patternCovers(k, o)))
+  // the content script twice on any page the narrower matches. Keep only the MAXIMAL patterns — drop a
+  // pattern that ANOTHER matched pattern covers. Order-independent for strict coverage (transitive, so a
+  // chain A⊇B⊇C collapses to A). For a MUTUAL-coverage tie (two distinct strings that reduce to the same
+  // host+scheme — e.g. port-distinct grants both →`localhost`, since match patterns are host-wide), keep the
+  // FIRST so we never drop both and register nothing.
+  return matched.filter((o, i) => !matched.some((k, j) =>
+    j !== i && patternCovers(k, o) && !(patternCovers(o, k) && j > i)
+  ))
 }
