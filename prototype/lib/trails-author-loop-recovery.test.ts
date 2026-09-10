@@ -295,6 +295,7 @@ test("(D) loop-recovery: auto-advance skips selectors matching >1 element", asyn
 //        never fires — only the repeated-successKey guard trips. It must auto-submit, not fail. ───────
 test("(E) repeated type where the snapshot keeps changing still auto-advances (BookJoy login fix)", async () => {
   let snapN = 0
+  let settleN = 0
   let currentUrl = "https://example.com/v2/login"
   let dom = `<html><body><form>
     <input type="email" aria-label="Email" id="email" value="a@b.com"/>
@@ -316,7 +317,7 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel); if (sel === 'button[type="submit"]') { currentUrl = "https://example.com/dashboard"; dom = `<html><body><p id="ok">Signed in.</p></body></html>` } },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
-    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, settleNetwork: async () => { settleN++ }, interceptNetwork: async () => {}, guardNavigations: async () => {},
   }
   const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
 
@@ -340,6 +341,9 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
 
   // Neg-control: without the successKey→auto-submit fix, this run STALLS (repeated type never submits).
   expect(clickLog).toContain('button[type="submit"]') // auto-advance submitted the filled form
+  // KLA (BookJoy Save-loop): the auto-submit helper settled the network before the post-click snapshot,
+  // so a no-nav AJAX login result would be captured (not the pre-response DOM).
+  expect(settleN).toBeGreaterThan(0)
   expect(out.status).toBe("crystallized")
   expect(out.stallReason).toBeNull()
   // C1-1: the recovery CLICK must be PERSISTED in the crystallized trail — else replay types the fields

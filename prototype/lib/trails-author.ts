@@ -379,6 +379,10 @@ export async function authorTrail(
         const cnt = await bounded(pg.count(sel), 5_000, "auto-advance count")
         if (cnt === 1) {
           await bounded(pg.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
+          // KLA (BookJoy Save-loop): settle so the caller's post-click snapshot reflects an AJAX login/submit
+          // result (no-nav forms) instead of the pre-response DOM. (The no-op-guard's inline click settles on
+          // its own path; this helper is the repeated-type login auto-submit path.)
+          await bounded(pg.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance settle").catch(() => {})
           return sel
         }
       } catch { /* try next candidate */ }
