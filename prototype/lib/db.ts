@@ -4323,10 +4323,14 @@ export async function mergeFeedbackClusters(
     // none of the folded ticket's attachments/recordings. Read both rows' raw JSON, then within the atomic
     // batch: UNION attachments (dedup by key||url) and recordings (dedup by id||key), and carry annotations
     // onto the survivor only when the survivor lacks its own (survivor's own markup layer wins if present).
+    // KLA-780 round-4 (codex C2): a TRANSIENT artifact-read failure must NOT be swallowed — silently
+    // proceeding would commit the merge (receipt written) with NO artifact carry, and a retry would see the
+    // receipt and take the idempotent fast-path, stranding the artifacts forever. Throw so the merge aborts
+    // (compensating rollback → clean re-claim on retry) rather than losing evidence.
     const artRows = await db!.execute({
       sql: "SELECT id, attachments_json, recordings_json, annotations_json FROM feedback WHERE project_id=? AND id IN (?,?)",
       args: [projectId, sId, mId],
-    }).catch(() => ({ rows: [] as any[] }))
+    })
     const artOf = (rid: string) => (artRows.rows as any[]).find((r) => String(r.id) === rid) || {}
     const survArt = artOf(sId)
     const mergedArt = artOf(mId)
