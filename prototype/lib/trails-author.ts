@@ -790,6 +790,12 @@ export async function authorTrail(
           // (No-op in prod, where the key is set and a real LLM verifier judges the reloaded page; custom
           // injected verifiers don't emit this marker, so they're honored.)
           if (didForcedReadBack && verifyResult.achieved && /OPENROUTER_API_KEY not set/i.test(verifyResult.reason || "")) {
+            // KLA-786 (round-6, codex): the read-back block already cleared unconfirmedCommitPending before
+            // we got here, so stalling now would persist a checkpoint with the gate OFF — a resume could
+            // then accept "done" with no forced read-back and the same stub would crystallize the unsaved
+            // change. Re-arm the gate so the persisted checkpoint keeps it: a resume re-forces the read-back
+            // (and re-refuses the stub, or verifies for real once a key is configured) instead of bypassing.
+            unconfirmedCommitPending = true
             return await stall("cannot confirm the change persisted: no objective verifier configured for the post-save read-back", page.url())
           }
         } catch (verifyErr: any) {

@@ -801,3 +801,40 @@ test("(F) KLA-786: auto-advance does not re-fire the same submit every couple of
   const submitClicks = clickLog.filter((s) => s === 'button[type="submit"]').length
   expect(submitClicks).toBeLessThanOrEqual(1)
 })
+
+// ── (N) KLA-786 (round-6, codex): no-key refusal must survive resume (re-arm the gate before stall) ──
+
+test("(N) KLA-786: a no-key refusal persists the pending gate so resume can't bypass the read-back", async () => {
+  // codex round-2 C2: the proactive read-back clears unconfirmedCommitPending, then the no-key stub is
+  // refused and we stall. If the persisted checkpoint had the gate OFF, resuming + emitting done would skip
+  // the read-back and the same stub would crystallize the unsaved change. The refusal must re-arm the gate.
+  const stubVerifier = async () => ({ achieved: true, evidenceSelector: null, reason: "OPENROUTER_API_KEY not set (auto-verify)", costUsd: 0 })
+
+  // Phase 1: drive until the proactive verify refuses the stub and stalls; capture the persisted checkpoint.
+  const p1 = notesPage({})
+  let captured: any = null
+  const out1 = await authorTrail("proj_loop_n1", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model: async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }),
+    verifier: stubVerifier, onCheckpoint: (cp: any) => { captured = cp },
+    browserFactory: async () => ({ newPage: async () => p1.page, close: async () => {}, kind: "local" } as any),
+    shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out1.status).toBe("stalled")
+  expect(out1.objectiveVerified).toBeFalsy()
+  // The gate was RE-ARMED before stalling, so the persisted checkpoint keeps it on.
+  expect(captured).toBeTruthy()
+  expect(captured.unconfirmedCommitPending).toBe(true)
+
+  // Phase 2: resume that checkpoint and have the model emit done immediately. Because the gate is restored,
+  // the done handler re-forces the read-back and re-refuses the stub → stall, never a false crystallize.
+  const p2 = notesPage({})
+  const out2 = await authorTrail("proj_loop_n2", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model: async () => ({ action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "saved" }, costUsd: 0 }),
+    verifier: stubVerifier, checkpoint: captured,
+    browserFactory: async () => ({ newPage: async () => p2.page, close: async () => {}, kind: "local" } as any),
+    shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out2.status).toBe("stalled")
+  expect(out2.objectiveVerified).toBeFalsy()
+  expect(p2.state.gotoCount).toBeGreaterThanOrEqual(2) // resume re-forced an independent read-back
+})
