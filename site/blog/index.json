@@ -558,5 +558,12 @@
     "excerpt": "A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish.",
     "category": "Guides",
     "date": "2026-09-09"
+  },
+  {
+    "slug": "how-to-test-for-edge-cases-checklist",
+    "title": "How to Test for Edge Cases: A Practical QA Checklist",
+    "excerpt": "Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.",
+    "category": "Guides",
+    "date": "2026-09-10"
   }
 ]
