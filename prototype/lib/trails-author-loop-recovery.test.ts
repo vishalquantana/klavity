@@ -1244,7 +1244,8 @@ test("KLA-788b: the done read-back + verify path pumps onHeartbeat (not just top
     shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
   })
   expect(out.status).toBe("crystallized")
-  // Top-of-loop beats give ~2 (iter1 + iter2); the two done-handler pumps (pre-read-back, pre-verify) add
-  // more, so by verify time we've seen strictly more than the top-of-loop-only baseline.
-  expect(beatsAtVerify).toBeGreaterThanOrEqual(3)
+  // iter1 (click) + iter2 (done) give 2 top-of-loop beats; the done-handler's TWO pumps (pre-read-back +
+  // pre-verify) bring it to exactly 4. >=4 requires BOTH pumps (dropping the pre-verify pump would leave 3),
+  // so this independently proves both are present (codex round-review C3).
+  expect(beatsAtVerify).toBeGreaterThanOrEqual(4)
 })
