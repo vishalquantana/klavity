@@ -560,6 +560,119 @@ test("(G) KLA-786: a silent save failure is caught by the forced read-back, not 
   expect(out.objectiveVerified).toBeFalsy()
 })
 
+// helper: a page stub for a customer-notes form whose Save is a silent no-op commit ─────────────────
+function notesPage(opts: { onGotoThrow?: boolean; reloadedDom?: string } = {}) {
+  const NOTES_DOM = `<html><body><form><textarea aria-label="Notes" id="customer_notes">test note</textarea><button type="submit" id="cus_notes">Save</button></form></body></html>`
+  const state = { gotoCount: 0, modalOpen: false, clickLog: [] as string[] }
+  const kref = (dom: string) => dom.replace(/<textarea /g, '<textarea data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" ').replace(/<div /g, '<div data-kref="e3" ')
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { state.gotoCount++; if (opts.onGotoThrow && state.gotoCount >= 2) throw new Error("navigation timeout") },
+    screenshotJpeg: async () => "",
+    krefSnapshot: async () => {
+      if (state.gotoCount >= 2 && opts.reloadedDom) return kref(opts.reloadedDom)
+      if (state.modalOpen) return kref(`<html><body><div id="modal">Confirm?</div><form><textarea aria-label="Notes" id="customer_notes">test note</textarea><button type="submit" id="cus_notes">Save</button></form></body></html>`)
+      return kref(NOTES_DOM)
+    },
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' || sel === '#open-modal' || sel === 'button[type="submit"]' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: sel.includes("cus_notes") || sel.includes("submit") ? "BUTTON" : "TEXTAREA", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { state.clickLog.push(sel); if (sel === '#open-modal') state.modalOpen = true /* #cus_notes save is a silent no-op */ },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  return { page, state }
+}
+
+// ── (H) KLA-786 (round-2 C2): a FAILED forced read-back must not certify on the stale snapshot ───────
+
+test("(H) KLA-786: when the read-back reload fails, done is not certified from the pre-commit DOM", async () => {
+  // Silent Save + pending; the model emits done; the forced reload THROWS. Even with a verifier that would
+  // happily certify the still-filled form, the failed read-back must block certification → stall.
+  const { page, state } = notesPage({ onGotoThrow: true })
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    if (n < 3) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "saved" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 }) // would falsely certify if reached on stale DOM
+  const out = await authorTrail("proj_loop_h2", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+  // The read-back was attempted (goto beyond the initial nav) but failed, so we never certified.
+  expect(state.gotoCount).toBeGreaterThanOrEqual(2)
+})
+
+// ── (I) KLA-786 (round-2 C3): incidental DOM progress must NOT bypass the read-back gate ─────────────
+
+test("(I) KLA-786: opening a modal between a silent save and done does not skip the forced read-back", async () => {
+  // Silent Save (pending) → the model opens a modal (DOM changes = incidental progress, NOT a read-back)
+  // → emits done. The done gate must STILL force a reload (pending not cleared by incidental progress); the
+  // reloaded truth shows the note was never saved → not certified.
+  const { page, state } = notesPage({ reloadedDom: `<html><body><form><textarea aria-label="Notes" id="customer_notes"></textarea><button type="submit" id="cus_notes">Save</button></form></body></html>` })
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    if (n === 1) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 }
+    if (n === 2) return { action: { op: "click", selector: '#open-modal', value: null, url: null, checkpoint: null, rationale: "open modal" }, costUsd: 0 }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "saved" }, costUsd: 0 }
+  }
+  // Verifier certifies only if the reloaded DOM still holds the note (it won't — save failed).
+  const verifier = async (input: any) => ({ achieved: /test note/.test(String(input.domSnapshot)), reason: "empty after reload", costUsd: 0 })
+  const out = await authorTrail("proj_loop_i", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // The forced read-back fired despite the intervening modal-open progress, and the unsaved note was rejected.
+  expect(state.gotoCount).toBeGreaterThanOrEqual(2)
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+})
+
+// ── (J) KLA-786 (round-2 C2): resume preserves the restored auto-advance cap ─────────────────────────
+
+test("(J) KLA-786: a resumed run does not regain its spent auto-advance click", async () => {
+  // Checkpoint restored mid-run with the one auto-advance click already spent (autoAdvanceClicks:1). On a
+  // static page the model keeps doing no-ops; the restored cap must survive the first post-resume iteration
+  // so NO fresh synthetic submit-click fires. Before the fix, the first snapshot reset the cap to 0 and a
+  // submit was auto-clicked again.
+  const STATIC_DOM = `<html><body><form><input type="email" aria-label="Email" id="email" value="x@y.com"/><button type="submit" id="go">Go</button></form></body></html>`
+  const clickLog: string[] = []
+  const page: any = {
+    url: () => "https://example.com/stuck",
+    goto: async () => {}, screenshotJpeg: async () => "",
+    krefSnapshot: async () => STATIC_DOM.replace(/<input /g, '<input data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
+    count: async (sel: string) => (sel === 'button[type="submit"]' || sel.includes("Email") || sel.includes("email") ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Email", tagName: sel.includes("button") ? "BUTTON" : "INPUT", innerText: "", inputType: sel.includes("button") ? null : "text", dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Email"]', value: "x@y.com", url: null, checkpoint: null, rationale: "typing" }, costUsd: 0 })
+  const checkpoint: any = {
+    traj: [
+      { action: "navigate", actionValue: "https://example.com/stuck", url: "https://example.com/stuck", domHash: "a" },
+      { action: "type", target: { resolvedSelector: 'input[aria-label="Email"]' }, url: "https://example.com/stuck", domHash: "b" },
+    ],
+    history: [], stepIdx: 2, llmCalls: 0, costUsd: 0, lastUrl: "https://example.com/stuck",
+    autoAdvanceClicks: 1, unconfirmedCommitPending: false,
+  }
+  const out = await authorTrail("proj_loop_j", { name: "Resume", objective: "finish", baseUrl: "https://example.com/stuck" }, {
+    model, verifier: async () => ({ achieved: false, reason: "", costUsd: 0 }), checkpoint, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  // The restored cap survived resume → no fresh synthetic submit-click was fired.
+  expect(clickLog).not.toContain('button[type="submit"]')
+})
+
 // ── (F) KLA-786 (round-1 C2): the no-op guard auto-advances a submit AT MOST ONCE per stagnation ─────
 
 test("(F) KLA-786: auto-advance does not re-fire the same submit every couple of iterations", async () => {
