@@ -596,6 +596,39 @@ test("KLA-780 r4 (leftover cleanup): pending export_outbox + assignment-invite r
   expect(await rawClientQuery(`SELECT COUNT(*) FROM ticket_assignment_invites WHERE feedback_id=?`, [survivor])).toBe("2")
 })
 
+test("KLA-784 (mixed outbox states): a survivor IN_FLIGHT row + merged PENDING row for the same connector reconcile to ONE (no double-file)", async () => {
+  const survivor = await insertFeedback({
+    projectId: P, urlPath: "/mixob", observation: "mixed survivor",
+    suggestedBug: { title: "Mixed survivor", body: "b", priority: "high" }, issueKey: keyFor("/mixob", "MA"),
+  })
+  const folded = await insertFeedback({
+    projectId: P, urlPath: "/mixob", observation: "mixed dup",
+    suggestedBug: { title: "Mixed dup", body: "b", priority: "high" }, issueKey: keyFor("/mixob", "MB"),
+  })
+  const now = Date.now()
+  // The partial UNIQUE only covers status='pending', so an IN_FLIGHT survivor row does NOT collide with a
+  // merged PENDING row for the same connector — the pre-784 code left BOTH on the survivor and the sweep
+  // double-filed. Also give the folded ticket a PENDING row on a connector the survivor does NOT have (must
+  // re-home cleanly).
+  await rawExec(`INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["ob_surv_if", survivor, P, "conn_x", "issue", "in_flight", now, now, now])
+  await rawExec(`INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["ob_fold_pend", folded, P, "conn_x", "issue", "pending", now, now, now])
+  await rawExec(`INSERT INTO export_outbox (id,feedback_id,project_id,connector_id,type,status,next_attempt_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["ob_fold_other", folded, P, "conn_y", "issue", "pending", now, now, now])
+
+  await mergeFeedbackClusters(P, survivor, folded, "op@example.com")
+
+  // Nothing left on the hidden id.
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM export_outbox WHERE feedback_id=?`, [folded])).toBe("0")
+  // Survivor has exactly ONE row for conn_x (its original in_flight — the merged pending was dropped, NOT
+  // moved alongside it), so the sweep can't double-file conn_x.
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM export_outbox WHERE feedback_id=? AND connector_id='conn_x'`, [survivor])).toBe("1")
+  expect(await rawClientQuery(`SELECT status FROM export_outbox WHERE feedback_id=? AND connector_id='conn_x'`, [survivor])).toBe("in_flight")
+  // The connector the survivor had NONE for re-homed cleanly.
+  expect(await rawClientQuery(`SELECT COUNT(*) FROM export_outbox WHERE feedback_id=? AND connector_id='conn_y'`, [survivor])).toBe("1")
+})
+
 test("KLA-780 r4 (artifact carry): merged ticket's attachments/recordings union onto the survivor; annotations carried when survivor has none", async () => {
   const survivor = await insertFeedback({
     projectId: P, urlPath: "/artifacts", observation: "artifacts survivor",

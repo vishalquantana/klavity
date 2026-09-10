@@ -4416,11 +4416,13 @@ export async function mergeFeedbackClusters(
       { sql: `DELETE FROM ticket_assignment_invites WHERE feedback_id=?`, args: [mId] },
       // export request/outbox pipeline — outbox has partial UNIQUE(feedback_id,connector_id) WHERE pending.
       { sql: `UPDATE export_requests SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
-      // outbox: OR IGNORE moves non-colliding rows; then DROP the leftover pending rows still on the hidden
-      // id (KLA-780 round-4, codex C2 + Muse C4-3). Without the DELETE a colliding pending row survives on
-      // the merged ticket and the sweep (server.ts) can double-file the same external issue.
-      { sql: `UPDATE OR IGNORE export_outbox SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
-      { sql: `DELETE FROM export_outbox WHERE feedback_id=?`, args: [mId] },
+      // outbox: reconcile across ALL states (KLA-784, codex). The partial UNIQUE only covers status='pending',
+      // so the old OR-IGNORE-then-delete left a survivor IN_FLIGHT row coexisting with a merged PENDING row
+      // for the same connector — the sweep would then double-file the same external issue. Instead: DROP the
+      // merged rows for any connector the survivor ALREADY has an outbox row for (any state — the survivor's
+      // row/export covers it), then MOVE the rest (connectors the survivor has none for — no collision).
+      { sql: `DELETE FROM export_outbox WHERE feedback_id=? AND connector_id IN (SELECT connector_id FROM export_outbox WHERE feedback_id=?)`, args: [mId, sId] },
+      { sql: `UPDATE export_outbox SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
       // Persist the summed count + unioned dates onto the survivor (commits with the unique receipt above).
       { sql: `UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=? AND project_id=?`, args: [combinedCount, JSON.stringify(dates), lastSeen, sId, projectId] },
     ]
