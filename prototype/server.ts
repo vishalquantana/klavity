@@ -5676,6 +5676,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // success-exit can build the pretty /<slug>/<KEY>-<n> issue_url. The inner `projectId` is
         // block-scoped and not visible at the exit. Null-safe: prettyDeepLinkUrl falls back to /t/<id>.
         let submitProjectId: string | null = null
+        // KLA-782: was the report submitted by an authenticated workspace MEMBER, or an ANONYMOUS
+        // (cross-origin / no-session) widget reporter? The success-exit deep link depends on it: a
+        // member gets the pretty /<slug>/<KEY>-<n> permalink, but that route is projectAccess-gated
+        // (member-only) → an anonymous reporter following it after the widget's login-resume hits 403.
+        // Anonymous reporters must get the unguessable, teaser-policy-honoring /t/<fb_id> link instead.
+        // Mirrors `trustedProvenance` (= authenticated actor AND not an anon widget submit); lifted to
+        // this outer scope so it survives to the exit (the inner `actor` is block-scoped and gone there).
+        let submitterIsMember = false
         if (db) {
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
@@ -5738,6 +5746,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (resolved) {
               const projectId = resolved.id
               submitProjectId = projectId // #745: carry to the success-exit for the pretty issue_url
+              // KLA-782: a resolved project + an authenticated actor that is NOT an anon widget submit
+              // means the reporter is a workspace member (resolveProject only resolves projects the actor
+              // can access) → safe to hand them the member-gated pretty permalink at the exit.
+              submitterIsMember = !!actor && !anonWidgetAllowed
               // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
               // attachments + recordings), now that the project is resolved. Fire-and-forget.
               {
@@ -6237,8 +6249,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // #745: prefer the pretty /<slug>/<KEY>-<n> form (resolved server-side); prettyDeepLinkUrl
         // falls back to /t/<id> when the workspace slug / project key isn't backfilled yet. Keep the
         // request/base origin (customer sites embed cross-origin) rather than forcing BASE.
+        // KLA-782: only a MEMBER submit gets the pretty permalink — that route is projectAccess-gated,
+        // so an anonymous widget reporter following it after login-resume hits 403. For an anon reporter
+        // pass no projectId so prettyDeepLinkUrl returns the unguessable /t/<fb_id> teaser link (which
+        // honors the share/teaser redaction policy) — never the enumerable member-only pretty permalink.
         const issueUrl = (feedbackId && dashBase)
-          ? await prettyDeepLinkUrl(feedbackId, submitProjectId, { origin: dashBase })
+          ? await prettyDeepLinkUrl(feedbackId, submitterIsMember ? submitProjectId : null, { origin: dashBase })
           : ""
         // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
         // hits the share link gets a warm cache (never a synchronous render on the crawler request).
