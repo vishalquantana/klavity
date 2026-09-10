@@ -1,42 +1,31 @@
-// KLA-791: bun-test preload that sweeps the per-run temp SQLite DBs the suite leaves in the OS tmpdir.
+// KLA-791: bun-test preload giving each test process its OWN temp dir, then removing it at the end.
 //
 // Many tests do `join(tmpdir(), `klav-...-${Date.now()}-${rand}.db`)` and set TURSO_DATABASE_URL to it, but
 // never delete the file (nor its libSQL -wal/-shm sidecars). Over a long session of repeated `bun test`
 // runs these accumulated to ~11k files / ~14G in the macOS tmpdir and filled the dev disk (ENOSPC → false
-// test failures). Rather than retrofit an afterAll into ~108 test files, sweep once at the end of the run.
+// test failures). Rather than retrofit cleanup into ~108 test files, redirect this process's tmpdir to a
+// unique per-run subdirectory (bun's os.tmpdir() honors process.env.TMPDIR at call time — verified) and
+// remove that whole subtree when the suite finishes.
 //
-// Wired via `[test] preload` in bunfig.toml. Cleanup runs from a GLOBAL afterAll (registered here in the
-// preload) — bun's test runner does not reliably emit process "exit" for a preload handler, so afterAll is
-// the load-bearing hook; process.on("exit") is kept only as a harmless fallback.
+// This is TRUE per-process isolation: every `tmpdir()` call in this process resolves inside our own
+// subdir, so a parallel `bun test` invocation writes into ITS own subdir and we can never delete its files
+// (the birthtime/mtime heuristic a prior version used could clobber a concurrent run — codex round-review).
 //
-// Safety: only files CREATED during this process (birthtime >= process start) and matching klav-*.db* are
-// removed, so a parallel `bun test` invocation's DBs (created earlier) are never clobbered. `[test]
-// maxConcurrency = 1` also means there is no in-run parallelism to race.
+// Wired via `[test] preload` in bunfig.toml. Cleanup runs from a GLOBAL afterAll (registered here) — bun's
+// test runner does not reliably emit process "exit" for a preload handler; the exit handler is a fallback.
 import { tmpdir } from "node:os"
-import { readdirSync, statSync, unlinkSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { afterAll } from "bun:test"
 
-const START_MS = Date.now()
-// klav-<suffix>-<ts>-<rand>.db plus its libSQL sidecars.
-const TEMP_DB_RE = /^klav-.*\.db(-wal|-shm|-journal)?$/
+// Create the per-run dir under the ORIGINAL system tmpdir, then point TMPDIR at it BEFORE any test imports
+// os/calls tmpdir(). Preloads run before test files, so all subsequent tmpdir() calls see this subdir.
+const RUN_TMPDIR = mkdtempSync(join(tmpdir(), "klav-testrun-"))
+process.env.TMPDIR = RUN_TMPDIR
 
-function sweepRunTempDbs(): void {
-  const dir = tmpdir()
-  let names: string[]
-  try { names = readdirSync(dir) } catch { return }
-  for (const name of names) {
-    if (!TEMP_DB_RE.test(name)) continue
-    const p = join(dir, name)
-    try {
-      const st = statSync(p)
-      // birthtime = creation time (reliable on APFS); fall back to mtime if unavailable. Only remove files
-      // born during this run, with a small grace for clock skew.
-      const born = st.birthtimeMs || st.mtimeMs
-      if (born >= START_MS - 5_000) unlinkSync(p)
-    } catch { /* already gone / held open — ignore */ }
-  }
+function removeRunTmpdir(): void {
+  try { rmSync(RUN_TMPDIR, { recursive: true, force: true }) } catch { /* best-effort */ }
 }
 
-afterAll(sweepRunTempDbs)
-process.on("exit", sweepRunTempDbs) // fallback; the *Sync fs calls are safe in a sync exit handler
+afterAll(removeRunTmpdir)
+process.on("exit", removeRunTmpdir) // fallback; rmSync is sync so it is safe in an exit handler
