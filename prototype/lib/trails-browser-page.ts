@@ -10,6 +10,10 @@
 import type { Fingerprint, NetworkMock as TrailNetworkMock, TrailViewport } from "./trails-types"
 import { KREF_SNAPSHOT_CAP } from "./trails-snapshot"
 import { clickWithTransitionFallback } from "./trails-click"
+// KLA-786 (dialog-capture): keep at most the last N captured dialogs per page so an alert-spamming page
+// can't grow the buffer unbounded between drains. The author loop drains every loop-top, so N need only
+// cover a burst within one action.
+const DIALOG_BUFFER_CAP = 20
 // ── Network mocking (KLA-111) ─────────────────────────────────────────────────────────────────────
 // A Trail can declare zero or more mocks. Each mock matches browser requests by URL pattern
 // (exact string, glob-style "*" wildcard, or RegExp). The first matching mock wins.
@@ -317,7 +321,7 @@ class PlaywrightPage implements BrowserPage {
   private dialogs: { type: string; message: string }[] = []
   constructor(private page: import("playwright").Page) {
     this.page.on("dialog", (d) => {
-      try { this.dialogs.push({ type: d.type(), message: String(d.message() ?? "") }) } catch {}
+      try { this.dialogs.push({ type: d.type(), message: String(d.message() ?? "") }); if (this.dialogs.length > DIALOG_BUFFER_CAP) this.dialogs.splice(0, this.dialogs.length - DIALOG_BUFFER_CAP) } catch {}
       // Accept informational alerts / beforeunload (OK); dismiss confirm/prompt to preserve the prior safe
       // default (never auto-confirm a possibly-destructive prompt). Best-effort; a race on an already-handled
       // dialog just no-ops.
@@ -480,7 +484,7 @@ class PuppeteerPage implements BrowserPage {
   private dialogs: { type: string; message: string }[] = []
   constructor(private page: any) {
     this.page.on("dialog", async (d: any) => {
-      try { this.dialogs.push({ type: d.type(), message: String(d.message?.() ?? "") }) } catch {}
+      try { this.dialogs.push({ type: d.type(), message: String(d.message?.() ?? "") }); if (this.dialogs.length > DIALOG_BUFFER_CAP) this.dialogs.splice(0, this.dialogs.length - DIALOG_BUFFER_CAP) } catch {}
       const t = (() => { try { return d.type() } catch { return "" } })()
       try { await (t === "alert" || t === "beforeunload" ? d.accept() : d.dismiss()) } catch {}
     })

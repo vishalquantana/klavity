@@ -549,10 +549,20 @@ export async function authorTrail(
       // guard below (the action had an effect even if the page markup is unchanged).
       const dialogs = page.drainDialogs?.() ?? []
       if (dialogs.length) {
-        const note = dialogs.map((d) => `[dialog:${d.type}] ${String(d.message).slice(0, 300)}`).join(" | ")
-        const line = `(a browser dialog appeared after the previous action and was auto-closed: ${note}. Treat this as the app's response — if it confirms the action succeeded and the objective is met, finish with "done"; if it reports an error, adjust.)`
+        // Label how the adapter answered each dialog (round-7 C3): alert/beforeunload were ACCEPTED (OK);
+        // confirm/prompt were DISMISSED (cancel) — so the model can tell whether its action actually went
+        // through (a dismissed confirm means it was CANCELLED, not completed).
+        const answered = (t: string) => (t === "alert" || t === "beforeunload" ? "accepted" : "dismissed")
+        const note = dialogs.map((d) => `[dialog:${d.type} ${answered(d.type)}] ${String(d.message).slice(0, 300)}`).join(" | ")
+        const line = `(a browser dialog appeared after the previous action: ${note}. Treat this as the app's response — if it confirms success and the objective is met, finish with "done"; if it reports an error or a confirm was dismissed/cancelled, adjust.)`
         history.push(line)
         dom = `${dom}\n<!-- ${line} -->`
+        // KLA-786 (round-7 C2, codex): a dialog is app-controlled and may report FAILURE ("Save failed")
+        // or be a confirm we cancelled — the model can misread it and finish anyway. Appending the note to
+        // `dom` also makes this iteration hash as "progress", which would otherwise leave the done gate
+        // unset and let a "done" skip the forced read-back (verifying stale DOM). Arm the gate so ANY
+        // dialog-driven finish still goes through the independent read-back before certifying.
+        unconfirmedCommitPending = true
       }
       // No-op stagnation guard: if the page URL + DOM hash hasn't changed since the last iteration
       // the previous action had no visible effect (e.g. re-typing the same field value, clicking
