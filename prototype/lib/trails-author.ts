@@ -452,7 +452,8 @@ export async function authorTrail(
   // live on prod 2026-07-04: dead browser, slot stuck, every walk/authoring 409ing until a
   // service restart. Every per-iteration op below is also individually bounded.
   const driveDeadlineMs = opts.driveDeadlineMs ?? AUTOSIM_DEADLINE_MS_DEFAULT
-  let deadlineAt = Date.now() + driveDeadlineMs
+  const driveStartedAt = Date.now()
+  let deadlineAt = driveStartedAt + driveDeadlineMs
   // KLA-786 (round-10): a recent commit deserves one bounded server-truth check even when the
   // normal drive deadline is reached. The failed-verify cap still bounds the number of extensions.
   const PROACTIVE_VERIFY_WINDOW_MS = 150_000
@@ -558,6 +559,10 @@ export async function authorTrail(
       traj.push({ action: "navigate", actionValue: req.baseUrl, url: page.url(), domHash: sha256hex(initSnap) })
     }
     let stepLimit = AUTHOR_MAX_STEPS
+    // KLA-786 (round-10b, opencode C3): one reserved max-step slot per arming (the two arming sites — top
+    // and end-of-body — must not each ++ for the SAME pending verify). Cleared when the forced done consumes
+    // the deferral.
+    let maxStepSlotReserved = false
     for (let idx = startIdx; idx < stepLimit; idx++) {
       // KLA-55: heartbeat - signals the crash-reaper that this session is still alive. Best-effort.
       opts.onHeartbeat?.()
@@ -571,17 +576,17 @@ export async function authorTrail(
         } else if (armProactiveVerify()) {
           extendDeadlineForPendingVerify()
         } else {
-          return await stall(`authoring drive deadline exceeded (${Math.round(driveDeadlineMs / 1000)}s) after ${log.length} steps`, page.url())
+          return await stall(`authoring drive deadline exceeded (${Math.round((Date.now() - driveStartedAt) / 1000)}s) after ${log.length} steps`, page.url())
         }
       }
       // KLA-786 (round-10): reserve one loop slot for the forced done when the step budget itself is
       // the give-up boundary. A forced failure can reserve another slot, but the persisted fail cap
-      // prevents this from extending the run indefinitely.
-      if (idx === stepLimit - 1) {
+      // prevents this from extending the run indefinitely. (round-10b: reserve at most ONE slot per arm.)
+      if (idx === stepLimit - 1 && !maxStepSlotReserved) {
         if (deferProactiveVerify) {
-          stepLimit++
+          stepLimit++; maxStepSlotReserved = true
         } else if (armProactiveVerify()) {
-          stepLimit++
+          stepLimit++; maxStepSlotReserved = true
         }
       }
       const includeShot = !textFirst || misses > 0
@@ -661,6 +666,7 @@ export async function authorTrail(
       // this iteration with the read-back + verify instead of the model.
       let forceProactiveDone = deferProactiveVerify
       deferProactiveVerify = false
+      if (forceProactiveDone) maxStepSlotReserved = false // round-10b: the reserved max-step slot is now being consumed
       {
         // Strip kref attribute numbers before hashing - they are renumbered every capture and would
         // make every iteration look different even when the real page content is identical.
@@ -1205,14 +1211,14 @@ export async function authorTrail(
       await opts.onStep?.(log)
       // Arm before persisting the final ordinary step so a crash/resume cannot lose the pending
       // read-back that was earned at the max-step boundary.
-      const armedAtStepLimit = idx === stepLimit - 1 && armProactiveVerify()
+      const armedAtStepLimit = idx === stepLimit - 1 && !maxStepSlotReserved && armProactiveVerify()
       // KLA-57: persist checkpoint after each step so a subsequent stall or crash has a recovery point.
       if (opts.onCheckpoint) {
         try { await opts.onCheckpoint(snapshotCheckpoint(page.url())) } catch {}
       }
       // The action just consumed the last ordinary step. If it was a recent commit, reserve a final
       // iteration for the same forced read-back before the authoring loop crystallizes a partial trail.
-      if (armedAtStepLimit) stepLimit++
+      if (armedAtStepLimit) { stepLimit++; maxStepSlotReserved = true }
     }
     await closeHandle()
     if (!traj.length) return { status: "stalled", trailId: null, verificationRunId: null, verificationVerdict: null, steps: log, stallReason: "model finished without performing any step", llmCalls, costUsd, objectiveVerified }
