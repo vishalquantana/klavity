@@ -261,6 +261,11 @@ export interface AuthorCheckpoint {
    * back-compat (resume recounting from 0 is merely conservative, never unsafe).
    */
   commitNudgeCount?: number
+  /**
+   * KLA-786 (round-9d): the commit key most recently verified-before-stall, so a resume won't re-verify an
+   * already-checked commit. Optional for back-compat.
+   */
+  lastVerifiedCommitKey?: string | null
 }
 
 const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", waitForSelector: "waitForSelector", upload: "upload", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
@@ -424,19 +429,20 @@ export async function authorTrail(
   const COMMIT_RECENCY_STEPS = 6
   // Set at a stall point to make the NEXT iteration take over with a proactive read-back + verify instead.
   let deferProactiveVerify = false
-  // KLA-786 (round-9b C2, codex): HARD cap on verify-before-stall recoveries for the whole run. Without it
-  // a never-persisting save loops: each Save refreshes lastCommitStep so every repeated-action stall looks
-  // "recent" → read-back → failed verify (misses++), but the next successful action resets misses=0, so the
-  // 3-miss termination never accumulates and the run issues dozens of live Saves until the step/deadline
-  // cap. Capping the recoveries (no reset — a legit run needs ≤ this many) bounds live re-saves to roughly
-  // cap × LOOP_STALL_N, then a plain stall.
-  let proactiveVerifyBeforeStall = 0
-  const MAX_PROACTIVE_VERIFY_BEFORE_STALL = 2
+  // KLA-786 (round-9d C2, codex): bound verify-before-stall by COMMIT IDENTITY, not a raw counter. Each
+  // committed action gets a key (op|selector|url); we verify-before-stall at most ONCE per distinct commit
+  // key. This bounds the never-persisting case (the model re-clicks the SAME Save → one key → one read-back,
+  // then a plain stall) WITHOUT prematurely stalling a legitimate multi-commit flow (Saves on different
+  // records/pages are distinct keys, each verified). Persisted so a resume can't re-verify an already-checked
+  // commit; the recency anchor (lastCommitStep) is deliberately NOT persisted, so a resume won't re-verify a
+  // stale commit at all until a fresh one occurs.
+  let lastCommitKey: string | null = null
+  let lastVerifiedCommitKey: string | null = cp?.lastVerifiedCommitKey ?? null
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
     traj: [...traj], history: [...history], stepIdx: log.length,
-    llmCalls, costUsd, lastUrl: url, autoAdvanceClicks, unconfirmedCommitPending, commitNudgeCount,
+    llmCalls, costUsd, lastUrl: url, autoAdvanceClicks, unconfirmedCommitPending, commitNudgeCount, lastVerifiedCommitKey,
   })
   let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make
@@ -466,6 +472,7 @@ export async function authorTrail(
           // guard re-firing its own just-committed click was the save-loop, no model complicity needed).
           prevActionWasCommit = true
           lastCommitStep = log.length // KLA-786 (round-9b C2, codex): auto-submit is a commit → anchor recency
+          lastCommitKey = `autosubmit|${sel}|${pg.url()}` // round-9d: dedup key
           return sel
         }
       } catch { /* try next candidate */ }
@@ -981,6 +988,7 @@ export async function authorTrail(
             // to finish (emit "done") rather than re-click submit if the DOM still didn't change.
             prevActionWasCommit = true
             lastCommitStep = log.length // KLA-786 (round-9): recency anchor for the stall→verify hook
+            lastCommitKey = `${a.op}|${persistSelector ?? a.selector ?? ""}|${page.url()}` // round-9d: dedup key
           }
           traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" || a.op === "upload" ? a.value ?? undefined : undefined,
@@ -1027,17 +1035,17 @@ export async function authorTrail(
               consecutiveSuccessKey = 0
               lastSuccessKey = `autosubmit|${autoClicked}|${page.url()}`
             } else if ((log.length - lastCommitStep) <= COMMIT_RECENCY_STEPS && !deferProactiveVerify
-                       && proactiveVerifyBeforeStall < MAX_PROACTIVE_VERIFY_BEFORE_STALL) {
+                       && lastCommitKey !== null && lastCommitKey !== lastVerifiedCommitKey) {
               // KLA-786 (round-9): about to give up on a repeated action, but a COMMIT (Save/submit) fired
               // within the last few steps — the change may ALREADY have persisted (BookJoy's Save pops a
               // modal, so the model oscillates and re-types instead of finishing). Don't stall yet: log this
               // step, arm the read-back gate, and let the NEXT iteration take over with a proactive
               // read-back + verify (server truth). If the save really took, the run crystallizes; if not,
               // the verifier rejects and the miss/deadline caps still end it. Fires at most once per stall
-              // region (deferProactiveVerify latch + reset of consecutiveSuccessKey) and at most
-              // MAX_PROACTIVE_VERIFY_BEFORE_STALL times per run (round-9b C2: hard-bounds live re-saves on a
-              // never-persisting page — after the cap, fall through to a plain stall).
-              proactiveVerifyBeforeStall++
+              // region (deferProactiveVerify latch + reset of consecutiveSuccessKey) and at most ONCE per
+              // distinct commit key (round-9d C2: re-clicking the SAME Save on a never-persisting page is
+              // one key → one read-back → then a plain stall; distinct saves each still get verified).
+              lastVerifiedCommitKey = lastCommitKey
               entry.ok = true
               entry.krefSnapshot = dom.length > 50000 ? dom.slice(0, 50000) + "\n...[TRUNCATED]" : dom
               log.push(entry); await opts.onStep?.(log)
@@ -1099,6 +1107,7 @@ export async function authorTrail(
               misses = 0
               entryDom = afterDom
               lastCommitStep = log.length // KLA-786 (round-9b C3, codex): a click that timed out but took effect is still a commit → anchor recency
+              lastCommitKey = `${a.op}|${persistSelector ?? safeSelector ?? ""}|${page.url()}` // round-9d: dedup key
               history.push(`${a.op}${entry.selector ? " " + entry.selector : ""} — ok (page changed after action timeout)`)
               recoveredSideEffect = true
             }

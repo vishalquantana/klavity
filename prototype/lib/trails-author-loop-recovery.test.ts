@@ -1045,9 +1045,50 @@ test("(T) KLA-786: a save that never persists stalls after a bounded number of v
   })
   expect(out.status).toBe("stalled")
   expect(out.objectiveVerified).toBeFalsy()
-  // The proactive read-backs are hard-capped (MAX_PROACTIVE_VERIFY_BEFORE_STALL=2), so only a bounded
-  // number of reloads happened — NOT one per Save through the whole step budget.
-  expect(gotoCount).toBeLessThanOrEqual(4) // initial nav(s) + at most 2 proactive read-backs
-  // Live Save clicks stay bounded (roughly cap × LOOP_STALL_N), not dozens up to AUTHOR_MAX_STEPS.
-  expect(clickLog.filter((s) => s === '#cus_notes').length).toBeLessThanOrEqual(20)
+  // Round-9d: re-clicking the SAME Save is ONE commit key → verify-before-stall fires at most once, then a
+  // plain stall. So exactly one proactive read-back (initial nav + 1 reload), NOT one per Save.
+  expect(gotoCount).toBeLessThanOrEqual(3)
+  // Live Save clicks stay bounded (~LOOP_STALL_N to the first stall, ~LOOP_STALL_N to the deduped stall).
+  expect(clickLog.filter((s) => s === '#cus_notes').length).toBeLessThanOrEqual(12)
+})
+
+// ── (U) KLA-786 (round-9d C2, codex): DISTINCT commits each get verified (per-key, not run-wide) ─────
+
+test("(U) KLA-786: a second distinct save (different page) still gets its own verify-before-stall", async () => {
+  // Proves the bound is per-commit-key, not a run-wide counter: a save on page A that never persists uses
+  // its verify budget, but a save on page B (distinct key) still gets its own read-back — and since B
+  // persisted, the run crystallizes. A run-wide cap of 1 would have wrongly stalled B.
+  let url = "https://example.com/customer/A"
+  let savedB = false, gotoCount = 0
+  const A_DOM = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  const B_DOM = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  const B_CONFIRMED = B_DOM + '\n  note-b-confirmed'
+  const page: any = {
+    url: () => url,
+    goto: async (u: string) => { gotoCount++; if (u && u.includes("/B")) url = "https://example.com/customer/B" },
+    screenshotJpeg: async () => "",
+    krefSnapshot: async () => (url.includes("/B") ? (savedB && gotoCount >= 2 ? B_CONFIRMED : B_DOM) : A_DOM),
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: "BUTTON", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel,
+    click: async (sel: string) => { if (sel === '#cus_notes' && url.includes("/B")) savedB = true },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let n = 0
+  const model: AuthorModel = async () => {
+    n++
+    if (n <= 4) return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save A" }, costUsd: 0 } // A never persists → stall→verify(fail)→dedup
+    if (n === 5) return { action: { op: "navigate", selector: null, value: null, url: "https://example.com/customer/B", checkpoint: null, rationale: "go to B" }, costUsd: 0 }
+    return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save B" }, costUsd: 0 } // B persists
+  }
+  const verifier = async (input: any) => ({ achieved: /note-b-confirmed/.test(String(input.domSnapshot)), reason: "B confirmed on reload", costUsd: 0 })
+  const out = await authorTrail("proj_loop_u", { name: "Save note", objective: "save a note on B", baseUrl: "https://example.com/customer/A" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // The distinct B-commit got its own verify (not blocked by A's) and, since B persisted, crystallized.
+  expect(out.status).toBe("crystallized")
+  expect(out.objectiveVerified).toBeTruthy()
 })
