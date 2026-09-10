@@ -50,6 +50,37 @@ function originScheme(origin: string): string {
   return m ? m[1].toLowerCase() : ''
 }
 
+// Does host-glob `a` COVER host-or-glob `b`? ("*" covers all; "*.base" covers base, any subdomain of
+// base, and any "*.<within-base>" glob; an exact host covers only itself.) Case-insensitive.
+export function hostGlobCovers(a: string, b: string): boolean {
+  const A = String(a).toLowerCase(); const B = String(b).toLowerCase()
+  if (!A || !B) return false
+  if (A === '*') return true
+  if (A === B) return true
+  if (A.startsWith('*.')) {
+    const base = A.slice(2); if (!base) return false
+    if (B === base || B.endsWith('.' + base)) return true
+    if (B.startsWith('*.')) { const bb = B.slice(2); return bb === base || bb.endsWith('.' + base) }
+  }
+  return false
+}
+
+// Does granted match pattern X cover granted match pattern Y (so registering both would double-run on
+// any page Y matches)? True when X's scheme covers Y's ("*" covers http+https) AND X's host-glob covers Y's.
+function patternCovers(x: string, y: string): boolean {
+  const sx = originScheme(x); const sy = originScheme(y)
+  const schemeCovers = sx === '*' || sx === sy
+  return schemeCovers && hostGlobCovers(originHost(x), originHost(y))
+}
+
+// Broadest-first: scheme "*" before a concrete scheme; host "*" before "*.x" before an exact host.
+function specificity(origin: string): number {
+  const s = originScheme(origin) === '*' ? 0 : 1
+  const h0 = originHost(origin)
+  const h = h0 === '*' ? 0 : h0.startsWith('*.') ? 1 : 2
+  return s * 3 + h
+}
+
 // Given the monitored host globs + the origins the user has actually granted
 // (chrome.permissions.getAll().origins), return the granted match patterns to register:
 // every granted origin whose host matches a monitored glob (returned VERBATIM — it is already
@@ -57,26 +88,23 @@ function originScheme(origin: string): string {
 // (e.g. the extension's own manifest hosts) are omitted.
 export function registrablePatterns(monitoredGlobs: Iterable<string>, grantedOrigins: Iterable<string>): string[] {
   const globs = [...monitoredGlobs].filter(Boolean)
-  // Collect matching granted origins, grouped by host.
-  const byHost = new Map<string, string[]>()
+  // Match: keep a granted origin if its host overlaps a monitored glob — EITHER direction, so a broad
+  // subdomain grant (*.example.com) covering a monitored exact host, and an exact grant within a monitored
+  // wildcard, both qualify.
+  const matched: string[] = []
   const seen = new Set<string>()
   for (const origin of grantedOrigins) {
     const o = String(origin)
     if (!o || seen.has(o)) continue
     const h = originHost(o)
-    if (!globs.some((g) => hostMatchesGlob(h, g))) continue
-    seen.add(o)
-    const arr = byHost.get(h) ?? []; arr.push(o); byHost.set(h, arr)
+    if (!globs.some((g) => hostGlobCovers(g, h) || hostGlobCovers(h, g))) continue
+    seen.add(o); matched.push(o)
   }
-  // Collapse overlapping coverage per host: a broad `*://host/*` grant already covers the concrete
-  // https/http patterns for that host — registering both would run the content script TWICE on a page
-  // that matches both. If a broad `*` pattern is present for a host, register ONLY it; otherwise keep the
-  // concrete schemes (https + http don't overlap each other, so both are needed when both are granted).
-  const out: string[] = []
-  for (const [, origins] of byHost) {
-    const broad = origins.find((o) => originScheme(o) === '*')
-    if (broad) out.push(broad)
-    else out.push(...origins)
-  }
-  return out
+  // Collapse by COVERAGE (not just identical host): if one matched pattern covers another (scheme + host
+  // glob), registering both would run the content script twice on any page the narrower one matches. Sort
+  // broadest-first and greedily keep a pattern only if no already-kept pattern covers it.
+  matched.sort((a, b) => specificity(a) - specificity(b))
+  const kept: string[] = []
+  for (const o of matched) { if (!kept.some((k) => patternCovers(k, o))) kept.push(o) }
+  return kept
 }

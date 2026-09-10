@@ -2,7 +2,7 @@
 // actually granted (permissions.getAll) that match a monitored host glob, covering exact
 // single-scheme grants, both schemes, and wildcard-subdomain monitored patterns.
 import { describe, it, expect } from 'vitest'
-import { monitoredHost, originHost, hostMatchesGlob, registrablePatterns } from './roam-scope'
+import { monitoredHost, originHost, hostMatchesGlob, hostGlobCovers, registrablePatterns } from './roam-scope'
 
 describe('monitoredHost', () => {
   it('strips scheme/path/port, preserves *. subdomain glob and bare *', () => {
@@ -65,6 +65,20 @@ describe('registrablePatterns', () => {
   it('matches case-insensitively (codex C3)', () => {
     expect(registrablePatterns(['Example.COM'], ['https://example.com/*'])).toEqual(['https://example.com/*'])
     expect(hostMatchesGlob('APP.example.com', '*.Example.com')).toBe(true)
+  })
+  it('a broad *.subdomain grant covering a monitored EXACT host registers (codex round-3 a)', () => {
+    expect(registrablePatterns(['app.example.com'], ['*://*.example.com/*'])).toEqual(['*://*.example.com/*'])
+  })
+  it('collapses a wildcard-host grant over a concrete same-domain grant (no double-run) (codex round-3 b)', () => {
+    expect(registrablePatterns(['*.example.com'], ['*://*.example.com/*', 'https://app.example.com/*']))
+      .toEqual(['*://*.example.com/*'])
+  })
+  it('hostGlobCovers: wildcard subsumption', () => {
+    expect(hostGlobCovers('*.example.com', 'app.example.com')).toBe(true)
+    expect(hostGlobCovers('*.example.com', '*.example.com')).toBe(true)
+    expect(hostGlobCovers('*.example.com', '*.sub.example.com')).toBe(true)
+    expect(hostGlobCovers('app.example.com', '*.example.com')).toBe(false) // exact can't cover a wildcard
+    expect(hostGlobCovers('*', 'anything.io')).toBe(true)
   })
   it('dedups and keeps only matching origins from a mixed grant set', () => {
     const out = registrablePatterns(globs, [
