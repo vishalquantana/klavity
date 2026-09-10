@@ -1051,3 +1051,32 @@ test("(T) KLA-786: a save that never persists stalls after a bounded number of v
   // Live Save clicks stay bounded (~cap × LOOP_STALL_N), not dozens up to AUTHOR_MAX_STEPS.
   expect(clickLog.filter((s) => s === '#cus_notes').length).toBeLessThanOrEqual(16)
 })
+
+// ── (W) KLA-786 (round-9e): a never-persists NO-DOM-CHANGE save is bounded via the round-5 path too ──
+
+test("(W) KLA-786: a silent (no DOM change) save that never persists is bounded by the fail cap", async () => {
+  // The round-5 commit-no-change proactive path (commitNudgeCount) must ALSO respect the failed-verify cap,
+  // else a silent never-persisting save loops via it. Model clicks Save (no DOM change); it never persists;
+  // verifier always rejects → after MAX_PROACTIVE_VERIFY_FAILS the run plain-stalls with bounded read-backs.
+  const FILLED = 'form\n  textbox "Notes" {filled: 4 chars} [ref=e1]\n  button "Save" [ref=e2]'
+  let gotoCount = 0
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => { gotoCount++ }, screenshotJpeg: async () => "",
+    krefSnapshot: async () => FILLED, // save has NO visible effect and never persists
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: "BUTTON", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel,
+    click: async () => {}, fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async () => ({ action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save" }, costUsd: 0 })
+  const out = await authorTrail("proj_loop_w", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier: async () => ({ achieved: false, reason: "never persists", costUsd: 0 }), browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(out.status).toBe("stalled")
+  expect(out.objectiveVerified).toBeFalsy()
+  expect(gotoCount).toBeLessThanOrEqual(5) // initial nav + at most MAX_PROACTIVE_VERIFY_FAILS read-backs
+})

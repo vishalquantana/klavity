@@ -641,7 +641,11 @@ export async function authorTrail(
             // model answering with another no-op can't fall through to auto-advance) AND is the done gate.
             unconfirmedCommitPending = true
             commitNudgeCount++
-            if (commitNudgeCount >= PROACTIVE_VERIFY_AFTER) {
+            if (commitNudgeCount >= PROACTIVE_VERIFY_AFTER && proactiveVerifyFails < MAX_PROACTIVE_VERIFY_FAILS) {
+              // (round-9e) the fail cap gates BOTH proactive-done triggers — this round-5 commit-no-change
+              // path and the round-9 recent-commit stall path — so a never-persisting save can't loop via
+              // either. Past the cap we fall through to the finish/read-back nudge (below) and let the
+              // model/no-op/deadline caps end it.
               // KLA-786 (round-5): the model has been nudged but keeps re-committing / re-typing instead of
               // finishing (no visible confirmation to tell it the save worked - observed live on BookJoy).
               // Stop waiting: take over and verify directly this iteration. forceProactiveDone routes to the
