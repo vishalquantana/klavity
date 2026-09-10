@@ -299,6 +299,11 @@ test("persists step artifacts (screenshotKey, krefSnapshot) on every executed st
       model,
       shotUploader,
       onStep,
+      // KLA-786: this test asserts step-artifact persistence, not verification. The scripted click is a
+      // commit that leaves the static mockup unchanged → the "done" read-back gate engages; the default
+      // no-key stub verifier is (correctly) refused on that path, so provide a deterministic verifier like
+      // the other e2e tests here instead of relying on the ambient no-key auto-verify.
+      verifier: async () => ({ achieved: true, evidenceSelector: null, reason: "test-verified" }),
       headless: true
     }
   )

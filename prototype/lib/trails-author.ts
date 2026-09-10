@@ -255,6 +255,12 @@ export interface AuthorCheckpoint {
    * "done" (rather than certifying a possibly-unsaved change). Optional for back-compat.
    */
   unconfirmedCommitPending?: boolean
+  /**
+   * KLA-786 (round-5): consecutive unconfirmed-commit iterations counted toward the proactive auto-verify
+   * takeover. Persisted so a resume doesn't restart the count and re-delay the takeover. Optional for
+   * back-compat (resume recounting from 0 is merely conservative, never unsafe).
+   */
+  commitNudgeCount?: number
 }
 
 const OP2ACTION: Record<string, StepAction> = { navigate: "navigate", click: "click", type: "type", select: "select", assert: "assert", wait: "wait", waitForSelector: "waitForSelector", upload: "upload", hover: "hover", keyPress: "keyPress", clearField: "clearField" }
@@ -402,12 +408,12 @@ export async function authorTrail(
   // against server truth) instead of waiting for the model. Bounded and self-correcting — if the change
   // did NOT persist the verifier rejects and the run continues with the (reloaded) empty field.
   const PROACTIVE_VERIFY_AFTER = 2
-  let commitNudgeCount = 0
+  let commitNudgeCount = cp?.commitNudgeCount ?? 0
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
     traj: [...traj], history: [...history], stepIdx: log.length,
-    llmCalls, costUsd, lastUrl: url, autoAdvanceClicks, unconfirmedCommitPending,
+    llmCalls, costUsd, lastUrl: url, autoAdvanceClicks, unconfirmedCommitPending, commitNudgeCount,
   })
   let objectiveVerified = false
   // Overall drive deadline. Without it a single hung page op (a crashed Chromium can make

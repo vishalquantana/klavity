@@ -746,7 +746,6 @@ test("(M) KLA-786: when the model keeps re-saving without finishing, the loop ve
   // objective is confirmed and the run crystallizes — WITHOUT the model ever emitting "done".
   const { page, state } = notesPage({}) // reload returns the same still-saved NOTES_DOM (note present)
   const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
-  let sawModelDone = false
   const model: AuthorModel = async () => {
     // The model NEVER emits done — it just keeps clicking Save.
     return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save the note again" }, costUsd: 0 }
@@ -758,7 +757,6 @@ test("(M) KLA-786: when the model keeps re-saving without finishing, the loop ve
   // The loop confirmed the persisted save on its own and finished — no runaway loop, no model "done" needed.
   expect(out.status).toBe("crystallized")
   expect(out.objectiveVerified).toBeTruthy()
-  expect(sawModelDone).toBe(false) // the model never emitted done; the loop verified proactively
   expect(state.gotoCount).toBeGreaterThanOrEqual(2) // a read-back reload happened before certifying
   // No synthetic submit-click ran while the commit was unconfirmed (only the model's own Save clicks).
   expect(state.clickLog.every((s) => s === '#cus_notes')).toBe(true)
