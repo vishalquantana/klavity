@@ -38,7 +38,13 @@ input:where([type="text"],[type="email"],[type="url"],[type="password"],[type="n
 textarea:where(*), select:where(*){padding:11px 13px;line-height:1.45;font-size:14px}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(80% 50% at 50% -5%,rgba(139,139,245,.08),transparent 60%)}
 a{color:inherit;text-decoration:none}
-.bar{position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);background:var(--ink-2);border-bottom:1px solid var(--line)}
+/* KLA-781 [PERF] scroll stutter: the sticky top bar had backdrop-filter:blur(12px) over a FULLY OPAQUE
+   background (--ink-2 = #ffffff / #15110d). The blur was therefore never visible, yet the browser
+   snapshot+Gaussian-blurred the full-width strip behind the bar on every scroll frame — a costly
+   per-frame compositor step for zero visual benefit. Dropping it removes that work with no visible
+   change. (No paint containment here — the bar hosts the project-picker popover, which overflows
+   below it and must not be clipped.) */
+.bar{position:sticky;top:0;z-index:10;background:var(--ink-2);border-bottom:1px solid var(--line)}
 .bar-in{margin-left:214px;padding:0 30px;height:60px;display:flex;align-items:center;gap:14px;transition:margin-left .2s ease}
 .brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:-.02em}
 /* #719: the brand mark is the REAL Klavity logo (favicon.svg dot-grid), not the letter "K".
@@ -1178,7 +1184,9 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* Tickets kanban board */
 /* #636: Jira-style horizontal scroll — columns keep a fixed width and the board scrolls sideways
    instead of every column squishing when many statuses are present. */
-.kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:flex-start;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+/* KLA-776: align-items:stretch makes every column the height of the tallest one, so a short/empty
+   column's swim lane is still a full-height drop target (paired with .kb-list{flex:1}). */
+.kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:stretch;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 /* #676: columns GROW to fill the board when there's room (no dead space with few columns) but keep a
    MIN width so a crowded board still scrolls sideways instead of squishing. */
 .kb-col{flex:1 1 300px;min-width:300px;max-width:none;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
@@ -1189,7 +1197,9 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .kb-head .kb-n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 8px}
 .kb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
 .kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-done{background:var(--green)}.kb-dot-dismissed{background:var(--paper-faint)}
-.kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px}
+/* KLA-776: flex:1 lets the card list fill the column's stretched height so the empty area below the
+   last card is part of the swim lane and accepts drops. */
+.kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px;flex:1 1 auto}
 /* #alignment-fix: .kb-card is a flex item of .kb-list (column flex) and defaults to min-width:auto,
    letting a long nowrap card-description (e.g. a raw ticket URL) stretch the card — and the whole
    .kb-col — past its neighbors instead of actually eliding via .kb-card-d's text-overflow:ellipsis. */
@@ -1206,9 +1216,13 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* #alignment-fix: card titles often embed a raw ticket URL (no spaces) — without a break-anywhere
    rule that single "word" can refuse to wrap and spill past the card's own right edge. Not
    overflow:hidden on .kb-card itself — that would clip the hover box-shadow (.kb-card:hover). */
-.kb-card-t{font-size:13px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
+/* KLA-775: make the "what" (title/summary) the visually dominant, clearly separated block on the card. */
+.kb-card-t{font-size:13.5px;font-weight:600;line-height:1.35;overflow-wrap:anywhere;color:var(--paper)}
 .kb-card-d{font-size:11px;color:var(--paper-faint);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kb-card-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+/* KLA-775: a hairline divider separates the "what" (title/summary above) from the chips/labels row.
+   :not(:empty) keeps cards with no meta (no priority/source/assignee/labels) free of a stray line. */
+.kb-card-meta:not(:empty){margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
 /* #739: Sim Reports board reuses the ticket kanban card look. Priority-keyed column dots + the
    report-card extras (quote line, thumbnail, card actions, always-reachable select checkbox). */
 .kb-dot-urgent{background:#dc2626}.kb-dot-high{background:var(--rose)}.kb-dot-medium{background:var(--amber)}.kb-dot-low{background:var(--paper-faint)}
@@ -3733,22 +3747,44 @@ async function load() {
   // KLAVITYKLA-299: use dashTargetProjId() (URL param || localStorage last) so the user's
   // chosen project sticks across reloads/navigation, not just when ?project= is in the URL.
   let data
+  let redirected = false
   kbar.start()
   try {
     const pid = dashTargetProjId()
-    const r = await fetchWithTimeout("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""))
-    if (r.status === 401) { location.href = "/login"; return }
-    data = await r.json()
-    // If the stored project id is stale/inaccessible, clear it and retry without a project param
-    // so the server falls back to the user's first accessible project rather than erroring out.
-    if (data && data.error && pid && pid !== activeProjectParam()) {
-      try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
-      const r2 = await fetchWithTimeout("/api/dashboard")
-      if (r2.status === 401) { location.href = "/login"; return }
-      data = await r2.json()
+    const dashUrl = "/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : "")
+    // KLA-764: a transient network blip or a racey empty payload used to overwrite good state and
+    // blank the project switcher to "—" (only browser-Back — via bfcache — could recover it). Retry
+    // a hard failure a couple of times before giving up so one flaky fetch can't wipe the switcher.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // KLA-764: the fetch itself must be INSIDE the try so a REJECTED request (network drop / timeout /
+      // abort — the most common transient failure) retries instead of escaping to the outer catch and
+      // failing on the first blip. A resolved-but-error response is handled below the same way.
+      try {
+        const r = await fetchWithTimeout(dashUrl)
+        if (r.status === 401) { location.href = "/login"; redirected = true; break }
+        data = await r.json().catch(() => null)
+        // If the stored project id is stale/inaccessible, clear it and retry without a project param
+        // so the server falls back to the user's first accessible project rather than erroring out.
+        if (data && data.error && pid && pid !== activeProjectParam()) {
+          try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+          const r2 = await fetchWithTimeout("/api/dashboard")
+          if (r2.status === 401) { location.href = "/login"; redirected = true; break }
+          data = await r2.json().catch(() => null)
+        }
+      } catch (e) { data = null } // rejected/timed-out fetch → fall through to the backoff + retry
+      // Retry only true failures (no payload / server error). A well-formed empty payload
+      // (genuinely-zero-projects new user) is a valid terminal state — don't spin on it.
+      if (data && !data.error) break
+      if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)))
     }
   } catch (e) { data = null }
   finally { kbar.done() }
+  if (redirected) return
+  // KLA-764: never let a transient EMPTY payload ({active:null, projects:[]}) blank an already-loaded
+  // switcher (same guard as refreshAll's KLA-717). load() re-runs while state is populated (e.g. after a
+  // plan-override change), so a racey empty revalidation could paint "—"; keep the good state instead.
+  if (data && Array.isArray(data.projects) && data.projects.length === 0 && !data.active
+      && state && Array.isArray(state.projects) && state.projects.length > 0) return
   if (!data || data.error) {
     // Keep whatever we painted from cache; only surface the error on a true cold miss.
     if (state === null) {
@@ -7436,8 +7472,14 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
           d = r ? await r.json().catch(() => ({})) : {}
         } finally { window.__klavMutating--; priSelEl.disabled = false; priSelEl.removeAttribute("aria-busy") }
         if (d.ok) {
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
           if (tkt) tkt.priority = newPri
+          // KLA-777: also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it,
+          // NOT state.tickets. Mirrors the status handler above so onChange's renderTicketsKanban()
+          // re-buckets the card (priority columns / High-priority filter), recolors its severity rail
+          // and re-sorts immediately, instead of waiting up to 15s for the next boardRevTick poll.
+          const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
+          if (bt) bt.priority = newPri
           recordLocalEdit(ticketId, { priority: newPri })   // #532
           // #653: repaint the priority severity square.
           const _sq = detailEl.querySelector(".prop-sq")
@@ -9162,6 +9204,7 @@ let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "
 let _tktListState = { page: 1, totalPages: 1, loading: false }
 let _tktBoardState = { loading: false }
 let _tktBoardTickets = []
+let _tktBoardLoadedPid = null // KLA-779: pid the board was actually FETCHED for (even if the result is empty), so an empty project isn't re-fetched on every render/poll
 // #536: the board caches the FULL, unfiltered project set here; status/priority/label/assignee/
 // source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
 // (no 'Loading…' wipe, no round-trip). This tracks which project the cache belongs to.
@@ -9368,7 +9411,9 @@ function renderTicketsView() {
     // client-side and re-render synchronously — no network round-trip, no 'Loading…' flash.
     // Only fetch when the cache is empty or belongs to a different project.
     const projId = state && state.active && state.active.id
-    if (projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) {
+    if (projId && _tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets)) {
+      // KLA-779: loaded-for-this-project (even an EMPTY result) counts as cached — render client-side, no
+      // network. Requiring _tktBoardTickets.length here re-fetched an empty project on every filter/toggle.
       renderTicketsKanban(_tktBoardTickets)
     } else {
       fetchAndRenderTktBoard()
@@ -9484,7 +9529,7 @@ async function fetchAndRenderTktBoard() {
   // #536: only show the 'Loading…' placeholder on a genuine cold load (no cached board for this
   // project). Re-fetches that back a filter/Clear/drag reconcile keep the current board in place.
   const projId = state && state.active && state.active.id
-  const warmCache = projId && _tktBoardProjId === projId && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length
+  const warmCache = projId && _tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets) // KLA-779: loaded-empty is warm too
   // #660: SWR cold-load paint — on a reload / first entry the in-memory board cache is empty, which
   // used to flash 'Loading…'. Paint the last-cached board from localStorage instantly (same
   // "tickets:"+pid key the #652 prefetch writes) so it never flashes, then revalidate below.
@@ -9518,6 +9563,7 @@ async function fetchAndRenderTktBoard() {
     mergeLocalEdits(data, _fetchStart)
     _tktBoardTickets = data.tickets || []
     _tktBoardProjId = projId
+    _tktBoardLoadedPid = projId // KLA-779: mark this project's board as loaded (even when empty) — no re-fetch spin
     if (data.rev != null) { _tktBoardRev = data.rev; _tktBoardRevPid = projId } // QA C2.2: authoritative live-poll baseline
     renderTicketsKanban(_tktBoardTickets)
     swrWrite("tickets:" + projId, _tktBoardTickets)   // #660: keep the SWR snapshot (+ #652 marker) fresh
@@ -10054,10 +10100,12 @@ async function moveTicketColumn(ticketId, fromKey, toKey) {
 // Used by renderCard AND the optimistic bulk-action DOM update so both stay in lockstep.
 function kbCardMetaHtml(t) {
   const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
-  const stChip = `<span class="chip kb-st kb-st-${esc(t.status || "open")}">${esc(ticketStatusLabel(t.status))}</span>`
+  // KLA-775: the per-card STATUS chip is dropped from the board card face — the kanban column the card
+  // sits in already communicates its status, so the chip was redundant clutter. (Other views build
+  // their own status label; this only affects the board card meta row.)
   const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
   const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
-  return `${stChip}${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
+  return `${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">'+lblHtml+'</span>' : ""}`
 }
 // #704: after moving cards between columns, recompute each column's count badge + restore the "—"
 // empty placeholder (or drop it) — cheaply, without a full board rebuild.
@@ -10099,6 +10147,19 @@ function renderTicketsKanban(boardTickets) {
     })
   }
   refreshAssigneeOptions()
+  // KLA-779: if we're about to render the board from the TINY state.tickets fallback (the board cache is
+  // cold), kick off the full 200-row board fetch so filters like "My items"/assignee run over the COMPLETE
+  // set, not a truncated preview (the reported "only 5 of 20+"). Gated tightly to avoid a fetch spin:
+  //  - `_tktBoardProjId !== projId`: the board has NEVER been fetched for this project. fetchAndRenderTktBoard
+  //    sets _tktBoardProjId=projId on completion EVEN for an empty result, so a genuinely-empty project is
+  //    fetched once, not on every render/poll.
+  //  - only on the active tickets view: #ticketsKanban exists in the DOM globally (just hidden), so the
+  //    overview's renderTicketsKanban() call must NOT trigger a board fetch.
+  if (!Array.isArray(boardTickets) && _tktBoardTickets.length === 0 && projId && !_tktBoardState.loading
+      && _tktBoardLoadedPid !== projId
+      && document.body.getAttribute("data-view") === "tickets") {
+    fetchAndRenderTktBoard()
+  }
   const sourceTickets = Array.isArray(boardTickets) ? boardTickets : (_tktBoardTickets.length ? _tktBoardTickets : (state.tickets || []))
   // #536: the board caches the FULL project set and filters client-side, so status/priority/label/
   // assignee/source/search are applied here (tktMatchesSelectFilters mirrors the server, matching
@@ -10141,9 +10202,14 @@ function renderTicketsKanban(boardTickets) {
     const list = document.createElement("div")
     list.className = "kb-list"
     list.setAttribute("data-key", col.key)
-    list.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
-    list.addEventListener("dragleave", ev => { if (!list.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
-    list.addEventListener("drop", ev => {
+    // KLA-776: the ENTIRE column (swim lane) is the drop target, not just the card list. Wiring
+    // dragover/dragleave/drop on colEl (which stretches full-height via .kanban{align-items:stretch}
+    // + .kb-list{flex:1}) means the header, padding, and the empty space below the last card all
+    // accept a drop. The drop still fires exactly once (single colEl handler; events from cards
+    // bubble up) and moveTicketColumn keeps the status-change behaviour unchanged.
+    colEl.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
+    colEl.addEventListener("dragleave", ev => { if (!colEl.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
+    colEl.addEventListener("drop", ev => {
       ev.preventDefault()
       colEl.classList.remove("drag-over")
       const ticketId = ev.dataTransfer.getData("text/plain")
@@ -10174,7 +10240,10 @@ function renderTicketsKanban(boardTickets) {
         cardEl.classList.remove("dragging")
         boardEl.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"))
       })
-      const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
+      // KLA-775: drop the URL/path from the board card face — it added a long, low-signal line that
+      // pushed the "what" (title) around. The full path still lives in the ticket detail panel. Keep
+      // the concise provenance ("by <Sim>") + relative age.
+      const sub = [t.simName ? ("by " + t.simName) : "", ticketAgo(t)].filter(Boolean).join(" · ")
       const renderCard = () => { cardEl.querySelector(".kb-card-meta").innerHTML = kbCardMetaHtml(t) }
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
@@ -10212,7 +10281,10 @@ function renderTicketsKanban(boardTickets) {
       }
 
       // Detail is built for the "Copy to AI" action; the card itself opens the single-ticket view.
-      const detailEl = buildTktDetail(t, admin, () => renderCard())
+      // KLA-777: after an edit (e.g. a priority change) also re-render the board so an active filter can
+      // evict/re-bucket the card — renderCard() alone only repaints this one card's metadata in place, so a
+      // ticket changed out of the current filter (High→Low while "High priority" is on) would wrongly linger.
+      const detailEl = buildTktDetail(t, admin, () => { renderCard(); renderTicketsKanban(_tktBoardTickets) })
       const cardCopyIcon = cardEl.querySelector(".copy-ai-icon")
       if (cardCopyIcon) cardCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, cardCopyIcon, detailEl) })
       // #678: no inline assign on cards anymore — the assignee shows READ-ONLY via kbCardMetaHtml's
@@ -12026,8 +12098,11 @@ async function loadLabels(admin) {
   const d = await r.json().catch(() => ({}))
   state._labels = d.labels || []
   refreshTicketLabelOptions()
+  // KLA-778: label management is available to any project member (not admin-only), mirroring the
+  // member-accessible ticket mutations + the relaxed server label routes. `admin` is kept as an
+  // arg for call-site compatibility but no longer gates the affordance.
   const btn = document.getElementById("manageLabelsBtn")
-  if (btn) btn.style.display = admin ? "" : "none"
+  if (btn) btn.style.display = ""
 }
 
 let _mlBound = false

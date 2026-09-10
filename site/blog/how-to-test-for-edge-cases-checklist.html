@@ -1,0 +1,103 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Test for Edge Cases: A Practical QA Checklist · Klavity</title>
+<meta name="description" content="Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-test-for-edge-cases-checklist">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Test for Edge Cases: A Practical QA Checklist"><meta property="og:description" content="Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-test-for-edge-cases-checklist"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Test for Edge Cases: A Practical QA Checklist"><meta name="twitter:description" content="Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Test for Edge Cases: A Practical QA Checklist","description":"Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.","datePublished":"2026-09-10","dateModified":"2026-09-10","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-test-for-edge-cases-checklist","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Test for Edge Cases: A Practical QA Checklist","item":"https://klavity.in/blog/how-to-test-for-edge-cases-checklist"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-test-for-edge-cases-checklist"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is an edge case in software testing?","acceptedAnswer":{"@type":"Answer","text":"An edge case is an input or operating condition at the extreme boundary of what a feature was designed to handle — an empty field, the maximum allowed length, a leap-year date, a lost network connection, or two clicks fired in the same instant. Edge cases are where assumptions in the code stop being true, so they surface bugs that the normal 'happy path' never reaches."}},{"@type":"Question","name":"What's the difference between an edge case and a corner case?","acceptedAnswer":{"@type":"Answer","text":"An edge case pushes one variable to its limit (a string of maximum length). A corner case is where two or more edge conditions happen at once (a maximum-length string submitted twice while offline). Corner cases are rarer and harder to reproduce, which is exactly why they escape to production — test the combinations, not just each boundary alone."}},{"@type":"Question","name":"How many edge cases should I test?","acceptedAnswer":{"@type":"Answer","text":"Don't aim for a number; aim for coverage of categories. Walk each input and state transition through the same checklist — boundaries, empty/null, size, encoding, numeric extremes, date/time, concurrency, network, permissions, and interrupted flows — and test the ones that are reachable in your product. Equivalence partitioning lets you test one representative value per category instead of every possible value."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-10</div>
+    <h1>How to Test for Edge Cases: A Practical QA Checklist</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>An edge case is any input or condition at the boundary of what a feature was designed for: empty values, maximums, special characters, timezone rollovers, offline states, and double-submits. Test them by walking a fixed checklist of categories against every input and state transition, then lock each confirmed edge case into a regression test so it can't return.</div>
+    <div class="prose"><p>An edge case is any input or condition at the boundary of what a feature was built to handle: an empty field, the maximum allowed length, a special character, a timezone rollover, a dropped connection, or two clicks in the same instant. You test for them by walking every input and every state change through a fixed checklist of categories, testing the values that sit at the edges rather than the comfortable middle, and then locking each confirmed failure into a regression test. The happy path proves a feature works; edge cases prove it doesn't break when reality gets weird.</p>
+
+<h2>What counts as an edge case?</h2>
+<p>An edge case is where an assumption in the code stops being true. The form field assumed text would arrive; a user pastes 50,000 characters. The date logic assumed months have 28 to 31 days; February 29 arrives. The submit handler assumed one click; a slow network and an impatient user produce three. None of these are exotic — they are ordinary conditions the original code simply didn't account for.</p>
+<p>It helps to separate two terms. An <strong>edge case</strong> pushes a single variable to its limit. A <strong>corner case</strong> combines two or more edge conditions at once — a maximum-length name, submitted twice, while offline. Corner cases are where the nastiest production bugs live, because each condition alone might be handled but the combination isn't. Test the boundaries individually first, then test the combinations that a real user could plausibly hit.</p>
+
+<h2>An edge-case testing checklist</h2>
+<p>Run every input field, parameter, and state transition through these ten categories. You won't need all ten for every feature, but walking the full list is what stops you from forgetting the one that matters.</p>
+<ol>
+<li><strong>Boundary values.</strong> For any limit, test the value just below it, exactly at it, and just above it. A field capped at 100 characters gets tested at 99, 100, and 101. Off-by-one errors live almost entirely at these three points.</li>
+<li><strong>Empty and null.</strong> Submit the empty string, a whitespace-only string, an empty list, a zero, and a genuine null. "No value" and "a value of zero" are different things, and code that conflates them breaks in quiet, data-corrupting ways.</li>
+<li><strong>Oversized input.</strong> Paste a very long string, upload a large file, request a huge page size, add hundreds of items to a cart. Look for truncation, layout breakage, timeouts, and memory spikes.</li>
+<li><strong>Special characters and encoding.</strong> Test emoji, accented and non-Latin scripts, right-to-left text, quotes and apostrophes, leading and trailing spaces, and input shaped like markup or a database query (an HTML tag, a stray apostrophe followed by SQL). You're checking both correct display and safe handling.</li>
+<li><strong>Numeric extremes.</strong> Negative numbers, zero, decimals where integers are expected, very large numbers, leading zeros, and currency rounding (does 0.1 + 0.2 render as you expect?). Financial and quantity fields fail here constantly.</li>
+<li><strong>Date and time.</strong> Timezone boundaries, daylight-saving transitions, February 29, midnight rollover, the last day of a month, and dates far in the past or future. "Works on my machine" is often "works in my timezone."</li>
+<li><strong>Concurrency and repetition.</strong> Double-click submit, fire the same action twice quickly, open the same record in two tabs and edit both. Watch for duplicate records, lost updates, and <a href="/blog/what-is-a-race-condition-in-software">race conditions</a>.</li>
+<li><strong>Network and state.</strong> Go offline mid-action, throttle to a slow connection, let a request time out, refresh during a multi-step flow, and act on an expired session or stale token. These reveal whether your app degrades or corrupts.</li>
+<li><strong>Permissions and auth.</strong> Try the action logged out, as the wrong role, with an expired session, and against a record you don't own. Authorization gaps are edge cases with security consequences.</li>
+<li><strong>Interrupted flows.</strong> Press the browser back button mid-wizard, resize the window, rotate a phone, hit refresh after a partial submit. The path a user takes is rarely the straight line the design assumed.</li>
+</ol>
+
+<h2>How to find edge cases you haven't thought of</h2>
+<p>The checklist covers the known categories. The dangerous edge cases are the ones specific to your product that nobody wrote down. Four techniques surface them systematically instead of by luck.</p>
+<ol>
+<li><strong>Boundary-value analysis and equivalence partitioning.</strong> Group every possible input into classes that the code should treat identically, then test one representative value per class plus the boundaries between classes. This gives you near-complete coverage without testing infinite values — the formal version of "test the edges, not the middle."</li>
+<li><strong>Read your real bug reports.</strong> Your <a href="/blog">bug tracker</a> is a list of edge cases users already found. Every "cannot reproduce" and every production incident points at a condition your tests didn't cover. Mine the last quarter of tickets for patterns and turn each into a permanent test.</li>
+<li><strong>Error guessing from experience.</strong> Ask the engineers who wrote the feature where they took shortcuts, and ask support which inputs generate the most confusion. People know where the thin ice is; the trick is writing it down before it melts.</li>
+<li><strong>Persona-driven exploration.</strong> Real users don't follow the happy path — they paste from Excel, work on flaky hotel Wi-Fi, and abandon flows halfway. Running your product through <a href="/sims">AI personas</a> built from real customer interviews surfaces the assumption mismatches and messy real-world sequences that a checklist written by the people who built the feature will always miss.</li>
+</ol>
+
+<h2>How to capture an edge-case bug so it's reproducible</h2>
+<p>Edge cases are the bugs most likely to come back as "cannot reproduce," because they depend on exact state — a specific input, a particular session, a timing window. When you hit one, the report has to carry that state or the fix will guess. Capture the exact input value (including invisible whitespace and encoding), the console and network activity at the moment of failure, the browser and timezone, and the precise sequence of steps. Filing directly from the point of failure — a <a href="/snap">right-click bug report</a> that attaches the screenshot, console, and network trace automatically — removes the retyping that loses the very details an edge case depends on.</p>
+
+<h2>How to turn edge cases into regression tests</h2>
+<p>A confirmed edge case that isn't captured as a test is a bug waiting to return. The moment you reproduce one, convert it into an automated test that fails against the current code and passes after the fix. Follow this order:</p>
+<ol>
+<li><strong>Reproduce it reliably.</strong> Pin down the exact input and state until the failure happens on demand. If you can't make it happen every time, you can't test it — narrow the conditions until you can.</li>
+<li><strong>Write the test first, and watch it fail.</strong> A regression test that never failed proves nothing. Assert the correct behavior, run it against the broken code, and confirm red before you touch the fix.</li>
+<li><strong>Fix, then confirm green.</strong> Apply the fix and watch the same test pass. Now the edge case is documented, verified, and guarded.</li>
+<li><strong>Keep the test durable.</strong> Edge-case tests break when the UI shifts, so anchor them to stable selectors and behavior rather than brittle markup. Suites that <a href="/autosim">repair their own selectors</a> when the UI changes keep these guards alive instead of letting them rot into flaky failures that get muted.</li>
+</ol>
+<p>Test the edges deliberately, capture each failure with the state that caused it, and lock every confirmed one into a regression test. Over time your suite stops being a list of things you hoped would work and becomes a record of every way the product has broken — and can't break again.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test every input against a fixed checklist: boundaries, empty/null, oversized, special characters, and numeric extremes.</li><li>Test every state transition for concurrency, offline/timeout, wrong permissions, and interrupted flows (back, refresh, resize).</li><li>Find missed edge cases with boundary-value analysis, real bug reports, and persona-driven exploration — not guesswork.</li><li>Convert each confirmed edge case into a regression test that fails before the fix and passes after, so it can't return.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is an edge case in software testing?</summary><p>An edge case is an input or operating condition at the extreme boundary of what a feature was designed to handle — an empty field, the maximum allowed length, a leap-year date, a lost network connection, or two clicks fired in the same instant. Edge cases are where assumptions in the code stop being true, so they surface bugs that the normal 'happy path' never reaches.</p></details><details><summary>What's the difference between an edge case and a corner case?</summary><p>An edge case pushes one variable to its limit (a string of maximum length). A corner case is where two or more edge conditions happen at once (a maximum-length string submitted twice while offline). Corner cases are rarer and harder to reproduce, which is exactly why they escape to production — test the combinations, not just each boundary alone.</p></details><details><summary>How many edge cases should I test?</summary><p>Don't aim for a number; aim for coverage of categories. Walk each input and state transition through the same checklist — boundaries, empty/null, size, encoding, numeric extremes, date/time, concurrency, network, permissions, and interrupted flows — and test the ones that are reachable in your product. Equivalence partitioning lets you test one representative value per category instead of every possible value.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

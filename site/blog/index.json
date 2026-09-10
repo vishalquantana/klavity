@@ -544,5 +544,26 @@
     "excerpt": "Load testing checks how your system behaves under expected traffic. Stress testing pushes past the limit to find where it breaks. Here's how to run each.",
     "category": "Compare",
     "date": "2026-09-07"
+  },
+  {
+    "slug": "reproduce-a-bug-that-only-happens-for-one-user",
+    "title": "How to Reproduce a Bug That Only Happens for One User",
+    "excerpt": "A bug that hits one user and no one else is almost always a state problem. Here are the five kinds of user state to replicate to reproduce it.",
+    "category": "Guides",
+    "date": "2026-09-08"
+  },
+  {
+    "slug": "how-to-design-a-bug-report-template",
+    "title": "How to Design a Bug Report Template Teams Actually Use",
+    "excerpt": "A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish.",
+    "category": "Guides",
+    "date": "2026-09-09"
+  },
+  {
+    "slug": "how-to-test-for-edge-cases-checklist",
+    "title": "How to Test for Edge Cases: A Practical QA Checklist",
+    "excerpt": "Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.",
+    "category": "Guides",
+    "date": "2026-09-10"
   }
 ]

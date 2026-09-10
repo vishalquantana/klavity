@@ -130,7 +130,60 @@ describe('StreamingDictation session', () => {
     expect(FakeWS.instances.length).toBe(0)
   })
 
-  it('stop() sends a stop control frame, closes the socket, releases the mic, fires onStop', async () => {
+  // KLA-774: stop() must keep the socket LIVE until the server's async 'final' lands (or a bounded grace
+  // timeout), so the last words — only ever sent as 'interim' — are captured instead of dropped.
+  it('stop() sends a stop frame, keeps the socket open, commits the flushed final, and tears down on server CLOSE', async () => {
+    const stream = makeStream()
+    const stops = vi.fn()
+    const finals: string[] = []
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ getUserMedia: vi.fn(async () => stream) }) })
+    d.onStop = stops
+    d.onTranscript = (t) => finals.push(t)
+    await d.start()
+    const ws = FakeWS.instances[0]
+    ws.open()
+    ws.emit({ type: 'ready' })
+    ws.emit({ type: 'interim', text: 'hello wor' })
+    d.stop()
+    // Stop frame sent; recorder stopped; but the socket is STILL OPEN and onStop has NOT fired yet.
+    expect(ws.sent).toContain(JSON.stringify({ type: 'stop' }))
+    expect(ws.readyState).toBe(1)          // still open — waiting for the server to flush + close
+    expect(stops).not.toHaveBeenCalled()
+    // The async flush final arrives → committed. Committing does NOT tear down (another final could follow).
+    ws.emit({ type: 'final', text: 'hello world' })
+    expect(finals).toEqual(['hello world'])
+    expect(ws.readyState).toBe(1)          // still open
+    expect(stops).not.toHaveBeenCalled()
+    // Server finished flushing → it closes the client socket → NOW teardown + onStop (exactly once).
+    ws.close()
+    expect(ws.readyState).toBe(3)
+    expect(stream._track.stop).toHaveBeenCalled()
+    expect(stops).toHaveBeenCalledTimes(1)
+  })
+
+  it('a short utterance stopped BEFORE the server "ready" still flushes gracefully (open socket, not connected)', async () => {
+    // Socket is OPEN and the recorder is streaming, but the server has sent NO message yet (_connected=false).
+    // Stopping here must still take the graceful flush path, not immediate teardown (which would drop the tail).
+    const stops = vi.fn()
+    const stream = makeStream()
+    const finals: string[] = []
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ getUserMedia: vi.fn(async () => stream) }) })
+    d.onStop = stops; d.onTranscript = (t) => finals.push(t)
+    await d.start()
+    const ws = FakeWS.instances[0]
+    ws.open()                                  // recorder starts; NO server 'ready' emitted → not connected
+    d.stop()
+    expect(ws.readyState).toBe(1)              // graceful: socket kept open (NOT immediate teardown)
+    expect(stops).not.toHaveBeenCalled()
+    expect(ws.sent.some((s) => s === JSON.stringify({ type: 'stop' }))).toBe(true) // flush requested
+    // Server (finally) flushes a final for the buffered audio, then closes → teardown.
+    ws.emit({ type: 'final', text: 'hi there' })
+    expect(finals).toEqual(['hi there'])
+    ws.close()
+    expect(stops).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop() with NO final within the grace window still tears down exactly once (timeout path)', async () => {
     const stream = makeStream()
     const stops = vi.fn()
     const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ getUserMedia: vi.fn(async () => stream) }) })
@@ -140,10 +193,170 @@ describe('StreamingDictation session', () => {
     ws.open()
     ws.emit({ type: 'ready' })
     d.stop()
-    expect(ws.sent).toContain(JSON.stringify({ type: 'stop' }))
-    expect(ws.readyState).toBe(3) // closed
+    expect(ws.readyState).toBe(1)          // held open during grace
+    expect(stops).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(StreamingDictation.STOP_GRACE_MS + 10)
+    expect(ws.readyState).toBe(3)          // grace expired → closed
     expect(stream._track.stop).toHaveBeenCalled()
     expect(stops).toHaveBeenCalledTimes(1)
+  })
+
+  it('server closing the socket during the grace window finishes the stop (no reconnect / no onUnavailable)', async () => {
+    const stops = vi.fn()
+    const unavailable = vi.fn()
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps() })
+    d.onStop = stops
+    d.onUnavailable = unavailable
+    await d.start()
+    const ws = FakeWS.instances[0]
+    ws.open()
+    ws.emit({ type: 'ready' })
+    d.stop()
+    ws.close()                              // server closes right after receiving 'stop' (before/without a final)
+    await vi.advanceTimersByTimeAsync(StreamingDictation.STOP_GRACE_MS + 10)
+    expect(stops).toHaveBeenCalledTimes(1)  // stopped cleanly
+    expect(unavailable).not.toHaveBeenCalled()
+    expect(FakeWS.instances.length).toBe(1) // did NOT reconnect
+  })
+
+  it('sends the tail audio chunk BEFORE the {type:stop} control frame (KLA-774 ordering)', async () => {
+    // A recorder whose stop() flushes a FINAL dataavailable (the tail audio) and THEN fires onstop —
+    // exactly like a real MediaRecorder. The server must receive that tail chunk before "stop".
+    class TailRecorder {
+      state = 'inactive'; ondataavailable: any = null; onstop: any = null
+      constructor(public stream: any, public opts?: any) {}
+      static isTypeSupported() { return true }
+      start() { this.state = 'recording' }
+      stop() { this.state = 'inactive'; this.ondataavailable?.({ data: { size: 999 } }); this.onstop?.() }
+      emit() { this.ondataavailable?.({ data: { size: 64 } }) }
+    }
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ MediaRecorder: TailRecorder as any }) })
+    await d.start()
+    const ws = FakeWS.instances[0]
+    ws.open(); ws.emit({ type: 'ready' })
+    d.stop()
+    // The tail chunk (size 999) must appear in the sent stream BEFORE the JSON 'stop' frame.
+    const tailIdx = ws.sent.findIndex((s) => s && s.size === 999)
+    const stopIdx = ws.sent.findIndex((s) => s === JSON.stringify({ type: 'stop' }))
+    expect(tailIdx).toBeGreaterThanOrEqual(0)
+    expect(stopIdx).toBeGreaterThanOrEqual(0)
+    expect(tailIdx).toBeLessThan(stopIdx)
+    ws.emit({ type: 'final', text: 'done' })
+  })
+
+  it('a mid-stream final arriving AFTER stop() but BEFORE the recorder flush does NOT tear down early (KLA-774 race)', async () => {
+    // Recorder whose stop() DEFERS its final dataavailable + onstop until fireStop() is called — models a
+    // real MediaRecorder flushing async. Meanwhile a server segment-final lands in that gap.
+    let deferredStop: (() => void) | null = null
+    class DeferredRecorder {
+      state = 'inactive'; ondataavailable: any = null; onstop: any = null
+      constructor(public stream: any, public opts?: any) {}
+      static isTypeSupported() { return true }
+      start() { this.state = 'recording' }
+      stop() { this.state = 'inactive'; deferredStop = () => { this.ondataavailable?.({ data: { size: 777 } }); this.onstop?.() } }
+      emit() { this.ondataavailable?.({ data: { size: 64 } }) }
+    }
+    const finals: string[] = []
+    const stops = vi.fn()
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ MediaRecorder: DeferredRecorder as any }) })
+    d.onTranscript = (t) => finals.push(t); d.onStop = stops
+    await d.start()
+    const ws = FakeWS.instances[0]
+    ws.open(); ws.emit({ type: 'ready' }); ws.emit({ type: 'interim', text: 'the quick brown' })
+    d.stop()
+    // A segment 'final' arrives BEFORE the recorder has flushed — must be committed but must NOT tear down.
+    ws.emit({ type: 'final', text: 'the quick' })
+    expect(finals).toEqual(['the quick'])
+    expect(ws.readyState).toBe(1)             // socket STILL open — no premature teardown
+    expect(stops).not.toHaveBeenCalled()
+    expect(ws.sent.some((s) => s === JSON.stringify({ type: 'stop' }))).toBe(false) // stop not sent yet
+    // Now the recorder flushes its tail → onstop → stop frame goes out.
+    deferredStop!()
+    const tailIdx = ws.sent.findIndex((s) => s && s.size === 777)
+    const stopIdx = ws.sent.findIndex((s) => s === JSON.stringify({ type: 'stop' }))
+    expect(tailIdx).toBeGreaterThanOrEqual(0)
+    expect(stopIdx).toBeGreaterThan(tailIdx)  // tail audio before the stop frame
+    // The REAL flush final now arrives → committed (still no teardown from a final).
+    ws.emit({ type: 'final', text: 'brown fox' })
+    expect(finals).toEqual(['the quick', 'brown fox'])
+    expect(ws.readyState).toBe(1)
+    expect(stops).not.toHaveBeenCalled()
+    // Server closes the socket after flushing → teardown + onStop once.
+    ws.close()
+    expect(ws.readyState).toBe(3)
+    expect(stops).toHaveBeenCalledTimes(1)
+  })
+
+  it('start() during a pending stop-grace tears down the OLD session (no leak, old final ignored)', async () => {
+    const stops = vi.fn()
+    const finals: string[] = []
+    const oldStream = makeStream()
+    let n = 0
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ getUserMedia: vi.fn(async () => (n++ === 0 ? oldStream : makeStream())) }) })
+    d.onStop = stops
+    d.onTranscript = (t) => finals.push(t)
+    await d.start()
+    const ws1 = FakeWS.instances[0]
+    ws1.open(); ws1.emit({ type: 'ready' }); ws1.emit({ type: 'interim', text: 'partial' })
+    d.stop()                                    // grace pending — ws1 still open
+    expect(ws1.readyState).toBe(1)
+    await d.start()                             // restart DURING grace
+    expect(ws1.readyState).toBe(3)              // old socket closed by teardown
+    expect(oldStream._track.stop).toHaveBeenCalled() // old mic released (no leak)
+    expect(FakeWS.instances.length).toBe(2)     // fresh socket for the new session
+    const ws2 = FakeWS.instances[1]
+    ws2.open(); ws2.emit({ type: 'ready' })
+    // A late final on the OLD socket must NOT affect the new session.
+    ws1.emit({ type: 'final', text: 'STALE' })
+    expect(finals).not.toContain('STALE')
+    d.stop()
+  })
+
+  it('start() during grace cancels the pending stop-flush fallback (no stale send, no cross-session state)', async () => {
+    // A recorder that NEVER fires onstop, so stop() arms the 1200ms fallback timer. Restarting during grace
+    // must cancel it — otherwise it would later send {type:'stop'} on the dead socket and corrupt the reused
+    // instance's _awaitingFinal.
+    class NoStopRecorder {
+      state = 'inactive'; ondataavailable: any = null; onstop: any = null
+      constructor(public stream: any, public opts?: any) {}
+      static isTypeSupported() { return true }
+      start() { this.state = 'recording' }
+      stop() { this.state = 'inactive' }   // deliberately never fires onstop/dataavailable
+      emit() {}
+    }
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps({ MediaRecorder: NoStopRecorder as any }) })
+    await d.start()
+    const ws1 = FakeWS.instances[0]
+    ws1.open(); ws1.emit({ type: 'ready' })
+    d.stop()                                   // fallback armed; onstop will never come
+    expect(ws1.sent.filter((s) => s === JSON.stringify({ type: 'stop' })).length).toBe(0) // not sent yet
+    await d.start()                            // restart DURING grace → must cancel the fallback
+    const ws2 = FakeWS.instances[1]
+    ws2.open(); ws2.emit({ type: 'ready' })
+    await vi.advanceTimersByTimeAsync(StreamingDictation.STOP_FLUSH_FALLBACK_MS + 50)
+    expect(ws1.sent.filter((s) => s === JSON.stringify({ type: 'stop' })).length).toBe(0) // no stale send on old socket
+    expect((d as any)._awaitingFinal).toBe(false)   // new session not corrupted
+    d.stop()
+  })
+
+  it('a reused instance (start→stop→start→stop) fires onStop on EACH cycle (KLA-774 _stopFired re-arm)', async () => {
+    const stops = vi.fn()
+    const d = new StreamingDictation({ url: 'wss://x/stream', deps: deps() })
+    d.onStop = stops
+    // Cycle 1 — final commits, server close finishes it.
+    await d.start()
+    const ws1 = FakeWS.instances[0]
+    ws1.open(); ws1.emit({ type: 'ready' })
+    d.stop()
+    ws1.emit({ type: 'final', text: 'one' }); ws1.close()
+    expect(stops).toHaveBeenCalledTimes(1)
+    // Cycle 2 on the SAME instance
+    await d.start()
+    const ws2 = FakeWS.instances[1]
+    ws2.open(); ws2.emit({ type: 'ready' })
+    d.stop()
+    ws2.emit({ type: 'final', text: 'two' }); ws2.close()
+    expect(stops).toHaveBeenCalledTimes(2)
   })
 
   it('a mid-session drop after connecting reconnects (does not fire onUnavailable)', async () => {

@@ -34,7 +34,7 @@ function fakeBrowser() {
     keyPress: async () => {},
     clearField: async () => {},
     assertVisible: async () => {},
-    waitMs: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {},
     mockNetwork: async () => {},
   }
   return {

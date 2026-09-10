@@ -1,0 +1,126 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Design a Bug Report Template Teams Actually Use · Klavity</title>
+<meta name="description" content="A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-design-a-bug-report-template">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Design a Bug Report Template Teams Actually Use"><meta property="og:description" content="A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-design-a-bug-report-template"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Design a Bug Report Template Teams Actually Use"><meta name="twitter:description" content="A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Design a Bug Report Template Teams Actually Use","description":"A good bug report template keeps human input tiny and auto-captures the technical fields. Here's what to include and how to design a form people finish.","datePublished":"2026-09-09","dateModified":"2026-09-09","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-design-a-bug-report-template","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Design a Bug Report Template Teams Actually Use","item":"https://klavity.in/blog/how-to-design-a-bug-report-template"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-design-a-bug-report-template"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What fields should a bug report template include?","acceptedAnswer":{"@type":"Answer","text":"At minimum: a specific title, numbered steps to reproduce, expected vs. actual result, environment (browser, OS, version, device), the exact URL or route, evidence (screenshot or recording plus console and network logs), severity, and reproducibility. Ask humans only for the first four in prose; capture the rest automatically."}},{"@type":"Question","name":"How many required fields should a bug report form have?","acceptedAnswer":{"@type":"Answer","text":"Keep required human-entered fields to three or four — title, what happened, what you expected, and severity. Making technical fields like console logs required forces people to either skip them or paste something useless. Auto-capture those instead of requiring them."}},{"@type":"Question","name":"Should severity be a dropdown or free text?","acceptedAnswer":{"@type":"Answer","text":"A dropdown or picker with defined levels. Free-text severity produces values like 'high?' and 'kinda bad' that can't be sorted or filtered. A fixed set (for example blocker, major, minor, trivial) with a one-line definition beside each keeps triage consistent."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-09</div>
+    <h1>How to Design a Bug Report Template Teams Actually Use</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>Design a bug report template by asking only for what a human uniquely knows — the title, what happened, and what they expected — and auto-capturing everything technical (URL, environment, console, network, timestamp). Every required free-text field you add lowers completion and quality; the shortest form that still reproduces the bug is the best one.</div>
+    <div class="prose"><p>To design a bug report template teams actually use, ask people only for what a human uniquely knows &mdash; a specific title, what happened, and what they expected &mdash; and auto-capture everything technical: the URL, environment, console errors, network requests, and timestamp. Every required free-text field you add lowers both completion rate and quality, so the shortest form that still lets a developer reproduce the bug is the best template you can ship.</p>
+
+<h2>What fields should a bug report template include?</h2>
+<p>A complete bug report carries enough for someone who has never seen the issue to reproduce it. That breaks into two groups: fields only the reporter knows, and fields a machine can collect. Design your template around that split.</p>
+<p><strong>Fields a human must supply (keep these short):</strong></p>
+<ul>
+<li><strong>Title</strong> &mdash; one specific line: what broke, where. "Checkout button does nothing on the cart page" beats "bug".</li>
+<li><strong>What happened</strong> &mdash; the actual result, in the reporter's own words.</li>
+<li><strong>What you expected</strong> &mdash; the intended behavior. The gap between these two is the bug.</li>
+<li><strong>Severity</strong> &mdash; how badly it breaks the product, chosen from a fixed list.</li>
+</ul>
+<p><strong>Fields you should capture automatically (don't make people type these):</strong></p>
+<ul>
+<li><strong>Steps to reproduce</strong> &mdash; the actions leading up to the report; reconstruct from the session where you can, or prompt for a numbered list.</li>
+<li><strong>Environment</strong> &mdash; browser, browser version, OS, device, and viewport size.</li>
+<li><strong>URL / route</strong> &mdash; the exact page, including query parameters.</li>
+<li><strong>Evidence</strong> &mdash; a screenshot or short recording, plus console errors and failed network requests.</li>
+<li><strong>Timestamp</strong> &mdash; when it happened, so it can be matched to logs and deploys.</li>
+<li><strong>Reproducibility</strong> &mdash; always, sometimes, or seen once.</li>
+</ul>
+<p>The distinction matters because the technical fields are exactly the ones people skip, guess at, or get wrong &mdash; and they're also the ones a browser can read directly.</p>
+
+<h2>How to design a bug report template step by step</h2>
+<ol>
+<li><strong>Start from the fix, not the form.</strong> List what a developer needs to reproduce and diagnose a typical bug, then work backward to the fields that supply it. If a field doesn't help someone reproduce, triage, or route the bug, cut it.</li>
+<li><strong>Make the human section tiny.</strong> Title, what happened, what you expected, severity. Four fields is a form people finish; twelve is a form they abandon or fill with "n/a".</li>
+<li><strong>Auto-capture the technical fields.</strong> Read the URL, browser, OS, viewport, console log, and network activity from the session instead of asking. This is the single biggest quality lever, because it removes the fields most likely to be wrong when typed by hand.</li>
+<li><strong>Use pickers, not free text, for anything you'll sort by.</strong> Severity and reproducibility should be dropdowns with defined options. Free text can't be filtered, and it invites values no one can compare.</li>
+<li><strong>Set smart defaults.</strong> Pre-fill environment and URL, default severity to "minor" rather than blank, and pre-select the current project or component. A partially filled form is finished faster and more accurately.</li>
+<li><strong>Add a duplicate check at intake.</strong> Search open tickets by title and URL before creating a new one, and surface likely matches so the reporter can confirm an existing bug instead of splitting the signal across two tickets.</li>
+<li><strong>Redact PII and secrets by default.</strong> If the template captures console output, network payloads, or screenshots, strip tokens, auth headers, and personal data automatically &mdash; don't rely on the reporter to remember.</li>
+</ol>
+
+<h2>Required vs. optional fields: how to avoid empty tickets</h2>
+<p>The temptation is to mark every useful field required so nothing is missing. In practice, over-requiring backfires: people either abandon the form or type filler to get past the gate, and you end up with tickets that look complete but reproduce nothing.</p>
+<p>A more reliable rule:</p>
+<ul>
+<li><strong>Require only what a human uniquely knows</strong> &mdash; title, what happened, what you expected, severity.</li>
+<li><strong>Auto-fill everything technical</strong> so it's present without being a gate.</li>
+<li><strong>Leave genuinely optional context optional</strong> &mdash; account role, related tickets, workaround &mdash; and let people add it when they have it.</li>
+</ul>
+<p>The goal is a template where a complete, reproducible ticket is the path of least resistance, not an obstacle course.</p>
+
+<h2>How to auto-capture evidence instead of asking for it</h2>
+<p>The fields that decide whether a bug gets fixed &mdash; environment, console errors, and network failures &mdash; are the ones a reporter is least equipped to provide. Most people don't know how to open developer tools, let alone export a HAR file, so asking for them in a template just guarantees blank fields.</p>
+<p>Capturing them from the session solves this. When a report is filed from inside the product, the tool already has the URL, the browser and OS, the viewport, the recent console log, and the network requests around the moment the bug was flagged. In-app and right-click bug reporting exists precisely to attach that state automatically &mdash; <a href="/snap">Klavity Snap</a> lets someone right-click to file a bug and ships it with the screenshot, console, network, and environment already attached, so the template's technical fields fill themselves. That turns "cannot reproduce" back-and-forth into a ticket a developer can act on immediately. For the reporter's side of the format, see <a href="/blog/how-to-write-a-bug-report-developers-act-on">how to write a bug report developers will actually act on</a>.</p>
+
+<h2>Bug report template examples by tool</h2>
+<p>Most trackers support templated intake; the mechanics differ:</p>
+<ul>
+<li><strong>GitHub Issues</strong> &mdash; add Markdown or YAML issue forms under <em>.github/ISSUE_TEMPLATE/</em>. YAML forms let you define typed inputs and mark specific ones required, which is closer to a real form than a Markdown checklist.</li>
+<li><strong>Jira</strong> &mdash; use a dedicated Bug issue type with custom fields (severity, environment, steps) and configure which are required per screen scheme. Keep required custom fields minimal to avoid the abandonment problem.</li>
+<li><strong>Linear</strong> &mdash; use issue templates to pre-populate the description structure and default labels, and lean on labels rather than many custom fields for severity and area.</li>
+</ul>
+<p>Whichever tool you use, the design principles are the same: few required human fields, structured pickers for anything you sort by, and evidence attached rather than requested. For a deeper look at filing directly to each tracker, see the <a href="/blog">Klavity blog</a>.</p>
+
+<h2>Common bug report template mistakes</h2>
+<ul>
+<li><strong>Too many required fields.</strong> The fastest way to kill report quality is to gate submission behind a dozen inputs. People route around gates.</li>
+<li><strong>Free-text severity and priority.</strong> Unsortable, incomparable, and impossible to build SLAs on. Use fixed levels with one-line definitions.</li>
+<li><strong>Asking users for console logs and HAR files.</strong> Most reporters can't produce them; capture from the session instead.</li>
+<li><strong>No duplicate check.</strong> Without an intake search, the same bug lands three times and the triage cost triples.</li>
+<li><strong>No default state.</strong> Blank severity and blank environment mean every ticket needs a follow-up before it can even be triaged.</li>
+</ul>
+<p>Design the template so the easy path produces a reproducible ticket, and quality stops depending on how much each reporter happens to know.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Ask humans only for title, what happened, and what they expected</li><li>Auto-capture URL, environment, console, network, and timestamp</li><li>Use pickers for severity and reproducibility, never free text</li><li>Add a duplicate check at intake before the ticket is created</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What fields should a bug report template include?</summary><p>At minimum: a specific title, numbered steps to reproduce, expected vs. actual result, environment (browser, OS, version, device), the exact URL or route, evidence (screenshot or recording plus console and network logs), severity, and reproducibility. Ask humans only for the first four in prose; capture the rest automatically.</p></details><details><summary>How many required fields should a bug report form have?</summary><p>Keep required human-entered fields to three or four — title, what happened, what you expected, and severity. Making technical fields like console logs required forces people to either skip them or paste something useless. Auto-capture those instead of requiring them.</p></details><details><summary>Should severity be a dropdown or free text?</summary><p>A dropdown or picker with defined levels. Free-text severity produces values like 'high?' and 'kinda bad' that can't be sorted or filtered. A fixed set (for example blocker, major, minor, trivial) with a one-line definition beside each keeps triage consistent.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

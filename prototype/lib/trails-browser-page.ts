@@ -199,11 +199,24 @@ function fingerprintBody(el: Element): Fingerprint {
 
 function stableSelectorBody(el: Element): string | null {
   const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-  if (el.id) return "#" + CSS.escape(el.id)
-  const tid = el.getAttribute("data-testid")
-  if (tid) return `[data-testid="${esc(tid)}"]`
-  const al = el.getAttribute("aria-label")
-  if (al) return `${el.tagName.toLowerCase()}[aria-label="${esc(al)}"]`
+  const tag = el.tagName.toLowerCase()
+  // Each candidate must resolve to EXACTLY ONE element AND that element must be `el` itself — else a replay
+  // could act on the wrong node. The `=== el` check is defense-in-depth: it guarantees a candidate built from
+  // a normalized IDL property (which can diverge from the matching content attribute) can never anchor onto a
+  // different element that merely happens to be unique.
+  const uniq = (sel: string): boolean => { try { return document.querySelectorAll(sel).length === 1 && document.querySelector(sel) === el } catch { return false } }
+  // Ordered most→least robust. Returns null (→ author keeps the positional domPath) only if NONE anchor.
+  // KLA (BookJoy replay locator_drift): sites without id/testid/aria (e.g. CodeIgniter forms) previously
+  // fell straight to a brittle positional path; `name`/`placeholder`/`type` anchor those cleanly.
+  if (el.id) { const s = "#" + CSS.escape(el.id); if (uniq(s)) return s }
+  const tid = el.getAttribute("data-testid"); if (tid) { const s = `[data-testid="${esc(tid)}"]`; if (uniq(s)) return s }
+  const nm = el.getAttribute("name"); if (nm) { const s = `${tag}[name="${esc(nm)}"]`; if (uniq(s)) return s }
+  const al = el.getAttribute("aria-label"); if (al) { const s = `${tag}[aria-label="${esc(al)}"]`; if (uniq(s)) return s }
+  const ph = (el as HTMLInputElement).placeholder; if (ph) { const s = `${tag}[placeholder="${esc(ph)}"]`; if (uniq(s)) return s }
+  // Read the content ATTRIBUTE, not the IDL `.type` property (which normalizes a missing/invalid type to
+  // "text") — otherwise a bare `<input>` would build `input[type="text"]` and could anchor onto a DIFFERENT
+  // explicit text input. Absent/invalid attribute → skip (fall through to the positional path).
+  if (tag === "input") { const ty = el.getAttribute("type"); if (ty) { const s = `input[type="${esc(ty)}"]`; if (uniq(s)) return s } }
   return null
 }
 /* eslint-enable */
@@ -242,6 +255,14 @@ export interface BrowserPage {
   assertUrlMatches(pattern: RegExp | string, timeoutMs: number): Promise<void>
   assertElementCount(selector: string, expected: number, timeoutMs: number): Promise<void>
   waitMs(ms: number): Promise<void>
+  /**
+   * KLA (BookJoy Save-loop): wait (bounded) for in-flight network requests to settle. Used by AUTHORING
+   * after a commit-style action (click/submit/select/upload) so the NEXT snapshot captures the AJAX result
+   * (a "Saved" toast / updated list) instead of the pre-response DOM — otherwise a no-page-nav AJAX save
+   * looks unchanged and trips the no-op stagnation guard into re-clicking Save. Never throws; on timeout it
+   * just returns (best-effort). Mirrors the replay runner's post-action networkidle wait.
+   */
+  settleNetwork(timeoutMs: number): Promise<void>
   /**
    * KLA-111: Install network mocks before navigating. Subsequent requests whose URL matches a mock
    * rule are either stubbed with a canned response or aborted (blocked). Call before goto() so
@@ -336,6 +357,7 @@ class PlaywrightPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async settleNetwork(timeoutMs: number) { await this.page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {}) }
   async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
     // Remove any previously installed Klavity route handlers before installing fresh ones.
     await this.page.unroute("**/*").catch(() => {})
@@ -490,6 +512,10 @@ class PuppeteerPage implements BrowserPage {
     throw new Error(`assertElementCount: expected ${expected} but found ${n}`)
   }
   async waitMs(ms: number) { await new Promise((r) => setTimeout(r, ms)) }
+  async settleNetwork(timeoutMs: number) {
+    // Puppeteer's waitForNetworkIdle (idleTime 500ms); fall back to a short flat wait on older builds.
+    try { await this.page.waitForNetworkIdle({ timeout: timeoutMs, idleTime: 500 }) } catch { await this.waitMs(Math.min(timeoutMs, 800)) }
+  }
   async interceptNetwork(mocks: NetworkMock[]): Promise<void> {
     // Puppeteer: enable request interception and handle each request against the mock list.
     // setRequestInterception(true) is idempotent in Puppeteer; safe to call repeatedly.

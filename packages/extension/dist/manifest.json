@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Klavity – AI Bug Reporter & Feedback for Jira, Linear, GitHub",
   "short_name": "Klavity",
-  "version": "0.107.3",
+  "version": "0.113.10",
   "description": "AI Sims review your pages and file bug & feature tickets to Jira, Linear, GitHub, or Plane — or report any page in one click.",
   "permissions": [
     "activeTab",
@@ -36,7 +36,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content.ts-loader-BrjAMWJq.js"
+        "assets/content.ts-loader-BdaP84uR.js"
       ],
       "matches": [
         "http://localhost/*"
@@ -82,10 +82,10 @@
       ],
       "resources": [
         "assets/icons-CiC9ZF46.js",
-        "assets/voice-input-BoFN39qq.js",
+        "assets/voice-input-BGxVGr6U.js",
         "assets/evidence-store-DkYpvFbG.js",
         "assets/heic2any-DQxJzxPi.js",
-        "assets/content.ts-Ce68gznH.js"
+        "assets/content.ts-wHt2dx-c.js"
       ],
       "use_dynamic_url": false
     },

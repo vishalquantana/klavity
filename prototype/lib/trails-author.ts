@@ -48,6 +48,10 @@ const MAX_CONSECUTIVE_MISSES = 3
 const MAX_API_RETRIES = 3
 const MODEL_RETRY_BASE_MS = 1_000
 const ACTION_TIMEOUT = 10_000
+// KLA (BookJoy Save-loop): after a commit-style action (click/submit/select/upload), wait up to this long for
+// in-flight network to settle so the NEXT snapshot reflects the AJAX result. Bounded so a long-poll/websocket
+// site can't stall the walk. Mirrors the replay runner's post-action networkidle wait.
+const POST_ACTION_SETTLE_MS = 4_000
 // KLA-129: stall if the exact same action (op+selector+value+url) fires this many consecutive
 // times without a different action in between — the model is stuck re-doing the same step.
 const LOOP_STALL_N = 3
@@ -375,6 +379,10 @@ export async function authorTrail(
         const cnt = await bounded(pg.count(sel), 5_000, "auto-advance count")
         if (cnt === 1) {
           await bounded(pg.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
+          // KLA (BookJoy Save-loop): settle so the caller's post-click snapshot reflects an AJAX login/submit
+          // result (no-nav forms) instead of the pre-response DOM. (The no-op-guard's inline click settles on
+          // its own path; this helper is the repeated-type login auto-submit path.)
+          await bounded(pg.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance settle").catch(() => {})
           return sel
         }
       } catch { /* try next candidate */ }
@@ -494,6 +502,9 @@ export async function authorTrail(
                 const n = await bounded(page.count(sel), 5_000, "auto-advance count")
                 if (n === 1) {
                   await bounded(page.click(sel, ACTION_TIMEOUT), ACTION_TIMEOUT + 2_000, "auto-advance click")
+                  // KLA (BookJoy Save-loop): an auto-advanced submit is a commit too — settle the network so the
+                  // next snapshot reflects its AJAX result rather than the pre-response DOM.
+                  await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-auto-advance network settle").catch(() => {})
                   history.push(`(auto-advance: the page was not changing — clicked the most likely submit control "${sel}" to progress the flow; check the new page state)`)
                   noOpCount = 0
                   autoAdvanced = true
@@ -709,6 +720,13 @@ export async function authorTrail(
             if (!opts.fileResolver) throw new Error("upload: this AutoSim has no attached file to upload")
             const paths = await opts.fileResolver(fname)
             await page.setInputFiles(a.selector!, paths, ACTION_TIMEOUT)
+          }
+          // KLA (BookJoy Save-loop): after a commit-style action, let the network settle so the NEXT top-of-loop
+          // snapshot captures the AJAX result (a "Saved" toast / updated list). Without this, an AJAX save with
+          // no page navigation leaves the DOM looking unchanged → the no-op stagnation guard fires → the model
+          // is nudged to re-click Save → Save-loop. (type/hover/fill/assert don't commit, so skip them.)
+          if (a.op === "click" || a.op === "keyPress" || a.op === "select" || a.op === "upload") {
+            await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-action network settle").catch(() => {})
           }
           traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" || a.op === "upload" ? a.value ?? undefined : undefined,

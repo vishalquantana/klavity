@@ -133,8 +133,21 @@ test("POST /api/projects/:id/labels creates label (admin)", async () => {
   createdLabelId = d.label.id
 })
 
-test("POST /api/projects/:id/labels is forbidden for members", async () => {
-  const r = await req("POST", `/api/projects/${PROJ}/labels`, { name: "Feature" }, SID_MEMBER)
+// KLA-778: label management is now available to regular project members (not admin-only), mirroring
+// the member-accessible bulk ticket mutations. A member can create a label…
+test("POST /api/projects/:id/labels is allowed for members (KLA-778)", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/labels`, { name: "Feature", color: "#3b82f6" }, SID_MEMBER)
+  expect(r.status).toBe(201)
+  const d = await r.json()
+  expect(d.label.name).toBe("Feature")
+  // Clean up so it doesn't perturb later list assertions.
+  await req("DELETE", `/api/projects/${PROJ}/labels/${d.label.id}`, undefined, SID_MEMBER)
+})
+
+// …but the gate stays project-scoped: a non-member (outsider) is still rejected. Negative control
+// proving KLA-778 relaxed member access WITHOUT opening the route to anyone outside the project.
+test("POST /api/projects/:id/labels is forbidden for non-members (KLA-778 negative control)", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/labels`, { name: "Nope" }, SID_OUT)
   expect(r.status).toBe(403)
 })
 
@@ -163,9 +176,20 @@ test("PATCH /api/projects/:id/labels/:lid updates label", async () => {
   expect(updated.color).toBe("#f97316")
 })
 
-test("PATCH label returns 403 for member", async () => {
-  const r = await req("PATCH", `/api/projects/${PROJ}/labels/${createdLabelId}`, { name: "X", color: "#000000" }, SID_MEMBER)
-  expect(r.status).toBe(403)
+// KLA-778: a member can PATCH a label (then we restore it so downstream assertions are unaffected)…
+test("PATCH label is allowed for members (KLA-778)", async () => {
+  const r = await req("PATCH", `/api/projects/${PROJ}/labels/${createdLabelId}`, { name: "Bug Report", color: "#f97316" }, SID_MEMBER)
+  expect(r.status).toBe(200)
+  const d = await r.json()
+  expect(d.ok).toBe(true)
+})
+
+// …while an outsider still gets 403 (negative control for both PATCH and DELETE).
+test("PATCH/DELETE label returns 403 for non-members (KLA-778 negative control)", async () => {
+  const rp = await req("PATCH", `/api/projects/${PROJ}/labels/${createdLabelId}`, { name: "X", color: "#000000" }, SID_OUT)
+  expect(rp.status).toBe(403)
+  const rd = await req("DELETE", `/api/projects/${PROJ}/labels/${createdLabelId}`, undefined, SID_OUT)
+  expect(rd.status).toBe(403)
 })
 
 // ── Attach / Detach ──────────────────────────────────────────────────────────

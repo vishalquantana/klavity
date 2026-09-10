@@ -70,6 +70,25 @@ await rawExec(
   `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES ('p2', 'a1', 'Email-Gated Project', 'active', 'auto', 'named', '{}', 'support', 'https://klavity.in/onboarding', 'lead@x.com', 'email', ?, ?)`,
   [now, now]
 )
+// KLA-785: a SEPARATE account a2 + project p3 = the Klavity intake project. MEMBER_EMAIL is NOT a member of
+// a2/p3, so a member report rerouted here (feedback_target=klavity) must NOT get p3's member-only pretty link.
+await rawExec(
+  `INSERT INTO accounts (id, name, owner_email, domain, plan, created_at) VALUES ('a2', 'Klavity Intake Acct', 'klavity@klavity.in', 'klavity.in', 'free', ?)`,
+  [now]
+)
+await rawExec(
+  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES ('p3', 'a2', 'Klavity Intake', 'active', 'auto', 'named', '{}', 'support', 'https://klavity.in/onboarding', 'lead@x.com', 'anonymous', ?, ?)`,
+  [now, now]
+)
+// KLA-782: seed an authenticated MEMBER (a1's owner) + a session so a first-party member submit can be
+// tested. getSession() dual-reads the raw id (legacy fallback), so a plaintext session id works here.
+const MEMBER_EMAIL = "owner@test.local"
+const MEMBER_SID = "sess_member_kla782"
+await rawExec(`INSERT INTO users (email, name, created_at) VALUES (?, 'Owner', ?)`, [MEMBER_EMAIL, now])
+// accountRole() reads account_members (NOT accounts.owner_email) — seed the owner row so projectAccess
+// grants admin and resolveProject resolves p1 for this actor.
+await rawExec(`INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES ('am_a1_owner', 'a1', ?, 'owner', ?)`, [MEMBER_EMAIL, now])
+await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [MEMBER_SID, MEMBER_EMAIL, now, now + 7 * 24 * 60 * 60 * 1000])
 
 // ── Spawn the server on a random port ─────────────────────────────────────────
 let serverPort: number
@@ -91,6 +110,7 @@ beforeAll(async () => {
       KLAV_BASE_URL: BASE,
       KLAV_ALLOWED_DOMAINS: "test.local",
       KLAV_DEV_SHOW_OTP: "1",
+      KLAVITY_INTAKE_PROJECT_ID: "p3", // KLA-785: route feedback_target=klavity into p3 (a2), which MEMBER can't access
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
       OPENROUTER_API_KEY: "test-key",
@@ -143,23 +163,42 @@ test("default-anonymous cross-origin submit with NO email is accepted (200) and 
   expect(row.rows[0].contact_email).toBeNull()
 })
 
-// ── #651/#727: an ANONYMOUS cross-origin widget submit still gets the single-ticket deep link ──
-// Previously issue_url was withheld for anonymous submitters (#632). Now the server returns the
-// FAST single-ticket permalink /t/<id> (#727 — was the heavy /dashboard…#tickets/<id> SPA boot)
-// regardless of reporter auth, so the "Report sent" toast always has an "Open in Klavity" link.
-// /t/:ref is member-gated server-side (a non-member gets the redacted teaser / login), so there
-// is no data leak.
-test("#651: anonymous cross-origin submit returns the single-ticket deep-link issue_url", async () => {
+// ── KLA-782 (was #651/#727/#745): an ANONYMOUS cross-origin widget submit gets the /t/ teaser link ──
+// Previously (#745) issue_url was the pretty /<slug>/<KEY>-<n> permalink for EVERYONE — but that route
+// is projectAccess-gated (member-only), so an anonymous reporter following it after the widget's
+// login-resume hit a 403 instead of their own report (KLA-782, confirmed by opencode + codex). The fix:
+// an anonymous reporter now gets the unguessable /t/<fb_id> teaser link, which honors the share/teaser
+// redaction policy and resolves for a non-member. The pretty permalink stays MEMBER-ONLY (next test).
+test("KLA-782: anonymous cross-origin submit returns the /t/ teaser deep-link (NOT the member-only pretty permalink)", async () => {
   const fd = new FormData()
   fd.set("description", "anon needs a link back"); fd.set("project_id", "p1")
   const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: "https://customer.example" } })
   expect(r.status).toBe(200)
   const j = await r.json()
   expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
-  // #745: the deep link is now the Jira-clean pretty permalink /<slug>/<KEY>-<n> once the workspace
-  // slug + project ticket_key are backfilled (the server backfills existing accounts/projects on boot),
-  // and falls back to the fast opaque /t/<id> otherwise. Compute the expected form from the DB so the
-  // assertion is exact either way. dashBase = KLAV_BASE_URL; the project is resolved server-side.
+  // Anon ALWAYS gets the opaque teaser form, regardless of whether the workspace slug / project
+  // ticket_key are backfilled — so it can never be the enumerable member-only pretty permalink.
+  expect(j.issue_url).toBe(`${BASE}/t/${j.id}`)
+  // Guard against a regression back to the pretty form leaking to anon.
+  expect(j.issue_url).not.toMatch(/\/[^/]+\/[A-Z0-9]+-\d+$/)
+})
+
+// ── KLA-782: an authenticated MEMBER submit keeps the pretty /<slug>/<KEY>-<n> permalink (unchanged) ──
+// A first-party submit carrying the member's session cookie resolves an actor with project access, so
+// prettyDeepLinkUrl still returns the Jira-clean permalink (falling back to /t/<id> only if the slug /
+// ticket_key aren't backfilled yet). This proves the fix does NOT downgrade real members.
+test("KLA-782: authenticated member submit keeps the pretty permalink (falls back to /t/ only pre-backfill)", async () => {
+  const fd = new FormData()
+  fd.set("description", "member files a report"); fd.set("project_id", "p1")
+  const r = await fetch(`${BASE}/api/feedback`, {
+    method: "POST",
+    body: fd,
+    headers: { origin: BASE, cookie: `klav_session=${MEMBER_SID}` },
+  })
+  expect(r.status).toBe(200)
+  const j = await r.json()
+  expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
+  // Compute the expected pretty form from the DB (backfilled server-side on boot); fall back to /t/.
   const meta = await rawClient.execute({
     sql: `SELECT a.slug AS slug, p.ticket_key AS key, f.seq_num AS seq
             FROM feedback f JOIN projects p ON p.id = f.project_id
@@ -171,10 +210,36 @@ test("#651: anonymous cross-origin submit returns the single-ticket deep-link is
     ? `${BASE}/${row.slug}/${row.key}-${row.seq}`
     : `${BASE}/t/${j.id}`
   expect(j.issue_url).toBe(expected)
+  // In this seeded env the workspace alias + project key are backfilled on boot, so a member gets the
+  // pretty permalink — the exact form an anon reporter is denied above.
+  if (row && row.slug && row.key && row.seq != null) {
+    expect(j.issue_url).toMatch(/\/[^/]+\/[A-Z0-9]+-\d+$/)
+  }
 })
 
 // ── Test 2b (JTBD 1.7): an EXPLICIT 'email' gate (p2) still rejects a submit with no email (400) ──
 // Explicit email/login gate configs must behave exactly as before the default flipped to anonymous.
+test("KLA-785: a MEMBER rerouted to the Klavity intake project (feedback_target=klavity) gets the /t/ teaser, NOT the intake pretty link", async () => {
+  const fd = new FormData()
+  fd.set("description", "member reports to klavity")
+  fd.set("project_id", "p1")            // member is owner of a1/p1 …
+  fd.set("feedback_target", "klavity")  // …but this reroutes the report into p3 (a2), which they can't access
+  const r = await fetch(`${BASE}/api/feedback`, {
+    method: "POST", body: fd,
+    headers: { origin: BASE, cookie: `klav_session=${MEMBER_SID}` },
+  })
+  expect(r.status).toBe(200)
+  const j = await r.json()
+  expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
+  // The report landed in the intake project p3 (reroute fired) …
+  const row = (await rawClient.execute({ sql: `SELECT project_id FROM feedback WHERE id=?`, args: [j.id] })).rows[0] as any
+  expect(String(row.project_id)).toBe("p3")
+  // … and because the member can't access p3, the deep-link is the opaque /t/ teaser, NOT p3's member-only
+  // pretty permalink (which would 403 after login-resume — the KLA-785 bug).
+  expect(j.issue_url).toBe(`${BASE}/t/${j.id}`)
+  expect(j.issue_url).not.toMatch(/\/[^/]+\/[A-Z0-9]+-\d+$/)
+})
+
 test("explicit email-gated project rejects a cross-origin submit with no email (400)", async () => {
   const fd = new FormData()
   fd.set("description", "x"); fd.set("project_id", "p2")

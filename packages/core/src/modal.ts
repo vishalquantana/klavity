@@ -127,6 +127,32 @@ function displayRef(issueKey: string): string {
   return m ? 'fb_' + m[1] : issueKey
 }
 
+// KLA-766: the reporter-friendly ticket KEY shape (KLA-123, SIM-1520) — a leading letter, up to 9 more
+// key chars, a dash and a sequence number. Matches the SERVER's pretty-permalink key segment
+// (/<slug>/<KEY>-<n>) exactly (server.ts prettyTicketMatch) so we only ever surface a ref the server
+// actually minted — we never invent one.
+const FRIENDLY_KEY_SHAPE = /^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/
+
+/** KLA-766: pull the reporter-friendly ticket key (KLA-123) out of the server's pretty deep-link
+ *  (/<slug>/<KEY>-<n>) when it has one. Returns '' for the opaque /t/<fb_id> fallback, a bare
+ *  /dashboard link, a non-http(s) URL, or anything whose last path segment isn't a real KEY-<n>. */
+export function refFromPrettyUrl(u: string | null | undefined): string {
+  if (!u) return ''
+  try {
+    const p = new URL(u)
+    if (p.protocol !== 'https:' && p.protocol !== 'http:') return ''
+    const seg = p.pathname.split('/').filter(Boolean).pop() || ''
+    return FRIENDLY_KEY_SHAPE.test(seg) ? seg : ''
+  } catch { return '' }
+}
+
+/** KLA-766: what to show as the "Filed as" reference. Prefer the friendly ticket key the server
+ *  embedded in the deep link (KLA-123); fall back to displayRef (a real tracker key passes through,
+ *  an fb_<uuid> is shortened) only when the server gave us nothing friendlier. Never invents a ref. */
+export function friendlyRef(issueKey: string, issueUrl?: string | null): string {
+  return refFromPrettyUrl(issueUrl) || displayRef(issueKey)
+}
+
 /** Only ever link out to a real http(s) URL — issueUrl flows in from the host/server response, so
  *  anything else (empty, javascript:, garbage) renders no link at all. */
 function safeHttpUrl(u: string | null | undefined): string {
@@ -500,6 +526,10 @@ export interface ModalCallbacks {
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
+  // KLA-772: fired whenever the inline annotator commits/edits/reverts the drawn overlay for a shot, with the
+  // shot's strip index and a JSON-safe copy of its markup ({ w, h, shapes } or null when cleared). The host
+  // persists it onto the matching EvidenceShot so annotations survive minimize + navigation. Absent => no-op.
+  onAnnotationsChanged?: (index: number, annotations: any | null) => void
   // #638: when true, render a small "Attach console logs" toggle just above Submit. It is CHECKED (ON) by
   // default now (founder ask 2026-08-30) — console logs ride most reports since they're high-signal for
   // debugging; the reporter can still uncheck it to withhold them. The chosen state rides the submit payload
@@ -520,7 +550,9 @@ export interface ModalController {
   // shows for it too (e.g. a right-click-drag region shot the host detected was partial). Defaults false.
   // KLA-621: an optional 5th arg carries the shot's capture provenance (region rect / picked element selector)
   // so Retake redoes that exact selection instead of a full-frame grab. Backward compatible.
-  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
+  // KLA-772: an optional 6th arg re-seeds the shot's saved annotation overlay ({ w, h, shapes }) so a report
+  // restored after navigation repaints the shapes the reporter drew. Absent => the shot seeds with no overlay.
+  addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => void
   // Like addScreenshot, but treats the shot as a GENUINE user capture: it becomes the ACTIVE/selected hero
   // (activeIndex → the new last shot, scrolled into view) AND fires onShotAdded (so the host persists it to
   // any evidence session). Use for a shot the reporter just captured — e.g. a right-click-drag region shot
@@ -528,6 +560,9 @@ export interface ModalController {
   // the fresh capture, not the first seeded one. (addScreenshot leaves activeIndex alone for silent seeds.)
   addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
   close: () => void
+  // KLA-772: a JSON-safe snapshot of every shot's drawn overlay (strip index → { w, h, shapes }). The host
+  // reads it on minimize to persist all annotations into the evidence session in one pass. Empty => {}.
+  getAnnotations: () => Record<number, any>
   // JTBD 1.8: update the attached-proof replay chip after mount (rrweb loads async, so the buffer may
   // only become playable a few hundred ms after the composer opens). No-op when no chip was rendered.
   setReplayState: (state: 'attached' | 'unavailable') => void
@@ -805,6 +840,22 @@ export function buildModal(
   const undoStacks: Record<number, UndoSnap[]> = {}
   const cropStacks: Record<number, Array<{ snap: UndoSnap; mark: number }>> = {}
   const cloneAnn = (a: any): any => (a ? JSON.parse(JSON.stringify(a)) : null)
+  // KLA-772: notify the host that the per-image markup for `index` changed, so it can persist the overlay
+  // into the EvidenceShot (survives minimize + navigation). Always hands over a JSON-safe deep clone (never a
+  // live reference to annotationsByIndex) so a later in-place edit can't mutate what the host already stored.
+  const fireAnnChanged = (index: number) => {
+    try { callbacks.onAnnotationsChanged?.(index, cloneAnn(annotationsByIndex[index])) } catch { /* host persistence best-effort */ }
+  }
+  // KLA-772: a JSON-safe snapshot of the FULL per-image markup map (index → { w, h, shapes }). The host reads
+  // this on minimize to persist every shot's overlay in one pass. Empty entries are omitted.
+  const getAnnotationsSnapshot = (): Record<number, any> => {
+    const out: Record<number, any> = {}
+    for (const k of Object.keys(annotationsByIndex)) {
+      const v = annotationsByIndex[k as any]
+      if (v) out[Number(k)] = cloneAnn(v)
+    }
+    return out
+  }
   const snapshotShot = (index: number): UndoSnap => ({
     url: screenshots[index],
     compressed: screenshotCompressed[index],
@@ -829,6 +880,7 @@ export function buildModal(
     const cs = cropStacks[index]
     while (cs && cs.length && cs[cs.length - 1].mark >= st.length) cs.pop()
     restoreShot(index, snap)
+    fireAnnChanged(index) // KLA-772: an undo changed the overlay → re-persist it
     updateStrip()
     return true
   }
@@ -840,6 +892,7 @@ export function buildModal(
     const { snap, mark } = cs.pop()!
     if (undoStacks[index]) undoStacks[index].length = Math.min(undoStacks[index].length, mark)
     restoreShot(index, snap)
+    fireAnnChanged(index) // KLA-772: revert changed the overlay → re-persist it
     updateStrip()
     return true
   }
@@ -920,7 +973,7 @@ export function buildModal(
     .kl-minimap{position:absolute;right:12px;bottom:12px;z-index:7;border:1px solid rgba(255,255,255,.4);border-radius:6px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.5);background:#0b0f1c;cursor:crosshair;touch-action:none;}
     .kl-minimap[hidden]{display:none;}
     .kl-minimap-img{display:block;width:100%;height:100%;object-fit:fill;opacity:.9;pointer-events:none;user-select:none;-webkit-user-drag:none;}
-    .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6c63ff);background:color-mix(in srgb,var(--kl-accent,#6c63ff) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
+    .kl-minimap-vp{position:absolute;box-sizing:border-box;border:2px solid var(--kl-accent,#6366f1);background:color-mix(in srgb,var(--kl-accent,#6366f1) 20%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.3);pointer-events:none;}
     .kl-htool:focus-visible,.kl-htbtn:focus-visible,.kl-hcolor:focus-visible,.kl-hlogo:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
     .klavity-thumb.kl-thumb-active img{outline:2px solid var(--kl-accent);outline-offset:1px;}
     /* #627: zoom −/+ buttons sit tight together as their own group. */
@@ -1659,10 +1712,12 @@ export function buildModal(
     shadowRoot,
     // Host seeds shots it already tracks (evidence-session restore, region-initial): fireAdded=false so
     // onShotAdded does NOT re-fire (which would double-persist). Page metadata is carried through as-is.
-    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture),
+    addScreenshot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture, annotations?: any) => addScreenshot(dataUrl, quality, pageMeta, false, !!suggestSharp, capture, annotations),
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
     addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
+    // KLA-772: expose the full per-image overlay map so the host can persist it on minimize.
+    getAnnotations: getAnnotationsSnapshot,
     setReplayState,
     // KLA-591: mirror the aggregate upload percent onto every video tile + file chip while a submit is in
     // flight. Re-renders the strip + chips so the bars paint; passing null clears them.
@@ -1703,8 +1758,6 @@ export function buildModal(
         screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
         screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
         screenshotCapture.splice(i, 1) // KLA-621: keep the capture-provenance aligned too
-        // KLA-412: tell the host to drop the matching shot from the evidence session (index-aligned).
-        try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
         // drop the removed image's markup and slide every higher index down by one. Without this, submitting
         // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
@@ -1713,6 +1766,11 @@ export function buildModal(
           annotationsByIndex[key - 1] = annotationsByIndex[key]
           delete annotationsByIndex[key]
         }
+        // KLA-412 + KLA-772: tell the host to drop the matching shot from the evidence session (index-aligned).
+        // MUST run AFTER the annotationsByIndex shift above: the host reads getAnnotations() synchronously to
+        // re-align the session's stored overlays, so it needs the ALREADY-SHIFTED map — otherwise the shot
+        // after the deleted one inherits the deleted shot's overlay (and the last shot's overlay is dropped).
+        try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
         // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
         delete undoStacks[i]; delete cropStacks[i]
         for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
@@ -1989,12 +2047,18 @@ export function buildModal(
   // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
   // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
   // shots it already tracks (no re-persist, explicit page tag carried through).
-  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture) {
+  function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
     blankCaptureHint = false // a real shot landed → drop the "couldn't capture" empty-state steer
     screenshots.push(dataUrl)
+    // KLA-772: re-seed a restored shot's saved overlay so the inline annotator repaints the drawn shapes when
+    // the hero mounts. Cloned so the persisted copy and the live editing map can't alias each other.
+    const seedIndex = screenshots.length - 1
+    if (annotations && Array.isArray(annotations.shapes) && annotations.shapes.length) {
+      annotationsByIndex[seedIndex] = cloneAnn(annotations)
+    }
     // Kick off compression immediately — by submit time the Promise is settled (user was typing).
     screenshotCompressed.push(callbacks.compressImage ? callbacks.compressImage(dataUrl) : Promise.resolve(dataUrl))
     screenshotQuality.push(quality) // JTBD 1.9: stays aligned with screenshots[] (undefined = no badge)
@@ -2038,7 +2102,9 @@ export function buildModal(
           screenshotQuality[index] = quality ?? 'real-pixel'
           screenshotSuggestSharp[index] = false // KLAVITYKLA-473: a sharp retake can't be blank/partial
           // Clear any markup on this image — the new capture has different pixels/dimensions.
-          if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index) }
+          // KLA-772: fire the change (→ null) so the PERSISTED overlay is cleared too; otherwise a retake
+          // followed by close+navigate (without a minimize) would restore the OLD overlay onto the new pixels.
+          if (annotationsByIndex[index]) { delete annotationsByIndex[index]; retakeClearedNote.add(index); fireAnnChanged(index) }
           // #449: the shot was fully replaced — its old undo/crop history no longer matches these pixels.
           delete undoStacks[index]; delete cropStacks[index]
         }
@@ -2313,7 +2379,15 @@ export function buildModal(
   }
 
   function escHandler(e: KeyboardEvent) {
-    if (e.key === 'Escape') { e.stopPropagation(); close(); return }
+    // KLA-773: while the discard-confirm card is open it OWNS the keyboard. Esc = "keep editing" (dismiss);
+    // every other key (crucially the global 'S' submit shortcut) is swallowed so the report can never be
+    // submitted from BEHIND the confirmation. The card's own two buttons still work via native focus/click.
+    if (dismissConfirmClose) {
+      if (e.key === 'Escape') { e.stopPropagation(); dismissConfirmClose() }
+      else if (e.key === 's' || e.key === 'S') { e.stopPropagation() } // block the submit shortcut only
+      return
+    }
+    if (e.key === 'Escape') { e.stopPropagation(); confirmClose(); return }
     // S submits the report — but only when the user isn't typing and no fullscreen editor owns the keys.
     if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
       // Real keystrokes are composed:true, so at this document-level capture listener e.target is
@@ -2476,6 +2550,38 @@ export function buildModal(
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
   const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  // KLA-773: closing with unsaved evidence (screenshot / recording / replay / files) used to discard it
+  // silently — X, backdrop click and Esc all called close() unconditionally. Guard those three paths with a
+  // lightweight in-modal confirm (never a blocking window.confirm() — that would freeze the host page). The
+  // minimize button (#klavity-min) stays UNGUARDED: it's non-destructive (the host persists the session).
+  let confirmCloseCard: HTMLElement | null = null
+  let dismissConfirmClose: (() => void) | null = null
+  const confirmClose = () => {
+    if (!hasEvidence()) { close(); return }
+    if (confirmCloseCard) return // already asking
+    const card = document.createElement('div')
+    confirmCloseCard = card
+    card.setAttribute('role', 'alertdialog')
+    card.setAttribute('aria-modal', 'true')
+    card.setAttribute('aria-labelledby', 'kl-cc-title')
+    card.style.cssText = 'position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(12,10,8,.55);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)'
+    card.innerHTML =
+      '<div style="max-width:340px;background:var(--kl-bg,#1c1712);color:var(--kl-fg,#f5f3ee);border:1px solid var(--kl-border,#574f45);border-radius:14px;padding:20px 20px 16px;box-shadow:0 18px 48px rgba(0,0,0,.45);font-family:var(--kl-font,system-ui,sans-serif)">'
+      + '<div id="kl-cc-title" style="font-size:15px;font-weight:600;margin-bottom:6px">Discard this capture?</div>'
+      + '<div style="font-size:13px;opacity:.8;line-height:1.45;margin-bottom:16px">Your screenshot and any annotations, recording or attached files will be lost.</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button id="kl-cc-keep" style="padding:8px 14px;border-radius:9px;border:1px solid var(--kl-border,#574f45);background:transparent;color:inherit;font-size:13px;font-weight:600;cursor:pointer">Keep editing</button>'
+      + '<button id="kl-cc-discard" style="padding:8px 14px;border-radius:9px;border:none;background:#c0392b;color:#fff;font-size:13px;font-weight:600;cursor:pointer">Discard</button>'
+      + '</div></div>'
+    const dismiss = () => { safeRemove(card); if (confirmCloseCard === card) { confirmCloseCard = null; dismissConfirmClose = null } }
+    dismissConfirmClose = dismiss
+    card.addEventListener('click', (e) => { if (e.target === card) dismiss() }) // click the dim to keep editing
+    card.querySelector('#kl-cc-keep')?.addEventListener('click', dismiss)
+    card.querySelector('#kl-cc-discard')?.addEventListener('click', () => { dismiss(); close() })
+    const m = shadowRoot.querySelector('.klavity-modal') as HTMLElement | null
+    ;(m || overlay).appendChild(card)
+    try { (card.querySelector('#kl-cc-keep') as HTMLElement | null)?.focus() } catch { /* jsdom */ }
+  }
   // #529: auto-grow the description so a prefilled or long (>4 line) report shows in full without the
   // reporter dragging the resize handle. Reset to 'auto' first so the box can also shrink, then grow to
   // fit content, capped at 40vh (keeps the modal usable on short viewports). resize:vertical stays as a
@@ -2713,8 +2819,8 @@ export function buildModal(
     })
   }
 
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
-  modal.querySelector('#klavity-x')?.addEventListener('click', () => close())
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) confirmClose() }) // KLA-773
+  modal.querySelector('#klavity-x')?.addEventListener('click', () => confirmClose())     // KLA-773
   // KLA-412: minimize hands off to the host, which persists the evidence session, closes this composer,
   // and shows the dock. Never let a listener error leave the button dead.
   modal.querySelector('#klavity-min')?.addEventListener('click', () => {
@@ -2883,12 +2989,18 @@ export function buildModal(
     // preview (replaced each interim, dropped on stop). onUnavailable cascades to batch, then Web Speech.
     const wireStreaming = (s: StreamingDictation) => {
       const sep = () => (streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : '')
-      s.onTranscript = (text) => { streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
-      s.onInterim = (text) => { desc.value = streamBase + sep() + text; refreshSubmit() }
+      // KLA-774: track the latest interim so that if Stop's grace window expires WITHOUT a server 'final'
+      // (slow/dropped final), we still commit the last spoken words instead of discarding them on onStop.
+      let lastInterim = ''
+      s.onTranscript = (text) => { lastInterim = ''; streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
+      s.onInterim = (text) => { lastInterim = text || ''; desc.value = streamBase + sep() + text; refreshSubmit() }
       s.onStatus = (type, message) => { if (type === 'idle') clearInfoStatus(); else setVoiceStatus('info', message) }
       s.onError = (_, message) => { if (message) setVoiceStatus('err', message, 4000) }
       s.onStop = () => {
-        desc.value = streamBase // drop any uncommitted interim preview
+        // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
+        // final already folded into streamBase and lastInterim is ''.
+        if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = '' }
+        desc.value = streamBase
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }
       s.onUnavailable = () => {
@@ -3546,6 +3658,7 @@ export function buildModal(
       }
       ;(undoStacks[index] ??= []).push(preSnap)
       ;(cropStacks[index] ??= []).push({ snap: preSnap, mark })
+      fireAnnChanged(index) // KLA-772: a crop rebases the overlay coords → re-persist it
       updateStrip()
     }
     src.src = srcUrl
@@ -3598,6 +3711,7 @@ export function buildModal(
       const persist = () => {
         if (annotator.shapes.length) annotationsByIndex[index] = { w: canvas.width, h: canvas.height, shapes: annotator.shapes.map(s => ({ ...s })) }
         else delete annotationsByIndex[index]
+        fireAnnChanged(index) // KLA-772: mirror the drawn overlay into the persisted evidence shot
       }
       const selectTool = (t: string) => {
         activeTool = t
@@ -3792,6 +3906,31 @@ export function buildModal(
       // Crop drag state: a dashed overlay box tracks the selection in stage-relative pixels.
       let cropBox: HTMLDivElement | null = null
       let cropClient = { x: 0, y: 0 }
+      // KLA-770: text move/resize state. When the Text tool presses ON an existing text shape we drag it
+      // (reposition) or, from its bottom-right corner, resize the font — instead of dropping a new label.
+      type TextShape = Extract<Shape, { type: 'text' }>
+      let textDrag: { shape: TextShape; mode: 'move' | 'resize'; grabX: number; grabY: number; origX: number; origY: number; origSize: number } | null = null
+      // The size (image px) of the invisible resize hot-zone at a text box's bottom-right corner.
+      const textHandleSize = () => Math.max(14, annotator.computeFontSize() * 0.6)
+      // Topmost text shape (+ interaction mode) under an image-space point, or null. Grabbing the bottom-right
+      // corner resizes; anywhere else inside the (padded) box moves.
+      const hitTextShape = (px: number, py: number): { shape: TextShape; mode: 'move' | 'resize' } | null => {
+        for (let i = annotator.shapes.length - 1; i >= 0; i--) {
+          const s = annotator.shapes[i]
+          if (s.type !== 'text') continue
+          const b = annotator.textBounds(s)
+          if (!b) continue
+          const hz = textHandleSize()
+          if (px >= b.x + b.w - hz && px <= b.x + b.w + hz && py >= b.y + b.h - hz && py <= b.y + b.h + hz) {
+            return { shape: s as TextShape, mode: 'resize' }
+          }
+          const pad = 6
+          if (px >= b.x - pad && px <= b.x + b.w + pad && py >= b.y - pad && py <= b.y + b.h + pad) {
+            return { shape: s as TextShape, mode: 'move' }
+          }
+        }
+        return null
+      }
       canvas.addEventListener('pointerdown', (e) => {
         // Shift+drag pans the zoomed image instead of drawing.
         if (e.shiftKey && zoom > 1) {
@@ -3807,11 +3946,22 @@ export function buildModal(
           try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
           cropClient = { x: e.clientX, y: e.clientY }
           cropBox = document.createElement('div')
-          cropBox.style.cssText = 'position:absolute;border:2px dashed #6c63ff;background:rgba(108,99,255,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
+          // KLA-763 (odd color): brand accent #6366f1 (rgb 99,102,241) — was #6c63ff, an off-brand purple.
+          cropBox.style.cssText = 'position:absolute;border:2px dashed #6366f1;background:rgba(99,102,241,.14);pointer-events:none;z-index:6;left:0;top:0;width:0;height:0;'
           stage.appendChild(cropBox)
           return
         }
         if (activeTool === 'text') {
+          // KLA-770: pressing on an existing text label grabs it for move/resize instead of starting a new one.
+          const hit = hitTextShape(pt.x, pt.y)
+          if (hit) {
+            pushUndo(index) // one undo step for the whole move/resize gesture
+            textDrag = { shape: hit.shape, mode: hit.mode, grabX: pt.x, grabY: pt.y, origX: hit.shape.x, origY: hit.shape.y, origSize: hit.shape.size ?? annotator.computeFontSize() }
+            try { canvas.setPointerCapture(e.pointerId) } catch { /* noop */ }
+            canvas.style.cursor = hit.mode === 'resize' ? 'nwse-resize' : 'move'
+            e.preventDefault()
+            return
+          }
           const input = document.createElement('input')
           const shadow = textOutline === 'none' ? 'none' : `0 0 2px ${textOutline}, 0 0 2px ${textOutline}`
           // KLAVITYKLA-508: the on-screen input must match the COMMITTED render. The committed text is drawn
@@ -3851,6 +4001,25 @@ export function buildModal(
       })
       canvas.addEventListener('pointermove', (e) => {
         if (panning) { canvas.style.transition = 'none'; panX = panBaseX + (e.clientX - panSX); panY = panBaseY + (e.clientY - panSY); applyZoomTransform(); canvas.style.cursor = 'grabbing'; return }
+        // KLA-770: live text move/resize — mutate the grabbed shape and repaint (base + committed) each move.
+        if (textDrag) {
+          const pt = toImg(e)
+          if (textDrag.mode === 'move') {
+            textDrag.shape.x = textDrag.origX + (pt.x - textDrag.grabX)
+            textDrag.shape.y = textDrag.origY + (pt.y - textDrag.grabY)
+          } else {
+            // Resize: dragging down/right grows the font; clamp to a sane range.
+            textDrag.shape.size = Math.max(10, Math.min(240, textDrag.origSize + (pt.y - textDrag.grabY)))
+          }
+          annotator.redraw()
+          return
+        }
+        // KLA-770: hovering a text label with the Text tool hints it's draggable/resizable.
+        if (activeTool === 'text' && !drawing) {
+          const hp = toImg(e)
+          const h = hitTextShape(hp.x, hp.y)
+          canvas.style.cursor = h ? (h.mode === 'resize' ? 'nwse-resize' : 'move') : 'crosshair'
+        }
         if (!drawing) return
         if (activeTool === 'pen') {
           penPoints.push(toImg(e))
@@ -3877,6 +4046,15 @@ export function buildModal(
       })
       canvas.addEventListener('pointerup', (e) => {
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair'; try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ } return }
+        // KLA-770: finish a text move/resize — commit the shape's new position/size into the overlay.
+        if (textDrag) {
+          textDrag = null
+          try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
+          canvas.style.cursor = 'crosshair'
+          annotator.redraw()
+          persist()
+          return
+        }
         if (!drawing) return
         drawing = false
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
@@ -3906,6 +4084,9 @@ export function buildModal(
         try { canvas.releasePointerCapture(e.pointerId) } catch { /* noop */ }
         if (cropBox) { safeRemove(cropBox); cropBox = null }
         if (panning) { panning = false; canvas.style.cursor = zoom > 1 ? 'grab' : 'crosshair' }
+        // KLA-770: an interrupted text drag keeps its last position (already mutated); commit + clear state so
+        // the gesture can't get stuck holding the shape.
+        if (textDrag) { textDrag = null; canvas.style.cursor = 'crosshair'; annotator.redraw(); persist() }
         if (drawing) { drawing = false; annotator.redraw() } // discard the provisional shape, keep committed
       })
 
@@ -4105,6 +4286,7 @@ export function buildModal(
         } else {
           delete annotationsByIndex[index]
         }
+        fireAnnChanged(index) // KLA-772: full-screen editor save → re-persist the overlay
         close()
         updateStrip()
       })
@@ -4186,10 +4368,13 @@ export function buildModal(
       const label = document.createElement('span')
       label.textContent = 'Filed as'
       const code = document.createElement('code')
-      code.textContent = displayRef(issueKey)
+      // KLA-766: show the friendly ticket key (KLA-123) the server minted in the deep link, not the
+      // opaque fb_ id — fall back to the shortened fb_ only when the server gave us nothing friendlier.
+      code.textContent = friendlyRef(issueKey, issueUrl)
       ref.append(label, code)
-      // Link only when the server resolved a real http(s) dashboard URL (authed reporters). Anonymous
-      // widget submits get just the quotable ref — matching the pre-#448 themed card contract.
+      // KLA-768: link straight to the specific ISSUE via the server's deep-link permalink
+      // (/<slug>/<KEY>-<n> or the opaque /t/<ref>) — an unauthenticated click resumes to it after login
+      // (the server's loginGate adds ?next=). safeHttpUrl keeps it same-scheme (no open redirect).
       const linkUrl = safeHttpUrl(issueUrl)
       if (linkUrl) {
         const a = document.createElement('a')
@@ -4241,7 +4426,8 @@ export function buildModal(
       const label = document.createElement('span')
       label.textContent = 'Filed as'
       const code = document.createElement('code')
-      code.textContent = displayRef(feedbackId)
+      // KLA-766: friendly ticket key from the deep link (KLA-123), fb_ shortened only as a fallback.
+      code.textContent = friendlyRef(feedbackId, issueUrl)
       ref.append(label, code)
       const linkUrl = safeHttpUrl(issueUrl)
       if (linkUrl) {
@@ -4249,7 +4435,9 @@ export function buildModal(
         a.href = linkUrl
         a.target = '_blank'
         a.rel = 'noopener'
-        a.textContent = 'View in dashboard'
+        // KLA-768: the link now deep-links to the specific ISSUE (server pretty permalink), not the
+        // generic board — label it "Open in Klavity" to match the confirmation card + the pill.
+        a.textContent = 'Open in Klavity'
         ref.appendChild(a)
       }
       wrap.appendChild(ref)
@@ -4487,6 +4675,9 @@ function mountRegionOverlay(
   })
 }
 
+// KLA-763: bound the HEIC→JPEG convert (dynamic import + WASM) so a stalled convert can't hang the attach
+// flow before blobToDataUrl's own reader watchdog. Generous — a real convert is well under this.
+const HEIC_CONVERT_TIMEOUT_MS = 20000
 async function fileToDataUrl(file: File): Promise<string> {
   if (file.type === 'image/heic' || file.type === 'image/heif' || file.name.endsWith('.heic') || file.name.endsWith('.heif')) {
     // HEIC→JPEG conversion uses heic2any (libheif compiled to WASM). Its Emscripten/embind glue calls
@@ -4495,20 +4686,53 @@ async function fileToDataUrl(file: File): Promise<string> {
     // bundled into the embeddable widget IIFE (externalized in vite.widget.config.ts); the extension,
     // which runs outside customer CSP, still bundles it. When it's unavailable OR conversion/CSP fails,
     // degrade gracefully to uploading the raw file rather than throwing.
+    let heicTimer: ReturnType<typeof setTimeout> | undefined
     try {
-      const heic2any = (await import('heic2any')).default
-      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob
+      // KLA-763: the dynamic import + WASM conversion can STALL (slow/hung fetch of the heic2any chunk, or
+      // a wedged libheif run) — that happens BEFORE blobToDataUrl's own reader watchdog, so without a bound
+      // here the attach spinner hangs forever. Race the whole convert against a deadline; on timeout/failure
+      // fall through to uploading the raw file (which is itself guarded by blobToDataUrl's timeout).
+      const blob = await Promise.race([
+        (async () => {
+          const heic2any = (await import('heic2any')).default
+          return await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob
+        })(),
+        new Promise<Blob>((_, reject) => { heicTimer = setTimeout(() => reject(new Error('heic-convert-timeout')), HEIC_CONVERT_TIMEOUT_MS) }),
+      ])
       return blobToDataUrl(blob)
-    } catch { /* heic2any absent (widget) or conversion failed — fall back to the raw file */ }
+    } catch { /* heic2any absent (widget) / conversion failed / timed out — fall back to the raw file */ }
+    finally { if (heicTimer) clearTimeout(heicTimer) } // KLA-763: never leak the deadline timer (fast path or fail)
   }
   return blobToDataUrl(file)
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
+// KLA-763 (stuck upload): a FileReader can genuinely hang — a truly stuck read never fires onload OR
+// onerror, so the old two-listener promise could sit unresolved forever, freezing the attach ingest
+// (the "Attach"/paste spinner never resolved). Mirror the KLA-767 "always terminate" rule: race the
+// WHOLE read against a hard timeout (covers the body, not just the start), wire onabort too, and ignore
+// any late completion after we've already settled (a stale onload must not double-resolve). The timer is
+// always cleared on settle (no leaked timer). Guarantee: this promise ALWAYS resolves or rejects.
+export const BLOB_READ_TIMEOUT_MS = 30000
+export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { reader.abort() } catch { /* onabort is a no-op once settled */ }
+      reject(new Error('file read timed out'))
+    }, BLOB_READ_TIMEOUT_MS)
+    const settle = (fn: () => void) => {
+      if (settled) return   // a late onload/onerror/onabort after the timeout is ignored (no double-add)
+      settled = true
+      clearTimeout(timer)   // never leak the timer once the read finishes on its own
+      fn()
+    }
+    reader.onload = () => settle(() => resolve(reader.result as string))
+    reader.onerror = () => settle(() => reject(reader.error || new Error('file read failed')))
+    reader.onabort = () => settle(() => reject(reader.error || new Error('file read aborted')))
+    try { reader.readAsDataURL(blob) }
+    catch (e) { settle(() => reject(e instanceof Error ? e : new Error('file read failed'))) }
   })
 }

@@ -1164,6 +1164,12 @@ export async function applySchema(c: Client) {
     // ADDITIVE (never overwrites the reporter's observation) and surfaces in the tracker body + report read.
     // Null on rows without a video walkthrough — additive, back-compat.
     ["ai_walkthrough_json",    "TEXT"],
+    // KLA-780: non-destructive ticket merge. When one ticket is folded into another, the merged-away
+    // row is NO LONGER deleted — its evidence/occurrences/comments are absorbed onto the survivor and
+    // this pointer records which surviving ticket it now redirects to (status is also set to 'merged').
+    // Board/dedup/count reads filter `merged_into IS NULL` so a merged row never shows as a phantom
+    // duplicate, but the row (and thus the merge) stays reversible. Null on all normal rows — back-compat.
+    ["merged_into",            "TEXT"],
   ]
   for (const [col, def] of feedbackAlters) {
     if (needCol("feedback", col)) {
@@ -3084,6 +3090,9 @@ export async function setProjectTrailsAutofile(projectId: string, enabled: boole
 }
 
 export async function setFeedbackContactEmail(feedbackId: string, projectId: string, email: string): Promise<boolean> {
+  // KLA-780 round-3 (Muse C3-6, checklist L): redirect a contact-email write on a MERGED (hidden) row to
+  // the live survivor so the reporter email attaches to the ticket that's actually shown.
+  feedbackId = await resolveLiveRoot(projectId, feedbackId)
   const r = await db!.execute({ sql: "UPDATE feedback SET contact_email=? WHERE id=? AND project_id=?", args: [email, feedbackId, projectId] })
   return (r.rowsAffected ?? 0) > 0
 }
@@ -3118,7 +3127,7 @@ export async function latestWidgetPing(projectId: string): Promise<{ host: strin
 // "widget never loaded". Indexed COUNT(*) on fb_proj_idx; best-effort (throws bubble to the caller).
 export async function countRecentFeedback(projectId: string, sinceMs: number): Promise<number> {
   const r = await db!.execute({
-    sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND created_at>=?",
+    sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND created_at>=? AND merged_into IS NULL", // KLA-780: don't count folded-away merged rows
     args: [projectId, sinceMs],
   })
   return Number((r.rows[0] as any).n)
@@ -3703,6 +3712,15 @@ function rowToTicketComment(x: any): TicketCommentRow {
 export async function insertTicketComment(feedbackId: string, author: string | null, body: string): Promise<TicketCommentRow> {
   const trimmed = String(body || "").trim()
   if (!trimmed) throw new Error("comment body required")
+  // KLA-780 round-3 (Muse C3-6, checklist L): a comment on a MERGED (hidden) row would be invisible on
+  // the board. Redirect it to the live survivor so the comment lands on the ticket that's actually shown.
+  {
+    const fr = await db!.execute({ sql: "SELECT project_id, merged_into FROM feedback WHERE id=? LIMIT 1", args: [feedbackId] })
+    const mi = fr.rows.length ? (fr.rows[0] as any).merged_into : null
+    if (mi != null && String(mi).trim() !== "") {
+      feedbackId = await resolveLiveRoot(String((fr.rows[0] as any).project_id), feedbackId)
+    }
+  }
   const id = "tc_" + crypto.randomUUID()
   const createdAt = Date.now()
   await db!.execute({
@@ -3777,6 +3795,8 @@ export type FeedbackRow = {
   reportIp: string | null; reportUrl: string | null; reportGeo: any | null
   reportEnv: string | null; reportOrg: string | null; reportServer: string | null
   seqNum: number | null; createdAt: number
+  // KLA-780: set to the surviving ticket id when this row was folded into another by a merge; null otherwise.
+  mergedInto: string | null
 }
 function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
 function rowToFeedback(x: any): FeedbackRow {
@@ -3812,6 +3832,8 @@ function rowToFeedback(x: any): FeedbackRow {
     // #745: per-project human sequence (KLA-200). Powers the pretty <KEY>-<n> permalink on the board.
     seqNum: x.seq_num != null ? Number(x.seq_num) : null,
     createdAt: Number(x.created_at),
+    // KLA-780: null on normal rows; a survivor id when this ticket was merged away.
+    mergedInto: x.merged_into != null ? String(x.merged_into) : null,
   }
 }
 // Recent feedback for a project, newest-first (uses fb_proj_idx). withTicketOnly → only rows that
@@ -3819,12 +3841,14 @@ function rowToFeedback(x: any): FeedbackRow {
 export async function listFeedback(projectId: string, opts: { withTicketOnly?: boolean; limit?: number; simOnly?: boolean } = {}): Promise<FeedbackRow[]> {
   const limit = opts.limit ?? 20
   let sql: string
+  // KLA-780: `merged_into IS NULL` hides tickets that were folded into a survivor by a merge — their
+  // content lives on the survivor, so listing them again would show a phantom duplicate on the board.
   if (opts.withTicketOnly) {
-    sql = "SELECT * FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL ORDER BY created_at DESC LIMIT ?"
+    sql = "SELECT * FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
   } else if (opts.simOnly) {
-    sql = "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL ORDER BY created_at DESC LIMIT ?"
+    sql = "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
   } else {
-    sql = "SELECT * FROM feedback WHERE project_id=? ORDER BY created_at DESC LIMIT ?"
+    sql = "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
   }
   const r = await db!.execute({ sql, args: [projectId, limit] })
   return r.rows.map(rowToFeedback)
@@ -3851,7 +3875,7 @@ export type SimFeedbackRow = {
 export async function listFeedbackForSim(projectId: string, simId: string): Promise<SimFeedbackRow[]> {
   const r = await db!.execute({
     sql: `SELECT id, observation, sentiment, COALESCE(priority, severity) AS priority, url_path, suggested_bug_json, source_quote, status, created_at
-          FROM feedback WHERE project_id=? AND sim_id=? ORDER BY created_at DESC LIMIT 200`,
+          FROM feedback WHERE project_id=? AND sim_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT 200`, // KLA-780: exclude folded-away merged rows
     args: [projectId, simId],
   })
   return r.rows.map((x: any) => {
@@ -3923,7 +3947,9 @@ export async function findFeedbackByIssueKey(projectId: string, issueKey: string
   const r = await db!.execute({
     // title + observation come back so the caller can apply a similarity floor on a broad page-key match
     // (KLA dedup-smart) instead of merging unconditionally.
-    sql: "SELECT id, title, observation FROM feedback WHERE project_id=? AND issue_key=? ORDER BY created_at DESC LIMIT 1",
+    // KLA-780: never resolve a dedup exact-key hit to a merged-away row — a repeat report must land on
+    // the surviving cluster, not on a ticket that was folded into another.
+    sql: "SELECT id, title, observation FROM feedback WHERE project_id=? AND issue_key=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT 1",
     args: [projectId, issueKey],
   })
   if (!r.rows.length) return null
@@ -3960,7 +3986,7 @@ export async function listRecentFeedbackForDedup(projectId: string, limit = 50):
     // #543 completeness: SELECT the `title` column so a MANUAL ticket (distinct title, unrelated body)
     // is matched on its real title, not the body — effectiveTicketTitle prefers the title column.
     sql: `SELECT id, title, observation, suggested_bug_json FROM feedback
-          WHERE project_id=?
+          WHERE project_id=? AND merged_into IS NULL
           ORDER BY created_at DESC LIMIT ?`,
     args: [projectId, limit],
   })
@@ -3976,7 +4002,7 @@ export async function listRecentFeedbackForDedup(projectId: string, limit = 50):
 // same ticket (via bumpFeedbackRecurrence) instead of filing a new one each time it fires.
 export async function findFeedbackBySignature(projectId: string, signature: string): Promise<{ id: string; status: string; recurrenceCount: number } | null> {
   if (!signature) return null
-  const r = await db!.execute({ sql: "SELECT id, status, recurrence_count FROM feedback WHERE project_id=? AND signature=? ORDER BY created_at ASC LIMIT 1", args: [projectId, signature] })
+  const r = await db!.execute({ sql: "SELECT id, status, recurrence_count FROM feedback WHERE project_id=? AND signature=? AND merged_into IS NULL ORDER BY created_at ASC LIMIT 1", args: [projectId, signature] })
   if (!r.rows.length) return null
   const x = r.rows[0] as any
   return { id: String(x.id), status: String(x.status), recurrenceCount: Number(x.recurrence_count) || 1 }
@@ -3996,8 +4022,22 @@ export const NON_HUMAN_FEEDBACK_SOURCES = new Set(["sim", "autosim", "adhoc", "a
 // void, so the caller assigned feedbackId to the vanished id and reported saved:true though NOTHING was
 // persisted. The boolean lets the /api/feedback handler only claim success when a row was truly touched.
 export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { allowPromote?: boolean }): Promise<boolean> {
-  const r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id, project_id FROM feedback WHERE id=?", args: [id] })
+  let r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id, project_id, merged_into FROM feedback WHERE id=?", args: [id] })
   if (!r.rows.length) return false
+  // KLA-780 round-3 (Muse C3-6, checklist L): a recurrence bump on a MERGED (hidden) row would strand the
+  // increment on a row no board shows. Redirect the bump to the live survivor so the recurrence lands
+  // where the ticket actually lives.
+  {
+    const mi = (r.rows[0] as any).merged_into
+    if (mi != null && String(mi).trim() !== "") {
+      const live = await resolveLiveRoot(String((r.rows[0] as any).project_id), id)
+      if (live !== id) {
+        id = live
+        r = await db!.execute({ sql: "SELECT recurrence_count, recurrence_dates_json, status, source, sim_id, project_id, merged_into FROM feedback WHERE id=?", args: [id] })
+        if (!r.rows.length) return false
+      }
+    }
+  }
   const row = r.rows[0] as any
   const count = Number(row.recurrence_count ?? 1) + 1
   let dates: number[] = []
@@ -4126,6 +4166,81 @@ export async function excludedDedupIds(projectId: string, feedbackId: string): P
   } catch { return new Set() }
 }
 
+// KLA-780 (round-2): follow the `merged_into` pointer chain to the terminal LIVE row (the row whose
+// merged_into IS NULL). Used so a merge NEVER folds data into an already-hidden survivor and so old
+// permalinks/refs to a folded row resolve to the canonical survivor. Cycle-guarded (a corrupt A→B→A
+// loop stops at the last visited node instead of spinning) and depth-bounded (≤16 hops). Returns the
+// input id unchanged when it is already live, missing, or the chain can't be followed.
+// KLA-780 round-4 (codex C2 + Muse C4-4/C4-6): exported route-boundary resolver. HTTP handlers call this
+// ONCE at the top of a feedback-mutation route to redirect a merged ticket id to its live survivor root,
+// then use the returned id for EVERY downstream side-effect (tracker sync, activity/audit, notifications,
+// response reload/labels) — not just the DB write (the mutators already redirect internally). Thin wrapper
+// over the internal resolveLiveRoot so callers outside this module don't reach into private chain-follow.
+export async function liveFeedbackId(projectId: string, id: string): Promise<string> {
+  return resolveLiveRoot(projectId, id)
+}
+
+async function resolveLiveRoot(projectId: string, id: string): Promise<string> {
+  let cur = String(id)
+  const seen = new Set<string>([cur])
+  for (let hops = 0; hops < 16; hops++) {
+    const r = await db!.execute({
+      sql: "SELECT merged_into FROM feedback WHERE project_id=? AND id=? LIMIT 1",
+      args: [projectId, cur],
+    }).catch(() => ({ rows: [] as any[] }))
+    if (!r.rows.length) return cur
+    const next = (r.rows[0] as any).merged_into
+    if (next == null || String(next).trim() === "") return cur // reached the live root
+    const nid = String(next)
+    if (seen.has(nid)) return cur // cycle — stop at the last node we actually visited
+    seen.add(nid)
+    cur = nid
+  }
+  return cur // depth cap hit — return the deepest id reached (defensive; real chains are short)
+}
+
+// Same chain-follow as resolveLiveRoot but WITHOUT a project scope (merged_into always points inside
+// the same project, so the global id is sufficient) and returning the public-safe status facts of the
+// terminal live row. Used by the anonymous /r/:ref status page so an old fb_<B> link shows the
+// SURVIVOR's status, not the hidden folded row's.
+async function followMergedToLiveStatus(
+  startId: string,
+): Promise<{ status: string; createdAt: number; recurrenceCount: number } | null> {
+  let cur = String(startId)
+  const seen = new Set<string>([cur])
+  for (let hops = 0; hops < 16; hops++) {
+    const r = await db!.execute({
+      sql: "SELECT status, created_at, recurrence_count, merged_into FROM feedback WHERE id=? LIMIT 1",
+      args: [cur],
+    }).catch(() => ({ rows: [] as any[] }))
+    if (!r.rows.length) return null
+    const x = r.rows[0] as any
+    const facts = {
+      status: x.status != null ? String(x.status) : "open",
+      createdAt: Number(x.created_at),
+      recurrenceCount: Math.max(1, Number(x.recurrence_count ?? 1)),
+    }
+    const mi = x.merged_into
+    if (mi == null || String(mi).trim() === "") return facts // live root
+    const nid = String(mi)
+    if (seen.has(nid)) return facts // cycle — return the node we're on
+    seen.add(nid)
+    cur = nid
+  }
+  // depth cap — return whatever the deepest id resolves to
+  const r = await db!.execute({
+    sql: "SELECT status, created_at, recurrence_count FROM feedback WHERE id=? LIMIT 1",
+    args: [cur],
+  }).catch(() => ({ rows: [] as any[] }))
+  if (!r.rows.length) return null
+  const x = r.rows[0] as any
+  return {
+    status: x.status != null ? String(x.status) : "open",
+    createdAt: Number(x.created_at),
+    recurrenceCount: Math.max(1, Number(x.recurrence_count ?? 1)),
+  }
+}
+
 export type MergeResult = { survivorId: string; recurrenceCount: number; contactEmails: string[] }
 
 /**
@@ -4133,87 +4248,305 @@ export type MergeResult = { survivorId: string; recurrenceCount: number; contact
  * (so future intake dedup lands on it AND the expectation link — dedup_key = survivor.issue_key —
  * survives). Sums recurrence_count, unions recurrence_dates_json, carries every stored contact/
  * reporter email across, re-homes both the merged head's own evidence AND its stored occurrences
- * onto the survivor, then deletes the merged head row. Returns null when either row is missing or
- * they belong to different projects (defensive — the caller already scoped both to one project).
+ * AND its ticket comments onto the survivor.
+ *
+ * KLA-780 (was: "merging deletes the merged ticket as well"): the merge is now NON-DESTRUCTIVE. The
+ * merged-away head row is NOT deleted — it is marked `status='merged'` with a `merged_into` pointer to
+ * the survivor, so nothing is lost and the fold is reversible (a later split can restore content). All
+ * board/dedup/count reads filter `merged_into IS NULL`, so the merged row never shows as a phantom
+ * duplicate ticket even though the row persists. Idempotent: a re-run against an already-merged row is a
+ * no-op (never double-absorbs recurrence/occurrences). Returns null when either row is missing or they
+ * belong to different projects (defensive — the caller already scoped both to one project), or when
+ * asked to merge a ticket into itself.
  */
 export async function mergeFeedbackClusters(
   projectId: string, survivorId: string, mergedId: string, actor?: string | null,
 ): Promise<MergeResult | null> {
+  // Coerce to strings before comparing — callers may pass mixed types (route strings vs raw ids). A
+  // ticket can never be merged into itself.
+  survivorId = String(survivorId)
+  mergedId = String(mergedId)
   if (survivorId === mergedId) return null
-  const survivor = await feedbackById(projectId, survivorId)
-  const merged = await feedbackById(projectId, mergedId)
-  if (!survivor || !merged) return null
 
-  // Combined recurrence count = both cluster counts summed (each ≥1 for the original report).
-  const survCount = Math.max(1, Number(survivor.recurrenceCount ?? 1))
-  const mergedCount = Math.max(1, Number(merged.recurrenceCount ?? 1))
-  const combinedCount = survCount + mergedCount
-
-  // Union the recurrence dates (both heads' created_at + all stored recurrence dates), dedup + sort.
-  const survDates = new Set(parseDates(survivor.recurrenceDatesJson))
-  survDates.add(Number(survivor.createdAt))
-  for (const d of parseDates(merged.recurrenceDatesJson)) survDates.add(d)
-  survDates.add(Number(merged.createdAt))
-  const dates = [...survDates].filter((d) => Number.isFinite(d) && d > 0).sort((a, b) => a - b)
-  const lastSeen = dates.length ? dates[dates.length - 1] : Number(survivor.createdAt)
-
-  // Carry the merged head's OWN report body/screenshot/date across as a survivor occurrence, so its
-  // evidence is not lost when its row is deleted (mirrors the A.8 intake occurrence receipt).
-  await insertFeedbackOccurrence({
-    feedbackId: survivorId, projectId, seenAt: Number(merged.createdAt),
-    observation: merged.observation ?? null,
-    screenshotId: merged.screenshotId ?? null,
-    sourceQuote: null,
-    reporterEmail: merged.contactEmail ?? null,
-  }).catch((e: any) => console.warn("merge head-occurrence skipped:", e?.message || e))
-
-  // Re-home the merged cluster's stored occurrence receipts onto the survivor head.
-  await db!.execute({
-    sql: `UPDATE feedback_occurrences SET feedback_id=? WHERE feedback_id=? AND project_id=?`,
-    args: [survivorId, mergedId, projectId],
-  }).catch((e: any) => console.warn("merge occurrence re-home skipped:", e?.message || e))
-
-  // Persist the summed count + unioned dates onto the survivor.
-  await db!.execute({
-    sql: `UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=? AND project_id=?`,
-    args: [combinedCount, JSON.stringify(dates), lastSeen, survivorId, projectId],
-  })
-
-  // Carry the contact email: keep the survivor's if present, else adopt the merged one. Every distinct
-  // reporter email is preserved on the occurrences above so notify-on-fix (A.4) reaches them all.
-  if (!survivor.contactEmail && merged.contactEmail) {
-    await db!.execute({
-      sql: `UPDATE feedback SET contact_email=? WHERE id=? AND project_id=?`,
-      args: [merged.contactEmail, survivorId, projectId],
-    }).catch((e: any) => console.warn("merge contact carry skipped:", e?.message || e))
+  // KLA-780 round-3 (codex C2 "claim committed before batch"; Muse C3-1/C3-2/C3-3/C3-5).
+  //
+  // ATOMICITY MECHANISM — REPAIR-ON-RETRY over an atomic `db.batch`, NOT an interactive transaction.
+  // We deliberately do NOT use `db.transaction("write")`: it is unusable against the local file:-backed
+  // libSQL the tests (and local dev) run on — a "write" txn on the single-connection sqlite3 driver
+  // throws SQLITE_BUSY under any concurrency and "cannot commit — SQL statements in progress" even
+  // single-threaded. The absorb therefore stays in ONE atomic `db.batch(..., "write")` (BEGIN…COMMIT,
+  // all-or-nothing), and the SEPARATE claim's crash window is closed by making the idempotent/lost-race
+  // paths REPAIR instead of blindly succeeding:
+  //   • The absorb batch's FIRST statement inserts a DETERMINISTIC head-occurrence receipt keyed
+  //     `occ_merge_<mergedId>` (PRIMARY KEY on feedback_occurrences.id). Because the recurrence-sum
+  //     UPDATE rides in the SAME atomic batch as that unique INSERT, the batch commits AT MOST ONCE per
+  //     merged row: a second absorb (concurrent or repair) hits the PK conflict, the whole batch aborts,
+  //     and NOTHING is double-counted. That receipt is also the COMPLETION MARKER: its presence ⇒ absorb
+  //     finished; its absence on a row already marked `merged` ⇒ a crash-stranded claim to be REPAIRED.
+  //   • CONCURRENCY: the guarded claim `UPDATE ... WHERE merged_into IS NULL` still elects one winner
+  //     (rowsAffected===1). The loser (rowsAffected 0) — and any retry after a crash — no longer returns
+  //     a bare idempotent success; it routes through absorbInto(), which detects the marker and either
+  //     no-ops (already absorbed) or completes the stranded absorb.
+  //   • SURVIVOR TOCTOU (Muse C3-1): resolveLiveRoot runs before the claim, so after winning the claim we
+  //     RE-VERIFY the survivor is still live; if a concurrent fold hid it, we roll the claim back and
+  //     re-resolve to the new live root (bounded retry). Residual sub-batch window is documented inline.
+  const emailsFor = async (survivorRow: any): Promise<string[]> => {
+    const e = new Set<string>()
+    if (survivorRow?.contactEmail) e.add(survivorRow.contactEmail)
+    for (const o of await listFeedbackOccurrences(String(survivorRow.id))) if (o.reporterEmail) e.add(o.reporterEmail)
+    return [...e]
+  }
+  const isHeadOccConflict = (e: any): boolean => {
+    const m = String(e?.message || e || "")
+    const code = String(e?.code || e?.extendedCode || "")
+    return /constraint/i.test(m) && /feedback_occurrences/i.test(m) || /CONSTRAINT_PRIMARYKEY/i.test(code)
   }
 
-  // Collect the distinct reporter emails now attached to the survivor cluster (for the caller/notify).
-  const survivorAfter = await feedbackById(projectId, survivorId)
-  const occs = await listFeedbackOccurrences(survivorId)
-  const emails = new Set<string>()
-  if (survivorAfter?.contactEmail) emails.add(survivorAfter.contactEmail)
-  if (merged.contactEmail) emails.add(merged.contactEmail)
-  for (const o of occs) if (o.reporterEmail) emails.add(o.reporterEmail)
+  // absorbInto: run (or repair, or no-op) the absorption of `mergedRow` into `survivorRow`. Idempotent —
+  // safe to call again after a crash or a lost claim race. Returns the MergeResult, or null on a genuine
+  // (non-idempotent) write failure so the caller can roll the claim back / surface a 500.
+  const absorbInto = async (survivorRow: any, mergedRow: any): Promise<MergeResult | null> => {
+    const sId = String(survivorRow.id)
+    const mId = String(mergedRow.id)
+    const headOccId = "occ_merge_" + mId // deterministic → completion marker + double-absorb guard
+    // Fast path: marker already present ⇒ absorb already completed (idempotent no-op).
+    const done = await db!.execute({ sql: "SELECT 1 FROM feedback_occurrences WHERE id=? LIMIT 1", args: [headOccId] })
+      .catch(() => ({ rows: [] as any[] }))
+    if (done.rows.length) {
+      const s = await feedbackById(projectId, sId)
+      return { survivorId: sId, recurrenceCount: Math.max(1, Number(s?.recurrenceCount ?? survivorRow.recurrenceCount ?? 1)), contactEmails: await emailsFor(s ?? survivorRow) }
+    }
 
-  // Delete the now-empty merged head row (its evidence lives on as survivor occurrences).
-  await db!.execute({ sql: `DELETE FROM feedback WHERE id=? AND project_id=?`, args: [mergedId, projectId] })
-  // The merged head's issue_key had its own expectation link (dedup_key = merged.issue_key). Re-point
-  // that expectation onto the survivor's key so the spine neither orphans nor double-links.
-  if (merged.issueKey && survivor.issueKey && merged.issueKey !== survivor.issueKey) {
-    // Only repoint if the survivor doesn't already own an expectation on its key (avoid duplicate keys).
-    await db!.execute({
-      sql: `UPDATE expectations SET dedup_key=? WHERE project_id=? AND dedup_key=?
-              AND NOT EXISTS (SELECT 1 FROM expectations e2 WHERE e2.project_id=? AND e2.dedup_key=?)`,
-      args: [survivor.issueKey, projectId, merged.issueKey, projectId, survivor.issueKey],
-    }).catch((e: any) => console.warn("merge expectation repoint skipped:", e?.message || e))
+    // KLA-780 round-4 (Muse C4-2, checklist P): carry the merged row's ARTIFACT columns onto the survivor.
+    // attachments_json/recordings_json/annotations_json live on the feedback row itself (not an FK table),
+    // so re-homing the child tables above does NOT move them — the survivor's timeline would otherwise show
+    // none of the folded ticket's attachments/recordings. Read both rows' raw JSON, then within the atomic
+    // batch: UNION attachments (dedup by key||url) and recordings (dedup by id||key), and carry annotations
+    // onto the survivor only when the survivor lacks its own (survivor's own markup layer wins if present).
+    // KLA-780 round-4 (codex C2): a TRANSIENT artifact-read failure must NOT be swallowed — silently
+    // proceeding would commit the merge (receipt written) with NO artifact carry, and a retry would see the
+    // receipt and take the idempotent fast-path, stranding the artifacts forever. Throw so the merge aborts
+    // (compensating rollback → clean re-claim on retry) rather than losing evidence.
+    const artRows = await db!.execute({
+      sql: "SELECT id, attachments_json, recordings_json, annotations_json FROM feedback WHERE project_id=? AND id IN (?,?)",
+      args: [projectId, sId, mId],
+    })
+    const artOf = (rid: string) => (artRows.rows as any[]).find((r) => String(r.id) === rid) || {}
+    const survArt = artOf(sId)
+    const mergedArt = artOf(mId)
+    const parseArr = (v: any): any[] => { const p = safeJsonParse(v == null ? null : String(v)); return Array.isArray(p) ? p : [] }
+    const unionBy = (a: any[], b: any[], keyOf: (x: any) => string): any[] => {
+      const out: any[] = []
+      const seen = new Set<string>()
+      for (const item of [...a, ...b]) {
+        const k = keyOf(item)
+        if (k && seen.has(k)) continue
+        if (k) seen.add(k)
+        out.push(item)
+      }
+      return out
+    }
+    const artStmts: Array<{ sql: string; args: any[] }> = []
+    // attachments: union survivor + merged, dedup by key (fallback url), keep survivor's order first.
+    {
+      const merged = parseArr(mergedArt.attachments_json)
+      if (merged.length) {
+        const surv = parseArr(survArt.attachments_json)
+        const u = unionBy(surv, merged, (x) => String(x?.key ?? x?.url ?? ""))
+        artStmts.push({ sql: `UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?`, args: [JSON.stringify(u), sId, projectId] })
+      }
+    }
+    // recordings: union survivor + merged, dedup by id (fallback key).
+    {
+      const merged = parseArr(mergedArt.recordings_json)
+      if (merged.length) {
+        const surv = parseArr(survArt.recordings_json)
+        const u = unionBy(surv, merged, (x) => String(x?.id ?? x?.key ?? ""))
+        artStmts.push({ sql: `UPDATE feedback SET recordings_json=? WHERE id=? AND project_id=?`, args: [JSON.stringify(u), sId, projectId] })
+      }
+    }
+    // annotations (markup overlay, singular per ticket): carry merged's only when the survivor has none.
+    {
+      const survAnn = survArt.annotations_json == null ? "" : String(survArt.annotations_json).trim()
+      const mergedAnn = mergedArt.annotations_json == null ? "" : String(mergedArt.annotations_json).trim()
+      if (!survAnn && mergedAnn) {
+        artStmts.push({ sql: `UPDATE feedback SET annotations_json=? WHERE id=? AND project_id=?`, args: [mergedAnn, sId, projectId] })
+      }
+    }
+
+    // Compute the combined recurrence from the CURRENT (pristine, un-absorbed) survivor + merged rows.
+    const survCount = Math.max(1, Number(survivorRow.recurrenceCount ?? 1))
+    const mergedCount = Math.max(1, Number(mergedRow.recurrenceCount ?? 1))
+    const combinedCount = survCount + mergedCount
+    const survDates = new Set(parseDates(survivorRow.recurrenceDatesJson))
+    survDates.add(Number(survivorRow.createdAt))
+    for (const d of parseDates(mergedRow.recurrenceDatesJson)) survDates.add(d)
+    survDates.add(Number(mergedRow.createdAt))
+    const dates = [...survDates].filter((d) => Number.isFinite(d) && d > 0).sort((a, b) => a - b)
+    const lastSeen = dates.length ? dates[dates.length - 1] : Number(survivorRow.createdAt)
+    const now = Date.now()
+
+    const stmts: Array<{ sql: string; args: any[] }> = [
+      // (1) UNIQUE head-occ receipt FIRST — completion marker + guarantees the whole batch (incl. the
+      //     recurrence sum below) commits at most once per merged row.
+      {
+        sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at)
+              VALUES (?,?,?,?,?,?,?,?,?)`,
+        args: [headOccId, sId, projectId, Number(mergedRow.createdAt), mergedRow.observation ?? null, mergedRow.screenshotId ?? null, null, mergedRow.contactEmail ?? null, now],
+      },
+      // Re-home the merged cluster's stored occurrence receipts + comments.
+      { sql: `UPDATE feedback_occurrences SET feedback_id=? WHERE feedback_id=? AND project_id=?`, args: [sId, mId, projectId] },
+      { sql: `UPDATE ticket_comments SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      // KLA-780 round-3 (codex C2 + Muse C3-5, checklist P): re-home EVERY table that keys history/
+      // artifacts by feedback_id, in the SAME atomic batch, so nothing vanishes from the survivor.
+      { sql: `UPDATE ticket_exports SET feedback_id=? WHERE feedback_id=? AND project_id=?`, args: [sId, mId, projectId] },
+      { sql: `UPDATE activity_events SET feedback_id=? WHERE feedback_id=? AND project_id=?`, args: [sId, mId, projectId] },
+      { sql: `UPDATE feedback_replays SET feedback_id=? WHERE feedback_id=? AND project_id=?`, args: [sId, mId, projectId] },
+      // labels — PK(label_id, feedback_id): OR IGNORE moves non-colliding rows, then drop leftover dupes.
+      { sql: `UPDATE OR IGNORE ticket_labels SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      { sql: `DELETE FROM ticket_labels WHERE feedback_id=?`, args: [mId] },
+      // share-viewer grants — UNIQUE(feedback_id, email): OR IGNORE, then clean leftover dupes.
+      { sql: `UPDATE OR IGNORE ticket_viewers SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      { sql: `DELETE FROM ticket_viewers WHERE feedback_id=?`, args: [mId] },
+      // pending assignment invites — UNIQUE(project_id, email): OR IGNORE onto the survivor, then DROP the
+      // leftover colliding rows still on the hidden id (KLA-780 round-4, codex C2 + Muse C4-3). Without the
+      // DELETE an invite for the same (project,email) that lost the OR IGNORE stays attached to the hidden
+      // ticket → invite lookup could accept against a merged ticket.
+      { sql: `UPDATE OR IGNORE ticket_assignment_invites SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      { sql: `DELETE FROM ticket_assignment_invites WHERE feedback_id=?`, args: [mId] },
+      // export request/outbox pipeline — outbox has partial UNIQUE(feedback_id,connector_id) WHERE pending.
+      { sql: `UPDATE export_requests SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      // outbox: reconcile across ALL states (KLA-784, codex). The partial UNIQUE only covers status='pending',
+      // so the old OR-IGNORE-then-delete left a survivor IN_FLIGHT row coexisting with a merged PENDING row
+      // for the same connector — the sweep would then double-file the same external issue. Instead: DROP the
+      // merged rows for any connector the survivor ALREADY has an outbox row for (any state — the survivor's
+      // row/export covers it), then MOVE the rest (connectors the survivor has none for — no collision).
+      { sql: `DELETE FROM export_outbox WHERE feedback_id=? AND connector_id IN (SELECT connector_id FROM export_outbox WHERE feedback_id=?)`, args: [mId, sId] },
+      { sql: `UPDATE export_outbox SET feedback_id=? WHERE feedback_id=?`, args: [sId, mId] },
+      // Persist the summed count + unioned dates onto the survivor (commits with the unique receipt above).
+      { sql: `UPDATE feedback SET recurrence_count=?, recurrence_dates_json=?, last_seen_at=? WHERE id=? AND project_id=?`, args: [combinedCount, JSON.stringify(dates), lastSeen, sId, projectId] },
+    ]
+    // Carry the contact email: keep the survivor's if present, else adopt the merged one.
+    if (!survivorRow.contactEmail && mergedRow.contactEmail) {
+      stmts.push({ sql: `UPDATE feedback SET contact_email=? WHERE id=? AND project_id=?`, args: [mergedRow.contactEmail, sId, projectId] })
+    }
+    // KLA-780 round-3 (codex C2 + Muse C3-4): repoint the expectation link INSIDE the atomic batch (was
+    // best-effort outside — a failure there orphaned the spine on the hidden key). NOT EXISTS guard
+    // avoids double-linking the survivor's own key.
+    if (mergedRow.issueKey && survivorRow.issueKey && mergedRow.issueKey !== survivorRow.issueKey) {
+      stmts.push({
+        sql: `UPDATE expectations SET dedup_key=? WHERE project_id=? AND dedup_key=?
+                AND NOT EXISTS (SELECT 1 FROM expectations e2 WHERE e2.project_id=? AND e2.dedup_key=?)`,
+        args: [survivorRow.issueKey, projectId, mergedRow.issueKey, projectId, survivorRow.issueKey],
+      })
+    }
+    // Fold in the artifact-carry UPDATEs (attachments/recordings/annotations) computed above — same batch.
+    for (const s of artStmts) stmts.push(s)
+
+    try {
+      await db!.batch(stmts, "write")
+    } catch (e: any) {
+      if (isHeadOccConflict(e)) {
+        // A concurrent absorb / repair beat us to the unique receipt — the merge is already done. The
+        // batch aborted atomically (nothing double-applied). Report the survivor's current state.
+        const s = await feedbackById(projectId, sId)
+        return { survivorId: sId, recurrenceCount: Math.max(1, Number(s?.recurrenceCount ?? 1)), contactEmails: await emailsFor(s ?? survivorRow) }
+      }
+      console.warn("merge absorb batch failed:", e?.message || e)
+      return null
+    }
+    invalidateDashboardCache(projectId)
+    const s = await feedbackById(projectId, sId)
+    const occs = await listFeedbackOccurrences(sId)
+    const emails = new Set<string>()
+    if (s?.contactEmail) emails.add(s.contactEmail)
+    if (mergedRow.contactEmail) emails.add(mergedRow.contactEmail)
+    for (const o of occs) if (o.reporterEmail) emails.add(o.reporterEmail)
+    return { survivorId: sId, recurrenceCount: combinedCount, contactEmails: [...emails] }
   }
 
-  // #722-fix (Codex QA, Finding 2): a merge deletes the merged head row (changes feedback + tickets +
-  // insight counts) and rewrites the survivor's recurrence. Invalidate DIRECTLY at this mutation boundary
-  // rather than relying on the caller's later best-effort activity insert (which can race or fail).
-  invalidateDashboardCache(projectId)
-  return { survivorId, recurrenceCount: combinedCount, contactEmails: [...emails] }
+  // repairOrIdempotent: the merged row is ALREADY claimed (by us-in-a-prior-crash, or a concurrent
+  // merge). Resolve the survivor it points at to its live root and run absorbInto — which no-ops if the
+  // absorb already completed, or COMPLETES a crash-stranded claim. This is the fix for "retry returns
+  // idempotent-success without repairing".
+  const repairOrIdempotent = async (mergedRow: any): Promise<MergeResult | null> => {
+    const target = String(mergedRow.mergedInto ?? "").trim() || survivorId
+    const liveSurvivor = await resolveLiveRoot(projectId, target)
+    const sRow = await feedbackById(projectId, liveSurvivor)
+    if (!sRow) return null
+    return absorbInto(sRow, mergedRow)
+  }
+
+  // Bounded retry: re-resolve the survivor to its live root each attempt; only a concurrent fold of the
+  // survivor drives a re-loop. Common case runs exactly once.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    // Resolve the survivor to its terminal LIVE root FIRST (a chain A→R must fold into R, never a hidden
+    // node). Re-check self-merge (merging R into a descendant of R is a no-op).
+    survivorId = await resolveLiveRoot(projectId, survivorId)
+    if (survivorId === mergedId) return null
+
+    const survivor = await feedbackById(projectId, survivorId)
+    const merged = await feedbackById(projectId, mergedId)
+    if (!survivor || !merged) return null
+    // Defensive: after resolution the survivor SHOULD be live. If it somehow isn't, refuse.
+    if (String(survivor.mergedInto ?? "").trim()) return null
+
+    // Already claimed (double-submit / retry / concurrent winner already flipped it): REPAIR or no-op —
+    // never a bare success that could leave a crash-stranded claim un-absorbed.
+    if (String(merged.mergedInto ?? "").trim()) {
+      return repairOrIdempotent(merged)
+    }
+
+    const mergedPrevStatus = merged.status ?? "open"
+
+    // CLAIM the merged row (concurrency gate): NULL→survivor in one guarded UPDATE.
+    const claim = await db!.execute({
+      sql: `UPDATE feedback SET merged_into=?, status='merged', updated_at=? WHERE id=? AND project_id=? AND merged_into IS NULL`,
+      args: [survivorId, Date.now(), mergedId, projectId],
+    })
+    if (Number(claim.rowsAffected ?? 0) !== 1) {
+      // Lost the race — a concurrent merge claimed B. Re-read it and REPAIR/idempotent-complete rather
+      // than returning a bare success (the concurrent winner may still be mid-absorb, or have crashed).
+      const merged2 = await feedbackById(projectId, mergedId)
+      if (!merged2) return null
+      return repairOrIdempotent(merged2)
+    }
+
+    // Won the claim. SURVIVOR RE-VERIFY (Muse C3-1): resolveLiveRoot ran before the claim, so re-check
+    // the survivor is STILL live. If a concurrent fold hid it, roll the claim back and re-resolve to the
+    // new live root on the next attempt. (Residual window: a fold landing between this SELECT and the
+    // absorb batch below is not lock-protected — the local file driver can't run an interactive write
+    // txn — but is vanishingly narrow and self-heals via resolveLiveRoot on the next read/merge.)
+    const sv = await db!.execute({ sql: "SELECT merged_into FROM feedback WHERE id=? AND project_id=? LIMIT 1", args: [survivorId, projectId] })
+    const svMi = sv.rows.length ? (sv.rows[0] as any).merged_into : null
+    if (!sv.rows.length || (svMi != null && String(svMi).trim() !== "")) {
+      // Roll back the claim so B is not stranded marked-merged, then re-resolve/retry.
+      await db!.execute({
+        sql: `UPDATE feedback SET merged_into=NULL, status=?, updated_at=? WHERE id=? AND project_id=? AND merged_into=?`,
+        args: [mergedPrevStatus, Date.now(), mergedId, projectId, survivorId],
+      }).catch((e2: any) => console.warn("merge claim rollback (survivor folded) failed:", e2?.message || e2))
+      continue
+    }
+
+    const res = await absorbInto(survivor, merged)
+    if (res === null) {
+      // Genuine absorb failure — ROLL BACK the claim so B is NOT left marked merged with stranded data,
+      // and report failure (route maps null → 500) instead of a false success. The row is now re-open for
+      // a clean retry.
+      await db!.execute({
+        sql: `UPDATE feedback SET merged_into=NULL, status=?, updated_at=? WHERE id=? AND project_id=? AND merged_into=?`,
+        args: [mergedPrevStatus, Date.now(), mergedId, projectId, survivorId],
+      }).catch((e2: any) => console.warn("merge claim rollback failed:", e2?.message || e2))
+      console.warn("merge absorb failed — claim rolled back, row NOT marked merged")
+      return null
+    }
+    return res
+  }
+
+  // Exhausted retries — the survivor kept getting folded out from under us. Give up safely (no partial
+  // state written; every attempt either rolled its claim back or returned above).
+  console.warn("merge aborted — survivor repeatedly folded concurrently, gave up:", { projectId, survivorId, mergedId })
+  return null
 }
 
 export type SplitResult = { newFeedbackId: string; sourceRecurrenceCount: number }
@@ -4348,8 +4681,10 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
   const seqAtStart = dashGenSeq // Finding 3/2: snapshot the GLOBAL sequence BEFORE querying
   const q = (sql: string) => db!.execute({ sql, args: [projectId] })
   const settled = await Promise.allSettled([
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=?"),
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL"),
+    // KLA-780: exclude merged-away rows so a fold doesn't inflate the feedback/tickets counts (its
+    // recurrence was already summed onto the survivor).
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
@@ -6286,6 +6621,10 @@ export async function updateFeedbackMeta(
   feedbackId: string,
   meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null; observation: string | null }>
 ): Promise<boolean> {
+  // KLA-780 round-3 (Muse C3-6, checklist L): a triage/meta edit targeting a MERGED (hidden) row would
+  // apply to a row no board shows. Redirect the edit to the live survivor so status/priority/notes land
+  // on the ticket that's actually displayed.
+  feedbackId = await resolveLiveRoot(projectId, feedbackId)
   const now = Date.now()
   // C2-5: monotonic beyond all key timestamps (a frozen-clock PATCH must still bust the OG card).
   const sets: string[] = ["updated_at=" + MONOTONIC_UPDATED_AT_SQL]
@@ -6382,6 +6721,9 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     // KLA-603: server-side "AI summary from walkthrough" (see ai_walkthrough_json column). Null when the
     // report had no transcribed video or the description was already substantial. Additive.
     aiWalkthrough: safeJsonParse(x.ai_walkthrough_json),
+    // KLA-780: survivor id this row was merged into (null on normal rows). Lets a viewer redirect a
+    // merged ticket's permalink to its survivor, and lets the merge helper detect an already-merged row.
+    mergedInto: x.merged_into != null ? String(x.merged_into) : null,
   }
 }
 
@@ -6461,6 +6803,7 @@ export async function feedbackByPageUrl(
                  contact_email, screenshot_id, url_host, url_path, report_url, annotations_json, created_at
           FROM feedback
           WHERE project_id=? AND lower(url_host)=lower(?) AND lower(url_path) IN (${placeholders})
+            AND merged_into IS NULL
           ORDER BY created_at DESC`,
     args: [projectId, host, ...cands],
   })
@@ -6493,6 +6836,7 @@ export async function distinctReportedPages(projectId: string, limit = 200): Pro
     sql: `SELECT url_host, url_path, COUNT(*) AS n, MAX(created_at) AS last_at
           FROM feedback
           WHERE project_id=? AND url_host IS NOT NULL AND url_host<>''
+            AND merged_into IS NULL
           GROUP BY lower(url_host), url_path
           ORDER BY last_at DESC
           LIMIT ?`,
@@ -6523,7 +6867,7 @@ export async function publicReportStatus(ref: string): Promise<PublicReportStatu
   let rows: any[]
   if (isFull) {
     const r = await db!.execute({
-      sql: "SELECT status, created_at, recurrence_count FROM feedback WHERE id=? LIMIT 2",
+      sql: "SELECT id FROM feedback WHERE id=? LIMIT 2",
       args: [raw],
     })
     rows = r.rows as any[]
@@ -6532,18 +6876,15 @@ export async function publicReportStatus(ref: string): Promise<PublicReportStatu
     // Escape the literal "_" in "fb_" so LIKE treats it as a character, not the single-char wildcard.
     const pattern = raw.replace(/_/g, "\\_") + "-%"
     const r = await db!.execute({
-      sql: "SELECT status, created_at, recurrence_count FROM feedback WHERE id LIKE ? ESCAPE '\\' LIMIT 2",
+      sql: "SELECT id FROM feedback WHERE id LIKE ? ESCAPE '\\' LIMIT 2",
       args: [pattern],
     })
     rows = r.rows as any[]
   }
   if (rows.length !== 1) return null
-  const x = rows[0]
-  return {
-    status: x.status != null ? String(x.status) : "open",
-    createdAt: Number(x.created_at),
-    recurrenceCount: Math.max(1, Number(x.recurrence_count ?? 1)),
-  }
+  // KLA-780 round-2 (finding C2-resolvers): an old fb_<B> link to a now-folded row must show the
+  // SURVIVOR's status, not the hidden merged row's. Follow the merged_into chain to the live root.
+  return await followMergedToLiveStatus(String(rows[0].id))
 }
 
 // KLAVITYKLA-491: resolve a ticket deep-link ref (full fb_<uuid> OR short fb_<8hex>) to the
@@ -6961,7 +7302,9 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
     args: [projectId, seq],
   })
   if (!fb.rows.length) return null
-  const id = String((fb.rows[0] as any).id)
+  // KLA-780 round-2 (finding C2-resolvers): a pretty KEY-n permalink whose row was later folded resolves
+  // to the canonical survivor (live root), not the hidden merged row.
+  const id = await resolveLiveRoot(projectId, String((fb.rows[0] as any).id))
 
   // 4) Canonical redirect target — only when a STALE alias was used, and only built from the ORIGINAL
   //    owner's CURRENT slug + the project's CURRENT key. The route emits the 301 ONLY after proving
@@ -6982,22 +7325,25 @@ export async function resolveWorkspaceTicket(slug: string, ref: string): Promise
 // ticket API attaches these (plus the already-present seqNum) to each ticket so the CLIENT can build
 // `/<slug>/t/<KEY>-<n>`. Additive, member-gated by the caller; leaks nothing (slug is the public
 // namespace anyway, key is not secret). Callers dedupe by projectId to avoid N queries per list.
-export async function projectAliasInfo(projectId: string): Promise<{ slug: string | null; ticketKey: string | null }> {
+export async function projectAliasInfo(projectId: string): Promise<{ slug: string | null; ticketKey: string | null; projectName: string | null }> {
   try {
     const r = await db!.execute({
-      sql: `SELECT a.slug AS slug, p.ticket_key AS ticket_key
+      sql: `SELECT a.slug AS slug, p.ticket_key AS ticket_key, p.name AS project_name
               FROM projects p LEFT JOIN accounts a ON a.id = p.account_id
              WHERE p.id = ? LIMIT 1`,
       args: [projectId],
     })
-    if (!r.rows.length) return { slug: null, ticketKey: null }
+    if (!r.rows.length) return { slug: null, ticketKey: null, projectName: null }
     const row = r.rows[0] as any
     return {
       slug: row.slug != null ? String(row.slug) : null,
       ticketKey: row.ticket_key != null ? String(row.ticket_key) : null,
+      // KLA-765: project name for the ticket-detail project badge (resolved server-side from the
+      // feedback row's owning project — a query param is never trusted, so no wrong-project label).
+      projectName: row.project_name != null ? String(row.project_name) : null,
     }
   } catch {
-    return { slug: null, ticketKey: null }
+    return { slug: null, ticketKey: null, projectName: null }
   }
 }
 
@@ -7088,7 +7434,13 @@ export async function resolveFeedbackRef(ref: string): Promise<{ id: string; pro
     rows = r.rows as any[]
   }
   if (rows.length !== 1) return null
-  return { id: String(rows[0].id), projectId: String(rows[0].project_id) }
+  const projectId = String(rows[0].project_id)
+  // KLA-780 round-2 (finding C2-resolvers): if this ref points at a row that was later folded into a
+  // survivor, resolve to the canonical LIVE root so the deep-link (and everything downstream that reads
+  // this id — the /t/:ref page, single-ticket API, workspace permalink) lands on the survivor, not the
+  // hidden merged row whose evidence/comments were re-homed away.
+  const liveId = await resolveLiveRoot(projectId, String(rows[0].id))
+  return { id: liveId, projectId }
 }
 
 export async function addTicketExport(
@@ -7345,14 +7697,16 @@ export async function computeDashboardInsights(projectId: string) {
   try {
     const now = Date.now()
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000
+    // KLA-780: every insight query excludes merged-away rows (merged_into IS NULL) — their evidence and
+    // recurrence were already folded onto the survivor, so counting them too would double-count.
     const [sevRows, sentRows, hotRows, volRows, recRow, throughputRows, triageRow] = await Promise.all([
-      db.execute({ sql: `SELECT COALESCE(priority,severity,'none') sev, COUNT(*) n FROM feedback WHERE project_id=? AND status IN ('open','in_progress') GROUP BY sev`, args: [projectId] }),
-      db.execute({ sql: `SELECT COALESCE(sentiment,'') s, COUNT(*) n FROM feedback WHERE project_id=? AND status!='dismissed' GROUP BY s`, args: [projectId] }),
-      db.execute({ sql: `SELECT COALESCE(NULLIF(url_path,''),'(unknown)') area, COUNT(*) n FROM feedback WHERE project_id=? AND status IN ('open','in_progress') GROUP BY area ORDER BY n DESC LIMIT 6`, args: [projectId] }),
-      db.execute({ sql: `SELECT CAST(created_at/86400000 AS INTEGER) d, COUNT(*) n FROM feedback WHERE project_id=? AND created_at>? GROUP BY d`, args: [projectId, weekAgo] }),
-      db.execute({ sql: `SELECT COUNT(*) n FROM feedback WHERE project_id=? AND recurrence_count>=3 AND status!='dismissed'`, args: [projectId] }),
-      db.execute({ sql: `SELECT (CASE WHEN status='done' THEN 'resolved' ELSE 'opened' END) k, COUNT(*) n FROM feedback WHERE project_id=? AND created_at>? AND status!='dismissed' GROUP BY k`, args: [projectId, weekAgo] }),
-      db.execute({ sql: `SELECT COUNT(*) n FROM feedback WHERE project_id=? AND status='new'`, args: [projectId] }),
+      db.execute({ sql: `SELECT COALESCE(priority,severity,'none') sev, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('open','in_progress') GROUP BY sev`, args: [projectId] }),
+      db.execute({ sql: `SELECT COALESCE(sentiment,'') s, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status!='dismissed' GROUP BY s`, args: [projectId] }),
+      db.execute({ sql: `SELECT COALESCE(NULLIF(url_path,''),'(unknown)') area, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('open','in_progress') GROUP BY area ORDER BY n DESC LIMIT 6`, args: [projectId] }),
+      db.execute({ sql: `SELECT CAST(created_at/86400000 AS INTEGER) d, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND created_at>? GROUP BY d`, args: [projectId, weekAgo] }),
+      db.execute({ sql: `SELECT COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND recurrence_count>=3 AND status!='dismissed'`, args: [projectId] }),
+      db.execute({ sql: `SELECT (CASE WHEN status='done' THEN 'resolved' ELSE 'opened' END) k, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND created_at>? AND status!='dismissed' GROUP BY k`, args: [projectId, weekAgo] }),
+      db.execute({ sql: `SELECT COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status='new'`, args: [projectId] }),
     ])
     const out = JSON.parse(JSON.stringify(empty))
     for (const r of sevRows.rows) { const k = String((r as any).sev); if (k in out.openBySeverity) out.openBySeverity[k] = Number((r as any).n) }
@@ -7386,6 +7740,7 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
     sql: `SELECT f.*, p.name AS sim_name FROM feedback f
           LEFT JOIN personas p ON p.id = f.sim_id
           WHERE f.project_id=? AND f.status='new'
+            AND f.merged_into IS NULL
             AND (f.source IS NULL OR f.source <> 'studio-demo')
           ORDER BY f.created_at DESC LIMIT 200`,
     args: [projectId],
@@ -7470,6 +7825,7 @@ export async function listInboxForProjects(
     // KLAVITYKLA-256: sandbox demo saves (source='studio-demo') are excluded from the New-reports count.
     sql: `SELECT project_id, COUNT(*) AS cnt FROM feedback
           WHERE project_id IN (${ph}) AND status='new' AND created_at >= ?
+            AND merged_into IS NULL
             AND (source IS NULL OR source <> 'studio-demo')
           GROUP BY project_id`,
     args: [...projectIds, since],
@@ -7500,6 +7856,7 @@ export async function listInboxForProjects(
             SELECT *, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at DESC) AS rn
             FROM feedback
             WHERE project_id IN (${ph}) AND status='new' AND created_at >= ?
+              AND merged_into IS NULL
               AND (source IS NULL OR source <> 'studio-demo')
           ) WHERE rn <= ?`,
     args: [...projectIds, since, topN],
@@ -7556,6 +7913,7 @@ export async function agencyClientOutcomes(
   const repR = await db!.execute({
     sql: `SELECT project_id, COUNT(*) AS cnt FROM feedback
           WHERE project_id IN (${ph}) AND created_at >= ?
+            AND merged_into IS NULL
           GROUP BY project_id`,
     args: [...projectIds, since],
   })
@@ -7629,6 +7987,12 @@ export async function listTicketsPaginated(
 
   const conditions: string[] = ["f.project_id=?"]
   const args: any[] = [projectId]
+
+  // KLA-780 round-2 (finding C1-1): NEVER surface a folded-away merged row on the tickets board,
+  // /api/v1/tickets, or MCP — independent of any status filter (an explicit statuses:["merged"] must
+  // still not resurface it, and it must not inflate `total`). Applies to both the count and rows query
+  // (both share `where`).
+  conditions.push("f.merged_into IS NULL")
 
   // Exclude 'new' (un-triaged) by default
   const statuses = (opts.statuses ?? []).filter(Boolean)

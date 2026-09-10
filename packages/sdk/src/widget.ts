@@ -22,7 +22,7 @@ import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
-  makeShotId, pageCount, MAX_SHOTS,
+  makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -96,9 +96,13 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
   return new Promise((resolve) => {
     if (typeof document === "undefined" || !document.body) return resolve(null)
     const box = document.createElement("div")
-    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6d5efc;background:rgba(109,94,252,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
+    // KLA-763 (odd color): the element-picker highlight box + label used #6d5efc / rgba(109,94,252,…),
+    // an off-brand purple that read as a DIFFERENT accent from the rest of the widget/composer (which is
+    // the Klavity brand accent #6366f1 = rgb 99,102,241 everywhere else — pill, FAB, region-drag, chips).
+    // Snap them to the brand accent so the picker matches the composer.
+    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6366f1;background:rgba(99,102,241,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
     const label = document.createElement("div")
-    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6d5efc;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
+    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6366f1;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
     const banner = document.createElement("div")
     banner.setAttribute("role", "status")
     banner.setAttribute("aria-live", "polite")
@@ -185,12 +189,32 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
 // ── KLA-412 multi-page evidence helpers (pure, top-level) ──────────────────────────────────────────
 // The evidence session stores screenshots as Blobs (IndexedDB). The composer works in data URLs (its
 // screenshots[] are data URLs, and submit uploads them). These convert between the two + measure dims.
+// KLA-763 (stuck upload): a stalled FileReader that fires neither onload nor onerror used to leave this
+// promise unsettled forever — the evidence-resume loop (blobToDataUrl on a stored shot) then hung. Mirror
+// the KLA-767 "always terminate" rule: race the whole read against a hard timeout, wire onabort, and ignore
+// any late completion after settle (no double-resolve, no leaked timer). ALWAYS resolves or rejects.
+const BLOB_READ_TIMEOUT_MS = 30000
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const fr = new FileReader()
-    fr.onload = () => resolve(String(fr.result || ""))
-    fr.onerror = () => reject(fr.error || new Error("blob read failed"))
-    fr.readAsDataURL(blob)
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { fr.abort() } catch { /* onabort is a no-op once settled */ }
+      reject(new Error("blob read timed out"))
+    }, BLOB_READ_TIMEOUT_MS)
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
+    fr.onload = () => settle(() => resolve(String(fr.result || "")))
+    fr.onerror = () => settle(() => reject(fr.error || new Error("blob read failed")))
+    fr.onabort = () => settle(() => reject(fr.error || new Error("blob read aborted")))
+    try { fr.readAsDataURL(blob) }
+    catch (e) { settle(() => reject(e instanceof Error ? e : new Error("blob read failed"))) }
   })
 }
 // Manual data-URL -> Blob (no fetch(), so a strict connect-src CSP can't block it).
@@ -906,14 +930,41 @@ async function mount() {
   }
   // Remove the session shot at a composer strip index (indices stay aligned with seed+append order).
   function removeEvShotAt(index: number): void {
+    // KLA-772: the modal shifts its per-image overlay map down on a mid-strip delete; snapshot the composer's
+    // (already-shifted) overlays synchronously so we can re-align the session's stored annotations after the
+    // removal, keeping shot ↔ overlay in lock-step (no misaligned or orphaned overlays after a restore).
+    let byIndex: Record<number, unknown> = {}
+    try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
     void queueEvWrite(async () => {
       const latest = await getActiveSession(cfg.projectId, evOrigin)
       if (!latest) return
       const target = latest.shots[index]
       if (!target) return
       evSession = await removeShot(latest.id, target.id)
+      if (evSession) await persistAllAnnotations(evSession.id, byIndex)
       updateEvDock()
     })
+  }
+  // KLA-772: persist the drawn overlays for EVERY shot into the session in one pass (composer strip order ==
+  // session shot order). Called on minimize (and after a shot removal re-aligns the strip) so annotations
+  // survive teardown + navigation. Reads a JSON-safe snapshot from the modal; each index writes/clears its
+  // shot's `annotations`. Serialized via queueEvWrite by callers to avoid a lost-update race.
+  async function persistAllAnnotations(sessionId: string, byIndex: Record<number, unknown>): Promise<void> {
+    try {
+      const latest = await getActiveSession(cfg.projectId, evOrigin)
+      if (!latest) return
+      for (let i = 0; i < latest.shots.length; i++) {
+        // Undefined => this shot has no overlay; pass null so a previously-saved overlay is cleared on undo.
+        const ann = Object.prototype.hasOwnProperty.call(byIndex, i) ? byIndex[i] : null
+        evSession = await updateShotAnnotations(sessionId, i, ann) ?? evSession
+      }
+    } catch { /* best-effort: a failed annotation persist must never break minimize/navigation */ }
+  }
+  // KLA-772: snapshot the open composer's overlays and persist them (used on minimize + post-removal re-align).
+  function persistComposerAnnotations(sessionId: string): void {
+    let byIndex: Record<number, unknown> = {}
+    try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
+    void queueEvWrite(() => persistAllAnnotations(sessionId, byIndex))
   }
   function buildPagesTrail(shots: EvidenceShot[]): string {
     if (!shots || !shots.length) return ""
@@ -1033,6 +1084,9 @@ async function mount() {
   // Minimize the open composer to the dock WITHOUT losing evidence (called from the composer's onMinimize).
   function minimizeToDock() {
     evMinimizing = true
+    // KLA-772: capture the open composer's drawn overlays BEFORE close() (which detaches the modal + nulls the
+    // composer ref) and persist them into the session, so the shapes survive the dock + a page navigation.
+    if (evSession) persistComposerAnnotations(evSession.id)
     void queueEvWrite(async () => {
       try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep copy */ }
       showEvDock()
@@ -1569,6 +1623,12 @@ async function mount() {
       onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
+      // KLA-772: persist a shot's drawn overlay incrementally as the reporter draws/edits/undoes it, so the
+      // annotations survive even a navigation that happens without an explicit minimize. Serialized so it can't
+      // race the shot add/remove writes. `annotations` is a JSON-safe { w, h, shapes } (or null when cleared).
+      onAnnotationsChanged: ev ? (index: number, annotations: unknown) => {
+        void queueEvWrite(async () => { evSession = await updateShotAnnotations(ev.id, index, annotations) ?? evSession })
+      } : undefined,
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
       onClose: (reason?: 'submitted') => {
         emit("close", {})
@@ -1624,10 +1684,20 @@ async function mount() {
       // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
       // region-initial shot as a NEW capture — seed it visually AND persist it to the session.
       void (async () => {
+        let failedRestores = 0
         for (const shot of ev.shots) {
           try {
-            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label })
-          } catch { /* skip an unreadable shot */ }
+            // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
+            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
+          } catch { failedRestores++ /* KLA-763: unreadable/corrupt persisted blob or read timeout */ }
+        }
+        // KLA-763 (codex round-2): don't SILENTLY drop persisted evidence on resume — a shot whose blob
+        // won't read (corrupt / reader timeout) would otherwise vanish while the report still submits, with
+        // no signal. Make the loss explicit so the reporter knows to re-capture.
+        if (failedRestores > 0) {
+          evBanner(failedRestores === 1
+            ? "1 saved screenshot couldn't be restored — please re-capture it if needed."
+            : `${failedRestores} saved screenshots couldn't be restored — please re-capture them if needed.`)
         }
         if (opts?.initialShot) {
           // Bug 3 (wrong image selected): seed the freshly-captured region shot as a GENUINE capture
@@ -1982,7 +2052,9 @@ async function mount() {
       reportArmed = false
       setTimeout(() => { reportArmed = true }, 400)
       showMenu(e.clientX, e.clientY)
-    })
+    }, true)  // KLA-771: CAPTURE phase — some hosts (px4/qa1.px4app.com) stopPropagation() their own
+              // contextmenu handler, which in the bubble phase would stop us reaching document and the
+              // native menu would win. Capture runs before any host bubble/target handler.
   }
 
   const banner = (text: string) => {
@@ -2204,6 +2276,22 @@ function pillDisplayRef(issueKey: string): string {
   const m = /^fb_([0-9a-f]{8})[0-9a-f-]+$/i.exec(issueKey)
   return m ? "fb_" + m[1] : issueKey
 }
+// KLA-766: prefer the reporter-friendly ticket key (KLA-123) the server minted in the deep-link
+// permalink (/<slug>/<KEY>-<n>) over the opaque fb_ id — same shape + rule as the composer's friendlyRef.
+// Falls back to the shortened fb_ (pillDisplayRef) only when the URL carries nothing friendlier.
+const PILL_KEY_SHAPE = /^[A-Za-z][A-Za-z0-9]{1,9}-\d+$/
+function pillRefFromUrl(u: string | null | undefined): string {
+  if (!u) return ""
+  try {
+    const p = new URL(u)
+    if (p.protocol !== "https:" && p.protocol !== "http:") return ""
+    const seg = p.pathname.split("/").filter(Boolean).pop() || ""
+    return PILL_KEY_SHAPE.test(seg) ? seg : ""
+  } catch { return "" }
+}
+function pillFriendlyRef(issueKey: string, issueUrl?: string | null): string {
+  return pillRefFromUrl(issueUrl) || pillDisplayRef(issueKey)
+}
 function pillSafeHttpUrl(u: string | null | undefined): string {
   if (!u) return ""
   try { const p = new URL(u); return p.protocol === "https:" || p.protocol === "http:" ? p.href : "" } catch { return "" }
@@ -2370,7 +2458,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     // Sub: "Filed as <ref-mono-chip> · <Open in Klavity ↗>" — graceful "We filed it." when neither exists.
     progFill.style.width = "100%"
     sub.textContent = ""
-    const ref = pillDisplayRef(issueKey)
+    const ref = pillFriendlyRef(issueKey, issueUrl)
     const linkUrl = pillSafeHttpUrl(issueUrl)
     if (ref) {
       sub.appendChild(document.createTextNode("Filed as "))

@@ -11,7 +11,7 @@ import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
-import { countFoundingAccounts } from "./lib/db"
+import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
 // real title instead of its body. Wired into every consumer that previously derived title from observation.
@@ -5676,6 +5676,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // success-exit can build the pretty /<slug>/<KEY>-<n> issue_url. The inner `projectId` is
         // block-scoped and not visible at the exit. Null-safe: prettyDeepLinkUrl falls back to /t/<id>.
         let submitProjectId: string | null = null
+        // KLA-782: was the report submitted by an authenticated workspace MEMBER, or an ANONYMOUS
+        // (cross-origin / no-session) widget reporter? The success-exit deep link depends on it: a
+        // member gets the pretty /<slug>/<KEY>-<n> permalink, but that route is projectAccess-gated
+        // (member-only) → an anonymous reporter following it after the widget's login-resume hits 403.
+        // Anonymous reporters must get the unguessable, teaser-policy-honoring /t/<fb_id> link instead.
+        // Mirrors `trustedProvenance` (= authenticated actor AND not an anon widget submit); lifted to
+        // this outer scope so it survives to the exit (the inner `actor` is block-scoped and gone there).
+        let submitterIsMember = false
         if (db) {
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
@@ -5713,6 +5721,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // tracker — it was meant for Klavity, and leaking it into a customer's Jira is a data breach.
             // (5 Klavity bug reports leaked into customers' Jira as PX4D-*/SIM-1520 when the env was unset.)
             let klavityFailsafeToOrigin = false
+            // KLA-785: true when the report was REROUTED to the Klavity intake project (a DIFFERENT project the
+            // submitting member likely can't access) — used at the success-exit to avoid handing them a
+            // member-only pretty permalink for a project they'd 403 on.
+            let klavityRerouted = false
             if (resolved && wantsKlavityIntake) {
               const originProject = resolved
               const intakeId = (process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
@@ -5723,6 +5735,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (intakeProj && intakeProj.id !== originProject.id) {
                 // Route into the Klavity intake project; carry the full origin context in the body.
                 resolved = intakeProj
+                klavityRerouted = true // KLA-785: the final project is NOT the one the member was validated against
                 klavityRerouteNote = `[Reported via the Klavity widget on ${originProject.name || originProject.id}` +
                   (reportUrl ? ` — ${reportUrl}` : "") + `] — ${originCtx}`
               } else {
@@ -5738,6 +5751,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (resolved) {
               const projectId = resolved.id
               submitProjectId = projectId // #745: carry to the success-exit for the pretty issue_url
+              // KLA-782: a resolved project + an authenticated actor that is NOT an anon widget submit
+              // means the reporter is a workspace member (resolveProject only resolves projects the actor
+              // can access) → safe to hand them the member-gated pretty permalink at the exit.
+              submitterIsMember = !!actor && !anonWidgetAllowed
+              // KLA-785: BUT if the report was rerouted to the Klavity intake project, `resolved` is no longer
+              // the project the actor was validated against — they likely can't access the intake project, so
+              // its pretty permalink would 403. Re-check access to the FINAL project; if none, fall back to the
+              // /t/<fb_id> teaser (fail-closed) rather than hand out a link they can't open.
+              if (submitterIsMember && klavityRerouted) {
+                submitterIsMember = !!(await projectAccess(actor as string, projectId).catch(() => null))
+              }
               // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
               // attachments + recordings), now that the project is resolved. Fire-and-forget.
               {
@@ -6227,18 +6251,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // not here — there is no longer any inline external filing on this endpoint (KLAVITYKLA-288),
         // so this is the ONE exit for a successful submission.
         //
-        // Success-screen deep link: point straight at the FAST single-ticket page (/t/<feedbackId>)
-        // so "Open in Klavity" renders just this report instead of cold-booting the whole dashboard
-        // SPA (#727 — Raghu flagged the ~15s board load). #651: this link is returned for EVERY widget
-        // submit — including anonymous / cross-origin end-users on a customer's site. /t/:ref is
-        // member-gated server-side (resolveFeedbackRef + ticketViewAccess): a member gets the full
-        // ticket, a non-member gets the redacted teaser / login gate → no data leak.
+        // Success-screen deep link ("Open in Klavity") returned for EVERY widget submit — including
+        // anonymous / cross-origin end-users on a customer's site. It points at the FAST single-ticket
+        // page rather than cold-booting the whole dashboard SPA (#727 — Raghu flagged the ~15s board
+        // load). KLA-782: the link SHAPE now depends on the reporter (see below) — a MEMBER gets the
+        // pretty /<slug>/<KEY>-<n> permalink; an ANON reporter gets the unguessable /t/<fb_id> teaser,
+        // because the pretty route is projectAccess-gated and would 403 an anon reporter after login.
+        // (/t/:ref itself stays member-gated via resolveFeedbackRef + ticketViewAccess: member → full
+        // ticket, non-member → redacted teaser / login gate → no data leak either way.)
         const dashBase = baseOrigin || reqOrigin
         // #745: prefer the pretty /<slug>/<KEY>-<n> form (resolved server-side); prettyDeepLinkUrl
         // falls back to /t/<id> when the workspace slug / project key isn't backfilled yet. Keep the
         // request/base origin (customer sites embed cross-origin) rather than forcing BASE.
+        // KLA-782: only a MEMBER submit gets the pretty permalink — that route is projectAccess-gated,
+        // so an anonymous widget reporter following it after login-resume hits 403. For an anon reporter
+        // pass no projectId so prettyDeepLinkUrl returns the unguessable /t/<fb_id> teaser link (which
+        // honors the share/teaser redaction policy) — never the enumerable member-only pretty permalink.
         const issueUrl = (feedbackId && dashBase)
-          ? await prettyDeepLinkUrl(feedbackId, submitProjectId, { origin: dashBase })
+          ? await prettyDeepLinkUrl(feedbackId, submitterIsMember ? submitProjectId : null, { origin: dashBase })
           : ""
         // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
         // hits the share link gets a warm cache (never a synchronous render on the crawler request).
@@ -9528,9 +9558,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // Load a ticket for this token's project. IDOR guard: a feedback id owned by ANOTHER project
       // resolves to null here (feedbackById is project-scoped), so cross-project ids 404 below.
-      const loadOwned = async (fid: string) => {
-        const row = await feedbackById(tpid, fid).catch(() => null)
+      // KLA-780 round-4 (codex C2 + Muse C4-4/C4-6): resolve a merged ticket id to its LIVE survivor root
+      // here so every v1 handler acts on the survivor. Callers reassign `fid = row.id` after this returns,
+      // so all downstream side-effects (comment sync, activity, PATCH meta, response reload/labels) use the
+      // survivor id — not the hidden merged row the token holder addressed.
+      const loadOwned = async (fidIn: string) => {
+        let row = await feedbackById(tpid, fidIn).catch(() => null)
         if (!row || String(row.projectId) !== tpid) return null
+        if (row.mergedInto) {
+          const liveId = await liveFeedbackId(tpid, fidIn).catch(() => fidIn)
+          if (liveId && liveId !== fidIn) {
+            const liveRow = await feedbackById(tpid, liveId).catch(() => null)
+            if (liveRow && String(liveRow.projectId) === tpid) row = liveRow
+          }
+        }
         return row
       }
 
@@ -9619,9 +9660,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // (cross-project id → 404). Mirrors GET /api/feedback/:id/replay exactly: the ALREADY-gzipped
       // bytes stream out with Content-Encoding: gzip + the x-klv-* meta headers, private + no-store.
       if (replayMatch && req.method === "GET") {
-        const fid = replayMatch[1]
+        let fid = replayMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: merged id → survivor replay.
         const raw = await getFeedbackReplayGz(tpid, fid).catch(() => null)
         if (!raw) return v1err("not_found", "No replay for this ticket.", 404)
         return withSecurityHeaders(new Response(raw.gz, {
@@ -9640,9 +9682,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET/POST /api/v1/tickets/:id/comments
       if (commentsMatch) {
-        const fid = commentsMatch[1]
+        let fid = commentsMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: redirect merged id → survivor for all downstream ops.
         if (req.method === "GET") {
           try {
             const comments = (await listTicketComments(fid)).map((c) => ({ id: c.id, author: c.author, body: c.body, created_at: c.createdAt }))
@@ -9677,9 +9720,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET /api/v1/tickets/:id/activity — merged comment/activity/export timeline.
       if (activityMatch && req.method === "GET") {
-        const fid = activityMatch[1]
+        let fid = activityMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: merged id → survivor timeline.
         try {
           const events = await ticketActivityTimeline(tpid, fid)
           return json({ ticket_id: fid, events })
@@ -9691,9 +9735,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // GET (enriched) / PATCH /api/v1/tickets/:id
       if (singleMatch) {
-        const fid = singleMatch[1]
+        let fid = singleMatch[1]
         const row = await loadOwned(fid)
         if (!row) return v1err("not_found", "Unknown ticket_id.", 404)
+        fid = row.id // route-boundary live-id: merged id → survivor for GET enrich + PATCH side-effects.
 
         if (req.method === "GET") {
           try {
@@ -11136,7 +11181,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const [personas, feedbackTickets, activityRows, simObservations] = await Promise.all([
             listPersonas(wid),
             // All recent feedback (not just withTicketOnly) — Klavity Cloud is the primary ticket system.
-            listFeedback(projectId, { limit: 12 }),
+            // KLA-779: this array becomes `state.tickets` on the client — the source the overview "Recent
+            // tickets" preview and, crucially, the kanban's fallback (renderTicketsKanban → sourceTickets)
+            // read from. A 12-row cap starved the "My items"/assignee filter to a handful even when 20+ were
+            // assigned. Raise to a bounded 50 (matches the list view's page size, well under the board's 200)
+            // so quick-filters over state.tickets can surface 20+ without an unbounded per-poll payload.
+            listFeedback(projectId, { limit: 50 }),
             // Non-admins see only their own activity (own-rows-only); admins see all.
             listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
             // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.
@@ -11245,7 +11295,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // #745: workspace slug + project key are constant for this project-scoped board — resolve
           // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
           // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
-          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null }))
+          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
           const tickets = feedbackTickets.map(f => {
             const p = f.simId ? personaById.get(f.simId) : null
             const meta = ticketMetaRows[f.id] ?? { status: "open", assignee: null, notes: null, recurrence: 1, recurrenceDatesJson: null, lastSeenAt: null, resolvedAt: null, createdAt: f.createdAt }
@@ -11970,7 +12020,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Resolve the feedback's project via feedbackById across accessible projects.
       const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
-        const fid = feedbackIdMatch[1]
+        let fid = feedbackIdMatch[1]
         const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
         const labelIdParam = feedbackIdMatch[3] || null
         const isExport = feedbackSubroute === "/export"
@@ -12019,6 +12069,21 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         if (!fbRow) return json({ error: "Feedback not found or not accessible." }, 404)
+
+        // KLA-780 round-4 (codex C2 + Muse C4-4/C4-6): route-boundary live-id resolution. If this ticket
+        // was merged into a survivor, redirect fid + fbRow to the LIVE root ONCE here so every downstream
+        // side-effect below — comment insert + pushCommentToLinkedIssues, annotations, attachments,
+        // label attach/detach + syncTicketFields, PATCH meta + activity/audit + notify + autoCopy, and the
+        // reload/response — acts on the survivor, not the hidden merged row. Skipped for /merge and /split,
+        // which manage merged-state themselves (merge resolves the survivor internally; split operates on
+        // the head the caller named). Reads follow to the survivor too (old permalink → survivor timeline).
+        if (fbRow.mergedInto && !isMerge && !isSplit) {
+          const liveId = await liveFeedbackId(fbRow.projectId, fid).catch(() => fid)
+          if (liveId && liveId !== fid) {
+            const liveRow = await feedbackById(fbRow.projectId, liveId).catch(() => null)
+            if (liveRow) { fid = liveId; fbRow = liveRow }
+          }
+        }
 
         // GET /api/feedback/:id/replay — the stored rrweb session-replay events for a ticket, so the
         // dashboard viewer can play them. Project-scoped (access already verified via fbRow above);
@@ -12239,7 +12304,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             seqNum: fbRow.seqNum ?? null,
             // #745: workspace slug + project ticket_key so the client can build the pretty
             // /<slug>/<KEY>-<n> permalink (falls back to /t/<fb_id> when un-backfilled). Member-gated.
-            ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null }))),
+            ...(await projectAliasInfo(fbRow.projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))),
             // KLA-603: server-side "AI summary from walkthrough" (post-transcription enrichment). Null when
             // the report had no transcribed video or the reporter's description was already substantial.
             aiWalkthrough: fbRow.aiWalkthrough ?? null,
@@ -12454,7 +12519,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const result = await mergeFeedbackClusters(fbRow.projectId, fid, mergeId, me)
           if (!result) return json({ error: "Merge failed." }, 500)
           await insertActivity({
-            projectId: fbRow.projectId, type: "ticket_merged", actorEmail: me, feedbackId: fid,
+            // KLA-780 round-4 (Muse C4-4): log the event on the LIVE survivor (result.survivorId), not the
+            // request's fid — in a chain (requested survivor was itself hidden), fid resolves inside the
+            // merge to a different root, so logging fid would strand the ticket_merged event on a hidden row
+            // that the survivor's timeline (queried by feedback_id) never shows.
+            projectId: fbRow.projectId, type: "ticket_merged", actorEmail: me, feedbackId: result.survivorId,
             meta: { mergedFrom: mergeId, recurrenceCount: result.recurrenceCount },
           }).catch((e: any) => console.warn("ticket merge activity skipped:", e?.message || e))
           return json({ ok: true, survivorId: result.survivorId, recurrenceCount: result.recurrenceCount, contactEmails: result.contactEmails })
@@ -14142,9 +14211,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ labels: await listLabels(proj.id) })
         }
 
-        // POST /api/projects/:id/labels — create label (admin only) { name, color? }
+        // POST /api/projects/:id/labels — create label { name, color? }
+        // KLA-778: any project member may manage labels (create/edit/delete) — mirrors the
+        // member-accessible bulk ticket mutations (status/priority/assignee/label attach) which
+        // are NOT admin-gated. Still authed + project-scoped: `access` (any member) is required
+        // by the route entry above, and outsiders never reach here (projectAccess → 403).
         if (req.method === "POST" && sub === "/labels") {
-          if (access !== "admin") return json({ error: "Only project admins can create labels." }, 403)
           const body = await req.json().catch(() => ({}))
           const name = String(body.name ?? "").trim()
           if (!name) return json({ error: "name is required." }, 400)
@@ -14154,12 +14226,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ label }, 201)
         }
 
-        // PATCH /api/projects/:id/labels/:lid — update label (admin only) { name?, color? }
+        // PATCH /api/projects/:id/labels/:lid — update label { name?, color? }
+        // KLA-778: member-accessible (see POST above) — authed + project-scoped, outsiders 403 at route entry.
         const labelSubMatch = sub.match(/^\/labels\/([^/]+)$/)
         if (labelSubMatch) {
           const lid = labelSubMatch[1]
           if (req.method === "PATCH") {
-            if (access !== "admin") return json({ error: "Only project admins can update labels." }, 403)
             const body = await req.json().catch(() => ({}))
             const name = String(body.name ?? "").trim()
             if (!name) return json({ error: "name is required." }, 400)
@@ -14170,7 +14242,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             return json({ ok: true })
           }
           if (req.method === "DELETE") {
-            if (access !== "admin") return json({ error: "Only project admins can delete labels." }, 403)
+            // KLA-778: member-accessible (see POST above) — authed + project-scoped.
             const ok = await deleteLabel(proj.id, lid)
             if (!ok) return json({ error: "Label not found." }, 404)
             return json({ ok: true })

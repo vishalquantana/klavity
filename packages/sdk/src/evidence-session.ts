@@ -22,6 +22,10 @@ export interface EvidenceShot {
   w: number
   h: number
   ts: number
+  // KLA-772: the shot's drawn overlay ({ w, h, shapes }, the same structure the modal keeps in
+  // annotationsByIndex) so annotations survive minimize + navigation. Serializable (plain objects/arrays,
+  // no DOM nodes or functions) → structured-clone / JSON safe for IndexedDB. Absent = nothing drawn.
+  annotations?: unknown
 }
 
 /** A bug report in progress. `id` is deterministic = `${projectId}|${origin}` (one per project+origin). */
@@ -221,6 +225,27 @@ export async function updateFields(
   if (fields.desc !== undefined) cur.desc = fields.desc
   if (fields.reportType !== undefined) cur.reportType = fields.reportType
   if (fields.env !== undefined) cur.env = fields.env
+  cur.updatedAt = Date.now()
+  await putSession(cur)
+  return cur
+}
+
+/**
+ * KLA-772: persist the drawn overlay for the shot at `index` (composer strip order == session shot order).
+ * `annotations` should be JSON-safe ({ w, h, shapes } or null/undefined to clear). No-op (returns null) if the
+ * session or that index is gone. Mirrors updateFields/removeShot's read-modify-write; callers should serialize.
+ */
+export async function updateShotAnnotations(
+  sessionId: string,
+  index: number,
+  annotations: unknown,
+): Promise<EvidenceSession | null> {
+  const cur = await getById(sessionId)
+  if (!cur) return null
+  const shot = cur.shots[index]
+  if (!shot) return null
+  if (annotations == null) delete shot.annotations
+  else shot.annotations = annotations
   cur.updatedAt = Date.now()
   await putSession(cur)
   return cur

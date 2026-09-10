@@ -12,6 +12,7 @@ import {
   addShot,
   updateFields,
   removeShot,
+  updateShotAnnotations,
   clear,
   makeShotId,
   pageCount,
@@ -180,6 +181,55 @@ describe('updateFields', () => {
     expect(after!.env).toBe('QA')
     const active = await getActiveSession(PROJECT, ORIGIN)
     expect(active!.title).toBe('Broken')
+  })
+})
+
+describe('updateShotAnnotations (KLA-772)', () => {
+  const overlay = (n: number) => ({ w: 800, h: 600, shapes: [{ type: 'text', color: '#ef4444', x: n, y: n, text: 'hi ' + n, size: 26, outline: 'black' }] })
+
+  it('persists a shot overlay that survives a fresh read (round-trip)', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    await addShot(s.id, shot(10, '/a'))
+    const after = await updateShotAnnotations(s.id, 0, overlay(5))
+    expect(after!.shots[0].annotations).toEqual(overlay(5))
+    // Re-read from storage: the overlay round-tripped through the structured clone.
+    const active = await getActiveSession(PROJECT, ORIGIN)
+    expect(active!.shots[0].annotations).toEqual(overlay(5))
+  })
+
+  it('keeps overlays attached to the RIGHT shot after a mid-strip removal + re-align', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    await addShot(s.id, shot(10, '/a'))
+    const rMid = await addShot(s.id, shot(10, '/b'))
+    await addShot(s.id, shot(10, '/c'))
+    await updateShotAnnotations(s.id, 0, overlay(0))
+    await updateShotAnnotations(s.id, 1, overlay(1))
+    await updateShotAnnotations(s.id, 2, overlay(2))
+    // Remove the middle shot, then re-write the (now shifted) overlays as the widget does post-removal.
+    await removeShot(s.id, rMid.session.shots[1].id)
+    // After removal the strip is [/a, /c]; the modal's shifted map is { 0: overlay(0), 1: overlay(2) }.
+    await updateShotAnnotations(s.id, 0, overlay(0))
+    await updateShotAnnotations(s.id, 1, overlay(2))
+    const active = await getActiveSession(PROJECT, ORIGIN)
+    expect(active!.shots.map((sh) => sh.pagePath)).toEqual(['/a', '/c'])
+    expect(active!.shots[0].annotations).toEqual(overlay(0))
+    expect(active!.shots[1].annotations).toEqual(overlay(2))
+  })
+
+  it('clears an overlay when passed null (undo back to a clean image)', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    await addShot(s.id, shot(10, '/a'))
+    await updateShotAnnotations(s.id, 0, overlay(1))
+    await updateShotAnnotations(s.id, 0, null)
+    const active = await getActiveSession(PROJECT, ORIGIN)
+    expect(active!.shots[0].annotations).toBeUndefined()
+  })
+
+  it('no-ops (returns null) for an unknown session or out-of-range index', async () => {
+    const s = await startOrContinue(PROJECT, ORIGIN)
+    await addShot(s.id, shot(10, '/a'))
+    expect(await updateShotAnnotations('nope|nope', 0, overlay(1))).toBeNull()
+    expect(await updateShotAnnotations(s.id, 9, overlay(1))).toBeNull()
   })
 })
 

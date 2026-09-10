@@ -72,7 +72,7 @@ function fakeBrowser(closeSpy: { count: number }) {
     assertTextContains: async () => {},
     assertUrlMatches: async () => {},
     assertElementCount: async () => {},
-    waitMs: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {},
     mockNetwork: async () => {},
   }
   return {

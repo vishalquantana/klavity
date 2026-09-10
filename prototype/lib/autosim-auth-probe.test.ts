@@ -49,7 +49,7 @@ function makeFakePage(landedUrl: string, showAuthGate: boolean): BrowserPage {
   return {
     url: () => currentUrl,
     goto: async (u: string) => { currentUrl = landedUrl },
-    waitMs: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {},
     krefSnapshot: async () => showAuthGate ? 'button "Sign in" [ref=e1]' : 'button "Dashboard" [ref=e1]',
     screenshotJpeg: async () => "",
     count: async () => 0,

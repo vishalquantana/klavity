@@ -42,7 +42,7 @@ const LOGIN_DOM = `<html><body><form>
 function makeStuckPage(opts: {
   // If set, click on this selector triggers the page to "advance" (dom changes to DONE_DOM)
   submitSelector?: string
-}): BrowserPage & { advanceCount: number; clickLog: string[] } {
+}): BrowserPage & { advanceCount: number; clickLog: string[]; settleCount: number } {
   let currentDom = LOGIN_DOM
   let currentUrl = "https://example.com/login"
   let advanceCount = 0
@@ -50,8 +50,10 @@ function makeStuckPage(opts: {
 
   const DONE_DOM = `<html><body><p id="otp">Enter the code sent to your email.</p></body></html>`
 
-  const page: BrowserPage & { advanceCount: number; clickLog: string[] } = {
+  let settleCount = 0
+  const page: BrowserPage & { advanceCount: number; clickLog: string[]; settleCount: number } = {
     advanceCount: 0,
+    settleCount: 0,
     clickLog,
     url: () => currentUrl,
     goto: async (url: string) => { currentUrl = url; currentDom = LOGIN_DOM },
@@ -99,7 +101,7 @@ function makeStuckPage(opts: {
     assertTextContains: async () => {},
     assertUrlMatches: async () => {},
     assertElementCount: async () => {},
-    waitMs: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => { settleCount++; page.settleCount = settleCount },
     interceptNetwork: async () => {},
     guardNavigations: async () => {},
   } as any
@@ -166,6 +168,9 @@ test("(A) loop-recovery: model that repeats type twice gets nudge and then recov
     h.toLowerCase().includes("did not change") || h.toLowerCase().includes("different action")
   )
   expect(hasNudge).toBe(true)
+  // KLA (BookJoy Save-loop): the recovery click is a commit action, so the loop settled the network
+  // afterward (so the next snapshot would capture an AJAX result) — proves settleNetwork is wired post-click.
+  expect(page.settleCount).toBeGreaterThan(0)
 })
 
 // ── (B) Auto-advance fires when model still doesn't change after nudge ───────────────────────────
@@ -290,6 +295,7 @@ test("(D) loop-recovery: auto-advance skips selectors matching >1 element", asyn
 //        never fires — only the repeated-successKey guard trips. It must auto-submit, not fail. ───────
 test("(E) repeated type where the snapshot keeps changing still auto-advances (BookJoy login fix)", async () => {
   let snapN = 0
+  let settleN = 0
   let currentUrl = "https://example.com/v2/login"
   let dom = `<html><body><form>
     <input type="email" aria-label="Email" id="email" value="a@b.com"/>
@@ -311,7 +317,7 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel); if (sel === 'button[type="submit"]') { currentUrl = "https://example.com/dashboard"; dom = `<html><body><p id="ok">Signed in.</p></body></html>` } },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
-    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, settleNetwork: async () => { settleN++ }, interceptNetwork: async () => {}, guardNavigations: async () => {},
   }
   const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
 
@@ -335,6 +341,9 @@ test("(E) repeated type where the snapshot keeps changing still auto-advances (B
 
   // Neg-control: without the successKey→auto-submit fix, this run STALLS (repeated type never submits).
   expect(clickLog).toContain('button[type="submit"]') // auto-advance submitted the filled form
+  // KLA (BookJoy Save-loop): the auto-submit helper settled the network before the post-click snapshot,
+  // so a no-nav AJAX login result would be captured (not the pre-response DOM).
+  expect(settleN).toBeGreaterThan(0)
   expect(out.status).toBe("crystallized")
   expect(out.stallReason).toBeNull()
   // C1-1: the recovery CLICK must be PERSISTED in the crystallized trail — else replay types the fields
@@ -358,7 +367,7 @@ test("(F) repeated type on a non-login form does NOT auto-submit (C2-1 scope gua
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel) },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
-    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
   }
   const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
   const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Search"]', value: "hi", url: null, checkpoint: null, rationale: "search" }, costUsd: 0 })
@@ -387,7 +396,7 @@ test("(G) a no-op auto-submit is attempted once, then the run stalls (C2-2)", as
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel) /* NO-OP: never advances */ },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
-    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
   }
   const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
   const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Password"]', value: "x", url: null, checkpoint: null, rationale: "type pw" }, costUsd: 0 })
@@ -420,7 +429,7 @@ test("(H) page has a password field but repeated type is in a search box → NOT
     stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\w+"\]/g, ""),
     click: async (sel: string) => { clickLog.push(sel) },
     fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
-    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {}, waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
   }
   const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
   const model: AuthorModel = async () => ({ action: { op: "type", selector: 'input[aria-label="Search"]', value: "hi", url: null, checkpoint: null, rationale: "search" }, costUsd: 0 })

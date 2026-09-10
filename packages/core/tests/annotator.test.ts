@@ -1,6 +1,6 @@
 // packages/core/tests/annotator.test.ts
 import { describe, it, expect, vi } from 'vitest'
-import { Annotator, haloColor, luminance, parseColor } from '../src/annotator'
+import { Annotator, haloColor, luminance, parseColor, wrapTextLines } from '../src/annotator'
 import type { Shape } from '../src/types'
 
 /** Build a ctx that RECORDS every strokeStyle + lineWidth assignment (in order), plus a sync-decode Image
@@ -292,5 +292,80 @@ describe('Annotator', () => {
         expect(strokeStyles.some(s => /17,\s*17,\s*17/.test(s))).toBe(true)    // dark halo pass
       }
     })
+  })
+})
+
+// ── KLA-770: long text must WRAP/clamp within the image, and text shapes must be hit-testable for drag. ──
+describe('text wrapping + bounds (KLA-770)', () => {
+  // A deterministic measurer: every character is 10px wide. Lets us assert wrap points exactly.
+  const measure10 = (s: string) => s.length * 10
+
+  it('wrapTextLines keeps each line within the max width', () => {
+    const lines = wrapTextLines(measure10, 'the quick brown fox', 100) // 100px = 10 chars
+    for (const ln of lines) expect(measure10(ln)).toBeLessThanOrEqual(100)
+    // Nothing dropped: the words survive across the wrap.
+    expect(lines.join(' ').replace(/\s+/g, ' ').trim()).toBe('the quick brown fox')
+  })
+
+  it('wrapTextLines hard-breaks a single word longer than the limit', () => {
+    const lines = wrapTextLines(measure10, 'supercalifragilistic', 50) // 5 chars per line
+    expect(lines.length).toBeGreaterThan(1)
+    for (const ln of lines) expect(ln.length).toBeLessThanOrEqual(5)
+    expect(lines.join('')).toBe('supercalifragilistic')
+  })
+
+  it('wrapTextLines honours explicit newlines and never returns empty', () => {
+    expect(wrapTextLines(measure10, 'a\nb', 1000)).toEqual(['a', 'b'])
+    expect(wrapTextLines(measure10, '', 1000)).toEqual([''])
+  })
+
+  it('wrapTextLines treats a non-positive/non-finite width as no limit (one line per paragraph)', () => {
+    expect(wrapTextLines(measure10, 'a very long line', 0)).toEqual(['a very long line'])
+    expect(wrapTextLines(measure10, 'a very long line', Infinity)).toEqual(['a very long line'])
+  })
+
+  it('textBounds returns a clamped, wrapped box for a text shape (and null for non-text)', () => {
+    const ctx: any = {
+      canvas: { width: 200, height: 120 }, font: '',
+      measureText: (s: string) => ({ width: s.length * 10 }),
+    }
+    const canvas = { width: 200, height: 120, getContext: () => ctx } as unknown as HTMLCanvasElement
+    const a = new Annotator(canvas, 'data:image/png;base64,img')
+    const b = a.textBounds({ type: 'text', color: '#ef4444', x: 20, y: 10, text: 'hello world here', size: 20 })
+    expect(b).not.toBeNull()
+    // Wrapped to the 200px-wide image → the box width never exceeds the room to the right edge.
+    expect(b!.w).toBeLessThanOrEqual(200)
+    expect(b!.h).toBeGreaterThan(0)
+    expect(a.textBounds({ type: 'rect', color: '#ef4444', x: 0, y: 0, w: 5, h: 5 })).toBeNull()
+  })
+
+  it('clamps a MULTI-LINE label against the full wrapped height (never spills below the canvas) (KLA-770)', () => {
+    const ctx: any = { canvas: { width: 200, height: 120 }, font: '', measureText: (s: string) => ({ width: s.length * 10 }) }
+    const canvas = { width: 200, height: 120, getContext: () => ctx } as unknown as HTMLCanvasElement
+    const a = new Annotator(canvas, 'data:image/png;base64,img')
+    // 3 explicit lines placed way off the bottom; size 20 → lineHeight 25 → block height 75.
+    const b = a.textBounds({ type: 'text', color: '#ef4444', x: 20, y: 5000, text: 'aaa\nbbb\nccc', size: 20 })
+    expect(b!.h).toBeGreaterThanOrEqual(75)          // three lines tall
+    expect(b!.y + b!.h).toBeLessThanOrEqual(120)     // the WHOLE block stays inside the canvas
+  })
+
+  it('a label near the right edge wraps into the remaining width (no size-floor overflow) (KLA-770)', () => {
+    const ctx: any = { canvas: { width: 200, height: 120 }, font: '', measureText: (s: string) => ({ width: s.length * 10 }) }
+    const canvas = { width: 200, height: 120, getContext: () => ctx } as unknown as HTMLCanvasElement
+    const a = new Annotator(canvas, 'data:image/png;base64,img')
+    const b = a.textBounds({ type: 'text', color: '#ef4444', x: 190, y: 10, text: 'hello world here', size: 20 })
+    expect(b!.x + b!.w).toBeLessThanOrEqual(200)     // never extends past the right edge
+  })
+
+  it('textBounds clamps an off-canvas anchor back inside the image bounds', () => {
+    const ctx: any = {
+      canvas: { width: 200, height: 120 }, font: '',
+      measureText: (s: string) => ({ width: s.length * 10 }),
+    }
+    const canvas = { width: 200, height: 120, getContext: () => ctx } as unknown as HTMLCanvasElement
+    const a = new Annotator(canvas, 'data:image/png;base64,img')
+    const b = a.textBounds({ type: 'text', color: '#ef4444', x: 5000, y: 5000, text: 'x', size: 20 })
+    expect(b!.x).toBeLessThan(200)
+    expect(b!.y).toBeLessThan(120)
   })
 })
