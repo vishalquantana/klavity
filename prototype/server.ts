@@ -6239,12 +6239,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // not here — there is no longer any inline external filing on this endpoint (KLAVITYKLA-288),
         // so this is the ONE exit for a successful submission.
         //
-        // Success-screen deep link: point straight at the FAST single-ticket page (/t/<feedbackId>)
-        // so "Open in Klavity" renders just this report instead of cold-booting the whole dashboard
-        // SPA (#727 — Raghu flagged the ~15s board load). #651: this link is returned for EVERY widget
-        // submit — including anonymous / cross-origin end-users on a customer's site. /t/:ref is
-        // member-gated server-side (resolveFeedbackRef + ticketViewAccess): a member gets the full
-        // ticket, a non-member gets the redacted teaser / login gate → no data leak.
+        // Success-screen deep link ("Open in Klavity") returned for EVERY widget submit — including
+        // anonymous / cross-origin end-users on a customer's site. It points at the FAST single-ticket
+        // page rather than cold-booting the whole dashboard SPA (#727 — Raghu flagged the ~15s board
+        // load). KLA-782: the link SHAPE now depends on the reporter (see below) — a MEMBER gets the
+        // pretty /<slug>/<KEY>-<n> permalink; an ANON reporter gets the unguessable /t/<fb_id> teaser,
+        // because the pretty route is projectAccess-gated and would 403 an anon reporter after login.
+        // (/t/:ref itself stays member-gated via resolveFeedbackRef + ticketViewAccess: member → full
+        // ticket, non-member → redacted teaser / login gate → no data leak either way.)
         const dashBase = baseOrigin || reqOrigin
         // #745: prefer the pretty /<slug>/<KEY>-<n> form (resolved server-side); prettyDeepLinkUrl
         // falls back to /t/<id> when the workspace slug / project key isn't backfilled yet. Keep the
