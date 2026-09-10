@@ -5721,6 +5721,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // tracker — it was meant for Klavity, and leaking it into a customer's Jira is a data breach.
             // (5 Klavity bug reports leaked into customers' Jira as PX4D-*/SIM-1520 when the env was unset.)
             let klavityFailsafeToOrigin = false
+            // KLA-785: true when the report was REROUTED to the Klavity intake project (a DIFFERENT project the
+            // submitting member likely can't access) — used at the success-exit to avoid handing them a
+            // member-only pretty permalink for a project they'd 403 on.
+            let klavityRerouted = false
             if (resolved && wantsKlavityIntake) {
               const originProject = resolved
               const intakeId = (process.env.KLAVITY_INTAKE_PROJECT_ID || "").trim()
@@ -5731,6 +5735,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (intakeProj && intakeProj.id !== originProject.id) {
                 // Route into the Klavity intake project; carry the full origin context in the body.
                 resolved = intakeProj
+                klavityRerouted = true // KLA-785: the final project is NOT the one the member was validated against
                 klavityRerouteNote = `[Reported via the Klavity widget on ${originProject.name || originProject.id}` +
                   (reportUrl ? ` — ${reportUrl}` : "") + `] — ${originCtx}`
               } else {
@@ -5750,6 +5755,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // means the reporter is a workspace member (resolveProject only resolves projects the actor
               // can access) → safe to hand them the member-gated pretty permalink at the exit.
               submitterIsMember = !!actor && !anonWidgetAllowed
+              // KLA-785: BUT if the report was rerouted to the Klavity intake project, `resolved` is no longer
+              // the project the actor was validated against — they likely can't access the intake project, so
+              // its pretty permalink would 403. Re-check access to the FINAL project; if none, fall back to the
+              // /t/<fb_id> teaser (fail-closed) rather than hand out a link they can't open.
+              if (submitterIsMember && klavityRerouted) {
+                submitterIsMember = !!(await projectAccess(actor as string, projectId).catch(() => null))
+              }
               // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
               // attachments + recordings), now that the project is resolved. Fire-and-forget.
               {

@@ -70,6 +70,16 @@ await rawExec(
   `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES ('p2', 'a1', 'Email-Gated Project', 'active', 'auto', 'named', '{}', 'support', 'https://klavity.in/onboarding', 'lead@x.com', 'email', ?, ?)`,
   [now, now]
 )
+// KLA-785: a SEPARATE account a2 + project p3 = the Klavity intake project. MEMBER_EMAIL is NOT a member of
+// a2/p3, so a member report rerouted here (feedback_target=klavity) must NOT get p3's member-only pretty link.
+await rawExec(
+  `INSERT INTO accounts (id, name, owner_email, domain, plan, created_at) VALUES ('a2', 'Klavity Intake Acct', 'klavity@klavity.in', 'klavity.in', 'free', ?)`,
+  [now]
+)
+await rawExec(
+  `INSERT INTO projects (id, account_id, name, status, review_mode, observability_mode, modal_config_json, widget_mode, widget_cta_url, widget_notify_email, widget_report_gate, created_at, updated_at) VALUES ('p3', 'a2', 'Klavity Intake', 'active', 'auto', 'named', '{}', 'support', 'https://klavity.in/onboarding', 'lead@x.com', 'anonymous', ?, ?)`,
+  [now, now]
+)
 // KLA-782: seed an authenticated MEMBER (a1's owner) + a session so a first-party member submit can be
 // tested. getSession() dual-reads the raw id (legacy fallback), so a plaintext session id works here.
 const MEMBER_EMAIL = "owner@test.local"
@@ -100,6 +110,7 @@ beforeAll(async () => {
       KLAV_BASE_URL: BASE,
       KLAV_ALLOWED_DOMAINS: "test.local",
       KLAV_DEV_SHOW_OTP: "1",
+      KLAVITY_INTAKE_PROJECT_ID: "p3", // KLA-785: route feedback_target=klavity into p3 (a2), which MEMBER can't access
       SENDGRID_API_KEY: "",
       KLAV_MAIL_FROM: "",
       OPENROUTER_API_KEY: "test-key",
@@ -208,6 +219,27 @@ test("KLA-782: authenticated member submit keeps the pretty permalink (falls bac
 
 // ── Test 2b (JTBD 1.7): an EXPLICIT 'email' gate (p2) still rejects a submit with no email (400) ──
 // Explicit email/login gate configs must behave exactly as before the default flipped to anonymous.
+test("KLA-785: a MEMBER rerouted to the Klavity intake project (feedback_target=klavity) gets the /t/ teaser, NOT the intake pretty link", async () => {
+  const fd = new FormData()
+  fd.set("description", "member reports to klavity")
+  fd.set("project_id", "p1")            // member is owner of a1/p1 …
+  fd.set("feedback_target", "klavity")  // …but this reroutes the report into p3 (a2), which they can't access
+  const r = await fetch(`${BASE}/api/feedback`, {
+    method: "POST", body: fd,
+    headers: { origin: BASE, cookie: `klav_session=${MEMBER_SID}` },
+  })
+  expect(r.status).toBe(200)
+  const j = await r.json()
+  expect(j.saved).toBe(true); expect(j.id).toBeTruthy()
+  // The report landed in the intake project p3 (reroute fired) …
+  const row = (await rawClient.execute({ sql: `SELECT project_id FROM feedback WHERE id=?`, args: [j.id] })).rows[0] as any
+  expect(String(row.project_id)).toBe("p3")
+  // … and because the member can't access p3, the deep-link is the opaque /t/ teaser, NOT p3's member-only
+  // pretty permalink (which would 403 after login-resume — the KLA-785 bug).
+  expect(j.issue_url).toBe(`${BASE}/t/${j.id}`)
+  expect(j.issue_url).not.toMatch(/\/[^/]+\/[A-Z0-9]+-\d+$/)
+})
+
 test("explicit email-gated project rejects a cross-origin submit with no email (400)", async () => {
   const fd = new FormData()
   fd.set("description", "x"); fd.set("project_id", "p2")
