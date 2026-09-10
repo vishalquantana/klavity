@@ -497,6 +497,7 @@ export async function resolveTarget(
   cachedSelector: string | null,
   fp: Fingerprint | null,
   expectedUrl?: string,
+  attachWaitMs: number = RESOLVE_ATTACH_MS,
 ): Promise<ResolveResult> {
   // Tier 0: the cached concrete selector, verbatim. Zero work, zero heal.
   if (cachedSelector) {
@@ -504,7 +505,11 @@ export async function resolveTarget(
     // KLA-790: bounded attach-wait before the instantaneous count() so a not-yet-rendered element (common
     // on replay right after a navigation) isn't mistaken for drift. Never throws; on timeout we proceed to
     // count()/heal exactly as before, so ambiguous (>1) and genuinely-gone (0) semantics are unchanged.
-    try { await loc.first().waitFor({ state: "attached", timeout: RESOLVE_ATTACH_MS }) } catch { /* fall through */ }
+    // The caller clamps attachWaitMs to the remaining walk deadline (review C3); a non-positive budget skips
+    // the wait entirely — Playwright treats timeout:0 as "wait forever", so we must NOT pass 0.
+    if (attachWaitMs > 0) {
+      try { await loc.first().waitFor({ state: "attached", timeout: attachWaitMs }) } catch { /* fall through */ }
+    }
     const count = await loc.count()
     if (count === 1) {
       return { tier: "cache", selector: cachedSelector, locator: loc, healed: false, confidence: CACHE_CONFIDENCE }
@@ -946,7 +951,7 @@ export async function walkTrail(projectId: string, trailId: string, opts: WalkOp
     // KLA-790: goto only waits for 'load'; many apps render key UI async after that (BookJoy's login
     // form). Settle the network so the first step resolves against a rendered page — mirroring authoring's
     // post-action settleNetwork that the replay path otherwise lacked. Best-effort (never blocks the walk).
-    await page.waitForLoadState("networkidle", { timeout: Math.min(opTimeout, 8_000) }).catch(() => {})
+    await page.waitForLoadState("networkidle", { timeout: Math.max(1, Math.min(opTimeout, 8_000, deadline - Date.now())) }).catch(() => {})
 
     // Track the document URL across steps so a full-page navigation (click-driven or explicit
     // navigate) becomes a segment boundary: flush the page just LEFT, tagged with the idx of the
@@ -1364,7 +1369,10 @@ async function runOneStep(
 
   let resolved: ResolveResult
   try {
-    resolved = await resolveTarget(page, cachedSelector, fp, stepPageUrl)
+    // KLA-790 (review C3): clamp the Tier-0 attach-wait to the remaining walk deadline so it can't overshoot
+    // a tight budget (deadline is Infinity when unbudgeted → full RESOLVE_ATTACH_MS).
+    const attachBudget = Math.min(RESOLVE_ATTACH_MS, deadline - Date.now())
+    resolved = await resolveTarget(page, cachedSelector, fp, stepPageUrl, attachBudget)
   } catch (e) {
     if (e instanceof AmbiguousSelector) {
       // The crystallized selector matched N>1 elements — this is a data-quality problem,
