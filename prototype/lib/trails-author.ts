@@ -395,6 +395,14 @@ export async function authorTrail(
   // branch) discard the region state we just restored from the checkpoint. Preserve it across that one
   // comparison; genuine progress after that resets it normally.
   let firstPostResumeIter = !!cp
+  // KLA-786 (round-5): observed live on BookJoy — after a silent Save the model does NOT emit "done"; it
+  // oscillates type→Save→type (no visible confirmation to tell it it's finished) until the stall guard
+  // trips. The nudge alone can't make an LLM finish. So after this many consecutive unconfirmed-commit
+  // iterations, the LOOP takes over: it synthesizes a "done" (→ the forced read-back + verifier decides
+  // against server truth) instead of waiting for the model. Bounded and self-correcting — if the change
+  // did NOT persist the verifier rejects and the run continues with the (reloaded) empty field.
+  const PROACTIVE_VERIFY_AFTER = 2
+  let commitNudgeCount = 0
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
@@ -530,6 +538,9 @@ export async function authorTrail(
       // the previous action had no visible effect (e.g. re-typing the same field value, clicking
       // something that didn't respond). Inject an escalating nudge so the model tries a different
       // action rather than fixating on the same no-op step until the stall-reroll gives up.
+      // KLA-786 (round-5): set by the guard when an unconfirmed commit has persisted long enough that
+      // the loop should verify directly instead of nudging the model again (see PROACTIVE_VERIFY_AFTER).
+      let forceProactiveDone = false
       {
         // Strip kref attribute numbers before hashing — they are renumbered every capture and would
         // make every iteration look different even when the real page content is identical.
@@ -546,11 +557,21 @@ export async function authorTrail(
             // KLA-786 (round-3): the single sticky flag routes here across further no-op iterations (a
             // model answering with another no-op can't fall through to auto-advance) AND is the done gate.
             unconfirmedCommitPending = true
-            // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation error
-            // also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text still
-            // sits in the field, so a DOM-judging verifier could falsely certify. Require an INDEPENDENT
-            // confirmation before "done" (also enforced by the "done" handler, which forces a reload).
-            history.push(`(NOTICE: your last action (a click/submit) completed but the page did not visibly change. This may mean an AJAX save/submit persisted without a visible confirmation, OR that it silently failed. Do NOT blindly repeat the same action. Confirm it actually took effect via a genuinely DIFFERENT check — e.g. reload the page or navigate to where the change should appear and read it back. Only once you have confirmed it, respond with the "done" op to verify and finish.)`)
+            commitNudgeCount++
+            if (commitNudgeCount >= PROACTIVE_VERIFY_AFTER) {
+              // KLA-786 (round-5): the model has been nudged but keeps re-committing / re-typing instead of
+              // finishing (no visible confirmation to tell it the save worked — observed live on BookJoy).
+              // Stop waiting: take over and verify directly this iteration. forceProactiveDone routes to the
+              // "done" handler below, which forces the independent read-back reload and lets the verifier
+              // decide against server truth (achieved → crystallize; not → continue with the reloaded state).
+              forceProactiveDone = true
+            } else {
+              // KLA-786 (round-1 C2): do NOT assert the save succeeded — a transient 5xx / validation error
+              // also leaves the DOM unchanged after a commit+settle, and the typed-but-unsaved text still
+              // sits in the field, so a DOM-judging verifier could falsely certify. Require an INDEPENDENT
+              // confirmation before "done" (also enforced by the "done" handler, which forces a reload).
+              history.push(`(NOTICE: your last action (a click/submit) completed but the page did not visibly change. This may mean an AJAX save/submit persisted without a visible confirmation, OR that it silently failed. Do NOT blindly repeat the same action. Confirm it actually took effect via a genuinely DIFFERENT check — e.g. reload the page or navigate to where the change should appear and read it back. Only once you have confirmed it, respond with the "done" op to verify and finish.)`)
+            }
           } else if (noOpCount >= NO_OP_AUTO_ADVANCE_AFTER) {
             // 2nd+ consecutive no-change iteration (NO_OP_AUTO_ADVANCE_AFTER): try clicking the most
             // likely submit control before falling back to model guidance. This handles the "stuck on
@@ -602,6 +623,7 @@ export async function authorTrail(
             // Real progress resets the per-region auto-advance cap. (While a commit is unconfirmed the
             // guard never reaches auto-advance anyway, so this only matters once the gate has cleared.)
             autoAdvanceClicks = 0
+            commitNudgeCount = 0
           }
           // KLA-786 (round-2 C3 / round-3): do NOT clear unconfirmedCommitPending here. Incidental DOM
           // progress (a modal/tab opening) is NOT an independent confirmation that the silent commit
@@ -622,8 +644,15 @@ export async function authorTrail(
       // KLA-69: hoist modelInput + modelCtx out of inner block so the stall-reroll can reuse them.
       const modelInput = { objective: req.objective, pageUrl: page.url(), screenshotB64, mediaType: "image/jpeg", domSnapshot: dom, history, credFields, uploads: opts.uploadNames }
       const modelCtx = { projectId, email: req.createdBy ?? null, projectInstructions }
-      let r!: { action: AuthorAction; costUsd: number }
-      {
+      // KLA-69: `let` so the stall second-opinion block can replace the action with a reroll result.
+      let a: AuthorAction
+      if (forceProactiveDone) {
+        // KLA-786 (round-5): the loop decides to verify directly rather than call the model again. Synthesize
+        // a "done" — the handler below forces the independent read-back and lets the verifier judge server
+        // truth. No model call is spent. (isAuthGate/stall-reroll below are no-ops for a "done" action.)
+        a = { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "(auto-verify: a commit produced no visible change and the model did not finish — confirming persistence directly)" }
+      } else {
+        let r!: { action: AuthorAction; costUsd: number }
         let lastErr: unknown = null
         let succeeded = false
         for (let attempt = 0; attempt < MAX_API_RETRIES; attempt++) {
@@ -649,10 +678,9 @@ export async function authorTrail(
           if (misses >= MAX_CONSECUTIVE_MISSES) return await stall(`stuck after ${misses} failed model calls; last error: ${errMsg}`, page.url())
           continue
         }
+        llmCalls++; costUsd += r.costUsd || 0
+        a = r.action
       }
-      llmCalls++; costUsd += r.costUsd || 0
-      // KLA-69: `let` so the stall second-opinion block can replace the action with a reroll result.
-      let a = r.action
       // KLA-179: the model classifies the current page as an auth gate (login form / OTP prompt /
       // OAuth-only wall) as one extra field on the action it already returns — no extra LLM call.
       // When there's no verified auth method to get past it, we PAUSE (not fail): suspend in the
@@ -734,6 +762,7 @@ export async function authorTrail(
           unconfirmedCommitPending = false
           didForcedReadBack = true
           autoAdvanceClicks = 0 // the reload is a fresh region — restore the per-region auto-advance budget
+          commitNudgeCount = 0 // the region is resolved (confirmed or will be re-armed by a fresh commit)
           prevIterDomKey = null // the reload is real progress; don't let the next guard treat it as a no-op
           history.push(`(confirmation: reloaded the page to independently verify the change persisted before finishing)`)
         }

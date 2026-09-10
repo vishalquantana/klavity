@@ -737,6 +737,33 @@ test("(L) KLA-786: an auto-verify stub (no OPENROUTER_API_KEY) does not certify 
   expect(out.objectiveVerified).toBeFalsy()
 })
 
+// ── (M) KLA-786 (round-5): loop proactively verifies a persisted save the model won't finish ─────────
+
+test("(M) KLA-786: when the model keeps re-saving without finishing, the loop verifies and crystallizes", async () => {
+  // The live BookJoy scenario: the note DID save (AJAX, no visible confirmation), but the model oscillates
+  // Save→Save and never emits done. After PROACTIVE_VERIFY_AFTER unconfirmed-commit iterations the LOOP
+  // takes over: forces the read-back and runs the verifier. The reloaded page still holds the note, so the
+  // objective is confirmed and the run crystallizes — WITHOUT the model ever emitting "done".
+  const { page, state } = notesPage({}) // reload returns the same still-saved NOTES_DOM (note present)
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  let sawModelDone = false
+  const model: AuthorModel = async () => {
+    // The model NEVER emits done — it just keeps clicking Save.
+    return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save the note again" }, costUsd: 0 }
+  }
+  const verifier = async (input: any) => ({ achieved: /test note/.test(String(input.domSnapshot)), reason: "note present", costUsd: 0 })
+  const out = await authorTrail("proj_loop_m", { name: "Save note", objective: "save a note on the customer", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  // The loop confirmed the persisted save on its own and finished — no runaway loop, no model "done" needed.
+  expect(out.status).toBe("crystallized")
+  expect(out.objectiveVerified).toBeTruthy()
+  expect(sawModelDone).toBe(false) // the model never emitted done; the loop verified proactively
+  expect(state.gotoCount).toBeGreaterThanOrEqual(2) // a read-back reload happened before certifying
+  // No synthetic submit-click ran while the commit was unconfirmed (only the model's own Save clicks).
+  expect(state.clickLog.every((s) => s === '#cus_notes')).toBe(true)
+})
+
 // ── (F) KLA-786 (round-1 C2): the no-op guard auto-advances a submit AT MOST ONCE per stagnation ─────
 
 test("(F) KLA-786: auto-advance does not re-fire the same submit every couple of iterations", async () => {
