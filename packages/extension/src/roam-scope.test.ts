@@ -80,6 +80,13 @@ describe('registrablePatterns', () => {
     expect(hostGlobCovers('app.example.com', '*.example.com')).toBe(false) // exact can't cover a wildcard
     expect(hostGlobCovers('*', 'anything.io')).toBe(true)
   })
+  it('collapses NESTED wildcard grants order-independently (codex round-4)', () => {
+    expect(registrablePatterns(['*.example.com'], ['*://*.sub.example.com/*', '*://*.example.com/*']))
+      .toEqual(['*://*.example.com/*'])
+    // reversed input order → same result
+    expect(registrablePatterns(['*.example.com'], ['*://*.example.com/*', '*://*.sub.example.com/*']))
+      .toEqual(['*://*.example.com/*'])
+  })
   it('dedups and keeps only matching origins from a mixed grant set', () => {
     const out = registrablePatterns(globs, [
       'https://klavity.in/*',          // manifest host — omit

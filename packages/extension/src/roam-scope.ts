@@ -73,14 +73,6 @@ function patternCovers(x: string, y: string): boolean {
   return schemeCovers && hostGlobCovers(originHost(x), originHost(y))
 }
 
-// Broadest-first: scheme "*" before a concrete scheme; host "*" before "*.x" before an exact host.
-function specificity(origin: string): number {
-  const s = originScheme(origin) === '*' ? 0 : 1
-  const h0 = originHost(origin)
-  const h = h0 === '*' ? 0 : h0.startsWith('*.') ? 1 : 2
-  return s * 3 + h
-}
-
 // Given the monitored host globs + the origins the user has actually granted
 // (chrome.permissions.getAll().origins), return the granted match patterns to register:
 // every granted origin whose host matches a monitored glob (returned VERBATIM — it is already
@@ -100,11 +92,10 @@ export function registrablePatterns(monitoredGlobs: Iterable<string>, grantedOri
     if (!globs.some((g) => hostGlobCovers(g, h) || hostGlobCovers(h, g))) continue
     seen.add(o); matched.push(o)
   }
-  // Collapse by COVERAGE (not just identical host): if one matched pattern covers another (scheme + host
-  // glob), registering both would run the content script twice on any page the narrower one matches. Sort
-  // broadest-first and greedily keep a pattern only if no already-kept pattern covers it.
-  matched.sort((a, b) => specificity(a) - specificity(b))
-  const kept: string[] = []
-  for (const o of matched) { if (!kept.some((k) => patternCovers(k, o))) kept.push(o) }
-  return kept
+  // Collapse by COVERAGE (not just identical host): registering both a pattern and one it covers would run
+  // the content script twice on any page the narrower matches. Keep only the MAXIMAL patterns — drop any
+  // pattern that ANOTHER matched pattern covers. Order-independent (no reliance on a specificity sort, which
+  // ties for nested wildcards like *.sub.example.com vs *.example.com); coverage is transitive so a chain
+  // A⊇B⊇C collapses to A. Exact-string dups were already removed above, so mutual coverage can't drop both.
+  return matched.filter((o) => !matched.some((k) => k !== o && patternCovers(k, o)))
 }
