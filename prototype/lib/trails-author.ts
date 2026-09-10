@@ -354,6 +354,14 @@ export async function authorTrail(
   // iterations (the previous action had no visible effect). noOpCount resets on any real change.
   let prevIterDomKey: string | null = null
   let noOpCount = 0
+  // KLA-786: true when the immediately-previous executed action was a COMMIT (click/keyPress/select/
+  // upload) that succeeded and had its network settled. Read by the no-op stagnation guard: a commit
+  // that leaves the DOM unchanged even post-settle is the signature of an AJAX save/submit that
+  // persists WITHOUT any visible confirmation (observed live on BookJoy: saving #customer_notes shows
+  // no toast/nav). In that case the guard must steer the model to FINISH (emit "done"), never re-click
+  // submit — re-clicking a just-committed save is the save-loop we saw. Reset to false every iteration
+  // after the guard reads it; set true only when a commit op completes successfully.
+  let prevActionWasCommit = false
   const startIdx = cp ? cp.stepIdx : 0
 
   const snapshotCheckpoint = (url: string): AuthorCheckpoint => ({
@@ -492,7 +500,15 @@ export async function authorTrail(
         const iterDomKey = `${page.url()}|${sha256hex(domWithoutKrefs)}`
         if (prevIterDomKey !== null && iterDomKey === prevIterDomKey && log.length > 0) {
           noOpCount++
-          if (noOpCount >= NO_OP_AUTO_ADVANCE_AFTER) {
+          if (prevActionWasCommit) {
+            // KLA-786: the previous action was a COMMIT (click/submit/select/upload) that we already
+            // settled the network for, yet the DOM still didn't change — the signature of an AJAX
+            // save/submit that persists without a visible confirmation. Do NOT treat it as "nothing
+            // happened" and auto-advance-click a submit (that re-fires the save → save-loop). Steer
+            // the model to FINISH: if the objective is now met it should emit the "done" op to verify;
+            // otherwise move to a genuinely different step. Never auto-advance-click on this path.
+            history.push(`(NOTICE: your last action (a click/submit) completed but the page did not visibly change — this is normal for AJAX saves/submits that persist without a confirmation message, so it likely SUCCEEDED. Do NOT repeat the same action. If the objective is now satisfied, respond with the "done" op to verify and finish; otherwise choose a genuinely different next step.)`)
+          } else if (noOpCount >= NO_OP_AUTO_ADVANCE_AFTER) {
             // Third+ no-change iteration: try clicking the most likely submit control before
             // falling back to model guidance. This handles the "stuck on type, never clicks submit"
             // pattern observed live on the login form (2026-07-08 dogfood session).
@@ -522,6 +538,9 @@ export async function authorTrail(
           noOpCount = 0
         }
         prevIterDomKey = iterDomKey
+        // KLA-786: reset every iteration AFTER the guard has read it; re-armed below only when a
+        // commit op completes successfully this iteration.
+        prevActionWasCommit = false
       }
       // KLA-56: retry transient model/API errors (429, 5xx, timeout) with exponential back-off.
       // Fatal errors (budget exhausted, 401/403) stall immediately with a distinct reason.
@@ -727,6 +746,9 @@ export async function authorTrail(
           // is nudged to re-click Save → Save-loop. (type/hover/fill/assert don't commit, so skip them.)
           if (a.op === "click" || a.op === "keyPress" || a.op === "select" || a.op === "upload") {
             await bounded(page.settleNetwork(POST_ACTION_SETTLE_MS), POST_ACTION_SETTLE_MS + 1_000, "post-action network settle").catch(() => {})
+            // KLA-786: mark this as a settled commit so next iteration's no-op guard nudges the model
+            // to finish (emit "done") rather than re-click submit if the DOM still didn't change.
+            prevActionWasCommit = true
           }
           traj.push({
             action: OP2ACTION[a.op], actionValue: a.op === "type" || a.op === "select" || a.op === "keyPress" || a.op === "upload" ? a.value ?? undefined : undefined,

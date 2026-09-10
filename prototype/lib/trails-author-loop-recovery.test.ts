@@ -441,3 +441,66 @@ test("(H) page has a password field but repeated type is in a search box → NOT
   expect(clickLog).not.toContain('button[type="submit"]')
   expect(out.status).toBe("stalled")
 })
+
+// ── (E) KLA-786: AJAX save (commit, no DOM change) nudges toward "done", never re-clicks submit ─────
+
+test("(E) KLA-786: a commit that leaves the DOM unchanged nudges the model to finish, not re-submit", async () => {
+  // BookJoy's Save on #customer_notes persists via AJAX with NO observable DOM change. Clicking Save is
+  // a COMMIT, so after settling the network the loop must recognise a just-committed action that left the
+  // page unchanged as "likely saved" and steer the model to emit "done" — NOT fire the auto-advance submit
+  // (which re-clicks Save → the save-loop we saw live). A submit-candidate IS present on the page, so if the
+  // suppression were absent the auto-advance would click it.
+  const NOTES_DOM = `<html><body><form>
+    <textarea aria-label="Notes" id="customer_notes">test note</textarea>
+    <button type="submit" id="cus_notes">Save</button>
+  </form></body></html>`
+  const clickLog: string[] = []
+  let settleCount = 0
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => {}, screenshotJpeg: async () => "",
+    // DOM NEVER changes on click — the AJAX save has no visible confirmation.
+    krefSnapshot: async () => NOTES_DOM.replace(/<textarea /g, '<textarea data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
+    count: async (sel: string) => (sel === '#cus_notes' || sel === 'button[type="submit"]' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: sel.includes("notes") ? "Notes" : null, tagName: sel.includes("cus_notes") ? "BUTTON" : "TEXTAREA", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { clickLog.push(sel) /* AJAX save: no DOM/URL change */ },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => { settleCount++ }, interceptNetwork: async () => {}, guardNavigations: async () => {},
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+
+  let callCount = 0
+  const capturedHistory: string[][] = []
+  const model: AuthorModel = async (input) => {
+    callCount++
+    capturedHistory.push([...input.history])
+    // The model clicks Save a few times (each a commit that doesn't change the page). Once it sees the
+    // KLA-786 "done" nudge it should finish — but to prove the loop never auto-advances on the commit
+    // path, keep clicking Save until we finally declare done.
+    if (callCount < 4) {
+      return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save the note" }, costUsd: 0 }
+    }
+    return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "note saved" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, reason: "", costUsd: 0 })
+
+  const out = await authorTrail("proj_loop_e", { name: "Save note", objective: "save a note on the customer", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+
+  // Finished cleanly — the model emitted "done" and the verifier confirmed.
+  expect(out.status).toBe("crystallized")
+  // The auto-advance submit must NEVER have fired on the commit path — only the model's own #cus_notes
+  // clicks appear, never a synthetic button[type="submit"] auto-click.
+  expect(clickLog).not.toContain('button[type="submit"]')
+  expect(clickLog.every((s) => s === '#cus_notes')).toBe(true)
+  // The commit was settled (network idle awaited so the next snapshot could catch any AJAX result).
+  expect(settleCount).toBeGreaterThan(0)
+  // The KLA-786 nudge (steer to "done", page did not visibly change) must have been injected.
+  const sawDoneNudge = capturedHistory.flat().some((h) =>
+    h.toLowerCase().includes("did not visibly change") && h.toLowerCase().includes('"done"')
+  )
+  expect(sawDoneNudge).toBe(true)
+})
