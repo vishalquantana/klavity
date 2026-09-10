@@ -540,6 +540,20 @@ export async function authorTrail(
         await new Promise((r) => setTimeout(r, 900))
         dom = await bounded(page.krefSnapshot(), 15_000, "snapshot re-capture")
       }
+      // KLA-786 (dialog-capture): surface any JS dialogs the previous action triggered (alert/confirm/
+      // prompt). Many apps confirm a save via an alert the headless browser silently auto-dismisses
+      // (BookJoy: "Customer notes updated"), leaving no DOM trace — so the loop couldn't tell the save
+      // worked and re-clicked Save. Fold the captured text into BOTH the observation the model sees this
+      // iteration AND the persisted history, so the model/verifier get the success (or failure) signal a
+      // human sees. Appending to `dom` also means a dialog counts as "something happened" for the no-op
+      // guard below (the action had an effect even if the page markup is unchanged).
+      const dialogs = page.drainDialogs?.() ?? []
+      if (dialogs.length) {
+        const note = dialogs.map((d) => `[dialog:${d.type}] ${String(d.message).slice(0, 300)}`).join(" | ")
+        const line = `(a browser dialog appeared after the previous action and was auto-closed: ${note}. Treat this as the app's response — if it confirms the action succeeded and the objective is met, finish with "done"; if it reports an error, adjust.)`
+        history.push(line)
+        dom = `${dom}\n<!-- ${line} -->`
+      }
       // No-op stagnation guard: if the page URL + DOM hash hasn't changed since the last iteration
       // the previous action had no visible effect (e.g. re-typing the same field value, clicking
       // something that didn't respond). Inject an escalating nudge so the model tries a different

@@ -838,3 +838,46 @@ test("(N) KLA-786: a no-key refusal persists the pending gate so resume can't by
   expect(out2.objectiveVerified).toBeFalsy()
   expect(p2.state.gotoCount).toBeGreaterThanOrEqual(2) // resume re-forced an independent read-back
 })
+
+// ── (O) KLA-786 (dialog-capture): an alert-based save confirmation is surfaced to the model ──────────
+
+test("(O) KLA-786: a captured JS dialog ('Customer notes updated') is fed to the model so it can finish", async () => {
+  // BookJoy confirms a saved note with an alert the headless browser auto-dismisses (no DOM trace). The
+  // adapter now captures the text; the loop folds it into the observation + history. This fake queues that
+  // dialog after the Save click; the model finishes only once it SEES the confirmation in its input.
+  const NOTES_DOM = `<html><body><form><textarea aria-label="Notes" id="customer_notes">test note</textarea><button type="submit" id="cus_notes">Save</button></form></body></html>`
+  let pendingDialogs: { type: string; message: string }[] = []
+  let saved = false
+  const seenByModel: string[] = []
+  const page: any = {
+    url: () => "https://example.com/customer/42",
+    goto: async () => {}, screenshotJpeg: async () => "",
+    krefSnapshot: async () => NOTES_DOM.replace(/<textarea /g, '<textarea data-kref="e1" ').replace(/<button /g, '<button data-kref="e2" '),
+    count: async (sel: string) => (sel === '#cus_notes' || sel === '#customer_notes' ? 1 : 0),
+    fingerprint: async (sel: string) => ({ domPath: sel, ariaLabel: "Notes", tagName: sel.includes("cus_notes") ? "BUTTON" : "TEXTAREA", innerText: "", inputType: null, dataTestId: null, id: null, classNames: [], isInteractive: true }),
+    stableSelector: async (sel: string) => sel.replace(/\[data-kref="e\d+"\]/g, ""),
+    click: async (sel: string) => { if (sel === '#cus_notes') { saved = true; pendingDialogs.push({ type: "alert", message: "Customer notes updated" }) } },
+    fill: async () => {}, selectOption: async () => {}, hover: async () => {}, keyPress: async () => {}, clearField: async () => {},
+    assertVisible: async () => {}, assertTextEquals: async () => {}, assertTextContains: async () => {}, assertUrlMatches: async () => {}, assertElementCount: async () => {},
+    waitMs: async () => {}, settleNetwork: async () => {}, interceptNetwork: async () => {}, guardNavigations: async () => {},
+    // The adapter's capture surface: return and clear queued dialogs.
+    drainDialogs: () => { const out = pendingDialogs; pendingDialogs = []; return out },
+  }
+  const handle: BrowserHandle = { newPage: async () => page, close: async () => {}, kind: "local" }
+  const model: AuthorModel = async (input) => {
+    seenByModel.push(input.history.join("\n") + "\n" + String(input.domSnapshot))
+    // Finish ONLY when the confirmation dialog has been surfaced (proves the signal reached the model).
+    const sawConfirmation = input.history.some((h) => /customer notes updated/i.test(h)) || /customer notes updated/i.test(String(input.domSnapshot))
+    if (sawConfirmation) return { action: { op: "done", selector: null, value: null, url: null, checkpoint: null, rationale: "the app confirmed the note saved" }, costUsd: 0 }
+    return { action: { op: "click", selector: '#cus_notes', value: null, url: null, checkpoint: null, rationale: "save the note" }, costUsd: 0 }
+  }
+  const verifier = async () => ({ achieved: true, evidenceSelector: null, reason: "confirmed", costUsd: 0 })
+  const out = await authorTrail("proj_loop_o", { name: "Save note", objective: "save a note", baseUrl: "https://example.com/customer/42" }, {
+    model, verifier, browserFactory: async () => handle, shotUploader: async () => ({ key: "t" }), ...noSleepOpts, verificationVision: false as const, headless: true,
+  })
+  expect(saved).toBe(true)
+  // The dialog text reached the model as a signal, and it finished on it.
+  expect(seenByModel.some((s) => /customer notes updated/i.test(s))).toBe(true)
+  expect(out.status).toBe("crystallized")
+  expect(out.objectiveVerified).toBeTruthy()
+})

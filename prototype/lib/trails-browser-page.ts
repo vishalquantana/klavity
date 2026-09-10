@@ -264,6 +264,16 @@ export interface BrowserPage {
    */
   settleNetwork(timeoutMs: number): Promise<void>
   /**
+   * KLA-786 (dialog-capture): return the JS dialogs (alert/confirm/prompt/beforeunload) that fired since
+   * the last call, clearing the buffer. The adapter installs a dialog handler so these are captured
+   * (with their text) and closed — without a handler the automation framework silently auto-dismisses
+   * them, so a confirmation like BookJoy's "Customer notes updated" alert leaves NO trace in the DOM and
+   * the author loop can't tell a save succeeded. Surfacing the text gives the model/verifier the success
+   * (or failure) signal a human sees. `alert`/`beforeunload` are accepted (OK); `confirm`/`prompt` are
+   * dismissed (cancel) to preserve the prior safe default (never auto-confirm a destructive prompt).
+   */
+  drainDialogs(): { type: string; message: string }[]
+  /**
    * KLA-111: Install network mocks before navigating. Subsequent requests whose URL matches a mock
    * rule are either stubbed with a canned response or aborted (blocked). Call before goto() so
    * mocks are in place for the initial page load. Calling again REPLACES all previously installed
@@ -301,7 +311,22 @@ export async function safeClose(p: Promise<unknown>, ms = 5_000): Promise<void> 
 
 // ── Playwright impl (default) — wraps a Playwright Page, preserving current auto-wait behavior ─────
 class PlaywrightPage implements BrowserPage {
-  constructor(private page: import("playwright").Page) {}
+  // KLA-786 (dialog-capture): JS dialogs fired since the last drain. Without a handler Playwright silently
+  // auto-dismisses every dialog, so an alert-based save confirmation ("Customer notes updated") vanishes
+  // with no DOM trace and the author loop can't tell the save worked.
+  private dialogs: { type: string; message: string }[] = []
+  constructor(private page: import("playwright").Page) {
+    this.page.on("dialog", (d) => {
+      try { this.dialogs.push({ type: d.type(), message: String(d.message() ?? "") }) } catch {}
+      // Accept informational alerts / beforeunload (OK); dismiss confirm/prompt to preserve the prior safe
+      // default (never auto-confirm a possibly-destructive prompt). Best-effort; a race on an already-handled
+      // dialog just no-ops.
+      const t = (() => { try { return d.type() } catch { return "" } })()
+      const p = t === "alert" || t === "beforeunload" ? d.accept() : d.dismiss()
+      p.catch(() => {})
+    })
+  }
+  drainDialogs() { const out = this.dialogs; this.dialogs = []; return out }
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, timeout: timeoutMs, fullPage: !!opts?.fullPage })).toString("base64") }
@@ -450,7 +475,17 @@ class PlaywrightHandle implements BrowserHandle {
 
 // ── Puppeteer-over-CDP impl — remote browser (Steel). Actionability re-added via waitForSelector. ──
 class PuppeteerPage implements BrowserPage {
-  constructor(private page: any) {}
+  // KLA-786 (dialog-capture): mirror PlaywrightPage — capture JS dialog text before closing it. Puppeteer
+  // does NOT auto-dismiss by default (a dialog can hang the page), so a handler is doubly important here.
+  private dialogs: { type: string; message: string }[] = []
+  constructor(private page: any) {
+    this.page.on("dialog", async (d: any) => {
+      try { this.dialogs.push({ type: d.type(), message: String(d.message?.() ?? "") }) } catch {}
+      const t = (() => { try { return d.type() } catch { return "" } })()
+      try { await (t === "alert" || t === "beforeunload" ? d.accept() : d.dismiss()) } catch {}
+    })
+  }
+  drainDialogs() { const out = this.dialogs; this.dialogs = []; return out }
   url() { return this.page.url() }
   async goto(url: string, timeoutMs: number) { await this.page.goto(url, { timeout: timeoutMs, waitUntil: "domcontentloaded" }) }
   async screenshotJpeg(quality: number, _timeoutMs: number, opts?: { fullPage?: boolean }) { return (await this.page.screenshot({ type: "jpeg", quality, encoding: "base64", fullPage: !!opts?.fullPage })) as string }
