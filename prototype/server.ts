@@ -2,6 +2,7 @@
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
+import { listAccessibleProjects } from "./lib/db" // KLA-829: switcher lists only projects the user can open
 import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
 // `logAudit` is undefined at 11 call sites — including the login/verify success path — so
@@ -11146,7 +11147,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/dashboard") {
         try {
           // Real projects (P2). Honor ?project=:id (projectAccess-gated); default to the first.
-          const allProjects = await listProjects(me)
+          // KLA-829: use listAccessibleProjects (mirrors projectAccess) NOT listProjects — the latter
+          // returns every project in any account the user belongs to, including ones a plain
+          // account-member can't actually open. Those leaked into the switcher; switching to one 403'd
+          // in /api/dashboard → blank dead page (state never resolved, switcher stuck at "—"). The
+          // switcher is built from this `projects` array, so it must contain only openable projects.
+          const allProjects = await listAccessibleProjects(me)
           if (!allProjects.length) {
             // No project yet — return an empty-but-valid shape so the UI renders skeleton/empty states.
             return json({ email: me, projects: [], active: null, members: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })

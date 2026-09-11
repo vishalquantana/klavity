@@ -528,7 +528,7 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .proj-combo-pop.hide{display:none}
 .proj-combo-pop .tap-search-row{margin:2px 2px 6px}
 .proj-combo-search-ic{display:inline-flex;color:var(--paper-faint);flex:none}
-.proj-combo-list{max-height:min(320px,52vh);overflow-y:auto;display:flex;flex-direction:column}
+.proj-combo-list{max-height:min(320px,52vh);overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column}
 .proj-combo-opt{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:none;border-radius:8px;padding:8px 9px;cursor:pointer;color:var(--paper);font-family:var(--body);font-size:13.5px;font-weight:500;transition:background var(--mi-dur) var(--mi-ease)}
 .proj-combo-opt:hover{background:var(--ink-3)}
 .proj-combo-opt.active{background:var(--ink-3)}
@@ -3784,10 +3784,18 @@ async function load() {
         const r = await fetchWithTimeout(dashUrl)
         if (r.status === 401) { location.href = "/login"; redirected = true; break }
         data = await r.json().catch(() => null)
-        // If the stored project id is stale/inaccessible, clear it and retry without a project param
-        // so the server falls back to the user's first accessible project rather than erroring out.
-        if (data && data.error && pid && pid !== activeProjectParam()) {
+        // KLA-829: recover from ANY errored project hint — stale/inaccessible id, dead bookmark, or an
+        // EXPLICIT ?project= switch the old guard (pid !== activeProjectParam()) skipped → blank dead page.
+        // Clear the pointer + strip the bad ?project=, then retry bare → first accessible project.
+        if (data && data.error && pid) {
           try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+          if (activeProjectParam()) {
+            try {
+              const u = new URL(location.href)
+              u.searchParams.delete("project")
+              history.replaceState(null, "", u.pathname + u.search + u.hash)
+            } catch (e) {}
+          }
           const r2 = await fetchWithTimeout("/api/dashboard")
           if (r2.status === 401) { location.href = "/login"; redirected = true; break }
           data = await r2.json().catch(() => null)
@@ -3813,6 +3821,10 @@ async function load() {
       // No cache + failed fetch → render() never runs, so EVERY section skeleton (stat tiles AND
       // the sims/saying/tickets/kanban/activity feeds) would shimmer forever. Clear them all.
       clearStuckSkeletons()
+      // KLA-829: never leave a DEAD page. Keep the top-nav project switcher alive + wired so the user
+      // can pick another project WITHOUT the browser Back button. renderSwitcher is null-safe (state
+      // may still be null on a true cold miss), so this can't throw and abort the rest of init.
+      safeRender("switcher", renderSwitcher)
     }
     return
   }
@@ -5153,7 +5165,7 @@ function render(fromCache, poll) {
         const d = await r.json().catch(() => ({}))
         if (!r.ok) { msg.textContent = d.error || "Couldn't save"; return }
         inp.value = d.name
-        if (state.active) state.active.name = d.name
+        if (state && state.active) state.active.name = d.name  // KLA-829: null-safe (state may be null)
         $("wsName").textContent = d.name
         msg.textContent = "Saved"
         setTimeout(() => { if (msg.textContent === "Saved") msg.textContent = "" }, 2500)
@@ -6237,9 +6249,12 @@ const projSwitch = {
   active: -1         // index into matches of the highlighted row
 }
 function renderSwitcher() {
-  const projects = state.projects || []
-  const activeId = state.active ? state.active.id : null
-  const isAdmin = state.active && state.active.role === "admin"
+  // KLA-829: null-safe — renderSwitcher runs as "chrome" on every render AND from load()'s failure
+  // branch where `state` can still be null (cold fetch miss). Guard every deref so a dead page still
+  // shows an operable switcher instead of throwing and aborting init.
+  const projects = (state && state.projects) || []
+  const activeId = state && state.active ? state.active.id : null
+  const isAdmin = !!(state && state.active && state.active.role === "admin")
   const btnName = $("projComboName")
   if (btnName) {
     const cur = projects.find(p => p.id === activeId)
@@ -6265,6 +6280,18 @@ function projSwitchWire() {
   btn.addEventListener("click", () => { projSwitchIsOpen() ? projSwitchClose() : projSwitchOpen() })
   input.addEventListener("input", () => projSwitchFilter(input.value))
   input.addEventListener("keydown", projSwitchKeydown)
+  // KLA-829 (Issue 2): keep the wheel INSIDE the popover. `overscroll-behavior:contain` on
+  // .proj-combo-list stops scroll-chaining only once the list overflows AND hits its boundary;
+  // when the list is short (few projects → not scrollable) a wheel event over the dropdown still
+  // bubbles to the page body and scrolls the dashboard behind it. Swallow any wheel the list can't
+  // consume (not scrollable, or already at the top/bottom edge) so the background never moves.
+  pop.addEventListener("wheel", (e) => {
+    const canScroll = list.scrollHeight > list.clientHeight
+    if (!canScroll) { e.preventDefault(); return }
+    const atTop = list.scrollTop <= 0 && e.deltaY < 0
+    const atBottom = (list.scrollTop + list.clientHeight) >= (list.scrollHeight - 1) && e.deltaY > 0
+    if (atTop || atBottom) e.preventDefault()
+  }, { passive: false })
   // Outside-click closes the popover.
   document.addEventListener("mousedown", (e) => {
     if (!projSwitchIsOpen()) return
@@ -6292,8 +6319,8 @@ function projSwitchClose(returnFocus) {
 }
 // Case-insensitive substring filter, then render + highlight the first match.
 function projSwitchFilter(q) {
-  const projects = state.projects || []
-  const activeId = state.active ? state.active.id : null
+  const projects = (state && state.projects) || []
+  const activeId = state && state.active ? state.active.id : null
   const needle = String(q || "").trim().toLowerCase()
   const matches = needle
     ? projects.filter(p => String(p.name || "").toLowerCase().includes(needle))
@@ -6340,7 +6367,7 @@ function projSwitchSetActive(i) {
 function projSwitchChoose(i) {
   const p = projSwitch.matches[i]
   if (!p) return
-  const activeId = state.active ? state.active.id : null
+  const activeId = state && state.active ? state.active.id : null
   if (p.id === activeId) { projSwitchClose(); return }
   // Reuse the existing navigation to switch projects.
   location.href = "/dashboard?project=" + encodeURIComponent(p.id)
@@ -9136,7 +9163,12 @@ async function submitNewTicket() {
   }
   if (aerr) aerr.textContent = ""
   if (msg) msg.textContent = ""
-  const projId = state.active && state.active.id
+  // KLA-829: guard against `state` itself being null, not just state.active. When a project fails to
+  // load (e.g. switched to an inaccessible project → /api/dashboard errors → state stays null), the
+  // Create-ticket button is still clickable; `state.active` then throws "Cannot read properties of
+  // null (reading 'active')" (prod NPE at submitNewTicket). Fall back to the "No project selected."
+  // message instead of an uncaught TypeError.
+  const projId = state && state.active && state.active.id
   if (!projId) { if (msg) msg.textContent = "No project selected."; return }
   newTktSubmitting = true   // #542
   // #532/#534: pause the liveness poll while the create is in flight so a background refresh can't race it.

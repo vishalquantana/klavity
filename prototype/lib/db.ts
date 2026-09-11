@@ -2491,6 +2491,27 @@ export async function listProjects(email: string): Promise<ProjectRow[]> {
   return r.rows.map(rowToProject)
 }
 
+// KLA-829: projects the user can actually OPEN — mirrors projectAccess() exactly, unlike the broader
+// listProjects() which returns every project in any account the user belongs to (even ones a plain
+// account-member has no explicit project row for). The dashboard switcher is built from this so it can
+// never list a project that would 403 on switch (the blank-page / dead-switcher bug). Access ==
+//   • owner/admin of the owning account  → sees all that account's projects, OR
+//   • an explicit project_members row with role admin|member (viewer is NOT access — read-only share).
+export async function listAccessibleProjects(email: string): Promise<ProjectRow[]> {
+  const r = await db!.execute({
+    sql: `SELECT DISTINCT p.* FROM projects p
+          WHERE p.account_id IN (
+                  SELECT account_id FROM account_members
+                  WHERE email=? AND account_role IN ('owner','admin'))
+             OR p.id IN (
+                  SELECT project_id FROM project_members
+                  WHERE email=? AND project_role IN ('admin','member'))
+          ORDER BY p.created_at ASC`,
+    args: [email, email],
+  })
+  return r.rows.map(rowToProject)
+}
+
 export async function createProject(accountId: string, name: string, siteUrl?: string | null): Promise<ProjectRow> {
   const id = "proj_" + crypto.randomUUID()
   const now = Date.now()
