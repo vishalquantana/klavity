@@ -3466,14 +3466,21 @@ const esc = (s) => String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;","
 // Only ever emit a strict #rrggbb/#rgb hex into a style attribute. Model-generated `accent` is
 // untrusted (LLM05) — without this, a value like `#fff" onmouseover=…` would break out of the attr.
 const safeAccent = (v, fallback) => /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(String(v||"")) ? String(v) : fallback
+// KLA-833 (issue #3): unambiguous, consistent relative time. The old labels read "3m ago" for THREE
+// MINUTES, which reporters mis-read as three MONTHS (there was no months unit at all — it jumped
+// straight from "29d ago" to a bare locale date, so "6 months ago" and "3 minutes ago" looked alike).
+// Now every unit is spelled distinctly — "min" (minutes) vs "mo" (months) can't collide — and the
+// scale runs all the way to years as relative text instead of an abrupt absolute-date switch.
 const ago = (ts) => {
   if (!ts) return ""
   const s = Math.max(0, Math.floor((Date.now()-Number(ts))/1000))
-  if (s < 60) return "just now"
-  const m = Math.floor(s/60); if (m < 60) return m+"m ago"
-  const h = Math.floor(m/60); if (h < 24) return h+"h ago"
-  const d = Math.floor(h/24); if (d < 30) return d+"d ago"
-  return new Date(Number(ts)).toLocaleDateString()
+  if (s < 45) return "just now"
+  const m = Math.floor(s/60);    if (m < 60) return m + (m === 1 ? " min ago" : " min ago")
+  const h = Math.floor(s/3600);  if (h < 24) return h + (h === 1 ? " hr ago"  : " hrs ago")
+  const d = Math.floor(s/86400); if (d < 7)  return d + (d === 1 ? " day ago" : " days ago")
+  const w = Math.floor(d/7);     if (d < 30) return w + (w === 1 ? " wk ago"  : " wks ago")
+  const mo = Math.floor(d/30);   if (mo < 12) return mo + (mo === 1 ? " mo ago" : " mos ago")
+  const y = Math.floor(d/365);   return y + (y === 1 ? " yr ago" : " yrs ago")
 }
 const ACT_ICON = { feedback_filed:kicon('bug'), review_run:kicon('eye'), sim_activated:kicon('zap'), sim_added:kicon('plus'), sim_evolved:kicon('dna'), transcript_added:kicon('file-text') }
 const ACT_VERB = { feedback_filed:"filed feedback", review_run:"ran a review", sim_activated:"went live", sim_added:"added a Sim", sim_evolved:"evolved a Sim", transcript_added:"added a transcript" }

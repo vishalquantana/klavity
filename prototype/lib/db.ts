@@ -3192,6 +3192,31 @@ export async function projectAccess(email: string, projectId: string): Promise<'
   return null
 }
 
+// KLA-833 (perf): projectAccess + projectById in ONE pass. The hot /api/projects/:id/* block (tickets
+// board load, the 15s /tickets/rev poll, triage, members, …) previously called projectAccess(me,pid)
+// — which itself fetches projectById internally — and THEN called projectById(pid) a SECOND time for
+// the row. That's a redundant round-trip to Turso on EVERY request through that block. This helper
+// fetches the project row exactly once and reuses it for the role computation, returning both. Access
+// semantics (and the 403-before-404 ordering the caller relies on: a non-existent project yields
+// access:null so the caller 403s, never revealing existence) are identical to projectAccess().
+export async function projectAccessAndRow(
+  email: string,
+  projectId: string,
+): Promise<{ access: 'admin' | 'member' | null; proj: ProjectRow | null }> {
+  const proj = await projectById(projectId)
+  if (!proj) return { access: null, proj: null }
+  const acctRole = await accountRole(proj.accountId, email)
+  if (acctRole === "owner" || acctRole === "admin") return { access: "admin", proj }
+  const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [projectId, email] })
+  if (r.rows.length) {
+    const role = String((r.rows[0] as any).project_role)
+    if (role === "admin") return { access: "admin", proj }
+    if (role === "viewer") return { access: null, proj }   // viewer row is NOT member access (mirrors projectAccess)
+    return { access: "member", proj }
+  }
+  return { access: null, proj }   // account member w/ no explicit project row, or no relationship at all
+}
+
 // Project roster (project_members). Returns email/role/createdAt for the dashboard team panel.
 export async function membersOfProject(projectId: string) {
   const r = await db!.execute({ sql: "SELECT email, project_role, created_at FROM project_members WHERE project_id=? ORDER BY created_at ASC", args: [projectId] })
@@ -8118,10 +8143,16 @@ export async function listTicketsPaginated(
   const total = Number((countRow.rows[0] as any).n ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / limit))
 
+  // KLA-833 (recency, issue #2): order by most-recent ACTIVITY, not just cluster-creation time. A
+  // brand-new ticket has no last_seen_at → falls back to created_at (so it lands at the top the moment
+  // it's filed). A re-reported/deduped ticket bumps last_seen_at to "now" but keeps its original
+  // (older) created_at — ordering by created_at alone buried the ticket the reporter JUST re-filed
+  // ("where's the report I just submitted?"). COALESCE(last_seen_at, created_at) surfaces both cases;
+  // created_at DESC is the stable tiebreak for same-activity rows.
   const rows = await db!.execute({
     sql: `SELECT f.*, p.name AS sim_name FROM feedback f
           LEFT JOIN personas p ON p.id = f.sim_id
-          ${where} ORDER BY f.created_at DESC LIMIT ? OFFSET ?`,
+          ${where} ORDER BY COALESCE(f.last_seen_at, f.created_at) DESC, f.created_at DESC LIMIT ? OFFSET ?`,
     args: [...args, limit, offset],
   })
 
