@@ -59,6 +59,39 @@ describe('buildFeedbackFormData (shared serializer)', () => {
     const form = buildFeedbackFormData({ description: 'x', pageUrl: 'https://x/' })
     expect(form.get('replay_events')).toBeNull()
   })
+
+  // KLA-831 (screenshot-instead-of-video): a "Record me" clip must be appended as a VIDEO blob. The blob
+  // type is forced to the recording's real video mime so a generic/missing data-URL prefix can't default
+  // to image/png (which the server's video-only intake filter drops → the clip vanishes or lands as a still).
+  it('appends a recording as a video/webm blob even when the data URL prefix is generic', () => {
+    const form = buildFeedbackFormData({
+      description: 'x', pageUrl: 'https://x/',
+      recordings: [{
+        id: 'rec1',
+        // generic/degenerate prefix (as some browsers emit for MediaRecorder blobs read via FileReader)
+        dataUrl: 'data:application/octet-stream;base64,AAAA',
+        mime: 'video/webm', durationMs: 4000, bytes: 3, width: 1280, height: 720, screenOnly: true,
+      }],
+    })
+    const rec = form.getAll('recording').find((f): f is File => f instanceof File)
+    expect(rec).toBeTruthy()
+    expect((rec as File).type).toMatch(/^video\/webm/)
+    expect((rec as File).name).toBe('recording-rec1.webm')
+    expect(JSON.parse(form.get('recording_meta') as string)[0].id).toBe('rec1')
+  })
+
+  it('keeps an mp4 recording as a video/mp4 blob (Safari)', () => {
+    const form = buildFeedbackFormData({
+      description: 'x', pageUrl: 'https://x/',
+      recordings: [{
+        id: 'rec2', dataUrl: 'data:;base64,AAAA',
+        mime: 'video/mp4;codecs=avc1', durationMs: 2000, bytes: 3, width: 640, height: 480, screenOnly: false,
+      }],
+    })
+    const rec = form.getAll('recording').find((f): f is File => f instanceof File)
+    expect((rec as File).type).toMatch(/^video\/mp4/)
+    expect((rec as File).name).toBe('recording-rec2.mp4')
+  })
 })
 
 // ── Parity proof: extension path uses same fields as widget path ─────────────

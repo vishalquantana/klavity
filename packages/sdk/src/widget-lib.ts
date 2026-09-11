@@ -250,7 +250,11 @@ export function buildFeedbackForm(input: { type?: string; title?: string; descri
     for (const r of input.recordings) {
       try {
         const ext = (r.mime || "").includes("mp4") ? "mp4" : "webm"
-        fd.append("recording", dataUrlToBlob(r.dataUrl), `recording-${r.id}.${ext}`)
+        // KLA-831: force the blob type to the recording's real video mime. dataUrlToBlob defaults a
+        // generic/missing data-URL prefix to image/png, which the server's video-only intake filter drops
+        // (or renders as a still). Passing the container mime guarantees the clip persists as a VIDEO.
+        const recMime = (r.mime && /^video\//.test(r.mime)) ? r.mime : `video/${ext}`
+        fd.append("recording", dataUrlToBlob(r.dataUrl, recMime), `recording-${r.id}.${ext}`)
         meta.push({ id: r.id, durationMs: r.durationMs, width: r.width, height: r.height, bytes: r.bytes, mime: r.mime, screenOnly: r.screenOnly })
       } catch { /* skip a malformed recording */ }
     }

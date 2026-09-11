@@ -129,6 +129,25 @@ describe('startRecording engine', () => {
     expect(onState).toHaveBeenCalledWith('stopped')
   })
 
+  // KLA-831: huge-file-size fix — the MediaRecorder must be constructed with a COMPACT bitrate cap so a
+  // few-second clip is a few hundred KB, not many MB. Assert the compact default and the caller override.
+  it('applies a compact default bitrate cap (video ≤ 1Mbps, audio ≤ 128kbps) so clips stay small', async () => {
+    const deps = makeDeps()
+    await startRecording({ wantMic: true }, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+    expect(rec.opts.videoBitsPerSecond).toBeLessThanOrEqual(1_000_000)
+    expect(rec.opts.videoBitsPerSecond).toBeGreaterThan(0)
+    expect(rec.opts.audioBitsPerSecond).toBeLessThanOrEqual(128_000)
+  })
+
+  it('honours an explicit videoBitsPerSecond / audioBitsPerSecond override', async () => {
+    const deps = makeDeps()
+    await startRecording({ videoBitsPerSecond: 600_000, audioBitsPerSecond: 64_000 }, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+    expect(rec.opts.videoBitsPerSecond).toBe(600_000)
+    expect(rec.opts.audioBitsPerSecond).toBe(64_000)
+  })
+
   it('enforces the length cap via the interval tick (3 min auto-stop)', async () => {
     let intervalCb: (() => void) | null = null
     let clock = 0
@@ -267,7 +286,7 @@ describe('recordMe overlay teardown', () => {
 describe('recordMe walkthrough mode (KLA-555)', () => {
   const tick = async (n = 3) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)) }
 
-  it('recording phase: host is click-through (no backdrop, pointer-events:none) with a bottom-docked bar and NO screen-preview box', async () => {
+  it('recording phase: host is click-through (no backdrop, pointer-events:none) with a right-docked bar and NO screen-preview box', async () => {
     document.querySelectorAll('[data-klavity-ui="recorder"]').forEach((n) => n.remove())
     const deps = makeDeps({}, { screen: new FakeStream(1, 0), user: new FakeStream(1, 1) })
     const phases: string[] = []
@@ -286,10 +305,12 @@ describe('recordMe walkthrough mode (KLA-555)', () => {
     expect(host.style.pointerEvents).toBe('none')
     expect(host.style.background).toBe('')
     expect(phases).toContain('recording')
-    // Compact control docked bottom-center, its own pointer-events so Stop/Pause stay clickable.
+    // KLA-831: compact control floats on the RIGHT edge (vertically centered), its own pointer-events so
+    // Stop/Pause stay clickable while the rest of the host is click-through.
     const bar = host.firstElementChild as HTMLElement
     expect(bar.style.position).toBe('fixed')
-    expect(bar.style.bottom).toBe('24px')
+    expect(bar.style.right).toBe('20px')
+    expect(bar.style.top).toBe('50%')
     expect(bar.style.pointerEvents).toBe('auto')
     // Stop/pause/timer/meta present; the pointless "screen preview" box is gone.
     expect(host.querySelector('#klr-stop')).not.toBeNull()
@@ -297,6 +318,10 @@ describe('recordMe walkthrough mode (KLA-555)', () => {
     expect(host.querySelector('#klr-timer')).not.toBeNull()
     expect(host.querySelector('#klr-meta')).not.toBeNull()
     expect(host.textContent || '').not.toContain('screen preview')
+    // KLA-831: the Stop control is a clearly-labelled, prominent affordance (not just a tiny "Stop").
+    const stopBtn = host.querySelector('#klr-stop') as HTMLButtonElement
+    expect(stopBtn.getAttribute('aria-label')).toBe('Stop recording')
+    expect(stopBtn.textContent || '').toContain('Stop recording')
 
     // KLA-602(a): stopping from the docked bar AUTO-ATTACHES — the promise resolves DIRECTLY with the
     // recording (no "Preview → Attach to report" gate, no 'preview' phase) and the overlay is removed.

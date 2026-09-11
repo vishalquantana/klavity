@@ -21,6 +21,19 @@
 export const RECORDING_MAX_DURATION_MS = 3 * 60 * 1000
 export const RECORDING_MAX_BYTES = 50 * 1024 * 1024
 
+// KLA-831 (file size): a screen recording composited onto a 1280-wide canvas at a modest framerate does
+// NOT need a 2.5Mbps stream — that produced multi-MB clips for a few seconds of capture. Cap the encoder
+// hard so a few-second clip is a few hundred KB. VP9 (preferred codec) honours videoBitsPerSecond well.
+//   • 1.0 Mbps video  → ~125 KB/s → a 4s clip ≈ 0.5 MB, a 30s clip ≈ 3.75 MB (well under the 50MB ceiling)
+//   • 96 kbps audio   → transparent for voice narration
+//   • 15 fps default  → screen/UI walkthroughs read fine at 15fps and it roughly halves the bitrate need
+// Overridable via StartRecordingOptions for callers that want higher fidelity.
+export const DEFAULT_VIDEO_BITS_PER_SECOND = 1_000_000
+export const DEFAULT_AUDIO_BITS_PER_SECOND = 96_000
+export const DEFAULT_RECORDING_FPS = 15
+/** Hard cap on the composited canvas width so huge/retina monitors don't balloon the encoded size. */
+export const RECORDING_MAX_WIDTH = 1280
+
 export interface RecordingCaps {
   maxDurationMs: number
   maxBytes: number
@@ -74,6 +87,10 @@ export interface StartRecordingOptions {
   wantCamera?: boolean
   wantMic?: boolean
   fps?: number
+  // KLA-831: encoder bitrate caps (bits/sec). Default to the compact DEFAULT_*_BITS_PER_SECOND so clips
+  // stay small; a caller can raise them for higher fidelity. Applied straight to the MediaRecorder.
+  videoBitsPerSecond?: number
+  audioBitsPerSecond?: number
   caps?: Partial<RecordingCaps>
   onState?: (state: RecorderState) => void
   onStats?: (stats: { elapsedMs: number; bytes: number }) => void
@@ -170,7 +187,7 @@ export async function startRecording(
   // surprising reporters with a live webcam and keeps the common bug-repro flow screen-only.
   const wantCamera = opts.wantCamera === true
   const wantMic = opts.wantMic !== false
-  const fps = Math.max(5, Math.min(60, opts.fps ?? 24))
+  const fps = Math.max(5, Math.min(60, opts.fps ?? DEFAULT_RECORDING_FPS))
 
   const mime = pickRecordingMime(
     deps.MediaRecorder?.isTypeSupported ? (m: string) => deps.MediaRecorder.isTypeSupported(m) : undefined,
@@ -226,8 +243,9 @@ export async function startRecording(
   const screenTrack = screenStream.getVideoTracks?.()[0]
   const st = (screenTrack?.getSettings?.() ?? {}) as { width?: number; height?: number }
   const aspect = (st.width && st.height) ? st.width / st.height : 16 / 9
-  canvas.width = 1280
-  canvas.height = Math.round(1280 / aspect)
+  // KLA-831: cap the composited width so the encode stays cheap regardless of the shared monitor's size.
+  canvas.width = RECORDING_MAX_WIDTH
+  canvas.height = Math.round(RECORDING_MAX_WIDTH / aspect)
   try { screenVid.srcObject = screenStream; await (screenVid.play?.() ?? Promise.resolve()) } catch { /* jsdom/headless: no real playback */ }
 
   // 2) Camera + mic — best-effort. A rejection → audio-only retry (mic kept) → screen-only fallback.
@@ -296,7 +314,10 @@ export async function startRecording(
   if (micTrack) outTracks.push(micTrack)
   const out = new deps.MediaStream(outTracks)
 
-  const recorder = new deps.MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 })
+  // KLA-831: apply the compact bitrate caps so a few-second clip is a few hundred KB, not many MB.
+  const videoBps = Math.max(150_000, Math.floor(opts.videoBitsPerSecond ?? DEFAULT_VIDEO_BITS_PER_SECOND))
+  const audioBps = Math.max(16_000, Math.floor(opts.audioBitsPerSecond ?? DEFAULT_AUDIO_BITS_PER_SECOND))
+  const recorder = new deps.MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: videoBps, audioBitsPerSecond: audioBps })
   const chunks: BlobPart[] = []
   let totalBytes = 0
   let startedAt = 0, pausedMs = 0, pauseStartedAt = 0
@@ -499,8 +520,12 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     //             so the reporter can navigate + narrate over the running app, Loom/CleanShot style.
     const setChrome = (mode: 'modal' | 'bar') => {
       if (mode === 'bar') {
+        // KLA-831: the ACTIVE recording control floats on the RIGHT edge, vertically centered, so there is
+        // an obvious always-visible Stop affordance (reporters kept looking for one and only found Chrome's
+        // native "Stop sharing"). The host stays click-through (pointer-events:none) so the reporter can
+        // still drive the live app; only this docked control captures clicks.
         host.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;${FONT}`
-        card.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);pointer-events:auto;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:14px;box-shadow:0 12px 40px rgba(28,22,40,.32);overflow:hidden;max-width:92vw'
+        card.style.cssText = 'position:fixed;right:20px;top:50%;transform:translateY(-50%);pointer-events:auto;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:14px;box-shadow:0 12px 40px rgba(28,22,40,.32);overflow:hidden;max-width:min(240px,80vw)'
       } else {
         host.style.cssText = `position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.55);${FONT}`
         card.style.cssText = 'width:360px;max-width:92vw;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:12px;box-shadow:0 20px 60px rgba(28,22,40,.28);overflow:hidden'
@@ -629,14 +654,18 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       setChrome('bar'); emitPhase('recording')
       backdropDismiss = false // KLA-620: recording is ACTIVE — a stray page click must NOT tear it down
       card.removeAttribute('role'); card.removeAttribute('aria-modal'); card.removeAttribute('aria-label')
+      // KLA-831: a vertical stack with a BIG, unmistakable red "Stop recording" button as the dominant
+      // affordance, so the reporter never has to hunt for how to end the clip (they were falling back to
+      // Chrome's native "Stop sharing"). Timer sits above it; Pause is a secondary control below.
       card.innerHTML =
-        '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px">' +
-        '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap">' +
-        '<span aria-hidden="true" style="width:9px;height:9px;border-radius:50%;background:#e11;flex:none"></span>' +
+        '<div style="display:flex;flex-direction:column;gap:9px;padding:12px 14px;min-width:180px">' +
+        '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:700;white-space:nowrap">' +
+        '<span aria-hidden="true" style="width:10px;height:10px;border-radius:50%;background:#e11;flex:none"></span>' +
         '<span id="klr-timer">REC 0:00</span></span>' +
-        '<button id="klr-pause" style="padding:7px 12px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
-        '<button id="klr-stop" style="padding:7px 12px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Stop</button>' +
-        '<span id="klr-meta" style="font-size:11px;color:#574f45;text-align:right;white-space:nowrap"></span>' +
+        '<button id="klr-stop" aria-label="Stop recording" title="Stop recording" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:700;font-size:15px;cursor:pointer">' +
+        '<span aria-hidden="true" style="width:12px;height:12px;border-radius:2px;background:#fff;flex:none"></span>Stop recording</button>' +
+        '<button id="klr-pause" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
+        '<span id="klr-meta" style="font-size:11px;color:#574f45;text-align:center;white-space:nowrap"></span>' +
         '</div>' +
         hint
       const pauseBtn = card.querySelector('#klr-pause') as HTMLButtonElement

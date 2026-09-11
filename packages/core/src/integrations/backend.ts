@@ -107,7 +107,12 @@ export function buildFeedbackFormData(payload: FeedbackFormPayload): FormData {
     for (const r of payload.recordings) {
       try {
         const ext = (r.mime || '').includes('mp4') ? 'mp4' : 'webm'
-        form.append('recording', dataUrlToBlob(r.dataUrl), `recording-${r.id}.${ext}`)
+        // KLA-831: pass the recording's real video mime as the blob type override. Otherwise a data URL
+        // with a generic/missing prefix (data:;base64 / application/octet-stream) yields a non-video blob,
+        // which the server's `video/(webm|mp4)` intake filter drops — the clip silently vanishes or lands
+        // as a still image. Force the container type so a "Record me" clip always persists as a VIDEO.
+        const recMime = (r.mime && /^video\//.test(r.mime)) ? r.mime : `video/${ext}`
+        form.append('recording', dataUrlToBlob(r.dataUrl, recMime), `recording-${r.id}.${ext}`)
         meta.push({ id: r.id, durationMs: r.durationMs, width: r.width, height: r.height, bytes: r.bytes, mime: r.mime, screenOnly: r.screenOnly })
       } catch { /* skip a malformed recording */ }
     }
