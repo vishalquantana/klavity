@@ -3622,6 +3622,9 @@ export function buildModal(
     detachHeroKeys()
     if (tools) tools.innerHTML = ''
     stage.innerHTML = ''
+    const wrap = document.createElement('div')
+    wrap.className = 'kl-hero-vwrap'
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;max-width:100%;max-height:100%;'
     const video = document.createElement('video')
     video.src = src
     video.controls = true
@@ -3629,7 +3632,50 @@ export function buildModal(
     video.preload = 'metadata'
     video.className = 'kl-hero-video'
     video.style.cssText = 'display:block;max-width:100%;max-height:100%;border-radius:8px;background:#000;box-shadow:0 12px 40px rgba(0,0,0,.5);'
-    stage.appendChild(video)
+    // KLA-836: an error/download fallback so the reporter's just-recorded clip is never a dead black frame —
+    // if inline decode fails they can still retrieve their evidence via the Download link.
+    const err = document.createElement('div')
+    err.className = 'kl-hero-verror'
+    err.style.cssText = 'display:none;flex-direction:column;align-items:center;gap:6px;color:#fff;font-size:13px;text-align:center;'
+    const dl = document.createElement('a')
+    dl.href = src
+    dl.setAttribute('download', 'recording.webm')
+    dl.setAttribute('target', '_blank')
+    dl.setAttribute('rel', 'noopener')
+    dl.textContent = 'Download recording'
+    dl.style.cssText = 'color:#a5b4fc;font-size:12px;text-decoration:underline;'
+    err.innerHTML = '<span>This recording couldn’t play here.</span>'
+    err.appendChild(dl)
+    wrap.appendChild(video)
+    wrap.appendChild(err)
+    stage.appendChild(wrap)
+    wireHeroVideoRepair(video, err)
+  }
+
+  // KLA-836: MediaRecorder webm/mp4 clips carry NO container duration → the browser reports
+  // video.duration === Infinity, so the native seek bar starts ~95% and drifts backward with no input and
+  // scrubbing is broken. Mirror dashboard.html's wireRecordingVideos() canonical repair: on loadedmetadata,
+  // if the duration isn't finite, force a seek past the end (1e101) so the browser scans to the real end and
+  // recomputes the duration, then snap the playhead back to 0 on the resulting durationchange. On a decode
+  // error reveal the download fallback. Browser-only; guarded for headless/jsdom envs.
+  function wireHeroVideoRepair(video: HTMLVideoElement, errEl: HTMLElement | null) {
+    let repairing = false
+    video.addEventListener('loadedmetadata', () => {
+      if (!isFinite(video.duration) || video.duration <= 0) {
+        repairing = true
+        try { video.currentTime = 1e101 } catch {}
+      }
+    })
+    video.addEventListener('durationchange', () => {
+      if (repairing && isFinite(video.duration) && video.duration > 0) {
+        repairing = false
+        try { video.currentTime = 0 } catch {}
+      }
+    })
+    video.addEventListener('error', () => {
+      try { video.style.display = 'none' } catch {}
+      if (errEl) errEl.style.display = 'flex'
+    })
   }
 
   // #449 — reversible crop: replace screenshots[index] with the selected region of the CLEAN image and

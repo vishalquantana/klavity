@@ -423,6 +423,34 @@ function showNoReplay(msg){
 // ── Run Recording (KLA-490): persisted webm + step timeline ──
 var _recVideo=null
 function fmtTs(ms){var s=Math.floor(Math.max(0,ms)/1000);return Math.floor(s/60)+":"+("0"+(s%60)).slice(-2)}
+// KLA-836: MediaRecorder webm/mp4 clips carry no container duration → the browser reports
+// video.duration === Infinity, so the native seek bar starts ~95% and drifts backward with no input and
+// timestamps are wrong. Mirror dashboard.html's wireRecordingVideos() canonical repair: on loadedmetadata,
+// if the duration isn't finite force a seek past the end (1e101) so the browser scans to the real end and
+// recomputes the duration, then snap the playhead back to 0 on the resulting durationchange. Also drive an
+// honest loading state + an error/download fallback so a clip that can't decode inline is never an infinite
+// spinner or a dead frame. onDuration(secs) fires once the real finite duration is known (used to backfill
+// timeline seeks + timestamps when the server omitted durationMs).
+function wireRecVideoRepair(v,opts){
+  opts=opts||{}
+  var wrap=v.closest?v.closest(".rec-vwrap"):null
+  var loadingEl=wrap?wrap.querySelector(".rec-loading"):null
+  var errEl=wrap?wrap.querySelector(".rec-error"):null
+  function hideLoading(){if(loadingEl)loadingEl.style.display="none"}
+  var repairing=false,announced=false
+  function announce(){if(announced)return;if(isFinite(v.duration)&&v.duration>0){announced=true;if(opts.onDuration)try{opts.onDuration(v.duration)}catch(e){}}}
+  v.addEventListener("loadedmetadata",function(){
+    hideLoading()
+    if(!isFinite(v.duration)||v.duration<=0){repairing=true;try{v.currentTime=1e101}catch(e){}}
+    else announce()
+  })
+  v.addEventListener("durationchange",function(){
+    if(repairing&&isFinite(v.duration)&&v.duration>0){repairing=false;try{v.currentTime=0}catch(e){}}
+    announce()
+  })
+  v.addEventListener("canplay",hideLoading)
+  v.addEventListener("error",function(){hideLoading();if(errEl)errEl.style.display="";if(wrap)wrap.classList.add("rec-failed")})
+}
 async function loadRecording(steps){
   var pid=projParam()
   var qs=pid?"?project="+encodeURIComponent(pid):""
@@ -437,7 +465,17 @@ async function loadRecording(steps){
   var durMs=m.durationMs||0
   var html=""
   if(m.hasWebm && m.videoUrl){
-    html+='<video id="recVideo" controls preload="metadata" playsinline style="width:100%;border-radius:12px;background:#111;max-height:420px" src="'+esc(m.videoUrl+qs)+'"></video>'
+    // KLA-836: wrap the clip with an honest loading state, an error line, and an always-present Download link
+    // (the fallback when inline playback fails or the file is large). Inline SVG download glyph (kicon has no
+    // 'download' icon registered). wireRecVideoRepair() repairs the Infinity-duration seek bug + toggles these.
+    var _vurl=esc(m.videoUrl+qs)
+    var _dlSvg='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+    html+='<div class="rec-vwrap" style="position:relative">'
+      +'<video id="recVideo" controls preload="metadata" playsinline style="width:100%;border-radius:12px;background:#111;max-height:420px" src="'+_vurl+'"></video>'
+      +'<div class="rec-loading rnote" style="margin-top:6px;display:flex;align-items:center;gap:5px">'+window.kicon("loader",{size:13})+' Loading recording…</div>'
+      +'<div class="rec-error rnote" style="margin-top:6px;display:none;align-items:center;gap:5px;color:var(--rose)">'+window.kicon("triangle-alert",{size:13})+' This recording couldn’t play here. Download it to view.</div>'
+      +'<a class="rec-dl" href="'+_vurl+'" download="walk-'+esc(walkId)+'.webm" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;font-size:12px;color:var(--indigo);text-decoration:none">'+_dlSvg+' Download recording</a>'
+    +'</div>'
   } else {
     html+='<div class="no-replay"><p>Recording captured as frames (video encode unavailable).</p></div>'
   }
@@ -452,11 +490,15 @@ async function loadRecording(steps){
   if(sl.length){
     html+='<div class="steps-timeline" style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">'
     sl.forEach(function(s,i){
-      var seekMs=durMs*(sl.length>1?i/(sl.length-1):0)
+      // KLA-836: store the proportional fraction (not only the absolute ms) so seeks + timestamps can be
+      // backfilled from the video's computed duration when the server omitted durationMs (durMs===0 → every
+      // step would otherwise seek to 0 and show 0:00).
+      var frac=(sl.length>1?i/(sl.length-1):0)
+      var seekMs=durMs*frac
       var bad=String(s.verdict)==="red"||String(s.verdict)==="amber"
       var label=(s.action||"step")+(s.actionValue?" "+s.actionValue:"")
-      html+='<div class="rec-step" data-seek="'+Math.round(seekMs)+'" style="cursor:pointer;font-size:12px;padding:3px 0;display:flex;gap:8px;'+(bad?"color:var(--rose)":"color:var(--paper-faint)")+'">'
-        +'<span style="font-variant-numeric:tabular-nums;color:var(--indigo)">'+fmtTs(seekMs)+'</span>'
+      html+='<div class="rec-step" data-frac="'+frac+'" data-seek="'+Math.round(seekMs)+'" style="cursor:pointer;font-size:12px;padding:3px 0;display:flex;gap:8px;'+(bad?"color:var(--rose)":"color:var(--paper-faint)")+'">'
+        +'<span class="rec-ts" style="font-variant-numeric:tabular-nums;color:var(--indigo)">'+fmtTs(seekMs)+'</span>'
         +'<span>'+esc(label)+'</span></div>'
     })
     html+='</div>'
@@ -466,10 +508,24 @@ async function loadRecording(steps){
   body.querySelectorAll(".rec-step").forEach(function(el){
     el.onclick=function(){
       if(!_recVideo)return
-      var t=parseInt(el.getAttribute("data-seek"),10)/1000
+      // Prefer the video's real computed duration; fall back to durMs. Handles a missing/zero durationMs.
+      var frac=parseFloat(el.getAttribute("data-frac"))||0
+      var dsec=(isFinite(_recVideo.duration)&&_recVideo.duration>0)?_recVideo.duration:(durMs/1000)
+      var t=dsec*frac
       try{_recVideo.currentTime=t; if(_recVideo.paused)_recVideo.play().catch(function(){})}catch(e){}
     }
   })
+  // KLA-836: wire the Infinity-duration repair + loading/error states. When durationMs was absent, backfill
+  // the timeline timestamps once the browser computes the real duration so they no longer all read 0:00.
+  if(_recVideo)wireRecVideoRepair(_recVideo,{onDuration:function(dsec){
+    if(durMs>0)return
+    var dms=dsec*1000
+    body.querySelectorAll(".rec-step").forEach(function(el){
+      var frac=parseFloat(el.getAttribute("data-frac"))||0
+      var ts=el.querySelector(".rec-ts");if(ts)ts.textContent=fmtTs(dms*frac)
+      el.setAttribute("data-seek",String(Math.round(dms*frac)))
+    })
+  }})
 }
 
 // ── Live View SSE (authenticated) ──
