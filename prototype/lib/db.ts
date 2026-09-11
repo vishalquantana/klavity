@@ -3421,6 +3421,21 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
   })
 }
 
+// KLA-838 (perf): count personas across an ACCOUNT in ONE aggregate query, for the Sim-creation quota
+// (POST /api/personas). That path previously summed listPersonas(p.id).length over every project in the
+// account — one SELECT per project (O(N-projects)) just to compute a single number. The account is the
+// billing unit, so count directly over the account's projects. Pre-insert count (same call site), so
+// this reflects the current DB state exactly like the old loop did. Counts raw persona rows; listPersonas
+// applies a defensive read-side name+role dedup, so on the rare project with exact duplicate rows this
+// can count 1 higher — which is the stricter (more correct) number for a creation quota.
+export async function countPersonasForAccount(accountId: string): Promise<number> {
+  const r = await db!.execute({
+    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?)`,
+    args: [accountId],
+  })
+  return Number((r.rows[0] as any)?.c || 0)
+}
+
 // ── Global Sims v1: list personas for a project INCLUDING global Sims from sibling projects. ──
 // Ownership / tenant safety: a global Sim is ONLY surfaced in projects that share the SAME account_id
 // as the Sim's home project. The query joins via the projects table on account_id — so a global Sim
@@ -5705,6 +5720,23 @@ export async function insertTraitEvent(e: TraitEventRow): Promise<string> {
   return id
 }
 
+// KLA-838 (perf): insert many trait events in ONE batched write instead of awaiting insertTraitEvent()
+// serially (one round-trip per event). Used by the transcript-reconcile ingest loop, which emits a
+// run of trait_events per Sim. Mints the same "tev_"+uuid ids and writes the same columns/order as
+// insertTraitEvent so row content is identical; a no-op for an empty list.
+export async function insertTraitEvents(events: TraitEventRow[]): Promise<void> {
+  if (!events.length) return
+  const stmts = events.map((e) => ({
+    sql: `INSERT INTO trait_events (id,trait_id,sim_id,transcript_id,op,before_text,after_text,quote,quote_offset,quote_ts,verified,speaker,source_date,reason,area,issue_type,priority,actor,created_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: ["tev_" + crypto.randomUUID(), e.traitId, e.simId, e.transcriptId, e.op, e.beforeText ?? null, e.afterText ?? null,
+           e.quote, e.quoteOffset ?? null, e.quoteTs ?? null, e.verified == null ? null : (e.verified ? 1 : 0),
+           e.speaker ?? null, e.sourceDate, e.reason ?? null,
+           e.area ?? null, e.issueType ?? null, e.priority ?? null, e.actor ?? null, e.createdAt] as any[],
+  }))
+  await db!.batch(stmts, "write")
+}
+
 // Human edit/create/archive of a trait — persists the trait state AND appends a matching
 // append-only audit event. The frontend Sim Studio writes go through here so every manual
 // change is versioned alongside AI reconcile history.
@@ -5996,6 +6028,32 @@ export async function matchMonitored(projectId: string, url: string): Promise<Mo
   const rows = await listMonitoredUrls(projectId, { enabledOnly: true })
   for (const row of rows) if (patternMatchesUrl(row.urlPattern, url)) return row
   return null
+}
+
+// KLA-838 (perf): fetch the ENABLED monitored-URL patterns for many projects in ONE query instead of
+// one listMonitoredUrls() per project. Callers that previously walked every accessible project calling
+// matchMonitored()/listMonitoredUrls() per project (extensionProjectConfig, the passive auto-resolve
+// loops in /api/sim/review + /api/sim/request-resume + /api/extension/match) collapse their O(N-projects)
+// DB fan-out to a single round-trip, then do the prefix/glob match in memory via patternMatchesUrl().
+// Returns a Map projectId -> ordered (created_at ASC) pattern list; projects with no enabled patterns
+// are absent (callers default to []). Preserves per-project pattern ordering (== listMonitoredUrls).
+export async function listEnabledMonitoredUrlPatternsForProjects(projectIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  if (!projectIds.length) return out
+  const placeholders = projectIds.map(() => "?").join(",")
+  const r = await db!.execute({
+    sql: `SELECT project_id, url_pattern FROM monitored_urls
+          WHERE enabled=1 AND project_id IN (${placeholders})
+          ORDER BY created_at ASC`,
+    args: projectIds,
+  })
+  for (const row of r.rows) {
+    const pid = String((row as any).project_id)
+    const arr = out.get(pid) || []
+    arr.push(String((row as any).url_pattern))
+    out.set(pid, arr)
+  }
+  return out
 }
 
 export function hostOfPattern(pattern: string): string {

@@ -14,6 +14,8 @@ import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } f
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
+// KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
+import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
 // real title instead of its body. Wired into every consumer that previously derived title from observation.
@@ -309,13 +311,19 @@ const ALLOWED_SHARE_TTL_DAYS = new Set([7, 30, 90])
  * revalidates against is computed over EXACTLY the payload it caches.
  */
 async function extensionProjectConfig(email: string): Promise<ExtProjectConfig[]> {
-  const out: ExtProjectConfig[] = []
-  for (const p of await listProjects(email)) {
-    if (!(await projectAccess(email, p.id))) continue // project-scoped via projectAccess
-    const patterns = (await listMonitoredUrls(p.id, { enabledOnly: true })).map(m => m.urlPattern)
-    out.push({ id: p.id, name: p.name, reviewMode: p.reviewMode, monitoredUrls: patterns })
-  }
-  return out
+  // KLA-838 (perf): this runs on a POLLED endpoint (GET /api/extension/config + /version). It used to
+  // loop listProjects(email) and, PER project, call projectAccess() (≈3 queries) + listMonitoredUrls()
+  // (1 query) — O(N-projects) round-trips every poll. Collapsed to two queries: listAccessibleProjects()
+  // resolves access in SQL (same set as the old listProjects+projectAccess filter — both exclude viewer
+  // rows + account-members with no project row), and one batched monitored-URL fetch. Same payload +
+  // per-project pattern order (created_at ASC) as before, so the extConfigVersion hash is stable.
+  const projects = await listAccessibleProjects(email)
+  if (!projects.length) return []
+  const patternsByProject = await listEnabledMonitoredUrlPatternsForProjects(projects.map(p => p.id))
+  return projects.map(p => ({
+    id: p.id, name: p.name, reviewMode: p.reviewMode,
+    monitoredUrls: patternsByProject.get(p.id) || [],
+  }))
 }
 
 // #700: classify a browser-reported error message as a BENIGN, environmental network/abort failure
@@ -6345,12 +6353,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const homeProj = await projectById(wid)
           const simLock = homeProj ? snapLocked(homeProj) : null
           if (simLock) return wjson(simLock, 402)
-          const simQuota = homeProj ? await quotaExceeded(homeProj.accountId, "sims", async () => {
-            const accountProjects = (await listProjects(me2)).filter((p) => p.accountId === homeProj.accountId)
-            let n = 0
-            for (const p of accountProjects) n += p.id === wid ? existing.length : (await listPersonas(p.id)).length
-            return n
-          }) : null
+          // KLA-838 (perf): count Sims account-wide in ONE aggregate query instead of summing
+          // listPersonas(p.id).length over every project in the account (O(N-projects) SELECTs just to
+          // produce a single number). The account is the billing unit; countPersonasForAccount counts
+          // current DB rows pre-insert, exactly what the old per-project sum did.
+          const simQuota = homeProj
+            ? await quotaExceeded(homeProj.accountId, "sims", async () => countPersonasForAccount(homeProj.accountId))
+            : null
           if (simQuota) return wjson(simQuota, 402)
 
           const id = "sim_" + crypto.randomUUID()
@@ -6511,11 +6520,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // same guard resolveProject enforces, preventing a leaked widget token from probing
       // the owner's other projects' allowlists.
       const boundProj = reqCtx.getStore()?.boundProject ?? null
-      const accessible = (await listProjects(meM)).filter(p => !boundProj || p.id === boundProj)
+      // KLA-838 (perf): resolve access once (listAccessibleProjects == the old listProjects+projectAccess
+      // filter) and batch the monitored-URL fetch, instead of projectAccess()+matchMonitored() per project.
+      const accessible = (await listAccessibleProjects(meM)).filter(p => !boundProj || p.id === boundProj)
+      const patternsByProject = await listEnabledMonitoredUrlPatternsForProjects(accessible.map(p => p.id))
       const matched: { projectId: string; name: string }[] = []
       for (const p of accessible) {
-        if (!(await projectAccess(meM, p.id))) continue
-        if (await matchMonitored(p.id, rawUrl)) matched.push({ projectId: p.id, name: p.name })
+        const patterns = patternsByProject.get(p.id) || []
+        if (patterns.some(pat => patternMatchesUrl(pat, rawUrl))) matched.push({ projectId: p.id, name: p.name })
       }
       return json({ projects: matched })
     }
@@ -6657,9 +6669,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const a = await resolveProject(meRR, rReqProject)
           if (a) rPid = a.id
         } else if (rPageUrl) {
-          for (const p of await listProjects(meRR)) {
-            if (!(await projectAccess(meRR, p.id))) continue
-            if (await matchMonitored(p.id, rPageUrl)) { rPid = p.id; break }
+          // KLA-838 (perf): resolve access once + batch monitored-URL fetch, then match in memory —
+          // was projectAccess()+matchMonitored() per project. First (created_at ASC) match wins, as before.
+          const rAccessible = await listAccessibleProjects(meRR)
+          const rPatterns = await listEnabledMonitoredUrlPatternsForProjects(rAccessible.map(p => p.id))
+          for (const p of rAccessible) {
+            if ((rPatterns.get(p.id) || []).some(pat => patternMatchesUrl(pat, rPageUrl))) { rPid = p.id; break }
           }
         }
         if (!rPid) return json({ error: "Pick a project to request a resume for." }, 400)
@@ -6772,9 +6787,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (a) projectId = a.id
         } else if (pageUrl) {
           // pick the first accessible project whose allowlist matches this url.
-          for (const p of await listProjects(meR)) {
-            if (!(await projectAccess(meR, p.id))) continue
-            if (await matchMonitored(p.id, pageUrl)) { projectId = p.id; break }
+          // KLA-838 (perf): this is the live auto-review hot path. Resolve access once
+          // (listAccessibleProjects == listProjects+projectAccess filter) and batch the monitored-URL
+          // fetch into a single query, then prefix/glob-match in memory — was projectAccess()+
+          // matchMonitored() PER project (O(N-projects) round-trips) on every passive review. First
+          // (created_at ASC) match wins, identical to the old loop.
+          const rvAccessible = await listAccessibleProjects(meR)
+          const rvPatterns = await listEnabledMonitoredUrlPatternsForProjects(rvAccessible.map(p => p.id))
+          for (const p of rvAccessible) {
+            if ((rvPatterns.get(p.id) || []).some(pat => patternMatchesUrl(pat, pageUrl))) { projectId = p.id; break }
           }
         }
         if (!projectId) {
@@ -7134,7 +7155,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             if (w.mode === "insert") await insertTrait(w.trait)
             else await updateTrait(w.trait)
           }
-          for (const e of res.traitEvents) await insertTraitEvent(e)
+          await insertTraitEvents(res.traitEvents) // KLA-838 (perf): one batched write, was serial per-event awaits
           await markReconcileRun(simId, transcriptId)
           await rebuildInsightsJson(simId)
           opsApplied += res.traitWrites.length
@@ -7274,7 +7295,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             const res = applyReconcileOps(traitsForApply, approved, { simId: g.simId, projectId, transcriptId, sourceDate, rawText, lines })
             for (const w of res.traitWrites) { if (w.mode === "insert") await insertTrait(w.trait); else await updateTrait(w.trait) }
-            for (const e of res.traitEvents) await insertTraitEvent(e)
+            await insertTraitEvents(res.traitEvents) // KLA-838 (perf): one batched write, was serial per-event awaits
             await markReconcileRun(g.simId, transcriptId)
             await rebuildInsightsJson(g.simId)
             opsApplied += res.traitWrites.length
@@ -7295,7 +7316,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               .map((x: any) => ({ op: "add", kind: x.ins.kind, text: x.ins.text, quote: x.ins.quote, speaker: null }))
             const res = applyReconcileOps([], addOps as any, { simId, projectId, transcriptId, sourceDate, rawText, lines })
             for (const w of res.traitWrites) { if (w.mode === "insert") await insertTrait(w.trait); else await updateTrait(w.trait) }
-            for (const e of res.traitEvents) await insertTraitEvent(e)
+            await insertTraitEvents(res.traitEvents) // KLA-838 (perf): one batched write, was serial per-event awaits
             await markReconcileRun(simId, transcriptId)
             await rebuildInsightsJson(simId)
             opsApplied += res.traitWrites.length
@@ -14003,7 +14024,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     if (w.mode === "insert") await insertTrait(w.trait)
                     else await updateTrait(w.trait)
                   }
-                  for (const e of res.traitEvents) await insertTraitEvent(e)
+                  await insertTraitEvents(res.traitEvents) // KLA-838 (perf): one batched write, was serial per-event awaits
                   await markReconcileRun(chosenSimId, transcriptId)
                   await rebuildInsightsJson(chosenSimId)
                   await insertActivity({ projectId: proj.id, type: "sim_evolved", actorEmail: me, simId: chosenSimId, meta: { transcriptId, ops: res.traitWrites.length, via: "sim_match_confirm" } })
