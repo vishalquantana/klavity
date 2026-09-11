@@ -12720,7 +12720,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/inbox") {
         const windowHours = Math.min(168, Math.max(1, Number(url.searchParams.get("window") || "48")))
         const windowMs = windowHours * 3600 * 1000
-        const projects = await listProjects(me)
+        // KLA-834 (SECURITY, within-account cross-project info disclosure): list ONLY projects the
+        // caller can actually access, using the SAME predicate as the access gate (projectAccess).
+        // listProjects(me) returns every project in any account the user belongs to — including ones a
+        // plain account-member has no explicit project_members row for — so using it here leaked
+        // untriaged report TITLES + new/regression counts for projects the caller could never open
+        // (clicking through 403'd). listAccessibleProjects mirrors projectAccess (owner/admin of the
+        // account, or a non-viewer project_members row) — same class of bug fixed in KLA-829 / /api/dashboard.
+        const projects = await listAccessibleProjects(me)
         const projectIds = projects.map((p) => p.id)
         const rows = await listInboxForProjects(projectIds, { windowMs })
         // Annotate each row with the project name and role for the UI.

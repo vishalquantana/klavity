@@ -112,6 +112,28 @@ await rawExec(
   [`fb_b_${ts}`, PROJ_B, "Tenant B secret bug", "high", "new", 1, NOW],
 )
 
+// ── KLA-834 (SECURITY): within-account cross-project info disclosure ──────────
+// USER_C is a PLAIN account-member of Account A (account_role='member' — NOT owner/admin) with an
+// explicit project_members row for PROJ_A1 ONLY. They have NO access to PROJ_A2 (no project row, not
+// an account owner/admin). The broad listProjects(me) would still return PROJ_A2 (account-level match),
+// so the pre-fix /api/inbox leaked PROJ_A2's untriaged report TITLE + counts to USER_C even though
+// opening PROJ_A2 would 403. The fix (listAccessibleProjects, mirrors projectAccess) must omit it.
+const USER_C = `user-inbox-c-${ts}@test.local`
+const SID_C = `sess_c_${ts}`
+await rawExec(`INSERT INTO users (email, created_at) VALUES (?, ?)`, [USER_C, NOW])
+// Plain account member of Account A — NOT owner/admin → no account-wide project access.
+await rawExec(`INSERT INTO account_members (id, account_id, email, account_role, created_at) VALUES (?, ?, ?, ?, ?)`, [`am_c_${ts}`, ACCT_A, USER_C, "member", NOW])
+// Explicit access to PROJ_A1 only (member), NONE to PROJ_A2.
+await rawExec(`INSERT INTO project_members (id, project_id, email, project_role, created_at) VALUES (?, ?, ?, ?, ?)`, [`pm_c_a1_${ts}`, PROJ_A1, USER_C, "member", NOW])
+await rawExec(`INSERT INTO sessions (id, email, created_at, expires_at) VALUES (?, ?, ?, ?)`, [SID_C, USER_C, NOW, NOW + 86_400_000])
+// A distinctive untriaged report on PROJ_A2 (the inaccessible project) whose TITLE must never leak.
+const SECRET_A2_TITLE = `Beta confidential leak report ${ts}`
+await rawExec(
+  `INSERT INTO feedback (id, project_id, observation, priority, status, recurrence_count, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  [`fb_a2_secret_${ts}`, PROJ_A2, SECRET_A2_TITLE, "high", "new", 1, NOW],
+)
+
 // ── Spawn server ──────────────────────────────────────────────────────────────
 let serverPort: number
 let serverProc: ReturnType<typeof Bun.spawn>
@@ -246,4 +268,35 @@ test("GET /api/inbox — User B can only see their own projects", async () => {
   expect(ids).toContain(PROJ_B)
   expect(ids).not.toContain(PROJ_A1)
   expect(ids).not.toContain(PROJ_A2)
+})
+
+// ── KLA-834 NEGATIVE CONTROL (SECURITY) ───────────────────────────────────────
+// A plain account-member with access to PROJ_A1 ONLY must NOT see PROJ_A2's project entry, its counts,
+// or any of its untriaged report titles. This test FAILS on the pre-fix code (listProjects leaks the
+// whole account's projects) and PASSES with the fix (listAccessibleProjects mirrors the access gate).
+test("KLA-834: inbox hides projects the account-member cannot access (no title/count leak)", async () => {
+  const r = await getInbox(SID_C, 48)
+  expect(r.status).toBe(200)
+  const body = await r.json() as any
+  const ids = (body.projects as any[]).map((p: any) => p.projectId)
+  // Accessible project is still present (no over-filtering of what they CAN see).
+  expect(ids).toContain(PROJ_A1)
+  // The inaccessible sibling project must be entirely absent — no row, no counts.
+  expect(ids).not.toContain(PROJ_A2)
+  // Its regression count must not leak into totals (PROJ_A2 had the only regression finding).
+  expect(body.totalReg).toBe(0)
+  // And none of PROJ_A2's untriaged report titles may appear anywhere in the response.
+  const allTitles = (body.projects as any[]).flatMap((p: any) => (p.topReports || []).map((rep: any) => rep.title))
+  expect(allTitles).not.toContain(SECRET_A2_TITLE)
+  // Belt-and-suspenders: the secret title must not appear in the raw serialized body either.
+  expect(JSON.stringify(body)).not.toContain(SECRET_A2_TITLE)
+})
+
+// Over-filtering guard: an account OWNER still sees every project in their account.
+test("KLA-834: account owner still sees all their projects (no over-filtering)", async () => {
+  const r = await getInbox(SID_A, 48)
+  const body = await r.json() as any
+  const ids = (body.projects as any[]).map((p: any) => p.projectId)
+  expect(ids).toContain(PROJ_A1)
+  expect(ids).toContain(PROJ_A2)
 })
