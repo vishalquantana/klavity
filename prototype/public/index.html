@@ -2374,6 +2374,10 @@ async function loadStudioProjects() {
   if (!sel) return
   let projects = []
   try { const r = await fetch("/api/projects"); if (r.ok) projects = (await r.json()).projects || [] } catch (e) {}
+  // KLA-835: defensively drop any project the caller can't open (role:null). /api/projects now returns
+  // only accessible projects (server-side listAccessibleProjects), but guarding here too means the
+  // account default (resolveStudioProject → projects[0]) can never land on an un-openable project.
+  projects = projects.filter(p => p && p.role)
   if (!projects.length) return
   const requested = studioProjectId()
   const active = resolveStudioProject(requested, projects)

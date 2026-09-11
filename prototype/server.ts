@@ -11871,6 +11871,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/account/agency-report") {
         const ms = await membershipsFor(me); const active = ms[0]
         if (!active) return json({ error: "No account." }, 400)
+        // KLA-835: gate to account admins/owners. This rollup aggregates per-CLIENT (per-project)
+        // usage + outcomes across the WHOLE account; previously it was only isAgencyEntitled-gated with
+        // no per-caller role check, so a plain account MEMBER could pull per-client rollups for projects
+        // they can't even open. membershipsFor() maps account_role owner/admin → "admin", member → "user".
+        // Checked BEFORE the plan gate so a non-admin never learns the account's billing plan either.
+        if (active.role !== "admin") return json({ error: "The per-client report is restricted to account admins." }, 403)
         const billing = await accountBillingState(active.workspaceId)
         const unlimited = await isAccountUnlimited(active.workspaceId)
         if (!isAgencyEntitled(billing.plan, unlimited)) {
@@ -12756,7 +12762,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // ── projects (P2) ──
       // List the caller's projects.
       if (req.method === "GET" && path === "/api/projects") {
-        const projects = await listProjects(me)
+        // KLA-835: list ONLY projects the caller can actually OPEN, using listAccessibleProjects
+        // (mirrors projectAccess) instead of the broad listProjects(). This endpoint feeds the Sims
+        // Studio project switcher (public/index.html loadStudioProjects), whose account default is the
+        // FIRST project returned — with listProjects() that could be a project the member has no access
+        // to (role:null), so the studio defaulted to an un-openable project (blank/dead switcher, the
+        // same class of bug KLA-829 fixed for /api/dashboard + /api/inbox). Owners/admins still see all
+        // their account's projects. Every project returned now has a non-null role.
+        const projects = await listAccessibleProjects(me)
         // #661: resolve per-project role CONCURRENTLY. Sequentially awaiting projectAccess (≈2-3
         // queries each) made this an N+1 that scaled linearly with project count; Promise.all fans
         // the lookups out so total latency ≈ one round-trip. Same fix already applied to /api/inbox.
