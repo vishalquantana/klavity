@@ -565,5 +565,12 @@
     "excerpt": "Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.",
     "category": "Guides",
     "date": "2026-09-10"
+  },
+  {
+    "slug": "qa-vs-qc-quality-assurance-vs-quality-control",
+    "title": "QA vs. QC: Quality Assurance vs. Quality Control Explained",
+    "excerpt": "Quality assurance prevents defects by improving the process; quality control catches them in the product. Here's how each works and where they overlap.",
+    "category": "Compare",
+    "date": "2026-09-11"
   }
 ]
