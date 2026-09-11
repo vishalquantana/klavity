@@ -4225,7 +4225,7 @@ function Yf(e, t, r = {}) {
     mn = M, y.addEventListener("click", (O) => {
       O.target === y && M();
     }), (R = y.querySelector("#kl-cc-keep")) == null || R.addEventListener("click", M), (T = y.querySelector("#kl-cc-discard")) == null || T.addEventListener("click", () => {
-      M(), Wr();
+      M(), Wr({ reason: "discard" });
     }), (a.querySelector(".klavity-modal") || _t).appendChild(y);
     try {
       (A = y.querySelector("#kl-cc-keep")) == null || A.focus();
