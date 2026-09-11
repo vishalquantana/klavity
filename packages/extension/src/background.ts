@@ -261,8 +261,13 @@ async function reconcileDynamicScripts(): Promise<void> {
   if (ours.length) { try { await chrome.scripting.unregisterContentScripts({ ids: ours }) } catch { /* ignore */ } }
   if (!granted.length) return
   const { js, css } = contentFiles()
+  // KLA-830: inject at document_start (was document_idle) so content.ts wires the contextmenu handler as
+  // soon as the document exists — right-clicking BEFORE the page finishes loading now shows the Klavity menu
+  // instead of Chrome's native menu. The handler binds to `document` (present at document_start); every
+  // body-touching path (context menu, toast, evidence dock) runs on user action or behind async awaits by
+  // which point <body> exists, so the earlier injection is safe.
   const scripts = granted.map((o) => ({
-    id: 'klav-' + o, matches: [o], js, css, runAt: 'document_idle' as const,
+    id: 'klav-' + o, matches: [o], js, css, runAt: 'document_start' as const,
   }))
   try { await chrome.scripting.registerContentScripts(scripts) }
   catch (e) { console.warn('[Klavity] registerContentScripts failed:', e) }

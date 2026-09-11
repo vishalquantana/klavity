@@ -410,6 +410,11 @@ async function openComposer(
     // auto-capture and let the zoomed-in region lead. In session mode with already-captured shots, also
     // skip auto-capture (we seed those below). Otherwise auto-grab the full page on open.
     autoCaptureOnOpen: !opts.initialShot && !hasSeed,
+    // KLA-830: viewport-first — the DEFAULT auto-capture is the visible area only (captureViewportOnly in
+    // modal.ts), so opening "Report a bug" no longer scrolls + stitches the WHOLE page. Full Page stays an
+    // explicit click via onCaptureFull. This also makes the composer feel instant: it opens with a skeleton
+    // and the fast viewport shot swaps in, instead of blocking on a multi-frame full-page scroll-stitch.
+    onCaptureViewport,
     onCaptureFull,
     onRegionCapture,
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
@@ -447,11 +452,14 @@ async function openComposer(
     // Reset the single-slot controller ref whenever the composer closes (so it can reopen), and for a
     // session: a plain X/Esc close (NOT a submit or a minimize) keeps any captured evidence — show the
     // dock so it isn't lost — but reaps an EMPTY session so an unused open never lingers.
-    onClose: (reason?: 'submitted') => {
+    onClose: (reason?: 'submitted' | 'discard') => {
       modalCtrl = null
       _composerOpening = false // KLA-517: teardown clears BOTH guard halves so a fresh open works
       if (!session) return
       if (reason === 'submitted') { evMinimizing = false; return }
+      // KLA-830: an EXPLICIT Discard destroys the evidence session (no dock resurrection); without this a
+      // Discard fell through to the keep-evidence path below and re-showed the dock, forcing a second discard.
+      if (reason === 'discard') { evMinimizing = false; void discardEvidence(); return }
       if (evMinimizing) { evMinimizing = false; return } // minimizeToDock already showed the dock
       void queueEvWrite(async () => {
         const latest = await evGetActive(evStorage)
@@ -766,6 +774,15 @@ const onCaptureFull = async (): Promise<{ dataUrl: string; quality: 'real-pixel'
   } catch {
     dataUrl = await captureAwaiter.captureFull()
   }
+  return { dataUrl, quality: 'real-pixel' }
+}
+
+// KLA-830: VIEWPORT-only capture — a single captureVisibleTab grab of exactly what's on screen (chrome's
+// captureVisibleTab is inherently viewport-scoped: no scroll, no stitch). Wired as onCaptureViewport so the
+// composer's auto-capture-on-open default is the visible area (fast, no page-scroll jank) — matching the
+// widget. Full-page scroll-stitch stays the explicit "Full Page" button (onCaptureFull) + Retake sharp.
+const onCaptureViewport = async (): Promise<{ dataUrl: string; quality: 'real-pixel' }> => {
+  const dataUrl = await captureAwaiter.captureFull()
   return { dataUrl, quality: 'real-pixel' }
 }
 
@@ -1136,14 +1153,32 @@ document.addEventListener('contextmenu', handleContextMenu, true)  // KLA-771: C
 // If the widget announces itself after we initialised, tear down our report UI AND
 // the live-activation surface (indicator + comment bubbles); widget wins. This covers
 // the race where the extension boots and renders before the deferred widget mounts.
-document.addEventListener('klavity:widget-ready', () => {
+// KLA-830: extracted so BOTH the widget-ready event AND the DOM-presence observer below can invoke it —
+// the event alone missed cases where the widget mounted before our listener attached (now that we inject at
+// document_start) or where it never dispatches, leaving BOTH the extension and the script widget rendered.
+function yieldToWidget(): void {
   closeCtxMenu()
   if (modalCtrl) closeModal()
   hideEvDock() // widget owns reporting + its own evidence dock — hide ours so they don't stack
   klavIndicatorEl?.remove(); klavIndicatorEl = null
   klavClearBubbles()
   stopRoam() // tear down any in-flight Sim Roast overlay/characters (#714)
-})
+}
+document.addEventListener('klavity:widget-ready', yieldToWidget)
+
+// KLA-830: DOM-presence de-dupe. The event above only fires if we're listening when the widget dispatches
+// it. Injecting at document_start (issue #1) means we frequently boot BEFORE the in-page/script widget
+// mounts, so widgetPresent() is false at boot and we render our own surfaces — then the widget appears and
+// you'd see TWO. Watch <html> for the widget's host node (#klavity-widget-host / #klavity-sdk-host /
+// [data-klavity-ui]) being inserted and yield the instant it does, regardless of whether widget-ready fired.
+try {
+  const widgetWatch = new MutationObserver(() => {
+    if (widgetPresent()) { yieldToWidget(); widgetWatch.disconnect() }
+  })
+  const startWatch = () => { try { widgetWatch.observe(document.documentElement, { childList: true, subtree: true }) } catch { /* no DOM */ } }
+  if (widgetPresent()) yieldToWidget()        // widget already there at boot → yield now, no observer needed
+  else startWatch()
+} catch { /* MutationObserver unavailable (non-DOM env) — the widget-ready event + widgetPresent() guards still cover it */ }
 
 // ════════════════════════════════════════════════════════════════════════════
 // LIVE ACTIVATION (P3b, R5) — auto-comment on monitored URLs.

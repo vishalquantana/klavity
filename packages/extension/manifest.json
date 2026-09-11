@@ -27,7 +27,7 @@
       "matches": ["http://localhost/*"],
       "js": ["src/content.ts"],
       "css": ["src/content.css"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     },
     {
       "matches": ["https://klavity.in/*", "https://klavity.quantana.top/*", "http://localhost/*"],

@@ -1630,7 +1630,7 @@ async function mount() {
         void queueEvWrite(async () => { evSession = await updateShotAnnotations(ev.id, index, annotations) ?? evSession })
       } : undefined,
       // G5: fire 'close' event whenever the composer is dismissed (Esc, overlay click, X button).
-      onClose: (reason?: 'submitted') => {
+      onClose: (reason?: 'submitted' | 'discard') => {
         emit("close", {})
         // KLA-621: release the session-scoped shared display stream on EVERY composer exit (X/Esc/backdrop,
         // minimize, submit) so no getDisplayMedia track lingers after the composer is gone — mirrors the
@@ -1645,6 +1645,10 @@ async function mount() {
         // 'submitted' => the report was handed off to the background pill; onSubmit/afterFiled owns
         // clearing the evidence session, so skip the keep-evidence / restore-dock bookkeeping here.
         if (reason === "submitted") { evMinimizing = false; return }
+        // KLA-830: an EXPLICIT Discard (composer confirm dialog → "Discard") destroys the evidence session
+        // outright — no dock resurrection. discardEvidence() clears in-memory + IndexedDB state and calls
+        // hideEvDock() → paintLauncher(), so the normal launcher reappears immediately (no extra click).
+        if (reason === "discard") { evMinimizing = false; void discardEvidence(); return }
         // KLA-412: a plain X/Esc close (NOT a minimize) keeps any captured evidence — we show the dock so
         // it isn't lost — but reaps an EMPTY session so an unused open never lingers, restoring the launcher.
         if (ev && !evMinimizing) {

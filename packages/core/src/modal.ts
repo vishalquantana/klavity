@@ -494,7 +494,10 @@ export interface ModalCallbacks {
   // Used by the widget to fire the public window.Klavity.on('close') event. `reason` is 'submitted'
   // ONLY on the non-blocking background-upload close (see backgroundUpload): the report was handed off
   // to the host's pill, so the host should skip any "keep evidence / restore dock" bookkeeping.
-  onClose?: (reason?: 'submitted') => void
+  // KLA-830: `reason` is 'discard' when the reporter EXPLICITLY discarded from the composer's confirm
+  // dialog — the host must DESTROY any saved evidence session (and NOT resurrect the dock), so a single
+  // Discard truly discards instead of silently persisting the draft and re-showing the dock.
+  onClose?: (reason?: 'submitted' | 'discard') => void
   // NON-BLOCKING SUBMIT (default widget path). When true, a successful Submit does NOT await the upload
   // inside the modal: the payload is handed to callbacks.onSubmit (fire-and-forget) and the modal +
   // backdrop dismiss IMMEDIATELY so the page is never dimmed while a (possibly large) recording uploads.
@@ -2317,7 +2320,7 @@ export function buildModal(
   // gone AT ONCE; used by the non-blocking background-upload submit so the page is never left dimmed
   // while the report uploads. opts.reason='submitted' is forwarded to onClose so the host can skip its
   // keep-evidence/restore-dock bookkeeping (the report was filed, not abandoned).
-  function close(opts?: { immediate?: boolean; reason?: 'submitted' }) {
+  function close(opts?: { immediate?: boolean; reason?: 'submitted' | 'discard' }) {
     // #468: idempotent — a second close() (e.g. the auto-dismiss timer firing after the user already hit X)
     // must never re-run teardown or re-fire onClose. onClose can tear down host session state, so a double
     // call could kill a reopened composer.
@@ -2577,7 +2580,10 @@ export function buildModal(
     dismissConfirmClose = dismiss
     card.addEventListener('click', (e) => { if (e.target === card) dismiss() }) // click the dim to keep editing
     card.querySelector('#kl-cc-keep')?.addEventListener('click', dismiss)
-    card.querySelector('#kl-cc-discard')?.addEventListener('click', () => { dismiss(); close() })
+    // KLA-830: signal a TRUE discard so the host destroys any saved evidence session instead of persisting
+    // it + re-showing the dock. Without the reason, onClose's keep-evidence path resurrected the draft, so
+    // the reporter had to discard twice (once here, once on the re-appeared dock).
+    card.querySelector('#kl-cc-discard')?.addEventListener('click', () => { dismiss(); close({ reason: 'discard' }) })
     const m = shadowRoot.querySelector('.klavity-modal') as HTMLElement | null
     ;(m || overlay).appendChild(card)
     try { (card.querySelector('#kl-cc-keep') as HTMLElement | null)?.focus() } catch { /* jsdom */ }
