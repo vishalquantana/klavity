@@ -633,13 +633,26 @@ function feedbackLink(fid){
 
 $("logout").onclick = async function(){ await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" };
 
+// KLA-837 — never dead-end on a load failure: show a clear Retry affordance (mirrors
+// dashboard's swrSection). The project switcher can't be painted without the dashboard
+// payload, so the Retry button is the recovery path back to a usable page.
+function renderLoadError(msg) {
+  $("lead").textContent = msg;
+  const rl = $("runsList");
+  if (rl) rl.innerHTML = '<div class="empty-state"><p>' + esc(msg) + '</p>'
+    + '<button class="run-rerun-btn" type="button" id="loadRetry">'
+    + (window.kicon ? window.kicon("rotate-cw", { size: 13 }) : "") + ' Retry</button></div>';
+  const b = $("loadRetry");
+  if (b) b.onclick = function () { $("lead").textContent = "Loading…"; load(); };
+}
+
 async function load() {
   const pid = projParam();
   try {
     const r = await fetch("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""));
     if (r.status === 401) { location.href = "/login"; return; }
     if (!r.ok) {
-      $("lead").textContent = "Error loading project.";
+      renderLoadError("Error loading project.");
       return;
     }
     const d = await r.json();
@@ -660,7 +673,7 @@ async function load() {
     await fetchRuns(state.active.id);
 
   } catch (e) {
-    $("lead").textContent = "Network error loading page.";
+    renderLoadError("Network error loading page.");
   }
 }
 

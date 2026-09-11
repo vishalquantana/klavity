@@ -352,12 +352,15 @@ function showError(type) {
   if (h) h.textContent = type === 'notfound' ? 'Not found' : 'Error'
   document.title = 'Not Found — Klavity'
   const main = document.getElementById('main')
+  // KLA-837 — transient 500/network failure offers a Reload; terminal 404/revoked-link stays a dead end.
   if (main) main.innerHTML =
     '<div class="error-state"><h1>' + (type === 'notfound' ? '404' : '500') + '</h1><p>' +
     (type === 'notfound'
       ? 'This report could not be found. The link may have been revoked or is invalid.'
       : 'Failed to load the monthly report. Please try again.') +
-    '</p></div>'
+    '</p>' +
+    (type === 'notfound' ? '' : '<button type="button" onclick="location.reload()" style="margin-top:12px;padding:8px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;cursor:pointer;font-weight:600">Reload</button>') +
+    '</div>'
 }
 </script>
 </body>

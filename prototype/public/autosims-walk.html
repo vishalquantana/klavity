@@ -742,6 +742,15 @@ document.addEventListener("DOMContentLoaded",function(){
 // ── Walk data ──
 var walkData=null
 
+// KLA-837 — render a transient load failure with an inline Retry (re-runs load()) rather than a
+// terminal "not found" dead-end.
+function walkLoadError(msg){
+  $("walkTitle").textContent=msg
+  var meta=$("walkMeta")
+  if(meta) meta.innerHTML='<button class="btn btn-sm" type="button" id="walkRetry">Retry</button>'
+  var b=$("walkRetry")
+  if(b) b.onclick=function(){$("walkTitle").textContent="Loading…";if(meta) meta.innerHTML="";load()}
+}
 async function load(){
   var pid=projParam()
   var qs=pid?"?project="+encodeURIComponent(pid):""
@@ -761,9 +770,15 @@ async function load(){
   // Load walk detail
   var r
   try{r=await fetch("/api/trails/walks/"+encodeURIComponent(walkId)+qs)}
-  catch(e){$("walkTitle").textContent="Network error loading walk.";return}
+  catch(e){walkLoadError("Network error loading walk.");return}
   if(r.status===401){location.href="/login";return}
-  if(!r.ok){$("walkTitle").textContent="Walk not found.";return}
+  // KLA-837 — only a genuine 404 is "not found"; a transient 5xx/other error gets a Retry
+  // affordance instead of a misleading dead-end.
+  if(!r.ok){
+    if(r.status===404){$("walkTitle").textContent="Walk not found."}
+    else{walkLoadError("Couldn't load this walk.")}
+    return
+  }
 
   var d=await r.json()
   walkData=d

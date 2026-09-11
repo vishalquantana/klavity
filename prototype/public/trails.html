@@ -2189,8 +2189,16 @@ var AS_COPY = (typeof window !== "undefined" && window.KLAV_AUTOSIMS_COPY) || {}
 
 async function load(){
   const d = await loadData()
-  if (!d) { $("lead").textContent = AS_COPY.loadError || "Couldn't load AutoSims."; return }
+  // KLA-837 — don't dead-end on a failed load: surface an inline Retry affordance instead of a
+  // terminal "Couldn't load" message (mirrors dashboard's swrSection). 401 already redirects to /login.
+  if (!d) { renderLoadError(AS_COPY.loadError || "Couldn't load AutoSims."); return }
   await render(d)
+}
+function renderLoadError(msg){
+  var lead = $("lead")
+  lead.innerHTML = esc(msg) + ' <button class="btn btn-ghost" type="button" id="loadRetry" style="margin-left:8px;vertical-align:middle">Retry</button>'
+  var b = $("loadRetry")
+  if (b) b.onclick = function(){ lead.textContent = "Loading…"; load() }
 }
 
 async function render(d){

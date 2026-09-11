@@ -6519,7 +6519,7 @@ function setCaFreq(freq, el) {
   for (var i = 0; i < opts.length; i++) opts[i].classList.toggle("on", opts[i] === el);
 }
 function openConvertAutosim(simId) {
-  var sim = (state.sims || []).find(function (x) { return x.id === simId; }) || { id: simId, name: "this Sim" };
+  var sim = ((state && state.sims) || []).find(function (x) { return x.id === simId; }) || { id: simId, name: "this Sim" };
   caState.simId = simId; caState.freq = "weekly";
   $("caName").textContent = sim.name || "this Sim";
   $("caForm").style.display = ""; $("caSuccess").style.display = "none";
@@ -9644,7 +9644,8 @@ async function fetchAndRenderTktList() {
     if (window.__klavMutating > 0 && paintedFromCache) return
     renderTktList(listEl, data.tickets || [], data.total || 0)
   } catch (e) {
-    if (!paintedFromCache) listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+    // KLA-837 — don't dead-end: offer an inline Retry that re-runs this exact fetch (swrSection spirit).
+    if (!paintedFromCache) listEl.innerHTML = '<div class="tkt-list-empty">Failed to load tickets. <button class="btn btn-sm" type="button" onclick="fetchAndRenderTktList()">Retry</button></div>'
   } finally {
     _tktListState.loading = false
   }
@@ -9696,7 +9697,8 @@ async function fetchAndRenderTktBoard() {
     renderTicketsKanban(_tktBoardTickets)
     swrWrite("tickets:" + projId, _tktBoardTickets)   // #660: keep the SWR snapshot (+ #652 marker) fresh
   } catch (e) {
-    if (!warmCache && !paintedFromCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets.</div>'
+    // KLA-837 — don't dead-end: offer an inline Retry that re-runs this exact fetch (swrSection spirit).
+    if (!warmCache && !paintedFromCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets. <button class="btn btn-sm" type="button" onclick="fetchAndRenderTktBoard()">Retry</button></div>'
   } finally {
     _tktBoardState.loading = false
   }

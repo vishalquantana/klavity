@@ -395,8 +395,12 @@ async function loadInbox(windowHours) {
     if (mySeq !== inboxSeq) return
     hide($("loadingEl"))
     // Never surface an empty error banner — always carry a human-readable message.
+    // KLA-837 — and never dead-end: pair it with a Retry that re-loads the current window.
     const msg = (e && e.message) ? e.message : "unknown error"
-    $("errEl").textContent = "Could not load inbox: " + msg
+    $("errEl").innerHTML = 'Could not load inbox: ' + esc(msg)
+      + ' <button class="btn" type="button" id="inboxRetry" style="margin-left:8px">Retry</button>'
+    const rb = $("inboxRetry")
+    if (rb) rb.onclick = () => loadInbox(windowHours)
     show($("errEl"))
   }
 }

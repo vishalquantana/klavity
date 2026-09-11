@@ -263,6 +263,15 @@ async function fetchWalksPage(page){
   return r.json()
 }
 
+// KLA-837 — never dead-end on a load failure: clear the stuck "Loading walks…" skeleton and
+// offer an inline Retry that re-runs load() (mirrors dashboard's swrSection).
+function renderLoadError(msg){
+  $("lead").textContent=msg
+  var wl=$("walkList")
+  if(wl) wl.innerHTML='<div class="empty"><p>'+esc(msg)+'</p><button class="pager-btn" type="button" id="walksRetry" style="margin-top:10px">Retry</button></div>'
+  var b=$("walksRetry")
+  if(b) b.onclick=function(){$("lead").textContent="";if(wl) wl.innerHTML='<div class="empty"><p>Loading walks…</p></div>';load()}
+}
 async function load(){
   var pid=projParam()
   var qs=pid?"?project="+encodeURIComponent(pid):""
@@ -274,11 +283,11 @@ async function load(){
       fetch("/api/trails/walks"+qs+(qs?"&":"?")+"page=1&limit="+PAGE_SIZE)
     ])
     if(res[0].status===401||res[1].status===401||res[2].status===401){location.href="/login";return}
-    if(!res[0].ok){$("lead").textContent="Error loading project.";return}
+    if(!res[0].ok){renderLoadError("Error loading project.");return}
     dash=await res[0].json()
     trails=res[1].ok?await res[1].json():{trails:[]}
     walksData=res[2].ok?await res[2].json():{walks:[],total:0,page:1,pages:1,limit:PAGE_SIZE}
-  }catch(e){$("lead").textContent="Network error.";return}
+  }catch(e){renderLoadError("Network error.");return}
   $("who").textContent=dash.email||""
   state.projId=dash.active?dash.active.id:null
 

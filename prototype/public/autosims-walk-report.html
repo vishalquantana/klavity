@@ -266,7 +266,13 @@ async function load(){
   var dataUrl="/shared/walk/"+encodeURIComponent(token)+"/data"+(pc?("?"+pcQ()):"")
   var r=await fetch(dataUrl)
   if(r.status===401){var g=await r.json().catch(function(){return {}});if(g&&g.needsPasscode){renderPasscodePrompt(!!pc);return}}
-  if(!r.ok){$("title").textContent="Shared report not found";$("meta").textContent="This link may be expired or revoked.";return}
+  // KLA-837 — a transient 5xx is NOT a revoked link: distinguish it and offer a Retry instead of a
+  // misleading "not found" dead-end. A genuine 404 stays terminal (link expired/revoked).
+  if(!r.ok){
+    if(r.status===404){$("title").textContent="Shared report not found";$("meta").textContent="This link may be expired or revoked."}
+    else{reportLoadError("Couldn't load this report.")}
+    return
+  }
   state.data=await r.json()
   // Thread the passcode onto sub-resource URLs so the PDF / replay endpoints pass the same server gate.
   if(pc){state.data.pdfUrl=withPc(state.data.pdfUrl);state.data.replayUrl=withPc(state.data.replayUrl)}
@@ -276,7 +282,15 @@ async function load(){
   $("acts").innerHTML='<span class="pill '+esc(v)+'">'+esc(v)+'</span><a class="btn" href="'+esc(state.data.pdfUrl)+'" target="_blank" rel="noopener">'+icon("file-text",12)+'PDF</a>'
   renderSteps();renderJudgment();renderFindings();await loadReplay();if(v==="running")startLive()
 }
-load().catch(function(){$("title").textContent="Could not load shared report"})
+// KLA-837 — transient failure gets a Retry affordance (re-runs load()), never a bare dead-end.
+function reportLoadError(msg){
+  $("title").textContent=msg
+  var meta=$("meta")
+  if(meta) meta.innerHTML='<button class="btn" type="button" id="reportRetry">Retry</button>'
+  var b=$("reportRetry")
+  if(b) b.onclick=function(){$("title").textContent="Loading…";if(meta) meta.innerHTML="";load().catch(function(){reportLoadError("Could not load shared report")})}
+}
+load().catch(function(){reportLoadError("Could not load shared report")})
 </script>
 </body>
 </html>

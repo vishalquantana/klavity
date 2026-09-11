@@ -299,13 +299,16 @@ tbody tr:hover{background:var(--ink-3)}
 
   fetch("/api/superadmin/pl", { credentials: "include" })
     .then(function(res){
-      if (res.status === 403) throw new Error("Forbidden — this page is restricted to ops admins.");
+      if (res.status === 403) { var fe = new Error("Forbidden — this page is restricted to ops admins."); fe.terminal = true; throw fe; }
       if (!res.ok) throw new Error("Failed to load P&L (" + res.status + ")");
       return res.json();
     })
     .then(boot)
     .catch(function(e){
-      document.querySelector(".wrap").innerHTML = "<div class='err'>" + esc(e.message || String(e)) + "</div>";
+      // KLA-837 — a transient load failure must offer a way back; only a real 403 is terminal.
+      // Reload re-runs the whole boot fetch (the tabs/nav come back on success).
+      var retry = e && e.terminal ? "" : ' <button type="button" onclick="location.reload()" style="margin-left:10px;padding:6px 14px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer;font-weight:600">Reload</button>';
+      document.querySelector(".wrap").innerHTML = "<div class='err'>" + esc(e.message || String(e)) + retry + "</div>";
     });
 })();
 </script>
