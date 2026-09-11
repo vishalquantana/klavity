@@ -3278,6 +3278,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           + "@keyframes klvindet{0%{margin-left:-40%}100%{margin-left:100%}}"
           + "#klvretry{margin-top:14px;padding:7px 16px;font:inherit;font-size:13px;color:#fff;background:#7c3aed;border:0;border-radius:8px;cursor:pointer;transition:transform .15s ease,background .15s ease}"
           + "#klvretry:hover{background:#6d28d9;transform:scale(1.02)}#klvretry:active{transform:scale(.97)}"
+          // KLA-832: download fallback link, revealed on a failed/too-large mount so the recording is always retrievable.
+          + "#klvdl{display:none;margin-top:10px;font-size:13px;color:#7c3aed;text-decoration:underline;cursor:pointer}"
+          + "#klvdl:hover{color:#6d28d9}"
           // Playback controller (ported from autosims-walk-report.html .rpl-* controller). The frame has no
           // --ink-3/--line/--indigo/--paper CSS vars, so the dark tokens are mapped to hardcoded equivalents
           // consistent with the frame's white paper + purple (#7c3aed) accent.
@@ -3325,6 +3328,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "<div id=\"klvstatus\">Loading replay…</div>"
         + "<div id=\"klvbarwrap\"><div id=\"klvbar\"></div></div>"
         + "<button id=\"klvretry\" type=\"button\" style=\"display:none\">Retry</button>"
+        + "<a id=\"klvdl\" href=\"/api/feedback/" + encodeURIComponent(fbId) + "/replay?download=1\" download>Download the recording</a>"
         + "</div>"
         + "<script src=\"/vendor/klv-buffer.min.js\"></script>"
         + "<script>(function(){"
@@ -3337,7 +3341,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // is absurd) so the synchronous new rrweb.Replayer(...) returns in well under a second.
         + "var MOUNT_EVENT_CAP=6000,MOUNT_BYTES_CAP=6000000,HARD_BYTES_CEIL=12000000;"
         + "function post(m){try{parent.postMessage(Object.assign({source:'klv-replay'},m),location.origin)}catch(e){}}"
-        + "var statusEl=document.getElementById('klvstatus'),barWrap=document.getElementById('klvbarwrap'),barEl=document.getElementById('klvbar'),retryEl=document.getElementById('klvretry'),msgBox=document.getElementById('klvmsg');"
+        + "var statusEl=document.getElementById('klvstatus'),barWrap=document.getElementById('klvbarwrap'),barEl=document.getElementById('klvbar'),retryEl=document.getElementById('klvretry'),dlEl=document.getElementById('klvdl'),msgBox=document.getElementById('klvmsg');"
+        + "function showDl(){if(dlEl)dlEl.style.display='inline-block'}"
         // KLA-757: a SINGLE watchdog timer that runs from fetch start through the mount. It is only cleared once
         // the player's iframe is confirmed present (real mount) or on an explicit fail()/toolarge(). Because the
         // mount is now bounded (MOUNT_EVENT_CAP) the main thread yields quickly, so this can actually FIRE on the
@@ -3349,10 +3354,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "function setPct(p){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.remove('klv-indet');barEl.style.width=Math.max(0,Math.min(100,p))+'%'}}"
         + "function setIndet(){if(barWrap)barWrap.style.display='block';if(barEl){barEl.classList.add('klv-indet');barEl.style.width=''}}"
         + "function hideBar(){if(barWrap)barWrap.style.display='none'}"
-        + "function fail(t,st){clearLoadTimer();setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:st||'error'})}"
+        + "function fail(t,st){clearLoadTimer();setStatus(t);hideBar();if(retryEl)retryEl.style.display='inline-block';showDl();post({status:st||'error'})}"
         // Extreme-size safety net: skip the live rebuild entirely and show an honest message + Retry rather than
         // attempting a freeze. Posts {status:'toolarge'} so the dashboard can render its own honest state.
-        + "function toolarge(){clearLoadTimer();setStatus('This session is too large to play here.');hideBar();if(retryEl)retryEl.style.display='inline-block';post({status:'toolarge'})}"
+        + "function toolarge(){clearLoadTimer();setStatus('This session is too large to play here.');hideBar();if(retryEl)retryEl.style.display='inline-block';showDl();post({status:'toolarge'})}"
         // Build a BOUNDED, coherent slice for mounting: a contiguous prefix (indices 0..cap-1) that still contains
         // the FIRST full snapshot (type===2). Returns ev unchanged when already small, or null when no full
         // snapshot is reachable within the cap (leading prefix alone too large) so the caller degrades to toolarge.
@@ -3376,7 +3381,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         + "return Promise.resolve({text:new TextDecoder('utf-8').decode(buf),bytes:buf.length})"
         + "}"
         + "function boot(){"
-        + "if(retryEl)retryEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
+        + "if(retryEl)retryEl.style.display='none';if(dlEl)dlEl.style.display='none';showBox();setStatus('Loading replay…');setPct(0);"
         + "var done=false,metaN=0,metaT=false;"
         + "var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;"
         + "loadTimer=setTimeout(function(){if(done)return;done=true;if(ctrl){try{ctrl.abort()}catch(e){}}fail('The replay is taking too long to load. Check your connection and try again.','timeout')},DL_TIMEOUT);"
@@ -12109,6 +12114,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const raw = await getFeedbackReplayGz(fbRow.projectId, fid)
           if (!raw) return json({ error: "No replay for this report." }, 404)
           const gzBytes = raw.gz
+          // KLA-832: ?download=1 is the DOWNLOAD FALLBACK the replay viewer offers when inline playback fails
+          // or the session is too large to rebuild in the tab. Serve the already-gzipped events as a saved
+          // file (application/gzip + Content-Disposition attachment) WITHOUT Content-Encoding, so the browser
+          // writes the .json.gz bytes verbatim instead of transparently decompressing + rendering them. This
+          // lets a reporter always retrieve their own evidence even when the player can't mount.
+          if (url.searchParams.get("download") === "1") {
+            return withSecurityHeaders(new Response(gzBytes, {
+              headers: {
+                "content-type": "application/gzip",
+                "content-disposition": `attachment; filename="klavity-replay-${fid}.json.gz"`,
+                "cache-control": "private, no-store",
+                "x-klv-feedback": fid,
+                "x-klv-nevents": String(raw.nEvents),
+              },
+            }))
+          }
           return withSecurityHeaders(new Response(gzBytes, {
             headers: {
               "content-type": "application/json; charset=utf-8",

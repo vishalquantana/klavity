@@ -1143,6 +1143,9 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .tkt-save-grp .save-meta-btn{background:var(--indigo);border-color:var(--indigo);color:#fff}
 .tkt-act-grp{display:inline-flex;align-items:center;gap:6px}
 /* editable description (click-to-edit / pencil → textarea + Save/Cancel) */
+/* KLA-832: the Description reads as a clearly-outlined white card (repo "white cards on beige" standard) —
+   a visible border/stroke + padding so the detail body never sits as bare text directly on the page bg. */
+.tkt-desc{background:var(--ink-2);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
 .tkt-desc-head{display:flex;align-items:center;gap:8px}
 .tkt-desc-head .tkt-desc-label{margin-bottom:0}
 .tkt-desc-edit{background:none;border:none;padding:2px;line-height:0;color:var(--paper-faint);cursor:pointer;border-radius:6px;opacity:0;transition:opacity .15s,color .15s,transform var(--mi-dur) var(--mi-ease)}
@@ -1881,6 +1884,21 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-rec-seg:hover{background:rgba(255,255,255,.05)}
   .tkt-rec-ts{font-family:var(--mono);font-size:11px;color:var(--indigo,#9a8cff);margin-right:6px}
   .tkt-rec-tx-status{font-size:12.5px}
+  /* KLA-832: recording <video> wrapper + loading/error/download fallback states. MediaRecorder-produced
+     webm clips report duration:Infinity (no duration in the container), so the native seek bar starts near
+     the end and drifts; wireRecordingVideos() repairs the duration. A Download link is always present as a
+     fallback (and the clip may be evidence the reporter wants to keep); the error line reveals when inline
+     playback fails so a broken clip is never a dead frame with no way out. */
+  .tkt-rec-vwrap{position:relative;display:flex;flex-direction:column;gap:7px}
+  .tkt-rec-loading{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--paper-dim)}
+  .tkt-rec-loading svg{width:13px;height:13px;animation:tktRecSpin 1s linear infinite}
+  @keyframes tktRecSpin{to{transform:rotate(360deg)}}
+  .tkt-rec-error{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--rose);background:rgba(219,39,119,.08);border:1px solid rgba(219,39,119,.28);border-radius:8px;padding:8px 10px}
+  .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-video{display:none}
+  .tkt-rec-dl{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;font-size:12px;font-weight:600;color:var(--indigo);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:5px 11px;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+  .tkt-rec-dl svg{width:13px;height:13px}
+  .tkt-rec-dl:hover{background:rgba(99,102,241,.1);border-color:var(--indigo);transform:var(--mi-lift)}
+  .tkt-rec-dl:active{transform:var(--mi-press)}
 
 /* ===== Add-a-Sim modal (first-run + "New Sim") ===== */
 .sm-ov{position:fixed;inset:0;background:rgba(25,20,15,.5);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;z-index:2147483646;overflow:auto;padding:40px 18px}
@@ -6991,8 +7009,19 @@ function buildRecordingsHtml(t) {
   if (!recs.length) return ""
   return '<div class="tkt-recordings">' + recs.map(function (r, i) {
     var rid = esc(String(r.id || ("rec" + i)))
+    // KLA-832: the clip is wrapped with a loading state, an error line, and an always-present Download link
+    // (presigned S3 GET). wireRecordingVideos() repairs the MediaRecorder webm Infinity-duration seek bug and
+    // toggles these states. The Download link is the fallback when inline playback fails or the file is large,
+    // so a reporter can always retrieve their own evidence. Inline SVG download glyph (no emoji; kicon has no
+    // 'download' icon registered).
+    var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
     var vid = r.url
-      ? '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata"></video>'
+      ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '">'
+          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline></video>'
+          + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading recording…</div>'
+          + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This recording couldn’t play here. Download it to view.</div>'
+          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.webm" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
+        + '</div>'
       : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
     var st = r.transcript_status || "none"
     var tj = r.transcript_json || null
@@ -7027,6 +7056,44 @@ function wireRecordingSeek(root) {
           break
         }
       }
+    })
+  })
+}
+// KLA-832: make recording <video> clips reliably viewable. THE root cause reporters hit: MediaRecorder
+// produces webm/mp4 clips WITHOUT a duration in the container metadata, so the browser reports
+// video.duration === Infinity. The native seek bar then starts near the end and drifts backward with no
+// input, timestamps are wrong, and scrubbing is broken — exactly the reported symptom. The fix is the
+// well-known force-seek: on loadedmetadata, if the duration is not finite, seek past the end once to make
+// the browser scan to the real end and recompute the duration; on the resulting durationchange reset the
+// playhead to 0. We also drive an honest loading state and an error+download fallback so a clip that can't
+// decode inline is never an infinite spinner or a dead black frame.
+function wireRecordingVideos(root) {
+  root.querySelectorAll("video.tkt-rec-video").forEach(function (v) {
+    var wrap = v.closest ? v.closest(".tkt-rec-vwrap") : null
+    var loadingEl = wrap ? wrap.querySelector(".tkt-rec-loading") : null
+    var errEl = wrap ? wrap.querySelector(".tkt-rec-error") : null
+    function hideLoading() { if (loadingEl) loadingEl.classList.add("hide") }
+    var repairing = false
+    v.addEventListener("loadedmetadata", function () {
+      hideLoading()
+      // Infinity / NaN / 0 duration → force the browser to compute the real one by seeking to the end.
+      if (!isFinite(v.duration) || v.duration <= 0) {
+        repairing = true
+        try { v.currentTime = 1e101 } catch (e) {}
+      }
+    })
+    v.addEventListener("durationchange", function () {
+      // After the forced seek the duration is now finite; snap the playhead back to the start, once.
+      if (repairing && isFinite(v.duration) && v.duration > 0) {
+        repairing = false
+        try { v.currentTime = 0 } catch (e) {}
+      }
+    })
+    v.addEventListener("canplay", hideLoading)
+    v.addEventListener("error", function () {
+      hideLoading()
+      if (errEl) errEl.classList.remove("hide")
+      if (wrap) wrap.classList.add("tkt-rec-failed")
     })
   })
 }
@@ -7296,6 +7363,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         : `${_contextHtml}${_recHtml}${_bodyHtml}`
     }
     wireRecordingSeek(detailEl)
+    wireRecordingVideos(detailEl)
     if (_pageThreeCol) wireT3Resize(detailEl)
 
     // #653: dirty-only Save — the Save button/group stays hidden until the assignee OR notes actually

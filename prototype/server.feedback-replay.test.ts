@@ -345,3 +345,52 @@ test("garbage replay_events is ignored but the bug still saves", async () => {
   const row = await rawClient.execute({ sql: "SELECT COUNT(*) c FROM feedback_replays WHERE feedback_id=?", args: [j.id] })
   expect(Number(row.rows[0].c)).toBe(0)
 })
+
+// ── KLA-832: download fallback for the session replay (when inline playback fails or is too large) ──────
+test("GET …/replay?download=1 serves the replay as a saved file (attachment, raw gz, no transparent decode)", async () => {
+  const fd = new FormData()
+  fd.set("description", "bug download fallback"); fd.set("page_url", "https://test.local/dl"); fd.set("project_id", "p1")
+  fd.set("replay_events", JSON.stringify(sampleEvents()))
+  const post = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { cookie: sessionCookie } })
+  const pj = await post.json(); expect(pj.id).toBeTruthy()
+
+  const dl = await fetch(`${BASE}/api/feedback/${encodeURIComponent(pj.id)}/replay?download=1`, { headers: { cookie: sessionCookie } })
+  expect(dl.status).toBe(200)
+  // Attachment so the browser SAVES it (the evidence) rather than trying to render JSON…
+  expect((dl.headers.get("content-disposition") || "")).toContain("attachment")
+  expect((dl.headers.get("content-disposition") || "")).toContain(".json.gz")
+  // …served as the raw gzip bytes (application/gzip, NOT content-encoding:gzip which a browser would
+  // transparently inflate before saving, producing a file that isn't what we named it).
+  expect((dl.headers.get("content-type") || "")).toContain("application/gzip")
+  expect(dl.headers.get("content-encoding")).toBeNull()
+  expect((dl.headers.get("cache-control") || "")).toContain("no-store")
+  // The body really is a gzip stream (magic bytes 1f 8b).
+  const buf = new Uint8Array(await dl.arrayBuffer())
+  expect(buf[0]).toBe(0x1f)
+  expect(buf[1]).toBe(0x8b)
+})
+
+test("GET …/replay?download=1 is still auth + project-scoped (never leaks a foreign replay)", async () => {
+  const anon = await fetch(`${BASE}/api/feedback/fb_foreign/replay?download=1`, { redirect: "manual" })
+  expect([401, 302, 303, 404]).toContain(anon.status)
+  const scoped = await fetch(`${BASE}/api/feedback/fb_foreign/replay?download=1`, { headers: { cookie: sessionCookie } })
+  expect([403, 404]).toContain(scoped.status)
+})
+
+test("the /replay-frame viewer offers a Download fallback revealed on failure / too-large", async () => {
+  const r = await fetch(`${BASE}/replay-frame?fb=${encodeURIComponent(frameFbId)}`, { headers: { cookie: sessionCookie } })
+  const html = await r.text()
+  // the anchor is present, points at the download endpoint, and is hidden until a failure reveals it
+  expect(html).toContain('id="klvdl"')
+  expect(html).toContain("/replay?download=1")
+  expect(html).toContain("#klvdl{display:none")
+  const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
+  const boot = scripts.find((s) => s.includes("DL_TIMEOUT")) as string
+  expect(boot).toBeTruthy()
+  // the download link is revealed on BOTH terminal failure paths (error + too-large)
+  expect(boot).toContain("function showDl(")
+  const failFn = boot.slice(boot.indexOf("function fail("), boot.indexOf("function fail(") + 160)
+  expect(failFn).toContain("showDl()")
+  const tlFn = boot.slice(boot.indexOf("function toolarge("), boot.indexOf("function toolarge(") + 200)
+  expect(tlFn).toContain("showDl()")
+})
