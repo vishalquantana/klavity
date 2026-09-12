@@ -572,5 +572,12 @@
     "excerpt": "Quality assurance prevents defects by improving the process; quality control catches them in the product. Here's how each works and where they overlap.",
     "category": "Compare",
     "date": "2026-09-11"
+  },
+  {
+    "slug": "bug-vs-feature-request",
+    "title": "Bug vs. Feature Request: How to Tell Them Apart in Triage",
+    "excerpt": "A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage.",
+    "category": "Compare",
+    "date": "2026-09-12"
   }
 ]

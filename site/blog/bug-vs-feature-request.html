@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bug vs. Feature Request: How to Tell Them Apart in Triage · Klavity</title>
+<meta name="description" content="A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage.">
+<link rel="canonical" href="https://klavity.in/blog/bug-vs-feature-request">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Bug vs. Feature Request: How to Tell Them Apart in Triage"><meta property="og:description" content="A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage.">
+<meta property="og:url" content="https://klavity.in/blog/bug-vs-feature-request"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Bug vs. Feature Request: How to Tell Them Apart in Triage"><meta name="twitter:description" content="A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Bug vs. Feature Request: How to Tell Them Apart in Triage","description":"A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage.","datePublished":"2026-09-12","dateModified":"2026-09-12","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/bug-vs-feature-request","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Bug vs. Feature Request: How to Tell Them Apart in Triage","item":"https://klavity.in/blog/bug-vs-feature-request"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/bug-vs-feature-request"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is a bug always a feature request when there's no spec?","acceptedAnswer":{"@type":"Answer","text":"No. Even without a written spec, a report is a bug if it violates a reasonable user expectation, prior behavior, or an implicit contract (for example, a form that silently loses data on submit). Absence of a spec means you rely on documented behavior, prior releases, and common sense — not that everything defaults to a feature request."}},{"@type":"Question","name":"How do I classify 'it works as designed but the design is wrong'?","acceptedAnswer":{"@type":"Answer","text":"That's a design defect, which most teams triage as a bug because it produces a bad outcome users hit today, not a new capability. Log it as a bug with a note that the fix requires a design decision, and route it to whoever owns that surface. Calling it a feature request tends to bury it in the roadmap where it never gets prioritized."}},{"@type":"Question","name":"Why does the bug-vs-feature distinction matter?","acceptedAnswer":{"@type":"Answer","text":"It changes routing, SLA, and accounting. Bugs usually have response-time targets and count against quality metrics like escaped-defect and reopen rate; feature requests enter the roadmap and compete on business value. Misfiling a bug as a feature request hides it from your quality metrics and delays a fix that has a deadline."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-09-12</div>
+    <h1>Bug vs. Feature Request: How to Tell Them Apart in Triage</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A bug is a gap between what the product promised (via a spec, docs, prior behavior, or reasonable expectation) and what it actually does. A feature request asks the product to do something it never promised. The fastest test: if the behavior worked before or was documented to work, it's a bug; if it's a new capability nobody committed to, it's a feature request.</div>
+    <div class="prose"><p>A <strong>bug</strong> is a gap between what your product promised and what it actually does &mdash; the promise coming from a spec, documentation, prior behavior, or a reasonable user expectation. A <strong>feature request</strong> asks the product to do something it never promised in the first place. The quickest way to tell them apart: if the behavior worked before, was documented to work, or any reasonable user would expect it to work, it's a bug; if it's a new capability nobody ever committed to, it's a feature request.</p>
+
+<h2>What is the difference between a bug and a feature request?</h2>
+<p>The distinction is about <em>expectation</em>, not effort or severity. A one-line typo fix and a month-long rebuild can both be bugs; a trivial toggle and a major integration can both be feature requests. What decides the category is whether the reported behavior breaks a commitment the product already made.</p>
+<ul>
+<li><strong>Bug:</strong> The product has an expected behavior &mdash; stated or implied &mdash; and does something else. Examples: a checkout button that returns a 500, a saved draft that disappears on refresh, a filter that returns the wrong rows.</li>
+<li><strong>Feature request:</strong> The product behaves exactly as built, and someone wants it to do more or differently. Examples: "add dark mode," "let me export to CSV," "support bulk edit."</li>
+</ul>
+<p>Two reports can describe the same screen and land in opposite categories. "Export is broken" is a bug if an export button exists and fails; "we need an export" is a feature request if export was never built. Getting the category right starts with knowing what was actually promised.</p>
+
+<h2>How to tell a bug from a feature request in under a minute</h2>
+<p>Run each incoming report through the same short check so classification comes from facts, not from whoever argues loudest in triage.</p>
+<ol>
+<li><strong>Check the expectation.</strong> Is there a spec, acceptance criterion, or doc that says what should happen? If the behavior contradicts it, it's a bug.</li>
+<li><strong>Check prior behavior.</strong> Did this work in an earlier release? A regression is always a bug &mdash; no spec required, because the working version <em>was</em> the spec.</li>
+<li><strong>Reproduce it.</strong> Confirm the behavior is real and consistent before you argue about its label. A report you can't reproduce isn't ready to classify.</li>
+<li><strong>Ask: broken or absent?</strong> Broken existing behavior is a bug. An entirely absent capability is a feature request. This single question resolves most disputes.</li>
+<li><strong>Route accordingly.</strong> Send bugs to the fix queue with a severity and an SLA; send feature requests to the roadmap backlog where they compete on business value.</li>
+</ol>
+
+<h2>The gray areas that cause triage arguments</h2>
+<p>Most disagreements cluster in a handful of edge cases. Handle them with a default rule so the team stops relitigating each one.</p>
+<h3>"It works as designed, but the design is wrong"</h3>
+<p>This is a <strong>design defect</strong>. The code matches the spec, but the spec produces a bad outcome users hit today &mdash; a confusing empty state, a destructive action with no confirmation, a form that accepts invalid input. Triage it as a bug with a note that the fix needs a design decision, and route it to whoever owns that surface. Filing it as a feature request tends to bury it in the roadmap, where a live problem waits behind net-new work.</p>
+<h3>Missing validation or error handling</h3>
+<p>If the product accepts input it should reject, or fails without telling the user why, that's usually a bug: the implied contract of any input is that it validates and reports failure. "Add a nicer error message" on a path that already handles the error is closer to an enhancement.</p>
+<h3>Undocumented behavior someone relied on</h3>
+<p>When a change breaks a workflow that was never officially supported, reasonable people disagree. Decide it by impact and reach: if many users depended on it and had no warning, treat it as a bug (or at least a breaking change that needs a migration path), not a feature request to "bring it back."</p>
+<h3>Performance and UX complaints</h3>
+<p>"It's slow" or "this is confusing" is a bug when it violates a stated target or a clear expectation (a page that used to load in a second now takes ten), and a feature request when it asks for a better-than-promised experience. Anchor the call to a measurable expectation wherever one exists.</p>
+
+<h2>Why the distinction actually matters</h2>
+<p>Getting the label right isn't pedantry &mdash; it changes three concrete things:</p>
+<ol>
+<li><strong>Routing and SLA.</strong> Bugs typically carry response and resolution targets by severity; feature requests enter the roadmap and are scheduled by value. Misfiling a bug as a feature strips it of its deadline.</li>
+<li><strong>Quality metrics.</strong> Bugs count toward escaped-defect rate, reopen rate, and mean time to resolution. A bug hidden in the feature backlog quietly makes your quality numbers look better than they are.</li>
+<li><strong>Ownership and accounting.</strong> Fixing a broken promise is maintenance the team already owes; building a new capability is a prioritization choice. Teams that blur the two end up shipping features while known breakage lingers.</li>
+</ol>
+
+<h2>Classify from evidence, not opinions</h2>
+<p>Every rule above depends on knowing what actually happened, and most triage fights are really disputes about the facts. The fix is to capture the evidence at report time &mdash; exact steps, the environment, and the console and network state &mdash; so a triager can see whether behavior is broken or merely absent instead of guessing. In-app capture like <a href="/snap">Klavity Snap</a> attaches that context to every report, which turns "is this a bug?" from an argument into a lookup. Once reports arrive with evidence, you can <a href="/blog/how-to-triage-a-bug-backlog">triage the backlog</a> quickly and route each item to the right queue with confidence.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Ask 'broken or absent?' — broken existing behavior is a bug; a missing capability is a feature request</li><li>Treat any regression (it worked in a prior release) as a bug, no spec needed</li><li>File design defects as bugs with a 'needs design decision' note, not as roadmap items</li><li>Capture reproducible evidence at report time so triage classifies from facts, not opinions</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is a bug always a feature request when there's no spec?</summary><p>No. Even without a written spec, a report is a bug if it violates a reasonable user expectation, prior behavior, or an implicit contract (for example, a form that silently loses data on submit). Absence of a spec means you rely on documented behavior, prior releases, and common sense — not that everything defaults to a feature request.</p></details><details><summary>How do I classify 'it works as designed but the design is wrong'?</summary><p>That's a design defect, which most teams triage as a bug because it produces a bad outcome users hit today, not a new capability. Log it as a bug with a note that the fix requires a design decision, and route it to whoever owns that surface. Calling it a feature request tends to bury it in the roadmap where it never gets prioritized.</p></details><details><summary>Why does the bug-vs-feature distinction matter?</summary><p>It changes routing, SLA, and accounting. Bugs usually have response-time targets and count against quality metrics like escaped-defect and reopen rate; feature requests enter the roadmap and compete on business value. Misfiling a bug as a feature request hides it from your quality metrics and delays a fix that has a deadline.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
