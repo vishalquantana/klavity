@@ -268,6 +268,13 @@ h1 .ind{color:var(--indigo)}
 .reveal{opacity:0; transform:translateY(16px); animation:rise .8s cubic-bezier(.2,.7,.2,1) forwards}
 @keyframes rise{to{opacity:1; transform:translateY(0)}}
 .d1{animation-delay:.05s}.d2{animation-delay:.15s}.d3{animation-delay:.27s}.d4{animation-delay:.4s}.d5{animation-delay:.52s}
+/* LCP-safe hero entrance: above-the-fold content must never start at opacity:0 —
+   Chrome excludes opacity:0 elements from LCP, so the hero <h1> (the LCP element)
+   only registered once the fade finished, pushing mobile LCP to ~6-9s. Keep the
+   subtle rise via transform only; the element stays painted (opacity:1) from frame 1. */
+.hero .reveal{opacity:1; transform:translateY(16px); animation:heroRise .8s cubic-bezier(.2,.7,.2,1) forwards}
+@keyframes heroRise{to{transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.hero .reveal{transform:none; animation:none}}
 
 /* hero stage: a product card with sims observing it */
 .stage{position:relative; aspect-ratio:1/.92}
