@@ -27,10 +27,15 @@ export function emailAllowed(email: string): boolean {
 // the shared-office-IP throttle (see the /api/auth/request handler) — the per-IP limit exists to
 // stop anonymous OTP bombing, which a trusted staff domain behind the access list doesn't warrant.
 // Extra domains can be added via KLAV_INTERNAL_DOMAINS (comma-separated); the defaults always apply.
+// EVERY @quantana.* domain is internal (quantana.in / quantana.com.au / quantana.top / …, plus any
+// subdomain like foo.quantana.in) — Quantana is the company, so any quantana address is staff.
 const INTERNAL_DOMAINS_DEFAULT = ["quantana.in", "quantana.com.au"]
+// Matches "quantana.<tld>" and "<sub>.quantana.<tld>" as the email's domain part.
+const QUANTANA_DOMAIN = /(^|\.)quantana\.[a-z.]+$/
 export function isInternalEmail(email: string): boolean {
   const dom = String(email || "").toLowerCase().split("@")[1] || ""
   if (!dom) return false
+  if (QUANTANA_DOMAIN.test(dom)) return true
   const extra = (process.env.KLAV_INTERNAL_DOMAINS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
   return INTERNAL_DOMAINS_DEFAULT.includes(dom) || extra.includes(dom)
 }

@@ -4,22 +4,27 @@ import { isInternalEmail } from "./auth"
 const ENV_KEY = "KLAV_INTERNAL_DOMAINS"
 afterEach(() => { delete process.env[ENV_KEY] })
 
-test("quantana.in and quantana.com.au are internal by default", () => {
+test("every @quantana.* domain is internal (Quantana is the company)", () => {
   expect(isInternalEmail("karthik@quantana.in")).toBe(true)
   expect(isInternalEmail("vishal@quantana.com.au")).toBe(true)
+  expect(isInternalEmail("x@quantana.com")).toBe(true)
+  expect(isInternalEmail("x@quantana.top")).toBe(true)
+  expect(isInternalEmail("x@quantana.io")).toBe(true)
 })
 
 test("internal match is case-insensitive", () => {
   expect(isInternalEmail("Karthik@Quantana.IN")).toBe(true)
 })
 
-test("external domains are not internal", () => {
-  expect(isInternalEmail("someone@gmail.com")).toBe(false)
-  expect(isInternalEmail("user@quantana.com")).toBe(false) // .com is NOT one of ours
+test("quantana subdomains are internal too", () => {
+  expect(isInternalEmail("bot@mail.quantana.in")).toBe(true)
+  expect(isInternalEmail("ci@build.quantana.com.au")).toBe(true)
 })
 
-test("subdomains are not treated as internal (exact domain match)", () => {
-  expect(isInternalEmail("bot@mail.quantana.in")).toBe(false)
+test("non-quantana external domains are not internal", () => {
+  expect(isInternalEmail("someone@gmail.com")).toBe(false)
+  expect(isInternalEmail("user@notquantana.com")).toBe(false)
+  expect(isInternalEmail("user@quantana-labs.com")).toBe(false) // no dot before quantana.<tld>
 })
 
 test("malformed / empty emails are not internal", () => {

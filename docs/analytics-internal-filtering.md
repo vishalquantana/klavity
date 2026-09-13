@@ -36,9 +36,11 @@ rename it).
 
 ## KLA-840 — exclude internal Quantana traffic
 
-Internal = any email whose domain is `quantana.in`, `quantana.com.au`, or anything in the
+Internal = any `@quantana.*` email — every Quantana domain and subdomain (`quantana.in`,
+`quantana.com.au`, `quantana.com`, `quantana.top`, `foo.quantana.in`, …) — plus anything in the
 `KLAV_INTERNAL_DOMAINS` env var. Single source of truth: `isInternalEmail()` in
-`prototype/lib/auth.ts`.
+`prototype/lib/auth.ts` (regex `(^|\.)quantana\.`). The PostHog project `test_account_filters`
+and the "Internal Quantana (exclude)" cohort use the same `quantana.` match.
 
 ### PostHog
 
