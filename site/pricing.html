@@ -551,7 +551,7 @@
   <section class="pricing-hero">
     <div class="wrap">
       <p class="eyebrow reveal" style="--d:0s">Simple pricing, no surprises</p>
-      <h1 class="reveal" style="--d:.06s;max-width:22ch;margin:0 auto">Your customer calls become your QA team.</h1>
+      <h1 class="reveal" style="--d:.06s;max-width:22ch;margin:0 auto">AI testers that browse your clients' sites and file bugs before your clients do.</h1>
       <p class="reveal" style="--d:.12s;margin:22px auto 0;max-width:60ch;font-size:18px;color:var(--paper-dim)">
         Klavity builds AI personas from your real customer call transcripts and sends them through your live site — including the pages no one has visited yet. Everything they find is filed with evidence straight into Jira, Linear, GitHub or Plane, and the flows that matter get re-run so fixed things stay fixed.
       </p>
@@ -574,8 +574,8 @@
          offer we actually want people to take. Entitlements below mirror
          PLAN_QUOTAS.founding in prototype/lib/billing.ts, which KLAVITYKLA-365 set
          equal to Team. Canonical name on this page: "Founding Ten". ── -->
-    <div class="founding-band reveal" data-founding-state="__FOUNDING_STATE__">
-      <span class="founding-ribbon">__FOUNDING_RIBBON__</span>
+    <div class="founding-band reveal" data-founding-state="open">
+      <span class="founding-ribbon">3 of 10 spots left</span>
       <div class="founding-lead">
         <div class="plan-name" style="color:var(--amber, #d98324)">The Founding Ten</div>
         <!-- KLAVITYKLA-366: the STANDARD price is the anchor and stays visible in every state —
@@ -590,7 +590,7 @@
         <!-- Server-substituted, and EMPTY when the count is unavailable (see lib/founding.ts).
              An empty span collapses via :empty — we show the offer without a number rather than a
              wrong number or a spinner. Never animated: a stale honest number beats an animated lie. -->
-        <div class="founding-spots">__FOUNDING_SPOTS_LINE__</div>
+        <div class="founding-spots">3 of 10 spots left</div>
         <div class="plan-desc">Ten teams, set up by hand by the founder, price grandfathered forever.</div>
       </div>
       <ul class="plan-features-list">
@@ -626,6 +626,12 @@
     </div>
 
     <p class="qa-cost-anchor reveal" style="--d:.2s">Your first QA hire costs $60,000 a year. Klavity's Team plan is $249 a month.</p>
+    <p class="reveal" style="--d:.22s;text-align:center;margin:0 auto 32px">
+      <span style="display:inline-flex;align-items:center;gap:8px;background:rgba(15,157,107,0.12);color:var(--green-text);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:0.02em;padding:7px 16px;border-radius:20px">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"></path><circle cx="12" cy="12" r="10"></circle></svg>
+        30-day money-back guarantee
+      </span>
+    </p>
     <div class="pricing-grid auto-stagger">
 
       <!-- Free -->
@@ -685,8 +691,9 @@
           <span class="plan-price" id="pricePro" data-monthly="49" data-annual="41">49</span>
           <span class="plan-price-period" id="periodPro">/ month</span>
         </div>
-        <a class="btn btn-ghost plan-btn" href="/onboarding?plan=pro">Start with Solo — $49/mo</a>
-        
+        <a class="btn btn-ghost plan-btn" href="/onboarding?plan=pro">Start 30-day trial</a>
+        <p class="plan-value-anchor" style="text-align:center">$49/mo after trial - 30-day money-back guarantee.</p>
+
         <div class="plan-features-title">Everything in Free, plus</div>
         <ul class="plan-features-list">
           <li>
@@ -718,8 +725,9 @@
           <span class="plan-price-period" id="periodTeam">/ month</span>
         </div>
         <p class="plan-value-anchor">≈ 5% of one QA engineer's salary.</p>
-        <a class="btn btn-indigo plan-btn" href="/onboarding?plan=team">Start with Team — $249/mo</a>
-        
+        <a class="btn btn-indigo plan-btn" href="/onboarding?plan=team">Start 30-day trial</a>
+        <p class="plan-value-anchor" style="text-align:center">$249/mo after trial - 30-day money-back guarantee.</p>
+
         <div class="plan-features-title">Everything in Solo, plus</div>
         <ul class="plan-features-list">
           <li>
