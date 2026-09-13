@@ -574,8 +574,8 @@
          offer we actually want people to take. Entitlements below mirror
          PLAN_QUOTAS.founding in prototype/lib/billing.ts, which KLAVITYKLA-365 set
          equal to Team. Canonical name on this page: "Founding Ten". ── -->
-    <div class="founding-band reveal" data-founding-state="open">
-      <span class="founding-ribbon">3 of 10 spots left</span>
+    <div class="founding-band reveal" data-founding-state="__FOUNDING_STATE__">
+      <span class="founding-ribbon">__FOUNDING_RIBBON__</span>
       <div class="founding-lead">
         <div class="plan-name" style="color:var(--amber, #d98324)">The Founding Ten</div>
         <!-- KLAVITYKLA-366: the STANDARD price is the anchor and stays visible in every state —
@@ -590,7 +590,7 @@
         <!-- Server-substituted, and EMPTY when the count is unavailable (see lib/founding.ts).
              An empty span collapses via :empty — we show the offer without a number rather than a
              wrong number or a spinner. Never animated: a stale honest number beats an animated lie. -->
-        <div class="founding-spots">3 of 10 spots left</div>
+        <div class="founding-spots">__FOUNDING_SPOTS_LINE__</div>
         <div class="plan-desc">Ten teams, set up by hand by the founder, price grandfathered forever.</div>
       </div>
       <ul class="plan-features-list">
