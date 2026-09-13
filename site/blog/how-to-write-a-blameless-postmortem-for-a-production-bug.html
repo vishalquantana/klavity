@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write a Blameless Postmortem for a Production Bug","item":"https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-a-blameless-postmortem-for-a-production-bug"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a blameless postmortem?","acceptedAnswer":{"@type":"Answer","text":"A blameless postmortem investigates a production incident by focusing on the systems, processes, and information gaps that let the bug through — not on which person made a mistake. The goal is honest reporting: when people aren't punished for the timeline, they document what really happened, which is the only way to find the true root cause."}},{"@type":"Question","name":"When should you write a postmortem?","acceptedAnswer":{"@type":"Answer","text":"Write one for any incident that reached production and caused customer-visible impact, data loss, or a significant near-miss. Small internal bugs caught before release usually don't need a full postmortem, but a recurring bug — even a minor one — is a strong signal that a systemic gap deserves the full treatment."}},{"@type":"Question","name":"What is the difference between a postmortem and root cause analysis?","acceptedAnswer":{"@type":"Answer","text":"Root cause analysis is one section of a postmortem — the part that traces the bug back to its origin. The postmortem is the wider document: it also covers the timeline, the customer impact, how the incident was detected and resolved, and the action items that prevent recurrence."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Write a Blameless Postmortem for a Production Bug",
+  "description": "A good postmortem answers what broke, why it broke, and what stops it recurring \u2014 blamelessly, with a timeline and owned action items. Here's the template.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What goes in a production-bug postmortem?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to build the incident timeline"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to find the root cause without blaming a person"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Turning findings into action items that stick"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Always close with a regression test"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -53,6 +53,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"In-App Bug Reporting: A Practical Guide for QA Teams","item":"https://klavity.in/blog/in-app-bug-reporting-guide"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/in-app-bug-reporting-guide"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is in-app bug reporting?","acceptedAnswer":{"@type":"Answer","text":"In-app bug reporting is filing a bug from inside the running product — usually via a widget, keyboard shortcut, or right-click — so the tool captures the current page state (URL, console, network, browser and OS) and attaches it to the report automatically, instead of asking the reporter to describe it from memory."}},{"@type":"Question","name":"How is in-app bug reporting different from a bug form?","acceptedAnswer":{"@type":"Answer","text":"A bug form lives outside the product, so the reporter has to switch context and manually retype the URL, steps, and environment — details they often get wrong or omit. In-app reporting stays in context and records that state programmatically, so the report is both faster to file and more complete."}},{"@type":"Question","name":"Does in-app bug reporting replace a bug tracker like Jira or Linear?","acceptedAnswer":{"@type":"Answer","text":"No. In-app reporting is the capture layer; it should create a ticket in your existing tracker (Jira, Linear, GitHub Issues, Plane) with the evidence attached. It changes how a bug is filed, not where it lives."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "In-App Bug Reporting: A Practical Guide for QA Teams",
+  "description": "In-app bug reporting lets people file a bug from inside your product, so it ships with the exact state \u2014 URL, console, network, and environment \u2014 attached.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What is in-app bug reporting?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "Why in-app bug reporting beats a separate bug form"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "What a good in-app bug report should capture"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to add in-app bug reporting to your product"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "When in-app reporting is the wrong tool"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

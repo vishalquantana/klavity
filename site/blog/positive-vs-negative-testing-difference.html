@@ -52,6 +52,13 @@
     <h1>Positive vs. Negative Testing: What's the Difference?</h1>
     <div class="by">Klavity</div>
     <div class="tldr-box"><b>TL;DR</b>Positive testing verifies a feature behaves correctly when given valid, expected input — the happy path. Negative testing verifies it fails safely when given invalid, empty, malformed, or unexpected input. You need both: positive tests prove the feature does its job, negative tests prove it won't corrupt data, crash, or leak errors when someone misuses it.</div>
+<div class="comparison-table" style="overflow-x:auto;margin:1.5rem 0"><table style="width:100%;border-collapse:collapse;font-size:0.9rem"><thead><tr style="background:#6366f1;color:#fff"><th style="padding:0.75rem;text-align:left">Feature</th><th style="padding:0.75rem;text-align:left">Positive</th><th style="padding:0.75rem;text-align:left">Negative Testing</th></tr></thead><tbody>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">AI bug detection</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Setup time</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">Price</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Best for</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+</tbody></table></div>
+
     <div class="prose"><p><strong>Positive testing</strong> verifies that a feature behaves correctly when it receives valid, expected input — the happy path. <strong>Negative testing</strong> verifies that the same feature fails safely when it receives invalid, empty, malformed, or unexpected input. You need both: positive tests prove the feature does its job, and negative tests prove it won't crash, corrupt data, or leak a raw error when someone misuses it.</p>
 <p>The two are not competing strategies — they are two halves of a complete test for the same behavior. Skipping either leaves a blind spot: positive-only testing ships features that break the first time a user pastes the wrong thing into a field; negative-only testing catches nothing because the feature was never confirmed to work at all.</p>
 

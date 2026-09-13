@@ -53,6 +53,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Run a Bug Bash That Actually Finds Real Bugs","item":"https://klavity.in/blog/how-to-run-a-bug-bash"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-run-a-bug-bash"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long should a bug bash last?","acceptedAnswer":{"@type":"Answer","text":"Keep the active testing window to 60–90 minutes. Attention and creativity drop off after that, and short sessions are easier to schedule across a busy team. Reserve a separate block afterward for triage rather than trying to sort findings live."}},{"@type":"Question","name":"How many people should join a bug bash?","acceptedAnswer":{"@type":"Answer","text":"Five to ten testers is a practical range. Fewer than five and you miss the diversity of paths that makes a bash valuable; more than ten and duplicate reports pile up faster than anyone can triage them. Mix roles — engineering, design, support, sales — so different mental models hit different corners of the product."}},{"@type":"Question","name":"What's the difference between a bug bash and regular QA?","acceptedAnswer":{"@type":"Answer","text":"Regular QA verifies known requirements against a plan. A bug bash is deliberately exploratory: people poke at the product without a script, looking for the unexpected. It complements automated tests and scripted QA rather than replacing them — the bash finds what nobody thought to write a test for."}},{"@type":"Question","name":"When should you run a bug bash?","acceptedAnswer":{"@type":"Answer","text":"Before a significant release, after a large feature merges, or ahead of a launch when the risk of user-facing regressions is highest. Run them on a real staging build with production-like data, not on a developer's local branch, so the bugs you find are the ones users would actually hit."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Run a Bug Bash That Actually Finds Real Bugs",
+  "description": "A bug bash only works when it's scoped, timeboxed, and captures reproducible evidence. Here's how to plan one, run the session, and triage what it finds.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What is a bug bash?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to plan a bug bash"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "Who should attend a bug bash"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to run the bug bash session"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to triage bug bash findings"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

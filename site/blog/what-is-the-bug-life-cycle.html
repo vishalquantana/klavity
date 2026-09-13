@@ -36,6 +36,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is the Bug Life Cycle? Every Stage, Explained","item":"https://klavity.in/blog/what-is-the-bug-life-cycle"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-the-bug-life-cycle"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What are the stages of the bug life cycle?","acceptedAnswer":{"@type":"Answer","text":"The core stages are New (just reported), Assigned (given to a developer), Open/In Progress (being fixed), Fixed (code changed, awaiting verification), Retest, Verified, and Closed. Side states include Reopened, Deferred, Duplicate, and Rejected/Not a Bug."}},{"@type":"Question","name":"What is the difference between Closed and Verified?","acceptedAnswer":{"@type":"Answer","text":"Verified means QA re-ran the reproduction steps and confirmed the fix works. Closed means the ticket is done and no further action is expected. Verified is a QA action; Closed is the administrative end state. Many teams close only after verifying."}},{"@type":"Question","name":"What does it mean when a bug is Reopened?","acceptedAnswer":{"@type":"Answer","text":"A bug is Reopened when it was marked Fixed or Closed but the failure still happens on retest — the fix was incomplete, addressed the wrong cause, or a new build reintroduced it. A high reopen rate signals fixes aren't sticking."}},{"@type":"Question","name":"Who moves a bug through the life cycle?","acceptedAnswer":{"@type":"Answer","text":"Ownership shifts by state: the reporter and triage lead handle New and Assigned, developers own Open through Fixed, and QA owns Retest through Verified and Closed. The status field is a handoff signal — it tells the next person the work is theirs."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "the Bug Life Cycle? Every Stage, Explained",
+  "description": "The bug life cycle (also called the defect life cycle) is the set of states a bug moves through from the moment it's reported until it's finally closed. The standard path is New \u2192 Assigned \u2192 Open/In Progress \u2192 Fixed \u2192 Retest \u2192 Verified \u2192 Closed, with",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
 <script>

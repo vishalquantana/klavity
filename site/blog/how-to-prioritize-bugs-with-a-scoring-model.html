@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Prioritize Bugs With a Scoring Model, Step by Step","item":"https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-prioritize-bugs-with-a-scoring-model"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between severity and a bug priority score?","acceptedAnswer":{"@type":"Answer","text":"Severity measures how badly the bug breaks the product in isolation. A priority score combines severity with how many users hit it, how confident you are in the estimate, and how much effort the fix takes. A severe bug that affects one user on a deprecated path can score lower than a moderate bug on your signup flow."}},{"@type":"Question","name":"Which scoring model should I use for bugs, RICE or WSJF?","acceptedAnswer":{"@type":"Answer","text":"Use RICE (Reach x Impact x Confidence / Effort) when you want a simple, defensible ranking that most teams can adopt in a day. Use WSJF (cost of delay / job size) when time-criticality matters heavily, such as security or compliance deadlines. Both produce a number you divide by effort, so pick the one whose inputs your team can estimate honestly."}},{"@type":"Question","name":"How often should bug scores be recalculated?","acceptedAnswer":{"@type":"Answer","text":"Re-score at each triage cycle, weekly for active backlogs. Reach and impact drift as usage changes, and confidence rises once a bug is reproduced. A score set months ago and never revisited is usually the reason a stale bug outranks a fresh, more damaging one."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Prioritize Bugs With a Scoring Model, Step by Step",
+  "description": "Prioritizing bugs by gut invites the loudest voice to win. A scoring model ranks them on reach, impact, confidence, and effort so the right fix rises first.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why severity alone can't prioritize a backlog"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to score a bug: the RICE formula adapted for bugs"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to set consistent scoring scales"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to prioritize with WSJF when deadlines dominate"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to keep bug scores honest over time"
+    }
+  ]
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
 <script>

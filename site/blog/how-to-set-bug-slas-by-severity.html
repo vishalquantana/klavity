@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Set Bug SLAs by Severity: A Practical Guide","item":"https://klavity.in/blog/how-to-set-bug-slas-by-severity"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-set-bug-slas-by-severity"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What's the difference between a response SLA and a resolution SLA?","acceptedAnswer":{"@type":"Answer","text":"The response SLA is the time to acknowledge and triage a bug — confirm it's real, set a severity, and assign an owner. The resolution SLA is the time to ship a fix or an accepted workaround. Response should be short and consistent across all severities; resolution should scale with severity."}},{"@type":"Question","name":"Should SLAs be based on severity or priority?","acceptedAnswer":{"@type":"Answer","text":"The resolution clock should be driven by severity (how badly the product is broken) combined with priority (how soon it must be fixed given business context). Severity sets the default tier; priority lets you fast-track or defer a specific bug. Never let a single loud stakeholder override the tier without a documented reason."}},{"@type":"Question","name":"When does the SLA clock start?","acceptedAnswer":{"@type":"Answer","text":"Start it when a reproducible report exists — one with steps, environment, and evidence — not when a vague complaint lands. If half your intake is unreproducible, your resolution SLA measures your triage backlog, not your fix speed. Capturing complete evidence at report time is the single biggest lever on hitting resolution targets."}},{"@type":"Question","name":"What happens when we miss an SLA?","acceptedAnswer":{"@type":"Answer","text":"A missed SLA should trigger an escalation, not a penalty. Route the bug to a lead, re-check severity, and record why it slipped. Track breach rate per tier over time: a consistently breached tier means the target is unrealistic or the tier is over-subscribed, and the fix is to re-baseline the target, not to blame the team."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Set Bug SLAs by Severity: A Practical Guide",
+  "description": "A bug SLA sets a response and resolution target for each severity level. Here's how to define tiers, set realistic targets, and keep them honest.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What is a bug SLA?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How many severity tiers should a bug SLA have?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How do you set realistic SLA targets?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "When does the SLA clock start?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How do you enforce an SLA without turning it into a blame machine?"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

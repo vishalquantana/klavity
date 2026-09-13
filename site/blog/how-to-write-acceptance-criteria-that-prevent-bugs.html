@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write Acceptance Criteria That Prevent Bugs","item":"https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-acceptance-criteria-that-prevent-bugs"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What are acceptance criteria in software?","acceptedAnswer":{"@type":"Answer","text":"Acceptance criteria are the specific, testable conditions a feature must satisfy to be considered done. Each criterion is written as a binary pass/fail statement about observable behavior, so QA, developers, and automated tests can all agree on whether the feature works."}},{"@type":"Question","name":"What is the difference between acceptance criteria and a definition of done?","acceptedAnswer":{"@type":"Answer","text":"Acceptance criteria are specific to one story — they describe what that feature must do. A definition of done is a shared checklist applied to every story, covering things like tests written, code reviewed, and docs updated. You need both: criteria say 'this feature is correct,' the definition of done says 'this work is complete.'"}},{"@type":"Question","name":"Should QA write acceptance criteria?","acceptedAnswer":{"@type":"Answer","text":"The product owner usually drafts them, but QA should review and extend them before development starts. QA's job is to add the unhappy paths — invalid input, error states, boundaries, and permission cases — that product often leaves out. Writing criteria collaboratively before coding is where most bugs are prevented."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Write Acceptance Criteria That Prevent Bugs",
+  "description": "Acceptance criteria prevent bugs when they are written before development, cover the unhappy paths, and are independently verifiable. Here's the format.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What are acceptance criteria?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "Why acceptance criteria prevent bugs"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to write acceptance criteria that prevent bugs"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Given-When-Then vs. checklist format"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Common mistakes that let bugs through"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

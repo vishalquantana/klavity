@@ -58,6 +58,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Severity vs. Priority: How to Classify a Bug Correctly","item":"https://klavity.in/blog/severity-vs-priority-how-to-classify-a-bug"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/severity-vs-priority-how-to-classify-a-bug"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between severity and priority in a bug report?","acceptedAnswer":{"@type":"Answer","text":"Severity measures how badly the bug damages the product — does it crash, corrupt data, or block a core workflow, or is it a cosmetic glitch? Priority measures how soon the team should fix it relative to all other work. Severity is a technical judgment about impact on the system; priority is a business judgment about urgency. They are set independently, often by different people, and a bug can be high on one scale and low on the other."}},{"@type":"Question","name":"Can a bug have high severity but low priority?","acceptedAnswer":{"@type":"Answer","text":"Yes — and this combination is common. A crash that only triggers on a deprecated browser used by 0.1% of traffic is high severity (it completely breaks the app) but low priority (almost no one hits it). The reverse also happens: a typo in your headline or a wrong price on the pricing page is low severity (nothing breaks) but high priority (it damages trust or revenue and must be fixed today)."}},{"@type":"Question","name":"Who decides severity and who decides priority?","acceptedAnswer":{"@type":"Answer","text":"Severity is usually set by whoever files or triages the bug — QA, an engineer, or the reporter — because it is an objective assessment of technical impact. Priority is set by a product owner, engineering lead, or triage group because it weighs the bug against business context: how many users are affected, revenue impact, deadlines, and what else is in flight. Keeping the two decisions separate is what keeps the system honest."}},{"@type":"Question","name":"How do I classify a bug's severity quickly?","acceptedAnswer":{"@type":"Answer","text":"Ask one question: what does this bug stop a user from doing, and is there a workaround? A crash, data loss, or security hole with no workaround is critical. A broken core feature with a clunky workaround is major. A broken secondary feature is moderate. A cosmetic or text issue that doesn't affect function is minor. Grounding the answer in captured evidence — the exact error, the network failure, the screen state — removes most of the guesswork."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Severity vs. Priority: How to Classify a Bug Correctly",
+  "description": "Severity is how badly a bug breaks the product. Priority is how soon you should fix it. They're independent \u2014 and confusing them is why the wrong bugs get worked first. Here's how to classify each cor",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Severity: how badly it breaks"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "Priority: how soon you fix it"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "The four quadrants"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Who sets which"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Where classification actually breaks down"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

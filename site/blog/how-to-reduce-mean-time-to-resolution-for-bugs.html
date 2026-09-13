@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Reduce Mean Time to Resolution (MTTR) for Bugs","item":"https://klavity.in/blog/how-to-reduce-mean-time-to-resolution-for-bugs"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-reduce-mean-time-to-resolution-for-bugs"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a good MTTR for bugs?","acceptedAnswer":{"@type":"Answer","text":"There is no universal number — it depends on severity and system. Set targets per severity (SLAs) and track your own trend: a P1 measured in hours and a P3 measured in weeks can both be healthy. Focus on reducing variance and your own month-over-month trend, not on matching a benchmark someone else published."}},{"@type":"Question","name":"What's the difference between MTTR and MTTA?","acceptedAnswer":{"@type":"Answer","text":"MTTA (mean time to acknowledge) measures how fast someone picks up a new bug; MTTR (mean time to resolution) measures the whole path to a deployed, verified fix. High MTTA points to triage or routing problems. Low MTTA but high MTTR points to reproduction difficulty or fix complexity — a very different fix."}},{"@type":"Question","name":"Does MTTR include time to verify the fix?","acceptedAnswer":{"@type":"Answer","text":"It should. A bug isn't resolved until the fix is verified and shipped. If you stop the clock at 'code merged,' you hide time lost to failed verification and reopened tickets — and you reward fast-but-wrong fixes."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Reduce Mean Time to Resolution (MTTR) for Bugs",
+  "description": "Mean time to resolution (MTTR) measures how long bugs take to fix. The reproduction stage usually dominates it \u2014 here's how to shrink each stage.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What is mean time to resolution (MTTR) for bugs?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How do you calculate bug MTTR?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "Why is your bug MTTR high? Break it into stages"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to reduce bug MTTR"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to measure MTTR without gaming it"
+    }
+  ]
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
 <script>

@@ -68,6 +68,13 @@
     <h1>Smoke Testing vs. Sanity Testing: What's the Difference?</h1>
     <div class="by">Klavity</div>
     <div class="tldr-box"><b>TL;DR</b>Smoke testing is wide and shallow: it runs the critical paths on every new build to decide whether the build is stable enough to test further. Sanity testing is narrow and deep: it verifies one specific change or bug fix without breaking nearby features. Run the smoke test first to accept the build, then run a sanity test after a targeted change.</div>
+<div class="comparison-table" style="overflow-x:auto;margin:1.5rem 0"><table style="width:100%;border-collapse:collapse;font-size:0.9rem"><thead><tr style="background:#6366f1;color:#fff"><th style="padding:0.75rem;text-align:left">Feature</th><th style="padding:0.75rem;text-align:left">Smoke Testing</th><th style="padding:0.75rem;text-align:left">Sanity Testing</th></tr></thead><tbody>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">AI bug detection</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Setup time</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">Price</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Best for</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+</tbody></table></div>
+
     <div class="prose"><p>Smoke testing and sanity testing both decide whether it's worth investing in deeper QA, but they answer different questions. <strong>Smoke testing</strong> is a wide, shallow pass over a new build's most critical paths to confirm the build is stable enough to test at all. <strong>Sanity testing</strong> is a narrow, deep check that a specific change or bug fix works as intended without breaking the features around it. In practice you run a smoke test first to accept the build, then run a sanity test after a targeted change.</p>
 
 <h2>What is smoke testing?</h2>

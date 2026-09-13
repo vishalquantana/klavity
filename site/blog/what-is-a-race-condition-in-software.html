@@ -36,6 +36,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Race Condition in Software? A Practical Guide","item":"https://klavity.in/blog/what-is-a-race-condition-in-software"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-race-condition-in-software"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is a race condition the same as a deadlock?","acceptedAnswer":{"@type":"Answer","text":"No. A race condition is when the result depends on unpredictable timing of concurrent operations, so you occasionally get the wrong answer. A deadlock is when two or more threads each hold a lock the other needs and both freeze forever. Ironically, adding locks to fix a race condition is a common way to introduce a deadlock, so add them in a consistent order and keep critical sections small."}},{"@type":"Question","name":"Why does the bug disappear when I add logging?","acceptedAnswer":{"@type":"Answer","text":"Logging, breakpoints, or extra print statements change the timing of your code — they slow one thread just enough to hide the bad interleaving. A bug that vanishes when you observe it is called a heisenbug, and it's a strong signal you're looking at a race condition rather than a deterministic logic error."}},{"@type":"Question","name":"Can single-threaded JavaScript have race conditions?","acceptedAnswer":{"@type":"Answer","text":"Yes. JavaScript runs one call stack at a time, but async operations (fetch, timers, promises) interleave between tasks. If two async flows both read shared state, await something, then write back based on the stale value they read, you have a race — even without threads. Double-clicking a submit button that fires two overlapping requests is the everyday version."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "a Race Condition in Software? A Practical Guide",
+  "description": "A race condition is a defect where a program's result depends on the relative timing or interleaving of operations that run concurrently \u2014 two or more threads, processes, requests, or asynchronous callbacks touching the same shared state without coor",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -53,6 +53,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to File a Bug to Jira, Linear, or GitHub From the Browser","item":"https://klavity.in/blog/file-a-bug-to-jira-linear-github-from-the-browser"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/file-a-bug-to-jira-linear-github-from-the-browser"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the minimum information a bug ticket needs in each tracker?","acceptedAnswer":{"@type":"Answer","text":"Jira requires a project, an issue type, and a summary. Linear requires a team and a title. GitHub Issues technically requires only a title. But a minimum-viable field is not a useful ticket — every one of them should carry exact steps, the environment, and evidence (screenshot, console, network) so the fix can start immediately instead of with a round of questions."}},{"@type":"Question","name":"Should I file bugs directly to the tracker or to a triage inbox first?","acceptedAnswer":{"@type":"Answer","text":"For engineering-reported bugs, file straight to the tracker with full evidence. For bugs reported by non-technical teammates or users, route them through a lightweight capture step that collects evidence automatically, then push a complete ticket to the tracker — otherwise you get title-only issues that stall in triage."}},{"@type":"Question","name":"How do I avoid creating duplicate bug tickets?","acceptedAnswer":{"@type":"Answer","text":"Search the tracker for the exact error message string or a stable identifier (an API path, an element selector) before filing — not your paraphrase of the symptom. Two people describe the same bug three different ways, but the underlying error text is identical, so searching by that text is the reliable dedup key."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to File a Bug to Jira, Linear, or GitHub From the Browser",
+  "description": "File a bug to your tracker without losing context: capture evidence first, map it to each tool's required fields, and search before filing to avoid dupes.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What information does a bug ticket actually need?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to file a bug to Jira from the browser"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to file a bug to Linear from the browser"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to file a bug to GitHub Issues from the browser"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to avoid creating duplicate bug tickets"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

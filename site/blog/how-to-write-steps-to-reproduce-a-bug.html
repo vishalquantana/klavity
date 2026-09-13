@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write Steps to Reproduce a Bug Anyone Can Follow","item":"https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-steps-to-reproduce-a-bug"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How many steps to reproduce should a bug report have?","acceptedAnswer":{"@type":"Answer","text":"As many as it takes to reach the bug from a known starting point, but no more. Trim every step that doesn't change the outcome by removing it and re-testing. A good report is often 3–8 numbered lines: most bugs don't need twenty steps, and the ones that do usually hide two or three that don't matter."}},{"@type":"Question","name":"What's the difference between steps to reproduce and a minimal reproducible example?","acceptedAnswer":{"@type":"Answer","text":"Steps to reproduce describe the actions a person takes in the running product. A minimal reproducible example (MRE) is the smallest self-contained code and data that triggers the same bug in isolation. Steps to reproduce come first; you distill them into an MRE when the bug lives in code you can extract."}},{"@type":"Question","name":"Do I need to include the environment in the steps?","acceptedAnswer":{"@type":"Answer","text":"Yes, but keep it separate from the numbered actions. Put the browser, OS, app version, account, and any feature flags in their own line above the steps. A step list that silently depends on a specific browser or a beta flag is why the same steps 'work on my machine.'"}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Write Steps to Reproduce a Bug Anyone Can Follow",
+  "description": "Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow \u2014 one action per line, with state and data.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What are steps to reproduce?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "Why do reproduction steps fail?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How do you write steps to reproduce a bug?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Steps to reproduce: a bad example and a good one"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to capture the state your steps can't describe"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

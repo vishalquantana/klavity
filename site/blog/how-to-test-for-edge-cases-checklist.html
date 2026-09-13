@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Test for Edge Cases: A Practical QA Checklist","item":"https://klavity.in/blog/how-to-test-for-edge-cases-checklist"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-test-for-edge-cases-checklist"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is an edge case in software testing?","acceptedAnswer":{"@type":"Answer","text":"An edge case is an input or operating condition at the extreme boundary of what a feature was designed to handle — an empty field, the maximum allowed length, a leap-year date, a lost network connection, or two clicks fired in the same instant. Edge cases are where assumptions in the code stop being true, so they surface bugs that the normal 'happy path' never reaches."}},{"@type":"Question","name":"What's the difference between an edge case and a corner case?","acceptedAnswer":{"@type":"Answer","text":"An edge case pushes one variable to its limit (a string of maximum length). A corner case is where two or more edge conditions happen at once (a maximum-length string submitted twice while offline). Corner cases are rarer and harder to reproduce, which is exactly why they escape to production — test the combinations, not just each boundary alone."}},{"@type":"Question","name":"How many edge cases should I test?","acceptedAnswer":{"@type":"Answer","text":"Don't aim for a number; aim for coverage of categories. Walk each input and state transition through the same checklist — boundaries, empty/null, size, encoding, numeric extremes, date/time, concurrency, network, permissions, and interrupted flows — and test the ones that are reachable in your product. Equivalence partitioning lets you test one representative value per category instead of every possible value."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Test for Edge Cases: A Practical QA Checklist",
+  "description": "Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What counts as an edge case?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "An edge-case testing checklist"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to find edge cases you haven't thought of"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to capture an edge-case bug so it's reproducible"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to turn edge cases into regression tests"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -55,6 +55,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to fix flaky end-to-end tests (and stop re-running CI)","item":"https://klavity.in/blog/fix-flaky-end-to-end-tests"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/fix-flaky-end-to-end-tests"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What makes an end-to-end test flaky?","acceptedAnswer":{"@type":"Answer","text":"Almost always one of five root causes: a timing assumption (waiting a fixed number of milliseconds instead of waiting for a real condition), shared state between tests (one test's database writes bleed into another), a network or animation race (the UI is still mid-transition when the assertion fires), test-order dependence (a test assumes another ran first), or retries masking a real problem rather than fixing it."}},{"@type":"Question","name":"Should I use retries to fix flaky tests?","acceptedAnswer":{"@type":"Answer","text":"Retries are a quarantine tool, not a fix. Using retries without also tracking and fixing the underlying cause lets flake accumulate until your suite is meaningless. The right sequence: quarantine the flaky test with a retry so CI stays green, file a ticket, then fix the root cause and remove the retry."}},{"@type":"Question","name":"How do I make test data hermetic without reseeding the whole database every run?","acceptedAnswer":{"@type":"Answer","text":"Create all the data a test needs at the start of that test via API or factory, and tear it down (or mark it deleted) at the end. Never share records across tests unless they are immutable seed data. If your test framework supports it, wrap each test in a transaction that rolls back — this is far faster than reseeding and completely eliminates data leakage between tests."}},{"@type":"Question","name":"What's the difference between a slow test and a flaky test?","acceptedAnswer":{"@type":"Answer","text":"A slow test always takes a long time. A flaky test sometimes passes and sometimes fails — the failure isn't deterministic. Slowness is a performance problem; flakiness is a correctness problem. Flaky tests are worse because they corrode trust: developers start ignoring failures, which is how real regressions slip into production undetected."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to fix flaky end-to-end tests (and stop re-running CI)",
+  "description": "Flaky tests are a symptom, not bad luck. Here are the five root causes \u2014 timing, shared state, network races, test order, and retry abuse \u2014 and how to fix each one for good.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Root cause 1: timing assumptions"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "Root cause 2: shared state and non-hermetic fixtures"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "Root cause 3: network and animation races"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Root cause 4: test-order dependence"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Root cause 5: retries used as a crutch"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

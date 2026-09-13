@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write Resilient Test Selectors That Don't Break","item":"https://klavity.in/blog/how-to-write-resilient-test-selectors"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-write-resilient-test-selectors"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the best selector to use in end-to-end tests?","acceptedAnswer":{"@type":"Answer","text":"Prefer a role-based locator (the element's accessible role plus its visible name), because it matches how a user finds the control and stays stable across markup changes. When no accessible handle exists, fall back to a data-testid attribute you add on purpose. Use raw CSS or XPath only as a last resort, and never anchor to auto-generated class names or DOM position."}},{"@type":"Question","name":"Should I use data-testid or CSS class selectors?","acceptedAnswer":{"@type":"Answer","text":"Use data-testid. CSS classes exist for styling and change whenever the design changes, and modules or utility frameworks often emit hashed, non-deterministic class names. A data-testid is a contract owned by the test, so it only changes when someone deliberately changes it."}},{"@type":"Question","name":"Why do my tests break every time the UI changes?","acceptedAnswer":{"@type":"Answer","text":"Almost always because the selectors are tied to structure — nth-child positions, deep descendant chains, or generated class names — rather than to stable, user-facing attributes. Rewriting them in the priority order (role, label, text, test id) removes most of that fragility."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Write Resilient Test Selectors That Don't Break",
+  "description": "Brittle selectors are the top cause of false test failures. Here's the locator priority order that survives UI changes, plus the anti-patterns to drop.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What makes a test selector break?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "The selector priority order that survives UI changes"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to add a stable test id the right way"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Selectors to avoid (and what to use instead)"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to make selectors survive design changes automatically"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

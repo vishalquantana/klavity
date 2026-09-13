@@ -52,6 +52,13 @@
     <h1>Test doubles explained: mock vs. stub vs. fake vs. spy</h1>
     <div class="by">Klavity</div>
     <div class="tldr-box"><b>TL;DR</b>A test double stands in for a real dependency during a test. Stubs return canned data and fakes are lightweight working implementations (both let you verify the resulting state); spies record how they were called and mocks assert on those calls (both verify behavior). Reach for the simplest double that proves what the test actually claims.</div>
+<div class="comparison-table" style="overflow-x:auto;margin:1.5rem 0"><table style="width:100%;border-collapse:collapse;font-size:0.9rem"><thead><tr style="background:#6366f1;color:#fff"><th style="padding:0.75rem;text-align:left">Feature</th><th style="padding:0.75rem;text-align:left">Mock / Stub</th><th style="padding:0.75rem;text-align:left">Fake / Spy</th></tr></thead><tbody>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">AI bug detection</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Setup time</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">Price</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Best for</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+</tbody></table></div>
+
     <div class="prose"><p>A <strong>test double</strong> is any object that stands in for a real dependency so a test can run in isolation. The four you'll meet most often differ by what they actually do: a <strong>stub</strong> returns canned answers to calls, a <strong>fake</strong> is a lightweight but working implementation (like an in-memory database), a <strong>spy</strong> records how it was called so you can assert on it afterward, and a <strong>mock</strong> is pre-programmed with expectations and fails the test itself if the expected calls don't happen. Stubs and fakes help you verify <em>state</em>; spies and mocks help you verify <em>behavior</em>.</p>
 <h2>What is a test double?</h2>
 <p>"Test double" is the umbrella term coined by Gerard Meszaros in <em>xUnit Test Patterns</em>, by analogy with a stunt double who steps in for an actor. It covers five kinds of stand-in, ordered here from simplest to most demanding:</p>

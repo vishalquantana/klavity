@@ -53,6 +53,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Turn a Bug Into a Regression Test That Sticks","item":"https://klavity.in/blog/turn-a-bug-into-a-regression-test"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/turn-a-bug-into-a-regression-test"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a regression test?","acceptedAnswer":{"@type":"Answer","text":"A regression test is an automated check that verifies a specific behavior still works after code changes. A regression test born from a bug asserts the exact behavior that was broken, so if the bug ever returns, the test fails and CI catches it before release."}},{"@type":"Question","name":"Should every bug get a regression test?","acceptedAnswer":{"@type":"Answer","text":"Not literally every one, but every bug that reached a user, was expensive to diagnose, or lives in critical-path code should. Trivial cosmetic issues in low-traffic areas rarely earn the maintenance cost. Use the rule: if this bug reappearing would embarrass you or page someone, write the test."}},{"@type":"Question","name":"Do I write the regression test before or after the fix?","acceptedAnswer":{"@type":"Answer","text":"Before. Write the failing test first, confirm it fails for the right reason on the unpatched code, then apply the fix and watch it pass. This 'red-green' order is the only way to prove the test actually catches the bug rather than passing by accident."}},{"@type":"Question","name":"How do I keep regression tests from becoming flaky?","acceptedAnswer":{"@type":"Answer","text":"Make them deterministic: control time, seed random data, mock external network calls, and assert on observable behavior rather than internal timing. For end-to-end tests, use resilient selectors or self-healing tests so a UI rename doesn't break a test that was catching a real regression."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Turn a Bug Into a Regression Test That Sticks",
+  "description": "A fixed bug with no test will come back. Here's how to convert any bug into a regression test that fails before the fix and passes after.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why every serious bug deserves a regression test"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to turn a bug into a regression test, step by step"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "What separates a durable regression test from a brittle one"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Where the reproduction data actually comes from"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How AI and self-healing tests keep the suite from rotting"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

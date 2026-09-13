@@ -53,6 +53,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Deduplicate Bug Reports Before Your Backlog Drowns","item":"https://klavity.in/blog/how-to-deduplicate-bug-reports"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-deduplicate-bug-reports"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Should I close duplicate bugs or link them?","acceptedAnswer":{"@type":"Answer","text":"Link them. Mark the extras as duplicates of a canonical report instead of closing or deleting them, so you keep each reporter's context and can count how many people were affected. That 'also reported by' count is a real priority signal you lose if you just delete."}},{"@type":"Question","name":"How do I know if two bug reports are actually the same bug?","acceptedAnswer":{"@type":"Answer","text":"Compare the error signature (message plus the top stack frame or failing endpoint) and the reproduction path, not the titles. Two tickets with different wording can be the same defect, and two tickets with identical symptoms can have different root causes. Match on what the system did, not on how the reporter described it."}},{"@type":"Question","name":"Is it better to deduplicate at intake or in the backlog?","acceptedAnswer":{"@type":"Answer","text":"At intake. Catching a duplicate before it becomes a ticket costs one search; catching it later costs a triager's time to read, investigate, and merge. Prompting reporters to search similar reports and capturing structured evidence at report time prevents most duplicates from ever entering the queue."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Deduplicate Bug Reports Before Your Backlog Drowns",
+  "description": "Duplicate bug reports waste triage time and split the signal across tickets. Here's how to match, merge, and prevent duplicates before your backlog drowns.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why do duplicate bug reports pile up?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to tell if two bug reports are actually duplicates"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to merge duplicate bugs without losing information"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Use duplicate count as a priority signal"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to prevent duplicate bug reports"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -36,6 +36,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Test Coverage? Types, Metrics, and Its Limits","item":"https://klavity.in/blog/what-is-test-coverage"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-test-coverage"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a good test coverage percentage?","acceptedAnswer":{"@type":"Answer","text":"There's no universal number. Many teams treat 70–80% coverage of meaningful code as healthy, but the figure matters less than what it covers: 60% that exercises your critical paths and error handling is worth more than 95% dominated by trivial getters. Set a floor to stop coverage from sliding, not a ceiling to chase."}},{"@type":"Question","name":"What's the difference between line and branch coverage?","acceptedAnswer":{"@type":"Answer","text":"Line coverage counts whether a line of code ran at all. Branch coverage counts whether every outcome of each decision ran — both the true and false side of every if, each case of a switch. A single test can hit 100% line coverage on a conditional while exercising only one branch, so branch coverage is the stricter, more honest measure."}},{"@type":"Question","name":"Does 100% test coverage mean no bugs?","acceptedAnswer":{"@type":"Answer","text":"No. Coverage measures execution, not verification. A test can run a line and still assert nothing about the result, so the line counts as covered while its behavior is unchecked. Coverage also can't catch missing features, wrong requirements, or bugs in code paths you never thought to write a test for."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "Test Coverage? Types, Metrics, and Its Limits",
+  "description": "Test coverage is the percentage of your code that is executed while your test suite runs. It's reported as line, branch, function, or statement coverage, and a coverage tool measures it by instrumenting your code and recording which parts run during ",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
 <script>

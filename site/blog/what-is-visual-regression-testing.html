@@ -52,6 +52,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Visual Regression Testing? A Practical Guide","item":"https://klavity.in/blog/what-is-visual-regression-testing"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-visual-regression-testing"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between visual regression testing and functional testing?","acceptedAnswer":{"@type":"Answer","text":"Functional testing checks behavior — does clicking submit send the form? Visual regression testing checks appearance — does the page still look right after the change? A functional test can pass while the layout is visibly broken, because assertions on the DOM don't see rendered pixels. The two are complementary, not substitutes."}},{"@type":"Question","name":"Why do visual regression tests become flaky?","acceptedAnswer":{"@type":"Answer","text":"Most flakiness comes from non-deterministic rendering: anti-aliasing differences between machines, font rendering across operating systems, animations captured mid-frame, and dynamic content like timestamps or carousels. You fix it by pinning the browser and viewport, disabling animations, freezing time, and masking regions that are expected to change."}},{"@type":"Question","name":"Do I need a separate tool for visual regression testing?","acceptedAnswer":{"@type":"Answer","text":"Not always. Playwright and Cypress both support screenshot snapshot assertions natively, which is enough for component and page-level checks. Dedicated services add hosted baseline storage, a review UI for approving diffs, and cross-browser rendering — useful once your suite grows past a few dozen snapshots and multiple people review changes."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "Visual Regression Testing? A Practical Guide",
+  "description": "Visual regression testing is an automated QA technique that catches unintended changes to a user interface by comparing screenshots of your app before and after a code change. A tool renders each page or component, captures an image, and compares it ",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

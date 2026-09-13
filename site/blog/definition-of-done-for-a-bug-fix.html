@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Write a Definition of Done for a Bug Fix (Checklist)","item":"https://klavity.in/blog/definition-of-done-for-a-bug-fix"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/definition-of-done-for-a-bug-fix"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a definition of done for a bug fix?","acceptedAnswer":{"@type":"Answer","text":"It's an explicit, shared checklist every bug fix must satisfy before the ticket moves to Closed — typically: root cause found, fix verified against the original reproduction steps, a regression test added, related paths checked, and the change reviewed. It turns 'done' from an opinion into a repeatable standard."}},{"@type":"Question","name":"How is a definition of done different from acceptance criteria?","acceptedAnswer":{"@type":"Answer","text":"Acceptance criteria are specific to one ticket ('the export button should download a CSV'). A definition of done is a general standard that applies to every fix regardless of the ticket. You need both: acceptance criteria say what to build, the definition of done says what 'finished' means for all of it."}},{"@type":"Question","name":"Does every bug fix need a regression test?","acceptedAnswer":{"@type":"Answer","text":"Nearly always for logic, data, and integration bugs — a fix with no test is a fix that can silently regress. The pragmatic exceptions are one-off environment issues and pure copy changes, but even then note in the ticket why no test was added so the decision is visible rather than skipped by default."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Write a Definition of Done for a Bug Fix (Checklist)",
+  "description": "A bug isn't fixed when the code changes \u2014 it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What should be in a definition of done for a bug fix?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "Why 'it works now' isn't done"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to make the definition of done actually get used"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "A copy-paste checklist for your bug template"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Key takeaways"
+    }
+  ]
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
 <script>

@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Test for Accessibility Bugs: A Practical Checklist","item":"https://klavity.in/blog/how-to-test-for-accessibility-bugs"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-test-for-accessibility-bugs"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can accessibility testing be fully automated?","acceptedAnswer":{"@type":"Answer","text":"No. Automated scanners catch machine-checkable issues like missing alt text, low contrast, and missing form labels, but they can't judge whether alt text is meaningful, whether focus order is logical, or whether a screen reader announces a control correctly. Plan on a manual keyboard and screen-reader pass for anything user-facing."}},{"@type":"Question","name":"What is the WCAG contrast requirement?","acceptedAnswer":{"@type":"Answer","text":"WCAG 2.1 Level AA requires a contrast ratio of at least 4.5:1 for normal text and 3:1 for large text (18pt, or 14pt bold), plus 3:1 for UI components and graphical objects. Remember to check text over images and the hover, focus, and disabled states, not just the default state."}},{"@type":"Question","name":"Which screen reader should I test with?","acceptedAnswer":{"@type":"Answer","text":"Start with the free options: NVDA on Windows and VoiceOver on macOS and iOS. If your users skew enterprise, add JAWS. Pair each screen reader with a browser it works well with — NVDA with Firefox or Chrome, VoiceOver with Safari."}},{"@type":"Question","name":"How do I file an accessibility bug so it gets fixed?","acceptedAnswer":{"@type":"Answer","text":"Name the specific WCAG success criterion, the assistive technology and browser you used, the exact steps, and what you expected the tech to announce or do versus what it actually did. Capturing the DOM and console state alongside the report removes the guesswork for the developer."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Test for Accessibility Bugs: A Practical Checklist",
+  "description": "Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist \u2014 keyboard, contrast, focus, and labels \u2014 to catch them.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What counts as an accessibility bug?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "The accessibility testing checklist"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "Which accessibility tests to automate vs. do manually"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to write an accessibility bug report that gets fixed"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Where to start if you've never tested accessibility"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

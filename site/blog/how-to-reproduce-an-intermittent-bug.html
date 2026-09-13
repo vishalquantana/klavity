@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Reproduce an Intermittent Bug: A Practical Guide","item":"https://klavity.in/blog/how-to-reproduce-an-intermittent-bug"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-reproduce-an-intermittent-bug"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does an intermittent bug happen sometimes but not always?","acceptedAnswer":{"@type":"Answer","text":"Because a variable you aren't controlling changes between runs — the order of async operations, a specific data value, a cache being warm or cold, a race between two requests, or a difference in environment. The bug isn't random; it's conditional on inputs you haven't identified yet."}},{"@type":"Question","name":"What's the difference between an intermittent bug and a flaky test?","acceptedAnswer":{"@type":"Answer","text":"A flaky test passes and fails without the product changing — the fault is usually in the test (timing, shared state, order). An intermittent bug is a real product defect that only triggers under certain conditions. A flaky test can be hiding a real intermittent bug, so investigate before you add a retry."}},{"@type":"Question","name":"How many times should I re-run to confirm a fix worked?","acceptedAnswer":{"@type":"Answer","text":"Enough to make the original failure statistically unlikely to have been missed. If the bug reproduced roughly 1 in 10 times before, a handful of runs proves nothing — run it in a loop dozens of times after the fix, ideally with the exact trigger you isolated, before calling it resolved."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Reproduce an Intermittent Bug: A Practical Guide",
+  "description": "Intermittent bugs don't fail every time, so they slip past tests and bounce back as 'cannot reproduce.' Here's how to make one happen on demand.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why do intermittent bugs happen at all?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How do I reproduce an intermittent bug step by step?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "What techniques force a variable to reproduce?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How do I confirm the fix actually worked?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "When should I stop chasing and escalate?"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -52,6 +52,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Stack Trace? How to Read One to Find a Bug","item":"https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-stack-trace-how-to-read-one"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do you read a stack trace?","acceptedAnswer":{"@type":"Answer","text":"Start at the top. The first line is the error type and message; the frames below it are the call stack, ordered from where the error was thrown (top) back to the program's entry point (bottom). Scan down to the first frame that references your own source file rather than a library or the runtime — that is usually the line to fix."}},{"@type":"Question","name":"What's the difference between a stack trace and an error message?","acceptedAnswer":{"@type":"Answer","text":"The error message is one line that says what went wrong (for example, 'TypeError: Cannot read properties of undefined'). The stack trace is the sequence of function calls that shows where and how it went wrong. You need both: the message tells you the failure, the trace tells you the location and the path that got there."}},{"@type":"Question","name":"Why does my stack trace point to the wrong line?","acceptedAnswer":{"@type":"Answer","text":"Usually because the code is minified or transpiled, so line numbers refer to the built bundle, not your source. A source map maps built lines back to original ones. Async operations, error re-throwing, and swallowed exceptions can also shift the true origin, so read the whole trace rather than trusting only the top frame."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "a Stack Trace? How to Read One to Find a Bug",
+  "description": "A stack trace is the ordered list of function calls that were active at the exact moment a program threw an error. It is printed innermost-call-first: the top line is the error itself, and each line below is the function that called the one above it,",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

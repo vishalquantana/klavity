@@ -52,6 +52,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Smoke Test? Definition, Uses, and Examples","item":"https://klavity.in/blog/what-is-a-smoke-test"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-smoke-test"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between smoke testing and sanity testing?","acceptedAnswer":{"@type":"Answer","text":"Smoke testing broadly verifies that the critical functions of a whole build work, usually automated and run on every build. Sanity testing is a narrow, often manual check that one specific change or bug fix behaves as expected, without re-testing everything else. In short: smoke tests breadth on a new build; sanity tests depth on a specific change."}},{"@type":"Question","name":"Is smoke testing manual or automated?","acceptedAnswer":{"@type":"Answer","text":"Both exist, but smoke tests are ideally automated so they run on every build without human effort. Manual smoke passes are still common before a demo, or when automation doesn't yet cover a newly built area."}},{"@type":"Question","name":"How long should a smoke test take?","acceptedAnswer":{"@type":"Answer","text":"A few minutes at most. The whole point is a fast gate: if your smoke suite takes longer than your team is willing to wait on every build, people will skip it. Aim for under five minutes and roughly 5–20 checks."}},{"@type":"Question","name":"Should smoke tests run in production?","acceptedAnswer":{"@type":"Answer","text":"Yes — run a read-mostly smoke test after every production deploy to catch config, secret, and infrastructure failures that pre-deploy tests can't see. Use safe, idempotent checks like health endpoints and a synthetic login, and avoid mutating real customer data."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "a Smoke Test? Definition, Uses, and Examples",
+  "description": "A smoke test is a small, fast set of checks that confirms a build's most critical functions work before anyone spends time on deeper testing. If the smoke test fails, the build is rejected immediately \u2014 there is no point running a full regression sui",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Root Cause Analysis for Bugs: A Step-by-Step Guide","item":"https://klavity.in/blog/root-cause-analysis-for-bugs"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/root-cause-analysis-for-bugs"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between debugging and root cause analysis?","acceptedAnswer":{"@type":"Answer","text":"Debugging finds where the code misbehaves so you can make the symptom go away. Root cause analysis goes one layer deeper to explain why the defect was possible at all — a missing validation, a wrong assumption about state, a config that drifted — so you can fix every instance of that class, not only the one you observed."}},{"@type":"Question","name":"What are the 5 Whys in root cause analysis?","acceptedAnswer":{"@type":"Answer","text":"The 5 Whys is a technique where you state the failure and ask 'why did that happen?' repeatedly, each answer becoming the next question, until you reach a cause you can actually change. Five is a rule of thumb, not a law: stop when the next 'why' would leave your codebase and start blaming people or luck."}},{"@type":"Question","name":"How do you do root cause analysis when a bug is intermittent?","acceptedAnswer":{"@type":"Answer","text":"Intermittent bugs almost always come from state you did not capture — timing, request ordering, cached data, or environment. Instead of re-running until it happens again, capture the full context at the moment it fails (console, network, and app state) so you can analyze one real occurrence instead of chasing a reproduction."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Root Cause Analysis for Bugs: A Step-by-Step Guide",
+  "description": "Root cause analysis finds why a bug happened, not just what broke. Here's a repeatable process: reproduce, narrow, ask why, and lock the fix with a test.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What is root cause analysis in software?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How do you find the root cause of a bug?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "What are common root causes of software bugs?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "A worked 5 Whys example"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How do you stop the bug from coming back?"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

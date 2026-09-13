@@ -52,6 +52,13 @@
     <h1>Error Monitoring vs. Bug Reporting: When You Need Each</h1>
     <div class="by">Klavity</div>
     <div class="tldr-box"><b>TL;DR</b>Error monitoring (Sentry, Rollbar, Datadog) automatically catches runtime exceptions and gives you stack traces, but it only sees bugs that throw an error. Bug reporting captures human-observed problems — including silent bugs like wrong copy, broken layout, or plausible-but-wrong data that never raise an exception. Most teams need both: error monitoring for volume and code-level detail, bug reporting for intent and the failures your code never flags.</div>
+<div class="comparison-table" style="overflow-x:auto;margin:1.5rem 0"><table style="width:100%;border-collapse:collapse;font-size:0.9rem"><thead><tr style="background:#6366f1;color:#fff"><th style="padding:0.75rem;text-align:left">Feature</th><th style="padding:0.75rem;text-align:left">Error Monitoring</th><th style="padding:0.75rem;text-align:left">Bug Reporting</th></tr></thead><tbody>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">AI bug detection</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Setup time</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:0.75rem">Price</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+<tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb;"><td style="padding:0.75rem">Best for</td><td style="padding:0.75rem">—</td><td style="padding:0.75rem">—</td></tr>
+</tbody></table></div>
+
     <div class="prose"><p>Error monitoring and bug reporting solve two different halves of the same problem. <strong>Error monitoring</strong> — tools like Sentry, Rollbar, and Datadog — automatically catches exceptions and crashes your code throws at runtime and groups them by stack trace, so you learn about failures without anyone reporting them. <strong>Bug reporting</strong> is a person flagging a problem they observed, which captures failures your code never throws an error for: wrong copy, broken layout, a total that's incorrect but still a valid number, or a flow that technically works but confuses the user. You need error monitoring for volume and code-level detail, and bug reporting for intent and the silent failures monitoring can't see.</p>
 
 <h2>What is the difference between error monitoring and bug reporting?</h2>

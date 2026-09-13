@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Reproduce a Bug That Only Happens for One User","item":"https://klavity.in/blog/reproduce-a-bug-that-only-happens-for-one-user"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/reproduce-a-bug-that-only-happens-for-one-user"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does a bug happen for only one user?","acceptedAnswer":{"@type":"Answer","text":"Because something about that user's state is different from yours. The usual suspects are their role or permissions, the exact shape of their data, which feature flags or experiments they are assigned to, their locale and timezone, and stale client-side state such as cookies, localStorage, or a cached service worker. Your test account has none of those differences, so the bug never fires for you."}},{"@type":"Question","name":"How do I reproduce a bug I can't see on my own account?","acceptedAnswer":{"@type":"Answer","text":"Stop testing from your own account. Capture the affected user's state — role, feature flags, browser and OS, and any relevant client storage — then recreate it: use secure impersonation ('log in as') to inherit their permissions and data, set the same flag assignments, and match their locale and timezone. Reproduce against a copy of their data, not a clean seed account."}},{"@type":"Question","name":"What information should I ask the user for?","acceptedAnswer":{"@type":"Answer","text":"Ask for the exact URL, the time it happened (with timezone), their browser and OS, and a screenshot or recording with the console and network tab open. An in-app report that captures those automatically removes the back-and-forth entirely."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Reproduce a Bug That Only Happens for One User",
+  "description": "A bug that hits one user and no one else is almost always a state problem. Here are the five kinds of user state to replicate to reproduce it.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why does a bug happen for only one user?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to reproduce a bug that only affects one user"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to stop one-user bugs from becoming 'cannot reproduce'"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "A quick checklist for the next one-user bug"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Key takeaways"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

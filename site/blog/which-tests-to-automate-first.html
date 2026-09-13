@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Decide Which Tests to Automate First: A Framework","item":"https://klavity.in/blog/which-tests-to-automate-first"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/which-tests-to-automate-first"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Should I aim for 100% test automation?","acceptedAnswer":{"@type":"Answer","text":"No. Some tests cost more to automate and maintain than they save, and some checks — visual polish, first-run UX, exploratory judgment — are cheaper and better done by a person. Aim to automate the stable, repetitive, high-value checks and keep humans on the rest."}},{"@type":"Question","name":"What is the single best predictor that a test should be automated?","acceptedAnswer":{"@type":"Answer","text":"How often you'd otherwise run it by hand. A check you repeat every release or every deploy pays back its automation cost fastest, provided the underlying behavior is stable enough that the test won't break on every UI tweak."}},{"@type":"Question","name":"How do I stop automated tests from becoming a maintenance burden?","acceptedAnswer":{"@type":"Answer","text":"Prioritize stable flows, use resilient selectors, and adopt self-healing tests that repair broken locators when the UI changes so a renamed button doesn't fail the whole suite. Maintenance cost is a factor in the priority score, not an afterthought."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Decide Which Tests to Automate First: A Framework",
+  "description": "You can't automate every test at once. Score each candidate on frequency, stability, manual cost, and business risk, then automate the top of the list first.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why you can't automate every test at once"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "What makes a test worth automating first"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "A simple scoring framework for automation priority"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Which tests to automate last \u2014 or never"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to keep the priority list from going stale"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

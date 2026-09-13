@@ -53,6 +53,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Capturing Network Requests for Bug Reports That Get Fixed","item":"https://klavity.in/blog/capturing-network-requests-for-bug-reports"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/capturing-network-requests-for-bug-reports"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Which network requests should I include in a bug report?","acceptedAnswer":{"@type":"Answer","text":"Focus on requests that failed (4xx/5xx status), requests that returned unexpected data, and the last few requests made before the error appeared. Avoid attaching every request — a 200-response for a font file is noise. The DevTools Network tab lets you filter by XHR/Fetch to see only API calls."}},{"@type":"Question","name":"Is it safe to include request payloads in a bug report?","acceptedAnswer":{"@type":"Answer","text":"Redact passwords, tokens, and PII before attaching. Most bug tracker tools accept plain text, so copy the payload as JSON and manually blank sensitive fields. Never screenshot a request that contains an Authorization header or a session cookie — copy the payload body only."}},{"@type":"Question","name":"What if the failing request only happens in production?","acceptedAnswer":{"@type":"Answer","text":"Use your browser's network panel in production (it works the same way). If you can reproduce the bug on demand, capture it live. If it's intermittent, set up a Fetch observer or a service worker that logs failing responses to localStorage — then retrieve those logs when the bug occurs."}},{"@type":"Question","name":"How do I capture a network request that disappears on page refresh?","acceptedAnswer":{"@type":"Answer","text":"In Chrome DevTools Network tab, check 'Preserve log' before you trigger the action. This keeps all requests across page navigations. You can also use 'Save all as HAR with content' to export the full session for the developer."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "Capturing Network Requests for Bug Reports That Get Fixed",
+  "description": "A screenshot shows what broke. A console log shows the JavaScript error. But a network request capture shows why it broke \u2014 the server's actual response, the payload your app sent, the status code that caused the failure.",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

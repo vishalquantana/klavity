@@ -36,6 +36,19 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is a Test Case? Anatomy, Types, and How to Write One","item":"https://klavity.in/blog/what-is-a-test-case"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-a-test-case"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between a test case and a test scenario?","acceptedAnswer":{"@type":"Answer","text":"A test scenario is a high-level thing to test ('user can reset a forgotten password'). A test case is the concrete, step-by-step way to verify part of that scenario, with specific inputs and one expected result. One scenario usually expands into several test cases — the valid email, the unregistered email, the expired reset link, and so on."}},{"@type":"Question","name":"Should test cases be manual or automated?","acceptedAnswer":{"@type":"Answer","text":"Automate the stable, repetitive, high-value cases you run every release — logins, checkout, core API responses. Keep exploratory and one-off checks manual, since scripting them costs more than they return. A well-written manual test case is also the fastest thing to hand to an automation tool later, because the steps and expected result are already explicit."}},{"@type":"Question","name":"How many test cases do I need for a feature?","acceptedAnswer":{"@type":"Answer","text":"Enough to cover the happy path, the main error paths, and the boundaries — not one per imaginable input. Coverage comes from testing distinct behaviors and equivalence classes, not from sheer count. Ten sharp cases usually beat fifty overlapping ones that all re-check the same code path."}},{"@type":"Question","name":"What makes a test case a good one?","acceptedAnswer":{"@type":"Answer","text":"It is atomic (verifies one behavior), repeatable (anyone running it gets the same result), and specific (exact inputs and an unambiguous expected result). If two people could disagree on whether it passed, it is not specific enough yet."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "DefinedTerm",
+  "name": "a Test Case? Anatomy, Types, and How to Write One",
+  "description": "A test case is a documented set of conditions, inputs, and steps used to verify that one specific feature or behavior of a software product works as intended. Each test case pairs an expected result with the actual result, so a tester or an automated",
+  "inDefinedTermSet": {
+    "@type": "DefinedTermSet",
+    "name": "Klavity QA Glossary",
+    "url": "https://klavity.in/blog"
+  }
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

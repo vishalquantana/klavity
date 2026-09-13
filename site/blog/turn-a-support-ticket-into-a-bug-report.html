@@ -52,6 +52,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Turn a Support Ticket Into a Bug Report Devs Fix","item":"https://klavity.in/blog/turn-a-support-ticket-into-a-bug-report"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/turn-a-support-ticket-into-a-bug-report"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between a support ticket and a bug report?","acceptedAnswer":{"@type":"Answer","text":"A support ticket is written by a customer to describe a problem they experienced, often in emotional or outcome terms ('my invoice disappeared'). A bug report is written for a developer and describes the observable behavior, exact steps, environment, and evidence needed to reproduce and fix it. Not every ticket is a bug, and a ticket almost never contains enough to fix the issue on its own."}},{"@type":"Question","name":"What if I can't reproduce the bug from the support ticket?","acceptedAnswer":{"@type":"Answer","text":"That's a finding, not a dead end. Note how many times it reproduced out of how many attempts, then work through what differs between your environment and the customer's: their account role or plan, feature flags, data state, browser version, or timezone. If it still won't reproduce, ask the customer for the exact timestamp and a fresh screenshot with the console open rather than filing a vague ticket engineers will bounce back."}},{"@type":"Question","name":"Should every support ticket become a bug report?","acceptedAnswer":{"@type":"Answer","text":"No. Many tickets are how-to questions, expected behavior, or account issues. Convert a ticket into a bug report only when there is a genuine defect: the product did something it shouldn't, or failed to do something it should. Search your tracker first to avoid filing a duplicate of an issue that's already open."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Turn a Support Ticket Into a Bug Report Devs Fix",
+  "description": "Support tickets describe a feeling; bug reports describe a mechanism. Here is how to convert one into the other so developers can fix it.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why support tickets don't work as bug reports"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "How to turn a support ticket into a bug report, step by step"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "What to capture before you file"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "What to do when you can't reproduce it"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "How to close the loop with the customer"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

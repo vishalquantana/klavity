@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Build a Release Readiness Checklist (Pre-Launch)","item":"https://klavity.in/blog/release-readiness-checklist-pre-launch-qa"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/release-readiness-checklist-pre-launch-qa"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a release readiness checklist?","acceptedAnswer":{"@type":"Answer","text":"It's a standing list of conditions a release must meet before it ships — passing smoke tests, a working rollback path, live monitoring, and a named sign-off owner. Unlike a test plan, which describes what you test, a readiness checklist is the final go/no-go gate that turns 'I think we're fine' into an explicit, auditable decision."}},{"@type":"Question","name":"How long should a release readiness checklist be?","acceptedAnswer":{"@type":"Answer","text":"Short enough that people actually run it — usually 8 to 12 items. Every entry should be something that could genuinely stop a launch. If a check has never once blocked a release, cut it; a checklist people skip because it's too long protects nothing."}},{"@type":"Question","name":"Who signs off on a release?","acceptedAnswer":{"@type":"Answer","text":"One named person with the authority to say no — typically a release owner, on-call engineer, or QA lead — not a group. Diffused ownership ('everyone approved') means no one actually verified the gate. The sign-off is a person attaching their name to 'this is safe to ship,' and rotating that role keeps it from becoming a rubber stamp."}},{"@type":"Question","name":"Is a release readiness checklist the same as a definition of done?","acceptedAnswer":{"@type":"Answer","text":"No. Definition of done applies to a single change ('this bug fix is complete'). A release readiness checklist applies to the whole shipment ('this build is safe to deploy to everyone'). You can have every ticket meet its definition of done and still fail readiness — for example, if monitoring is broken or there's no rollback plan."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Build a Release Readiness Checklist (Pre-Launch)",
+  "description": "A release readiness checklist is the go/no-go gate before you ship. Here's what to verify \u2014 smoke tests, rollback, monitoring, and sign-off.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "What is a release readiness checklist?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "What should a release readiness checklist include?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to run the go/no-go decision"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "Common release readiness mistakes"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Where readiness meets reality: the first hour after launch"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Get Useful Bug Reports From Non-Technical Users","item":"https://klavity.in/blog/get-useful-bug-reports-from-non-technical-users"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/get-useful-bug-reports-from-non-technical-users"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What information should you ask a non-technical user for?","acceptedAnswer":{"@type":"Answer","text":"Ask only what a person can reliably answer: what they were trying to do, what they expected, and what happened instead. Leave the technical evidence, such as the URL, browser version, console errors, and network requests, to be captured automatically rather than typed by hand."}},{"@type":"Question","name":"Why do non-technical users write vague bug reports?","acceptedAnswer":{"@type":"Answer","text":"Not because they're careless, but because they lack the vocabulary and access. They can't open dev tools, don't know what a console error is, and can't tell a 500 from a 403. When you ask them for detail they can't produce, they leave it blank or guess, and both make the report harder to reproduce."}},{"@type":"Question","name":"How do you reduce back-and-forth on customer bug reports?","acceptedAnswer":{"@type":"Answer","text":"Capture the full state at the moment the report is filed. Most follow-up questions, like which page, which browser, what error, and what steps, are questions you would never need to ask if that context were attached from the start. Front-load the capture and the round trips disappear."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Get Useful Bug Reports From Non-Technical Users",
+  "description": "Non-technical users can't describe console errors or network calls, so capture them automatically. Here's how to design intake for reproducible reports.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why non-technical users write vague bug reports"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "What a bug report from a non-technical user must contain"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to get useful bug reports from non-technical users"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "How to design bug intake for non-technical reporters"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Common mistakes when collecting bug reports from customers"
+    }
+  ]
+}
+</script>
 </head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
 <a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>

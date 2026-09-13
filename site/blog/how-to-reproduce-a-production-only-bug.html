@@ -36,6 +36,41 @@
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Reproduce a Production-Only Bug That Never Happens Locally","item":"https://klavity.in/blog/how-to-reproduce-a-production-only-bug"}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-reproduce-a-production-only-bug"}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does a bug happen in production but not locally?","acceptedAnswer":{"@type":"Answer","text":"Because your local environment differs from production in at least one way the code depends on: the data shape, an environment variable or feature flag, request volume and concurrency, a third-party integration, or the specific user's account and permission state. The bug lives in that difference, not in the code path you can see locally."}},{"@type":"Question","name":"How do I reproduce a bug I can only see in production?","acceptedAnswer":{"@type":"Answer","text":"Capture the failing request, URL, environment, and account state from production first — ideally at the exact moment it broke. Then reproduce it against a production-like environment, or bring one production variable at a time into your local setup (real data shape, the same flag values, the same user role) until the bug appears."}},{"@type":"Question","name":"What's the difference between a production-only bug and a flaky bug?","acceptedAnswer":{"@type":"Answer","text":"A production-only bug is deterministic — it reproduces reliably given the right environment and inputs, it just never gets those inputs locally. A flaky bug is non-deterministic: it fails intermittently in the same environment due to timing, order, or races. Production-only bugs are an environment problem; flaky bugs are a timing problem."}}]}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "How to Reproduce a Production-Only Bug That Never Happens Locally",
+  "description": "A bug that only appears in production usually traces to a parity gap in data, config, scale, integrations, or user state. Here's how to close it.",
+  "step": [
+    {
+      "@type": "HowToStep",
+      "name": "Step 1",
+      "text": "Why does a bug only happen in production?"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 2",
+      "text": "The five parity gaps that cause production-only bugs"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 3",
+      "text": "How to reproduce a production-only bug, step by step"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 4",
+      "text": "When you still can't reproduce it locally"
+    },
+    {
+      "@type": "HowToStep",
+      "name": "Step 5",
+      "text": "Prevent the next one"
+    }
+  ]
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-Q9H005LW9K"></script>
 <script>
