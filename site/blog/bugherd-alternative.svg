@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <!-- Grid lines -->
+  <line x1="0" y1="140" x2="800" y2="140" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="0" y1="280" x2="800" y2="280" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="200" y1="0" x2="200" y2="420" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="400" y1="0" x2="400" y2="420" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="600" y1="0" x2="600" y2="420" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <!-- Two columns: BugHerd (left, muted) vs Klavity (right, vibrant) -->
+  <!-- Left column - manual/passive -->
+  <rect x="60" y="60" width="280" height="300" rx="12" fill="#2d2a3e" stroke="#4a4870" stroke-width="1.5"/>
+  <circle cx="200" cy="160" r="50" fill="none" stroke="#4a4870" stroke-width="2"/>
+  <line x1="175" y1="160" x2="225" y2="160" stroke="#4a4870" stroke-width="2"/>
+  <line x1="200" y1="135" x2="200" y2="185" stroke="#4a4870" stroke-width="2"/>
+  <!-- Person icon (reporting) -->
+  <circle cx="200" cy="110" r="18" fill="#4a4870"/>
+  <path d="M170 155 Q200 140 230 155" fill="#4a4870"/>
+  <!-- Right column - AI/active -->
+  <rect x="460" y="60" width="280" height="300" rx="12" fill="#2d2a3e" stroke="#6366f1" stroke-width="2"/>
+  <!-- AI scan lines -->
+  <rect x="480" y="100" width="240" height="3" rx="1.5" fill="#6366f1" opacity="0.8"/>
+  <rect x="480" y="130" width="200" height="3" rx="1.5" fill="#6366f1" opacity="0.6"/>
+  <rect x="480" y="160" width="220" height="3" rx="1.5" fill="#6366f1" opacity="0.7"/>
+  <rect x="480" y="190" width="180" height="3" rx="1.5" fill="#6366f1" opacity="0.5"/>
+  <!-- Bug found indicator -->
+  <circle cx="600" cy="270" r="30" fill="#6366f1"/>
+  <path d="M588 270 l8 10 l16-18" stroke="#f5f0e8" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Arrow between columns -->
+  <path d="M350 210 L450 210" stroke="#f5f0e8" stroke-width="2" stroke-dasharray="6,4" opacity="0.4" marker-end="url(#arrowhead)"/>
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#f5f0e8" opacity="0.4"/>
+    </marker>
+  </defs>
+</svg>

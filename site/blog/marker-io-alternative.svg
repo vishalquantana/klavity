@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <!-- Background geometric shapes -->
+  <polygon points="0,0 200,0 0,200" fill="#6366f1" opacity="0.08"/>
+  <polygon points="800,420 600,420 800,220" fill="#6366f1" opacity="0.08"/>
+  <!-- Left: feedback widget (passive) -->
+  <rect x="80" y="80" width="240" height="180" rx="8" fill="#2d2a3e" stroke="#4a4870" stroke-width="1.5"/>
+  <rect x="80" y="80" width="240" height="36" rx="8" fill="#4a4870"/>
+  <circle cx="104" cy="98" r="6" fill="#c0392b" opacity="0.7"/>
+  <circle cx="124" cy="98" r="6" fill="#e67e22" opacity="0.7"/>
+  <circle cx="144" cy="98" r="6" fill="#2ecc71" opacity="0.7"/>
+  <!-- Screenshot annotation marker -->
+  <circle cx="200" cy="185" r="18" fill="none" stroke="#4a4870" stroke-width="2.5"/>
+  <line x1="200" y1="200" x2="200" y2="220" stroke="#4a4870" stroke-width="2.5"/>
+  <line x1="185" y1="185" x2="215" y2="185" stroke="#4a4870" stroke-width="2" stroke-dasharray="4,3" opacity="0.5"/>
+  <!-- Waiting indicator -->
+  <circle cx="200" cy="300" r="20" fill="none" stroke="#4a4870" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <!-- Right: AI active detection -->
+  <rect x="480" y="80" width="240" height="180" rx="8" fill="#2d2a3e" stroke="#6366f1" stroke-width="2"/>
+  <!-- Scan beam -->
+  <rect x="480" y="80" width="240" height="4" rx="2" fill="#6366f1" opacity="0.9">
+    <animate attributeName="y" values="80;260;80" dur="3s" repeatCount="indefinite"/>
+  </rect>
+  <!-- Bug markers found -->
+  <rect x="510" y="130" width="16" height="16" rx="3" fill="#ef4444" opacity="0.9"/>
+  <rect x="570" y="170" width="16" height="16" rx="3" fill="#ef4444" opacity="0.7"/>
+  <rect x="650" y="145" width="16" height="16" rx="3" fill="#f59e0b" opacity="0.8"/>
+  <!-- AI found badge -->
+  <rect x="490" y="270" width="200" height="36" rx="18" fill="#6366f1"/>
+  <circle cx="515" cy="288" r="10" fill="#f5f0e8" opacity="0.9"/>
+  <line x1="510" y1="288" x2="521" y2="288" stroke="#6366f1" stroke-width="2"/>
+  <line x1="515" y1="283" x2="515" y2="293" stroke="#6366f1" stroke-width="2"/>
+  <!-- Decorative circles -->
+  <circle cx="400" cy="210" r="3" fill="#6366f1" opacity="0.6"/>
+  <circle cx="400" cy="195" r="2" fill="#6366f1" opacity="0.4"/>
+  <circle cx="400" cy="225" r="2" fill="#6366f1" opacity="0.4"/>
+</svg>
