@@ -145,7 +145,7 @@ h3{font-family:var(--display);font-weight:540;letter-spacing:-.01em}
 .nav-links{display:none;gap:4px;margin-left:14px}
 @media(min-width:880px){ .nav-links{display:flex} }
 .nav-links a{
-  position:relative;font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;
+  position:relative;font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;white-space:nowrap;
   color:var(--paper-dim);padding:6px 11px;border-radius:99px;border:1px solid transparent;
   transition:color 150ms ease,border-color 150ms ease,transform 150ms ease;
 }
