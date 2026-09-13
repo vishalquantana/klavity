@@ -1618,9 +1618,15 @@ async function verifyCode(){
     if (!v.ok) { err.textContent = v.data.error || 'Invalid or expired code.'; return }
     // KLA-547: fire the sign_up conversion exactly once, only for a genuinely-new account (server
     // returns isNewAccount:false on a returning login). gtag/posthog may be absent — always guard.
+    // KLA-839: PostHog event is `signup_completed` — the ONE canonical PostHog signup name the
+    // server also emits (lib/posthog.ts) and the PostHog funnel filters on. It previously fired
+    // `sign_up` here, which never matched the funnel/server name → funnel stuck at 0%. GA4 keeps
+    // its own recommended `sign_up` event name (unchanged).
+    // KLA-840: mark internal Quantana signups so PostHog/GA4 can exclude them from funnels.
     if (v.data && v.data.isNewAccount === true) {
-      try { window.gtag && gtag('event','sign_up',{ method:'otp' }) } catch(e){}
-      try { window.posthog && posthog.capture('sign_up',{ method:'otp' }) } catch(e){}
+      var _internal = v.data.internal === true
+      try { if (window.gtag) { if (_internal) gtag('set', { traffic_type: 'internal' }); gtag('event','sign_up',{ method:'otp' }) } } catch(e){}
+      try { if (window.posthog) { if (_internal && posthog.people) posthog.people.set({ is_internal: true }); posthog.capture('signup_completed',{ method:'otp', is_internal: _internal }) } } catch(e){}
     }
     if (v.data && v.data.projectId) {
       projectId = v.data.projectId

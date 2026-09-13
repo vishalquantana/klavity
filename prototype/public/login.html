@@ -314,9 +314,15 @@ async function verifyNow() {
     if (d.error) throw new Error(d.error)
     // KLA-547: sign_up conversion — genuinely-new accounts only (server returns isNewAccount:false on
     // a returning login). Fire once; gtag/posthog may be absent on the page, so always null-guard.
+    // KLA-839: PostHog event is `signup_completed` — the ONE canonical PostHog signup name the
+    // server also emits (lib/posthog.ts) and the PostHog funnel filters on. It previously fired
+    // `sign_up` here, which never matched the funnel/server name → funnel stuck at 0%. GA4 keeps
+    // its own recommended `sign_up` event name (unchanged).
+    // KLA-840: mark internal Quantana signups so PostHog/GA4 can exclude them from funnels.
     if (d.isNewAccount === true) {
-      try { window.gtag && gtag('event','sign_up',{ method:'otp' }) } catch (e) {}
-      try { window.posthog && posthog.capture('sign_up',{ method:'otp' }) } catch (e) {}
+      var _internal = d.internal === true
+      try { if (window.gtag) { if (_internal) gtag('set', { traffic_type: 'internal' }); gtag('event','sign_up',{ method:'otp' }) } } catch (e) {}
+      try { if (window.posthog) { if (_internal && posthog.people) posthog.people.set({ is_internal: true }); posthog.capture('signup_completed',{ method:'otp', is_internal: _internal }) } } catch (e) {}
     }
     // Verify OK — let the Sims smile + clap before we navigate away (purely visual, additive).
     try { window.simEvent && window.simEvent("success") } catch (e) {}

@@ -112,6 +112,54 @@ test("capturePosthog: default properties is empty object (no crash)", async () =
   expect(lastFetchBody!.distinct_id).toBe("user@example.com")
 })
 
+// ── KLA-840: internal (Quantana) traffic flagging at ingestion ──────────────────
+
+test("capturePosthog: external email is not flagged internal", async () => {
+  mockFetch()
+  await withKey("phc_testkey", async () => {
+    await capturePosthog("someone@gmail.com", "signup_completed", {})
+  })
+  const props = lastFetchBody!.properties as Record<string, unknown>
+  expect(props.is_internal).toBe(false)
+  expect(props.$set).toBeUndefined()
+})
+
+test("capturePosthog: internal quantana.com.au email is flagged + $set person prop", async () => {
+  mockFetch()
+  await withKey("phc_testkey", async () => {
+    await capturePosthog("vishal@quantana.com.au", "signup_completed", { email: "vishal@quantana.com.au" })
+  })
+  const props = lastFetchBody!.properties as Record<string, unknown>
+  expect(props.is_internal).toBe(true)
+  expect(props.$set).toEqual({ is_internal: true })
+})
+
+test("capturePosthog: internal quantana.in email is flagged", async () => {
+  mockFetch()
+  await withKey("phc_testkey", async () => {
+    await capturePosthog("ops@quantana.in", "bug_filed", {})
+  })
+  const props = lastFetchBody!.properties as Record<string, unknown>
+  expect(props.is_internal).toBe(true)
+  expect((props.$set as Record<string, unknown>).is_internal).toBe(true)
+})
+
+test("capturePosthog: KLAV_INTERNAL_DOMAINS extra domain is flagged", async () => {
+  const orig = process.env.KLAV_INTERNAL_DOMAINS
+  process.env.KLAV_INTERNAL_DOMAINS = "acme.test"
+  try {
+    mockFetch()
+    await withKey("phc_testkey", async () => {
+      await capturePosthog("dev@acme.test", "signup_completed", {})
+    })
+    const props = lastFetchBody!.properties as Record<string, unknown>
+    expect(props.is_internal).toBe(true)
+  } finally {
+    if (orig === undefined) delete process.env.KLAV_INTERNAL_DOMAINS
+    else process.env.KLAV_INTERNAL_DOMAINS = orig
+  }
+})
+
 // ── first_bug_filed gate logic (injectable count fn) ─────────────────────────
 // The actual "first?" check in server.ts queries the DB. Here we test the
 // fire/no-fire decision by wrapping the logic in a testable helper.

@@ -4801,7 +4801,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             : resumeNext || "/dashboard"
         // KLA-547: expose isNewAccount so the client verify handlers can fire a `sign_up` conversion
         // (GA4 + PostHog) exactly once for genuinely-new accounts — a returning login carries false.
-        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+        // KLA-840: expose `internal` so the client conversion handlers can tag GA4/PostHog internal
+        // Quantana signups (traffic_type:'internal' / is_internal person prop) for funnel exclusion.
+        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew, internal: isInternalEmail(e) }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
@@ -11167,7 +11169,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const ms = await membershipsFor(me)
         const active = ms[0] || null
         const members = active ? await membersOf(active.workspaceId) : []
-        return json({ email: me, workspaces: ms, active, members })
+        // KLA-840: `internal` lets logged-in app pages tag their PostHog/GA4 stream as internal
+        // Quantana traffic so the growth team can exclude it from funnels.
+        return json({ email: me, workspaces: ms, active, members, internal: isInternalEmail(me) })
       }
       // ── dashboard-on-login aggregate (P1): one round-trip, reads only, no AI/vision. ──
       // Derived single project ('proj_'+workspaceId) until the P2 schema lands; UI is already project-shaped.

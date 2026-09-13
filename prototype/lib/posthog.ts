@@ -8,6 +8,8 @@
 //
 // The function is a no-op when KLAV_POSTHOG_KEY is not set (local dev / CI).
 
+import { isInternalEmail } from "./auth"
+
 const POSTHOG_ENDPOINT = "https://us.i.posthog.com/capture/"
 
 // ── Per-occurrence volume events (KLAVITYKLA-372) ───────────────────────────────
@@ -199,6 +201,15 @@ export async function capturePosthog(
   const key = process.env.KLAV_POSTHOG_KEY
   if (!key) return
 
+  // KLA-840: flag internal Quantana traffic at ingestion so the growth team can exclude it from
+  // EVERY dashboard/funnel with one filter, instead of retyping "email contains quantana.*" on each.
+  // The distinct_id here is the user's email (see call sites), so isInternalEmail() applies directly.
+  // `$set` writes a durable PERSON property — it sticks to the person across all events (server AND
+  // the stitched client stream once posthog.identify(email) merges the anon id), so filtering on
+  // `is_internal` reliably drops the whole internal person, not just this one event. We also stamp
+  // an event property so per-event breakdowns can filter without a person-property join.
+  const internal = isInternalEmail(distinctId)
+
   try {
     await fetch(POSTHOG_ENDPOINT, {
       method: "POST",
@@ -209,6 +220,8 @@ export async function capturePosthog(
         event,
         properties: {
           $lib: "klavity-server",
+          is_internal: internal,
+          ...(internal ? { $set: { is_internal: true } } : {}),
           ...properties,
         },
       }),
