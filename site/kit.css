@@ -144,6 +144,18 @@ h3{font-family:var(--display);font-weight:540;letter-spacing:-.01em}
 .brand:hover .mark{transform:rotate(-12deg) scale(1.08)}
 .nav-links{display:none;gap:4px;margin-left:14px}
 @media(min-width:880px){ .nav-links{display:flex} }
+/* Mobile nav (KLA-849): below 880px the link row is hidden, so expose a hamburger. */
+.nav-burger{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;flex:none;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--paper-dim);cursor:pointer;transition:color 150ms ease,border-color 150ms ease,transform 150ms ease}
+.nav-burger:hover{color:var(--paper);border-color:var(--line)}
+.nav-burger:active{transform:scale(.96)}
+@media(min-width:880px){ .nav-burger{display:none} }
+.mobile-menu{display:none;position:absolute;top:100%;left:0;right:0;background:color-mix(in srgb,var(--ink) 97%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line-2);padding:10px 0 16px}
+.mobile-menu.open{display:block}
+@media(min-width:880px){ .mobile-menu,.mobile-menu.open{display:none} }
+.mobile-menu a{display:block;padding:12px 22px;font-family:var(--mono);font-size:14px;letter-spacing:.03em;color:var(--paper-dim)}
+.mobile-menu a:hover{color:var(--paper);background:color-mix(in srgb,var(--ink) 60%,transparent)}
+.mm-cta{display:flex;gap:10px;padding:12px 22px 2px;border-top:1px solid var(--line-2);margin-top:8px}
+.mm-cta .btn{flex:1;text-align:center}
 .nav-links a{
   position:relative;font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;white-space:nowrap;
   color:var(--paper-dim);padding:6px 11px;border-radius:99px;border:1px solid transparent;

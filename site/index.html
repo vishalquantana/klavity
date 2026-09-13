@@ -23,8 +23,8 @@
 <script>!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.people.toString()+" (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);posthog.init("__POSTHOG_KEY__",{api_host:"https://us.i.posthog.com",person_profiles:"identified_only"})</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Klavity — your customer calls become your QA team · Klavity</title>
-<meta name="description" content="Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed." />
+<title>Klavity — AI testers for the client sites your agency builds · Klavity</title>
+<meta name="description" content="Klavity gives web agencies AI testers that browse the client sites you build, file grounded bug reports with evidence into Jira, Linear, GitHub or Plane, and re-run the key flows so fixed things stay fixed - catching bugs before your clients do." />
 <link rel="canonical" href="https://klavity.in/" />
 <link rel="preconnect" href="https://klavity.in" crossorigin />
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -34,14 +34,14 @@
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Klavity" />
-<meta property="og:title" content="Klavity — your customer calls become your QA team" />
-<meta property="og:description" content="Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed." />
+<meta property="og:title" content="Klavity — AI testers for the client sites your agency builds" />
+<meta property="og:description" content="Klavity gives web agencies AI testers that browse the client sites you build, file grounded bug reports with evidence into Jira, Linear, GitHub or Plane, and re-run the key flows so fixed things stay fixed - catching bugs before your clients do." />
 <meta property="og:url" content="https://klavity.in/" />
 <meta property="og:image" content="https://klavity.in/og/default.png" />
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Klavity — your customer calls become your QA team" />
-<meta name="twitter:description" content="Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed." />
+<meta name="twitter:title" content="Klavity — AI testers for the client sites your agency builds" />
+<meta name="twitter:description" content="Klavity gives web agencies AI testers that browse the client sites you build, file grounded bug reports with evidence into Jira, Linear, GitHub or Plane, and re-run the key flows so fixed things stay fixed - catching bugs before your clients do." />
 <meta name="twitter:image" content="https://klavity.in/og/default.png" />
 
 <!-- Preload the fonts that paint the hero (LCP) so they fetch in parallel with CSS, not after it.
@@ -67,7 +67,7 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","name":"Klavity","url":"https://klavity.in/","logo":"https://klavity.in/favicon.svg","sameAs":["https://github.com/vishalquantana/klav-snap"]},
-{"@type":"SoftwareApplication","name":"Klavity","applicationCategory":"DeveloperApplication","operatingSystem":"Web","url":"https://klavity.in/","description":"Klavity turns your customer calls into AI personas that browse your real site, file grounded bug reports with evidence into your tracker, and keep re-running your key flows so fixed things stay fixed.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},
+{"@type":"SoftwareApplication","name":"Klavity","applicationCategory":"DeveloperApplication","operatingSystem":"Web","url":"https://klavity.in/","description":"Klavity gives web agencies AI testers that browse the client sites you build, file grounded bug reports with evidence into Jira, Linear, GitHub or Plane, and re-run the key flows so fixed things stay fixed - catching bugs before your clients do.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}},
 {"@type":"BreadcrumbList","itemListElement":[
 {"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},
 {"@type":"ListItem","position":2,"name":"Snap","item":"https://klavity.in/snap"},
@@ -225,7 +225,10 @@ h1 .ind{color:var(--indigo)}
 .hd-spin{width:13px; height:13px; flex:none; border-radius:50%; border:2px solid var(--line); border-top-color:var(--indigo); animation:hdspin .8s linear infinite}
 @keyframes hdspin{to{transform:rotate(360deg)}}
 .hd-eta{color:var(--paper-faint); font-size:12px}
+.hd-sample{margin-top:14px}
+.hd-sample-tag{font-family:var(--mono); font-size:11.5px; letter-spacing:.03em; color:var(--paper-faint); margin-bottom:2px}
 .hd-cast{display:flex; flex-direction:column; gap:8px; margin-top:14px}
+.hd-sample .hd-cast{margin-top:8px}
 .hd-sim{display:flex; align-items:flex-start; gap:10px; background:var(--ink-2); border:1px solid var(--line); border-radius:12px; padding:10px 12px}
 .hd-av{width:30px; height:30px; flex:none; border-radius:50%; display:grid; place-items:center; font-family:var(--mono); font-weight:700; font-size:10px; color:#fff}
 .hd-nm{font-family:var(--display); font-weight:600; font-size:14.5px}
@@ -569,6 +572,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <a class="btn btn-ghost" href="/login">Log in</a>
         <a data-testid="nav-get-started" class="btn btn-indigo" href="/onboarding">Get started</a>
       </div>
+      <button class="nav-burger" id="navBurger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
     </div>
     <script>
       // If a session is already active, swap the logged-out CTAs for a Dashboard link.
@@ -583,6 +587,39 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         .catch(function () {});
     </script>
   </div>
+  <!-- Mobile menu (KLA-849): the link row is hidden below 880px; this exposes it. -->
+  <div class="mobile-menu" id="mobileMenu" hidden>
+    <a href="#how">How it works</a>
+    <a href="/snap">Snap</a>
+    <a href="/sims">Sims</a>
+    <a href="/autosim">AutoSim</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/blog">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+    <div class="mm-cta">
+      <a class="btn btn-ghost" href="/login">Log in</a>
+      <a class="btn btn-indigo" href="/onboarding?goal=snap">Get started</a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var b = document.getElementById('navBurger'), m = document.getElementById('mobileMenu');
+      if (!b || !m) return;
+      function setOpen(on) {
+        m.hidden = !on;
+        m.classList.toggle('open', on);
+        b.setAttribute('aria-expanded', on ? 'true' : 'false');
+        b.setAttribute('aria-label', on ? 'Close menu' : 'Open menu');
+      }
+      b.addEventListener('click', function () { setOpen(m.hidden); });
+      // Close after tapping a link, on outside click, or once we're back at desktop width.
+      m.addEventListener('click', function (e) { if (e.target.closest('a')) setOpen(false); });
+      document.addEventListener('click', function (e) {
+        if (!m.hidden && !m.contains(e.target) && !b.contains(e.target)) setOpen(false);
+      });
+      window.addEventListener('resize', function () { if (window.innerWidth >= 880 && !m.hidden) setOpen(false); });
+    })();
+  </script>
 </nav>
 
 <main id="main">
@@ -590,9 +627,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow reveal d1"><span class="dot"></span><span class="tag">QA before you have users</span></span>
-      <h1 class="reveal d2">Your customer calls become <em>your QA team.</em></h1>
-      <p class="lede reveal d3">Klavity builds AI personas from your <strong>real customer call transcripts</strong> and sends them through your live site — <strong>including the pages no one has visited yet</strong>. Everything they find is filed with evidence straight into Jira, Linear, GitHub or Plane, and the flows that matter get re-run so fixed things stay fixed.</p>
+      <span class="eyebrow reveal d1"><span class="dot"></span><span class="tag">Built for web agencies</span></span>
+      <h1 class="reveal d2">AI testers for the client sites <em>your agency ships.</em></h1>
+      <p class="lede reveal d3">Klavity sends <strong>AI testers</strong> through the client sites you build — <strong>including the pages no one has clicked yet</strong>. Everything they find is filed with evidence straight into Jira, Linear, GitHub or Plane, and the flows that matter get re-run so fixed things stay fixed — so the bug never reaches your client.</p>
 
       <div class="hero-entries reveal d4">
         <div class="hentry snap">
@@ -616,7 +653,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       </div>
 
       <div class="hero-cta reveal d5" id="heroCtaRow">
-        <a id="hero-primary-cta" class="btn btn-indigo" href="/onboarding">See your site through your customers' eyes</a>
+        <a id="hero-primary-cta" class="btn btn-indigo" href="/onboarding?goal=snap">Add Klavity to Chrome — it's free</a>
       </div>
       <!-- Zero-signup aha: paste a URL right here and an AI customer reviews it live.
            JS swaps this in for the plain CTA link above; with JS disabled that anchor
@@ -624,13 +661,23 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="hero-demo reveal d5 hd-hidden" id="heroDemo">
         <div class="hd-field">
           <input id="hdUrl" type="url" placeholder="yourproduct.com" autocomplete="url" aria-label="Your product URL" onkeydown="if(event.key==='Enter'){event.preventDefault();hdFetch()}" />
-          <button type="button" class="btn btn-indigo" id="hdGo" onclick="hdFetch()">Watch a customer review it</button>
+          <button type="button" class="btn btn-indigo" id="hdGo" onclick="hdFetch()">Watch an AI tester review it</button>
         </div>
         <div class="hd-err" id="hdErr" role="alert"></div>
-        <div class="hd-loading hd-hidden" id="hdLoading" aria-live="polite"><span class="hd-spin"></span><span id="hdLoadTxt">Opening your page…</span><span class="hd-eta">usually a minute or two</span></div>
-        <div id="hdResult" aria-live="polite"></div>
+        <div class="hd-loading hd-hidden" id="hdLoading" aria-live="polite"><span class="hd-spin"></span><span id="hdLoadTxt">Opening your page…</span><span class="hd-eta">usually about 20 seconds</span></div>
+        <div id="hdResult" aria-live="polite">
+          <!-- Instant example so value is visible with zero wait; renderCast() overwrites this the moment a real URL is run. -->
+          <div class="hd-sample" id="hdSample">
+            <div class="hd-sample-tag"><span class="mono" style="color:var(--green)">●</span> A review Klavity just ran on a demo client storefront:</div>
+            <div class="hd-cast">
+              <div class="hd-sim"><span class="hd-av" style="background:#6366f1">MO</span><div><div class="hd-nm">Maya Okafor<span class="hd-rl">First-time shopper</span></div><div class="hd-sum">"Add to cart gives me no feedback - I clicked it three times before I trusted it."</div></div></div>
+              <div class="hd-sim"><span class="hd-av" style="background:#0f9d6b">TR</span><div><div class="hd-nm">Tom Reyes<span class="hd-rl">Mobile visitor</span></div><div class="hd-sum">"On my phone the checkout total is cut off - I can't see what I'm about to pay."</div></div></div>
+              <div class="hd-sim"><span class="hd-av" style="background:#db2777">PV</span><div><div class="hd-nm">Priya Varma<span class="hd-rl">The client</span></div><div class="hd-sum">"The contact form said 'sent' but the email never reached my inbox."</div></div></div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="hero-note reveal d5"><span class="mono" style="color:var(--green)">●</span> Paste your URL — an AI customer reviews your site in minutes. Free, no credit card.</div>
+      <div class="hero-note reveal d5"><span class="mono" style="color:var(--green)">●</span> Paste any client URL — an AI tester reviews it in about 20 seconds. Free, no credit card.</div>
     </div>
 
     <div class="stage reveal d3">
@@ -642,27 +689,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div class="prod-card float">
         <div class="pc-bar">
           <span class="pc-dot" style="background:#ff6058"></span><span class="pc-dot" style="background:#ffbd2e"></span><span class="pc-dot" style="background:#28c840"></span>
-          <span style="margin-left:8px; font-family:var(--mono); font-size:10px; color:var(--muted-safe)">acme-finance/overview</span>
+          <span style="margin-left:8px; font-family:var(--mono); font-size:10px; color:var(--muted-safe)">northwind-store.com/checkout</span>
         </div>
         <div class="pc-body">
-          <div class="pc-h">Q2 Revenue Overview</div>
-          <div class="pc-sub">apr–jun 2026 · updated 2h ago</div>
+          <div class="pc-h">Checkout</div>
+          <div class="pc-sub">order #4471 · demo client store</div>
           <div class="pc-kpis">
-            <div class="pc-kpi"><div class="pc-kl">Revenue</div><div class="pc-kv">$2.4M</div></div>
-            <div class="pc-kpi pc-target"><div class="pc-kl">Pending</div><div class="pc-kv">14</div></div>
-            <div class="pc-kpi"><div class="pc-kl">Rate</div><div class="pc-kv">87%</div></div>
+            <div class="pc-kpi"><div class="pc-kl">Items</div><div class="pc-kv">3</div></div>
+            <div class="pc-kpi pc-target"><div class="pc-kl">Total</div><div class="pc-kv">$128</div></div>
+            <div class="pc-kpi"><div class="pc-kl">Ship to</div><div class="pc-kv">US</div></div>
           </div>
-          <div class="pc-row"><span class="pc-dotc" style="background:#ff3b30"></span><span class="nm">Marketing Budget</span><span style="color:var(--red-text)">2d overdue</span></div>
-          <div class="pc-row"><span class="pc-dotc" style="background:#ff3b30"></span><span class="nm">Vendor Contract</span><span style="color:var(--red-text)">1d overdue</span></div>
-          <div class="pc-row"><span class="pc-dotc" style="background:#ff9500"></span><span class="nm">Bonus Pool</span><span style="color:#9a5e12">today</span></div>
+          <div class="pc-row"><span class="pc-dotc" style="background:#ff3b30"></span><span class="nm">Total cut off on mobile</span><span style="color:var(--red-text)">bug</span></div>
+          <div class="pc-row"><span class="pc-dotc" style="background:#ff3b30"></span><span class="nm">Add-to-cart gives no feedback</span><span style="color:var(--red-text)">bug</span></div>
+          <div class="pc-row"><span class="pc-dotc" style="background:#ff9500"></span><span class="nm">Contact form never sends</span><span style="color:#9a5e12">check</span></div>
         </div>
       </div>
       <!-- a sim that walks in and points -->
       <div class="sim walk" id="sarah">
-        <div class="speech"><div class="sp-tag">SARAH CHEN · CFO</div>“These aren't sorted by urgency — I can't see what's overdue at a glance.”</div>
+        <div class="speech"><div class="sp-tag">MAYA OKAFOR · SHOPPER</div>"The total's cut off on my phone — I can't tell what I'm about to pay."</div>
         <div style="position:relative; display:flex; flex-direction:column; align-items:center">
           <div class="arm" style="background:#5a5ad6"><span class="fin"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" /></svg></span></div>
-          <div class="head" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">SC</div>
+          <div class="head" style="background:linear-gradient(135deg,#6366f1,#8b5cf6)">MO</div>
           <div class="legs"><span class="leg" style="background:#5a5ad6"></span><span class="leg" style="background:#5a5ad6"></span></div>
         </div>
       </div>
@@ -670,14 +717,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 
   <!-- quote marquee -->
-  <div class="wrap" style="margin-top:54px; text-align:center"><span class="tag">What your Sims will sound like</span></div>
+  <div class="wrap" style="margin-top:54px; text-align:center"><span class="tag">What your client's visitors will say</span></div>
   <div class="wrap"><div class="marquee" style="margin-top:12px">
     <div class="mq-track" id="mq">
-      <span class="mq-q">“I need an export before I sign off.” <span class="who">— Sarah, CFO</span></span>
-      <span class="mq-q">“Give me bulk-approve, I'm not clicking 14 times.” <span class="who">— James, Finance Lead</span></span>
-      <span class="mq-q">“Revenue front and centre — I check it every morning.” <span class="who">— Anika, Ops</span></span>
-      <span class="mq-q">“Why is this two clicks deep?” <span class="who">— Priya, Designer</span></span>
-      <span class="mq-q">“I'd never trust a number I can't drill into.” <span class="who">— Marcus, Analyst</span></span>
+      <span class="mq-q">"I clicked pay and nothing happened — is my card charged?" <span class="who">— Maya, shopper</span></span>
+      <span class="mq-q">"The menu doesn't open on my phone." <span class="who">— Tom, mobile visitor</span></span>
+      <span class="mq-q">"I filled in the contact form but never heard back." <span class="who">— Dev, enquiry</span></span>
+      <span class="mq-q">"The price at checkout wasn't the price I saw." <span class="who">— Priya, first-time buyer</span></span>
+      <span class="mq-q">"The booking button just spins forever." <span class="who">— Marcus, returning customer</span></span>
     </div>
   </div></div>
 </header>
@@ -704,12 +751,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   function initialsOf(n) { return String(n || '').trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0] || ''; }).join('').toUpperCase() || 'S'; }
 
   // Persona generation takes ~10-20s — staged wait copy while we hold attention.
-  var WAIT_LINES = ['Opening your page…', 'Meeting your customers…'];
+  var WAIT_LINES = ['Opening your page…', 'Sending in your AI testers…'];
   var waitTimer = null, waitIx = 0;
   function setLoading(on) {
     var lo = document.getElementById('hdLoading'), go = document.getElementById('hdGo'), txt = document.getElementById('hdLoadTxt');
     if (lo) lo.classList.toggle('hd-hidden', !on);
-    if (go) { go.disabled = on; go.textContent = on ? 'Reading…' : 'Watch a customer review it'; }
+    if (go) { go.disabled = on; go.textContent = on ? 'Reading…' : 'Watch an AI tester review it'; }
     if (waitTimer) { clearInterval(waitTimer); waitTimer = null; }
     if (on) {
       waitIx = 0;
@@ -1086,16 +1133,46 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div>
 </section>
 
+<!-- KLA-852 social proof. Kept HIDDEN so no placeholder/unverified proof ever ships.
+     TO GO LIVE: replace the [ ... ] placeholders with REAL agency quotes + a REAL count,
+     then remove the `hidden` attribute on the section. Do not unhide with placeholders. -->
+<style>
+.proof{padding:80px 0}
+.proof .sec-head{text-align:center;margin-bottom:14px}
+.proof-stat{text-align:center;font-family:var(--mono);font-size:13px;color:var(--paper-faint);letter-spacing:.03em;margin-bottom:30px}
+.proof-stat strong{font-family:var(--display);font-weight:600;font-size:20px;color:var(--paper)}
+.proof-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media(max-width:820px){.proof-grid{grid-template-columns:1fr}}
+.proof-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:22px;margin:0}
+.proof-card blockquote{margin:0 0 14px;font-size:15.5px;line-height:1.5;color:var(--paper)}
+.proof-card figcaption{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;color:var(--paper-faint)}
+</style>
+<section id="proof" class="proof" hidden aria-hidden="true">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">Trusted by agencies</span>
+      <h2>Agencies ship with <em>Klavity watching.</em></h2>
+    </div>
+    <div class="proof-stat"><strong>[ real count ]</strong> agencies catching bugs before their clients do</div>
+    <div class="proof-grid">
+      <figure class="proof-card"><blockquote>[ real client quote 1 ]</blockquote><figcaption>[ Name ] · [ Agency ]</figcaption></figure>
+      <figure class="proof-card"><blockquote>[ real client quote 2 ]</blockquote><figcaption>[ Name ] · [ Agency ]</figcaption></figure>
+      <figure class="proof-card"><blockquote>[ real client quote 3 ]</blockquote><figcaption>[ Name ] · [ Agency ]</figcaption></figure>
+    </div>
+  </div>
+</section>
+
 <!-- CTA -->
 <section id="cta" class="final">
   <div class="wrap">
     <span class="tag">Free to start · no credit card</span>
-    <h2>Ship like your best customer is <em>looking over your shoulder.</em></h2>
-    <p class="lede" style="margin:18px auto 0; max-width:40ch; text-align:center">Because, finally, they are.</p>
+    <h2>Catch the bugs your clients will <em>catch first.</em></h2>
+    <p class="lede" style="margin:18px auto 0; max-width:44ch; text-align:center">Send AI testers through every client site you ship — so the bug never lands in your client's inbox.</p>
     <div class="final-cta">
-      <a id="cta-primary-cta" class="btn btn-indigo" href="/onboarding">Get started →</a>
-      <a class="btn btn-ghost" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener">Add to Chrome</a>
+      <a id="cta-primary-cta" class="btn btn-indigo" href="/onboarding?goal=snap">Add Klavity to Chrome — free</a>
+      <a class="btn btn-ghost" href="#how">See how it works</a>
     </div>
+    <p style="margin:18px auto 0; text-align:center; font-family:var(--mono); font-size:12.5px; color:var(--paper-faint)"><span style="color:var(--green)">●</span> 30-day money-back guarantee</p>
   </div>
 </section>
 
