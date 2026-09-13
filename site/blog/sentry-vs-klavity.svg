@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="140" x2="800" y2="140" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="0" y1="280" x2="800" y2="280" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="200" y1="0" x2="200" y2="420" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="400" y1="0" x2="400" y2="420" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <line x1="600" y1="0" x2="600" y2="420" stroke="#6366f1" stroke-width="0.5" opacity="0.2"/>
+  <rect x="60" y="80" width="280" height="260" rx="12" fill="#2a2640" opacity="0.8"/>
+  <rect x="80" y="100" width="240" height="4" rx="2" fill="#ef4444" opacity="0.7"/>
+  <text x="200" y="160" font-family="monospace" font-size="13" fill="#ef4444" text-anchor="middle">PRODUCTION</text>
+  <text x="200" y="185" font-family="monospace" font-size="11" fill="#94a3b8" text-anchor="middle">error monitoring</text>
+  <rect x="100" y="210" width="200" height="28" rx="4" fill="#1e1b2e" opacity="0.6"/>
+  <text x="200" y="229" font-family="monospace" font-size="10" fill="#ef4444" text-anchor="middle">TypeError: 2,847 events</text>
+  <rect x="100" y="248" width="200" height="28" rx="4" fill="#1e1b2e" opacity="0.6"/>
+  <text x="200" y="267" font-family="monospace" font-size="10" fill="#f97316" text-anchor="middle">NetworkError: 431 events</text>
+  <rect x="100" y="286" width="200" height="28" rx="4" fill="#1e1b2e" opacity="0.6"/>
+  <text x="200" y="305" font-family="monospace" font-size="10" fill="#94a3b8" text-anchor="middle">after deploy</text>
+  <circle cx="400" cy="210" r="24" fill="#6366f1" opacity="0.15"/>
+  <text x="400" y="216" font-family="monospace" font-size="14" fill="#6366f1" text-anchor="middle" font-weight="bold">VS</text>
+  <rect x="460" y="80" width="280" height="260" rx="12" fill="#2a2640" opacity="0.8"/>
+  <rect x="480" y="100" width="240" height="4" rx="2" fill="#6366f1" opacity="0.9"/>
+  <text x="600" y="160" font-family="monospace" font-size="13" fill="#6366f1" text-anchor="middle">PRE-SHIP QA</text>
+  <text x="600" y="185" font-family="monospace" font-size="11" fill="#94a3b8" text-anchor="middle">client bug capture</text>
+  <rect x="500" y="210" width="200" height="28" rx="4" fill="#1e1b2e" opacity="0.6"/>
+  <text x="600" y="229" font-family="monospace" font-size="10" fill="#6366f1" text-anchor="middle">screenshot + console logs</text>
+  <rect x="500" y="248" width="200" height="28" rx="4" fill="#1e1b2e" opacity="0.6"/>
+  <text x="600" y="267" font-family="monospace" font-size="10" fill="#6366f1" text-anchor="middle">1-click from client</text>
+  <rect x="500" y="286" width="200" height="28" rx="4" fill="#1e1b2e" opacity="0.6"/>
+  <text x="600" y="305" font-family="monospace" font-size="10" fill="#94a3b8" text-anchor="middle">before deploy</text>
+  <text x="400" y="400" font-family="monospace" font-size="12" fill="#6366f1" text-anchor="middle" opacity="0.6">klavity.in</text>
+</svg>
