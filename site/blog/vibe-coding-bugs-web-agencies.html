@@ -1,0 +1,140 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch · Klavity</title>
+<meta name="description" content="AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coding-bugs-web-agencies">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch"><meta property="og:description" content="AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coding-bugs-web-agencies"><meta property="og:image" content="https://klavity.in/blog/vibe-coding-bugs-web-agencies.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch"><meta name="twitter:description" content="AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch","description":"AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.","datePublished":"2026-09-13","dateModified":"2026-09-13","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coding-bugs-web-agencies","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch","item":"https://klavity.in/blog/vibe-coding-bugs-web-agencies"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coding-bugs-web-agencies"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is vibe coding?","acceptedAnswer":{"@type":"Answer","text":"Vibe coding is the practice of building software by describing what you want in natural language and letting an AI — Cursor, Copilot, Claude, v0 — generate the code. You ship the output without reading every line. It's fast, increasingly common in web agencies, and introduces bugs that didn't exist in hand-written code."}},{"@type":"Question","name":"Does vibe coding produce buggy code?","acceptedAnswer":{"@type":"Answer","text":"Yes — but differently than human bugs. AI-generated code tends to be syntactically correct and functionally close to what was asked, but it introduces subtle visual regressions, broken edge cases, and accessibility failures. The logic works; the experience breaks."}},{"@type":"Question","name":"How do you test AI-generated code?","acceptedAnswer":{"@type":"Answer","text":"The most effective approach is AI-powered visual and functional QA that inspects what actually renders in the browser — not what your tests expect. Tools like Klavity screenshot every state, compare against baseline, and flag unexpected changes automatically."}},{"@type":"Question","name":"What bugs does vibe-coded code introduce?","acceptedAnswer":{"@type":"Answer","text":"The most common: layout shifts on edge-case viewport sizes, broken focus states, missing ARIA labels, hover and transition states that weren't tested, and interactions that work in isolation but break with real content. All of these are invisible to unit and integration tests."}},{"@type":"Question","name":"Can AI QA tools handle vibe-coded sites?","acceptedAnswer":{"@type":"Answer","text":"Yes — AI QA is actually better suited to vibe-coded sites than traditional test suites. Because AI QA inspects the rendered output rather than testing code paths, it catches visual and interaction bugs regardless of how the code was written."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guide · 2026-09-13</div>
+    <h1>Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch</h1>
+    <div class="by">Klavity</div>
+    <img src="/blog/vibe-coding-bugs-web-agencies.svg" alt="Vibe coding bugs" style="width:100%;border-radius:8px;margin-bottom:2rem">
+<div class="tldr-box"><b>TL;DR</b>Vibe-coded sites introduce a new class of bugs — visual regressions, broken interactions, and accessibility failures — that weren't present in hand-written code. Traditional test suites miss them because they test known behaviors, not the unexpected outputs of AI code generation. AI-powered QA tools like Klavity catch these bugs by inspecting what actually renders, not just what your tests expect.</div>
+    <div class="prose"><p>Web agencies are shipping faster than ever. A developer describes a component in Cursor, reviews the output briefly, and pushes. A designer prompts v0 for a landing page section and drops it in. Claude rewrites a form interaction in seconds. The pace is genuinely impressive — and the bugs it introduces are genuinely new.</p>
+
+<p>Vibe-coded sites break differently than hand-written sites. The code is usually syntactically correct. The feature usually works in the happy path. But the states your client will actually encounter — mobile viewports, empty data, keyboard navigation, screen readers, slow connections — weren't in the prompt. They weren't generated. And your test suite wasn't written to test them either.</p>
+
+<p>This is the vibe-coding QA gap: a whole class of bugs that exist in the rendered output, invisible to tests that check code paths rather than what actually appears on screen.</p>
+
+<h2>What makes vibe-coded sites break differently?</h2>
+
+<p>Hand-written code has a tight loop between the developer's mental model and the output. When you write a layout by hand, you're aware of the edge cases — you've thought about what happens when the title wraps, when the image is missing, when the viewport is narrow. That awareness shapes what you write and what you test.</p>
+
+<p>AI-generated code doesn't carry that awareness. The model produces code that satisfies the prompt. If the prompt said "create a card component with an image, title, and description," the model generates a card that works for the example content in the prompt. It doesn't generate the empty state, the long-title overflow case, the missing-image fallback, or the mobile breakpoint behavior — unless you explicitly asked for all of those.</p>
+
+<p>Most developers don't ask. They iterate on the happy path, ship, and move on. The edge cases accumulate silently.</p>
+
+<h2>Which bugs show up most in AI-generated code?</h2>
+
+<p>After running AI QA across hundreds of vibe-coded deployments, the same categories appear repeatedly:</p>
+
+<ul>
+<li><strong>Layout breaks on narrow viewports.</strong> AI-generated code often works fine at the viewport width used during development but breaks at 375px or 414px. Overflow, wrapping, and stacking behavior wasn't tested at those sizes.</li>
+<li><strong>Broken focus states.</strong> AI models often omit <code>:focus-visible</code> styles or generate components that trap keyboard focus. This fails WCAG and is invisible in click-based testing.</li>
+<li><strong>Missing ARIA labels.</strong> Buttons with icon-only content, form inputs without labels, modals without role attributes. Generated code frequently produces inaccessible components because accessibility wasn't in the prompt.</li>
+<li><strong>Hover and transition glitches.</strong> CSS transitions generated by AI sometimes conflict with inherited styles, producing flickering or stuck states on hover. These only appear in the browser, not in tests.</li>
+<li><strong>Edge-case content failures.</strong> A card that looks fine with "Short Title" breaks when a client enters "This Is A Much Longer Title That Wraps Unexpectedly." AI-generated code is usually tested against the example content in the prompt, not real production content.</li>
+</ul>
+
+<h2>Why does your existing test suite miss vibe-coding bugs?</h2>
+
+<p>Unit and integration tests verify that code behaves as written. They check return values, function calls, state changes. They're testing the logic of the code — and for vibe-coded code, the logic is usually fine.</p>
+
+<p>The bugs above aren't logic bugs. They're visual bugs. Interaction bugs. Rendering bugs. Your test suite checks that the button click fires the right function. It doesn't check that the button has a visible focus ring, that it's accessible to keyboard users, that it doesn't clip on a 375px viewport, that its hover state doesn't flicker.</p>
+
+<p>End-to-end tests could theoretically catch some of this, but most agencies don't write Playwright or Cypress suites for every component on every client site. Even when they do, tests are written against happy-path behavior — they verify that things work, not that they look correct and handle edge cases.</p>
+
+<p>Vibe coding widens this gap because the code surface grows faster than the test coverage. You ship three components from Cursor in the time it would take to write one — but you don't write three times the tests. The untested states accumulate faster than before.</p>
+
+<h2>How do web agencies QA vibe-coded client work?</h2>
+
+<p>The agencies handling this well have moved to automated visual and interaction QA that runs on every deploy. The workflow looks like this:</p>
+
+<ol>
+<li>Developer vibe-codes a feature and pushes to a preview URL</li>
+<li>AI QA tool automatically screenshots every key state — desktop, mobile, hover, focus, empty, error</li>
+<li>Screenshots are compared against baseline; regressions are flagged with a diff</li>
+<li>Developer reviews flagged changes before merge — catches the visual issues that weren't in the prompt</li>
+<li>Client never sees the broken states</li>
+</ol>
+
+<p>The key difference from manual QA: it runs automatically on every deploy, not just when someone remembers to check. And it checks the rendered output, not the code — which means it catches vibe-coding bugs that code-level tests would miss entirely.</p>
+
+<h2>What does AI-powered QA catch that tests don't?</h2>
+
+<p>AI QA operates at the visual and interaction layer — it inspects what actually renders in the browser, across real viewport sizes, with real browser rendering engines. This catches:</p>
+
+<ul>
+<li>Visual regressions introduced by AI-generated CSS that affect rendering without changing test behavior</li>
+<li>Layout breaks at viewport sizes that weren't tested during development</li>
+<li>Accessibility issues that don't show up in code review but are visible to screen readers and keyboard users</li>
+<li>Interaction states — hover, focus, active, disabled — that weren't in the original prompt</li>
+<li>Content overflow and wrapping behavior when real production content is longer than the example in the prompt</li>
+</ul>
+
+<p>Klavity runs AI QA on every deploy — including the vibe-coded ones. <a href="/onboarding">Try it free →</a></p>
+
+<h2>How to add vibe-coding QA to your agency workflow</h2>
+
+<p>The practical setup takes under ten minutes per client site:</p>
+
+<ol>
+<li>Connect your deployment pipeline (Vercel, Netlify, or a webhook from your CI)</li>
+<li>Define the key pages and states to check on each deploy</li>
+<li>Let Klavity establish a baseline on the current build</li>
+<li>From that point, every deploy is compared against baseline — visual regressions are flagged automatically</li>
+</ol>
+
+<p>You review flagged changes before they reach the client. The ones that are intentional, you approve and update the baseline. The ones that are bugs — the layout break on mobile, the missing hover state, the focus trap — you fix before the client ever sees them.</p>
+
+<p>For agencies using Cursor or Copilot heavily, this is the missing piece. Vibe coding is fast. AI QA makes it reliable.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>AI-generated code fails differently — expect visual and interaction bugs, not logic errors</li><li>Traditional test suites test what you wrote, not what AI generated — the gap is invisible until a client finds it</li><li>Vibe-coded sites have more untested states: hover, focus, empty, error, mobile viewport edge cases</li><li>AI QA tools catch vibe-coding bugs by inspecting rendered output, not code paths</li><li>Adding AI QA to your deploy pipeline takes under 10 minutes and catches bugs before clients see them</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is vibe coding?</summary><p>Vibe coding is the practice of building software by describing what you want in natural language and letting an AI — Cursor, Copilot, Claude, v0 — generate the code. You ship the output without reading every line. It's fast, increasingly common in web agencies, and introduces bugs that didn't exist in hand-written code.</p></details><details><summary>Does vibe coding produce buggy code?</summary><p>Yes — but differently than human bugs. AI-generated code tends to be syntactically correct and functionally close to what was asked, but it introduces subtle visual regressions, broken edge cases, and accessibility failures. The logic works; the experience breaks.</p></details><details><summary>How do you test AI-generated code?</summary><p>The most effective approach is AI-powered visual and functional QA that inspects what actually renders in the browser — not what your tests expect. Tools like Klavity screenshot every state, compare against baseline, and flag unexpected changes automatically.</p></details><details><summary>What bugs does vibe-coded code introduce?</summary><p>The most common: layout shifts on edge-case viewport sizes, broken focus states, missing ARIA labels, hover and transition states that weren't tested, and interactions that work in isolation but break with real content. All of these are invisible to unit and integration tests.</p></details><details><summary>Can AI QA tools handle vibe-coded sites?</summary><p>Yes — AI QA is actually better suited to vibe-coded sites than traditional test suites. Because AI QA inspects the rendered output rather than testing code paths, it catches visual and interaction bugs regardless of how the code was written.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

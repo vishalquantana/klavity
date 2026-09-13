@@ -94,3 +94,4 @@
 # AI QA Complete Guide (Tier A pillar)
 https://klavity.in/blog/ai-qa-complete-guide
 - [The Best AI Code Review Tool for Web Agencies in 2026](https://klavity.in/blog/ai-code-review-tool-for-web-agencies): AI code review tools scan your codebase for bugs before clients see them.
+- [Vibe Coding Bugs](https://klavity.in/blog/vibe-coding-bugs-web-agencies): AI-generated code creates bugs test suites miss.
