@@ -1,0 +1,29 @@
+<svg viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="400" cy="210" r="80" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <circle cx="400" cy="210" r="50" fill="#6366f1" opacity="0.15"/>
+  <circle cx="400" cy="210" r="12" fill="#6366f1"/>
+  <line x1="400" y1="130" x2="400" y2="60" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="400" y1="290" x2="400" y2="360" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="320" y1="210" x2="150" y2="210" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="480" y1="210" x2="650" y2="210" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <rect x="150" y="190" width="40" height="40" rx="4" fill="#6366f1" opacity="0.4"/>
+  <rect x="610" y="190" width="40" height="40" rx="4" fill="#6366f1" opacity="0.4"/>
+  <rect x="370" y="30" width="60" height="40" rx="4" fill="#6366f1" opacity="0.4"/>
+  <rect x="370" y="350" width="60" height="40" rx="4" fill="#6366f1" opacity="0.4"/>
+  <circle cx="240" cy="120" r="6" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="560" cy="300" r="6" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="560" cy="120" r="6" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="240" cy="300" r="6" fill="#f5f0e8" opacity="0.3"/>
+  <line x1="240" y1="120" x2="355" y2="175" stroke="#f5f0e8" stroke-width="1" opacity="0.15"/>
+  <line x1="560" y1="120" x2="445" y2="175" stroke="#f5f0e8" stroke-width="1" opacity="0.15"/>
+  <line x1="240" y1="300" x2="355" y2="245" stroke="#f5f0e8" stroke-width="1" opacity="0.15"/>
+  <line x1="560" y1="300" x2="445" y2="245" stroke="#f5f0e8" stroke-width="1" opacity="0.15"/>
+  <rect x="0" y="0" width="800" height="420" fill="url(#vignette)"/>
+  <defs>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="transparent"/>
+      <stop offset="100%" stop-color="#1e1b2e" stop-opacity="0.5"/>
+    </radialGradient>
+  </defs>
+</svg>
