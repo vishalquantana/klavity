@@ -3891,6 +3891,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const bf = Bun.file(SITE + "/blog/" + path.slice(6) + ".html")
       if (await bf.exists()) return htmlPage(SITE + "/blog/" + path.slice(6) + ".html")
     }
+    if (req.method === "GET" && path.startsWith("/blog/") && path.endsWith(".svg") && /^[a-z0-9-]+\.svg$/.test(path.slice(6))) {
+      const sf = Bun.file(SITE + "/blog/" + path.slice(6))
+      if (await sf.exists()) return new Response(sf, { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=31536000, immutable" } })
+    }
     if (req.method === "GET" && path === "/kit.css") return new Response(Bun.file(SITE + "/kit.css"), { headers: { "content-type": "text/css; charset=utf-8" } })
     if (req.method === "GET" && path === "/kit.js") return new Response(Bun.file(SITE + "/kit.js"), { headers: { "content-type": "text/javascript; charset=utf-8" } })
     // KLAVITYKLA-324: first-touch acquisition attribution capture, defer-loaded on every marketing page.
