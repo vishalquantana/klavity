@@ -69,6 +69,7 @@
     <div class="by">Klavity</div>
     <div class="tldr-box"><b>TL;DR</b>AI reproduces a bug by replaying the captured state of a report — the exact steps, a DOM snapshot, console errors, network calls, and the environment — against a fresh session of your app. It succeeds when the report carries that state, and fails when the bug depends on hidden inputs the report never captured: server-side data, timing, or third-party services.</div>
     <div class="prose"><p>AI reproduces a bug by replaying the captured state of a report — the exact steps, a DOM snapshot, the console output, the network requests, and the environment — against a fresh session of your application. When the report carries that state, an agent can re-run the sequence in a real browser and watch the same failure happen. When the trigger lives outside that captured state — in a specific database row, a race between requests, or a third-party service — replaying the front-end steps won't recreate it, and the bug stays a mystery until someone captures more.</p>
+<p>For a complete overview of how AI QA works, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA for web agencies</a>.</p>
 
 <h2>How does AI reproduce a bug from a report?</h2>
 <p>The mechanism is replay, not guesswork. An AI agent takes the structured evidence in a report and drives a browser to re-create the moment the bug occurred. Three things have to line up for that to work:</p>

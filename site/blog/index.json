@@ -586,5 +586,12 @@
     "excerpt": "Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.",
     "category": "Compare",
     "date": "2026-09-13"
+  },
+  {
+    "slug": "ai-qa-complete-guide",
+    "title": "What is AI QA? The Complete Guide for Web Agencies",
+    "excerpt": "AI QA uses machine learning to find bugs, reproduce issues, and triage defects automatically — without writing test scripts. Here's everything web agencies need to know.",
+    "category": "Learn",
+    "date": "2026-09-13"
   }
 ]

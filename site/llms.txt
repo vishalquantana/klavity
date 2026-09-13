@@ -90,3 +90,6 @@
 ## Product
 - [Try Klavity free](https://klavity.in/onboarding): AI-powered bug detection for web agencies
 - [How it works](https://klavity.in/): Klavity automatically finds visual, functional, and accessibility bugs across your client sites
+
+# AI QA Complete Guide (Tier A pillar)
+https://klavity.in/blog/ai-qa-complete-guide
