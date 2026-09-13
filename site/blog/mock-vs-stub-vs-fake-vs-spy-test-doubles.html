@@ -1,0 +1,102 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test doubles explained: mock vs. stub vs. fake vs. spy · Klavity</title>
+<meta name="description" content="Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.">
+<link rel="canonical" href="https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Test doubles explained: mock vs. stub vs. fake vs. spy"><meta property="og:description" content="Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.">
+<meta property="og:url" content="https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles"><meta property="og:image" content="https://klavity.in/favicon.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Test doubles explained: mock vs. stub vs. fake vs. spy"><meta name="twitter:description" content="Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls."><meta name="twitter:image" content="https://klavity.in/favicon.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Test doubles explained: mock vs. stub vs. fake vs. spy","description":"Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.","datePublished":"2026-09-13","dateModified":"2026-09-13","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/favicon.svg"}},"mainEntityOfPage":"https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Test doubles explained: mock vs. stub vs. fake vs. spy","item":"https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is a mock the same as a stub?","acceptedAnswer":{"@type":"Answer","text":"No. A stub returns canned responses so your code has something to work with, and you assert on the resulting state afterward. A mock is pre-set with expectations about which calls should happen and fails the test itself if they don't — it verifies behavior, not state."}},{"@type":"Question","name":"What is the difference between a fake and a stub?","acceptedAnswer":{"@type":"Answer","text":"A stub returns hardcoded answers for specific calls and has no real logic. A fake is a working but simplified implementation — an in-memory database or a fake payment gateway — that behaves like the real dependency while staying fast and self-contained."}},{"@type":"Question","name":"When should I avoid mocks?","acceptedAnswer":{"@type":"Answer","text":"Avoid mocks when they force you to assert on internal call sequences that aren't part of the contract. That couples the test to implementation details, so a harmless refactor breaks a green test. Prefer real objects or fakes and verify observable outcomes instead."}},{"@type":"Question","name":"Why do testing libraries use these terms differently?","acceptedAnswer":{"@type":"Answer","text":"The formal taxonomy comes from Gerard Meszaros's book xUnit Test Patterns. Frameworks blur it: Jest's jest.fn() acts as both a spy and a mock, while Sinon keeps spies, stubs, and mocks as separate APIs. Learn the concepts first, then map them onto your tool."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-09-13</div>
+    <h1>Test doubles explained: mock vs. stub vs. fake vs. spy</h1>
+    <div class="by">Klavity</div>
+    <div class="tldr-box"><b>TL;DR</b>A test double stands in for a real dependency during a test. Stubs return canned data and fakes are lightweight working implementations (both let you verify the resulting state); spies record how they were called and mocks assert on those calls (both verify behavior). Reach for the simplest double that proves what the test actually claims.</div>
+    <div class="prose"><p>A <strong>test double</strong> is any object that stands in for a real dependency so a test can run in isolation. The four you'll meet most often differ by what they actually do: a <strong>stub</strong> returns canned answers to calls, a <strong>fake</strong> is a lightweight but working implementation (like an in-memory database), a <strong>spy</strong> records how it was called so you can assert on it afterward, and a <strong>mock</strong> is pre-programmed with expectations and fails the test itself if the expected calls don't happen. Stubs and fakes help you verify <em>state</em>; spies and mocks help you verify <em>behavior</em>.</p>
+<h2>What is a test double?</h2>
+<p>"Test double" is the umbrella term coined by Gerard Meszaros in <em>xUnit Test Patterns</em>, by analogy with a stunt double who steps in for an actor. It covers five kinds of stand-in, ordered here from simplest to most demanding:</p>
+<ol>
+<li><strong>Dummy</strong> — an object passed around but never actually used, just to fill a required parameter.</li>
+<li><strong>Stub</strong> — returns hardcoded answers to the specific calls made during the test.</li>
+<li><strong>Fake</strong> — a real, simplified implementation with working logic that takes shortcuts unsuitable for production.</li>
+<li><strong>Spy</strong> — a stub that also records information about how it was called.</li>
+<li><strong>Mock</strong> — pre-programmed with expectations that form a specification of the calls it should receive, and can fail the test on its own.</li>
+</ol>
+<p>Most day-to-day confusion is between the middle four. The single most useful distinction: stubs and fakes support <strong>state verification</strong> (you check the end result), while spies and mocks support <strong>behavior verification</strong> (you check that certain interactions happened).</p>
+<h2>Stub vs. mock: what is the actual difference?</h2>
+<p>This is the pair people mix up most. A stub is passive input; a mock is an active assertion.</p>
+<ul>
+<li>A <strong>stub</strong> exists to feed your code. If a function needs the current exchange rate, a stub returns <strong>1.09</strong> every time so the rest of the logic can run. Your assertions target the output the code produced, not the stub.</li>
+<li>A <strong>mock</strong> exists to check an interaction. If the contract says "on checkout, charge the payment gateway exactly once," a mock is told to expect one <em>charge()</em> call and will fail the test if that call never comes, comes twice, or comes with the wrong amount.</li>
+</ul>
+<p>Rule of thumb: if you would still assert something without the double present, you probably want a stub. If the double <em>is</em> the assertion, you want a mock.</p>
+<h2>Fake vs. stub: when do you need a working implementation?</h2>
+<p>Reach for a <strong>fake</strong> when a stub's hardcoded answers can't keep up with the behavior your test exercises. A stub for a user repository might return the same record for every ID; the moment your test writes a record and expects to read it back, that stub breaks down. A fake — an in-memory implementation of the same interface — actually stores and retrieves data, so it holds up across a realistic sequence of calls while staying fast and free of external services.</p>
+<p>Common fakes include in-memory databases, a fake clock you can advance by hand, and a fake mail server that captures messages instead of sending them. The tradeoff: a fake is more code to maintain and can drift from the real dependency, so it needs its own contract tests to stay honest.</p>
+<h2>Spy vs. mock: recording calls vs. setting expectations</h2>
+<p>Spies and mocks both watch interactions, but they differ in <em>when</em> they judge.</p>
+<ul>
+<li>A <strong>spy</strong> records calls silently and lets you assert on them <em>after</em> the fact: "the logger was called once, with a message containing 'timeout'." Nothing fails until your explicit assertion runs, which keeps the test readable and the failure message specific.</li>
+<li>A <strong>mock</strong> sets expectations <em>up front</em> and verifies them for you. This is stricter and can catch missing calls you'd forget to assert on, but over-strict mocks that pin down every internal call make tests brittle.</li>
+</ul>
+<p>In practice, prefer a spy plus a targeted assertion when you care about one or two specific interactions, and reserve mocks for genuine contracts where an omitted call is itself a bug.</p>
+<h2>Which test double should I use?</h2>
+<p>Work from the cheapest option upward and stop at the first that proves your claim:</p>
+<ol>
+<li><strong>Use the real object</strong> when it's fast, deterministic, and side-effect-free. A double you don't need is just coupling you'll pay for later.</li>
+<li><strong>Use a stub</strong> when the code only needs a value to proceed and you'll assert on the result.</li>
+<li><strong>Use a fake</strong> when the interaction spans multiple calls with state, like read-after-write.</li>
+<li><strong>Use a spy</strong> when you must confirm a specific call happened but don't want up-front strictness.</li>
+<li><strong>Use a mock</strong> when a required interaction is part of the contract and its absence is a defect.</li>
+</ol>
+<p>The anti-pattern to watch for is <strong>over-mocking</strong>: tests so tied to internal call sequences that any refactor turns them red even when behavior is unchanged. When a suite breaks constantly on safe refactors, the doubles — not the code — are usually the problem.</p>
+<h2>Test doubles and end-to-end testing</h2>
+<p>Doubles are indispensable for fast unit tests, but they share one blind spot: a double only knows the behavior you told it about. If the real dependency changes and your stub or mock doesn't, your tests stay green while production breaks — an escaped defect no amount of mocking would have caught. That's the case for a layer of tests that run against the real, assembled system.</p>
+<p>This is where <a href="/autosim">AutoSim</a> fits: self-healing end-to-end tests that drive the actual application, so you get the honesty of real dependencies without hand-maintaining brittle selectors. Pair fast, well-chosen doubles at the unit level with real end-to-end coverage above them, and you catch both the logic bugs and the integration bugs. For more on keeping that top layer stable, see our guides on <a href="/blog/fix-flaky-end-to-end-tests">fixing flaky end-to-end tests</a> and <a href="/blog/how-to-write-resilient-test-selectors">writing resilient test selectors</a>, or browse the full <a href="/blog">Klavity blog</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Pick the simplest test double that proves the test's actual claim</li><li>Use stubs and fakes to verify state; use spies and mocks to verify behavior</li><li>Prefer a fake over a mock when a lightweight real implementation exists</li><li>Stop mocking internal calls that aren't part of the contract</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is a mock the same as a stub?</summary><p>No. A stub returns canned responses so your code has something to work with, and you assert on the resulting state afterward. A mock is pre-set with expectations about which calls should happen and fails the test itself if they don't — it verifies behavior, not state.</p></details><details><summary>What is the difference between a fake and a stub?</summary><p>A stub returns hardcoded answers for specific calls and has no real logic. A fake is a working but simplified implementation — an in-memory database or a fake payment gateway — that behaves like the real dependency while staying fast and self-contained.</p></details><details><summary>When should I avoid mocks?</summary><p>Avoid mocks when they force you to assert on internal call sequences that aren't part of the contract. That couples the test to implementation details, so a harmless refactor breaks a green test. Prefer real objects or fakes and verify observable outcomes instead.</p></details><details><summary>Why do testing libraries use these terms differently?</summary><p>The formal taxonomy comes from Gerard Meszaros's book xUnit Test Patterns. Frameworks blur it: Jest's jest.fn() acts as both a spy and a mock, while Sinon keeps spies, stubs, and mocks as separate APIs. Learn the concepts first, then map them onto your tool.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

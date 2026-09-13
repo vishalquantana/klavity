@@ -579,5 +579,12 @@
     "excerpt": "A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage.",
     "category": "Compare",
     "date": "2026-09-12"
+  },
+  {
+    "slug": "mock-vs-stub-vs-fake-vs-spy-test-doubles",
+    "title": "Test doubles explained: mock vs. stub vs. fake vs. spy",
+    "excerpt": "Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.",
+    "category": "Compare",
+    "date": "2026-09-13"
   }
 ]
