@@ -11,18 +11,35 @@
 <link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
 <style>
-.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
 .post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
-.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
 .post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
-.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
-.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
-.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
-.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
-.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
-.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
 .prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
 .prose strong{color:var(--paper)}
+.prose table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:15px}
+.prose table th{text-align:left;padding:8px 12px;border-bottom:2px solid var(--line);font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.prose table td{padding:9px 12px;border-bottom:1px solid var(--line);line-height:1.5}
+.prose table tr:last-child td{border-bottom:none}
+.callout{border-radius:0 8px 8px 0;padding:12px 16px;margin:14px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
 .faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
 .faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
 .faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
@@ -101,7 +118,7 @@
   <article class="post">
     <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-08-20</div>
     <h1>How to Prioritize Bugs With a Scoring Model, Step by Step</h1>
-    <div class="by">Klavity</div>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">10 min read</span></div>
     <div class="tldr-box"><b>TL;DR</b>Prioritize bugs with a scoring model instead of a gut call: score each bug on reach, impact, confidence, and effort (the RICE method adapted for bugs), then rank by the resulting number. It turns 'this feels urgent' into a comparable score every stakeholder can see, so the highest-value fix rises to the top instead of the loudest request.</div>
     <div class="prose"><p>Prioritize bugs with a scoring model rather than a gut call: score each bug on <strong>reach</strong> (how many users hit it), <strong>impact</strong> (how badly it hurts them), <strong>confidence</strong> (how sure you are of those estimates), and <strong>effort</strong> (how much work the fix is), then rank by the resulting number. This is the RICE method &mdash; popularized for feature prioritization &mdash; adapted for bugs. It converts "this feels urgent" into a comparable score every stakeholder can see, so the highest-value fix rises to the top instead of the loudest request.</p>
 
