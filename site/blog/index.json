@@ -642,5 +642,12 @@
     "excerpt": "Sentry catches errors in production code. Klavity captures bugs before they ship. Here is how to choose between them for your web agency workflow.",
     "category": "Compare",
     "date": "2026-09-14"
+  },
+  {
+    "slug": "how-to-qa-a-vibe-coded-app",
+    "title": "How to QA a Vibe-Coded App: A Practical 7-Step Process",
+    "excerpt": "To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.",
+    "category": "Guides",
+    "date": "2026-09-15"
   }
 ]

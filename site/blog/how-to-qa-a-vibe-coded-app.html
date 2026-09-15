@@ -1,0 +1,197 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to QA a Vibe-Coded App: A Practical 7-Step Process · Klavity</title>
+<meta name="description" content="To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-qa-a-vibe-coded-app">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to QA a Vibe-Coded App: A Practical 7-Step Process"><meta property="og:description" content="To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-qa-a-vibe-coded-app"><meta property="og:image" content="https://klavity.in/blog/how-to-qa-a-vibe-coded-app.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to QA a Vibe-Coded App: A Practical 7-Step Process"><meta name="twitter:description" content="To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take."><meta name="twitter:image" content="https://klavity.in/blog/how-to-qa-a-vibe-coded-app.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
+.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
+.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
+.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
+.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to QA a Vibe-Coded App: A Practical 7-Step Process","description":"To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.","datePublished":"2026-09-15","dateModified":"2026-09-15","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/how-to-qa-a-vibe-coded-app.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-qa-a-vibe-coded-app","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to QA a Vibe-Coded App: A Practical 7-Step Process","item":"https://klavity.in/blog/how-to-qa-a-vibe-coded-app"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-qa-a-vibe-coded-app"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do you QA a vibe-coded app without a QA team?","acceptedAnswer":{"@type":"Answer","text":"Work through the critical paths yourself in a fresh browser profile with no seeded data, break every input deliberately, and confirm that data persists correctly after a refresh or a failed request. Those steps need no code. Then automate the paths that pass so they stay working as the AI keeps editing."}},{"@type":"Question","name":"What is the most important thing to test in an AI-generated app?","acceptedAnswer":{"@type":"Answer","text":"The authorization boundary. AI coding tools frequently generate access control in the interface only, hiding a button while leaving the underlying endpoint open. Log in as one user and request another user's record directly to check whether the server actually refuses."}},{"@type":"Question","name":"Is AI-generated code less safe to ship than hand-written code?","acceptedAnswer":{"@type":"Answer","text":"It is not inherently worse code, but it is less verified code. It is produced faster than any human reviews it, and each generation is locally plausible without any guarantee it composes with the rest of the app. The risk comes from the missing verification step, not from the model."}},{"@type":"Question","name":"How often should you re-test a vibe-coded app?","acceptedAnswer":{"@type":"Answer","text":"After every AI editing session, not before every release. A model asked to change one screen can rewrite shared components or route guards, so treat each session as a potential regression event and re-walk at least one unrelated critical path."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-15</div>
+    <h1>How to QA a Vibe-Coded App: A Practical 7-Step Process</h1>
+    <div class="by">Klavity</div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="QA process for a vibe-coded app: AI-generated code passing through checks">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="360" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <!-- AI prompt / generated code block (left) -->
+  <rect x="56" y="118" width="190" height="184" rx="12" fill="#f5f0e8" opacity="0.06" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="74" cy="136" r="4" fill="#6366f1"/>
+  <line x1="88" y1="136" x2="150" y2="136" stroke="#f5f0e8" stroke-width="3" opacity="0.35" stroke-linecap="round"/>
+  <line x1="76" y1="168" x2="212" y2="168" stroke="#6366f1" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="92" y1="190" x2="226" y2="190" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+  <line x1="92" y1="212" x2="188" y2="212" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+  <line x1="76" y1="234" x2="204" y2="234" stroke="#6366f1" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="92" y1="256" x2="166" y2="256" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+  <line x1="76" y1="278" x2="196" y2="278" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+
+  <!-- hidden bug inside generated code -->
+  <circle cx="232" cy="212" r="11" fill="#f87171"/>
+  <line x1="232" y1="199" x2="232" y2="225" stroke="#1e1b2e" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- flow arrow into QA gate -->
+  <path d="M258 210 L318 210" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="306,201 318,210 306,219" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- QA gate: stacked checks (center) -->
+  <rect x="330" y="112" width="188" height="196" rx="14" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="2"/>
+  <rect x="352" y="140" width="144" height="34" rx="8" fill="#6366f1" opacity="0.18"/>
+  <polyline points="366,157 374,165 390,147" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="404" y1="157" x2="482" y2="157" stroke="#f5f0e8" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+
+  <rect x="352" y="186" width="144" height="34" rx="8" fill="#6366f1" opacity="0.18"/>
+  <polyline points="366,203 374,211 390,193" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="404" y1="203" x2="466" y2="203" stroke="#f5f0e8" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+
+  <rect x="352" y="232" width="144" height="34" rx="8" fill="#f87171" opacity="0.16"/>
+  <line x1="367" y1="242" x2="381" y2="256" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="381" y1="242" x2="367" y2="256" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="404" y1="249" x2="474" y2="249" stroke="#f5f0e8" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+
+  <!-- flow arrow out to shipped browser -->
+  <path d="M530 210 L590 210" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="578,201 590,210 578,219" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- verified browser window (right) -->
+  <rect x="600" y="126" width="156" height="168" rx="12" fill="#f5f0e8" opacity="0.07" stroke="#4ade80" stroke-width="2"/>
+  <line x1="600" y1="156" x2="756" y2="156" stroke="#4ade80" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="616" cy="141" r="4" fill="#4ade80" opacity="0.8"/>
+  <circle cx="630" cy="141" r="4" fill="#f5f0e8" opacity="0.25"/>
+  <circle cx="644" cy="141" r="4" fill="#f5f0e8" opacity="0.25"/>
+  <circle cx="678" cy="222" r="34" fill="none" stroke="#4ade80" stroke-width="3.5"/>
+  <polyline points="663,222 674,233 695,210" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- baseline rail -->
+  <line x1="56" y1="352" x2="756" y2="352" stroke="#f5f0e8" stroke-width="1.5" opacity="0.12"/>
+  <circle cx="151" cy="352" r="5" fill="#6366f1"/>
+  <circle cx="424" cy="352" r="5" fill="#6366f1"/>
+  <circle cx="678" cy="352" r="5" fill="#4ade80"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>To QA a vibe-coded app, test outside-in from the running app, not inside-out from the code: AI-generated code reads correctly but fails at the seams between generated pieces. Prioritise authorization boundaries, data writes, and error states, then lock every passing path into an automated test before the next AI edit undoes it.</div>
+    <div class="prose"><p>To QA a vibe-coded app, test the things an AI coding tool cannot verify for you: authorization boundaries, anything that writes to a database or moves money, error and empty states, and the exact paths your real users take. Work outside-in from the running app rather than inside-out from the code, because AI-generated code almost always <em>looks</em> correct — the failures sit in the seams between generated pieces, not inside them. A repeatable pass is: list the critical paths, walk each one as a first-time user, break every input on purpose, check what the data looks like after a failure, then lock the passing paths into automated tests so the next AI edit cannot silently undo them.</p>
+
+<h2>Why does a vibe-coded app need a different QA approach?</h2>
+
+<p>Tools like Cursor, Bolt, Lovable, v0 and Replit generate code that is <strong>locally plausible</strong>. The model is optimizing for output that compiles and matches your prompt — not for a guarantee that the new code composes correctly with everything already in the project. That produces a distinct failure profile, and it is what your QA process has to target.</p>
+
+<ul>
+  <li><strong>Generated code reads like a senior engineer wrote it.</strong> Clean naming, tidy structure, helpful comments. Reviewing it by eye gives false reassurance, because fluency and correctness are separate properties here.</li>
+  <li><strong>Failures cluster at the seams.</strong> Each file works in isolation; the contract between them drifts. A field gets renamed on one side, a null becomes possible on the other, or the same piece of state ends up with two sources of truth.</li>
+  <li><strong>Regressions arrive silently.</strong> Ask the model to change one screen and it may rewrite a shared component, a validation rule, or a route guard that four other screens depend on. Nothing in the chat window tells you it happened.</li>
+</ul>
+
+<p>The practical consequence: QA has to be black-box and outside-in. Drive the running app the way a user does and judge observable behaviour, rather than reading a diff and deciding it looks fine. For a fuller breakdown of the bug classes involved, see <a href="/blog/vibe-coding-bugs-web-agencies">the bugs vibe-coded projects ship most often</a>.</p>
+
+<h2>How do you QA a vibe-coded app, step by step?</h2>
+
+<p>Seven steps, in this order. The order matters — the early steps are the ones that find the bugs that cost you a customer.</p>
+
+<ol>
+  <li><strong>List the critical paths, not the features.</strong> A critical path is a sentence: "a new user signs up, connects their account, and sees their first result." Most early-stage apps have only a handful. Everything else is secondary until these are solid.</li>
+  <li><strong>Walk each path once as a genuine first-time user.</strong> Fresh browser profile, no cookies, no seeded data, no accounts you created while building. A whole class of bugs in AI-generated apps only exists on an empty account, because the model was only ever prompted about the populated case.</li>
+  <li><strong>Break every input deliberately.</strong> Empty string, whitespace only, 5,000 characters, emoji, a leading apostrophe, a negative number, a date in 1900, a pasted value with a trailing space. Generated validation tends to cover the format you mentioned in your prompt and nothing else. Our <a href="/blog/how-to-test-for-edge-cases-checklist">edge-case checklist</a> is a good source list.</li>
+  <li><strong>Test the authorization boundary from the wrong side.</strong> This is the single highest-value check on a vibe-coded app. Log in as user A, then request user B's record directly — change the ID in the URL, or replay the API call from the browser's network tab with A's session. AI tools routinely generate gating in the interface only: the button is hidden, the endpoint is wide open. Check the response, not the screen.</li>
+  <li><strong>Check what the data looks like after a failure.</strong> Submit a form twice quickly. Kill the tab mid-request. Force a payment or API error. Then look at the actual rows. Generated code rarely wraps multi-step writes in a transaction, so interrupted operations leave half-created records that break every later screen.</li>
+  <li><strong>Check the states you never prompted for.</strong> Empty, loading, long text, no network, slow network, third-party API down, permission denied. A generated UI renders the happy path convincingly and then shows a blank panel or an infinite spinner for everything else.</li>
+  <li><strong>Lock the passing paths into automated tests.</strong> Once a path works, it needs a test that runs on every change, or the next AI editing session will quietly undo it. This is what <a href="/autosim">AutoSim</a> exists for — end-to-end tests that repair their own selectors instead of breaking the moment the model restructures your markup.</li>
+</ol>
+
+<h2>Which parts should you test first with limited time?</h2>
+
+<p>If you only have an hour before a demo or a launch, spend it here.</p>
+
+<table>
+  <tr><th>Area</th><th>Why it breaks in AI-generated apps</th><th>First check</th></tr>
+  <tr><td>Auth &amp; access control</td><td>Gating implemented in the UI layer only</td><td>Request another user's record with your own session</td></tr>
+  <tr><td>Payments &amp; billing</td><td>Happy path generated; webhooks and failures unhandled</td><td>Double-click submit; force a declined card</td></tr>
+  <tr><td>Writes and deletes</td><td>No transaction boundaries; optimistic UI hides failures</td><td>Hard-refresh after every write and confirm it persisted</td></tr>
+  <tr><td>File and image upload</td><td>Size and type limits assumed rather than enforced</td><td>Upload a 0-byte file, a wrong type, and something very large</td></tr>
+  <tr><td>Forms and validation</td><td>Client-side only, server trusts the payload</td><td>Submit the request directly, bypassing the form</td></tr>
+  <tr><td>Third-party API calls</td><td>No timeout, retry, or error branch</td><td>Block the domain in devtools and use the feature</td></tr>
+  <tr><td>Mobile layout</td><td>Generated desktop-first from a desktop preview</td><td>Open every critical path at a 360px viewport</td></tr>
+</table>
+
+<h2>What should you check on every AI-generated feature?</h2>
+
+<p>A short standing checklist, applied to each new feature before you consider it done:</p>
+
+<ul>
+  <li>Does it still work for a user who owns no data yet?</li>
+  <li>Does the server reject what the form rejects?</li>
+  <li>What does a second, unauthorized user see if they guess the URL?</li>
+  <li>What happens on a refresh mid-flow?</li>
+  <li>What appears when the request fails — a message, or nothing?</li>
+  <li>Did anything else in the app change in the same AI session? Re-walk one unrelated critical path to find out.</li>
+</ul>
+
+<p>That last item is the one people skip and the one that bites. Treat every AI editing session as a potential regression event, not a contained change.</p>
+
+<h2>How do you keep testing as the AI keeps editing?</h2>
+
+<p>QA on a vibe-coded app cannot be a launch-day event, because the code changes shape faster than a manual pass can keep up. Three habits carry most of the weight:</p>
+
+<ul>
+  <li><strong>Run a smoke pass after every AI session</strong>, not before every release. Five minutes on the critical paths while the change is fresh beats an hour of archaeology a week later.</li>
+  <li><strong>Capture evidence at the moment of failure.</strong> A bug you cannot reproduce is a bug you will ship. <a href="/snap">Snap</a> captures the console, the network activity, and the DOM state with a right-click, so the report carries proof rather than a description.</li>
+  <li><strong>Get someone who is not you through the app.</strong> You know where to click. <a href="/sims">Sims</a> runs AI personas that don't — they hesitate, mistype, go back, and abandon, which is where usability and state bugs surface.</li>
+</ul>
+
+<p>For the wider picture of how automated and AI-assisted testing fit together, start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Can you QA a vibe-coded app if you are not technical?</h2>
+
+<p>Mostly yes. Steps 1, 2, 3, 5 and 6 above need no code at all — they need a browser, a fresh profile, and the discipline to try the thing you assume will work. The one step that genuinely benefits from a developer is the authorization check, and even that is often visible in the browser's network tab: open it, use the feature, and look at whether the server returned data or an error when it should have refused. If you have a developer available for one hour a month, spend it on that check.</p>
+
+<h2>Try Klavity free</h2>
+
+<p>Klavity is built for exactly this gap: code that ships faster than anyone can verify it. Snap turns any bug into a reproducible report with one right-click, Sims puts AI personas through your flows before real users get there, and AutoSim keeps the paths that already work from breaking. <a href="/onboarding">Try Klavity free</a> and run your first pass on the app you shipped this week.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>List your critical paths first — test those before any feature.</li><li>Check the authorization boundary from the wrong user's session.</li><li>Inspect the data after a failed or interrupted write, not just the screen.</li><li>Automate each passing path so the next AI edit cannot silently break it.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How do you QA a vibe-coded app without a QA team?</summary><p>Work through the critical paths yourself in a fresh browser profile with no seeded data, break every input deliberately, and confirm that data persists correctly after a refresh or a failed request. Those steps need no code. Then automate the paths that pass so they stay working as the AI keeps editing.</p></details><details><summary>What is the most important thing to test in an AI-generated app?</summary><p>The authorization boundary. AI coding tools frequently generate access control in the interface only, hiding a button while leaving the underlying endpoint open. Log in as one user and request another user's record directly to check whether the server actually refuses.</p></details><details><summary>Is AI-generated code less safe to ship than hand-written code?</summary><p>It is not inherently worse code, but it is less verified code. It is produced faster than any human reviews it, and each generation is locally plausible without any guarantee it composes with the rest of the app. The risk comes from the missing verification step, not from the model.</p></details><details><summary>How often should you re-test a vibe-coded app?</summary><p>After every AI editing session, not before every release. A model asked to change one screen can rewrite shared components or route guards, so treat each session as a potential regression event and re-walk at least one unrelated critical path.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

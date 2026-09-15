@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="QA process for a vibe-coded app: AI-generated code passing through checks">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="360" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <!-- AI prompt / generated code block (left) -->
+  <rect x="56" y="118" width="190" height="184" rx="12" fill="#f5f0e8" opacity="0.06" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="74" cy="136" r="4" fill="#6366f1"/>
+  <line x1="88" y1="136" x2="150" y2="136" stroke="#f5f0e8" stroke-width="3" opacity="0.35" stroke-linecap="round"/>
+  <line x1="76" y1="168" x2="212" y2="168" stroke="#6366f1" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="92" y1="190" x2="226" y2="190" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+  <line x1="92" y1="212" x2="188" y2="212" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+  <line x1="76" y1="234" x2="204" y2="234" stroke="#6366f1" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="92" y1="256" x2="166" y2="256" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+  <line x1="76" y1="278" x2="196" y2="278" stroke="#f5f0e8" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+
+  <!-- hidden bug inside generated code -->
+  <circle cx="232" cy="212" r="11" fill="#f87171"/>
+  <line x1="232" y1="199" x2="232" y2="225" stroke="#1e1b2e" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- flow arrow into QA gate -->
+  <path d="M258 210 L318 210" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="306,201 318,210 306,219" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- QA gate: stacked checks (center) -->
+  <rect x="330" y="112" width="188" height="196" rx="14" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="2"/>
+  <rect x="352" y="140" width="144" height="34" rx="8" fill="#6366f1" opacity="0.18"/>
+  <polyline points="366,157 374,165 390,147" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="404" y1="157" x2="482" y2="157" stroke="#f5f0e8" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+
+  <rect x="352" y="186" width="144" height="34" rx="8" fill="#6366f1" opacity="0.18"/>
+  <polyline points="366,203 374,211 390,193" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="404" y1="203" x2="466" y2="203" stroke="#f5f0e8" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+
+  <rect x="352" y="232" width="144" height="34" rx="8" fill="#f87171" opacity="0.16"/>
+  <line x1="367" y1="242" x2="381" y2="256" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="381" y1="242" x2="367" y2="256" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="404" y1="249" x2="474" y2="249" stroke="#f5f0e8" stroke-width="4" opacity="0.28" stroke-linecap="round"/>
+
+  <!-- flow arrow out to shipped browser -->
+  <path d="M530 210 L590 210" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="578,201 590,210 578,219" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- verified browser window (right) -->
+  <rect x="600" y="126" width="156" height="168" rx="12" fill="#f5f0e8" opacity="0.07" stroke="#4ade80" stroke-width="2"/>
+  <line x1="600" y1="156" x2="756" y2="156" stroke="#4ade80" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="616" cy="141" r="4" fill="#4ade80" opacity="0.8"/>
+  <circle cx="630" cy="141" r="4" fill="#f5f0e8" opacity="0.25"/>
+  <circle cx="644" cy="141" r="4" fill="#f5f0e8" opacity="0.25"/>
+  <circle cx="678" cy="222" r="34" fill="none" stroke="#4ade80" stroke-width="3.5"/>
+  <polyline points="663,222 674,233 695,210" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- baseline rail -->
+  <line x1="56" y1="352" x2="756" y2="352" stroke="#f5f0e8" stroke-width="1.5" opacity="0.12"/>
+  <circle cx="151" cy="352" r="5" fill="#6366f1"/>
+  <circle cx="424" cy="352" r="5" fill="#6366f1"/>
+  <circle cx="678" cy="352" r="5" fill="#4ade80"/>
+</svg>
