@@ -11,24 +11,76 @@
 <link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
 <style>
-.post{max-width:720px;margin:0 auto;padding:40px 22px 80px}
+/* ── layout ── */
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
 .post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
-.post h1{font-family:var(--display);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1.06;letter-spacing:-.02em;margin:0 0 10px}
-.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
-.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 30px;font-size:17px;line-height:1.5}
-.tldr-box b{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:6px}
-.prose{font-size:18px;line-height:1.72;color:var(--paper-dim)}
-.prose h2{font-family:var(--display);font-weight:600;font-size:28px;color:var(--paper);margin:42px 0 12px;line-height:1.15}
-.prose h3{font-weight:700;font-size:20px;color:var(--paper);margin:30px 0 8px}
-.prose p{margin:0 0 18px}.prose ul,.prose ol{margin:0 0 18px;padding-left:24px}.prose li{margin:6px 0}
-.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+
+/* ── TL;DR ── */
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--indigo,#6366f1);border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+
+/* ── prose ── */
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}
+.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}
+.prose li{margin:5px 0}
+.prose a{color:var(--indigo,#6366f1);text-decoration:underline}
 .prose strong{color:var(--paper)}
+
+/* ── bug cards ── */
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}
+.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}
+.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}
+.sev-low .bug-badge{color:var(--paper-faint)}
+
+/* ── illustrations ── */
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+
+/* ── callouts ── */
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+
+/* ── 10-minute scan list ── */
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+
+/* ── sticky TOC rail (desktop only) ── */
+.toc-rail{display:none}
+@media(min-width:1140px){
+  .toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}
+  .toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}
+  .toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}
+  .toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}
+}
+
+/* ── takeaways + FAQ + CTA ── */
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}
+.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
 .faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
 .faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
 .faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
 .faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
-.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
-.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
 .cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
 .cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
 </style>
@@ -43,20 +95,339 @@
     <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
     <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
     <a href="/blog" aria-current="page">Blog</a>
-    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a>
   </div>
   <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
-</div></nav><main id="main">
+</div></nav>
+
+<nav class="toc-rail" aria-label="On this page">
+  <span class="toc-rail-label">On this page</span>
+  <a href="#why">Why different</a>
+  <a href="#bug-1">Bug 1 — Nav</a>
+  <a href="#bug-2">Bug 2 — Forms</a>
+  <a href="#bug-3">Bug 3 — CTA</a>
+  <a href="#bug-4">Bug 4 — Console</a>
+  <a href="#bug-5">Bug 5 — Images</a>
+  <a href="#bug-6">Bug 6 — Dark mode</a>
+  <a href="#scan">10-min scan</a>
+</nav>
+
+<main id="main">
   <article class="post">
     <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-15</div>
     <h1>The Most Common Bugs in Vibe-Coded Apps (Web Agency Edition)</h1>
-    <div class="by">Klavity</div>
+    <div class="post-meta">
+      <span class="by">Klavity</span>
+      <span class="rt">7 min read</span>
+    </div>
     <div class="tldr-box"><b>TL;DR</b>Vibe-coded apps break in predictable patterns: mobile nav disappears at tablet breakpoints, forms submit silently on Safari, buttons look interactive but have no click handler on mobile, and console errors flood on page load without surfacing visibly. These bugs share a root cause — AI models optimise for desktop Chrome and miss edge cases that manual developers would catch during testing. Knowing the pattern lets you scan for them in under 10 minutes.</div>
-    <div class="prose"><h2>Why vibe-coded apps fail differently</h2><p>When a developer writes code by hand, they instinctively test the things they know tend to break: Safari CSS quirks, form submission edge cases, mobile touch events. These aren't in any spec — they're in the developer's memory from the last five times they burned three hours debugging something that worked perfectly in Chrome.</p><p>AI models don't have that memory. They generate syntactically correct, logically sound code that handles the happy path on desktop Chrome. The edge cases accumulate in a predictable pattern. After reviewing dozens of Cursor, Lovable, and Bolt-built sites, the same bugs appear on almost every project.</p><p>Here's what to look for — and where to look.</p><h2>Bug #1: Mobile nav collapses or disappears at tablet breakpoints</h2><p>AI models frequently generate hamburger menus that work on 375px (phone) and on 1280px (desktop) but break at 768px (tablet). The nav items overlap, the hamburger icon doesn't render, or the toggle doesn't respond to tap events. This is the highest-visibility bug — it's the first thing a client notices if they check their site on an iPad.</p><p><strong>Where to check:</strong> Chrome DevTools → Toggle Device → iPad Air or Samsung Galaxy Tab. Look for overlapping nav items, invisible hamburger icons, and tap events that don't fire.</p><p><strong>Root cause:</strong> The AI generated breakpoints at 480px and 1024px, leaving a gap where neither the mobile nor desktop layout applies correctly.</p><h2>Bug #2: Forms submit silently on Safari iOS</h2><p>This is the most damaging bug because it's invisible to the developer and appears to work to the user. On Safari iOS (iPhone), form submit buttons often trigger the submit event but either fail to serialize the form data correctly or run into Safari's stricter same-origin fetch policy without error handling. The user taps Submit. The button greys out for a moment. Nothing happens. No error. No success message. The lead or contact request is lost.</p><p><strong>Where to check:</strong> Open Chrome DevTools → Toggle Device → iPhone 13. Fill out the form. Submit. Watch the Network tab and Console. Look for a failed fetch or XHR with no visible error on the page.</p><p><strong>Root cause:</strong> AI-generated fetch calls often omit explicit error handling. Safari's stricter CORS and cookie handling surfaces these failures silently.</p><h2>Bug #3: CTA buttons with no click handler on mobile</h2><p>A button that looks like a button, has the visual weight of a button, and does nothing when tapped on mobile is one of the most common vibe-coding bugs. It often works on desktop because the AI generated a hover event instead of a click event — hover is valid on desktop, meaningless on touchscreen.</p><p><strong>Where to check:</strong> Mobile emulator → tap the primary CTA button. If nothing happens, open the console and look for the event listener attached. Also check for pointer-events: none in the CSS chain — another common AI generation pattern.</p><p><strong>Root cause:</strong> Event handling for hover and click are conflated in the generated JavaScript, or the click handler is attached to a parent element that doesn't receive touch propagation correctly on iOS.</p><h2>Bug #4: Console error floods on page load</h2><p>AI-generated apps frequently have 10–30 JavaScript console errors on a cold page load that don't visibly affect the user experience in Chrome. These are usually failed imports for unused dependencies, null reference errors on components that render before their data arrives, and network errors for optional resources. They're cosmetically invisible but indicate fragile dependency chains that cause intermittent failures under real conditions — slower devices, slower networks, or browsers with stricter security settings.</p><p><strong>Where to check:</strong> Open DevTools console and reload. Filter for Errors only. Any error count above 5 on a clean load is a red flag worth filing as a bug.</p><p><strong>Root cause:</strong> AI models don't always clean up unused imports or add null guards. The errors are generated with the code and never reviewed because they don't break the visible happy path.</p><h2>Bug #5: Images missing alt text and lazy-loaded incorrectly</h2><p>Two patterns appear together in almost every AI-generated site: images missing alt attributes (accessibility failure and SEO gap) and images tagged with loading="lazy" that are above the fold (performance regression — the hero image loads late, causing visible layout shift).</p><p><strong>Where to check:</strong> Lighthouse accessibility audit (DevTools → Lighthouse → Accessibility) and a visual scan of the Network tab sorted by request time. Hero images should load in the first network batch, not after page render.</p><p><strong>Root cause:</strong> AI models apply loading="lazy" consistently to all images as a performance optimisation pattern, without distinguishing above-fold vs below-fold. Alt text is often blank or duplicated from the filename.</p><h2>Bug #6: Dark mode breaks component colours</h2><p>AI tools increasingly generate components with dark mode support via CSS media queries. But they don't always test the full component tree — a modal, a tooltip, or a notification component often has hard-coded light colours that become invisible against the dark background. These bugs are invisible to developers testing on default light mode and surface only when a client or end-user has dark mode enabled.</p><p><strong>Where to check:</strong> Chrome DevTools → Rendering → Emulate CSS prefers-color-scheme: dark. Walk every interactive component: modals, dropdowns, tooltips, form validation messages.</p><h2>How to find these in 10 minutes before launch</h2><p>The fastest scan covers the six patterns above in a structured pass:</p><ol><li>Open the site on iPhone 13 emulator. Check the nav at 375px, 768px, and 1024px.</li><li>Fill out every form on the site. Submit. Confirm a success state is visible.</li><li>Tap every CTA button on mobile. Confirm it does something.</li><li>Open Console tab. Reload. Count errors on page load.</li><li>Run a Lighthouse accessibility audit. Check for missing alt text.</li><li>Enable dark mode emulation. Walk every interactive component.</li></ol><p>Each step takes 60–90 seconds. The full scan is under 10 minutes. Using Klavity Snap on each bug you find creates a report with console log and screenshot automatically — the developer gets reproducible tickets without any follow-up from you.</p></div>
-    <section class="takeaways"><h2>Key takeaways</h2><ul><li>AI tools optimise for desktop Chrome — 80% of vibe-coding bugs are mobile-only or Safari-only</li><li>Silent form failures are the most client-visible bug: the user thinks they submitted, you never get the data</li><li>Console error floods are cosmetically invisible but indicate broken dependencies that cause intermittent failures</li><li>Mobile nav and CTA button failures are the two highest-priority things to check on every AI-built launch</li><li>Using Klavity Snap on mobile emulator catches most of these in under 10 minutes, before the client finds them</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why do vibe-coded apps have more bugs than hand-written code?</summary><p>AI models like Cursor and Lovable generate code optimised for the most common environment — desktop Chrome. They miss edge cases like Safari's stricter CSS engine, mobile breakpoint behaviour, and iOS-specific form handling. Human developers build these patterns through repetitive mistakes; AI models haven't accumulated the same scar tissue.</p></details><details><summary>What is a silent form failure in a vibe-coded app?</summary><p>A silent form failure is when a user submits a form and nothing visible happens — no success message, no error, just the button becoming unresponsive or the page appearing to reset. The user believes they submitted successfully. The data never arrived. It's common in AI-generated code because error handling is often omitted or written for happy-path only.</p></details><details><summary>How do I check for console errors in a vibe-coded app quickly?</summary><p>Open Chrome DevTools (F12 → Console tab) and reload the page. Filter for errors only (red circle icon). Any errors on page load that aren't network-related (CORS, 404s on assets) indicate broken JavaScript dependencies. Klavity Snap captures this automatically when you file a bug report.</p></details><details><summary>Do these bugs affect SEO as well as UX?</summary><p>Yes. Googlebot renders JavaScript and indexes what it sees. A nav that collapses on mobile means internal links are missing from the mobile-indexed version. A form that fails silently means your contact or lead-gen conversion rate is lower than analytics suggests — because users think they converted but didn't.</p></details></section>
+
+    <div class="prose">
+
+      <h2 id="why">Why vibe-coded apps fail differently</h2>
+      <p>When a developer writes code by hand, they instinctively test the things they know tend to break: Safari CSS quirks, form submission edge cases, mobile touch events. These aren't in any spec — they're in the developer's memory from the last five times they burned three hours debugging something that worked perfectly in Chrome.</p>
+      <p>AI models don't have that memory. They generate syntactically correct, logically sound code that handles the happy path on desktop Chrome. The edge cases accumulate in a predictable pattern. After reviewing dozens of Cursor, Lovable, and Bolt-built sites, the same bugs appear on almost every project.</p>
+      <p>Here's what to look for — and where to look.</p>
+
+      <!-- Bug 1 -->
+      <div class="bug-card sev-high" id="bug-1">
+        <div class="bug-badge">Bug 01 &nbsp;·&nbsp; High severity</div>
+        <h2>Mobile nav collapses or disappears at tablet breakpoints</h2>
+        <div class="illus" aria-hidden="true">
+          <svg viewBox="0 0 400 108" width="400" height="108" xmlns="http://www.w3.org/2000/svg">
+            <!-- browser chrome -->
+            <rect x="1" y="1" width="398" height="106" rx="8" fill="white" stroke="#d1cfc9" stroke-width="1.2"/>
+            <!-- title bar -->
+            <rect x="1" y="1" width="398" height="26" rx="8" fill="#ede7dc"/>
+            <rect x="1" y="17" width="398" height="10" fill="#ede7dc"/>
+            <circle cx="16" cy="14" r="4" fill="#f87171" opacity=".8"/>
+            <circle cx="28" cy="14" r="4" fill="#fbbf24" opacity=".8"/>
+            <circle cx="40" cy="14" r="4" fill="#86efac" opacity=".8"/>
+            <rect x="58" y="10" width="180" height="8" rx="3" fill="#d9d3c9"/>
+            <!-- breakpoint label -->
+            <text x="200" y="42" font-size="9" fill="#9ca3af" font-family="monospace" text-anchor="middle">768px — tablet</text>
+            <!-- nav bar -->
+            <rect x="8" y="48" width="384" height="30" rx="4" fill="#1a1a1a"/>
+            <!-- logo -->
+            <text x="22" y="68" font-size="10" fill="white" font-family="monospace" font-weight="700">Klavity</text>
+            <!-- nav items crammed too close -->
+            <text x="84" y="68" font-size="9.5" fill="rgba(255,255,255,.75)" font-family="sans-serif">Products</text>
+            <text x="144" y="68" font-size="9.5" fill="rgba(255,255,255,.75)" font-family="sans-serif">Blog</text>
+            <text x="178" y="68" font-size="9.5" fill="rgba(255,255,255,.75)" font-family="sans-serif">Pricing</text>
+            <text x="215" y="68" font-size="9.5" fill="rgba(255,255,255,.75)" font-family="sans-serif">Docs</text>
+            <text x="250" y="68" font-size="9.5" fill="rgba(255,255,255,.75)" font-family="sans-serif">About</text>
+            <!-- hamburger also showing = the bug -->
+            <rect x="348" y="56" width="18" height="2" rx="1" fill="white"/>
+            <rect x="348" y="62" width="18" height="2" rx="1" fill="white"/>
+            <rect x="348" y="68" width="18" height="2" rx="1" fill="white"/>
+            <!-- overlap zone highlight -->
+            <rect x="240" y="48" width="100" height="30" fill="#ef4444" opacity=".18" rx="3"/>
+            <!-- annotation -->
+            <text x="290" y="93" font-size="9" fill="#ef4444" font-family="monospace" text-anchor="middle">items + hamburger both visible</text>
+          </svg>
+        </div>
+        <p>AI models frequently generate hamburger menus that work on 375px (phone) and on 1280px (desktop) but break at 768px (tablet). The nav items overlap, the hamburger icon doesn't render, or the toggle doesn't respond to tap events. This is the highest-visibility bug — it's the first thing a client notices if they check their site on an iPad.</p>
+        <div class="callout callout-check">
+          <span class="callout-label">Where to check</span>
+          Chrome DevTools → Toggle Device → iPad Air or Samsung Galaxy Tab. Look for overlapping nav items, invisible hamburger icons, and tap events that don't fire.
+        </div>
+        <div class="callout callout-cause">
+          <span class="callout-label">Root cause</span>
+          The AI generated breakpoints at 480px and 1024px, leaving a gap where neither the mobile nor desktop layout applies correctly.
+        </div>
+      </div>
+
+      <!-- Bug 2 -->
+      <div class="bug-card sev-high" id="bug-2">
+        <div class="bug-badge">Bug 02 &nbsp;·&nbsp; High severity</div>
+        <h2>Forms submit silently on Safari iOS</h2>
+        <div class="illus" aria-hidden="true">
+          <svg viewBox="0 0 400 100" width="400" height="100" xmlns="http://www.w3.org/2000/svg">
+            <!-- form box -->
+            <rect x="20" y="12" width="148" height="78" rx="8" fill="white" stroke="#d1d5db" stroke-width="1.2"/>
+            <text x="34" y="34" font-size="9" fill="#9ca3af" font-family="sans-serif">Contact form</text>
+            <rect x="30" y="40" width="128" height="18" rx="3" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+            <text x="38" y="52" font-size="8.5" fill="#9ca3af" font-family="sans-serif">email@company.com</text>
+            <rect x="30" y="64" width="128" height="20" rx="5" fill="#6366f1"/>
+            <text x="94" y="78" font-size="10" fill="white" font-family="sans-serif" text-anchor="middle" font-weight="600">Submit</text>
+            <!-- arrow / flow -->
+            <line x1="172" y1="52" x2="218" y2="52" stroke="#9ca3af" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <polygon points="218,48 226,52 218,56" fill="#9ca3af"/>
+            <!-- void / empty response -->
+            <rect x="230" y="18" width="148" height="64" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.2" stroke-dasharray="5,4"/>
+            <text x="304" y="46" font-size="11" fill="#d1d5db" font-family="sans-serif" text-anchor="middle">no response</text>
+            <text x="304" y="62" font-size="9.5" fill="#ef4444" font-family="monospace" text-anchor="middle">lead lost silently</text>
+            <!-- Safari badge -->
+            <rect x="236" y="22" width="42" height="14" rx="3" fill="#ede7dc"/>
+            <text x="257" y="33" font-size="8" fill="#9ca3af" font-family="monospace" text-anchor="middle">Safari iOS</text>
+          </svg>
+        </div>
+        <p>This is the most damaging bug because it's invisible to the developer and appears to work to the user. On Safari iOS (iPhone), form submit buttons often trigger the submit event but either fail to serialize the form data correctly or run into Safari's stricter same-origin fetch policy without error handling. The user taps Submit. The button greys out for a moment. Nothing happens. No error. No success message. The lead or contact request is lost.</p>
+        <div class="callout callout-check">
+          <span class="callout-label">Where to check</span>
+          Open Chrome DevTools → Toggle Device → iPhone 13. Fill out the form. Submit. Watch the Network tab and Console. Look for a failed fetch or XHR with no visible error on the page.
+        </div>
+        <div class="callout callout-cause">
+          <span class="callout-label">Root cause</span>
+          AI-generated fetch calls often omit explicit error handling. Safari's stricter CORS and cookie handling surfaces these failures silently.
+        </div>
+      </div>
+
+      <!-- Bug 3 -->
+      <div class="bug-card sev-high" id="bug-3">
+        <div class="bug-badge">Bug 03 &nbsp;·&nbsp; High severity</div>
+        <h2>CTA buttons with no click handler on mobile</h2>
+        <div class="illus" aria-hidden="true">
+          <svg viewBox="0 0 400 108" width="400" height="108" xmlns="http://www.w3.org/2000/svg">
+            <!-- desktop side -->
+            <rect x="16" y="10" width="158" height="88" rx="7" fill="white" stroke="#d1d5db" stroke-width="1.2"/>
+            <text x="95" y="28" font-size="9" fill="#9ca3af" font-family="monospace" text-anchor="middle">desktop</text>
+            <rect x="36" y="48" width="118" height="28" rx="6" fill="#6366f1"/>
+            <text x="95" y="66" font-size="11" fill="white" font-family="sans-serif" text-anchor="middle" font-weight="600">Get started</text>
+            <!-- mouse cursor over button (works) -->
+            <polygon points="124,34 124,50 128,46 131,52 133,51 130,45 135,45" fill="#374151"/>
+            <text x="95" y="90" font-size="8.5" fill="#22c55e" font-family="monospace" text-anchor="middle">hover event fires — works</text>
+            <!-- divider -->
+            <line x1="194" y1="14" x2="194" y2="94" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="4,3"/>
+            <!-- mobile side -->
+            <rect x="214" y="14" width="84" height="80" rx="10" fill="#1a1a1a"/>
+            <rect x="222" y="26" width="68" height="56" rx="4" fill="#f8fafc"/>
+            <rect x="232" y="42" width="48" height="22" rx="5" fill="#6366f1"/>
+            <text x="256" y="56" font-size="9" fill="white" font-family="sans-serif" text-anchor="middle" font-weight="600">Get started</text>
+            <!-- touch indicator (simple hand shape) -->
+            <rect x="302" y="44" width="8" height="22" rx="4" fill="#374151" opacity=".85"/>
+            <rect x="312" y="46" width="7" height="18" rx="3.5" fill="#374151" opacity=".85"/>
+            <rect x="321" y="48" width="7" height="16" rx="3.5" fill="#374151" opacity=".85"/>
+            <!-- X = nothing happens -->
+            <line x1="338" y1="38" x2="350" y2="50" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+            <line x1="350" y1="38" x2="338" y2="50" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>
+            <text x="256" y="92" font-size="8.5" fill="#ef4444" font-family="monospace" text-anchor="middle">touch ignored</text>
+          </svg>
+        </div>
+        <p>A button that looks like a button, has the visual weight of a button, and does nothing when tapped on mobile is one of the most common vibe-coding bugs. It often works on desktop because the AI generated a hover event instead of a click event — hover is valid on desktop, meaningless on touchscreen.</p>
+        <div class="callout callout-check">
+          <span class="callout-label">Where to check</span>
+          Mobile emulator → tap the primary CTA button. If nothing happens, open the console and look for the event listener attached. Also check for <code>pointer-events: none</code> in the CSS chain — another common AI generation pattern.
+        </div>
+        <div class="callout callout-cause">
+          <span class="callout-label">Root cause</span>
+          Event handling for hover and click are conflated in the generated JavaScript, or the click handler is attached to a parent element that doesn't receive touch propagation correctly on iOS.
+        </div>
+      </div>
+
+      <!-- Bug 4 -->
+      <div class="bug-card sev-med" id="bug-4">
+        <div class="bug-badge">Bug 04 &nbsp;·&nbsp; Medium severity</div>
+        <h2>Console error floods on page load</h2>
+        <div class="illus" aria-hidden="true">
+          <svg viewBox="0 0 400 108" width="400" height="108" xmlns="http://www.w3.org/2000/svg">
+            <!-- devtools panel -->
+            <rect x="16" y="8" width="368" height="92" rx="6" fill="#1e1e1e"/>
+            <!-- tab bar -->
+            <rect x="16" y="8" width="368" height="22" rx="6" fill="#2d2d2d"/>
+            <rect x="16" y="20" width="368" height="10" fill="#2d2d2d"/>
+            <text x="32" y="23" font-size="9" fill="#9ca3af" font-family="monospace">Elements</text>
+            <rect x="80" y="10" width="44" height="18" rx="3" fill="#1e1e1e"/>
+            <text x="102" y="23" font-size="9" fill="white" font-family="monospace" text-anchor="middle">Console</text>
+            <text x="150" y="23" font-size="9" fill="#9ca3af" font-family="monospace">Network</text>
+            <!-- error lines -->
+            <circle cx="30" cy="42" r="4" fill="#ef4444"/>
+            <rect x="40" y="38" width="200" height="8" rx="2" fill="#7f1d1d" opacity=".8"/>
+            <text x="44" y="45" font-size="7.5" fill="#fca5a5" font-family="monospace">Uncaught TypeError: Cannot read properties of null</text>
+
+            <circle cx="30" cy="57" r="4" fill="#ef4444"/>
+            <rect x="40" y="53" width="240" height="8" rx="2" fill="#7f1d1d" opacity=".8"/>
+            <text x="44" y="60" font-size="7.5" fill="#fca5a5" font-family="monospace">Failed to load resource: net::ERR_FAILED — analytics.js</text>
+
+            <circle cx="30" cy="72" r="4" fill="#ef4444"/>
+            <rect x="40" y="68" width="180" height="8" rx="2" fill="#7f1d1d" opacity=".8"/>
+            <text x="44" y="75" font-size="7.5" fill="#fca5a5" font-family="monospace">ReferenceError: initWidget is not defined</text>
+
+            <circle cx="30" cy="87" r="4" fill="#ef4444"/>
+            <rect x="40" y="83" width="220" height="8" rx="2" fill="#7f1d1d" opacity=".8"/>
+            <text x="44" y="90" font-size="7.5" fill="#fca5a5" font-family="monospace">TypeError: e.addEventListener is not a function</text>
+
+            <!-- error count badge -->
+            <rect x="338" y="10" width="38" height="18" rx="4" fill="#ef4444"/>
+            <text x="357" y="23" font-size="9.5" fill="white" font-family="monospace" text-anchor="middle" font-weight="700">27</text>
+          </svg>
+        </div>
+        <p>AI-generated apps frequently have 10–30 JavaScript console errors on a cold page load that don't visibly affect the user experience in Chrome. These are usually failed imports for unused dependencies, null reference errors on components that render before their data arrives, and network errors for optional resources. They're cosmetically invisible but indicate fragile dependency chains that cause intermittent failures under real conditions — slower devices, slower networks, or browsers with stricter security settings.</p>
+        <div class="callout callout-check">
+          <span class="callout-label">Where to check</span>
+          Open DevTools console and reload. Filter for Errors only. Any error count above 5 on a clean load is a red flag worth filing as a bug.
+        </div>
+        <div class="callout callout-cause">
+          <span class="callout-label">Root cause</span>
+          AI models don't always clean up unused imports or add null guards. The errors are generated with the code and never reviewed because they don't break the visible happy path.
+        </div>
+      </div>
+
+      <!-- Bug 5 -->
+      <div class="bug-card sev-med" id="bug-5">
+        <div class="bug-badge">Bug 05 &nbsp;·&nbsp; Medium severity</div>
+        <h2>Images missing alt text and lazy-loaded incorrectly</h2>
+        <div class="illus" aria-hidden="true">
+          <svg viewBox="0 0 400 108" width="400" height="108" xmlns="http://www.w3.org/2000/svg">
+            <!-- page timeline -->
+            <text x="200" y="20" font-size="9" fill="#9ca3af" font-family="monospace" text-anchor="middle">page load timeline</text>
+            <line x1="30" y1="30" x2="370" y2="30" stroke="#d1d5db" stroke-width="1.5"/>
+            <!-- HTML loads -->
+            <rect x="30" y="22" width="60" height="16" rx="3" fill="#6366f1"/>
+            <text x="60" y="34" font-size="8" fill="white" font-family="monospace" text-anchor="middle">HTML</text>
+            <!-- CSS loads -->
+            <rect x="94" y="22" width="50" height="16" rx="3" fill="#818cf8"/>
+            <text x="119" y="34" font-size="8" fill="white" font-family="monospace" text-anchor="middle">CSS</text>
+            <!-- page renders -->
+            <rect x="148" y="22" width="60" height="16" rx="3" fill="#a5b4fc"/>
+            <text x="178" y="34" font-size="8" fill="white" font-family="monospace" text-anchor="middle">render</text>
+            <!-- hero image loads LATE = bug -->
+            <rect x="280" y="18" width="86" height="24" rx="3" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+            <text x="323" y="31" font-size="8.5" fill="#b45309" font-family="monospace" text-anchor="middle">hero image</text>
+            <!-- layout shift indicator -->
+            <text x="323" y="52" font-size="8" fill="#ef4444" font-family="monospace" text-anchor="middle">loading="lazy" above fold</text>
+            <line x1="323" y1="42" x2="323" y2="30" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2"/>
+            <!-- alt text issue -->
+            <rect x="30" y="64" width="160" height="36" rx="6" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1.2"/>
+            <rect x="40" y="72" width="140" height="20" rx="3" fill="#e5e7eb"/>
+            <text x="110" y="86" font-size="8.5" fill="#9ca3af" font-family="sans-serif" text-anchor="middle">alt=""</text>
+            <text x="110" y="104" font-size="8" fill="#ef4444" font-family="monospace" text-anchor="middle">empty alt — SEO gap</text>
+            <!-- LCP badge -->
+            <rect x="200" y="64" width="168" height="36" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2"/>
+            <text x="284" y="80" font-size="9" fill="#b45309" font-family="sans-serif" text-anchor="middle" font-weight="600">LCP delayed</text>
+            <text x="284" y="94" font-size="8" fill="#b45309" font-family="monospace" text-anchor="middle">visible layout shift</text>
+          </svg>
+        </div>
+        <p>Two patterns appear together in almost every AI-generated site: images missing alt attributes (accessibility failure and SEO gap) and images tagged with <code>loading="lazy"</code> that are above the fold (performance regression — the hero image loads late, causing visible layout shift).</p>
+        <div class="callout callout-check">
+          <span class="callout-label">Where to check</span>
+          Lighthouse accessibility audit (DevTools → Lighthouse → Accessibility) and a visual scan of the Network tab sorted by request time. Hero images should load in the first network batch, not after page render.
+        </div>
+        <div class="callout callout-cause">
+          <span class="callout-label">Root cause</span>
+          AI models apply <code>loading="lazy"</code> consistently to all images as a performance optimisation pattern, without distinguishing above-fold vs below-fold. Alt text is often blank or duplicated from the filename.
+        </div>
+      </div>
+
+      <!-- Bug 6 -->
+      <div class="bug-card sev-low" id="bug-6">
+        <div class="bug-badge">Bug 06 &nbsp;·&nbsp; Low–Medium severity</div>
+        <h2>Dark mode breaks component colours</h2>
+        <div class="illus" aria-hidden="true">
+          <svg viewBox="0 0 400 108" width="400" height="108" xmlns="http://www.w3.org/2000/svg">
+            <!-- split screen -->
+            <!-- light mode half -->
+            <rect x="16" y="10" width="178" height="88" rx="8" fill="white" stroke="#e5e7eb" stroke-width="1.2"/>
+            <text x="105" y="28" font-size="9" fill="#9ca3af" font-family="monospace" text-anchor="middle">Light mode</text>
+            <!-- tooltip component - works fine -->
+            <rect x="36" y="38" width="138" height="50" rx="6" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1"/>
+            <rect x="46" y="48" width="80" height="14" rx="3" fill="#6366f1"/>
+            <text x="86" y="59" font-size="8.5" fill="white" font-family="sans-serif" text-anchor="middle">Tooltip text</text>
+            <text x="105" y="80" font-size="8.5" fill="#374151" font-family="sans-serif" text-anchor="middle">component visible</text>
+            <text x="105" y="93" font-size="9" fill="#22c55e" font-family="monospace" text-anchor="middle">OK</text>
+            <!-- dark mode half -->
+            <rect x="206" y="10" width="178" height="88" rx="8" fill="#111827" stroke="#374151" stroke-width="1.2"/>
+            <text x="295" y="28" font-size="9" fill="#6b7280" font-family="monospace" text-anchor="middle">Dark mode</text>
+            <!-- tooltip - invisible because hardcoded white text on white bg -->
+            <rect x="226" y="38" width="138" height="50" rx="6" fill="#1f2937" stroke="#374151" stroke-width="1"/>
+            <rect x="236" y="48" width="80" height="14" rx="3" fill="#6366f1"/>
+            <!-- text invisible = same color as bg -->
+            <text x="276" y="59" font-size="8.5" fill="#6366f1" font-family="sans-serif" text-anchor="middle">Tooltip text</text>
+            <text x="295" y="80" font-size="8.5" fill="#6b7280" font-family="sans-serif" text-anchor="middle">text invisible</text>
+            <text x="295" y="93" font-size="9" fill="#ef4444" font-family="monospace" text-anchor="middle">broken</text>
+            <!-- divider line -->
+            <line x1="197" y1="10" x2="197" y2="98" stroke="#d1d5db" stroke-width="1"/>
+          </svg>
+        </div>
+        <p>AI tools increasingly generate components with dark mode support via CSS media queries. But they don't always test the full component tree — a modal, a tooltip, or a notification component often has hard-coded light colours that become invisible against the dark background. These bugs are invisible to developers testing on default light mode and surface only when a client or end-user has dark mode enabled.</p>
+        <div class="callout callout-check">
+          <span class="callout-label">Where to check</span>
+          Chrome DevTools → Rendering → Emulate CSS prefers-color-scheme: dark. Walk every interactive component: modals, dropdowns, tooltips, form validation messages.
+        </div>
+        <div class="callout callout-cause">
+          <span class="callout-label">Root cause</span>
+          AI-generated dark mode CSS patches the body background but misses nested components with hard-coded colour values. The tool tests the page at the top level, not every component variant.
+        </div>
+      </div>
+
+      <h2 id="scan">How to find these in 10 minutes before launch</h2>
+      <p>The fastest scan covers the six patterns above in a structured pass — 60–90 seconds per step:</p>
+      <ol class="scan-list">
+        <li>Open the site on iPhone 13 emulator. Check the nav at 375px, 768px, and 1024px. Confirm no overlap, no double hamburger.</li>
+        <li>Fill out every form on the site. Submit. Confirm a visible success state appears. Check Network tab for silent failures.</li>
+        <li>Tap every CTA button on mobile emulator. Confirm it does something — no dead taps.</li>
+        <li>Open Console tab. Reload. Filter Errors only. Flag anything above 5 errors on a clean load.</li>
+        <li>Run Lighthouse accessibility audit. Check for missing alt text and above-fold lazy images.</li>
+        <li>Enable dark mode emulation (DevTools → Rendering). Walk every modal, tooltip, and dropdown.</li>
+      </ol>
+      <p>Using Klavity Snap on each bug you find creates a report with the console log and screenshot automatically — the developer gets reproducible tickets without any follow-up from you.</p>
+
+    </div>
+
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>AI tools optimise for desktop Chrome — 80% of vibe-coding bugs are mobile-only or Safari-only</li><li>Silent form failures are the most client-visible bug: the user thinks they submitted, you never get the data</li><li>Console error floods are cosmetically invisible but indicate broken dependencies that cause intermittent failures</li><li>Mobile nav and CTA button failures are the two highest-priority things to check on every AI-built launch</li><li>Using Klavity Snap on mobile emulator catches most of these in under 10 minutes, before the client finds them</li></ul></section>
+    <section class="faq"><h2>FAQ</h2><details><summary>Why do vibe-coded apps have more bugs than hand-written code?</summary><p>AI models like Cursor and Lovable generate code optimised for the most common environment — desktop Chrome. They miss edge cases like Safari's stricter CSS engine, mobile breakpoint behaviour, and iOS-specific form handling. Human developers build these patterns through repetitive mistakes; AI models haven't accumulated the same scar tissue.</p></details><details><summary>What is a silent form failure in a vibe-coded app?</summary><p>A silent form failure is when a user submits a form and nothing visible happens — no success message, no error, just the button becoming unresponsive or the page appearing to reset. The user believes they submitted successfully. The data never arrived. It's common in AI-generated code because error handling is often omitted or written for happy-path only.</p></details><details><summary>How do I check for console errors in a vibe-coded app quickly?</summary><p>Open Chrome DevTools (F12 &rarr; Console tab) and reload the page. Filter for errors only (red circle icon). Any errors on page load that aren't network-related (CORS, 404s on assets) indicate broken JavaScript dependencies. Klavity Snap captures this automatically when you file a bug report.</p></details><details><summary>Do these bugs affect SEO as well as UX?</summary><p>Yes. Googlebot renders JavaScript and indexes what it sees. A nav that collapses on mobile means internal links are missing from the mobile-indexed version. A form that fails silently means your contact or lead-gen conversion rate is lower than analytics suggests — because users think they converted but didn't.</p></details></section>
     <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
-  </article></main><footer class="footer"><div class="wrap foot-in">
+  </article>
+</main>
+<footer class="footer"><div class="wrap foot-in">
   <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
   <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
   <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
-</div></footer></body></html>
+</div></footer>
+<script>
+(function(){
+  var rail=document.querySelector('.toc-rail');
+  if(!rail)return;
+  var links=rail.querySelectorAll('a');
+  var ids=['why','bug-1','bug-2','bug-3','bug-4','bug-5','bug-6','scan'];
+  var sections=ids.map(function(id){return document.getElementById(id)}).filter(Boolean);
+  function update(){
+    var active=sections[0];
+    sections.forEach(function(s){if(window.scrollY>=s.offsetTop-160)active=s;});
+    links.forEach(function(l){l.classList.toggle('toc-active',l.getAttribute('href')==='#'+active.id);});
+  }
+  window.addEventListener('scroll',update,{passive:true});
+  update();
+})();
+</script>
+</body></html>
