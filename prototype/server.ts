@@ -10,7 +10,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, ensureSharedAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
 // observation first line → "Untitled report") so notifications/receipts/exports show a MANUAL ticket's
@@ -932,17 +932,23 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
   normalizeExtractedPersonas(data)
   return { data, usage }
 }
-async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
+async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }, goal?: string | null) {
   // H4/LLM01: the persona is our own trusted data, but the page URL and the screenshot itself are
   // attacker-influenceable — delimit the URL and instruct the model to ignore instructions in page data.
   // Current-date awareness: without this the model assumes its training-era "current year" (e.g. 2024)
   // and wrongly flags valid future-looking dates on the page as errors (a 2026 "Founded Year" reported as
   // "impossible, it's 2024"). Stamp today's real date at call time so date reasoning is grounded in now.
   const today = new Date().toISOString().slice(0, 10)
+  // Sims Studio (dashboard-initiated review): an explicit reviewer-chosen focus, e.g. "Task completion
+  // — can the customer complete an important task?". Optional — the extension's continuous-watch path
+  // never passes this, so unset behaves exactly as before (react to whatever stands out generally).
+  const goalLine = goal && String(goal).trim()
+    ? `\n\nFocus your review on this specifically: ` + wrapUntrusted(String(goal).trim()) + `\n`
+    : ""
   const { content, usage } = await chat([
     { role: "system", content: REACT_SYS + UNTRUSTED_GUARD },
     { role: "user", content: [
-      { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+      { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + goalLine + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
       { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
     ] },
   ], 2500, false, { type: "react", feature: "sim-react", ...ctx })
@@ -4747,11 +4753,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
         }
         const acceptedAssignmentInvites = await acceptPendingTicketAssignmentInvites(e)
-        const newMemberships = acceptedAssignmentInvites.length ? null : await ensureAccount(e, signupAttr)
+        // ensureSharedAccount (not ensureAccount): every normal signup joins the one shared
+        // "Default Project" workspace instead of getting a private copy — see its doc comment.
+        const newMemberships = acceptedAssignmentInvites.length ? null : await ensureSharedAccount(e, signupAttr)
         const postSignupMs = newMemberships ?? (await membershipsFor(e))
-        // The caller's own default project — ensureAccount creates it as "proj_"+<first membership's
-        // account id>. Returned so the onboarding wizard targets the RIGHT project instead of
-        // guessing (its old ".pop()" heuristic picked the wrong one for multi-project users).
+        // The caller's own default project — ensureSharedAccount creates it as "proj_"+<first
+        // membership's account id>. Returned so the onboarding wizard targets the RIGHT project
+        // instead of guessing (its old ".pop()" heuristic picked the wrong one for multi-project users).
         const defaultProjectId = postSignupMs[0] ? "proj_" + postSignupMs[0].workspaceId : null
         if (wasNew && attribution != null) {
           const accountId = postSignupMs[0]?.workspaceId
@@ -11146,9 +11154,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && path === "/api/dashboard") {
         try {
           // Real projects (P2). Honor ?project=:id (projectAccess-gated); default to the first.
-          const allProjects = await listProjects(me)
+          let allProjects = await listProjects(me)
           if (!allProjects.length) {
-            // No project yet — return an empty-but-valid shape so the UI renders skeleton/empty states.
+            // No project yet (e.g. an account that predates ensureSharedAccount, or whose only
+            // project was later deleted) — ensureSharedAccount is idempotent and joins the one
+            // shared "Default Project" workspace instead of leaving an empty dashboard.
+            await ensureSharedAccount(me)
+            allProjects = await listProjects(me)
+          }
+          if (!allProjects.length) {
+            // Still nothing (e.g. DB unavailable) — return an empty-but-valid shape so the UI renders
+            // skeleton/empty states instead of erroring.
             return json({ email: me, projects: [], active: null, members: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
           }
           // KLAVITYKLA-299: when no ?project= param is present, fall back to the klav_proj cookie
@@ -11159,7 +11175,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             ? decodeURIComponent(parseCookies(req.headers.get("cookie"))["klav_proj"] || "") || null
             : null
           const requested = paramProject || cookieProject
-          const resolved = await resolveProject(me, requested)
+          let resolved = await resolveProject(me, requested)
+          // A stale/deleted klav_proj cookie is invisible state the client has no way to see or
+          // clear (unlike an explicit ?project= param, which the client's own retry logic already
+          // detects and drops) — degrade gracefully to the user's first accessible project instead
+          // of 403ing the whole dashboard on it. An explicit ?project= still hard-fails as before.
+          if (!resolved && !paramProject && cookieProject) resolved = await resolveProject(me, null)
           if (!resolved) return json({ error: "No access to this project." }, 403)
           const projectId = resolved.id
           const access = resolved.access
@@ -11384,7 +11405,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const cookieProject = !paramProject
             ? decodeURIComponent(parseCookies(req.headers.get("cookie"))["klav_proj"] || "") || null
             : null
-          const resolved = await resolveProject(me, paramProject || cookieProject)
+          // Same graceful-degradation as /api/dashboard: a stale klav_proj cookie must not 403 this
+          // endpoint either — fall back to the user's first accessible project.
+          let resolved = await resolveProject(me, paramProject || cookieProject)
+          if (!resolved && !paramProject && cookieProject) resolved = await resolveProject(me, null)
           if (!resolved) return json({ error: "No access to this project." }, 403)
           const projectId = resolved.id
 
@@ -14617,6 +14641,120 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             ? { x: rgn.x, y: rgn.y, w: rgn.w, h: rgn.h } : null
           return json({ reaction, personaName: p?.name || null, shotDataUrl, region, usage: rr.usage })
         } catch (e: any) { return json(oops(e, "preview"), 500) }
+      }
+
+      // ── Sims Studio — explicit, dashboard-initiated customer review ───────────────────────
+      // POST /api/sims/studio-review
+      //   Body: { projectId, targetUrl?, simIds?: string[], goal?: string, requireLogin?: boolean }
+      //   targetUrl omitted/empty → falls back to the project's primary site (its first monitored-URL
+      //   allowlist host, https:// assumed) so "Current page" in the wizard has something real to hit.
+      //   simIds omitted/empty → reviews with ALL of the project's Sims (same "null = all" convention
+      //   insertSimRun already uses). goal is optional free text folded into each Sim's prompt (see
+      //   reactToPage). requireLogin just forces the authed-screenshot path even if a public shot would
+      //   otherwise succeed — for pages that render a misleading "logged out" shell instead of failing.
+      //   Reuses the exact screenshot → runSimReviews → insertSimRun pipeline /api/sim/preview's authed
+      //   branch already runs — same credit/quota gating (inside runSimReviews), same Snap-lock check,
+      //   same SSRF preflight. Deliberately skips the extension-only "monitored URL allowlist" gate:
+      //   that gate exists for AUTONOMOUS background watching; this is one explicit, user-clicked run.
+      if (req.method === "POST" && path === "/api/sims/studio-review") {
+        try {
+          const srRunStartedAt = Date.now()
+          const meSr = (await sessionEmail(req)) || (await bearerEmail(req))
+          if (!meSr) return json({ error: "Sign in to continue." }, 401)
+          const body = await req.json().catch(() => ({}))
+          const srProj = await resolveProject(meSr, String(body.projectId || "").trim())
+          if (!srProj) return json({ error: "No accessible project found." }, 403)
+          const srFullProj = await projectById(srProj.id)
+          const srLock = srFullProj ? snapLocked(srFullProj) : null
+          if (srLock) return json(srLock, 402)
+
+          const allSims = await listPersonas(srProj.id)
+          if (!allSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          const reqSimIds: string[] = Array.isArray(body.simIds) ? body.simIds.map(String) : []
+          const targetSims = reqSimIds.length ? allSims.filter((s) => reqSimIds.includes(s.id)) : allSims
+          if (!targetSims.length) return json({ error: "None of the selected Sims were found." }, 400)
+
+          let srUrl = String(body.targetUrl || "").trim()
+          if (!srUrl) {
+            // "Current page" in the wizard means the project's own connected product — best-effort
+            // from its first monitored-URL pattern (glob wildcards stripped to a navigable origin).
+            const monitored = await listMonitoredUrls(srProj.id, { enabledOnly: true }).catch(() => [])
+            const first = monitored[0]?.urlPattern || ""
+            srUrl = first.replace(/\*.*$/, "").replace(/\/+$/, "")
+          }
+          if (!srUrl) return json({ error: "Enter a URL to review, or connect a site in Settings first." }, 400)
+          if (!/^https?:\/\//i.test(srUrl)) srUrl = "https://" + srUrl
+
+          try {
+            const pre = await safeFetch(srUrl, { headers: { "user-agent": "KlavitySimBot/1.0 (+https://klavity.in)" }, signal: AbortSignal.timeout(8000) })
+            if (!pre.ok) return json({ error: `Couldn't reach that page (HTTP ${pre.status}).` }, 400)
+          } catch {
+            return json({ error: "Couldn't reach that URL. Make sure it's a public https page." }, 400)
+          }
+
+          const requireLogin = body.requireLogin === true
+          let shot: { imageB64: string; mediaType: "image/jpeg"; authed?: boolean }
+          try {
+            shot = requireLogin || await projectHasHeadlessAuth(srProj.id).catch(() => false)
+              ? await authedScreenshotUrl(srUrl, srProj.id)
+              : await screenshotUrl(srUrl)
+          } catch {
+            if (requireLogin && !(await projectHasHeadlessAuth(srProj.id).catch(() => false))) {
+              return json({
+                error: "This page needs a login. Configure an AutoSim Test Account for this project so Sims can sign in before reviewing it — then try again.",
+                needsTestAccount: true,
+              }, 400)
+            }
+            return json({ error: "Couldn't open that page to review it. Try a public page." }, 400)
+          }
+
+          let screenshotId: string
+          try {
+            const shotBytes = Buffer.from(shot.imageB64, "base64")
+            const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
+            const upload = await uploadScreenshotMeta(shotBytes, shot.mediaType, "private")
+            screenshotId = await insertScreenshot({
+              projectId: srProj.id, s3Key: upload.key, bucket: upload.bucket,
+              contentType: upload.contentType, acl: "private",
+              bytes: shotBytes.byteLength, ownerEmail: meSr, expiresAt,
+            })
+          } catch (e: any) {
+            console.warn("[sims-studio] screenshot storage skipped (no S3):", e?.message || e)
+            screenshotId = "no-s3-" + Date.now().toString(36)
+          }
+
+          const goal = body.goal ? String(body.goal).trim().slice(0, 500) : null
+          const { urlHost, urlPath } = splitUrl(srUrl)
+          const seenKeys = targetSims.map((s) => `studio:${s.id}:${urlPath || "/"}`)
+          const reviews = await runSimReviews({
+            projectId: srProj.id, urlPath, urlHost, pageUrl: srUrl,
+            imageB64: shot.imageB64, mediaType: shot.mediaType,
+            targetSims, actorEmail: meSr, screenshotId,
+            seenKeys, seenHashes: new Set(), sessionId: undefined,
+            mode: "all", adhoc: true,
+            reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: meSr, projectId: srProj.id }, goal),
+            resolveCitationsFn: resolveCitations,
+            markSeen: () => {},
+            db: db ?? null,
+          })
+
+          let runId: string | null = null
+          if (db) {
+            try {
+              runId = await insertSimRun({
+                projectId: srProj.id, url: srUrl,
+                simIds: reqSimIds.length ? reqSimIds : null,
+                screenshotId, reactions: reviews,
+                actorEmail: meSr, status: "done",
+                label: goal || null,
+                startedAt: srRunStartedAt, finishedAt: Date.now(),
+              })
+            } catch (e: any) { console.warn("[sims-studio] sim_runs insert skipped:", e?.message || e) }
+          }
+
+          const { simCount, totalObservations } = buildSimRunSummary(reviews)
+          return json({ ok: true, runId, projectId: srProj.id, reviews, screenshotId, simCount, totalObservations })
+        } catch (e: any) { return json(oops(e, "sims-studio-review"), 500) }
       }
 
       // ── KLA-254: Scheduled Sim reviews ─────────────────────────────────────────────────────────

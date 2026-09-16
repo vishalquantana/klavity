@@ -135,15 +135,19 @@ test('onboarding.html derives the kicker from the rail so it always matches (app
 })
 
 // ── Deferred setup: tracker / plan / AutoSim / more-Sims move OUT of the wizard ───────────────
-// After the account is created the wizard goes straight to Install (the activation moment). It must
-// no longer route signup into the tracker step.
+// After the account is created the wizard goes straight to the dashboard (the activation moment).
+// It must no longer route signup into the tracker step, and — per the new Figma-matching flow,
+// which drops the separate "Install" rail phase after Account for both goals — no longer detours
+// through a post-signup Install screen either (Snap's widget install already happened earlier in
+// ITS own flow: Install → Connect → Account).
 
-test('onboarding.html routes account creation straight to Install (no wizard tracker/plan detour)', () => {
+test('onboarding.html routes account creation straight to the dashboard (no wizard tracker/plan/install detour)', () => {
   const src = loadSite('onboarding.html')
   // Old routing branched to the tracker step for the sims fork — it must be gone.
   expect(src).not.toContain("go(goal === 'snap' ? S.INSTALL : S.TRACKER)")
-  // verifyCode + requestCode now both advance to Install.
-  expect(src).toContain('go(S.INSTALL)')
+  // verifyCode + requestCode now both advance straight to the dashboard.
+  expect(src).toContain('await completeOnboardingAndGoDashboard()')
+  expect(src).not.toContain('go(S.INSTALL)')
 })
 
 // ── "Snap is always free" + 30-day guarantee copy ────────────────────────────

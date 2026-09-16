@@ -138,9 +138,16 @@ header.top-header {
   height: 64px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 0 24px;
 }
+.header-left { display: flex; align-items: center; gap: 10px; margin-right: 40px; }
+.back-arrow-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px; border: none; background: none;
+  color: var(--muted); cursor: pointer; transition: all 0.15s ease; flex: none;
+}
+.back-arrow-btn:hover { background: var(--canvas); color: var(--ink); }
 .brand-link {
   display: inline-flex;
   align-items: center;
@@ -149,7 +156,7 @@ header.top-header {
 .brand-logo-sq {
   width: 32px;
   height: 32px;
-  background: #161310;
+  background: var(--primary);
   color: #ffffff;
   border-radius: 9px;
   display: grid;
@@ -167,55 +174,41 @@ header.top-header {
   font-size: 19px;
   letter-spacing: -0.02em;
 }
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--ink2);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.back-btn:hover {
-  background: var(--canvas);
-  color: var(--ink);
-  border-color: var(--border);
-}
 .phases-nav {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0;
 }
-.phase-badge {
+/* Figma-matching top stepper: numbered/checkmark beads connected by a line — not pill badges. */
+.phase-step {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12.5px;
+  gap: 8px;
+  font-size: 13.5px;
   font-weight: 600;
-  font-family: var(--mono);
-  background: var(--canvas);
-  border: 1px solid var(--line);
-  color: var(--muted);
+  color: var(--faint);
+  white-space: nowrap;
+}
+.phase-bead {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  color: var(--faint);
+  flex: none;
   transition: all 0.2s ease;
 }
-.phase-badge.active {
-  background: var(--primary-ghost);
-  border-color: var(--ring);
-  color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-ghost);
-}
-.phase-badge.done {
-  background: var(--success-bg);
-  border-color: var(--success);
-  color: var(--success);
-}
+.phase-step.done { color: var(--ink); }
+.phase-step.done .phase-bead { background: var(--success); border-color: var(--success); color: #fff; }
+.phase-step.active { color: var(--primary); }
+.phase-step.active .phase-bead { background: var(--primary); border-color: var(--primary); color: #fff; }
+.phase-bar { width: 26px; height: 1.5px; background: var(--border); margin: 0 8px; flex: none; }
+.phase-bar.done { background: var(--success); }
 .phase-dot {
   width: 6px;
   height: 6px;
@@ -246,12 +239,69 @@ main.onboarding-app {
   transform: translateY(0);
 }
 
+/* Generic show/hide utility — used throughout the real wizard logic (loading states, OTP
+   sub-step swap, tracker panel, etc.). Must win over component display rules. */
+.hide { display: none !important; }
+.field-error { color: var(--critical, #dc2626); font-size: 13px; margin-top: 6px; min-height: 16px; }
+.otp-digits { display: flex; justify-content: center; gap: 10px; margin: 0 0 8px; }
+.otp-digit {
+  width: 48px; height: 56px; text-align: center; font-size: 22px; font-family: var(--mono);
+  border: 1.5px solid var(--border); border-radius: 12px; background: var(--card); color: var(--ink);
+}
+.otp-digit:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ghost); }
+.ready-note { color: var(--success, #0f9b63); font-size: 13px; font-weight: 600; margin-top: 8px; }
+.account-icon-box {
+  width: 56px; height: 56px; border-radius: 16px; background: var(--primary-ghost); color: var(--primary);
+  display: grid; place-items: center; margin: 0 auto 16px;
+}
+.icon-input-wrap {
+  display: flex; align-items: center; gap: 10px; border-radius: 16px; border: 1px solid var(--border);
+  background: var(--card); padding: 0 16px; height: 56px; transition: all 0.15s ease;
+}
+.icon-input-wrap:focus-within { border-color: var(--ring); box-shadow: 0 0 0 4px var(--primary-ghost); }
+.icon-input-ic { flex: none; color: var(--muted); }
+.icon-input {
+  flex: 1; min-width: 0; border: none; background: none; outline: none; font-size: 16px;
+  color: var(--ink); font-family: var(--body); height: 100%;
+}
+.icon-input-tick { flex: none; }
+.opened-note {
+  display: flex; align-items: flex-start; gap: 12px; background: var(--primary-ghost); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+}
+.opened-note-ic { font-size: 16px; flex: none; margin-top: 1px; }
+.opened-note > div > b { display: block; margin-bottom: 2px; color: var(--ink); }
+.opened-note .muted { font-size: 13px; }
+.detected-note { display: flex; align-items: center; gap: 6px; color: var(--success, #0f9b63); font-size: 13px; font-weight: 600; margin-top: 8px; }
+.sim-run-avatars { display: flex; justify-content: center; gap: 28px; margin-bottom: 24px; }
+.sim-run-avatars .sim-run-av { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.sim-run-avatars .av-circle {
+  width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 16px;
+}
+.sim-run-avatars .sim-run-name { font-size: 13.5px; font-weight: 650; color: var(--ink); }
+.sim-run-avatars .sim-run-role { font-size: 12px; color: var(--faint); margin-top: -4px; }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--primary); margin-right: 2px; animation: livePulse 1.4s ease-in-out infinite; }
+@keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.feature-list { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+.feature-row {
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--ink2);
+  background: var(--canvas); border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 14px;
+}
+.feature-ic { flex: none; font-size: 15px; color: var(--faint); display: inline-flex; }
+
 /* Screen Title Header */
 .screen-header {
-  text-align: center;
-  max-width: 680px;
+  text-align: left;
+  max-width: 496px;
   margin: 0 auto 36px;
 }
+/* Welcome's heading sits above the 2-card grid (756px), not the single-card form box every other
+   screen uses — so its header must match THAT width to keep left edges aligned, and its heading
+   runs larger (52px vs 44px elsewhere) — both measured directly against the Figma DOM. */
+#viewWelcome .screen-header { max-width: 756px; }
+#viewWelcome .screen-title { font-size: clamp(32px, 5vw, 52px); }
+.screen-header.centered { text-align: center; }
 .screen-kicker {
   display: inline-flex;
   align-items: center;
@@ -266,7 +316,7 @@ main.onboarding-app {
 }
 .screen-title {
   font-family: var(--display);
-  font-size: clamp(30px, 4vw, 42px);
+  font-size: clamp(30px, 4vw, 44px);
   line-height: 1.15;
   font-weight: 600;
   letter-spacing: -0.025em;
@@ -284,7 +334,7 @@ main.onboarding-app {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  max-width: 960px;
+  max-width: 756px;
   margin: 0 auto;
 }
 @media (max-width: 768px) {
@@ -296,7 +346,8 @@ main.onboarding-app {
   background: var(--card);
   border: 1.5px solid var(--line);
   border-radius: var(--radius-2xl);
-  padding: 32px 28px;
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow);
@@ -304,6 +355,24 @@ main.onboarding-app {
   position: relative;
   transition: all 0.2s ease;
 }
+.choice-banner { padding: 20px 24px; color: #ffffff; display: flex; align-items: center; gap: 14px; }
+.banner-snap { background: linear-gradient(to right bottom, #f59e0b, #f97316); }
+.banner-sim { background: linear-gradient(to right bottom, #8b5cf6, #6d28d9); }
+.choice-banner-text { display: flex; flex-direction: column; gap: 2px; }
+.choice-badge {
+  display: block; font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255,255,255,0.85);
+}
+.choice-banner-icon {
+  width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.22);
+  display: grid; place-items: center; flex: none;
+}
+.choice-banner-title { font-family: var(--display); font-size: 20px; font-weight: 700; margin: 0; color: #ffffff; line-height: 1.2; }
+.choice-body { padding: 24px 24px 28px; }
+.choice-heading { font-size: 17px; font-weight: 650; margin: 0 0 8px; color: var(--ink); }
+.choice-link { color: var(--primary); font-weight: 600; font-size: 14px; display: inline-block; }
+.choice-card:has(.banner-snap) .choice-link { color: #e8843a; }
+.choice-card:has(.banner-sim) .choice-link { color: #7c5cf0; }
 .choice-card:hover {
   transform: translateY(-3px);
   border-color: var(--primary);
@@ -384,10 +453,11 @@ main.onboarding-app {
 /* Primary & Action Buttons */
 .btn-action {
   width: 100%;
-  padding: 14px 22px;
-  border-radius: 12px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 9px;
   font-family: var(--body);
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
   border: none;
   cursor: pointer;
@@ -417,14 +487,12 @@ main.onboarding-app {
 }
 
 /* Center Form Layouts */
+/* NOT a card — Figma has no outer wrapping box here at all. The browser-mock / input field /
+   buttons are direct siblings straight on the page background, each with their own styling.
+   This is purely a width/position constraint matching the screen-header above it. */
 .form-center-box {
-  max-width: 620px;
+  max-width: 496px;
   margin: 0 auto;
-  background: var(--card);
-  border: 1.5px solid var(--line);
-  border-radius: var(--radius-2xl);
-  padding: 36px 32px;
-  box-shadow: var(--shadow);
 }
 .field-group {
   margin-bottom: 20px;
@@ -531,6 +599,25 @@ main.onboarding-app {
   color: #ffffff;
 }
 
+/* Real Sim-exploration checklist (#uhChk) — same visual language as .step-item, but the
+   markup/class names (`li`, `cbead`, `done`/`act`) are a fixed contract with the honest-checklist
+   tests and the live-pipeline ticking code (uhChkTo/uhChkIdle), so they're styled directly rather
+   than reusing the .step-item/.step-icon-bead class names. */
+#uhChk.steps-checklist .li {
+  display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px;
+  background: var(--canvas); border: 1px solid var(--hairline); font-size: 14px; color: var(--muted);
+  transition: all 0.2s ease;
+}
+#uhChk .li.act { background: var(--primary-ghost); border-color: var(--ring); color: var(--ink); font-weight: 600; }
+#uhChk .li.done { background: var(--success-bg); border-color: #bbf7d0; color: var(--success); }
+#uhChk .cbead {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px;
+  background: var(--card); border: 1.5px solid var(--line); flex: none;
+}
+#uhChk .li.act .cbead { border-color: var(--primary); color: var(--primary); }
+#uhChk .li.done .cbead { background: var(--success); border-color: var(--success); color: #ffffff; }
+#uhLoading { margin-bottom: 20px; }
+
 /* Findings Stream Card */
 .finding-box {
   background: var(--canvas);
@@ -558,6 +645,25 @@ main.onboarding-app {
   background: #fef3c7;
   color: #b45309;
 }
+
+/* Real Sim finding card (#insightLive, rendered by renderInsightLive()) — its markup/classes are
+   a fixed contract with the honest-empty-state + aha-carry logic, styled here to match the rest of
+   the redesign's card language. */
+#insightLive .card { background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius-2xl); overflow: hidden; box-shadow: var(--shadow); }
+#insightLive .pad { padding: 20px 24px; }
+#insightLive .rescard-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--hairline); }
+#insightLive .rescard-persona span { color: var(--muted); font-size: 13px; margin-left: 8px; font-weight: 400; }
+#insightLive .sentbadge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 6px; font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+#insightLive .sentbadge.rose { background: #fee2e2; color: #b91c1c; }
+#insightLive .sentbadge.green { background: var(--success-bg); color: var(--success); }
+#insightLive .sentbadge.amber { background: var(--warning-bg); color: var(--warning); }
+#insightLive .sentbadge.muted { background: var(--canvas); color: var(--muted); }
+#insightLive .rx-title { font-weight: 650; margin-bottom: 4px; }
+#insightLive .rx-shotwrap { position: relative; margin-top: 16px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+#insightLive .rx-shot { width: 100%; display: block; }
+#insightLive .rx-region { position: absolute; border: 2px solid var(--critical); border-radius: 6px; box-shadow: 0 0 0 4px rgba(220,38,38,.15); }
+#insightLive .rx-pin { position: absolute; top: -24px; left: 0; background: var(--critical); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+#insightLive .rx-cap { margin-top: 12px; font-size: 12px; color: var(--faint); }
 
 /* Results Action Switches */
 .toggle-row {
@@ -595,21 +701,17 @@ main.onboarding-app {
 <!-- ─── HEADER WITH BRAND & PHASE PROGRESS ─── -->
 <header class="top-header">
   <div class="header-inner">
-    <a class="brand-link" href="/">
-      <div class="brand-logo-sq">K</div>
-      <span class="brand-name">Klavity</span>
-    </a>
-
-    <div class="phases-nav" id="topPhasesNav">
-      <span class="phase-badge active" id="phaseBadgeChoice"><span class="phase-dot"></span> 1. Choose Path</span>
-      <span class="phase-badge" id="phaseBadgeAction"><span class="phase-dot"></span> 2. Setup</span>
-      <span class="phase-badge" id="phaseBadgeReview"><span class="phase-dot"></span> 3. Review &amp; Go</span>
+    <div class="header-left">
+      <button type="button" class="back-arrow-btn" id="headerBackBtn" onclick="onboardingPrevStep()" style="visibility: hidden;" aria-label="Back">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <a class="brand-link" href="/">
+        <div class="brand-logo-sq">K</div>
+        <span class="brand-name">Klavity</span>
+      </a>
     </div>
 
-    <button type="button" class="back-btn" id="headerBackBtn" onclick="onboardingPrevStep()" style="visibility: hidden;">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      Back
-    </button>
+    <div class="phases-nav" id="topPhasesNav"></div>
   </div>
 </header>
 
@@ -618,151 +720,184 @@ main.onboarding-app {
   <!-- ═════════ SCREEN 1: WELCOME / PATH FORK (Figma /onboarding/welcome) ═════════ -->
   <section class="ui-view active" id="viewWelcome">
     <div class="screen-header">
-      <div class="screen-kicker">Welcome to Klavity</div>
-      <h1 class="screen-title">How do you want to start?</h1>
-      <p class="screen-subtitle">Choose your onboarding flow — you can access both tools anytime from your dashboard.</p>
+      <div class="screen-kicker">Klavity · Get Started</div>
+      <h1 class="screen-title">How do you want to test your product?</h1>
+      <p class="screen-subtitle">Choose your starting point — you can add the other anytime from the dashboard.</p>
     </div>
 
     <div class="choice-grid">
       <!-- Snap Option -->
       <div class="choice-card" onclick="selectFlowPath('snap')">
-        <span class="choice-pill pill-snap">Free Forever · 2 Min Setup</span>
-        <div class="choice-icon">⚡</div>
-        <h2 class="choice-title">Klavity Snap</h2>
-        <p class="choice-desc">Instant bug reporting for your team and users with automated console logs, network traces, and video replays.</p>
-        <ul class="choice-features">
-          <li><span class="feature-check">✓</span> Chrome extension for instant capture</li>
-          <li><span class="feature-check">✓</span> 1-click video &amp; console logs</li>
-          <li><span class="feature-check">✓</span> Auto-sync to Jira, Linear &amp; GitHub</li>
-          <li><span class="feature-check">✓</span> Embeddable website feedback widget</li>
-        </ul>
-        <button type="button" class="btn-action btn-primary">Start with Snap →</button>
+        <div class="choice-banner banner-snap">
+          <div class="choice-banner-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg></div>
+          <div class="choice-banner-text">
+            <span class="choice-badge">Free · Browser Extension</span>
+            <h2 class="choice-banner-title">Snap</h2>
+          </div>
+        </div>
+        <div class="choice-body">
+          <h3 class="choice-heading">Report bugs instantly</h3>
+          <p class="choice-desc">Right-click anything on your website to file an issue. Screenshot, console errors, and device context captured automatically — straight into Jira, Linear, or GitHub.</p>
+          <span class="choice-link">Get started →</span>
+        </div>
       </div>
 
       <!-- Sim Option -->
       <div class="choice-card" onclick="selectFlowPath('sim')">
-        <span class="choice-pill pill-sim">AI QA Personas · Zero Scripts</span>
-        <div class="choice-icon">🤖</div>
-        <h2 class="choice-title">Klavity Sims</h2>
-        <p class="choice-desc">AI customer personas explore your web app 24/7 like real users, finding broken UX flows, edge cases, and regressions.</p>
-        <ul class="choice-features">
-          <li><span class="feature-check">✓</span> Auto-generate personas from your URL</li>
-          <li><span class="feature-check">✓</span> Autonomous exploratory testing</li>
-          <li><span class="feature-check">✓</span> Live browser replay &amp; visual evidence</li>
-          <li><span class="feature-check">✓</span> Continuous AutoSim test suites</li>
-        </ul>
-        <button type="button" class="btn-action btn-primary">Start with Sims →</button>
+        <div class="choice-banner banner-sim">
+          <div class="choice-banner-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+          <div class="choice-banner-text">
+            <span class="choice-badge">AI · Persona Testing</span>
+            <h2 class="choice-banner-title">Sim</h2>
+          </div>
+        </div>
+        <div class="choice-body">
+          <h3 class="choice-heading">Test like your customers</h3>
+          <p class="choice-desc">AI personas built from real customer interviews browse your live product, react in their voice, and surface exactly where real users get stuck.</p>
+          <span class="choice-link">Get started →</span>
+        </div>
       </div>
     </div>
+    <p style="text-align: center; color: var(--muted); font-size: 14px; margin-top: 24px;">Snap and Sims work together. Start with one — combine them later.</p>
   </section>
 
   <!-- ═════════ SCREEN 2: SNAP INSTALL (Figma /onboarding/snap-install) ═════════ -->
   <section class="ui-view" id="viewSnapInstall">
     <div class="screen-header">
-      <div class="screen-kicker">Snap Setup · Step 1 of 2</div>
-      <h1 class="screen-title">Install Klavity Snap for Chrome</h1>
-      <p class="screen-subtitle">Add our browser extension to capture bugs with full technical context in one click.</p>
+      <div class="screen-kicker">Snap · Install</div>
+      <h1 class="screen-title">Install the Klavity Snap extension</h1>
+      <p class="screen-subtitle">Report issues directly from the website you are testing. No manual screenshots or technical details needed.</p>
     </div>
 
     <div class="form-center-box">
-      <div style="text-align: center; margin-bottom: 28px;">
-        <div style="width: 64px; height: 64px; border-radius: 16px; background: #f0fdf4; color: #15803d; display: grid; place-items: center; font-size: 28px; margin: 0 auto 16px;">⚡</div>
-        <h3 style="font-size: 19px; font-weight: 600; margin-bottom: 6px;">Chrome Web Store Extension</h3>
-        <p style="font-size: 14px; color: var(--muted);">Version 2.4.0 · Over 10,000+ bug reports filed</p>
+      <div class="browser-mock" style="background: var(--card); box-shadow: var(--shadow); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--canvas); border-bottom: 1px solid var(--line);">
+          <span style="width: 9px; height: 9px; border-radius: 50%; background: #f28b82; display: inline-block;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; background: #fbbc04; display: inline-block;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; background: #81c995; display: inline-block;"></span>
+          <span style="margin-left: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted);">chromewebstore.google.com</span>
+        </div>
+        <div style="padding: 20px; display: flex; gap: 14px; align-items: flex-start;">
+          <div style="width: 44px; height: 44px; border-radius: 10px; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 20px; flex: none;">⚡</div>
+          <div>
+            <div style="font-weight: 600; font-size: 15px;">Klavity Snap</div>
+            <div style="font-size: 14px; color: var(--muted); margin-bottom: 8px;">klavity.com</div>
+            <div style="font-size: 12px; color: #d97706; margin-bottom: 10px;">★★★★★ 4.9 · 2,400+ users</div>
+            <p style="font-size: 14px; color: var(--muted); line-height: 1.625; margin: 0;">Point, click, and report issues directly from any website. Klavity Snap automatically captures screenshots, console errors, and device context.</p>
+          </div>
+        </div>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
-        <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer" class="btn-action btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
-          Add to Chrome (Free)
-        </a>
-        <button type="button" class="btn-action btn-secondary" onclick="advanceSnapStep()">I've Installed the Extension →</button>
+      <div id="snapInstallBeforeOpen" style="display: flex; flex-direction: column; gap: 12px;">
+        <button type="button" class="btn-action btn-primary" onclick="snapOpenChromeStore()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Add to Chrome</button>
+        <button type="button" class="btn-action btn-secondary" onclick="snapSkipToAccount()">I'll install it later</button>
       </div>
+      <div id="snapInstallAfterOpen" class="hide">
+        <div class="opened-note">
+          <span class="opened-note-ic">🌐</span>
+          <div><b>Chrome Web Store opened</b><div class="muted">Click <b>Add to Chrome</b> in that tab, then come back here and click Continue.</div></div>
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 16px;">
+          <button type="button" class="btn-action btn-primary" onclick="advanceSnapStep()" style="flex: 2.4;">✓ Continue — extension installed</button>
+          <button type="button" class="btn-action btn-secondary" onclick="snapOpenChromeStore()" style="flex: 1; white-space: nowrap;">↻ Open again</button>
+        </div>
+        <div style="text-align: center; margin-top: 14px;"><button type="button" class="ss-back" style="margin: 0; background: none; border: none; color: var(--faint); font-size: 13px; cursor: pointer;" onclick="snapInstallReset()">Go back</button></div>
+      </div>
+      <p style="text-align: center; font-size: 12px; color: var(--muted); margin-top: 14px;">🛡 Snap only activates when you choose to use it.</p>
     </div>
   </section>
 
-  <!-- ═════════ SCREEN 3: SNAP WEBSITE (Figma /onboarding/snap-website) ═════════ -->
+  <!-- ═════════ SCREEN 3: SNAP CONNECT (Figma /onboarding/snap-connect) ═════════ -->
   <section class="ui-view" id="viewSnapWebsite">
     <div class="screen-header">
-      <div class="screen-kicker">Snap Setup · Step 2 of 2</div>
-      <h1 class="screen-title">Where will you test?</h1>
-      <p class="screen-subtitle">Enter your web application URL to link your bug reports and embed widget.</p>
+      <div class="screen-kicker">Snap · Connect</div>
+      <h1 class="screen-title">Which website do you want to test?</h1>
+      <p class="screen-subtitle">Paste the URL of the product you want to test with Snap.</p>
     </div>
 
     <div class="form-center-box">
+      <input type="hidden" id="projectName" />
       <div class="field-group">
-        <label class="field-label" for="snapTargetUrl">Your Application URL</label>
-        <input type="url" class="text-input font-mono" id="snapTargetUrl" placeholder="https://app.yourproduct.com" />
+        <label class="field-label" for="snapTargetUrl">Website URL</label>
+        <input type="url" class="text-input font-mono" id="snapTargetUrl" placeholder="https://yourproduct.com" oninput="snapConnectSyncDetected()" />
+        <div id="snapConnectDetected" class="detected-note hide"></div>
       </div>
 
-      <div class="field-group">
-        <label class="field-label" for="snapProjName">Project Name</label>
-        <input type="text" class="text-input" id="snapProjName" placeholder="My Awesome App" />
+      <div id="snapConnectBeforeOpen" style="display: flex; gap: 12px;">
+        <button type="button" class="btn-action btn-primary" onclick="snapConnectOpenWebsite()" style="flex: 1;">⚡ Open website</button>
+        <button type="button" class="btn-action btn-secondary" onclick="snapConnectUseDemo()" style="flex: 1;">Use demo website</button>
       </div>
-
-      <button type="button" class="btn-action btn-primary" onclick="completeOnboardingAndGoDashboard()">Complete Setup &amp; Open Dashboard →</button>
+      <div id="snapConnectAfterOpen" class="hide">
+        <div class="opened-note">
+          <span class="opened-note-ic">✓</span>
+          <div><b>Website opened</b><div class="muted" id="snapConnectOpenedUrl"></div></div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted); text-align: center; margin: 14px 0;">Install the Snap extension on that tab, then come back here.</p>
+        <div style="display: flex; gap: 12px;">
+          <button type="button" class="btn-action btn-primary" onclick="snapConnectContinue()" style="flex: 1;">✓ Done — continue</button>
+          <button type="button" class="btn-action btn-secondary" onclick="snapConnectOpenWebsite()" style="flex: 1;">↻ Open again</button>
+        </div>
+      </div>
     </div>
   </section>
 
   <!-- ═════════ SCREEN 4: SIM CONNECT (Figma /onboarding/sim-connect) ═════════ -->
   <section class="ui-view" id="viewSimConnect">
     <div class="screen-header">
-      <div class="screen-kicker">Sims Setup · Step 1 of 3</div>
-      <h1 class="screen-title">Where should your Sims explore?</h1>
-      <p class="screen-subtitle">Point Klavity at your app. We'll generate realistic customer personas to test your user journeys.</p>
+      <div class="screen-kicker">Sim · Connect</div>
+      <h1 class="screen-title">Where should your Sims start?</h1>
+      <p class="screen-subtitle">Give Klavity your product URL. Your AI personas will browse it like real customers and report back.</p>
     </div>
 
     <div class="form-center-box">
       <div class="field-group">
-        <label class="field-label" for="simTargetUrl">Product URL</label>
-        <input type="url" class="text-input font-mono" id="simTargetUrl" placeholder="https://yourproduct.com" />
+        <label class="field-label" for="uhUrl">Product URL</label>
+        <input type="url" class="text-input font-mono" id="uhUrl" placeholder="https://yourproduct.com" oninput="simConnectSyncReady()" />
+        <div id="uhErr" class="field-error"></div>
+        <div id="simConnectReady" class="ready-note hide"></div>
       </div>
 
-      <div class="field-group">
-        <label class="field-label" for="simProjectNameInput">Project Name</label>
-        <input type="text" class="text-input" id="simProjectNameInput" placeholder="Acme SaaS" />
+      <div style="display: flex; gap: 12px;">
+        <button type="button" class="btn-action btn-primary" onclick="simConnectContinue()" style="flex: 1;">Launch Sims →</button>
+        <button type="button" class="btn-action btn-secondary" onclick="simConnectUseDemo()" style="flex: 1;">Use demo site</button>
       </div>
 
-      <button type="button" class="btn-action btn-primary" onclick="startSimLiveExploration()">Launch Sim Exploration →</button>
+      <div class="feature-list">
+        <div class="feature-row"><span class="feature-ic"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span> Opens your site in a real browser — no install needed</div>
+        <div class="feature-row"><span class="feature-ic"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span> AI personas explore exactly like genuine customers</div>
+        <div class="feature-row"><span class="feature-ic"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></span> Read-only — Klavity never modifies your data</div>
+      </div>
     </div>
   </section>
 
-  <!-- ═════════ SCREEN 5: SIM RUNNING (Figma /onboarding/sim-running) ═════════ -->
+  <!-- ═════════ SCREEN 5: SIM TESTING (Figma /onboarding/sim-running) ═════════ -->
   <section class="ui-view" id="viewSimRunning">
     <div class="screen-header">
-      <div class="screen-kicker">Live QA Session · Step 2 of 3</div>
-      <h1 class="screen-title">Sims are exploring your app</h1>
-      <p class="screen-subtitle">Watch as AI customer personas interact with your site, check responsive layouts, and test flows.</p>
+      <div class="screen-kicker"><span class="live-dot"></span> Sims running</div>
+      <h1 class="screen-title">Your Sims are exploring…</h1>
+      <p class="screen-subtitle" id="simRunSubtitle">Your AI personas are live on your product right now.</p>
     </div>
 
-    <div class="running-card">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-family: var(--mono); font-size: 13px; color: var(--primary); font-weight: 600;" id="simLiveStatusText">Starting exploration...</span>
-        <span style="font-family: var(--mono); font-size: 13px; font-weight: 700;" id="simLivePercent">25%</span>
-      </div>
-
+    <div class="running-card" style="text-align: center;">
+      <div id="simRunAvatars" class="sim-run-avatars"></div>
       <div class="progress-bar-wrap">
-        <div class="progress-bar-fill" id="simProgressFill" style="width: 25%;"></div>
+        <div class="progress-bar-fill" id="simRunProgress" style="width: 0%;"></div>
       </div>
+      <div id="simRunStatus" style="font-size: 14px; color: var(--muted); margin-bottom: 24px;">Opening your page…</div>
 
-      <div class="steps-checklist">
-        <div class="step-item done" id="simStep1">
-          <div class="step-icon-bead">✓</div>
-          <span>1. Reading page structure &amp; generating customer personas</span>
-        </div>
-        <div class="step-item active" id="simStep2">
-          <div class="step-icon-bead">2</div>
-          <span>2. Navigating primary user onboarding journeys</span>
-        </div>
-        <div class="step-item" id="simStep3">
-          <div class="step-icon-bead">3</div>
-          <span>3. Inspecting responsive layouts and button interactions</span>
-        </div>
-        <div class="step-item" id="simStep4">
-          <div class="step-icon-bead">4</div>
-          <span>4. Capturing visual evidence and filing findings</span>
-        </div>
+      <!-- Real pipeline state (honest-checklist contract) — drives simRunAvatars/simRunProgress/simRunStatus
+           above via uhChkTo()/uhChkIdle(); kept in the DOM, not visually shown (Figma's Testing screen
+           shows avatars + one status line, not a 4-item checklist). -->
+      <div id="uhLoading" class="hide">
+        <span id="uhLoadTxt">Starting exploration…</span>
       </div>
+      <section id="uhChk" class="steps-checklist hide">
+        <div class="li"><span class="cbead"></span>Reading your page</div>
+        <div class="li"><span class="cbead"></span>Scanning components</div>
+        <div class="li"><span class="cbead"></span>Testing user flows</div>
+        <div class="li"><span class="cbead"></span>Generating report</div>
+      </section>
+      <div id="uhResult" class="hide"></div>
 
       <button type="button" class="btn-action btn-primary" id="viewFindingsBtn" onclick="showSimResultsView()">View Findings →</button>
     </div>
@@ -771,41 +906,70 @@ main.onboarding-app {
   <!-- ═════════ SCREEN 6: SIM RESULTS (Figma /onboarding/sim-results) ═════════ -->
   <section class="ui-view" id="viewSimResults">
     <div class="screen-header">
-      <div class="screen-kicker">Exploration Complete · Step 3 of 3</div>
-      <h1 class="screen-title">Here's what your Sim found</h1>
-      <p class="screen-subtitle">Your AI persona finished exploring and documented this finding with visual evidence.</p>
+      <div class="screen-kicker">Sim · Results</div>
+      <h1 class="screen-title">Klavity found something.</h1>
+      <p class="screen-subtitle">Your Sim finished exploring. Here's the most notable thing it hit.</p>
     </div>
 
     <div class="running-card">
-      <div class="finding-box">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-          <span class="finding-badge badge-critical">Critical Issue</span>
-          <span style="font-family: var(--mono); font-size: 12px; color: var(--muted);">Persona: Elena (First-time visitor)</span>
-        </div>
-        <h3 style="font-size: 17px; font-weight: 600; margin-bottom: 6px;">Form submission failed on signup action</h3>
-        <p style="font-size: 14px; color: var(--muted); line-height: 1.5; font-style: italic;">"When clicking Submit without an invite code, the form spinner froze indefinitely without an inline validation error."</p>
+      <div id="insightLive"></div>
+
+      <p style="margin: 20px 0 0; font-size: 13px; color: var(--muted);">You can connect a tracker (Jira / Linear / GitHub) and turn on AutoSim anytime from your dashboard checklist.</p>
+
+      <div style="margin-top: 20px;">
+        <button type="button" class="btn-action btn-primary" onclick="setUIRoute('account')">Continue →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════ SCREEN 7/8: ACCOUNT · EMAIL + OTP (Figma /onboarding/email, /onboarding/otp) ═════════ -->
+  <section class="ui-view" id="viewAccount">
+    <input type="hidden" id="domain" />
+
+    <div id="s1form">
+      <div class="screen-header" style="text-align: center;">
+        <div class="account-icon-box"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5 6h14l2 7v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5l2-7Z"/></svg></div>
+        <div class="screen-kicker">Account · Email</div>
+        <h1 class="screen-title">What's your work email?</h1>
+        <p class="screen-subtitle">We'll send a one-time code to verify it's you. No password needed.</p>
       </div>
 
-      <div style="margin-top: 24px;">
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title">Sync findings to Issue Tracker</div>
-            <div class="toggle-desc">Automatically create tickets in Jira / Linear / GitHub when bugs are discovered</div>
+      <div class="form-center-box centered">
+        <div class="field-group">
+          <div class="icon-input-wrap">
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="icon-input-ic"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5 6h14l2 7v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5l2-7Z"/></svg>
+            <input type="email" class="icon-input" id="email" placeholder="you@company.com" oninput="accountSyncEmailValid()" />
+            <svg id="emailValidTick" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="icon-input-tick hide"><path d="M20 6 9 17l-5-5"/></svg>
           </div>
-          <input type="checkbox" class="switch-input" checked />
+          <div id="s1err" class="field-error"></div>
         </div>
+        <button type="button" class="btn-action btn-primary" id="createBtn" onclick="requestCode()">Send verification code →</button>
+        <p style="text-align: center; font-size: 12px; color: var(--faint); margin-top: 14px;">By continuing you agree to Klavity's Terms of Service and Privacy Policy.</p>
+      </div>
+    </div>
 
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title">Enable Daily AutoSims</div>
-            <div class="toggle-desc">Run autonomous regression checks on every deployment and release</div>
-          </div>
-          <input type="checkbox" class="switch-input" checked />
-        </div>
+    <div id="s1code" class="hide">
+      <div class="screen-header" style="text-align: center;">
+        <div class="account-icon-box"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></div>
+        <div class="screen-kicker">Account · Verify</div>
+        <h1 class="screen-title">Check your inbox</h1>
+        <p class="screen-subtitle">We sent a 6-digit code to <b id="codeEmail"></b>.</p>
       </div>
 
-      <div style="margin-top: 28px;">
-        <button type="button" class="btn-action btn-primary" onclick="completeOnboardingAndGoDashboard()">Go to My Dashboard →</button>
+      <div class="form-center-box centered">
+        <input type="hidden" id="code" />
+        <div id="devNote" class="hide" style="text-align: center; font-size: 12px; color: var(--primary); background: var(--primary-ghost); border-radius: 999px; padding: 6px 14px; margin: 0 auto 18px; display: inline-block;"></div>
+        <div class="otp-digits" id="otpDigits" role="group" aria-label="6-digit verification code">
+          <input class="otp-digit" type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code" />
+          <input class="otp-digit" type="text" inputmode="numeric" maxlength="1" />
+          <input class="otp-digit" type="text" inputmode="numeric" maxlength="1" />
+          <input class="otp-digit" type="text" inputmode="numeric" maxlength="1" />
+          <input class="otp-digit" type="text" inputmode="numeric" maxlength="1" />
+          <input class="otp-digit" type="text" inputmode="numeric" maxlength="1" />
+        </div>
+        <div id="s1cerr" class="field-error" style="text-align: center;"></div>
+        <button type="button" class="btn-action btn-primary" id="verifyBtn" onclick="verifyCode()">Verify and go to dashboard →</button>
+        <p style="text-align: center; font-size: 13px; color: var(--muted); margin-top: 14px;">Didn't get it? <a href="#" onclick="event.preventDefault(); requestCode()" style="color: var(--primary); font-weight: 600;">Resend code</a> · <a href="#" onclick="event.preventDefault(); backToEmail()" style="color: var(--primary); font-weight: 600;">Change email</a></p>
       </div>
     </div>
   </section>
@@ -816,46 +980,56 @@ main.onboarding-app {
 // Flow Navigation State
 let activeFlow = 'welcome';
 let navHistory = ['welcome'];
+// Which goal the visible wizard is on — independent of the legacy `goal` variable (declared in the
+// hidden-contract script block below) so the two UIs never fight over the same state.
+let uiGoal = null
+
+// Per-goal stepper, matching the new Figma screens' top rail exactly (Snap: Install → Connect →
+// Account · Sims: Connect → Testing → Results → Account). Falls back to the persisted goal
+// (?goal=/localStorage) so a reload mid-flow still renders the right rail.
+function uiRailModel() {
+  const g = uiGoal || (function(){ try { return localStorage.getItem('klav-onboarding-goal') } catch(e){ return null } })()
+  if (g === 'snap') return { labels: ['Install', 'Connect', 'Account'], phaseOf: { snapInstall: 0, snapWebsite: 1, account: 2 } }
+  return { labels: ['Connect', 'Testing', 'Results', 'Account'], phaseOf: { simConnect: 0, simRunning: 1, simResults: 2, account: 3 } }
+}
 
 function updateHeaderNav() {
-  const badgeChoice = document.getElementById('phaseBadgeChoice');
-  const badgeAction = document.getElementById('phaseBadgeAction');
-  const badgeReview = document.getElementById('phaseBadgeReview');
+  const nav = document.getElementById('topPhasesNav');
   const backBtn = document.getElementById('headerBackBtn');
-
   backBtn.style.visibility = activeFlow === 'welcome' ? 'hidden' : 'visible';
-
-  if (activeFlow === 'welcome') {
-    badgeChoice.className = 'phase-badge active';
-    badgeAction.className = 'phase-badge';
-    badgeReview.className = 'phase-badge';
-  } else if (activeFlow === 'snapInstall' || activeFlow === 'simConnect') {
-    badgeChoice.className = 'phase-badge done';
-    badgeAction.className = 'phase-badge active';
-    badgeReview.className = 'phase-badge';
-  } else if (activeFlow === 'snapWebsite' || activeFlow === 'simRunning' || activeFlow === 'simResults') {
-    badgeChoice.className = 'phase-badge done';
-    badgeAction.className = 'phase-badge done';
-    badgeReview.className = 'phase-badge active';
-  }
+  if (!nav) return
+  if (activeFlow === 'welcome') { nav.innerHTML = ''; return }
+  const model = uiRailModel()
+  const active = model.phaseOf[activeFlow] != null ? model.phaseOf[activeFlow] : 0
+  const CHECK = '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+  nav.innerHTML = model.labels.map(function(label, i){
+    const done = i < active, isActive = i === active
+    const cls = done ? 'phase-step done' : (isActive ? 'phase-step active' : 'phase-step')
+    const bead = '<span class="phase-bead">' + (done ? CHECK : (i + 1)) + '</span>'
+    const step = '<span class="' + cls + '">' + bead + label + '</span>'
+    const bar = i < model.labels.length - 1 ? '<span class="phase-bar' + (done ? ' done' : '') + '"></span>' : ''
+    return step + bar
+  }).join('')
 }
 
 function setUIRoute(route) {
   activeFlow = route;
   document.querySelectorAll('.ui-view').forEach(v => v.classList.remove('active'));
-  
+
   if (route === 'welcome') document.getElementById('viewWelcome').classList.add('active');
   if (route === 'snapInstall') document.getElementById('viewSnapInstall').classList.add('active');
   if (route === 'snapWebsite') document.getElementById('viewSnapWebsite').classList.add('active');
   if (route === 'simConnect') document.getElementById('viewSimConnect').classList.add('active');
   if (route === 'simRunning') document.getElementById('viewSimRunning').classList.add('active');
-  if (route === 'simResults') document.getElementById('viewSimResults').classList.add('active');
+  if (route === 'simResults') { document.getElementById('viewSimResults').classList.add('active'); if (typeof renderInsightLive === 'function') renderInsightLive() }
+  if (route === 'account') document.getElementById('viewAccount').classList.add('active');
 
   updateHeaderNav();
 }
 
 function selectFlowPath(pathType) {
   navHistory.push(activeFlow);
+  uiGoal = (pathType === 'snap') ? 'snap' : 'sims'
   if (pathType === 'snap') {
     persistGoal('snap');
     setUIRoute('snapInstall');
@@ -870,6 +1044,39 @@ function advanceSnapStep() {
   setUIRoute('snapWebsite');
 }
 
+// "I'll install it later" (Figma): skips Snap · Connect entirely, straight to Account — confirmed by
+// clicking through the real Figma prototype, whose stepper shows "Connect" already checked off on
+// arrival at Account via this path. uiRailModel's phaseOf already marks any phase before the active
+// one as done, so the stepper's "Connect ✓" falls out of this for free. Since Connect never ran here,
+// no URL was ever collected — requestCode() requires a non-empty project name, so fall back to a
+// generic one (renameable later from the dashboard) rather than dead-ending on a hidden field.
+function snapSkipToAccount() {
+  const pn = document.getElementById('projectName')
+  if (pn && !pn.value.trim()) pn.value = 'Default Project'
+  navHistory.push(activeFlow);
+  setUIRoute('account');
+}
+
+// Two-phase reveal matching Figma: opening the Chrome Web Store swaps the CTA row for a
+// "Chrome Web Store opened" confirmation + Continue/Open again, instead of leaving "Add to Chrome"
+// as a dead-end link with no way back into the flow.
+function snapOpenChromeStore() {
+  window.open('https://chromewebstore.google.com/search/Klavity', '_blank', 'noopener')
+  const before = document.getElementById('snapInstallBeforeOpen')
+  const after = document.getElementById('snapInstallAfterOpen')
+  if (before) before.classList.add('hide')
+  if (after) after.classList.remove('hide')
+}
+
+// "Go back" (Figma): resets THIS screen to its initial state — it does not navigate to the
+// previous screen (that's the header's own back arrow).
+function snapInstallReset() {
+  const before = document.getElementById('snapInstallBeforeOpen')
+  const after = document.getElementById('snapInstallAfterOpen')
+  if (after) after.classList.add('hide')
+  if (before) before.classList.remove('hide')
+}
+
 function onboardingPrevStep() {
   if (navHistory.length > 0) {
     const prev = navHistory.pop();
@@ -879,30 +1086,102 @@ function onboardingPrevStep() {
   }
 }
 
-function startSimLiveExploration() {
-  const urlInp = document.getElementById('simTargetUrl');
-  const urlVal = urlInp ? urlInp.value.trim() : '';
-  if (urlVal && typeof window.uhFetch === 'function') {
-    const hiddenInp = document.getElementById('uhUrl');
-    if (hiddenInp) hiddenInp.value = urlVal;
-    window.uhFetch();
-  }
+// ── Snap · Connect → Account. Snap doesn't run the persona pipeline — it just needs the target
+// site to name the project (and, best-effort, the account's domain). ──
+function snapConnectContinue() {
+  const urlInp = document.getElementById('snapTargetUrl')
+  const url = urlInp ? urlInp.value.trim() : ''
+  try {
+    if (url) {
+      const host = new URL(url.startsWith('http') ? url : 'https://' + url).hostname.replace(/^www\./, '')
+      const dm = document.getElementById('domain'); if (dm && !dm.value.trim()) dm.value = host
+      const pn = document.getElementById('projectName'); if (pn && !pn.value.trim() && typeof deriveName === 'function') pn.value = deriveName(host)
+    }
+  } catch(e){}
+  navHistory.push(activeFlow);
+  setUIRoute('account');
+}
+
+// "Detected: <name>" confirmation as soon as the URL looks valid — matches the Figma Snap · Connect screen.
+function snapConnectSyncDetected() {
+  const inp = document.getElementById('snapTargetUrl')
+  const note = document.getElementById('snapConnectDetected')
+  if (!inp || !note) return
+  const raw = inp.value.trim()
+  try {
+    const host = new URL(raw.startsWith('http') ? raw : 'https://' + raw).hostname.replace(/^www\./, '')
+    const name = typeof deriveName === 'function' ? deriveName(host) : host
+    if (raw && host.includes('.')) { note.textContent = '✓ Detected: ' + name; note.classList.remove('hide'); return }
+  } catch(e){}
+  note.classList.add('hide')
+}
+
+// "Open website" → real external tab + the two-phase "Website opened" confirmation, matching Figma
+// (same pattern as Snap · Install's "Add to Chrome" reveal).
+function snapConnectOpenWebsite() {
+  const inp = document.getElementById('snapTargetUrl')
+  let url = inp ? inp.value.trim() : ''
+  if (!url) { snapConnectSyncDetected(); if (inp) inp.focus(); return }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  window.open(url, '_blank', 'noopener')
+  const label = document.getElementById('snapConnectOpenedUrl'); if (label) label.textContent = url
+  const before = document.getElementById('snapConnectBeforeOpen'); if (before) before.classList.add('hide')
+  const after = document.getElementById('snapConnectAfterOpen'); if (after) after.classList.remove('hide')
+}
+
+// "Use demo website" — same canned demo used on Sim · Connect, so a visitor with nothing to point
+// Snap at yet can still see the flow through to signup.
+function snapConnectUseDemo() {
+  const inp = document.getElementById('snapTargetUrl')
+  if (inp) { inp.value = 'https://klavity.in'; snapConnectSyncDetected() }
+  snapConnectContinue()
+}
+
+// Account · Email — live checkmark once the address looks valid, matching Figma.
+function accountSyncEmailValid() {
+  const inp = document.getElementById('email')
+  const tick = document.getElementById('emailValidTick')
+  if (!inp || !tick) return
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inp.value.trim())
+  tick.classList.toggle('hide', !ok)
+}
+
+// ── Sim · Connect → Testing. Kicks off the REAL persona/preview pipeline (window.uhFetch, wired
+// to #uhUrl/#uhErr/#uhResult, which now live on the Connect/Testing screens) instead of a fake timer. ──
+function simConnectContinue() {
+  const inp = document.getElementById('uhUrl')
+  const url = inp ? inp.value.trim() : ''
+  if (!url) { const e = document.getElementById('uhErr'); if (e) e.textContent = 'Enter your product URL.'; if (inp) inp.focus(); return }
+  try {
+    const host = new URL(url.startsWith('http') ? url : 'https://' + url).hostname.replace(/^www\./, '')
+    const dm = document.getElementById('domain'); if (dm && !dm.value.trim()) dm.value = host
+    const pn = document.getElementById('projectName'); if (pn && !pn.value.trim() && typeof deriveName === 'function') pn.value = deriveName(host)
+  } catch(e){}
   navHistory.push(activeFlow);
   setUIRoute('simRunning');
+  if (typeof window.uhFetch === 'function') window.uhFetch()
+}
 
-  let pct = 25;
-  const timer = setInterval(() => {
-    pct = Math.min(100, pct + 25);
-    document.getElementById('simProgressFill').style.width = pct + '%';
-    document.getElementById('simLivePercent').textContent = pct + '%';
-    if (pct >= 50) document.getElementById('simStep2').className = 'step-item done';
-    if (pct >= 75) document.getElementById('simStep3').className = 'step-item done';
-    if (pct >= 100) {
-      document.getElementById('simStep4').className = 'step-item done';
-      document.getElementById('simLiveStatusText').textContent = 'Exploration complete!';
-      clearInterval(timer);
-    }
-  }, 1000);
+// "Ready: <name>" confirmation as soon as the URL looks valid — matches the Figma Sim · Connect screen.
+function simConnectSyncReady() {
+  const inp = document.getElementById('uhUrl')
+  const ready = document.getElementById('simConnectReady')
+  if (!inp || !ready) return
+  const raw = inp.value.trim()
+  try {
+    const host = new URL(raw.startsWith('http') ? raw : 'https://' + raw).hostname.replace(/^www\./, '')
+    const name = typeof deriveName === 'function' ? deriveName(host) : host
+    if (raw && host.includes('.')) { ready.textContent = '✓ Ready: ' + name; ready.classList.remove('hide'); return }
+  } catch(e){}
+  ready.classList.add('hide')
+}
+
+// "Use demo site" — same Klavity marketing site used elsewhere as the canned aha demo, so a visitor
+// with nothing to point Sims at yet can still see the real pipeline run end-to-end.
+function simConnectUseDemo() {
+  const inp = document.getElementById('uhUrl')
+  if (inp) { inp.value = 'https://klavity.in'; simConnectSyncReady() }
+  simConnectContinue()
 }
 
 function showSimResultsView() {
@@ -917,24 +1196,55 @@ async function completeOnboardingAndGoDashboard() {
   window.location.href = '/dashboard';
 }
 
+// ── OTP digit boxes: 6 visible single-char inputs, kept in sync with the real hidden #code
+// input verifyCode() reads. Auto-advances on entry, un-advances on backspace, and supports
+// pasting the whole code into any box. ──
+document.addEventListener('DOMContentLoaded', () => {
+  const wrap = document.getElementById('otpDigits')
+  if (!wrap) return
+  const boxes = Array.from(wrap.querySelectorAll('.otp-digit'))
+  const codeInput = document.getElementById('code')
+  function sync() { if (codeInput) codeInput.value = boxes.map(b => b.value).join('') }
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', () => {
+      box.value = box.value.replace(/[^0-9]/g, '').slice(0, 1)
+      if (box.value && boxes[i + 1]) boxes[i + 1].focus()
+      sync()
+    })
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !box.value && boxes[i - 1]) boxes[i - 1].focus()
+    })
+    box.addEventListener('paste', (e) => {
+      const text = (e.clipboardData || window.clipboardData).getData('text').replace(/[^0-9]/g, '')
+      if (!text) return
+      e.preventDefault()
+      boxes.forEach((b, j) => { b.value = text[j] || '' })
+      sync()
+      const next = boxes[Math.min(text.length, boxes.length - 1)]; if (next) next.focus()
+    })
+  })
+})
+
 // Prefill from URL param ?url=
 document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   const u = params.get('url');
   if (u) {
-    const simInp = document.getElementById('simTargetUrl');
+    const simInp = document.getElementById('uhUrl');
     const snapInp = document.getElementById('snapTargetUrl');
     if (simInp) simInp.value = u;
     if (snapInp) snapInp.value = u;
     try {
       const host = new URL(u.startsWith('http') ? u : 'https://' + u).hostname.replace(/^www\./, '');
-      const proj = host.split('.')[0];
-      const pName = proj.charAt(0).toUpperCase() + proj.slice(1);
-      if (document.getElementById('simProjectNameInput')) document.getElementById('simProjectNameInput').value = pName;
-      if (document.getElementById('snapProjName')) document.getElementById('snapProjName').value = pName;
+      const pName = typeof deriveName === 'function' ? deriveName(host) : host;
+      if (document.getElementById('projectName')) document.getElementById('projectName').value = pName;
     } catch(e) {}
   }
 });
+
+// Note: refresh intentionally always lands on Welcome (per explicit product decision) — a prior
+// version of this file auto-resumed into the last-picked Snap/Sim path via the persisted goal
+// signal, but that made refresh behavior feel inconsistent/surprising, so it was removed.
 </script>
 
 <!-- ═════════ HIDDEN BACKWARD-COMPATIBLE CONTRACT BLOCK ═════════ -->
@@ -1111,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', () => {
       var bead=items[i].querySelector('.cbead')
       if(bead) bead.innerHTML=done?CHECK_SVG:(act?'•':'')
     }
+    if(typeof window.renderSimRunVisual==='function') window.renderSimRunVisual(stage,true)
   }
   // like uhChkTo but leaves `stage` neutral (not active) — used when the pipeline stopped short
   // so we never show a spinner for work that isn't happening.
@@ -1123,8 +1434,39 @@ document.addEventListener('DOMContentLoaded', () => {
       var bead=items[i].querySelector('.cbead')
       if(bead) bead.innerHTML=i<stage?CHECK_SVG:''
     }
+    if(typeof window.renderSimRunVisual==='function') window.renderSimRunVisual(stage,false)
   }
   window.uhChkTo=uhChkTo; window.uhChkIdle=uhChkIdle
+
+  // ── Sim · Testing visual (Figma: avatar circles + one progress bar + one status line) — driven by
+  // the SAME real stage signals as the honest checklist above (uhChkTo/uhChkIdle), just rendered
+  // differently. isActive=false (uhChkIdle) means the pipeline stopped short, so freeze rather than
+  // imply work that isn't happening.
+  var SS_STAGE_TEXT={0:'Opening your page…',1:'Meeting your customers…',2:'Exploring navigation…',3:'Reviewing what they found…',4:'Wrapping up…'}
+  function renderSimRunVisual(stage,isActive){
+    var av=document.getElementById('simRunAvatars'), bar=document.getElementById('simRunProgress'), status=document.getElementById('simRunStatus'), sub=document.getElementById('simRunSubtitle')
+    if(!av&&!bar&&!status) return
+    if(av&&stage===0){ av.dataset.rendered=''; av.innerHTML=''; window._ssRunPersonas=null }
+    var personas=window._ssRunPersonas||[]
+    if(av&&personas.length&&!av.dataset.rendered){
+      av.dataset.rendered='1'
+      av.innerHTML=personas.slice(0,4).map(function(p){
+        var nm=p.name||'Sim'
+        return '<div class="sim-run-av"><div class="av-circle" style="background:'+esc(p.accent||accentFor(nm))+'">'+esc(p.initials||initials(nm))+'</div>'
+          +'<div class="sim-run-name">'+esc(nm)+'</div>'
+          +(p.role?'<div class="sim-run-role">'+esc(p.role)+'</div>':'')+'</div>'
+      }).join('')
+      if(sub){
+        var host=''
+        try{ var u=document.getElementById('uhUrl'); host=u&&u.value?new URL(u.value.trim().startsWith('http')?u.value.trim():'https://'+u.value.trim()).hostname.replace(/^www\./,''):'' }catch(e){}
+        var n=personas.length
+        sub.textContent=(n===1?'One AI persona is':n+' AI personas are')+' live'+(host?(' on '+host):'')+' right now.'
+      }
+    }
+    if(bar) bar.style.width=Math.min(100,Math.round((Math.min(stage,4)/4)*100))+'%'
+    if(status) status.textContent=isActive?(SS_STAGE_TEXT[stage]||'Exploring…'):'Paused — ' + (SS_STAGE_TEXT[stage]||'reviewing what came back')
+  }
+  window.renderSimRunVisual=renderSimRunVisual
 
   function uhSetLoading(on){
     var lo=document.getElementById('uhLoading'), go=document.getElementById('uhGo'), txt=document.getElementById('uhLoadTxt')
@@ -1142,6 +1484,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function uhShowPersonas(url, personas){
     var r=document.getElementById('uhResult'); if(!r) return
+    // Stash for the Sim · Testing screen's avatar row (renderSimRunVisual) — the only place these
+    // personas are known before the pipeline finishes.
+    if(personas&&personas.length) window._ssRunPersonas=personas
     if(!personas||!personas.length){
       // empty cast (after retry): tick what genuinely happened, nothing active — the fetch
       // completed but produced no Sims, so item 1 stays honest-ticked and the rest stay neutral.
@@ -1821,9 +2166,9 @@ async function requestCode(){
   // Already signed in: skip the second OTP — name the project and move on.
   if (signedIn) {
     const b = $('createBtn'); b.disabled = true; b.textContent = 'Creating…'
-    // Tightened path: signup → Install (the activation moment) for BOTH forks. Tracker / plan /
-    // AutoSim / more-Sims are deferred to the dashboard "Finish setting up Klavity" checklist.
-    try { await applyProjectName(); go(S.INSTALL) }
+    // New Figma flow: Account is the wizard's last step for both goals — straight to the dashboard
+    // from here. Tracker / plan / AutoSim / more-Sims stay deferred to the dashboard checklist.
+    try { await applyProjectName(); await completeOnboardingAndGoDashboard() }
     catch(e){ err.textContent = 'Network error — try again.' }
     finally { b.disabled = false; b.textContent = 'Create project →' }
     return
@@ -1839,18 +2184,22 @@ async function requestCode(){
     $('codeEmail').textContent = email
     $('s1form').classList.add('hide')
     $('s1code').classList.remove('hide')
+    const otpBoxes = document.querySelectorAll('#otpDigits .otp-digit')
     if (data.devCode) {
       const dn = $('devNote'); dn.classList.remove('hide')
       dn.innerHTML = 'Dev mode — your code is <code>' + esc(data.devCode) + '</code>'
       $('code').value = data.devCode
+      otpBoxes.forEach((b, i) => { b.value = String(data.devCode)[i] || '' })
     }
-    $('code').focus()
+    if (otpBoxes[0]) otpBoxes[0].focus(); else $('code').focus()
   } catch(e){ err.textContent = 'Network error — try again.' }
   finally { btn.disabled = false; btn.textContent = 'Create project →' }
 }
 function backToEmail(){
   $('s1code').classList.add('hide'); $('s1form').classList.remove('hide')
   $('s1cerr').textContent = ''; $('devNote').classList.add('hide')
+  document.querySelectorAll('#otpDigits .otp-digit').forEach(b => { b.value = '' })
+  $('code').value = ''
 }
 
 // ── Signup — verify OTP → sign in → name the default project → advance. ──
@@ -1877,9 +2226,10 @@ async function verifyCode(){
       try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}
     }
     await applyProjectName()
-    // Tightened path: straight to Install after the account is created (aha already happened before
-    // signup). Deferred setup (tracker / plan / AutoSim / more Sims) lives on the dashboard checklist.
-    go(S.INSTALL)
+    // New Figma flow: straight to the dashboard after the account is created (aha already happened
+    // before signup). Deferred setup (tracker / plan / AutoSim / more Sims) lives on the dashboard
+    // checklist; Snap's widget install already happened earlier in ITS flow (Install → Connect).
+    await completeOnboardingAndGoDashboard()
   } catch(e){ err.textContent = 'Network error — try again.' }
   finally { btn.disabled = false; btn.textContent = 'Verify & create →' }
 }

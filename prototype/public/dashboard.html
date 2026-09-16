@@ -115,25 +115,38 @@ body[data-view="settings"] [data-view]:not([data-view~="settings"]),
 body[data-view="autosims"] [data-view]:not([data-view~="autosims"]),
 body[data-view="guards"] [data-view]:not([data-view~="guards"]),
 body[data-view="pagebugs"] [data-view]:not([data-view~="pagebugs"]),
-body[data-view="recurring"] [data-view]:not([data-view~="recurring"]){display:none!important}
+body[data-view="recurring"] [data-view]:not([data-view~="recurring"]),
+body[data-view="sims-studio"] [data-view]:not([data-view~="sims-studio"]){display:none!important}
 /* ── Snap view — report-widget install + live detect ──────────────────── */
-.snap-view{padding:22px 26px 32px;max-width:760px}
-.snap-view h1{font-family:var(--display);font-weight:450;font-size:28px;letter-spacing:-.02em;margin-bottom:4px}
-.snap-view .snap-view-sub{font-size:15px;color:var(--paper-dim);margin-bottom:24px;line-height:1.55}
+/* Figma centers this view's content column (max-w-960px, mx-auto) inside the remaining area next
+   to the sidebar — it is NOT flush-left against .wrap's padding like most other dashboard views. */
+.snap-view{max-width:960px;margin:0 auto;padding:0 0 32px}
+/* Figma's secondary-text tone on this page (#6b6055) sits between our --paper-dim and --paper-faint
+   tokens — scope it locally rather than touching those shared globals. Dark mode keeps the existing
+   --paper-dim behavior (no Figma dark reference exists to match against). */
+.snap-view{--snap-dim:#6b6055}
+[data-theme="dark"] .snap-view{--snap-dim:var(--paper-dim)}
+.snap-view h1{font-family:var(--display);font-weight:460;font-size:38px;letter-spacing:-.38px;line-height:1.25;margin-bottom:4px}
+.snap-view .snap-view-sub{font-size:15px;color:var(--snap-dim);margin-bottom:24px;line-height:1.625}
+.snap-view .btn{font-size:14px;font-weight:500}
+.snap-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:28px}
+.snap-tab{background:none;border:none;border-bottom:2px solid transparent;padding:10px 4px;margin-right:24px;font-family:var(--body);font-size:14px;font-weight:500;color:var(--snap-dim);cursor:pointer}
+.snap-tab.on{color:var(--indigo);border-bottom-color:var(--indigo)}
+.snap-tab:not(.on):hover{color:var(--ink)}
 .snap-hero-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}
 @media(max-width:600px){.snap-hero-steps{grid-template-columns:1fr}}
-.snap-hero-step{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:16px 15px;text-align:left}
-.snap-hero-step .sh-n{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--amber);margin-bottom:8px;text-transform:uppercase}
-.snap-hero-step h4{font-size:13px;font-weight:600;margin-bottom:4px;color:var(--paper)}
-.snap-hero-step p{font-size:12px;color:var(--paper-dim);line-height:1.5}
+.snap-hero-step{background:var(--ink-2);border:1px solid var(--line);border-radius:14px;padding:16px 15px;text-align:left;box-shadow:0 1px 3px rgba(25,20,15,.06)}
+.snap-hero-step .sh-n{font-family:var(--mono);font-weight:600;font-size:10px;letter-spacing:.18em;color:var(--amber);margin-bottom:8px;text-transform:uppercase}
+.snap-hero-step h4{font-size:15px;font-weight:600;line-height:1.375;margin-bottom:4px;color:var(--paper)}
+.snap-hero-step p{font-size:14px;color:var(--snap-dim);line-height:1.625}
 .snap-embed-card{background:var(--ink-2);border:1px solid rgba(217,131,36,.3);border-radius:16px;padding:20px 22px;margin-bottom:20px}
 .snap-embed-card h3{font-size:15px;font-weight:600;margin-bottom:4px;color:var(--paper);display:flex;align-items:center;gap:8px}
-.snap-embed-card .sec{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber)}
-.snap-embed-card p{font-size:13px;color:var(--paper-dim);line-height:1.5;margin-bottom:14px}
+.snap-embed-card .sec{font-family:var(--mono);font-weight:600;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber)}
+.snap-embed-card p{font-size:14px;color:var(--snap-dim);line-height:1.43;margin-bottom:14px}
 .snap-embed-row{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
-.snap-embed-row code{flex:1;min-width:0;background:#0c0a08;border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-family:var(--mono);font-size:11.5px;color:#e8e0d4;word-break:break-all;line-height:1.55}
+.snap-embed-row code{flex:1;min-width:0;background:#161310;border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-family:var(--mono);font-weight:400;font-size:12.5px;color:#e8e3db;word-break:break-all;line-height:1.625}
 [data-theme="dark"] .snap-embed-row code{background:var(--ink-3)}
-.snap-detect{margin-top:12px;display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);transition:border-color .3s,color .3s,background .3s}
+.snap-detect{margin-top:12px;display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:1px solid rgba(217,131,36,.3);border-radius:999px;background:rgba(217,131,36,.08);font-family:var(--mono);font-size:11.5px;color:var(--amber);transition:border-color .3s,color .3s,background .3s}
 .snap-detect .sdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0;animation:sdpulse 1.6s ease infinite}
 .snap-detect.ok{border-color:var(--green);color:var(--green);background:rgba(15,157,107,.07)}
 .snap-detect.ok .sdot{background:var(--green);animation:none}
@@ -710,6 +723,82 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 body[data-view="sims"] .grid>.card[data-view~="sims"]{grid-column:1/-1}
 body[data-view="team"] .grid>.card[data-view~="team"]{grid-column:1/-1;max-width:820px}
 body[data-view="recurring"] .grid>.card[data-view~="recurring"]{grid-column:1/-1}
+
+/* ── Sims Studio — the guided "run a customer review" wizard (Customers→Experience→Goal→Review→Insights) ── */
+/* Figma shows no repeated "Sims Studio" page title inside the wizard itself — once you click
+   "Start a review" the generic .head greeting disappears entirely, replaced by the step stepper. */
+body[data-view="sims-studio"] .head,body[data-view="snap"] .head{display:none}
+.ss-wrap{max-width:796px;margin:0 auto;padding:8px 4px 60px}
+/* full-bleed white bar (breaks out of .wrap's 36px/32px page padding) — Figma runs the stepper
+   edge-to-edge under the top nav, distinct from the centered 796px wizard column below it. */
+.ss-crumbs-bar{margin:-36px -32px 24px;padding:14px 32px;background:var(--ink-2);border-bottom:1px solid var(--line)}
+.ss-crumbs{display:flex;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap}
+.ss-crumb{display:flex;align-items:center;gap:6px;color:var(--paper-faint)}
+.ss-crumb b{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--paper-dim);color:var(--ink-2);font-size:11px;font-weight:700}
+.ss-crumb.done{color:var(--indigo)}
+.ss-crumb.done b{background:var(--indigo);color:#fff}
+.ss-crumb.active{color:var(--ink)}
+.ss-crumb.active b{background:var(--indigo);color:#fff}
+.ss-crumb-sep{color:var(--paper-faint)}
+.ss-step{display:none}
+.ss-step.active{display:block}
+.ss-back{background:none;border:none;color:var(--paper-faint);cursor:pointer;font-size:13px;padding:0;margin-bottom:14px}
+.ss-back:hover{color:var(--ink)}
+.ss-title{font-family:var(--display);font-size:30px;font-weight:600;margin:0 0 8px}
+.ss-sub{color:var(--paper-faint);margin:0 0 24px;max-width:640px}
+.ss-search{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--ink-2);color:var(--ink);font-size:14px;margin-bottom:18px}
+.ss-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+@media (max-width:720px){.ss-grid{grid-template-columns:1fr}}
+.ss-cust-card{background:var(--ink-2);border:1.5px solid var(--line);border-radius:16px;padding:18px;cursor:pointer;transition:border-color .15s ease}
+.ss-cust-card:hover{border-color:var(--indigo)}
+.ss-cust-card.sel{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo)}
+.ss-cust-hd{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ss-cust-hd .av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex:none}
+.ss-cust-name{font-weight:650;font-size:14.5px}
+.ss-cust-role{font-size:12.5px;color:var(--paper-faint)}
+.ss-cust-goal-lbl{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint);margin:10px 0 3px}
+.ss-cust-goal{font-size:13px;color:var(--ink);margin-bottom:8px}
+.ss-cust-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.ss-tag{font-size:11px;background:var(--ink);color:var(--ink-2);border-radius:999px;padding:2px 9px}
+.ss-cust-ft{display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.ss-select-pill{font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--ink-2)}
+.ss-cust-card.sel .ss-select-pill{background:var(--indigo);color:#fff;border-color:var(--indigo)}
+.ss-footer{display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-top:8px}
+.ss-radio-card{display:flex;align-items:flex-start;gap:12px;border:1.5px solid var(--line);border-radius:14px;padding:18px;margin-bottom:12px;cursor:pointer}
+.ss-radio-card.sel{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo)}
+.ss-radio-card input[type=radio]{margin-top:3px}
+.ss-radio-card b{display:block;margin-bottom:3px}
+.ss-radio-card .muted{font-size:13px}
+.ss-another-url{width:100%;margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--ink-2);font-size:13.5px}
+.ss-check-row{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--paper-faint);margin:14px 0 22px}
+.ss-goal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
+@media (max-width:720px){.ss-goal-grid{grid-template-columns:1fr}}
+.ss-goal-tile{border:1.5px solid var(--line);border-radius:14px;padding:16px;cursor:pointer}
+.ss-goal-tile.sel{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo)}
+.ss-goal-tile b{display:block;font-size:14.5px;margin-bottom:4px}
+.ss-goal-tile span{font-size:13px;color:var(--paper-faint)}
+.ss-custom-lbl{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:8px}
+.ss-custom-goal{width:100%;min-height:90px;border-radius:12px;border:1px solid var(--line);background:var(--ink-2);color:var(--ink);font-size:14px;padding:12px;font-family:inherit;resize:vertical}
+.ss-review-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;margin-bottom:20px;overflow:hidden}
+.ss-review-row{display:flex;align-items:baseline;justify-content:space-between;gap:20px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.ss-review-row:last-child{border-bottom:none}
+.ss-review-row span:first-child{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--paper-faint)}
+.ss-review-row span:last-child{font-weight:600;text-align:right}
+.ss-run-card{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:40px 32px;text-align:center}
+.ss-run-avatars{display:flex;justify-content:center;gap:14px;margin-bottom:22px}
+.ss-run-avatars .av{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;animation:ssPulse 1.6s ease-in-out infinite}
+.ss-run-avatars .av:nth-child(2){animation-delay:.2s}
+.ss-run-avatars .av:nth-child(3){animation-delay:.4s}
+@keyframes ssPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.92)}}
+.ss-run-status{font-size:14px;color:var(--paper-faint)}
+.ss-finding{background:var(--ink-2);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:14px}
+.ss-finding-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ss-finding-badge{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 10px;border-radius:6px}
+.ss-finding-badge.critical{background:#fee2e2;color:#b91c1c}
+.ss-finding-badge.neutral{background:var(--ink);color:var(--ink-2)}
+.ss-finding-badge.positive{background:#dcfce7;color:#15803d}
+.ss-finding-quote{font-style:italic;color:var(--ink);margin:8px 0 0}
+.ss-empty{text-align:center;padding:40px 20px;color:var(--paper-faint)}
 
 /* ── Snap-plan gating: nav locks + upgrade wall ── */
 .nv-lock{margin-left:auto;display:inline-flex;align-items:center;color:var(--paper-faint);flex:none}
@@ -2409,12 +2498,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
   <!-- ─── Snap view — report-widget install + live detection ─────────── -->
   <div class="snap-view" data-view="snap" id="snapView">
-    <h1><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:9px" aria-hidden="true"><path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 7.2-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/></svg>Snap — report widget</h1>
-    <p class="snap-view-sub">Two ways to capture: drop in the report widget for every visitor, or install the browser extension for your team. Reports land here immediately.</p>
+    <h1><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:9px" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>Snap — report widget</h1>
+    <p class="snap-view-sub">Add one script tag to your site and every visitor gets a one-click bug-report button. Reports land here immediately — no extension, no AI setup required.</p>
+    <div class="snap-tabs" role="tablist">
+      <button type="button" class="snap-tab on" role="tab" aria-selected="true">Setup</button>
+      <button type="button" class="snap-tab" role="tab" aria-selected="false" onclick="setView('settings')">Widget appearance &amp; settings</button>
+    </div>
     <div class="snap-hero-steps">
       <div class="snap-hero-step"><div class="sh-n">Step 1</div><h4>Copy the snippet</h4><p>One script tag goes just before <code style="font-family:var(--mono);font-size:10.5px">&lt;/body&gt;</code> on every page. Works on any platform.</p></div>
       <div class="snap-hero-step"><div class="sh-n">Step 2</div><h4>Paste and publish</h4><p>Visitors see a discreet report button. One click opens a pre-filled bug composer — no sign-in needed.</p></div>
-      <div class="snap-hero-step"><div class="sh-n">Step 3</div><h4>Triage in Sim Reports</h4><p>Every submission lands in <button style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-family:inherit;font-size:inherit" onclick="setView('triage')">Sim Reports</button> — accept as a ticket or dismiss with one click.</p></div>
+      <div class="snap-hero-step"><div class="sh-n">Step 3</div><h4>Triage in New reports</h4><p>Every submission lands in <button style="background:none;border:none;padding:0;color:var(--indigo);cursor:pointer;font-family:inherit;font-size:inherit" onclick="setView('triage')">New reports</button> — accept as a ticket or dismiss with one click.</p></div>
     </div>
     <div class="snap-embed-card">
       <h3><span class="sec">Embed snippet</span></h3>
@@ -2428,15 +2521,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
         <span class="sdot" aria-hidden="true"></span><span id="snapViewDetectTxt">Waiting for your site… paste the snippet, then reload your page</span>
       </div>
     </div>
-    <!-- #709: browser (Chrome) extension as an alternative capture path — best for internal QA -->
-    <div class="snap-embed-card" id="snapExtCard">
-      <h3><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" /></svg> Install the browser extension</h3>
-      <p>Best for internal QA — your Sims watch your real product through the Klavity browser extension and file what they find.</p>
-      <a class="btn btn-indigo" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener">Get the extension →</a>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
-      <button class="btn btn-indigo btn-sm" onclick="setView('triage')"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> View Sim Reports</button>
-      <button class="btn btn-ghost btn-sm" onclick="setView('settings')">Widget appearance &amp; settings →</button>
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn btn-indigo btn-sm" onclick="setView('triage')"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> View New reports</button>
+      <a href="#" onclick="setView('settings');return false" style="color:var(--paper-dim);font-size:13.5px">Widget appearance &amp; settings →</a>
     </div>
   </div>
 
@@ -2579,6 +2666,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
     <div class="card full sims-hero" data-view="sims">
       <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 16 1.5 1.5" /> <path d="m14 8-1.5-1.5" /> <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" /> <path d="m16.5 10.5 1 1" /> <path d="m17 6-2.891-2.891" /> <path d="M2 15c6.667-6 13.333 0 20-6" /> <path d="m20 9 .891.891" /> <path d="M3.109 14.109 4 15" /> <path d="m6.5 12.5 1 1" /> <path d="m7 18 2.891 2.891" /> <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" /></svg> Your Sims <span class="count" id="simsCount"></span>
         <a class="card-go" id="simRunsLink" style="margin-left:auto" href="/sim-runs" aria-label="View Sim run history">Run history <span class="card-arrow" aria-hidden="true">→</span></a>
+        <button class="btn btn-indigo btn-sm" id="startReviewBtn" onclick="openSimsStudio()">＋ Start a review</button>
         <button class="btn btn-indigo btn-sm hide" id="newSimBtn" onclick="openSimModal()">＋ New Sim</button></h2>
       <div id="simsFeed"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
     </div>
@@ -2624,6 +2712,98 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <p>Open the live studio: drop in a transcript, watch a Sim review a page in their own words, and collect their feedback in the draft queue.</p>
       <a class="btn btn-indigo" href="/app">Launch the Sims studio →</a>
     </div>
+  </div>
+
+  <!-- ═══ Sims Studio — guided customer-review wizard (Customers → Experience → Goal → Review → Insights) ═══ -->
+  <div class="ss-crumbs-bar" data-view="sims-studio">
+    <div class="ss-crumbs" id="ssCrumbs"></div>
+  </div>
+  <div class="ss-wrap" data-view="sims-studio">
+
+    <!-- Step 1: Customers -->
+    <section class="ss-step" id="ssStepCustomers">
+      <button class="ss-back" onclick="setView('sims')">← Back</button>
+      <h1 class="ss-title">Who should review this experience?</h1>
+      <p class="ss-sub">Choose one or more AI customers to test your product from their perspective.</p>
+      <input id="ssSearch" class="ss-search" placeholder="Search Sims…" oninput="ssRenderCustomers()" />
+      <div id="ssCustomerGrid" class="ss-grid"></div>
+      <div class="ss-footer">
+        <span id="ssCustomerCount" class="muted"></span>
+        <button class="btn btn-indigo" id="ssCustomersNext" onclick="ssGoto('experience')" disabled>Continue →</button>
+      </div>
+    </section>
+
+    <!-- Step 2: Experience -->
+    <section class="ss-step" id="ssStepExperience">
+      <button class="ss-back" onclick="ssGoto('customers')">← Back</button>
+      <h1 class="ss-title">What should they review?</h1>
+      <p class="ss-sub">Choose the product experience you want your customers to evaluate.</p>
+
+      <label class="ss-radio-card sel" id="ssExpCurrentCard">
+        <input type="radio" name="ssExp" checked onchange="ssSetExperience('current')" />
+        <div><b>Current page</b><div class="muted" id="ssExpCurrentDesc">Review your connected product.</div></div>
+      </label>
+      <label class="ss-radio-card" id="ssExpAnotherCard">
+        <input type="radio" name="ssExp" onchange="ssSetExperience('another')" />
+        <div style="flex:1">
+          <b>Another page</b><div class="muted">Paste a URL to review a specific page.</div>
+          <input type="url" id="ssAnotherUrl" class="ss-another-url hide" placeholder="https://yourproduct.com/pricing" oninput="ssSyncExperienceNext()" onclick="event.stopPropagation()" />
+        </div>
+      </label>
+      <label class="ss-check-row"><input type="checkbox" id="ssRequireLogin" /> Does this page require login?</label>
+
+      <div class="ss-footer">
+        <button class="btn btn-indigo" id="ssExperienceNext" onclick="ssGoto('goal')">Continue →</button>
+      </div>
+    </section>
+
+    <!-- Step 3: Goal -->
+    <section class="ss-step" id="ssStepGoal">
+      <button class="ss-back" onclick="ssGoto('experience')">← Back</button>
+      <h1 class="ss-title">What should the customer evaluate?</h1>
+      <p class="ss-sub">A focused goal produces better customer insights.</p>
+      <div class="ss-goal-grid" id="ssGoalGrid"></div>
+      <div class="ss-custom-lbl">Custom goal</div>
+      <textarea id="ssCustomGoal" class="ss-custom-goal" placeholder="e.g. Evaluate whether a CFO can quickly understand which approvals need attention." oninput="ssSyncGoalNext()"></textarea>
+      <div class="ss-footer">
+        <button class="btn btn-indigo" id="ssGoalNext" onclick="ssGoto('review')" disabled>Continue →</button>
+      </div>
+    </section>
+
+    <!-- Step 4: Review -->
+    <section class="ss-step" id="ssStepReview">
+      <button class="ss-back" onclick="ssGoto('goal')">← Back</button>
+      <h1 class="ss-title">Ready to run your customer review?</h1>
+      <p class="ss-sub">Review the setup and start when ready.</p>
+      <div class="ss-review-card">
+        <div class="ss-review-row"><span>Experience</span><span id="ssRevExperience"></span></div>
+        <div class="ss-review-row"><span>Customers</span><span id="ssRevCustomers"></span></div>
+        <div class="ss-review-row"><span>Goal</span><span id="ssRevGoal"></span></div>
+        <div class="ss-review-row"><span>Estimated time</span><span id="ssRevTime">~1 minute</span></div>
+      </div>
+      <div id="ssRevErr" class="muted" style="color:var(--rose);margin-bottom:12px"></div>
+      <button class="btn btn-indigo" id="ssStartBtn" onclick="ssStartReview()" style="width:100%;justify-content:center">▷ Start review</button>
+      <div style="text-align:center;margin-top:14px"><button class="ss-back" style="margin:0" onclick="ssGoto('goal')">Edit setup</button></div>
+    </section>
+
+    <!-- Step 5: Insights (running → results) -->
+    <section class="ss-step" id="ssStepInsights">
+      <button class="ss-back" onclick="ssGoto('review')" id="ssInsightsBack">← Back</button>
+      <div id="ssRunning" class="ss-run-card">
+        <div class="ss-run-avatars" id="ssRunAvatars"></div>
+        <h1 class="ss-title" style="font-size:24px">Your Sims are reviewing…</h1>
+        <p class="ss-run-status" id="ssRunStatus">Opening the page and reading it like your customer would.</p>
+      </div>
+      <div id="ssResults" class="hide">
+        <h1 class="ss-title">Klavity found something.</h1>
+        <p class="ss-sub" id="ssResultsSummary"></p>
+        <div id="ssFindingsList"></div>
+        <div class="ss-footer" style="justify-content:space-between;margin-top:24px">
+          <button class="btn btn-ghost" onclick="openSimsStudio()">Run another review</button>
+          <button class="btn btn-indigo" onclick="setView('triage')">Go to Sim Reports →</button>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- KLAVITYKLA snap-plan gating: upgrade wall overlay for Sims/AutoSims when the active project is
@@ -4995,6 +5175,7 @@ const VIEW_TITLES = {
   snap:      ["Report widget", "Add the Klavity report widget to your site."],
   triage:    ["Sim Reports", "Fresh submissions waiting to be triaged."],
   sims:      ["Sims", "The AI users reacting to your product."],
+  "sims-studio": ["Sims Studio", "See your product through your customers' eyes."],
   autosims:  ["AutoSims", "Critical paths Klavity re-runs on every deploy."],
   tickets:   ["Tickets", "Everything filed, triaged, and tracked."],
   team:      ["Team", "People with access to this workspace."],
@@ -6671,6 +6852,227 @@ document.addEventListener("DOMContentLoaded", function() {
   const inp = document.getElementById("supUrlInput")
   if (inp) inp.addEventListener("keydown", function(e) { if (e.key === "Enter") runSimUrlPreview() })
 })
+
+// ═══ Sims Studio — guided "run a customer review" wizard (Customers→Experience→Goal→Review→Insights) ═══
+const SS_GOAL_PRESETS = [
+  { key: "usability", label: "Usability", sub: "Is the experience easy to understand?" },
+  { key: "task", label: "Task completion", sub: "Can the customer complete an important task?" },
+  { key: "content", label: "Content clarity", sub: "Can customers understand the information?" },
+  { key: "trust", label: "Trust & confidence", sub: "Does the experience feel credible?" },
+  { key: "accessibility", label: "Accessibility", sub: "Can customers navigate it comfortably?" },
+]
+const SS_STEPS = [
+  { key: "customers", label: "Customers" },
+  { key: "experience", label: "Experience" },
+  { key: "goal", label: "Goal" },
+  { key: "review", label: "Review" },
+  { key: "insights", label: "Insights" },
+]
+let ssState = null
+
+function ssReset() {
+  ssState = { step: "customers", sims: [], selected: new Set(), experience: "current", anotherUrl: "", requireLogin: false, goalKey: null, customGoal: "" }
+}
+
+async function openSimsStudio() {
+  ssReset()
+  setView("sims-studio")
+  ssGoto("customers")
+  const pid = curProjId()
+  if (!pid) return
+  try {
+    const res = await fetch("/api/sims?project=" + encodeURIComponent(pid), { credentials: "include" })
+    const data = await res.json()
+    ssState.sims = Array.isArray(data.sims) ? data.sims : []
+  } catch (e) { ssState.sims = [] }
+  ssRenderCustomers()
+}
+
+function ssRenderCrumbs() {
+  const el = $("ssCrumbs")
+  if (!el) return
+  const activeIdx = SS_STEPS.findIndex(s => s.key === ssState.step)
+  el.innerHTML = SS_STEPS.map((s, i) => {
+    const cls = i < activeIdx ? "done" : (i === activeIdx ? "active" : "")
+    const sep = i < SS_STEPS.length - 1 ? '<span class="ss-crumb-sep">→</span>' : ""
+    return `<span class="ss-crumb ${cls}"><b>${i < activeIdx ? "✓" : i + 1}</b>${esc(s.label)}</span>${sep}`
+  }).join("")
+}
+
+const SS_STEP_EL = { customers: "ssStepCustomers", experience: "ssStepExperience", goal: "ssStepGoal", review: "ssStepReview", insights: "ssStepInsights" }
+function ssGoto(step) {
+  ssState.step = step
+  document.querySelectorAll(".ss-step").forEach(el => el.classList.remove("active"))
+  const el = $(SS_STEP_EL[step]); if (el) el.classList.add("active")
+  ssRenderCrumbs()
+  if (step === "goal") { ssRenderGoalTiles(); ssSyncGoalNext() }
+  if (step === "review") ssRenderReview()
+  window.scrollTo(0, 0)
+}
+
+function ssRenderCustomers() {
+  const grid = $("ssCustomerGrid")
+  if (!grid) return
+  const q = ($("ssSearch")?.value || "").trim().toLowerCase()
+  const sims = ssState.sims.filter(s => !q || (s.name || "").toLowerCase().includes(q) || (s.role || "").toLowerCase().includes(q))
+  if (!ssState.sims.length) {
+    grid.innerHTML = '<div class="ss-empty">No Sims yet — <a href="#" onclick="setView(\'sims\');return false" style="color:var(--indigo)">create one first</a>.</div>'
+  } else {
+    grid.innerHTML = sims.map(s => {
+      const sel = ssState.selected.has(s.id)
+      const accent = safeAccent(s.accent, col(s.name || ""))
+      const inits = esc(s.initials || initials(s.name || "?"))
+      return `<div class="ss-cust-card ${sel ? "sel" : ""}" onclick="ssToggleCustomer('${esc(s.id)}')">
+        <div class="ss-cust-hd">
+          <div class="av" style="background:${accent}">${inits}</div>
+          <div><div class="ss-cust-name">${esc(s.name || "Sim")}</div><div class="ss-cust-role">${esc(s.role || "")}</div></div>
+        </div>
+        <div class="ss-cust-ft"><span></span><span class="ss-select-pill">${sel ? "Selected" : "Select"}</span></div>
+      </div>`
+    }).join("")
+  }
+  ssSyncCustomersNext()
+}
+
+function ssToggleCustomer(id) {
+  if (ssState.selected.has(id)) ssState.selected.delete(id); else ssState.selected.add(id)
+  ssRenderCustomers()
+}
+
+function ssSyncCustomersNext() {
+  const n = ssState.selected.size
+  const cnt = $("ssCustomerCount"); if (cnt) cnt.textContent = n ? (n + " selected") : ""
+  const btn = $("ssCustomersNext"); if (btn) btn.disabled = n === 0
+}
+
+function ssSetExperience(which) {
+  ssState.experience = which
+  $("ssExpCurrentCard").classList.toggle("sel", which === "current")
+  $("ssExpAnotherCard").classList.toggle("sel", which === "another")
+  $("ssAnotherUrl").classList.toggle("hide", which !== "another")
+  if (which === "another") $("ssAnotherUrl").focus()
+  ssSyncExperienceNext()
+}
+
+function ssSyncExperienceNext() {
+  ssState.anotherUrl = ($("ssAnotherUrl")?.value || "").trim()
+  ssState.requireLogin = !!$("ssRequireLogin")?.checked
+  const ok = ssState.experience === "current" || !!ssState.anotherUrl
+  const btn = $("ssExperienceNext"); if (btn) btn.disabled = !ok
+}
+
+function ssRenderGoalTiles() {
+  const el = $("ssGoalGrid")
+  if (!el) return
+  el.innerHTML = SS_GOAL_PRESETS.map(g => {
+    const sel = ssState.goalKey === g.key
+    return `<div class="ss-goal-tile ${sel ? "sel" : ""}" onclick="ssSelectGoalTile('${g.key}')"><b>${esc(g.label)}</b><span>${esc(g.sub)}</span></div>`
+  }).join("")
+}
+
+function ssSelectGoalTile(key) {
+  ssState.goalKey = ssState.goalKey === key ? null : key
+  ssRenderGoalTiles()
+  ssSyncGoalNext()
+}
+
+function ssSyncGoalNext() {
+  ssState.customGoal = ($("ssCustomGoal")?.value || "").trim()
+  const ok = !!ssState.goalKey || !!ssState.customGoal
+  const btn = $("ssGoalNext"); if (btn) btn.disabled = !ok
+}
+
+function ssGoalText() {
+  if (ssState.customGoal) return ssState.customGoal
+  const preset = SS_GOAL_PRESETS.find(g => g.key === ssState.goalKey)
+  return preset ? (preset.label + " — " + preset.sub) : ""
+}
+
+function ssRenderReview() {
+  const expEl = $("ssRevExperience")
+  if (expEl) expEl.textContent = ssState.experience === "current" ? "Current connected product" : ssState.anotherUrl
+  const names = ssState.sims.filter(s => ssState.selected.has(s.id)).map(s => s.name).join(", ")
+  const custEl = $("ssRevCustomers"); if (custEl) custEl.textContent = names || "—"
+  const preset = SS_GOAL_PRESETS.find(g => g.key === ssState.goalKey)
+  const goalEl = $("ssRevGoal"); if (goalEl) goalEl.textContent = ssState.customGoal ? "Custom" : (preset ? preset.label : "—")
+  const errEl = $("ssRevErr"); if (errEl) errEl.textContent = ""
+}
+
+async function ssStartReview() {
+  const pid = curProjId()
+  if (!pid) { $("ssRevErr").textContent = "Select a project first."; return }
+  const btn = $("ssStartBtn")
+  if (btn) { btn.disabled = true; btn.textContent = "Starting…" }
+
+  ssGoto("insights")
+  $("ssRunning").classList.remove("hide")
+  $("ssResults").classList.add("hide")
+  $("ssInsightsBack").classList.add("hide")
+  const chosen = ssState.sims.filter(s => ssState.selected.has(s.id))
+  $("ssRunAvatars").innerHTML = chosen.slice(0, 4).map(s =>
+    `<div class="av" style="background:${safeAccent(s.accent, col(s.name || ""))}">${esc(s.initials || initials(s.name || "?"))}</div>`
+  ).join("")
+  $("ssRunStatus").textContent = chosen.length === 1
+    ? (chosen[0].name + " is reviewing your product…")
+    : (chosen.length + " Sims are reviewing your product…")
+
+  const body = {
+    projectId: pid,
+    simIds: Array.from(ssState.selected),
+    targetUrl: ssState.experience === "another" ? ssState.anotherUrl : "",
+    requireLogin: ssState.requireLogin,
+    goal: ssGoalText(),
+  }
+  try {
+    const res = await fetch("/api/sims/studio-review", {
+      method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (btn) { btn.disabled = false; btn.textContent = "▷ Start review" }
+    if (!res.ok || data.error) {
+      ssGoto("review")
+      $("ssRevErr").textContent = data.error || "Something went wrong. Try again."
+      return
+    }
+    ssRenderResults(data)
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "▷ Start review" }
+    ssGoto("review")
+    $("ssRevErr").textContent = "Network error — check your connection and try again."
+  }
+}
+
+function ssRenderResults(data) {
+  $("ssInsightsBack").classList.remove("hide")
+  $("ssRunning").classList.add("hide")
+  $("ssResults").classList.remove("hide")
+  const reviews = Array.isArray(data.reviews) ? data.reviews : []
+  const total = data.totalObservations || 0
+  const simCount = data.simCount || reviews.length
+  $("ssResultsSummary").textContent = total
+    ? ("Your Sims completed the review. " + total + " finding" + (total === 1 ? "" : "s") + " across " + simCount + " Sim" + (simCount === 1 ? "" : "s") + ".")
+    : "Your Sims completed the review with no new observations this time."
+  const list = $("ssFindingsList")
+  const cards = []
+  reviews.forEach(rv => {
+    const observations = Array.isArray(rv.observations) ? rv.observations : []
+    observations.forEach(o => {
+      // normSentiment() doesn't exist anywhere in this file (a pre-existing dead reference at
+      // runSimUrlPreview's sentimentChip line) — normalize inline here rather than call it.
+      const ns = String(o.sentiment || "").trim().toLowerCase()
+      const sentClass = (ns === "critical" || ns === "frustrated") ? "critical" : (ns === "positive" || ns === "satisfied") ? "positive" : "neutral"
+      cards.push(`<div class="ss-finding">
+        <div class="ss-finding-hd">
+          <span class="ss-finding-badge ${sentClass}">${esc(o.sentiment || "observation")}</span>
+          <span class="muted" style="font-size:12px">${esc(rv.simName || "Sim")}</span>
+        </div>
+        <p class="ss-finding-quote">"${esc(o.observation || "")}"</p>
+      </div>`)
+    })
+  })
+  list.innerHTML = cards.length ? cards.join("") : '<div class="ss-empty">Nothing stood out this run.</div>'
+}
 
 function renderMembers(admin) {
   const members = state.members || []
@@ -13603,7 +14005,7 @@ load()
   // guards in SET UP/ANALYZE — fixing the earlier awkward "recurring/guards tacked onto Sims" cluster.
   // All view-ids / data-go / JS keys are unchanged (this is order + separators only). setView()
   // redirects any view NOT in this array to 'overview'. #713: 'getting-started' dropped from the sidebar.
-  var VIEWS=['overview','tickets','triage','recurring','sims','autosims','snap','pagebugs','guards','team','settings'];
+  var VIEWS=['overview','tickets','triage','recurring','sims','sims-studio','autosims','snap','pagebugs','guards','team','settings'];
   // A thin divider is injected AFTER each of these keys to visually cluster the four groups.
   var SEP_AFTER={recurring:1,autosims:1,guards:1};
   function sidebarNavs(){

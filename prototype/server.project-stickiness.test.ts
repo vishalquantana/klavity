@@ -189,14 +189,27 @@ test("dashboard: explicit ?project= overrides a stale klav_proj cookie", async (
 })
 
 // =============================================================================
-// 5. Stale/unknown klav_proj cookie → resolveProject returns null → 403
-//    (the client's retry-without-cookie logic handles this gracefully)
+// 5. Stale/unknown klav_proj cookie → degrades gracefully to the first accessible project
+//    (a stale cookie is invisible state the client has no way to detect or clear itself —
+//    unlike an explicit ?project= param, which the client's own retry logic already handles —
+//    so the server must not 403 the whole dashboard over it)
 // =============================================================================
-test("dashboard: stale/unknown klav_proj cookie returns 403 (client retries without cookie)", async () => {
+test("dashboard: stale/unknown klav_proj cookie falls back to the first accessible project (not a 403)", async () => {
   const cookies = `klav_session=${USER_SID}; klav_proj=${encodeURIComponent("proj_does_not_exist_xyz")}`
   const r = await fetch(`${BASE}/api/dashboard`, { headers: { Cookie: cookies } })
-  // resolveProject with an unknown project id returns null → 403. The client's load()
-  // detects data.error + (pid !== activeProjectParam()) and retries without the stale key.
+  expect(r.status).toBe(200)
+  const body = await r.json() as any
+  expect(body.active?.id).toBe(PROJECT_A_ID)
+  // The response must also correct the stale cookie going forward.
+  expect(extractProjCookie(r)).toBe(PROJECT_A_ID)
+})
+
+// =============================================================================
+// 5b. An EXPLICIT ?project= to an inaccessible/unknown project still hard-fails — the client's
+//     own retry-with-cleared-localStorage logic already handles this case (KLA-764).
+// =============================================================================
+test("dashboard: explicit ?project= to an unknown project still 403s", async () => {
+  const r = await fetch(`${BASE}/api/dashboard?project=proj_does_not_exist_xyz`, { headers: authHeader(USER_SID) })
   expect(r.status).toBe(403)
 })
 

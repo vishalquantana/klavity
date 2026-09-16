@@ -2420,6 +2420,45 @@ export async function ensureAccount(email: string, attr?: SanitizedAttr | null):
   return membershipsFor(email)
 }
 
+// Local/dev convenience ONLY, gated on its own dedicated flag (KLAV_SHARED_DEFAULT_PROJECT=1) rather
+// than the broader KLAV_DEV_SHOW_OTP — that flag is already used by unrelated existing tests just to
+// enable dev-mode OTP auth, so reusing it here would silently turn on account-sharing inside tests
+// that never asked for it. Off by default everywhere (including a plain local dev server) until
+// explicitly opted into: every normal signup joins this ONE shared workspace/project
+// instead of getting a private one, so test accounts (test1@, test12@…) can see each other and
+// exercise teammate/multi-user features without manual invites. Deliberately NOT the production
+// default — a shared `accounts` row breaks real invariants: UTM/attribution is per-account
+// ("first touch wins" on ONE company's signup, not many unrelated people), and GDPR "erase my
+// account" for any one user would erase/anonymize the workspace every other user relies on. In
+// production this just delegates to plain ensureAccount() (private per-signup account, unchanged).
+// Also deliberately NOT used by Stripe Payment-Link checkout provisioning
+// (resolveOrProvisionAccountForCheckoutSession) even in dev — that path always calls ensureAccount()
+// directly so a payer's subscription can never attach to a shared accounts row.
+const SHARED_DEFAULT_ACCOUNT_ID = "shared-default-workspace"
+export async function ensureSharedAccount(email: string, attr?: SanitizedAttr | null): Promise<Membership[]> {
+  if (process.env.KLAV_SHARED_DEFAULT_PROJECT !== "1") return ensureAccount(email, attr)
+  const existing = await membershipsFor(email)
+  if (existing.length) return existing
+  const aid = SHARED_DEFAULT_ACCOUNT_ID
+  const now = Date.now()
+  // The very first signup ever becomes the workspace owner; everyone after joins as a member
+  // (still gets full project-admin access below — only account-level control, e.g. billing, is
+  // reserved to the owner).
+  const alreadyBootstrapped = (await db!.execute({ sql: "SELECT 1 FROM accounts WHERE id=?", args: [aid] })).rows.length > 0
+  await db!.execute({ sql: "INSERT OR IGNORE INTO accounts (id,name,owner_email,created_at) VALUES (?,?,?,?)", args: [aid, "Shared Workspace", email, now] })
+  await db!.execute({ sql: "INSERT OR IGNORE INTO account_members (id,account_id,email,account_role,created_at) VALUES (?,?,?,?,?)", args: ["am_" + aid + "_" + email, aid, email, alreadyBootstrapped ? "member" : "owner", now] })
+  await db!.execute({
+    sql: `INSERT OR IGNORE INTO projects (id,account_id,name,status,review_mode,review_budget_daily,observability_mode,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`,
+    args: ["proj_" + aid, aid, "Default Project", "active", "auto", 200, "named", now, now],
+  })
+  await db!.execute({ sql: "INSERT OR IGNORE INTO project_members (id,project_id,email,project_role,invited_by,created_at) VALUES (?,?,?,?,?,?)", args: ["pm_" + aid + "_" + email, "proj_" + aid, email, "admin", null, now] })
+  await claimAccountSlug(aid, "Shared Workspace").catch((e: any) => { console.warn("ensureSharedAccount slug mint skipped:", e?.message || e); return null })
+  await claimProjectKey(aid, "proj_" + aid, "Default Project").catch((e: any) => { console.warn("ensureSharedAccount key mint skipped:", e?.message || e); return null })
+  if (attr) await setAccountAttribution(aid, attr)
+  return membershipsFor(email)
+}
+
 // KLAVITYKLA-324: FIRST-TOUCH WINS (same COALESCE contract as setUserAttribution) — a later login
 // from a different campaign link never clobbers the account's original acquisition source.
 export async function setAccountAttribution(accountId: string, attr: SanitizedAttr | null): Promise<void> {
