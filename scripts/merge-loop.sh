@@ -23,6 +23,7 @@ worktree_gc() {
   [ $((now - last)) -lt 3600 ] && return   # at most once per hour
   echo "$now" > "$GC_STAMP"
   cd "$REPO" || return
+  git fetch origin master --quiet 2>/dev/null   # so the merged check below is accurate
   git worktree prune 2>/dev/null
   local removed=0 path="" branch=""
   while IFS= read -r line; do
@@ -36,7 +37,19 @@ worktree_gc() {
             *T/tmp.*|*/.jcode/*|*/scratch/*|*/.claude/worktrees/*) : ;; # transient/session
             *) case "$branch" in
                  wip/*) : ;;                                          # active gated lane — keep
-                 *) git worktree remove "$path" 2>/dev/null && removed=$((removed+1)) ;;
+                 *)
+                   # If the branch is fully merged into origin/master, every commit is
+                   # already safe in master, so --force is loss-free (only disposable
+                   # artifact-dirt — .gitignore tweaks, agent tool dirs, .build-* scratch —
+                   # is discarded). WITHOUT this, agent tooling makes every worktree look
+                   # dirty forever and plain `remove` refuses them → hundreds accumulate.
+                   # Unmerged (or detached) worktrees fall back to a non-force remove, so a
+                   # clean one is reclaimed but in-progress unmerged edits are never destroyed.
+                   if [ -n "$branch" ] && git merge-base --is-ancestor "$branch" origin/master 2>/dev/null; then
+                     git worktree remove --force "$path" 2>/dev/null && removed=$((removed+1))
+                   else
+                     git worktree remove "$path" 2>/dev/null && removed=$((removed+1))
+                   fi ;;
                esac ;;
           esac
         fi
@@ -44,7 +57,7 @@ worktree_gc() {
     esac
   done < <(git worktree list --porcelain; echo "")
   git worktree prune 2>/dev/null
-  [ "$removed" -gt 0 ] && echo "[$(date '+%F %T')] [worktree-gc] removed $removed clean worktree(s)" >> "$LOG"
+  [ "$removed" -gt 0 ] && echo "[$(date '+%F %T')] [worktree-gc] removed $removed merged/clean worktree(s)" >> "$LOG"
 }
 
 while true; do
