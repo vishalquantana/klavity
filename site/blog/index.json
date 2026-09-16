@@ -635,5 +635,12 @@
     "excerpt": "Autonomous testing is software that runs QA without human input — finding bugs, reporting them, and learning your sites over time. Here's what it means for web agencies.",
     "category": "Learn",
     "date": "2026-09-13"
+  },
+  {
+    "slug": "how-to-use-ai-for-qa-testing",
+    "title": "How to Use AI for QA Testing: A Practical 6-Step Guide",
+    "excerpt": "To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.",
+    "category": "Guides",
+    "date": "2026-09-16"
   }
 ]

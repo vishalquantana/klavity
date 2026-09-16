@@ -1,0 +1,203 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Use AI for QA Testing: A Practical 6-Step Guide · Klavity</title>
+<meta name="description" content="To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-use-ai-for-qa-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Use AI for QA Testing: A Practical 6-Step Guide"><meta property="og:description" content="To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-use-ai-for-qa-testing"><meta property="og:image" content="https://klavity.in/blog/how-to-use-ai-for-qa-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Use AI for QA Testing: A Practical 6-Step Guide"><meta name="twitter:description" content="To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests."><meta name="twitter:image" content="https://klavity.in/blog/how-to-use-ai-for-qa-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Use AI for QA Testing: A Practical 6-Step Guide","description":"To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.","datePublished":"2026-09-16","dateModified":"2026-09-16","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/how-to-use-ai-for-qa-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-use-ai-for-qa-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Use AI for QA Testing: A Practical 6-Step Guide","item":"https://klavity.in/blog/how-to-use-ai-for-qa-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-use-ai-for-qa-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can AI replace a QA engineer?","acceptedAnswer":{"@type":"Answer","text":"No. AI is good at exhaustive repetition — clicking every path, comparing every deploy against a baseline, checking every form field. It is weak at judgment: whether a flow feels confusing, whether a discount calculation matches the contract, whether a design matches the mockup. Teams that get value from AI QA use it to clear the repetitive layer so humans spend their time on judgment calls."}},{"@type":"Question","name":"What is the fastest way to start using AI for QA testing?","acceptedAnswer":{"@type":"Answer","text":"Pick one client site or one app, and one workflow you already skip. For most teams that is exploratory testing before handoff. Run an AI persona pass over the critical path (signup, checkout, contact form), triage what comes back, and fix the real findings. That gives you a working loop in a day without rewriting your process."}},{"@type":"Question","name":"Is AI-generated code more likely to need QA?","acceptedAnswer":{"@type":"Answer","text":"It needs different QA. AI-generated code usually compiles and usually renders, so the failures show up as behaviour rather than crashes: an unvalidated form, a missing auth check on a route, an error state that was never written. Those are precisely the failures a test suite generated from the same assumptions will not catch, which is why exploratory and persona-driven testing matters more on AI-assisted codebases."}},{"@type":"Question","name":"How do you stop AI-written tests from becoming flaky?","acceptedAnswer":{"@type":"Answer","text":"Two rules. First, make every generated test fail on purpose once before you trust it — break the feature, confirm the test goes red, then fix it. Second, force stable selectors: test IDs or accessible roles and names, never CSS class chains or nth-child positions. Most flakiness in generated suites comes from selectors that describe the current markup rather than the user's intent."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-16</div>
+    <h1>How to Use AI for QA Testing: A Practical 6-Step Guide</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI in the QA testing workflow: build, AI test generation and exploration, triage, and green checks">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="4" fill="#6366f1" opacity="0.7"/>
+
+  <rect x="48" y="96" width="170" height="130" rx="10" fill="#f5f0e8" opacity="0.06" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="48" y1="122" x2="218" y2="122" stroke="#6366f1" stroke-width="1.5" opacity="0.8"/>
+  <circle cx="62" cy="109" r="4" fill="#f87171"/>
+  <circle cx="76" cy="109" r="4" fill="#f5f0e8" opacity="0.35"/>
+  <rect x="64" y="140" width="112" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="64" y="158" width="86" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="64" y="176" width="130" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+
+  <path d="M226 161 L296 161" stroke="#6366f1" stroke-width="2"/>
+  <path d="M288 154 L298 161 L288 168 Z" fill="#6366f1"/>
+
+  <circle cx="376" cy="161" r="66" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.55"/>
+  <circle cx="376" cy="161" r="44" fill="#6366f1" opacity="0.16"/>
+  <circle cx="376" cy="161" r="10" fill="#6366f1"/>
+  <path d="M376 117 L376 137 M376 185 L376 205 M332 161 L352 161 M400 161 L420 161" stroke="#6366f1" stroke-width="2" opacity="0.85"/>
+  <circle cx="376" cy="113" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="376" cy="209" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="328" cy="161" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="424" cy="161" r="6" fill="#f5f0e8" opacity="0.5"/>
+
+  <path d="M442 161 L512 161" stroke="#6366f1" stroke-width="2"/>
+  <path d="M504 154 L514 161 L504 168 Z" fill="#6366f1"/>
+
+  <rect x="522" y="72" width="230" height="52" rx="8" fill="#f87171" opacity="0.12" stroke="#f87171" stroke-width="1.4"/>
+  <circle cx="552" cy="98" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="546" y1="92" x2="558" y2="104" stroke="#f87171" stroke-width="2"/>
+  <rect x="578" y="93" width="146" height="9" rx="4.5" fill="#f87171" opacity="0.45"/>
+
+  <rect x="522" y="136" width="230" height="52" rx="8" fill="#f87171" opacity="0.09" stroke="#f87171" stroke-width="1.2"/>
+  <circle cx="552" cy="162" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="546" y1="156" x2="558" y2="168" stroke="#f87171" stroke-width="2"/>
+  <rect x="578" y="157" width="110" height="9" rx="4.5" fill="#f87171" opacity="0.35"/>
+
+  <rect x="522" y="200" width="230" height="52" rx="8" fill="#4ade80" opacity="0.12" stroke="#4ade80" stroke-width="1.4"/>
+  <polyline points="545,227 551,234 561,220" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="578" y="221" width="130" height="9" rx="4.5" fill="#4ade80" opacity="0.4"/>
+
+  <rect x="522" y="264" width="230" height="52" rx="8" fill="#4ade80" opacity="0.08" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="545,291 551,298 561,284" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="578" y="285" width="94" height="9" rx="4.5" fill="#4ade80" opacity="0.3"/>
+
+  <path d="M376 227 L376 320 L200 320" stroke="#6366f1" stroke-width="1.6" stroke-dasharray="6 6" opacity="0.65" fill="none"/>
+  <path d="M210 313 L198 320 L210 327 Z" fill="#6366f1" opacity="0.75"/>
+  <rect x="48" y="300" width="140" height="40" rx="8" fill="#6366f1" opacity="0.14" stroke="#6366f1" stroke-width="1.2"/>
+  <rect x="66" y="316" width="104" height="8" rx="4" fill="#6366f1" opacity="0.55"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Use AI for QA testing at four points in the workflow: generating test cases from requirements, exploring the app the way real users do, triaging and reproducing incoming bug reports, and repairing tests when the UI changes. AI does not replace a QA process — it removes the manual work that makes small teams skip QA entirely. Start with the step you skip most often, which for agencies and solo builders is almost always exploratory testing before a client sees the build.</div>
+    <div class="prose"><p>To use AI for QA testing, apply it at four points in your workflow: generating test cases from your requirements, exploring the app the way a real user would, triaging and reproducing the bug reports that come in, and repairing tests when the UI changes. AI is not a replacement for a QA process — it removes the manual work that makes small teams skip QA entirely. The practical starting point is whichever step you currently skip most often, which for agencies and solo builders is almost always exploratory testing before a client or a user sees the build.</p>
+<h2>What does "using AI for QA testing" actually mean?</h2>
+<p>It is worth separating three things that get sold under the same label, because they fail in different ways.</p>
+<ul>
+<li><strong>AI-assisted authoring</strong> — a model writes test cases or Playwright specs from your description. You still run and maintain them.</li>
+<li><strong>AI-driven exploration</strong> — an agent navigates the running app, tries paths nobody scripted, and reports what broke. Nothing is written in advance.</li>
+<li><strong>AI-assisted triage</strong> — a model takes a messy incoming report (a client email, a user screenshot) and turns it into reproducible steps, an environment snapshot, and a severity.</li>
+</ul>
+<p>Most teams reach for the first because it is the most familiar, and it is the least valuable on its own. A generated test suite only ever checks what you already thought of — the same blind spot that let the bug through. The compounding value is in exploration and triage. For the broader landscape, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Where should you use AI for QA testing first?</h2>
+<p>Map your current process honestly and find the gap. Almost every small team has the same one: code ships, someone clicks the happy path, and it goes to the client. Nobody tries the form with a pasted phone number, the checkout with an expired card, or the dashboard on a 390px viewport.</p>
+<table>
+<thead><tr><th>QA step</th><th>What AI does well here</th><th>What still needs a human</th></tr></thead>
+<tbody>
+<tr><td>Writing test cases</td><td>Enumerating edge cases and negative paths from a spec</td><td>Deciding which cases are worth the maintenance cost</td></tr>
+<tr><td>Exploratory testing</td><td>Clicking every path, on every viewport, every deploy</td><td>Judging whether a confusing flow is a bug or a design choice</td></tr>
+<tr><td>Bug triage</td><td>Deduplicating, reproducing, attaching console and network evidence</td><td>Setting priority against the client's commercial reality</td></tr>
+<tr><td>Test maintenance</td><td>Repairing selectors after a redesign</td><td>Confirming the change was intentional, not a regression</td></tr>
+<tr><td>Business logic checks</td><td>Very little — it does not know your contract</td><td>All of it: pricing, tax, permissions, refunds</td></tr>
+</tbody>
+</table>
+
+<h2>How do you use AI to generate test cases?</h2>
+<p>Feed the model the thing the feature is supposed to do, not the code that does it. If you paste the implementation, you get tests that assert what the code already does — including its bugs. Paste the acceptance criteria, the ticket, or the client's email, and ask for the negative and boundary cases.</p>
+<p>Then apply the rule that separates a useful suite from a decorative one: <strong>every generated test must fail on purpose once before you trust it.</strong> Break the feature deliberately, confirm the test goes red, then restore it. A test that has never failed is not a test; it is a green light with unknown wiring. This catches the most common failure mode in generated suites: assertions that pass regardless of application state.</p>
+<p>Specify the selector strategy in the prompt: test IDs, or accessible roles and names. Generated code defaults to whatever is in the markup, which means CSS class chains and <em>nth-child</em> positions that break on the next redesign. This is the single biggest source of flakiness in AI-written suites, and it is free to prevent at authoring time.</p>
+
+<h2>How do you use AI to find bugs you didn't think to test for?</h2>
+<p>This is the part a scripted suite structurally cannot do. A test suite encodes your assumptions; the bugs that reach clients live outside them.</p>
+<p>Persona-driven exploration works differently: instead of a script, you define who is using the app — a hurried mobile user on a bad connection, someone pasting a formatted address from a PDF, a returning customer with a stale session — and let an agent work through the app in character. It tries the paths a real person takes, including the wrong ones. <a href="/sims">Klavity Sims</a> runs this pattern against your staging or production URL, and <a href="/autosim">AutoSim</a> turns the paths that matter into self-healing end-to-end tests so the same route is checked on every deploy.</p>
+<p>Three bug classes show up here reliably and rarely appear in hand-written suites:</p>
+<ul>
+<li><strong>State bugs</strong> — the app works on first load but breaks on back-navigation, refresh mid-flow, or a second tab.</li>
+<li><strong>Input-shape bugs</strong> — a valid value in an unexpected format: a name with an apostrophe, a phone number with spaces, a pasted string carrying invisible characters.</li>
+<li><strong>Missing failure states</strong> — the success path renders, but the error path was never built, so a rejected payment or a 500 leaves a spinner turning forever.</li>
+</ul>
+<p>If you are shipping code written largely by Cursor, Copilot, Lovable, or v0, weight your effort here. Generated code tends to produce a working happy path with unwritten edges — the failure mode is not a crash, it is an interaction that silently does nothing.</p>
+
+<h2>How do you use AI to triage and reproduce bug reports?</h2>
+<p>The expensive part of a bug is rarely the fix. It is the three-message thread establishing what the reporter actually saw. A report becomes actionable when it carries four things: the exact steps, the environment (browser, OS, viewport, logged-in state), the evidence (screenshot, console output, failed network requests), and the expected-versus-actual difference.</p>
+<p>Non-technical reporters — clients, stakeholders, end users — will never supply those unprompted. The fix is to capture them automatically at report time rather than reconstruct them later. <a href="/snap">Klavity Snap</a> does this with a right-click: the reporter describes the problem in plain language, and the report ships with the console, network activity, DOM state, and environment already attached.</p>
+<p>AI then does the sorting: clustering duplicates, drafting steps to reproduce from the captured session, and proposing a severity. Keep the final call on priority — a cosmetic bug on a client's demo page the morning of their board meeting outranks a functional bug nobody hits. On where the line sits, see <a href="/blog/what-ai-bug-triage-can-and-cant-do">what AI bug triage can and can't do</a>.</p>
+
+<h2>How do you keep AI-written tests from breaking every sprint?</h2>
+<p>A generated suite that nobody maintains is worse than no suite, because a wall of red builds trains the team to ignore CI. Three practices keep it alive:</p>
+<ol>
+<li><strong>Cap the suite.</strong> Cover the routes that carry money, auth, and the client's primary conversion path. Everything else is optional.</li>
+<li><strong>Use self-healing selectors.</strong> When a button is renamed, the run should re-anchor to the same element rather than fail. Without this, every redesign costs a day of test repair.</li>
+<li><strong>Treat a failure as a decision, not a chore.</strong> Every red run resolves one of two ways: it found a regression, or the app changed intentionally and the test gets updated. Never re-run until green.</li>
+</ol>
+
+<h2>What should you never hand to AI?</h2>
+<p>Keep humans on anything where being wrong is expensive and the model has no way to know the right answer: pricing and tax calculations, permission and role boundaries, data deletion, anything touching payment or PII handling, and whether the build matches what the client actually asked for. An AI agent can confirm a checkout completes. It cannot confirm the total was correct.</p>
+
+<h2>How do you roll this out in one sprint?</h2>
+<p>Do not rebuild your process. Add one loop and let it prove itself:</p>
+<ol>
+<li><strong>Day 1</strong> — pick one live site or app and run a persona exploration pass over its critical path.</li>
+<li><strong>Day 2</strong> — triage what came back. Split it into real bugs, design choices, and noise. The noise ratio tells you how much to trust the next run.</li>
+<li><strong>Day 3</strong> — fix the real findings and convert the two or three highest-value paths into self-healing end-to-end tests.</li>
+<li><strong>Ongoing</strong> — put a one-click reporting path in front of whoever reviews the build, so their next complaint arrives with evidence attached instead of as "the form is broken".</li>
+</ol>
+<p>After a sprint you will have something more useful than a tool: evidence about where your bugs actually come from. In practice, escaped defects tend to cluster in one or two places — forms and narrow viewports are common culprits — and you can aim the next round of effort there.</p>
+
+<h2>Where to start</h2>
+<p>Using AI for QA testing is less about picking a product than about closing the gap between how fast you ship and how fast you can verify. Start where the gap is widest: the check you skip when a deadline is close.</p>
+<p><a href="/onboarding">Scan your next client site free</a> — run an AI persona pass over your critical path and see what comes back before your client does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Start with the QA step you skip most — usually exploratory testing before client handoff.</li><li>Make every AI-generated test fail on purpose once before you trust it.</li><li>Force test IDs or accessible roles as selectors so generated tests survive redesigns.</li><li>Keep humans on judgment: business logic, design intent, and anything involving money or auth.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can AI replace a QA engineer?</summary><p>No. AI is good at exhaustive repetition — clicking every path, comparing every deploy against a baseline, checking every form field. It is weak at judgment: whether a flow feels confusing, whether a discount calculation matches the contract, whether a design matches the mockup. Teams that get value from AI QA use it to clear the repetitive layer so humans spend their time on judgment calls.</p></details><details><summary>What is the fastest way to start using AI for QA testing?</summary><p>Pick one client site or one app, and one workflow you already skip. For most teams that is exploratory testing before handoff. Run an AI persona pass over the critical path (signup, checkout, contact form), triage what comes back, and fix the real findings. That gives you a working loop in a day without rewriting your process.</p></details><details><summary>Is AI-generated code more likely to need QA?</summary><p>It needs different QA. AI-generated code usually compiles and usually renders, so the failures show up as behaviour rather than crashes: an unvalidated form, a missing auth check on a route, an error state that was never written. Those are precisely the failures a test suite generated from the same assumptions will not catch, which is why exploratory and persona-driven testing matters more on AI-assisted codebases.</p></details><details><summary>How do you stop AI-written tests from becoming flaky?</summary><p>Two rules. First, make every generated test fail on purpose once before you trust it — break the feature, confirm the test goes red, then fix it. Second, force stable selectors: test IDs or accessible roles and names, never CSS class chains or nth-child positions. Most flakiness in generated suites comes from selectors that describe the current markup rather than the user's intent.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

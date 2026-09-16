@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI in the QA testing workflow: build, AI test generation and exploration, triage, and green checks">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="4" fill="#6366f1" opacity="0.7"/>
+
+  <rect x="48" y="96" width="170" height="130" rx="10" fill="#f5f0e8" opacity="0.06" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="48" y1="122" x2="218" y2="122" stroke="#6366f1" stroke-width="1.5" opacity="0.8"/>
+  <circle cx="62" cy="109" r="4" fill="#f87171"/>
+  <circle cx="76" cy="109" r="4" fill="#f5f0e8" opacity="0.35"/>
+  <rect x="64" y="140" width="112" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="64" y="158" width="86" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="64" y="176" width="130" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+
+  <path d="M226 161 L296 161" stroke="#6366f1" stroke-width="2"/>
+  <path d="M288 154 L298 161 L288 168 Z" fill="#6366f1"/>
+
+  <circle cx="376" cy="161" r="66" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.55"/>
+  <circle cx="376" cy="161" r="44" fill="#6366f1" opacity="0.16"/>
+  <circle cx="376" cy="161" r="10" fill="#6366f1"/>
+  <path d="M376 117 L376 137 M376 185 L376 205 M332 161 L352 161 M400 161 L420 161" stroke="#6366f1" stroke-width="2" opacity="0.85"/>
+  <circle cx="376" cy="113" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="376" cy="209" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="328" cy="161" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="424" cy="161" r="6" fill="#f5f0e8" opacity="0.5"/>
+
+  <path d="M442 161 L512 161" stroke="#6366f1" stroke-width="2"/>
+  <path d="M504 154 L514 161 L504 168 Z" fill="#6366f1"/>
+
+  <rect x="522" y="72" width="230" height="52" rx="8" fill="#f87171" opacity="0.12" stroke="#f87171" stroke-width="1.4"/>
+  <circle cx="552" cy="98" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="546" y1="92" x2="558" y2="104" stroke="#f87171" stroke-width="2"/>
+  <rect x="578" y="93" width="146" height="9" rx="4.5" fill="#f87171" opacity="0.45"/>
+
+  <rect x="522" y="136" width="230" height="52" rx="8" fill="#f87171" opacity="0.09" stroke="#f87171" stroke-width="1.2"/>
+  <circle cx="552" cy="162" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="546" y1="156" x2="558" y2="168" stroke="#f87171" stroke-width="2"/>
+  <rect x="578" y="157" width="110" height="9" rx="4.5" fill="#f87171" opacity="0.35"/>
+
+  <rect x="522" y="200" width="230" height="52" rx="8" fill="#4ade80" opacity="0.12" stroke="#4ade80" stroke-width="1.4"/>
+  <polyline points="545,227 551,234 561,220" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="578" y="221" width="130" height="9" rx="4.5" fill="#4ade80" opacity="0.4"/>
+
+  <rect x="522" y="264" width="230" height="52" rx="8" fill="#4ade80" opacity="0.08" stroke="#4ade80" stroke-width="1.2"/>
+  <polyline points="545,291 551,298 561,284" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="578" y="285" width="94" height="9" rx="4.5" fill="#4ade80" opacity="0.3"/>
+
+  <path d="M376 227 L376 320 L200 320" stroke="#6366f1" stroke-width="1.6" stroke-dasharray="6 6" opacity="0.65" fill="none"/>
+  <path d="M210 313 L198 320 L210 327 Z" fill="#6366f1" opacity="0.75"/>
+  <rect x="48" y="300" width="140" height="40" rx="8" fill="#6366f1" opacity="0.14" stroke="#6366f1" stroke-width="1.2"/>
+  <rect x="66" y="316" width="104" height="8" rx="4" fill="#6366f1" opacity="0.55"/>
+</svg>
