@@ -1899,17 +1899,31 @@ const Xh = ["light", "dark", "glass", "neon", "custom", "liquid"], Kh = ["hidden
 }, ka = {
   // Default = the marketing home surface: warm cream paper with Klavity-purple and amber atmosphere.
   // The panel is intentionally not stark white; chips/inputs are only a step lighter for affordance.
+  //
+  // KD-157: these used to read through generic host-page variable names — e.g.
+  // '--kl-accent': 'var(--accent, #6366f1)' — so the widget could auto-match Klavity's OWN dashboard
+  // theme when dogfooded there (which happens to define matching --ink/--paper/--line tokens). But
+  // CSS custom properties inherit straight through Shadow DOM boundaries (unlike everything else,
+  // which Shadow DOM correctly isolates), so on any OTHER host page that happens to define its own
+  // same-named variable for unrelated reasons, the widget silently inherited THAT instead. Confirmed
+  // live on PX4's React login page: its shadcn/ui theme defines a global `--accent: oklch(0.968 0.007
+  // 247.896)` (a near-white gray, shadcn's subtle hover tint) — so the widget's Bug button rendered
+  // white text on a near-white background instead of Klavity's purple. Every one of Klavity's own
+  // fallback defaults below already matches what Klavity's dashboard.html defines for light mode
+  // (and dark mode already renders via the fully-literal 'dark' theme below, never touching this
+  // object), so collapsing these to literals changes nothing for Klavity's own embed and removes the
+  // collision risk for every third-party one.
   light: {
-    "--kl-overlay": "var(--ink-overlay, rgba(28,22,40,.30))",
-    "--kl-bg": "var(--ink, #f5f3ee)",
-    "--kl-fg": "var(--paper, #19140f)",
-    "--kl-muted": "var(--paper-dim, #574f45)",
-    "--kl-border": "var(--line, rgba(25,20,15,.12))",
-    "--kl-chip": "var(--ink-2, #fffdf8)",
-    "--kl-input-bg": "var(--ink-2, #fffdf8)",
-    "--kl-accent": "var(--accent, #6366f1)",
-    "--kl-on-accent": "var(--accent-on, #fff)",
-    "--kl-accent2": "var(--accent2, var(--amber, #d98324))",
+    "--kl-overlay": "rgba(28,22,40,.30)",
+    "--kl-bg": "#f5f3ee",
+    "--kl-fg": "#19140f",
+    "--kl-muted": "#574f45",
+    "--kl-border": "rgba(25,20,15,.12)",
+    "--kl-chip": "#fffdf8",
+    "--kl-input-bg": "#fffdf8",
+    "--kl-accent": "#6366f1",
+    "--kl-on-accent": "#fff",
+    "--kl-accent2": "#d98324",
     "--kl-radius": "16px",
     "--kl-shadow": "0 24px 60px rgba(40,28,70,.18), 0 10px 30px rgba(99,102,241,.10)",
     "--kl-backdrop": "none"
@@ -3043,8 +3057,8 @@ function Xf(e, t, r = {}) {
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
-    .klavity-toggle .bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
-    .klavity-toggle .feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
+    .klavity-toggle .kl-toggle-bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
+    .klavity-toggle .kl-toggle-feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     /* PX4 #411: Title field. */
     .klavity-title-label{display:block;font-size:12px;font-weight:600;color:var(--kl-muted);margin-bottom:12px;padding-right:34px;}
     input.klavity-title{width:100%;margin-top:5px;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:9px 11px;font-size:14px;font-weight:500;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
@@ -3537,8 +3551,8 @@ function Xf(e, t, r = {}) {
     <div class="kl-side" id="klavity-side">
       ${t.showTitleField ? '<label class="klavity-title-label" for="klavity-title">Title<input type="text" class="klavity-title" id="klavity-title" maxlength="200" placeholder="One line summarising the issue"></label>' : ""}
       ${le ? `<div class="klavity-types" id="klavity-types" role="radiogroup" aria-label="Issue type">${le.map((y) => `<button type="button" class="kl-type-chip${y.value === e ? " active" : ""}" data-kind="${mt(y.value)}" role="radio" aria-checked="${y.value === e ? "true" : "false"}">${mt(y.label)}${y.mappingLabel ? `<span class="kl-type-map">${mt(y.mappingLabel)}</span>` : ""}</button>`).join("")}</div>` : `<div class="klavity-toggle">
-        <button class="bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${ee("bug")}</span>Bug</button>
-        <button class="feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${ee("lightbulb")}</span>Feature</button>
+        <button class="kl-toggle-bug ${e === "bug" ? "active" : ""}"><span class="kl-cap-ic">${ee("bug")}</span>Bug</button>
+        <button class="kl-toggle-feat ${e === "feature" ? "active" : ""}"><span class="kl-cap-ic">${ee("lightbulb")}</span>Feature</button>
       </div>`}
       
       
@@ -4103,7 +4117,7 @@ function Xf(e, t, r = {}) {
       });
     });
   } else {
-    const y = re.querySelector(".bug"), M = re.querySelector(".feat");
+    const y = re.querySelector(".kl-toggle-bug"), M = re.querySelector(".kl-toggle-feat");
     y.addEventListener("click", () => {
       ue = "bug", y.classList.add("active"), M.classList.remove("active"), Si();
     }), M.addEventListener("click", () => {

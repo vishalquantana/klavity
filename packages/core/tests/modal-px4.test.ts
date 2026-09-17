@@ -256,8 +256,8 @@ describe('PX4 — back-compat: no new opts → identical composer + payload shap
   it('classic Bug/Feature toggle is rendered and new affordances are absent', () => {
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: ok })
     expect(q(ctrl, '.klavity-toggle')).not.toBeNull()
-    expect(q(ctrl, '.bug')).not.toBeNull()
-    expect(q(ctrl, '.feat')).not.toBeNull()
+    expect(q(ctrl, '.kl-toggle-bug')).not.toBeNull()
+    expect(q(ctrl, '.kl-toggle-feat')).not.toBeNull()
     expect(q(ctrl, '.klavity-types')).toBeNull()
     expect(q(ctrl, '#klavity-title')).toBeNull()
     expect(q(ctrl, '#klavity-attach')).toBeNull()
@@ -282,7 +282,7 @@ describe('PX4 — back-compat: no new opts → identical composer + payload shap
   it('the classic Feature toggle still threads type:"feature"', async () => {
     const onSubmit = vi.fn(ok)
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit })
-    ;(q(ctrl, '.feat') as HTMLButtonElement).click()
+    ;(q(ctrl, '.kl-toggle-feat') as HTMLButtonElement).click()
     const desc = q(ctrl, '#klavity-desc') as HTMLTextAreaElement
     desc.value = 'a feature request'; desc.dispatchEvent(new Event('input'))
     ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()

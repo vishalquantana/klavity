@@ -992,8 +992,8 @@ export function buildModal(
     .klavity-modal.kl-closing{animation:kl-genie-out .5s cubic-bezier(.55,0,.85,.25) both;}
     .klavity-toggle{display:flex;gap:8px;margin-bottom:16px;padding-right:34px;}
     .klavity-toggle button{flex:1;min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;background:var(--kl-chip);color:var(--kl-fg);line-height:1;}
-    .klavity-toggle .bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
-    .klavity-toggle .feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
+    .klavity-toggle .kl-toggle-bug.active{background:var(--kl-accent);color:var(--kl-on-accent);}
+    .klavity-toggle .kl-toggle-feat.active{background:var(--kl-accent);color:var(--kl-on-accent);}
     /* PX4 #411: Title field. */
     .klavity-title-label{display:block;font-size:12px;font-weight:600;color:var(--kl-muted);margin-bottom:12px;padding-right:34px;}
     input.klavity-title{width:100%;margin-top:5px;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:9px 11px;font-size:14px;font-weight:500;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
@@ -1492,8 +1492,8 @@ export function buildModal(
       ${issueTypeOpts
         ? `<div class="klavity-types" id="klavity-types" role="radiogroup" aria-label="Issue type">${issueTypeOpts.map(t => `<button type="button" class="kl-type-chip${t.value === initialType ? ' active' : ''}" data-kind="${escHtml(t.value)}" role="radio" aria-checked="${t.value === initialType ? 'true' : 'false'}">${escHtml(t.label)}${t.mappingLabel ? `<span class="kl-type-map">${escHtml(t.mappingLabel)}</span>` : ''}</button>`).join('')}</div>`
         : `<div class="klavity-toggle">
-        <button class="bug ${initialType === 'bug' ? 'active' : ''}"><span class="kl-cap-ic">${icon('bug')}</span>Bug</button>
-        <button class="feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
+        <button class="kl-toggle-bug ${initialType === 'bug' ? 'active' : ''}"><span class="kl-cap-ic">${icon('bug')}</span>Bug</button>
+        <button class="kl-toggle-feat ${initialType === 'feature' ? 'active' : ''}"><span class="kl-cap-ic">${icon('lightbulb')}</span>Feature</button>
       </div>`}
       ${/* KLAVITYKLA-496: the page-path line ("/dashboard") was reporter-facing noise. It is intentionally
           NOT rendered anymore — the page URL is STILL captured and attached to the ticket (the widget puts
@@ -2431,7 +2431,7 @@ export function buildModal(
   }
   if (issueTypeOpts) {
     // PX4 #411: extended issue-type chips. Clicking one sets currentType (an IssueKind) + moves the active
-    // state. The classic .bug/.feat buttons are NOT rendered in this mode, so we skip their wiring entirely.
+    // state. The classic .kl-toggle-bug/.kl-toggle-feat buttons are NOT rendered in this mode, so we skip their wiring entirely.
     const chips = Array.from(modal.querySelectorAll('.kl-type-chip')) as HTMLButtonElement[]
     chips.forEach(chip => {
       chip.addEventListener('click', () => {
@@ -2441,8 +2441,8 @@ export function buildModal(
       })
     })
   } else {
-    const bugBtn = modal.querySelector('.bug') as HTMLButtonElement
-    const featBtn = modal.querySelector('.feat') as HTMLButtonElement
+    const bugBtn = modal.querySelector('.kl-toggle-bug') as HTMLButtonElement
+    const featBtn = modal.querySelector('.kl-toggle-feat') as HTMLButtonElement
     bugBtn.addEventListener('click', () => {
       currentType = 'bug'
       bugBtn.classList.add('active')
