@@ -3,7 +3,10 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [Is Vibe-Coded Code Safe to Ship? What to Verify First](https://klavity.in/blog/is-vibe-coded-code-safe-to-ship) — Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.
 - [How to Use AI for QA Testing: A Practical 6-Step Guide](https://klavity.in/blog/how-to-use-ai-for-qa-testing) — To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.
+- [How to QA a Vibe-Coded App: A Practical 7-Step Process](https://klavity.in/blog/how-to-qa-a-vibe-coded-app) — To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.
+- [Sentry vs Klavity: Which Bug Tool Is Right for Web Agencies?](https://klavity.in/blog/sentry-vs-klavity) — Sentry catches errors in production code. Klavity captures bugs before they ship. Here is how to choose between them for your web agency workflow.
 - [Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch](https://klavity.in/blog/vibe-coding-bugs-web-agencies) — AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.
 - [Test doubles explained: mock vs. stub vs. fake vs. spy](https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles) — Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.
 - [The Best Marker.io Alternative for Web Agencies in 2026](https://klavity.in/blog/marker-io-alternative) — Marker.io captures client bug reports beautifully — but it can't find bugs on its own. Here's the best Marker.io alternative for agencies that want proactive AI QA.

@@ -1,0 +1,213 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is Vibe-Coded Code Safe to Ship? What to Verify First · Klavity</title>
+<meta name="description" content="Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.">
+<link rel="canonical" href="https://klavity.in/blog/is-vibe-coded-code-safe-to-ship">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Is Vibe-Coded Code Safe to Ship? What to Verify First"><meta property="og:description" content="Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.">
+<meta property="og:url" content="https://klavity.in/blog/is-vibe-coded-code-safe-to-ship"><meta property="og:image" content="https://klavity.in/blog/is-vibe-coded-code-safe-to-ship.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Is Vibe-Coded Code Safe to Ship? What to Verify First"><meta name="twitter:description" content="Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow."><meta name="twitter:image" content="https://klavity.in/blog/is-vibe-coded-code-safe-to-ship.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Is Vibe-Coded Code Safe to Ship? What to Verify First","description":"Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.","datePublished":"2026-09-17","dateModified":"2026-09-17","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/is-vibe-coded-code-safe-to-ship.svg"}},"mainEntityOfPage":"https://klavity.in/blog/is-vibe-coded-code-safe-to-ship","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Is Vibe-Coded Code Safe to Ship? What to Verify First","item":"https://klavity.in/blog/is-vibe-coded-code-safe-to-ship"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/is-vibe-coded-code-safe-to-ship"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is vibe-coded code safe to ship to production?","acceptedAnswer":{"@type":"Answer","text":"Not by default. It is safe to ship once you have verified the four things the AI could not check: that one user cannot reach another user's data, that the right rows land in your database, that error and empty states behave, and that the full flow works for a brand-new user. Those checks take under an hour on a small app."}},{"@type":"Question","name":"What is the most common serious bug in AI-generated apps?","acceptedAnswer":{"@type":"Answer","text":"Missing authorization checks. The AI builds a route that fetches a record by ID but never verifies the logged-in user owns it. The bug is invisible while you are the only account, and it exposes other customers' data the moment you have two."}},{"@type":"Question","name":"Does AI-generated code have more security issues than hand-written code?","acceptedAnswer":{"@type":"Answer","text":"Research suggests a real gap. In 'Asleep at the Keyboard?' (Pearce et al., IEEE S&P 2022), roughly 40% of Copilot-generated programs in security-relevant scenarios contained a known weakness. A Stanford study (Perry et al., ACM CCS 2023) found developers using AI assistants wrote less secure code while being more confident it was secure."}},{"@type":"Question","name":"How do I QA a vibe-coded app without a QA team?","acceptedAnswer":{"@type":"Answer","text":"Add three layers in order: a way for users to file bugs with full technical context attached, AI personas that explore the paths you never take, and self-healing end-to-end tests on the flows that must not break. Manual checklists do not survive a shipping schedule; automated layers do."}},{"@type":"Question","name":"Should I stop using Cursor, Lovable, or Bolt?","acceptedAnswer":{"@type":"Answer","text":"No. The speed advantage is real. It only holds if verification gets faster too — generating a feature in an hour and then spending three days chasing a bug a client found first is not a net gain. Keep the tools, add the safety net."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-09-17</div>
+    <h1>Is Vibe-Coded Code Safe to Ship? What to Verify First</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Vibe-coded app passing a four-check shipping gate">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.5"/>
+
+  <rect x="44" y="96" width="196" height="150" rx="10" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="44" y="96" width="196" height="150" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.7"/>
+  <line x1="44" y1="124" x2="240" y2="124" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="60" cy="110" r="4" fill="#6366f1" opacity="0.8"/>
+  <rect x="62" y="146" width="122" height="7" rx="3.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="62" y="164" width="158" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="78" y="182" width="96" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="78" y="200" width="134" height="7" rx="3.5" fill="#6366f1" opacity="0.45"/>
+  <rect x="62" y="218" width="72" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+
+  <path d="M256 171 H320 M320 110 V293 M320 110 H352 M320 171 H352 M320 232 H352 M320 293 H352" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.65"/>
+
+  <rect x="352" y="90" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="90" width="210" height="40" rx="8" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <circle cx="378" cy="110" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <path d="M373 105 L383 115 M383 105 L373 115" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <rect x="400" y="106" width="140" height="8" rx="4" fill="#f87171" opacity="0.45"/>
+
+  <rect x="352" y="151" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="151" width="210" height="40" rx="8" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <circle cx="378" cy="171" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <path d="M373 166 L383 176 M383 166 L373 176" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <rect x="400" y="167" width="112" height="8" rx="4" fill="#f87171" opacity="0.45"/>
+
+  <rect x="352" y="212" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="212" width="210" height="40" rx="8" fill="none" stroke="#4ade80" stroke-width="1.6"/>
+  <circle cx="378" cy="232" r="11" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M372.5 232 L377 236.5 L384 227" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="400" y="228" width="128" height="8" rx="4" fill="#4ade80" opacity="0.4"/>
+
+  <rect x="352" y="273" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="273" width="210" height="40" rx="8" fill="none" stroke="#4ade80" stroke-width="1.6"/>
+  <circle cx="378" cy="293" r="11" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M372.5 293 L377 297.5 L384 288" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="400" y="289" width="96" height="8" rx="4" fill="#4ade80" opacity="0.4"/>
+
+  <line x1="600" y1="70" x2="600" y2="350" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 7" opacity="0.6"/>
+  <polyline points="578,201 610,201 602,193 M610,201 L602,209" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+  <rect x="648" y="150" width="108" height="104" rx="12" fill="#4ade80" opacity="0.08"/>
+  <rect x="648" y="150" width="108" height="104" rx="12" fill="none" stroke="#4ade80" stroke-width="1.8"/>
+  <path d="M682 202 L696 216 L724 186" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="668" y="230" width="68" height="6" rx="3" fill="#4ade80" opacity="0.35"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI coding tools optimize for code that satisfies your prompt and runs — not for code that respects your permission model, your production data, or what happens when something fails. Vibe-coded code is safe to ship once someone has verified authorization boundaries, what actually landed in the database, error and empty states, and the full flow as a brand-new user. The danger isn't bad code; it's that AI-written code reads as finished.</div>
+    <div class="prose"><p><strong>Is vibe-coded code safe to ship?</strong> Not by default — but it can be, once you verify the four things the AI had no way to check: authorization boundaries, what the code writes to your database, how it behaves when something fails, and whether the flow actually works end to end for a real user. An AI coding assistant optimizes for code that satisfies your prompt and runs without errors. It does not know your permission model, your production data, or what a paying customer expects to happen when their card declines. Shipping is safe when someone has verified those four things — not when the preview looks right.</p>
+
+<h2>Is vibe-coded code safe to ship without a review step?</h2>
+
+<p>No, and the reason is structural rather than a knock on the tools. When you prompt Cursor, Lovable, Bolt, v0, or Replit for a feature, the model works from the context in front of it: the files it can see, the prompt you wrote, and patterns from its training. It cannot see the row-level security policy you set up three weeks ago, the webhook that fires on the same table, or the fact that your <em>users</em> table already has 4,000 records that don't match the shape it just assumed.</p>
+
+<p>Two peer-reviewed studies are worth knowing about here. In <em>Asleep at the Keyboard?</em> (Pearce et al., presented at IEEE S&amp;P 2022), researchers prompted GitHub Copilot across dozens of security-relevant scenarios and found that roughly 40% of the generated programs contained a known weakness. In <em>Do Users Write More Insecure Code with AI Assistants?</em> (Perry et al., Stanford, ACM CCS 2023), participants with access to an AI assistant wrote less secure solutions than the control group — and were <strong>more confident</strong> that their code was secure.</p>
+
+<p>That second finding is the one that matters for shipping decisions. The risk isn't that AI writes bad code; it's that AI-written code <em>reads</em> as finished. Confidence rises faster than correctness, so the instinct to review drops exactly when it should rise.</p>
+
+<h2>What does the AI actually verify before you ship?</h2>
+
+<p>It helps to be precise about the gap. Here is what gets checked versus what typically doesn't:</p>
+
+<table>
+  <tr><th>Concern</th><th>Checked by the AI / preview?</th><th>Who has to check it</th></tr>
+  <tr><td>Syntax, types, imports</td><td>Yes — it won't build otherwise</td><td>Nobody, it's covered</td></tr>
+  <tr><td>Happy path renders</td><td>Usually — you saw it in the preview</td><td>Nobody, it's covered</td></tr>
+  <tr><td>Authorization (can user B read user A's data?)</td><td>No</td><td>You</td></tr>
+  <tr><td>Data writes (shape, nulls, duplicates, cascades)</td><td>No</td><td>You</td></tr>
+  <tr><td>Error and empty states</td><td>Rarely</td><td>You</td></tr>
+  <tr><td>Third-party boundaries (payments, email, auth)</td><td>No</td><td>You</td></tr>
+  <tr><td>The flow end to end, as a real user</td><td>No</td><td>You</td></tr>
+</table>
+
+<p>Everything in the bottom half of that table is invisible in a preview window. The code renders, the button clicks, the toast says "Saved." Whether it saved the <em>right</em> thing to the <em>right</em> row for the <em>right</em> person is a separate question, and nothing in the generation loop asks it.</p>
+
+<h2>Which bugs show up most often in AI-generated code?</h2>
+
+<p>Across the failures we see in vibe-coded client work, four classes dominate — and they're the same four whether the code came from Cursor or from a junior developer working too fast. We covered the agency-side version of this in <a href="/blog/vibe-coding-bugs-web-agencies">why vibe-coded sites produce different bugs</a>; here is the shippability-focused version.</p>
+
+<h3>1. Authorization that was never wired up</h3>
+<p>The AI builds a working <strong>/dashboard/:id</strong> route. It fetches by ID. It does not check that the logged-in user owns that ID, because you didn't say so and the pattern it learned doesn't require it. This is the single most common serious bug in AI-generated apps, and it is invisible when you're the only person logged in.</p>
+
+<h3>2. Writes that succeed but are wrong</h3>
+<p>Duplicate rows on double-submit, timestamps in the wrong timezone, a foreign key that silently orphans records, an update that clobbers a field it should have left alone. The request returns 200. The UI says it worked. The data is quietly wrong, and you find out weeks later.</p>
+
+<h3>3. Error and empty states that don't exist</h3>
+<p>Generated code tends to assume the request succeeds and the array has items. Real users hit expired sessions, declined cards, zero results, and flaky mobile networks. An app with no empty state is not broken in the preview — it's broken for the first user who hasn't created anything yet.</p>
+
+<h3>4. Third-party integrations stubbed as if they were real</h3>
+<p>Stripe in test mode, an email provider that silently drops in sandbox, an OAuth callback that only works on localhost. These pass locally and fail on the first real transaction.</p>
+
+<h2>What should you verify before you ship a vibe-coded app?</h2>
+
+<p>You don't need a QA department. You need to answer five questions with evidence rather than intuition. If you can't answer one of them, that's your pre-ship work.</p>
+
+<ol>
+  <li><strong>Can user B reach user A's data?</strong> Create two accounts. Log in as the second one. Try to open the first one's URLs directly — by ID, by slug, by API route. This takes four minutes and catches the most damaging class of bug.</li>
+  <li><strong>What exactly landed in the database?</strong> Run the core flow once, then look at the rows. Not the UI — the rows. Check shape, nulls, ownership, and timestamps.</li>
+  <li><strong>What happens when it fails?</strong> Kill your network mid-submit. Use a declining test card. Submit the form twice fast. Load a page for an account with no data.</li>
+  <li><strong>Does the whole flow work for someone who isn't you?</strong> Sign up as a brand-new user with a fresh email and go end to end without touching anything you already set up.</li>
+  <li><strong>Is anything secret in the client bundle?</strong> Search your built output for API keys and service-role tokens. AI-generated code frequently puts a key where it's convenient rather than where it's safe.</li>
+</ol>
+
+<p>For the longer version of this process, see <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a>. For the broader framing of how AI-assisted testing fits together, the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> is the pillar.</p>
+
+<h2>How do you build a safety net without hiring a QA team?</h2>
+
+<p>The honest constraint for a solo founder or a two-person agency is that manual verification doesn't survive contact with a shipping schedule. You'll do the five checks before launch and skip them on the fourteenth deploy. So the net has to be something that runs without you remembering.</p>
+
+<p>Three layers, in the order they're worth adding:</p>
+
+<ul>
+  <li><strong>Capture the bugs a human already saw.</strong> When a client or user hits something broken, the report needs to arrive with the URL, console errors, network calls, and environment attached — not as "it's not working." <a href="/snap">Snap</a> turns a right-click into that complete report.</li>
+  <li><strong>Have something explore the paths you don't.</strong> You test the way you built it. <a href="/sims">Sims</a> runs AI personas through your product the way different real users would, surfacing the empty states, dead ends, and authorization gaps you never navigate to yourself.</li>
+  <li><strong>Lock the flows that must not break.</strong> Once signup, checkout, and the core action work, turn them into <a href="/autosim">AutoSim</a> tests that re-run on every deploy and repair their own selectors when the AI rewrites your markup — which it will, on every prompt.</li>
+</ul>
+
+<p>The order matters. Layer one costs nothing and pays immediately. Layer three only makes sense once the flows are stable enough to be worth freezing.</p>
+
+<h2>So when is vibe-coded code actually safe to ship?</h2>
+
+<p>When the answer to "who verified this?" is a name or a system, not "it looked fine." Concretely: the five questions above are answered, the core flows have a test that runs on deploy, and there's a path for a user to report a bug with enough evidence that you can fix it without a back-and-forth.</p>
+
+<p>That bar is lower than a traditional QA process and considerably higher than shipping straight from the preview pane. It's also achievable in an afternoon, which is the point — the speed advantage of vibe coding only holds if verification gets faster too. Generating code in an hour and then spending three days chasing a bug a client found first is not a speed advantage.</p>
+
+<h2>Try it on your next deploy</h2>
+
+<p>Klavity gives vibe-coded projects the safety net they're missing: right-click bug reports with full technical context, AI personas that explore what you don't, and E2E tests that heal themselves when your AI rewrites the UI. <a href="/onboarding"><strong>Try Klavity free</strong></a> — point it at the app you shipped this week and see what it finds.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Log in as a second user and try to open the first user's URLs directly.</li><li>Check the database rows after a core flow, not just the success toast.</li><li>Test the declining card, the dead network, the double-submit, and the empty account.</li><li>Search your built bundle for API keys before every deploy.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is vibe-coded code safe to ship to production?</summary><p>Not by default. It is safe to ship once you have verified the four things the AI could not check: that one user cannot reach another user's data, that the right rows land in your database, that error and empty states behave, and that the full flow works for a brand-new user. Those checks take under an hour on a small app.</p></details><details><summary>What is the most common serious bug in AI-generated apps?</summary><p>Missing authorization checks. The AI builds a route that fetches a record by ID but never verifies the logged-in user owns it. The bug is invisible while you are the only account, and it exposes other customers' data the moment you have two.</p></details><details><summary>Does AI-generated code have more security issues than hand-written code?</summary><p>Research suggests a real gap. In 'Asleep at the Keyboard?' (Pearce et al., IEEE S&amp;P 2022), roughly 40% of Copilot-generated programs in security-relevant scenarios contained a known weakness. A Stanford study (Perry et al., ACM CCS 2023) found developers using AI assistants wrote less secure code while being more confident it was secure.</p></details><details><summary>How do I QA a vibe-coded app without a QA team?</summary><p>Add three layers in order: a way for users to file bugs with full technical context attached, AI personas that explore the paths you never take, and self-healing end-to-end tests on the flows that must not break. Manual checklists do not survive a shipping schedule; automated layers do.</p></details><details><summary>Should I stop using Cursor, Lovable, or Bolt?</summary><p>No. The speed advantage is real. It only holds if verification gets faster too — generating a feature in an hour and then spending three days chasing a bug a client found first is not a net gain. Keep the tools, add the safety net.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

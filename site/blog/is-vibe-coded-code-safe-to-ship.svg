@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Vibe-coded app passing a four-check shipping gate">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.5"/>
+
+  <rect x="44" y="96" width="196" height="150" rx="10" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="44" y="96" width="196" height="150" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.7"/>
+  <line x1="44" y1="124" x2="240" y2="124" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="60" cy="110" r="4" fill="#6366f1" opacity="0.8"/>
+  <rect x="62" y="146" width="122" height="7" rx="3.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="62" y="164" width="158" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="78" y="182" width="96" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="78" y="200" width="134" height="7" rx="3.5" fill="#6366f1" opacity="0.45"/>
+  <rect x="62" y="218" width="72" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+
+  <path d="M256 171 H320 M320 110 V293 M320 110 H352 M320 171 H352 M320 232 H352 M320 293 H352" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.65"/>
+
+  <rect x="352" y="90" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="90" width="210" height="40" rx="8" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <circle cx="378" cy="110" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <path d="M373 105 L383 115 M383 105 L373 115" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <rect x="400" y="106" width="140" height="8" rx="4" fill="#f87171" opacity="0.45"/>
+
+  <rect x="352" y="151" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="151" width="210" height="40" rx="8" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <circle cx="378" cy="171" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <path d="M373 166 L383 176 M383 166 L373 176" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <rect x="400" y="167" width="112" height="8" rx="4" fill="#f87171" opacity="0.45"/>
+
+  <rect x="352" y="212" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="212" width="210" height="40" rx="8" fill="none" stroke="#4ade80" stroke-width="1.6"/>
+  <circle cx="378" cy="232" r="11" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M372.5 232 L377 236.5 L384 227" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="400" y="228" width="128" height="8" rx="4" fill="#4ade80" opacity="0.4"/>
+
+  <rect x="352" y="273" width="210" height="40" rx="8" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="352" y="273" width="210" height="40" rx="8" fill="none" stroke="#4ade80" stroke-width="1.6"/>
+  <circle cx="378" cy="293" r="11" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M372.5 293 L377 297.5 L384 288" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="400" y="289" width="96" height="8" rx="4" fill="#4ade80" opacity="0.4"/>
+
+  <line x1="600" y1="70" x2="600" y2="350" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 7" opacity="0.6"/>
+  <polyline points="578,201 610,201 602,193 M610,201 L602,209" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+  <rect x="648" y="150" width="108" height="104" rx="12" fill="#4ade80" opacity="0.08"/>
+  <rect x="648" y="150" width="108" height="104" rx="12" fill="none" stroke="#4ade80" stroke-width="1.8"/>
+  <path d="M682 202 L696 216 L724 186" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="668" y="230" width="68" height="6" rx="3" fill="#4ade80" opacity="0.35"/>
+</svg>

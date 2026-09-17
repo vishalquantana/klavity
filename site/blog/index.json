@@ -2,21 +2,21 @@
   {
     "slug": "severity-vs-priority-how-to-classify-a-bug",
     "title": "Severity vs. Priority: How to Classify a Bug Correctly",
-    "excerpt": "Severity is how badly a bug breaks the product. Priority is how soon you should fix it. They're independent — and confusing them is why the wrong bugs get worked first. Here's how to classify each correctly.",
+    "excerpt": "Severity is how badly a bug breaks the product. Priority is how soon you should fix it. They're independent \u2014 and confusing them is why the wrong bugs get worked first. Here's how to classify each correctly.",
     "category": "Guides",
     "date": "2026-06-30"
   },
   {
     "slug": "fix-flaky-end-to-end-tests",
     "title": "How to fix flaky end-to-end tests (and stop re-running CI)",
-    "excerpt": "Flaky tests are a symptom, not bad luck. Here are the five root causes — timing, shared state, network races, test order, and retry abuse — and how to fix each one for good.",
+    "excerpt": "Flaky tests are a symptom, not bad luck. Here are the five root causes \u2014 timing, shared state, network races, test order, and retry abuse \u2014 and how to fix each one for good.",
     "category": "Guides",
     "date": "2026-06-29"
   },
   {
     "slug": "reduce-cannot-reproduce-bug-tickets",
     "title": "How to reduce 'cannot reproduce' bug tickets for good",
-    "excerpt": "'Cannot reproduce' is the most expensive two words in a bug tracker. Here's why it happens — and the four kinds of state you have to capture to make it stop.",
+    "excerpt": "'Cannot reproduce' is the most expensive two words in a bug tracker. Here's why it happens \u2014 and the four kinds of state you have to capture to make it stop.",
     "category": "Insights",
     "date": "2026-06-22"
   },
@@ -37,14 +37,14 @@
   {
     "slug": "playwright-vs-cypress-regression-testing",
     "title": "Playwright vs. Cypress: Choosing Your Regression Test Framework",
-    "excerpt": "Both Playwright and Cypress catch regressions — but they make different trade-offs around speed, flakiness, cross-browser coverage, and CI cost. Here's how to pick the right one for your team.",
+    "excerpt": "Both Playwright and Cypress catch regressions \u2014 but they make different trade-offs around speed, flakiness, cross-browser coverage, and CI cost. Here's how to pick the right one for your team.",
     "category": "Compare",
     "date": "2026-06-24"
   },
   {
     "slug": "why-qa-finds-different-bugs-than-real-users",
     "title": "Why Your QA Team Finds Different Bugs Than Your Real Users",
-    "excerpt": "QA teams are expert users who know what to avoid. Real users aren't — and the bugs they hit live in the paths your QA team never takes. Here's how to close that gap systematically.",
+    "excerpt": "QA teams are expert users who know what to avoid. Real users aren't \u2014 and the bugs they hit live in the paths your QA team never takes. Here's how to close that gap systematically.",
     "category": "Insights",
     "date": "2026-06-25"
   },
@@ -58,14 +58,14 @@
   {
     "slug": "how-ai-personas-catch-bugs-your-test-suite-misses",
     "title": "How AI Personas Catch Bugs Your Test Suite Misses",
-    "excerpt": "Automated test suites verify what you thought to test. AI personas explore what you didn't think to test — surfacing UX bugs, edge-case interactions, and assumption mismatches before real users find them.",
+    "excerpt": "Automated test suites verify what you thought to test. AI personas explore what you didn't think to test \u2014 surfacing UX bugs, edge-case interactions, and assumption mismatches before real users find them.",
     "category": "Insights",
     "date": "2026-06-27"
   },
   {
     "slug": "how-to-triage-a-bug-backlog",
     "title": "How to Triage a Bug Backlog Without Losing Your Mind",
-    "excerpt": "A 200-bug backlog doesn't mean 200 bugs to fix — it means 200 items to sort so the five that actually matter rise to the top. Here's a repeatable triage process that keeps your backlog useful.",
+    "excerpt": "A 200-bug backlog doesn't mean 200 bugs to fix \u2014 it means 200 items to sort so the five that actually matter rise to the top. Here's a repeatable triage process that keeps your backlog useful.",
     "category": "Guides",
     "date": "2026-06-28"
   },
@@ -135,7 +135,7 @@
   {
     "slug": "what-is-ai-bug-reporting",
     "title": "What Is AI Bug Reporting? Definition and How It Works",
-    "excerpt": "AI bug reporting uses AI to turn a rough report into a complete, reproducible ticket — capturing steps, environment, and evidence automatically.",
+    "excerpt": "AI bug reporting uses AI to turn a rough report into a complete, reproducible ticket \u2014 capturing steps, environment, and evidence automatically.",
     "category": "Learn",
     "date": "2026-07-11"
   },
@@ -149,7 +149,7 @@
   {
     "slug": "in-app-bug-reporting-guide",
     "title": "In-App Bug Reporting: A Practical Guide for QA Teams",
-    "excerpt": "In-app bug reporting lets people file a bug from inside your product, so it ships with the exact state — URL, console, network, and environment — attached.",
+    "excerpt": "In-app bug reporting lets people file a bug from inside your product, so it ships with the exact state \u2014 URL, console, network, and environment \u2014 attached.",
     "category": "Guides",
     "date": "2026-07-13"
   },
@@ -191,7 +191,7 @@
   {
     "slug": "screenshot-vs-screen-recording-bug-evidence",
     "title": "Screenshot vs. Screen Recording: Which Bug Evidence?",
-    "excerpt": "Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs — and attach the console too.",
+    "excerpt": "Screenshots freeze one moment; recordings capture a sequence. Use a screenshot for visual bugs, a recording for timing bugs \u2014 and attach the console too.",
     "category": "Compare",
     "date": "2026-07-19"
   },
@@ -205,7 +205,7 @@
   {
     "slug": "where-ai-qa-automation-helps",
     "title": "Where AI QA Automation Actually Helps (and Where It Doesn't)",
-    "excerpt": "AI QA automation is strongest at mechanical work — generating tests, repairing selectors, triaging reports — and weakest at deciding what to test.",
+    "excerpt": "AI QA automation is strongest at mechanical work \u2014 generating tests, repairing selectors, triaging reports \u2014 and weakest at deciding what to test.",
     "category": "Insights",
     "date": "2026-07-21"
   },
@@ -240,7 +240,7 @@
   {
     "slug": "what-is-a-smoke-test",
     "title": "What Is a Smoke Test? Definition, Uses, and Examples",
-    "excerpt": "A smoke test is a small, fast set of checks that confirms a build's critical paths work — login, boot, core flows — before any deeper testing runs.",
+    "excerpt": "A smoke test is a small, fast set of checks that confirms a build's critical paths work \u2014 login, boot, core flows \u2014 before any deeper testing runs.",
     "category": "Learn",
     "date": "2026-07-26"
   },
@@ -254,7 +254,7 @@
   {
     "slug": "how-to-write-steps-to-reproduce-a-bug",
     "title": "How to Write Steps to Reproduce a Bug Anyone Can Follow",
-    "excerpt": "Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow — one action per line, with state and data.",
+    "excerpt": "Vague repro steps are why bugs bounce back as 'cannot reproduce.' Here's how to write steps to reproduce anyone can follow \u2014 one action per line, with state and data.",
     "category": "Guides",
     "date": "2026-07-28"
   },
@@ -359,21 +359,21 @@
   {
     "slug": "definition-of-done-for-a-bug-fix",
     "title": "How to Write a Definition of Done for a Bug Fix (Checklist)",
-    "excerpt": "A bug isn't fixed when the code changes — it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.",
+    "excerpt": "A bug isn't fixed when the code changes \u2014 it's fixed when it's verified and can't quietly return. Here's a definition-of-done checklist for bug fixes.",
     "category": "Guides",
     "date": "2026-08-12"
   },
   {
     "slug": "redact-pii-and-secrets-from-bug-reports",
     "title": "How to Redact PII and Secrets From Bug Report Evidence",
-    "excerpt": "Bug reports capture console logs, network calls, screenshots, and URLs — which routinely carry tokens, cookies, and PII. Here's how to redact them safely.",
+    "excerpt": "Bug reports capture console logs, network calls, screenshots, and URLs \u2014 which routinely carry tokens, cookies, and PII. Here's how to redact them safely.",
     "category": "Guides",
     "date": "2026-08-13"
   },
   {
     "slug": "how-to-reduce-mean-time-to-resolution-for-bugs",
     "title": "How to Reduce Mean Time to Resolution (MTTR) for Bugs",
-    "excerpt": "Mean time to resolution (MTTR) measures how long bugs take to fix. The reproduction stage usually dominates it — here's how to shrink each stage.",
+    "excerpt": "Mean time to resolution (MTTR) measures how long bugs take to fix. The reproduction stage usually dominates it \u2014 here's how to shrink each stage.",
     "category": "Guides",
     "date": "2026-08-14"
   },
@@ -394,7 +394,7 @@
   {
     "slug": "what-is-test-coverage",
     "title": "What Is Test Coverage? Types, Metrics, and Its Limits",
-    "excerpt": "Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ — and why 100% never means bug-free.",
+    "excerpt": "Test coverage is the percentage of your code executed by tests. Here's how line, branch, and function coverage differ \u2014 and why 100% never means bug-free.",
     "category": "Learn",
     "date": "2026-08-17"
   },
@@ -436,7 +436,7 @@
   {
     "slug": "false-positive-vs-false-negative-in-testing",
     "title": "False Positive vs. False Negative in Software Testing",
-    "excerpt": "A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart — and cut both.",
+    "excerpt": "A false positive fails when the code is fine; a false negative passes when the code is broken. Here's how to tell them apart \u2014 and cut both.",
     "category": "Compare",
     "date": "2026-08-23"
   },
@@ -450,7 +450,7 @@
   {
     "slug": "how-to-write-a-blameless-postmortem-for-a-production-bug",
     "title": "How to Write a Blameless Postmortem for a Production Bug",
-    "excerpt": "A good postmortem answers what broke, why it broke, and what stops it recurring — blamelessly, with a timeline and owned action items. Here's the template.",
+    "excerpt": "A good postmortem answers what broke, why it broke, and what stops it recurring \u2014 blamelessly, with a timeline and owned action items. Here's the template.",
     "category": "Guides",
     "date": "2026-08-25"
   },
@@ -492,7 +492,7 @@
   {
     "slug": "release-readiness-checklist-pre-launch-qa",
     "title": "How to Build a Release Readiness Checklist (Pre-Launch)",
-    "excerpt": "A release readiness checklist is the go/no-go gate before you ship. Here's what to verify — smoke tests, rollback, monitoring, and sign-off.",
+    "excerpt": "A release readiness checklist is the go/no-go gate before you ship. Here's what to verify \u2014 smoke tests, rollback, monitoring, and sign-off.",
     "category": "Guides",
     "date": "2026-08-31"
   },
@@ -506,7 +506,7 @@
   {
     "slug": "how-to-test-for-accessibility-bugs",
     "title": "How to Test for Accessibility Bugs: A Practical Checklist",
-    "excerpt": "Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist — keyboard, contrast, focus, and labels — to catch them.",
+    "excerpt": "Most accessibility bugs throw no error and break nothing visually. Here's a practical checklist \u2014 keyboard, contrast, focus, and labels \u2014 to catch them.",
     "category": "Guides",
     "date": "2026-09-02"
   },
@@ -534,7 +534,7 @@
   {
     "slug": "error-monitoring-vs-bug-reporting-when-to-use-each",
     "title": "Error Monitoring vs. Bug Reporting: When You Need Each",
-    "excerpt": "Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures — here's how to use both.",
+    "excerpt": "Error monitoring catches exceptions your code throws. Bug reporting catches problems a person sees. They cover different failures \u2014 here's how to use both.",
     "category": "Compare",
     "date": "2026-09-06"
   },
@@ -590,7 +590,7 @@
   {
     "slug": "ai-qa-complete-guide",
     "title": "What is AI QA? The Complete Guide for Web Agencies",
-    "excerpt": "AI QA uses machine learning to find bugs, reproduce issues, and triage defects automatically — without writing test scripts. Here's everything web agencies need to know.",
+    "excerpt": "AI QA uses machine learning to find bugs, reproduce issues, and triage defects automatically \u2014 without writing test scripts. Here's everything web agencies need to know.",
     "category": "Learn",
     "date": "2026-09-13"
   },
@@ -604,7 +604,7 @@
   {
     "slug": "vibe-coding-bugs-web-agencies",
     "title": "Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch",
-    "excerpt": "AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.",
+    "excerpt": "AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss \u2014 and how web agencies are catching them before clients do.",
     "category": "Guide",
     "date": "2026-09-13"
   },
@@ -618,7 +618,7 @@
   {
     "slug": "marker-io-alternative",
     "title": "The Best Marker.io Alternative for Web Agencies in 2026",
-    "excerpt": "Marker.io captures client bug reports beautifully — but it can't find bugs on its own. Here's the best Marker.io alternative for agencies that want proactive AI QA.",
+    "excerpt": "Marker.io captures client bug reports beautifully \u2014 but it can't find bugs on its own. Here's the best Marker.io alternative for agencies that want proactive AI QA.",
     "category": "Compare",
     "date": "2026-09-13"
   },
@@ -632,7 +632,7 @@
   {
     "slug": "autonomous-testing-web-agencies",
     "title": "What Is Autonomous Testing? A Web Agency Guide",
-    "excerpt": "Autonomous testing is software that runs QA without human input — finding bugs, reporting them, and learning your sites over time. Here's what it means for web agencies.",
+    "excerpt": "Autonomous testing is software that runs QA without human input \u2014 finding bugs, reporting them, and learning your sites over time. Here's what it means for web agencies.",
     "category": "Learn",
     "date": "2026-09-13"
   },
@@ -642,5 +642,26 @@
     "excerpt": "To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.",
     "category": "Guides",
     "date": "2026-09-16"
+  },
+  {
+    "slug": "is-vibe-coded-code-safe-to-ship",
+    "title": "Is Vibe-Coded Code Safe to Ship? What to Verify First",
+    "excerpt": "Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.",
+    "category": "Insights",
+    "date": "2026-09-17"
+  },
+  {
+    "slug": "how-to-qa-a-vibe-coded-app",
+    "title": "How to QA a Vibe-Coded App: A Practical 7-Step Process",
+    "excerpt": "To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.",
+    "category": "Guides",
+    "date": "2026-09-15"
+  },
+  {
+    "slug": "sentry-vs-klavity",
+    "title": "Sentry vs Klavity: Which Bug Tool Is Right for Web Agencies?",
+    "excerpt": "Sentry catches errors in production code. Klavity captures bugs before they ship. Here is how to choose between them for your web agency workflow.",
+    "category": "Compare",
+    "date": "2026-09-14"
   }
 ]
