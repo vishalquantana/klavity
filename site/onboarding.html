@@ -821,6 +821,7 @@ main.onboarding-app {
         <label class="field-label" for="snapTargetUrl">Website URL</label>
         <input type="url" class="text-input font-mono" id="snapTargetUrl" placeholder="https://yourproduct.com" oninput="snapConnectSyncDetected()" />
         <div id="snapConnectDetected" class="detected-note hide"></div>
+        <div id="snapConnectErr" class="field-error"></div>
       </div>
 
       <div id="snapConnectBeforeOpen" style="display: flex; gap: 12px;">
@@ -1044,17 +1045,11 @@ function advanceSnapStep() {
   setUIRoute('snapWebsite');
 }
 
-// "I'll install it later" (Figma): skips Snap · Connect entirely, straight to Account — confirmed by
-// clicking through the real Figma prototype, whose stepper shows "Connect" already checked off on
-// arrival at Account via this path. uiRailModel's phaseOf already marks any phase before the active
-// one as done, so the stepper's "Connect ✓" falls out of this for free. Since Connect never ran here,
-// no URL was ever collected — requestCode() requires a non-empty project name, so fall back to a
-// generic one (renameable later from the dashboard) rather than dead-ending on a hidden field.
+// "I'll install it later" — skips the extension install, but still asks which site to test
+// (Snap · Connect) before Account, same as the normal Add-to-Chrome path does.
 function snapSkipToAccount() {
-  const pn = document.getElementById('projectName')
-  if (pn && !pn.value.trim()) pn.value = 'Default Project'
   navHistory.push(activeFlow);
-  setUIRoute('account');
+  setUIRoute('snapWebsite');
 }
 
 // Two-phase reveal matching Figma: opening the Chrome Web Store swaps the CTA row for a
@@ -1088,9 +1083,30 @@ function onboardingPrevStep() {
 
 // ── Snap · Connect → Account. Snap doesn't run the persona pipeline — it just needs the target
 // site to name the project (and, best-effort, the account's domain). ──
-function snapConnectContinue() {
+// Pre-signup duplicate-workspace guard: is this site already connected to someone else's
+// workspace? Fails OPEN (never blocks) on a network hiccup — a transient check failure must not
+// dead-end a real signup. Returns null when clear to proceed, or the existing workspace's name.
+async function checkUrlClaimed(url) {
+  if (!url) return null
+  try {
+    const { ok, data } = await jsonFetch('/api/onboarding/check-url', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }),
+    })
+    if (ok && data && data.claimed) return data.workspaceName || 'an existing workspace'
+  } catch (e) {}
+  return null
+}
+
+async function snapConnectContinue() {
   const urlInp = document.getElementById('snapTargetUrl')
   const url = urlInp ? urlInp.value.trim() : ''
+  const err = document.getElementById('snapConnectErr')
+  if (err) err.textContent = ''
+  const claimedBy = await checkUrlClaimed(url)
+  if (claimedBy) {
+    if (err) err.textContent = 'This site is already connected to ' + claimedBy + '. Ask an admin there to invite you — self-serve signup for it is disabled.'
+    return
+  }
   try {
     if (url) {
       const host = new URL(url.startsWith('http') ? url : 'https://' + url).hostname.replace(/^www\./, '')
@@ -1148,10 +1164,17 @@ function accountSyncEmailValid() {
 
 // ── Sim · Connect → Testing. Kicks off the REAL persona/preview pipeline (window.uhFetch, wired
 // to #uhUrl/#uhErr/#uhResult, which now live on the Connect/Testing screens) instead of a fake timer. ──
-function simConnectContinue() {
+async function simConnectContinue() {
   const inp = document.getElementById('uhUrl')
   const url = inp ? inp.value.trim() : ''
-  if (!url) { const e = document.getElementById('uhErr'); if (e) e.textContent = 'Enter your product URL.'; if (inp) inp.focus(); return }
+  const errEl = document.getElementById('uhErr')
+  if (!url) { if (errEl) errEl.textContent = 'Enter your product URL.'; if (inp) inp.focus(); return }
+  if (errEl) errEl.textContent = ''
+  const claimedBy = await checkUrlClaimed(url)
+  if (claimedBy) {
+    if (errEl) errEl.textContent = 'This site is already connected to ' + claimedBy + '. Ask an admin there to invite you — self-serve signup for it is disabled.'
+    return
+  }
   try {
     const host = new URL(url.startsWith('http') ? url : 'https://' + url).hostname.replace(/^www\./, '')
     const dm = document.getElementById('domain'); if (dm && !dm.value.trim()) dm.value = host
@@ -2168,7 +2191,7 @@ async function requestCode(){
     const b = $('createBtn'); b.disabled = true; b.textContent = 'Creating…'
     // New Figma flow: Account is the wizard's last step for both goals — straight to the dashboard
     // from here. Tracker / plan / AutoSim / more-Sims stay deferred to the dashboard checklist.
-    try { await applyProjectName(); await completeOnboardingAndGoDashboard() }
+    try { await applyProjectName(true); await completeOnboardingAndGoDashboard() }
     catch(e){ err.textContent = 'Network error — try again.' }
     finally { b.disabled = false; b.textContent = 'Create project →' }
     return
@@ -2225,7 +2248,9 @@ async function verifyCode(){
       projectId = v.data.projectId
       try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}
     }
-    await applyProjectName()
+    // A returning login (isNewAccount:false) means this wizard run is "add another project" —
+    // never rename the account's existing default project out from under them.
+    await applyProjectName(v.data && v.data.isNewAccount !== true)
     // New Figma flow: straight to the dashboard after the account is created (aha already happened
     // before signup). Deferred setup (tracker / plan / AutoSim / more Sims) lives on the dashboard
     // checklist; Snap's widget install already happened earlier in ITS flow (Install → Connect).
@@ -2274,11 +2299,25 @@ function wireProjectNameAutofill(){
   dm.addEventListener('blur', fill)
 }
 
-// Rename the signup's project to the chosen name + persist aha (best-effort — never blocks).
-async function applyProjectName(){
+// Apply the signup's chosen project name — persists aha (best-effort — never blocks).
+// createNew=false (default): a brand-new account, so rename the just-bootstrapped default project
+// to the chosen name (one-time first-signup naming).
+// createNew=true: a RETURNING/already-signed-in user going through the wizard again — this is
+// always "add another project" (the ?again=1 re-entry door, or the signedIn fast-path's "you are
+// signed in as X, so just name it and continue" copy) — so create a genuinely NEW project instead
+// of renaming their existing one out from under them.
+async function applyProjectName(createNew){
   const name = $('projectName').value.trim()
   try {
-    if (!projectId) {
+    if (createNew) {
+      const { ok, data } = await jsonFetch('/api/projects', {
+        method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ name: name || 'Untitled project' })
+      })
+      if (ok && data && data.project) {
+        projectId = data.project.id
+        try { sessionStorage.setItem('klav-onboarding-project', projectId) } catch(e){}
+      }
+    } else if (!projectId) {
       const { ok, data } = await jsonFetch('/api/projects', { headers:{'accept':'application/json'} })
       if (!ok || !data.projects || !data.projects.length) return
       projectId = (data.projects.filter(p => p.role === 'admin').pop() || data.projects[0]).id
@@ -2291,7 +2330,7 @@ async function applyProjectName(){
         method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ url: st.url, projectId: projectId })
       }).catch(function(){})
     }
-    if (name) {
+    if (!createNew && name) {
       await jsonFetch('/api/projects/' + encodeURIComponent(projectId) + '/rename', {
         method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name })
       })

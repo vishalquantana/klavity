@@ -2353,6 +2353,28 @@ export async function setAccountDomain(accountId: string, domain: string): Promi
   await db.execute({ sql: "UPDATE accounts SET domain=? WHERE id=?", args: [domain || null, accountId] })
 }
 
+// Pre-signup duplicate-workspace guard (onboarding's Snap/Sim "Connect" screens): does any EXISTING
+// account already own this website? Checked two ways — accounts.domain (what onboarding itself
+// persists via setAccountDomain above) and projects.site_url (settable separately, e.g. the
+// dashboard's "+ new project" siteUrl field) — so either path claiming a domain blocks a duplicate
+// signup for the same site. Returns only the workspace NAME (never an admin email or account id) —
+// enough for "ask an admin at X to invite you" without leaking who specifically to an anonymous
+// caller. Bare lowercase host in, www-stripped, so both columns compare on the same shape.
+export async function findClaimedWorkspaceByDomain(domain: string): Promise<{ workspaceName: string } | null> {
+  if (!db || !domain) return null
+  const byDomain = await db.execute({ sql: "SELECT name FROM accounts WHERE domain=? LIMIT 1", args: [domain] })
+  if (byDomain.rows.length) return { workspaceName: String((byDomain.rows[0] as any).name) }
+  // site_url is a full URL (e.g. "https://acme.com"); compare on host only, not the stored string.
+  const r = await db.execute({ sql: "SELECT p.site_url, a.name FROM projects p JOIN accounts a ON a.id=p.account_id WHERE p.site_url IS NOT NULL AND p.site_url != ''" })
+  for (const row of r.rows as any[]) {
+    try {
+      const host = new URL(String(row.site_url)).hostname.replace(/^www\./i, "").toLowerCase()
+      if (host === domain) return { workspaceName: String(row.name) }
+    } catch { /* malformed site_url — skip */ }
+  }
+  return null
+}
+
 // ── KLA-297: explicit onboarding-completed flag ──────────────────────────────────────────────
 // Before this, "has this account been through setup?" was inferred from accounts.domain — but the
 // wizard labels that field "Your website · optional", so the signal was wrong in BOTH directions:
