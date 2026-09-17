@@ -1,0 +1,24 @@
+{
+  "_comment": "Source of truth for which target keywords are already covered, per tier. The daily-blog routine reads this at STEP 2 to pick the next uncovered keyword, and appends a new entry here at STEP 9 (SHIP) every time it publishes a Tier A/B/C/D keyword. This replaces the old approach of hand-editing DONE tags in the routine prompt, which drifted out of sync (fixed 2026-09-17 — see KLAVITYKLA ticket for context).",
+  "tier-a": {
+    "ai qa": "ai-qa-complete-guide",
+    "ai testing tools for web agencies": "ai-testing-tools-for-web-agencies",
+    "ai code review tool": "ai-code-review-tool-for-web-agencies",
+    "autonomous testing": "autonomous-testing-web-agencies",
+    "how to use ai for qa testing": "how-to-use-ai-for-qa-testing"
+  },
+  "tier-b": {
+    "how to qa a vibe-coded app": "how-to-qa-a-vibe-coded-app",
+    "is vibe-coded code safe to ship": "is-vibe-coded-code-safe-to-ship",
+    "vibe coding bugs": "vibe-coding-bugs-web-agencies"
+  },
+  "tier-c": {
+    "marker.io alternative": "marker-io-alternative",
+    "bugherd alternative": "bugherd-alternative",
+    "sentry vs klavity": "sentry-vs-klavity"
+  },
+  "tier-d": {
+    "how to reduce cannot reproduce bug reports": "reduce-cannot-reproduce-bug-tickets",
+    "how to write a bug report developers won't hate": "how-to-write-a-bug-report-developers-act-on"
+  }
+}
