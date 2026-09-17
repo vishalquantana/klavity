@@ -2492,7 +2492,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <div id="sims"><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div><div class="sk-card"><span class="sk sk-av"></span><div class="sk-lines"><span class="sk sk-line" style="width:62%"></span><span class="sk sk-line" style="width:40%"></span></div><span class="sk sk-pill"></span></div></div>
     </div>
 
-    <!-- People & Teams (R2: invite CTA, admin only) -->
+    <!-- People & Teams (R2: invite CTA — any project member can invite; role-changing/removing existing members stays admin-only, see renderMembers) -->
     <div class="card" data-view="team">
       <h2><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /> <path d="M16 3.128a4 4 0 0 1 0 7.744" /> <path d="M22 21v-2a4 4 0 0 0-3-3.87" /> <circle cx="9" cy="7" r="4" /></svg> Your team <span class="count" id="memCount"></span></h2>
       <div id="members"></div>
@@ -5237,8 +5237,10 @@ function render(fromCache, poll) {
 
   // role-gated controls
   $("newSimBtn").classList.toggle("hide", !admin)
-  $("inviteWrap").classList.toggle("hide", !admin)
-  $("userNote").classList.toggle("hide", admin)
+  // Invite is no longer admin-only — any project member can invite a teammate (server caps a
+  // non-admin inviter to granting "member", never "admin"; see POST /api/projects/:id/invite).
+  $("inviteWrap").classList.remove("hide")
+  $("userNote").classList.add("hide")
   $("settingsDrawer").classList.toggle("hide", false)
   $("connAdmin").classList.toggle("hide", !admin)
   $("connUser").classList.toggle("hide", admin)
