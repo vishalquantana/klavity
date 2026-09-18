@@ -11526,9 +11526,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!inv.includes("@")) return json({ error: "Enter a valid email." }, 400)
         const proj = await resolveProject(me, project ? String(project) : null)
         if (!proj) return json({ error: "No project." }, 400)
-        if (proj.access !== "admin") return json({ error: "Only admins can invite." }, 403)
+        // Any project member (admin or plain member) can invite — was admin-only. A non-admin
+        // inviter is still capped to granting the "member" role, never "admin": otherwise any
+        // member could self-service mint a new admin. Only an admin inviter's role choice is honored.
         const p = await projectById(proj.id)
-        const wantRole = role === "admin" ? "admin" : "member"
+        const wantRole = proj.access === "admin" && role === "admin" ? "admin" : "member"
         // Was this person already an active member before we touched anything? (Determines pending vs accepted.)
         const priorAccess = await projectAccess(inv, proj.id)
         await addProjectMember(proj.id, p!.accountId, inv, wantRole, me)
@@ -14394,10 +14396,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ members: await membersOfProject(pid) })
         }
         if (req.method === "POST" && sub === "/invite") {
-          if (access !== "admin") return json({ error: "Only project admins can invite." }, 403)
+          // Any project member (admin or plain member) can invite — was admin-only. A non-admin
+          // inviter is still capped to granting the "member" role, never "admin": otherwise any
+          // member could self-service mint a new admin. Only an admin inviter's role choice is honored.
           const body = await req.json().catch(() => ({}))
           const inv = String(body.email || "").trim().toLowerCase()
-          const role = body.role === "admin" ? "admin" : "member"
+          const role = access === "admin" && body.role === "admin" ? "admin" : "member"
           if (!inv.includes("@")) return json({ error: "Enter a valid email." }, 400)
           const priorRole = (await projectAccess(inv, pid)) ?? null
           await addProjectMember(pid, proj.accountId, inv, role, me)
