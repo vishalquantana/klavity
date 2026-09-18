@@ -14106,6 +14106,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // POST /api/projects/:id/tickets — manually create a ticket (KLA-173).
         // Any project member may create; ticket is immediately open (skips triage queue).
         if (req.method === "POST" && sub === "/tickets") {
+          // KD-159: reported ~10s of silent latency before the dashboard's "Create ticket" button did
+          // anything visible. Per-query slow-query logging (lib/db.ts, 200ms threshold) would already
+          // catch any single slow DB call; this measures the whole handler (5-6 sequential awaited
+          // round trips + notifyTicketAssignee's lookups) in case the cost is cumulative rather than
+          // any one operation. Diagnostic only — not gating/changing behavior.
+          const _kd159T0 = performance.now()
           const body = await req.json().catch(() => ({}))
           const title = String(body.title ?? "").trim()
           if (!title) return json({ error: "Title is required." }, 400)
@@ -14168,6 +14174,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             })
             createEmailSent = notify.emailSent
           }
+          const _kd159Ms = performance.now() - _kd159T0
+          if (_kd159Ms >= 1000) console.warn(`[slow-ticket-create] ${_kd159Ms.toFixed(0)}ms project=${proj.id}`)
           // JTBD 2.15: surface a silently-skipped notification email so the UI can warn.
           return json({ ok: true, ticketId: id, ...(createEmailSent === false ? { assigneeEmailSent: false } : {}) }, 201)
         }
