@@ -1196,6 +1196,13 @@ export async function applySchema(c: Client) {
   await c.execute(`CREATE INDEX IF NOT EXISTS fb_proj_status_idx ON feedback (project_id, status, created_at)`)
     .catch((e: any) => console.warn("fb_proj_status_idx skipped:", e?.message || e))
 
+  // KD-158: ticket_comments.edited_at — stamped when a user edits their own comment's body after
+  // posting, so the timeline can show an "(edited)" marker. Null on comments never edited.
+  if (needCol("ticket_comments", "edited_at")) {
+    await c.execute("ALTER TABLE ticket_comments ADD COLUMN edited_at INTEGER")
+      .catch((e: any) => console.warn("ticket_comments.edited_at ALTER skipped:", e?.message || e))
+  }
+
   // ── feedback_replays.s3_key (KLA-757/759 perf): the gzipped rrweb event buffer is uploaded to object
   // storage at ingest and the object key stored here, so GET /api/feedback/:id/replay streams the blob
   // from S3 (fast) instead of SELECTing a 100s-of-KB events_gz BLOB out of remote Turso (pathologically
@@ -3779,7 +3786,7 @@ export async function listActivity(projectId: string, opts: { actorEmail?: strin
 }
 
 export type TicketCommentRow = {
-  id: string; feedbackId: string; author: string | null; body: string; createdAt: number
+  id: string; feedbackId: string; author: string | null; body: string; createdAt: number; editedAt: number | null
 }
 function rowToTicketComment(x: any): TicketCommentRow {
   return {
@@ -3788,6 +3795,7 @@ function rowToTicketComment(x: any): TicketCommentRow {
     author: x.author != null ? String(x.author) : null,
     body: String(x.body),
     createdAt: Number(x.created_at),
+    editedAt: x.edited_at != null ? Number(x.edited_at) : null,
   }
 }
 export async function insertTicketComment(feedbackId: string, author: string | null, body: string): Promise<TicketCommentRow> {
@@ -3818,8 +3826,32 @@ export async function listTicketComments(feedbackId: string): Promise<TicketComm
   return r.rows.map(rowToTicketComment)
 }
 
+// KD-158: edit an already-posted comment's body. Scoped by feedbackId so a comment id can't be
+// used to edit a comment on an unrelated ticket. Returns the updated row, or null if not found.
+export async function updateTicketComment(commentId: string, feedbackId: string, body: string): Promise<TicketCommentRow | null> {
+  const trimmed = String(body || "").trim()
+  if (!trimmed) throw new Error("comment body required")
+  const editedAt = Date.now()
+  const r = await db!.execute({
+    sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?",
+    args: [trimmed, editedAt, commentId, feedbackId],
+  })
+  if (Number(r.rowsAffected) === 0) return null
+  const sel = await db!.execute({ sql: "SELECT * FROM ticket_comments WHERE id=? LIMIT 1", args: [commentId] })
+  return sel.rows.length ? rowToTicketComment(sel.rows[0]) : null
+}
+
+// KD-158: permanently remove a posted comment. Scoped by feedbackId for the same reason as above.
+export async function deleteTicketComment(commentId: string, feedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "DELETE FROM ticket_comments WHERE id=? AND feedback_id=?",
+    args: [commentId, feedbackId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
 export type TicketTimelineItem =
-  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number }
+  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null }
   | { id: string; kind: "activity"; type: string; actorEmail: string | null; meta: any; createdAt: number }
   | { id: string; kind: "ticket_export"; type: "connector_export"; actorEmail: string | null; meta: any; createdAt: number }
 
@@ -3837,7 +3869,7 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
   ])
   const items: TicketTimelineItem[] = [
     ...comments.map((c): TicketTimelineItem => ({
-      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt,
+      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt,
     })),
     ...activity.rows.map((r: any): TicketTimelineItem => ({
       id: String(r.id),
@@ -8513,6 +8545,16 @@ export async function updateFeedbackTitle(feedbackId: string, projectId: string,
   // matches (title still empty), same as before.
   const r = await db!.execute({
     sql: `UPDATE feedback SET title=?, updated_at=${MONOTONIC_UPDATED_AT_SQL} WHERE id=? AND project_id=? AND (title IS NULL OR title='')`,
+    args: [title, Date.now(), feedbackId, projectId],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
+// KD-158: unlike updateFeedbackTitle (one-time fill for a blank AI-generated title), this lets a
+// user rename an already-titled ticket, any number of times, via the dashboard's title editor.
+export async function renameFeedbackTitle(feedbackId: string, projectId: string, title: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: `UPDATE feedback SET title=?, updated_at=${MONOTONIC_UPDATED_AT_SQL} WHERE id=? AND project_id=?`,
     args: [title, Date.now(), feedbackId, projectId],
   })
   return Number(r.rowsAffected) > 0

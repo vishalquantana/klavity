@@ -1275,6 +1275,16 @@ body[data-view="tickets"] .wrap,body[data-view="triage"] .wrap{max-width:none}
 .single-h-b{flex:1;min-width:0}
 .single-title{font-family:var(--display);font-weight:500;font-size:22px;line-height:1.25;letter-spacing:-.01em}
 .single-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px}
+/* KD-158: click-to-edit ticket title — mirrors .tkt-desc-edit's hover-reveal pencil pattern. */
+.single-title-row{display:flex;align-items:flex-start;gap:6px}
+.single-title-row .single-title{cursor:text;min-width:0}
+.single-title-edit{background:none;border:none;padding:2px;line-height:0;color:var(--paper-faint);cursor:pointer;border-radius:6px;opacity:0;transition:opacity .15s,color .15s,transform var(--mi-dur) var(--mi-ease);margin-top:4px;flex:none}
+.single-title-row:hover .single-title-edit,.single-title-edit:focus-visible{opacity:1}
+.single-title-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
+.single-title-editing .single-title,.single-title-editing .single-title-edit{display:none}
+.single-title-edit-wrap{display:block;flex:1;min-width:0}
+.single-title-input{width:100%;font:inherit;font-family:var(--display);font-weight:500;font-size:22px;line-height:1.25;letter-spacing:-.01em;color:var(--paper);background:var(--ink-3);border:1px solid var(--indigo);border-radius:8px;padding:2px 8px}
+#ticketSingle.tkt-page .t3-mid .single-title-input{font-size:26px;letter-spacing:-.015em;line-height:1.25}
 #ticketSingle .tkt-detail{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;max-width:920px}
 #ticketSingle .single-head{max-width:920px}
 /* KLA-562 Stage 2: single ticket as a Jira-style right-side sliding panel (board/list stays behind) */
@@ -1521,6 +1531,17 @@ body.tkt-page-open .wrap{max-width:none}
 .tkt-tl-text{font-size:13px;margin-top:2px;line-height:1.5;word-break:break-word}
 .tkt-tl-meta{font-size:11px;color:var(--paper-faint);margin-top:2px}
 .tkt-tl-empty{font-size:13px;color:var(--paper-faint);padding:4px 0 2px}
+/* KD-158: editable/deletable comments — hover-reveal actions, mirrors .tkt-desc-edit. */
+.tkt-tl-item{align-items:flex-start}
+.tkt-cmt-actions{position:absolute;top:8px;right:0;display:flex;gap:2px;opacity:0;transition:opacity .15s}
+.tkt-tl-item:hover .tkt-cmt-actions,.tkt-cmt-actions:focus-within{opacity:1}
+.tkt-cmt-edit,.tkt-cmt-del{background:none;border:none;padding:3px;line-height:0;color:var(--paper-faint);cursor:pointer;border-radius:6px;transition:color .15s,transform var(--mi-dur) var(--mi-ease)}
+.tkt-cmt-edit:hover{color:var(--indigo);transform:var(--mi-lift)}
+.tkt-cmt-del:hover{color:var(--rose);transform:var(--mi-lift)}
+.tkt-cmt-edited{font-style:italic}
+.tkt-cmt-edit-wrap{margin-top:4px;display:flex;flex-direction:column;gap:6px}
+.tkt-cmt-edit-ta{width:100%;min-height:52px;resize:vertical;font:inherit;font-size:13px;line-height:1.5;color:var(--paper);background:var(--ink-3);border:1px solid var(--indigo);border-radius:8px;padding:6px 8px}
+.tkt-cmt-edit-row{display:flex;align-items:center;gap:10px}
 /* #725d: Activity / Comments tab switcher on the dedicated page (underline pill row). The panel keeps
    the classic stacked "Activity" heading. */
 .t3-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}
@@ -1899,6 +1920,21 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-rec-dl svg{width:13px;height:13px}
   .tkt-rec-dl:hover{background:rgba(99,102,241,.1);border-color:var(--indigo);transform:var(--mi-lift)}
   .tkt-rec-dl:active{transform:var(--mi-press)}
+  /* KD-158: file attachments (PDFs/logs/docs from #425/KLAVITYKLA-480 intake, plus anything added
+     post-creation) — a small list + "Add attachment" affordance. */
+  .tkt-attach-wrap{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+  .tkt-attach-hd{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--paper-faint)}
+  .tkt-attach-count{color:var(--paper-dim)}
+  .tkt-attach-list{display:flex;flex-direction:column;gap:6px}
+  .tkt-attach-item{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--paper);background:var(--ink-2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;text-decoration:none;transition:border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
+  a.tkt-attach-item:hover{border-color:var(--indigo);transform:var(--mi-lift)}
+  a.tkt-attach-item:active{transform:var(--mi-press)}
+  .tkt-attach-item svg{flex:none}
+  .tkt-attach-item svg:last-child{margin-left:auto;color:var(--paper-faint)}
+  .tkt-attach-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tkt-attach-size{color:var(--paper-faint);flex:none}
+  .tkt-attach-unavailable{color:var(--paper-faint);cursor:default}
+  .tkt-attach-add-btn{align-self:flex-start}
 
 /* ===== Add-a-Sim modal (first-run + "New Sim") ===== */
 .sm-ov{position:fixed;inset:0;background:rgba(25,20,15,.5);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;z-index:2147483646;overflow:auto;padding:40px 18px}
@@ -7104,6 +7140,67 @@ function wireRecordingVideos(root) {
     })
   })
 }
+function _attachFmtBytes(n) {
+  n = Number(n) || 0
+  if (n < 1024) return n + " B"
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB"
+  return (n / (1024 * 1024)).toFixed(1) + " MB"
+}
+// KD-158: file attachments (non-image evidence — PDFs, logs, docs — uploaded at intake, #425/
+// KLAVITYKLA-480) were captured + presigned by the server but never rendered anywhere in the
+// dashboard. This renders the existing list; wireAttachments() (below) wires "+ Add attachment" so
+// a member can add more to an already-created ticket, not just at intake.
+function buildAttachmentsHtml(t) {
+  var atts = Array.isArray(t.attachments) ? t.attachments : []
+  var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+  var items = atts.map(function (a, i) {
+    var name = esc(String(a.filename || ("attachment-" + (i + 1))))
+    var size = a.size ? _attachFmtBytes(a.size) : ""
+    return a.url
+      ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener">'
+          + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span>'
+          + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + _dlSvg + '</a>'
+      : '<span class="tkt-attach-item tkt-attach-unavailable">' + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span><span>unavailable</span></span>'
+  }).join("")
+  return '<div class="tkt-attach-wrap">'
+    + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
+    + '<div class="tkt-attach-list">' + items + '</div>'
+    + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button">' + kicon('paperclip', { size: 13 }) + ' Add attachment</button>'
+    + '<input type="file" class="tkt-attach-input" multiple hidden>'
+    + '<div class="tkt-attach-msg muted" style="font-size:12px"></div>'
+  + '</div>'
+}
+// Wires the "+ Add attachment" control rendered by buildAttachmentsHtml — file picker → multipart
+// POST /api/feedback/:id/attachments → appendFeedbackAttachments (server) → re-render the list.
+function wireAttachments(detailEl, t, ticketId) {
+  var wrap = detailEl.querySelector(".tkt-attach-wrap"); if (!wrap) return
+  var addBtn = wrap.querySelector(".tkt-attach-add-btn")
+  var input = wrap.querySelector(".tkt-attach-input")
+  var msgEl = wrap.querySelector(".tkt-attach-msg")
+  if (!addBtn || !input) return
+  addBtn.addEventListener("click", function () { input.click() })
+  input.addEventListener("change", async function () {
+    var files = Array.prototype.slice.call(input.files || [])
+    if (!files.length) return
+    addBtn.disabled = true
+    if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Uploading…" }
+    var fd = new FormData()
+    files.forEach(function (f) { fd.append("files", f) })
+    const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/attachments", { method: "POST", body: fd }).catch(() => null)
+    addBtn.disabled = false
+    input.value = ""
+    const d = r ? await r.json().catch(() => ({})) : {}
+    if (r && r.ok && d.ok && Array.isArray(d.attachments)) {
+      t.attachments = (Array.isArray(t.attachments) ? t.attachments : []).concat(d.attachments)
+      const tkt = (state.tickets || []).find(x => x.id === ticketId)
+      if (tkt) tkt.attachments = t.attachments
+      wrap.outerHTML = buildAttachmentsHtml(t)
+      wireAttachments(detailEl, t, ticketId)   // re-wire the freshly re-rendered wrap
+    } else if (msgEl) {
+      msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
+    }
+  })
+}
 // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
 // ticket's REAL evidence — its screenshot + session replay + any recordings — switching what the strip
 // highlights on click (the screenshot stays in the big stage; replay/recording thumbs open the existing
@@ -7355,20 +7452,23 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         : ""
       const _descTools = `<div class="t3-desctools">
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles',{size:13})} Enhance with AI</button>
-        <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" disabled title="File attachments are coming soon">${kicon('paperclip',{size:13})} Attach</button>
       </div>`
+      // KD-158: existing attachments + "+ Add attachment" — a reusable fragment, same as _recHtml.
+      const _attachHtml = buildAttachmentsHtml(t)
       const _left = `<div class="t3-col t3-left"><div class="t3-colh">Evidence &amp; Media</div>${t.screenshotId ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
       // #725c: the redundant "ACTIVITY & COMMENTS" parent heading is gone — the Activity/Comments tab
       // row (built by buildTimelineSection) is the section header now. The <hr> still separates the
       // description/recordings block above from the activity/comments section below.
-      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}<hr class="t3-hr"><div class="t3-activity-mount"></div></div>`
+      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}${_attachHtml}<hr class="t3-hr"><div class="t3-activity-mount"></div></div>`
       const _right = `<div class="t3-col t3-right"><div class="t3-colh">Properties</div>${_bodyHtml}</div>`
       detailEl.innerHTML = `<div class="t3-cols">${_left}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_mid}<div class="t3-gutter" data-g="2" aria-hidden="true"></div>${_right}</div>`
     } else {
+      const _attachHtml = buildAttachmentsHtml(t)
       detailEl.innerHTML = _isTwoCol
-        ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_bodyHtml}</div>`
-        : `${_contextHtml}${_recHtml}${_bodyHtml}`
+        ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}</div>`
+        : `${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}`
     }
+    wireAttachments(detailEl, t, ticketId)
     wireRecordingSeek(detailEl)
     wireRecordingVideos(detailEl)
     if (_pageThreeCol) wireT3Resize(detailEl)
@@ -8165,7 +8265,7 @@ const TL_ACTIVITY_LABELS = {
 function renderCommentBody(text) {
   return esc(String(text == null ? "" : text)).replace(/(^|\s)@([\w.\-]+)/g, (_m, pre, h) => pre + '<span class="t3-m">@' + h + "</span>")
 }
-function renderTimelineItem(item) {
+function renderTimelineItem(item, ticketId) {
   const el = document.createElement("div")
   el.className = "tkt-tl-item"
   let dotClass = "tkt-tl-dot-activity"
@@ -8175,9 +8275,18 @@ function renderTimelineItem(item) {
   if (item.kind === "comment") {
     dotClass = "tkt-tl-dot-comment"; icon = TL_ICONS.comment
     const author = item.author ? esc(item.author.split("@")[0]) : "Anonymous"
+    // KD-158: a poster may edit/delete their own comment; a project admin may edit/delete any comment
+    // (mirrors Jira's default "edit/delete own" vs. "edit/delete all" split).
+    const isOwn = !!item.author && item.author === (state && state.email)
+    const isAdmin = !!(state && state.active && state.active.role === "admin")
+    const canManage = ticketId && item.id && (isOwn || isAdmin)
     bodyHtml = `<div class="tkt-tl-author">${author}</div>
-      <div class="tkt-tl-text">${renderCommentBody(item.body)}</div>
-      <div class="tkt-tl-meta">${esc(ago(item.createdAt))}</div>`
+      <div class="tkt-tl-text tkt-cmt-body">${renderCommentBody(item.body)}</div>
+      <div class="tkt-tl-meta">${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}</div>
+      ${canManage ? `<div class="tkt-cmt-actions">
+        <button type="button" class="tkt-cmt-edit" title="Edit comment" aria-label="Edit comment">${kicon('pencil',{size:12})}</button>
+        <button type="button" class="tkt-cmt-del" title="Delete comment" aria-label="Delete comment">${kicon('trash-2',{size:12})}</button>
+      </div>` : ""}`
   } else if (item.kind === "ticket_export") {
     dotClass = "tkt-tl-dot-export"; icon = TL_ICONS.export
     const label = TL_ACTIVITY_LABELS.connector_export ? TL_ACTIVITY_LABELS.connector_export(item.meta) : "Exported"
@@ -8195,6 +8304,79 @@ function renderTimelineItem(item) {
   }
 
   el.innerHTML = `<div class="tkt-tl-dot ${dotClass}">${icon}</div><div class="tkt-tl-body">${bodyHtml}</div>`
+
+  // KD-158: wire the edit/delete affordances (only rendered above when canManage is true).
+  if (item.kind === "comment" && item.id && ticketId) {
+    const editBtn = el.querySelector(".tkt-cmt-edit")
+    const delBtn = el.querySelector(".tkt-cmt-del")
+    const bodyEl = el.querySelector(".tkt-cmt-body")
+    const metaEl = el.querySelector(".tkt-tl-meta")
+    if (delBtn) {
+      delBtn.addEventListener("click", async (ev) => {
+        ev.stopPropagation()
+        if (!window.confirm("Delete this comment? This can't be undone.")) return
+        delBtn.disabled = true
+        const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
+          method: "DELETE",
+        }).catch(() => null)
+        const d = r ? await r.json().catch(() => ({})) : {}
+        if (r && r.ok && d.ok) el.remove()
+        else { delBtn.disabled = false; alert(d.error || "Couldn't delete comment.") }
+      })
+    }
+    if (editBtn && bodyEl) {
+      editBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation()
+        if (el.classList.contains("tkt-cmt-editing")) return
+        el.classList.add("tkt-cmt-editing")
+        bodyEl.style.display = "none"
+        const wrap = document.createElement("div")
+        wrap.className = "tkt-cmt-edit-wrap"
+        const ta = document.createElement("textarea")
+        ta.className = "tkt-cmt-edit-ta"; ta.value = item.body || ""
+        ta.setAttribute("aria-label", "Edit comment")
+        const row = document.createElement("div")
+        row.className = "tkt-cmt-edit-row"
+        const saveB = document.createElement("button")
+        saveB.type = "button"; saveB.className = "btn btn-indigo btn-sm"; saveB.textContent = "Save"
+        const cancelB = document.createElement("button")
+        cancelB.type = "button"; cancelB.className = "btn btn-ghost btn-sm"; cancelB.textContent = "Cancel"
+        row.appendChild(saveB); row.appendChild(cancelB)
+        wrap.appendChild(ta); wrap.appendChild(row)
+        bodyEl.insertAdjacentElement("afterend", wrap)
+        try { ta.focus(); const n = ta.value.length; ta.setSelectionRange(n, n) } catch (e) {}
+        let done = false
+        const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; wrap.remove() }
+        const commit = async () => {
+          if (done) return
+          const next = ta.value.trim()
+          if (!next) return
+          saveB.disabled = true
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ body: next })
+          }).catch(() => null)
+          const d = r ? await r.json().catch(() => ({})) : {}
+          if (r && r.ok && d.comment) {
+            item.body = d.comment.body; item.editedAt = d.comment.editedAt
+            bodyEl.innerHTML = renderCommentBody(item.body)
+            if (metaEl) metaEl.innerHTML = `${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}`
+            teardown()
+          } else {
+            saveB.disabled = false
+            alert(d.error || "Couldn't save comment.")
+          }
+        }
+        cancelB.addEventListener("click", (e2) => { e2.stopPropagation(); teardown() })
+        saveB.addEventListener("click", (e2) => { e2.stopPropagation(); commit() })
+        ta.addEventListener("keydown", ev2 => {
+          if (ev2.key === "Escape") { ev2.preventDefault(); ev2.stopPropagation(); teardown() }
+          else if (ev2.key === "Enter" && (ev2.metaKey || ev2.ctrlKey)) { ev2.preventDefault(); commit() }
+        })
+      })
+    }
+  }
+
   return el
 }
 
@@ -8349,9 +8531,9 @@ function buildTimelineSection(ticketId, report) {
       const acts = items.filter(it => it.kind !== "comment")
       const cmts = items.filter(it => it.kind === "comment")
       listEl.innerHTML = acts.length ? "" : '<div class="tkt-tl-empty">No activity yet.</div>'
-      acts.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+      acts.forEach(item => listEl.appendChild(renderTimelineItem(item, ticketId)))
       cmtListEl.innerHTML = cmts.length ? "" : '<div class="tkt-tl-empty">No comments yet.</div>'
-      cmts.forEach(item => cmtListEl.appendChild(renderTimelineItem(item)))
+      cmts.forEach(item => cmtListEl.appendChild(renderTimelineItem(item, ticketId)))
       _setTabCount("activity", acts.length)
       _setTabCount("comments", cmts.length)
       if (!_userPickedTab) _activateTab(cmts.length > 0 ? "comments" : "activity", false)
@@ -8360,7 +8542,7 @@ function buildTimelineSection(ticketId, report) {
       if (!items.length) {
         listEl.innerHTML = '<div class="tkt-tl-empty">No activity yet.</div>'
       } else {
-        items.forEach(item => listEl.appendChild(renderTimelineItem(item)))
+        items.forEach(item => listEl.appendChild(renderTimelineItem(item, ticketId)))
       }
     }
   }
@@ -9013,12 +9195,80 @@ function _renderSingleTicket(id) {
   const renderHead = () => {
     head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
-        <div class="single-title">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+        <div class="single-title-row">
+          <div class="single-title" title="Click to edit">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+          <button class="single-title-edit" type="button" title="Edit title" aria-label="Edit title">${kicon('pencil',{size:13})}</button>
+        </div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot',{size:11}) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
         ${regrBannerHtml(t)}
       </div>`
     // #735: the "#<seq>" title pill copies the clean /t/<id> permalink (re-wired after every renderHead).
     try { wireTktKeyCopy(head.querySelector(".tkt-seq"), t.id) } catch (e) {}
+    // KD-158: click-to-edit title (pencil, or the text itself — not the seq-pill, which copies the link).
+    // Re-wired after every renderHead, same as wireTktKeyCopy above.
+    try { wireSingleTitleEdit() } catch (e) {}
+  }
+  const wireSingleTitleEdit = () => {
+    const row = head.querySelector(".single-title-row")
+    if (!row) return
+    const titleEl = row.querySelector(".single-title")
+    const editBtn = row.querySelector(".single-title-edit")
+    const enterTitleEdit = () => {
+      if (row.classList.contains("single-title-editing")) return
+      const cur = t.title != null ? String(t.title) : ""
+      row.classList.add("single-title-editing")
+      const wrap = document.createElement("div")
+      wrap.className = "single-title-edit-wrap"
+      const inp = document.createElement("input")
+      inp.type = "text"; inp.className = "single-title-input"; inp.value = cur
+      inp.setAttribute("aria-label", "Edit title"); inp.maxLength = 200
+      wrap.appendChild(inp)
+      row.appendChild(wrap)
+      try { inp.focus(); inp.select() } catch (e) {}
+      let done = false
+      const teardown = () => { if (done) return; done = true; row.classList.remove("single-title-editing"); wrap.remove() }
+      const commit = () => {
+        if (done) return
+        const next = inp.value.trim()
+        const prev = t.title != null ? String(t.title) : ""
+        if (!next) { teardown(); return } // empty rename rejected client-side too — matches server validation
+        teardown()
+        if (next === prev) return
+        // OPTIMISTIC: repaint immediately; PATCH in the background; revert on failure.
+        t.title = next
+        const tkt = (state.tickets || []).find(x => x.id === id)
+        if (tkt) tkt.title = next
+        recordLocalEdit(id, { title: next })
+        renderHead()
+        renderTicketsKanban()
+        ;(async () => {
+          window.__klavMutating++
+          let d = {}
+          try {
+            const r = await fetch("/api/feedback/" + encodeURIComponent(id), {
+              method: "PATCH", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ title: next })
+            }).catch(() => null)
+            d = r ? await r.json().catch(() => ({})) : {}
+          } finally { window.__klavMutating-- }
+          if (!d.ok) {
+            t.title = prev
+            if (tkt) tkt.title = prev
+            recordLocalEdit(id, { title: prev })
+            renderHead()
+            renderTicketsKanban()
+            showTktMsg(detailEl, d.error || "Couldn't save title — reverted.", true)
+          }
+        })()
+      }
+      inp.addEventListener("keydown", ev => {
+        if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); teardown() }
+        else if (ev.key === "Enter") { ev.preventDefault(); commit() }
+      })
+      inp.addEventListener("blur", () => { if (!done) commit() })
+    }
+    if (editBtn) editBtn.addEventListener("click", ev => { ev.stopPropagation(); enterTitleEdit() })
+    if (titleEl) titleEl.addEventListener("click", ev => { if (ev.target.closest(".tkt-seq")) return; ev.stopPropagation(); enterTitleEdit() })
   }
   renderHead()
   const detailEl = buildTktDetail(t, admin, () => { renderHead(); renderTicketsKanban() }, true)
