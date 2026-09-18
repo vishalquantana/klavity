@@ -663,6 +663,23 @@ function withSharpSuggestion(
 // Active watch-engine controller — torn down when Sims are undeployed.
 let _simsWatchCtrl: SimsWatchController | null = null
 
+// KD-162: only worth listing when the reporter ACTUALLY navigated across pages while capturing evidence
+// — a single-shot session gains nothing over the structured urlPath field already sent with the report,
+// and unconditionally appending it here was clobbering the JTBD-1.10 "empty description" signal
+// (submitFeedback's `description.trim() ? ... : ""` check) for the common single-page case, which meant
+// the server's own clean fallback (fallbackDraftTitle) never got a chance to run — the reporter's ticket
+// showed this raw trail (a full page URL) as its description instead. Module-scope (not nested inside
+// mount()) so it's directly unit-testable, matching the extension's identical fix (evidence-store.ts).
+export function buildPagesTrail(shots: EvidenceShot[]): string {
+  if (!shots || shots.length < 2) return ""
+  const lines = shots.map((s, i) => {
+    const path = s.pagePath || s.pageUrl || "(unknown)"
+    const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
+    return `${i + 1}. ${path}${full}`
+  })
+  return "Pages captured:\n" + lines.join("\n")
+}
+
 async function mount() {
   const cfg = parseScriptConfig(currentScript())
   if (!cfg.projectId || !cfg.backendUrl) return
@@ -965,15 +982,6 @@ async function mount() {
     let byIndex: Record<number, unknown> = {}
     try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
     void queueEvWrite(() => persistAllAnnotations(sessionId, byIndex))
-  }
-  function buildPagesTrail(shots: EvidenceShot[]): string {
-    if (!shots || !shots.length) return ""
-    const lines = shots.map((s, i) => {
-      const path = s.pagePath || s.pageUrl || "(unknown)"
-      const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
-      return `${i + 1}. ${path}${full}`
-    })
-    return "Pages captured:\n" + lines.join("\n")
   }
 
   // ── Minimized dock (the mockup's dark pill) ──

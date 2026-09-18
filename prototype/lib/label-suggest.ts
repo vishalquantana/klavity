@@ -1,6 +1,7 @@
 // KLA-175: Lightweight AI label suggestion at bug capture time.
 // Fetches project labels, asks a cheap LLM to pick 1–3, stores the result for ghost-chip display.
-import { listLabels, setSuggestedLabels, recordAiCall, setFeedbackObservation } from "./db"
+import { listLabels, setSuggestedLabels, recordAiCall, updateFeedbackTitle } from "./db"
+import { clientInfoLines } from "./feedback"
 
 const SUGGEST_MODEL = process.env.KLAV_LABEL_SUGGEST_MODEL || "openai/gpt-4o-mini"
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
@@ -17,6 +18,38 @@ export function fallbackDraftTitle(opts: { reportType?: "bug" | "feature"; pageU
   }
   const noun = reportType === "feature" ? "Feature request" : "Screenshot report"
   return (where ? `${noun} on ${where}` : noun).slice(0, 200)
+}
+
+const _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+// UTC (not server-local time) so the stamp means the same thing regardless of where the server runs.
+function formatCapturedAt(ms: number): string {
+  const d = new Date(ms)
+  const day = String(d.getUTCDate()).padStart(2, "0")
+  const month = _MONTHS[d.getUTCMonth()]
+  const year = d.getUTCFullYear()
+  let h = d.getUTCHours()
+  const ampm = h >= 12 ? "PM" : "AM"
+  h = h % 12; if (h === 0) h = 12
+  const hh = String(h).padStart(2, "0")
+  const mm = String(d.getUTCMinutes()).padStart(2, "0")
+  return `${day} ${month} ${year}, ${hh}:${mm} ${ampm} UTC`
+}
+
+// KD-162: a screenshot-only report (no typed description) previously fell back to whatever raw text the
+// widget happened to send (often a bare page URL with an opaque id in it, or nothing at all — see
+// fallbackDraftTitle's history above). This composes an actually useful description from context that's
+// ALREADY captured with every report: the page, when it was captured, and the reporter's browser/OS/
+// viewport (reused from clientInfoLines — the same formatter already used for the export/share payload).
+export function fallbackDraftDescription(opts: {
+  reportType?: "bug" | "feature"
+  pageUrl?: string | null
+  createdAt: number
+  clientInfo?: unknown
+}): string {
+  const lines = [fallbackDraftTitle({ reportType: opts.reportType, pageUrl: opts.pageUrl })]
+  lines.push(`Captured: ${formatCapturedAt(opts.createdAt)}`)
+  lines.push(...clientInfoLines(opts.clientInfo))
+  return lines.join("\n").slice(0, 1000)
 }
 
 // JTBD 1.10: post-intake title drafting for a screenshot-only report. The row was inserted with a
@@ -88,8 +121,12 @@ export async function draftTitleForFeedback(opts: {
         const raw = JSON.parse(data.choices?.[0]?.message?.content || "{}")
         if (typeof raw.title === "string") title = raw.title.trim().replace(/[.\s]+$/, "").slice(0, 200)
       } catch { /* ignore parse errors — keep fallback */ }
-      // Only overwrite the fallback when the model gave us a real title (don't blank out a good fallback).
-      if (title) await setFeedbackObservation(feedbackId, projectId, title)
+      // KD-162: this used to overwrite `observation` (the ticket's DESCRIPTION) with the drafted title —
+      // which clobbered fallbackDraftDescription's page/capture-time/browser context the moment OpenRouter
+      // succeeded, undoing the whole point of that richer fallback. Stamp the dedicated `title` column
+      // instead (guarded empty-only, matching generateAndSaveTitle's KLA-554 pattern below), and leave the
+      // description alone.
+      if (title) await updateFeedbackTitle(feedbackId, projectId, title)
     }
   } catch (e: any) {
     console.warn("[title-draft] failed (non-fatal):", e?.message || e)

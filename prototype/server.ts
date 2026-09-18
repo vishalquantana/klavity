@@ -135,7 +135,7 @@ import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/si
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
-import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
+import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
@@ -5991,9 +5991,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     priorFeedbackCount = Number((r.rows[0] as any)?.n ?? 1)
                   } catch { /* non-fatal */ }
                 }
+                // KD-162: a screenshot-only report's `observation` (used above for the deterministic
+                // issueKey / dedup identity) stays the minimal fallbackDraftTitle string — untouched, so
+                // issueKey/dedup behavior is unaffected. What actually gets STORED/shown as the ticket's
+                // description is a richer version composed here (page + capture time + browser/OS), so
+                // the reporter never sees a bare/noisy fallback as their issue description.
+                const storedObservation = draftedTitle
+                  ? fallbackDraftDescription({ reportType, pageUrl, createdAt: Date.now(), clientInfo })
+                  : observation
                 feedbackId = await insertFeedback({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
-                  observation, sentiment, priority, screenshotId, suggestedBug,
+                  observation: storedObservation, sentiment, priority, screenshotId, suggestedBug,
                   citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
                   sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
                   planeIssueKey: null, planeIssueUrl: null,
