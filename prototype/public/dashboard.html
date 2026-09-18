@@ -9303,6 +9303,24 @@ function ticketAgo(t) {
   if (n && n >= 2 && t.lastSeenAt && t.lastSeenAt > (t.createdAt || 0)) return "reported " + ago(t.lastSeenAt)
   return ago(t.createdAt)
 }
+// KD-160: the "All Tickets" kanban swimlanes only ever showed a relative age ("3 wks ago") with no way
+// to see exactly when a ticket was created. Formatted manually (not toLocaleString) so the "15 Sep 2026,
+// 04:35 PM" shape is locale-independent, matching the format the ticket asked for verbatim.
+const _KD160_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+function exactCreatedWhen(ms) {
+  if (!ms) return ""
+  const d = new Date(Number(ms))
+  if (isNaN(d.getTime())) return ""
+  const day = String(d.getDate()).padStart(2, "0")
+  const month = _KD160_MONTHS[d.getMonth()]
+  const year = d.getFullYear()
+  let h = d.getHours()
+  const ampm = h >= 12 ? "PM" : "AM"
+  h = h % 12; if (h === 0) h = 12
+  const hh = String(h).padStart(2, "0")
+  const mm = String(d.getMinutes()).padStart(2, "0")
+  return `${day} ${month} ${year}, ${hh}:${mm} ${ampm}`
+}
 function regrBannerHtml(t) {
   if (!t.isRegression) return ""
   return `<div class="regr-banner"><span class="regr-ico">↩</span>Regression — came back after resolved</div>`
@@ -10372,14 +10390,19 @@ function renderTicketsKanban(boardTickets) {
       })
       // KLA-775: drop the URL/path from the board card face — it added a long, low-signal line that
       // pushed the "what" (title) around. The full path still lives in the ticket detail panel. Keep
-      // the concise provenance ("by <Sim>") + relative age.
-      const sub = [t.simName ? ("by " + t.simName) : "", ticketAgo(t)].filter(Boolean).join(" · ")
+      // the concise provenance ("by <Sim>") + created date/time.
+      // KD-160: swimlane cards showed only a relative age ("3 wks ago") with no exact created date/time
+      // — swapped for the literal "Created: 15 Sep 2026, 04:35 PM" format the ticket asked for. Kept as
+      // the element's `title` too so it's still readable in full if a long sim name truncates the line
+      // (.kb-card-d is single-line + ellipsis, same as every other overflow case on this card).
+      const createdWhen = exactCreatedWhen(t.createdAt)
+      const sub = [t.simName ? ("by " + t.simName) : "", createdWhen ? ("Created: " + createdWhen) : ""].filter(Boolean).join(" · ")
       const renderCard = () => { cardEl.querySelector(".kb-card-meta").innerHTML = kbCardMetaHtml(t) }
       cardEl.innerHTML = `
         <input type="checkbox" class="kb-card-cb" aria-label="Select ticket for bulk action"${_bulkSelected.has(ticketId) ? " checked" : ""}>
         <button class="copy-ai-icon kb-copy-ai" type="button" aria-label="Copy to AI" title="Copy to AI — paste into Claude / ChatGPT to fix this bug">${kicon('sparkles')}</button>
         <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
-        <div class="kb-card-d">${sub}</div>
+        <div class="kb-card-d" title="${esc(sub)}">${esc(sub)}</div>
         <div class="kb-card-meta"></div>`
       renderCard()
 
