@@ -11,7 +11,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -12067,16 +12067,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments(?:\/([^/]+))?|\/attachments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
       if (feedbackIdMatch) {
         let fid = feedbackIdMatch[1]
-        const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/labels\/[^/]+$/, "/labels") || ""
-        const labelIdParam = feedbackIdMatch[3] || null
+        const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/comments\/[^/]+$/, "/comments").replace(/\/labels\/[^/]+$/, "/labels") || ""
+        // KD-158: comment id for PATCH/DELETE /api/feedback/:id/comments/:commentId (undefined on every other subroute).
+        const commentIdParam = feedbackIdMatch[3] || null
+        const labelIdParam = feedbackIdMatch[4] || null
         const isExport = feedbackSubroute === "/export"
         const isExportRequest = feedbackSubroute === "/export-request"
         const isReplay = feedbackSubroute === "/replay"
         const isMemory = feedbackSubroute === "/memory"
         const isComments = feedbackSubroute === "/comments"
+        const isAttachments = feedbackSubroute === "/attachments"
         const isTimeline = feedbackSubroute === "/timeline" || feedbackSubroute === "/activity"
         const isLabels = feedbackSubroute === "/labels"
         const isSuggestLabels = feedbackSubroute === "/suggest-labels"
@@ -12231,6 +12234,81 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })().catch((e: any) => console.warn("[notify] comment notification failed:", e?.message || e))
 
           return json({ comment }, 201)
+        }
+
+        // KD-158: PATCH/DELETE /api/feedback/:id/comments/:commentId — a poster may edit or delete
+        // their own comment; a project admin may edit or delete anyone's (mirrors Jira's default
+        // "edit/delete own" vs. "edit/delete all" comment-permission split).
+        if ((req.method === "PATCH" || req.method === "DELETE") && isComments && commentIdParam) {
+          if (!fbAccess) return json({ error: "Only project members can manage comments." }, 403)
+          const existing = (await listTicketComments(fid)).find((c) => c.id === commentIdParam)
+          if (!existing) return json({ error: "Comment not found." }, 404)
+          const isOwn = !!existing.author && existing.author === me
+          if (!isOwn && fbAccess !== "admin") return json({ error: "You can only edit or delete your own comments." }, 403)
+
+          if (req.method === "DELETE") {
+            const ok = await deleteTicketComment(commentIdParam, fid)
+            if (!ok) return json({ error: "Comment not found." }, 404)
+            return json({ ok: true })
+          }
+
+          const body = await req.json().catch(() => ({}))
+          const text = String(body.body ?? body.comment ?? "").trim()
+          if (!text) return json({ error: "Comment body is required." }, 400)
+          if (text.length > 5000) return json({ error: "Comment body must be 5000 characters or fewer." }, 400)
+          const updated = await updateTicketComment(commentIdParam, fid, text)
+          if (!updated) return json({ error: "Comment not found." }, 404)
+          return json({ comment: updated })
+        }
+
+        // KD-158: POST /api/feedback/:id/attachments — add a file to an EXISTING ticket's evidence,
+        // after creation. Mirrors the non-image attachment path from ticket intake (#425/
+        // KLAVITYKLA-480: same per-file/type/size caps and uploadAttachment() storage) but appends
+        // onto the existing row via appendFeedbackAttachments() instead of seeding a new one.
+        if (req.method === "POST" && isAttachments) {
+          if (!fbAccess) return json({ error: "Only project members can add attachments." }, 403)
+          const form = await req.formData().catch(() => null)
+          if (!form) return json({ error: "Expected multipart/form-data." }, 400)
+          const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
+          if (!attachFiles.length) return json({ error: "No files provided." }, 400)
+          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
+          let attachTotalBytes = 0
+          const newAtts: Array<Record<string, any>> = []
+          for (const af of attachFiles) {
+            if (af.size <= 0) continue
+            const typeIsGeneric = !af.type || af.type === "application/octet-stream"
+            const videoMime = videoMimeFromName(af.name || "")
+            const isVideo = isVideoAttachment(af.type, af.name)
+            const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
+            if (af.size > perFileCap) return json({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
+            attachTotalBytes += af.size
+            if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return json({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
+            try {
+              const abuf = new Uint8Array(await af.arrayBuffer())
+              const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
+              const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
+              const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
+                { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
+              if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
+              newAtts.push(desc)
+            } catch (aErr: any) {
+              console.error("attachment upload failed (non-fatal):", aErr?.message || aErr)
+            }
+          }
+          if (!newAtts.length) return json({ error: "No attachments could be uploaded." }, 500)
+          await appendFeedbackAttachments(fid, fbRow.projectId, newAtts)
+          void insertActivity({
+            projectId: fbRow.projectId,
+            type: "ticket_attachment_added",
+            actorEmail: me,
+            feedbackId: fid,
+            meta: { count: newAtts.length, filenames: newAtts.map((a) => a.filename) },
+          }).catch((e: any) => console.warn("ticket attachment activity skipped:", e?.message || e))
+          // Presign each new attachment the same way the GET response does (#425/KLAVITYKLA-480), so the
+          // dashboard can render/download it immediately without a second round-trip.
+          const signedNewAtts = newAtts.map((a) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
+          return json({ ok: true, attachments: signedNewAtts }, 201)
         }
 
         // #738: POST /api/feedback/:id/annotations — persist a re-annotated evidence screenshot's markup.
@@ -12396,6 +12474,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (body.priority !== undefined && body.priority !== null && !VALID_PRI.includes(body.priority)) {
             return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
           }
+          // KD-158: editable title — reject a blank rename (use Description/notes to clear content
+          // instead), any project member who can PATCH may rename, any number of times.
+          let newTitle: string | undefined
+          if (body.title !== undefined) {
+            if (typeof body.title !== "string") return json({ error: "title must be a string." }, 400)
+            newTitle = body.title.trim().slice(0, 200)
+            if (!newTitle) return json({ error: "title cannot be empty." }, 400)
+          }
           const meta: Partial<{ status: string; assignee: string | null; notes: string | null; priority: string | null; observation: string | null }> = {}
           if (body.status !== undefined) meta.status = body.status
           // #653: editable description — accept `observation` (or the `description` alias). A string
@@ -12420,6 +12506,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
           if (!updated) return json({ error: "Update failed." }, 500)
           const activityWrites: Promise<any>[] = []
+          if (newTitle !== undefined && newTitle !== (fbRow.title || null)) {
+            await renameFeedbackTitle(fid, fbRow.projectId, newTitle)
+            activityWrites.push(insertActivity({
+              projectId: fbRow.projectId,
+              type: "ticket_title_changed",
+              actorEmail: me,
+              feedbackId: fid,
+              meta: { from: fbRow.title ?? null, to: newTitle },
+            }).catch((e: any) => console.warn("ticket title activity skipped:", e?.message || e)))
+          }
           if (meta.status !== undefined && meta.status !== fbRow.status) {
             activityWrites.push(insertActivity({
               projectId: fbRow.projectId,
@@ -12508,7 +12604,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               offerReceipt = prior == null
             }
           }
-          return json({ ok: true, offerRegressionReceipt: offerReceipt, assigneeEmailSent })
+          return json({ ok: true, offerRegressionReceipt: offerReceipt, assigneeEmailSent, title: newTitle })
         }
 
         // POST /api/feedback/:id/regression-receipt — B.7 (KLAVITYKLA-247) "regression-caught receipt".
