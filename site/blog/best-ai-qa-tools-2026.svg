@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Four layers of AI QA tooling: capture, exploratory agents, self-healing end-to-end tests, and production monitoring">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="380" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="54" width="688" height="70" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="54" width="5" height="70" rx="2.5" fill="#6366f1"/>
+  <rect x="86" y="70" width="58" height="38" rx="5" fill="none" stroke="#f5f0e8" stroke-opacity="0.55" stroke-width="2"/>
+  <line x1="86" y1="81" x2="144" y2="81" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="126" cy="100" r="8" fill="#f87171" opacity="0.85"/>
+  <path d="M138 104 l16 14 -6 2 4 9 -5 2 -4 -9 -5 4 z" fill="#f5f0e8" opacity="0.8"/>
+  <rect x="182" y="72" width="330" height="9" rx="4.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="182" y="93" width="214" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="56" y="140" width="688" height="70" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="140" width="5" height="70" rx="2.5" fill="#6366f1"/>
+  <circle cx="98" cy="175" r="11" fill="none" stroke="#6366f1" stroke-width="2.4"/>
+  <circle cx="132" cy="160" r="8" fill="none" stroke="#6366f1" stroke-width="2.2" opacity="0.75"/>
+  <circle cx="132" cy="192" r="8" fill="none" stroke="#6366f1" stroke-width="2.2" opacity="0.75"/>
+  <polyline points="109,171 122,163" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <polyline points="109,180 122,189" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <path d="M152 175 l22 0 m-7 -6 l7 6 -7 6" fill="none" stroke="#f5f0e8" stroke-opacity="0.45" stroke-width="2.2"/>
+  <rect x="182" y="158" width="286" height="9" rx="4.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="182" y="179" width="176" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="56" y="226" width="688" height="70" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="226" width="5" height="70" rx="2.5" fill="#6366f1"/>
+  <polyline points="88,261 108,261" fill="none" stroke="#f87171" stroke-width="2.6" stroke-dasharray="5 4"/>
+  <polyline points="118,261 146,261" fill="none" stroke="#4ade80" stroke-width="2.6"/>
+  <circle cx="152" cy="261" r="12" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="146,261 151,266 159,255" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <rect x="182" y="244" width="310" height="9" rx="4.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="182" y="265" width="198" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="56" y="312" width="688" height="70" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="312" width="5" height="70" rx="2.5" fill="#6366f1"/>
+  <path d="M115 330 l26 44 -52 0 z" fill="none" stroke="#f87171" stroke-width="2.4" stroke-linejoin="round"/>
+  <line x1="115" y1="345" x2="115" y2="358" stroke="#f87171" stroke-width="2.4"/>
+  <circle cx="115" cy="366" r="2.2" fill="#f87171"/>
+  <polyline points="152,368 164,352 174,360 186,336" fill="none" stroke="#6366f1" stroke-width="2.4"/>
+  <rect x="210" y="330" width="258" height="9" rx="4.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="210" y="351" width="160" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="600" y="70" width="112" height="38" rx="19" fill="#6366f1" opacity="0.18"/>
+  <circle cx="619" cy="89" r="5" fill="#4ade80"/>
+  <rect x="632" y="85" width="62" height="8" rx="4" fill="#f5f0e8" opacity="0.45"/>
+</svg>
