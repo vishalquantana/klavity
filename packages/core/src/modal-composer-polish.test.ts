@@ -28,7 +28,7 @@ describe("Bug/Feature toggle renders both icons (composer-polish item 1)", () =>
   it("the Bug button contains an svg glyph (icon('bug') rendered), even when Bug is the active chip", () => {
     buildModal("bug", { ...baseCallbacks() } as any, { theme: "light" } as any)
     const shadow = modalShadow()
-    const bugBtn = shadow.querySelector(".klavity-toggle .bug") as HTMLButtonElement
+    const bugBtn = shadow.querySelector(".klavity-toggle .kl-toggle-bug") as HTMLButtonElement
     expect(bugBtn).not.toBeNull()
     // Bug is the active chip by default when initialType is 'bug'.
     expect(bugBtn.classList.contains("active")).toBe(true)
@@ -43,7 +43,7 @@ describe("Bug/Feature toggle renders both icons (composer-polish item 1)", () =>
   it("the Feature button also renders its (lightbulb) glyph", () => {
     buildModal("bug", { ...baseCallbacks() } as any, { theme: "light" } as any)
     const shadow = modalShadow()
-    const featBtn = shadow.querySelector(".klavity-toggle .feat") as HTMLButtonElement
+    const featBtn = shadow.querySelector(".klavity-toggle .kl-toggle-feat") as HTMLButtonElement
     expect(featBtn).not.toBeNull()
     expect(featBtn.querySelector(".kl-cap-ic svg")).not.toBeNull()
   })
@@ -51,7 +51,7 @@ describe("Bug/Feature toggle renders both icons (composer-polish item 1)", () =>
   it("the Bug glyph is still present when Feature is the active chip (bug now inactive)", () => {
     buildModal("feature", { ...baseCallbacks() } as any, { theme: "light" } as any)
     const shadow = modalShadow()
-    const bugBtn = shadow.querySelector(".klavity-toggle .bug") as HTMLButtonElement
+    const bugBtn = shadow.querySelector(".klavity-toggle .kl-toggle-bug") as HTMLButtonElement
     expect(bugBtn.classList.contains("active")).toBe(false)
     expect(bugBtn.querySelector(".kl-cap-ic svg")).not.toBeNull()
   })

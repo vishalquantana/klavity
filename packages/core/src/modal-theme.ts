@@ -90,17 +90,31 @@ const fontStr = (v: unknown): string | undefined => {
 const THEMES: Record<Exclude<ModalTheme, 'custom'>, Record<string, string>> = {
   // Default = the marketing home surface: warm cream paper with Klavity-purple and amber atmosphere.
   // The panel is intentionally not stark white; chips/inputs are only a step lighter for affordance.
+  //
+  // KD-157: these used to read through generic host-page variable names — e.g.
+  // '--kl-accent': 'var(--accent, #6366f1)' — so the widget could auto-match Klavity's OWN dashboard
+  // theme when dogfooded there (which happens to define matching --ink/--paper/--line tokens). But
+  // CSS custom properties inherit straight through Shadow DOM boundaries (unlike everything else,
+  // which Shadow DOM correctly isolates), so on any OTHER host page that happens to define its own
+  // same-named variable for unrelated reasons, the widget silently inherited THAT instead. Confirmed
+  // live on PX4's React login page: its shadcn/ui theme defines a global `--accent: oklch(0.968 0.007
+  // 247.896)` (a near-white gray, shadcn's subtle hover tint) — so the widget's Bug button rendered
+  // white text on a near-white background instead of Klavity's purple. Every one of Klavity's own
+  // fallback defaults below already matches what Klavity's dashboard.html defines for light mode
+  // (and dark mode already renders via the fully-literal 'dark' theme below, never touching this
+  // object), so collapsing these to literals changes nothing for Klavity's own embed and removes the
+  // collision risk for every third-party one.
   light: {
-    '--kl-overlay': 'var(--ink-overlay, rgba(28,22,40,.30))',
-    '--kl-bg': 'var(--ink, #f5f3ee)',
-    '--kl-fg': 'var(--paper, #19140f)',
-    '--kl-muted': 'var(--paper-dim, #574f45)',
-    '--kl-border': 'var(--line, rgba(25,20,15,.12))',
-    '--kl-chip': 'var(--ink-2, #fffdf8)',
-    '--kl-input-bg': 'var(--ink-2, #fffdf8)',
-    '--kl-accent': 'var(--accent, #6366f1)',
-    '--kl-on-accent': 'var(--accent-on, #fff)',
-    '--kl-accent2': 'var(--accent2, var(--amber, #d98324))',
+    '--kl-overlay': 'rgba(28,22,40,.30)',
+    '--kl-bg': '#f5f3ee',
+    '--kl-fg': '#19140f',
+    '--kl-muted': '#574f45',
+    '--kl-border': 'rgba(25,20,15,.12)',
+    '--kl-chip': '#fffdf8',
+    '--kl-input-bg': '#fffdf8',
+    '--kl-accent': '#6366f1',
+    '--kl-on-accent': '#fff',
+    '--kl-accent2': '#d98324',
     '--kl-radius': '16px',
     '--kl-shadow': '0 24px 60px rgba(40,28,70,.18), 0 10px 30px rgba(99,102,241,.10)',
     '--kl-backdrop': 'none'
