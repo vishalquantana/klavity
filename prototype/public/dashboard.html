@@ -1914,6 +1914,10 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-rec-loading{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--paper-dim)}
   .tkt-rec-loading svg{width:13px;height:13px;animation:tktRecSpin 1s linear infinite}
   @keyframes tktRecSpin{to{transform:rotate(360deg)}}
+  /* KD-159: "Create ticket" submit — spinner + disabled styling so an in-flight create is visibly
+     different from an idle button, instead of silently doing nothing for the duration of the POST. */
+  #newTktSubmit svg{animation:tktRecSpin 1s linear infinite;margin-right:2px;vertical-align:-2px}
+  #newTktSubmit:disabled{opacity:.65;cursor:not-allowed}
   .tkt-rec-error{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--rose);background:rgba(219,39,119,.08);border:1px solid rgba(219,39,119,.28);border-radius:8px;padding:8px 10px}
   .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-video{display:none}
   .tkt-rec-dl{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;font-size:12px;font-weight:600;color:var(--indigo);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:5px 11px;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
@@ -9500,7 +9504,11 @@ async function submitNewTicket() {
   newTktSubmitting = true   // #542
   // #532/#534: pause the liveness poll while the create is in flight so a background refresh can't race it.
   window.__klavMutating++
-  if (submitBtn) submitBtn.disabled = true
+  // KD-159: the button used to just go `disabled` with no other visual change — a slow-ish create read
+  // as a frozen screen. Swap in a spinner + "Creating…" (same kicon('loader')/tktRecSpin pattern the
+  // recording-loading state already uses) and restore the original label in `finally` either way.
+  const _origBtnHtml = submitBtn ? submitBtn.innerHTML : ""
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = kicon('loader', { size: 13 }) + " Creating…" }
   let r, created = {}
   try {
     r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
@@ -9516,7 +9524,7 @@ async function submitNewTicket() {
   } finally {
     newTktSubmitting = false   // #542
     window.__klavMutating--
-    if (submitBtn) submitBtn.disabled = false
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = _origBtnHtml }
   }
   if (!r || !r.ok) {
     if (msg) msg.textContent = created.error || "Failed to create ticket."
@@ -9530,9 +9538,15 @@ async function submitNewTicket() {
   // the 25s guarded poll (which is suppressed whenever a detail/input/modal is open).
   try { swrInvalidate("triage:" + projId) } catch (e) {}
   try { swrInvalidate(dashCacheKey(projId)) } catch (e) {}
-  // Refresh the tickets list/board so the new ticket appears immediately
+  // KD-159: renderTicketsView() alone would repaint from the STALE _tktBoardTickets cache (this create
+  // never touched it), so the new ticket wouldn't show until some LATER, unrelated refresh caught up
+  // (a coincidental cold-cache load, or the 15s boardRevTick poll). Force the same authoritative
+  // fetch+repaint fetchAndRenderTktBoard() already does on a cold load, right now, so the board is
+  // correct the instant the modal closes instead of a few seconds (or up to 15s) later.
+  if (typeof fetchAndRenderTktBoard === "function") await fetchAndRenderTktBoard()
+  // Refresh the tickets list/board (now harmless — _tktBoardTickets is fresh) so other view state syncs.
   if (typeof renderTicketsView === "function") renderTicketsView()
-  // Re-fetch dashboard data so the kanban + overview count + Tickets rows update right away.
+  // Re-fetch dashboard data so the overview count + Tickets rows update right away.
   refreshAll()
 }
 
