@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [What Is Autonomous QA? Definition, Levels, and Limits](https://klavity.in/blog/what-is-autonomous-qa) — Autonomous QA is quality assurance where software decides what to test, runs the checks, and reports defects itself — not just replays human-written tests.
 - [Best AI QA Tools in 2026: A Buyer's Guide for Agencies](https://klavity.in/blog/best-ai-qa-tools-2026) — The best AI QA tools in 2026 split into four layers: bug capture, exploratory AI agents, self-healing E2E tests, and production monitoring.
 - [Is Vibe-Coded Code Safe to Ship? What to Verify First](https://klavity.in/blog/is-vibe-coded-code-safe-to-ship) — Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.
 - [How to Use AI for QA Testing: A Practical 6-Step Guide](https://klavity.in/blog/how-to-use-ai-for-qa-testing) — To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.
