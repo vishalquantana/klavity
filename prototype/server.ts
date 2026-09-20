@@ -1412,6 +1412,13 @@ async function htmlPage(path: string, extraHeaders?: Record<string, string>): Pr
     let out = raw
     if (_PH_KEY) out = out.replaceAll("__POSTHOG_KEY__", _PH_KEY)
     out = out.replaceAll("__CAL_BOOKING_URL__", CAL_BOOKING_URL)
+    // ColdIQ Visitor-ID tag — public marketing pages ONLY (SITE), never the auth-gated app
+    // "inserts" served from PUB. Injected server-side into every SITE page's <head> so new pages
+    // are covered automatically. Idempotent: skip if the src is somehow already present. The host
+    // is allow-listed in the CSP script-src (see CSP above); connect-src 'https:' covers reporting.
+    if (path.startsWith(SITE) && !out.includes("coldiq.websitevisitors.ai") && out.includes("</head>")) {
+      out = out.replace("</head>", '<script src="https://coldiq.websitevisitors.ai/s/pCWphXqXfYa_LyEgsvFdeg.js" async></script>\n</head>')
+    }
     // Leave __POSTHOG_REPLAY__ in the cached template; substituted per-response (see below)
     // so the session-replay volume gate re-evaluates as the tool-user count grows.
     _htmlCache.set(path, out)
@@ -3203,7 +3210,7 @@ function clientIp(req: Request, server?: { requestIP?: (r: Request) => { address
 // and blocking third-party script origins. Tighten script-src to nonces in a later, browser-tested pass.
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.clarity.ms https://*.clarity.ms",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.clarity.ms https://*.clarity.ms https://coldiq.websitevisitors.ai",
   // Fonts are self-hosted (site/fonts/) — no third-party font origins needed.
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
