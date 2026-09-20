@@ -677,5 +677,12 @@
     "excerpt": "Autonomous QA is quality assurance where software decides what to test, runs the checks, and reports defects itself — not just replays human-written tests.",
     "category": "Learn",
     "date": "2026-09-19"
+  },
+  {
+    "slug": "common-vibe-coding-mistakes",
+    "title": "9 Common Vibe Coding Mistakes That Ship Bugs to Users",
+    "excerpt": "The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.",
+    "category": "Guides",
+    "date": "2026-09-20"
   }
 ]
