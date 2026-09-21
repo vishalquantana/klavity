@@ -2329,11 +2329,11 @@ function fmtMB(bytes: number): string { return (bytes / 1048576).toFixed(1) }
 // A rough total-bytes estimate from the retained payload, used for the pill's initial "0 / N MB"
 // readout before the browser reports the real on-the-wire total. dataUrl base64 decodes to ~0.75×
 // its string length; recordings carry an exact byte count.
-function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string }> }): number {
+function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string; blob?: Blob }> }): number {
   let n = 0
   for (const s of p.screenshots || []) n += Math.round(s.length * 0.75)
   for (const r of p.recordings || []) n += r.bytes || 0
-  for (const f of p.files || []) n += Math.round((f.dataUrl?.length || 0) * 0.75)
+  for (const f of p.files || []) n += f.blob ? f.blob.size : Math.round((f.dataUrl?.length || 0) * 0.75)
   return n
 }
 // Human label of what's riding along, e.g. "screenshot + recording".
@@ -2541,7 +2541,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes

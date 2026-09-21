@@ -208,7 +208,7 @@ export async function buildThumbnail(dataUrl: string, opts: { maxWidth?: number;
   }
 }
 
-export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: import("@klavity/core").ClientInfo; replayEvents?: unknown[]; annotations?: any }): FormData {
+export function buildFeedbackForm(input: { type?: string; title?: string; description: string; pageUrl: string; referrer?: string; projectId: string; screenshots: string[]; screenshotThumbs?: string[]; files?: Array<{ name: string; type?: string; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: import("@klavity/core").ClientInfo; replayEvents?: unknown[]; annotations?: any }): FormData {
   // Use the shared serializer (packages/core/integrations/backend) for all common fields so that
   // extension + widget stay in parity by construction — a new shared field added in buildFeedbackFormData
   // appears in BOTH paths automatically (prevents drift like KLAVITYKLA-208).
@@ -238,7 +238,9 @@ export function buildFeedbackForm(input: { type?: string; title?: string; descri
   // the real filename + content type preserved, so the server can store them and connectors attach natively.
   if (input.files) {
     for (const f of input.files) {
-      try { fd.append("files", dataUrlToBlob(f.dataUrl, f.type), f.name) } catch { /* skip a malformed data URL */ }
+      // A blob-backed attachment (large video) is appended as-is — no base64 round-trip, which peaked at
+      // ~500MB+ of transient memory for a ~100MB video and crashed the tab. Everything else: data URL → Blob.
+      try { fd.append("files", f.blob ?? dataUrlToBlob(f.dataUrl, f.type), f.name) } catch { /* skip a malformed data URL */ }
     }
   }
   // KLAVITYKLA-438 "Record me": video recordings. Each blob is appended under the `recording` field (the

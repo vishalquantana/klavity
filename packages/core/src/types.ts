@@ -17,6 +17,12 @@ export interface ReportFileAttachment {
   type: string
   size: number
   dataUrl: string
+  // Large videos are kept as the original File/Blob instead of a base64 `dataUrl` (left ''), so attaching
+  // and submitting one never materialises 4-5 full in-memory copies of it (base64 string + split + atob +
+  // Uint8Array + Blob) — that peak crashed the tab (Crashpad_NotConnectedToHandler) on ~100MB videos.
+  // Consumers that can carry a Blob (the SDK's multipart upload) use it directly; ones that can't (the
+  // extension's chrome.runtime message) convert it to a data URL once, at submit.
+  blob?: Blob
 }
 
 // KLAVITYKLA-438 "Record me" (Phase 1): a screen+camera(PiP)+mic-narration recording captured from the
