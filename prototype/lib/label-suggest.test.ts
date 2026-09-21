@@ -23,45 +23,70 @@ test("fallbackDraftTitle: a non-URL string still degrades to its path-ish prefix
 
 // KD-162: a screenshot-only report (no typed description) used to fall back to whatever raw text the
 // widget happened to send — often a bare page URL with an opaque id baked in, sometimes nothing at all.
-// fallbackDraftDescription composes something actually useful from context every report already carries.
-test("KD-162: fallbackDraftDescription composes page + capture time + client info", () => {
-  const ms = Date.UTC(2026, 8, 18, 16, 35) // 18 Sep 2026, 16:35 UTC
+// fallbackDraftDescription composes something actually useful from context every report already carries:
+// a readable page title, the application path, and the capture time. (A 4th line — an AI caption of the
+// screenshot — is appended separately, asynchronously, by server.ts's captionScreenshotForFeedback.)
+test("KD-162: fallbackDraftDescription composes a readable page title + labeled path + capture time", () => {
+  const ms = Date.UTC(2026, 8, 21, 7, 25) // 21 Sep 2026, 07:25 UTC
   const out = fallbackDraftDescription({
     reportType: "bug",
-    pageUrl: "https://app.example.com/app/login",
+    pageUrl: "https://app.example.com/index.php/Actions/actions_list",
     createdAt: ms,
-    clientInfo: { browser: "Chrome", browserVersion: "118.0", os: "Windows 11", viewport: "1280x800" },
   })
-  expect(out).toContain("Screenshot report on /app/login")
-  expect(out).toContain("Captured: 18 Sep 2026, 04:35 PM UTC")
-  expect(out).toContain("Client: Chrome 118.0 | Windows 11 | viewport 1280x800")
+  expect(out).toBe(
+    "Actions List page\n" +
+    "Application path : /index.php/Actions/actions_list\n" +
+    "Captured: 21 Sep 2026, 07:25 AM UTC"
+  )
 })
 
-test("KD-162: fallbackDraftDescription never shows a raw/opaque page URL as the primary line — it's the same clean title fallbackDraftTitle produces", () => {
+test("KD-162: falls back to fallbackDraftTitle's wording when the last path segment is an opaque id", () => {
   const out = fallbackDraftDescription({
     pageUrl: "https://app.example.com/dashboard/reports/8472910384729104",
     createdAt: Date.now(),
   })
-  const firstLine = out.split("\n")[0]
-  expect(firstLine).toBe("Screenshot report on /dashboard/reports/8472910384729104")
-  // the numeric id is still present (in the URL-derived path), per the ticket's own allowance
-  // ("random identifiers... should remain part of the URL... where applicable") — it's just no longer
-  // the WHOLE description, and it's paired with capture time immediately after.
-  expect(out.split("\n")[1]).toMatch(/^Captured: /)
+  const lines = out.split("\n")
+  // no raw digit-string masquerading as a title — falls back to the clean noun+path form instead
+  expect(lines[0]).toBe("Screenshot report on /dashboard/reports/8472910384729104")
+  expect(lines[1]).toBe("Application path : /dashboard/reports/8472910384729104")
+  expect(lines[2]).toMatch(/^Captured: /)
 })
 
-test("KD-162: fallbackDraftDescription is graceful with no clientInfo (no 'Client:' line, no crash)", () => {
-  const out = fallbackDraftDescription({ pageUrl: "https://x.com/y", createdAt: Date.now() })
-  expect(out).not.toContain("Client:")
-  const out2 = fallbackDraftDescription({ pageUrl: "https://x.com/y", createdAt: Date.now(), clientInfo: null })
-  expect(out2).not.toContain("Client:")
+test("KD-162: title-cases underscore/hyphen-separated path segments", () => {
+  expect(fallbackDraftDescription({ pageUrl: "https://x.com/user-settings", createdAt: Date.now() }).split("\n")[0])
+    .toBe("User Settings page")
 })
 
-test("KD-162: fallbackDraftDescription is capped so a pathological clientInfo can't blow up the description", () => {
+test("KD-162: no path (root or missing URL) degrades to the bare fallbackDraftTitle noun, no path line", () => {
+  const out = fallbackDraftDescription({ pageUrl: "https://x.com/", createdAt: Date.now() })
+  expect(out.split("\n")[0]).toBe("Screenshot report")
+  expect(out).not.toContain("Application path")
+  const out2 = fallbackDraftDescription({ pageUrl: null, createdAt: Date.now() })
+  expect(out2.split("\n")[0]).toBe("Screenshot report")
+})
+
+test("KD-162: includes an Environment line when the host resolves to a known deploy env (qa/staging/local/uat/...)", () => {
+  const ms = Date.UTC(2026, 8, 21, 7, 25)
   const out = fallbackDraftDescription({
-    pageUrl: "https://x.com/y",
-    createdAt: Date.now(),
-    clientInfo: { browser: "x".repeat(5000), os: "y".repeat(5000) },
+    reportType: "bug",
+    pageUrl: "https://app.example.com/index.php/Actions/actions_list",
+    createdAt: ms,
+    reportEnv: "qa",
   })
-  expect(out.length).toBeLessThanOrEqual(1000)
+  expect(out).toBe(
+    "Actions List page\n" +
+    "Application path : /index.php/Actions/actions_list\n" +
+    "Environment : qa\n" +
+    "Captured: 21 Sep 2026, 07:25 AM UTC"
+  )
+})
+
+test("KD-162: no Environment line when reportEnv is null (plain production/web host — no recognized convention)", () => {
+  const out = fallbackDraftDescription({ pageUrl: "https://x.com/y", createdAt: Date.now(), reportEnv: null })
+  expect(out).not.toContain("Environment")
+})
+
+test("KD-162: a feature-type report keeps fallbackDraftTitle's explicit 'Feature request on X' wording, not the '<Title> page' bug-report phrasing", () => {
+  const out = fallbackDraftDescription({ reportType: "feature", pageUrl: "https://x.com/dashboard", createdAt: Date.now() })
+  expect(out.split("\n")[0]).toBe("Feature request on /dashboard")
 })

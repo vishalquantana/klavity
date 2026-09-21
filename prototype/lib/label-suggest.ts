@@ -1,7 +1,6 @@
 // KLA-175: Lightweight AI label suggestion at bug capture time.
 // Fetches project labels, asks a cheap LLM to pick 1–3, stores the result for ghost-chip display.
 import { listLabels, setSuggestedLabels, recordAiCall, updateFeedbackTitle } from "./db"
-import { clientInfoLines } from "./feedback"
 
 const SUGGEST_MODEL = process.env.KLAV_LABEL_SUGGEST_MODEL || "openai/gpt-4o-mini"
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
@@ -35,20 +34,57 @@ function formatCapturedAt(ms: number): string {
   return `${day} ${month} ${year}, ${hh}:${mm} ${ampm} UTC`
 }
 
+// A raw path's last segment made human-readable, e.g. "/index.php/Actions/actions_list" → "Actions List
+// page". Deliberately does NOT touch fallbackDraftTitle (above) — that string feeds the deterministic
+// issueKey/dedup identity computed at server.ts intake and must stay byte-for-byte stable; this is a
+// separate, display-only derivation used solely by fallbackDraftDescription's first line, below.
+function derivePageTitle(pageUrl: string | null | undefined): string {
+  if (!pageUrl) return ""
+  let path = ""
+  try { path = new URL(pageUrl).pathname } catch { path = String(pageUrl).split(/[?#]/)[0] || "" }
+  const segments = path.split("/").filter(Boolean)
+  const last = segments[segments.length - 1]
+  if (!last) return ""
+  // An opaque id (hex/uuid/long digit string) makes a bad title — bail rather than title-case garbage
+  // (the whole point of KD-162 is to stop surfacing raw ids as the primary description text).
+  if (/^[0-9a-f-]{8,}$/i.test(last) && /\d/.test(last)) return ""
+  const words = last.replace(/[_\-.]+/g, " ").trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return ""
+  const title = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ")
+  return `${title} page`
+}
+
 // KD-162: a screenshot-only report (no typed description) previously fell back to whatever raw text the
 // widget happened to send (often a bare page URL with an opaque id in it, or nothing at all — see
-// fallbackDraftTitle's history above). This composes an actually useful description from context that's
-// ALREADY captured with every report: the page, when it was captured, and the reporter's browser/OS/
-// viewport (reused from clientInfoLines — the same formatter already used for the export/share payload).
+// fallbackDraftTitle's history above). This composes the SYNCHRONOUS part of a useful description —
+// a readable page title, the application path, and when it was captured — all from context every report
+// already carries, so it's available immediately at intake with no extra latency. A 4th line (a short AI
+// caption of the actual screenshot) is appended separately, asynchronously, after intake — see
+// server.ts's captionScreenshotForFeedback — since a vision call is too slow to block the submit response.
 export function fallbackDraftDescription(opts: {
   reportType?: "bug" | "feature"
   pageUrl?: string | null
   createdAt: number
-  clientInfo?: unknown
+  // Auto-detected deploy environment (qa/staging/local/uat/dev/... — see hostConventionEnv), the SAME
+  // resolution intake already does for the export "Environment: X" label line (server.ts:2214). Null on
+  // a normal production/web host — no recognized env convention, so no line is added for it.
+  reportEnv?: string | null
 }): string {
-  const lines = [fallbackDraftTitle({ reportType: opts.reportType, pageUrl: opts.pageUrl })]
+  let path = ""
+  if (opts.pageUrl) {
+    try { path = new URL(opts.pageUrl).pathname } catch { path = String(opts.pageUrl).split(/[?#]/)[0] || "" }
+  }
+  if (path === "/") path = "" // bare root carries no useful path info — same "no path" treatment as fallbackDraftTitle
+  // The readable "<Title> page" derivation reads as a BUG report ("here's the page it happened on"); a
+  // feature request isn't about a page malfunctioning, so it keeps fallbackDraftTitle's explicit
+  // "Feature request on <path>" wording instead — same distinction the old one-line fallback made.
+  const pageTitle = opts.reportType === "feature"
+    ? fallbackDraftTitle({ reportType: opts.reportType, pageUrl: opts.pageUrl })
+    : (derivePageTitle(opts.pageUrl) || fallbackDraftTitle({ reportType: opts.reportType, pageUrl: opts.pageUrl }))
+  const lines = [pageTitle]
+  if (path) lines.push(`Application path : ${path}`)
+  if (opts.reportEnv) lines.push(`Environment : ${opts.reportEnv}`)
   lines.push(`Captured: ${formatCapturedAt(opts.createdAt)}`)
-  lines.push(...clientInfoLines(opts.clientInfo))
   return lines.join("\n").slice(0, 1000)
 }
 
