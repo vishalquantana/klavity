@@ -1352,7 +1352,15 @@ async function mount() {
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
       // KLAVITYKLA-473: if the DOM render is blank/partial-white, flag suggestSharp so the composer nudges
       // the user to the Screen button — NO auto getDisplayMedia (the #460 surprise-prompt regression).
-      onCaptureFull: async () => withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })),
+      // Out-of-memory fix: capture documentElement (not body — see fullPageCaptureSize's KLAVITYKLA-404
+      // note on app-shell layouts collapsing body's own box) at fullPageCaptureSize()'s pre-clamped
+      // {width,height}, exactly like safeToPngFullPage already does for the Sim live-review path — a very
+      // tall page's unbounded natural height was letting the renderer attempt a native-size canvas
+      // allocation BEFORE ever shrinking to a safe max, spiking memory enough to OOM-crash the tab.
+      onCaptureFull: async () => {
+        const { width, height } = fullPageCaptureSize()
+        return withSharpSuggestion(await safeToPngWithQuality(document.documentElement, { filter: notKlavityChrome, width, height }))
+      },
       // KLAVITYKLA-509: fast above-the-fold render used as the IMMEDIATE preview — the composer shows a real
       // image within ~1s while onCaptureFull() finishes the full-page render in the background and swaps in.
       onCaptureViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
