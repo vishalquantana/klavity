@@ -1,0 +1,214 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>9 Common Vibe Coding Mistakes That Ship Bugs to Users · Klavity</title>
+<meta name="description" content="The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.">
+<link rel="canonical" href="https://klavity.in/blog/common-vibe-coding-mistakes">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="9 Common Vibe Coding Mistakes That Ship Bugs to Users"><meta property="og:description" content="The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.">
+<meta property="og:url" content="https://klavity.in/blog/common-vibe-coding-mistakes"><meta property="og:image" content="https://klavity.in/blog/common-vibe-coding-mistakes.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="9 Common Vibe Coding Mistakes That Ship Bugs to Users"><meta name="twitter:description" content="The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging."><meta name="twitter:image" content="https://klavity.in/blog/common-vibe-coding-mistakes.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"9 Common Vibe Coding Mistakes That Ship Bugs to Users","description":"The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.","datePublished":"2026-09-20","dateModified":"2026-09-20","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/common-vibe-coding-mistakes.svg"}},"mainEntityOfPage":"https://klavity.in/blog/common-vibe-coding-mistakes","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"9 Common Vibe Coding Mistakes That Ship Bugs to Users","item":"https://klavity.in/blog/common-vibe-coding-mistakes"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/common-vibe-coding-mistakes"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the most common vibe coding mistake?","acceptedAnswer":{"@type":"Answer","text":"Accepting generated code without reading it. Because AI-generated code compiles and renders, there is no moment that forces you to check whether it handles errors, empty states or network failures — so nobody does, and the gap surfaces in production."}},{"@type":"Question","name":"Are vibe coding mistakes a security risk?","acceptedAnswer":{"@type":"Answer","text":"Three of them are: secrets pasted into client-side code (anything in your frontend bundle is public), permissions checked only in the UI (hiding a button does not protect the endpoint behind it), and backend tables left world-readable because row-level security was never switched on. All three leave the app behaving perfectly while it is exposed."}},{"@type":"Question","name":"How do I test a vibe-coded app if I am not technical?","acceptedAnswer":{"@type":"Answer","text":"Do a five-minute manual pass with the browser console open: sign up as a brand-new user, in a phone-sized window, on a throttled connection, and submit every form empty once. Then add automated persona testing so someone who does not know your happy path exercises the app for you."}},{"@type":"Question","name":"Why does AI-generated code fail differently from hand-written code?","acceptedAnswer":{"@type":"Answer","text":"Hand-written code tends to fail where the author found the problem hard. AI-generated code tends to fail where the author never thought to specify anything, because the model filled the gap with something plausible rather than something correct — so the bugs only appear under real conditions like slow networks, duplicate accounts or expired sessions."}},{"@type":"Question","name":"Should I ask the AI to write tests for its own code?","acceptedAnswer":{"@type":"Answer","text":"Not as your only safety net. A test suite written by the same assistant that wrote the bug will often assert the buggy behaviour as correct. Start with one automated critical path, a logged-out check on every data-bearing endpoint, and a bug intake that captures context automatically."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-20</div>
+    <h1>9 Common Vibe Coding Mistakes That Ship Bugs to Users</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Common vibe coding mistakes: AI-generated code passing the happy path but failing on edge cases">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.7"/>
+
+  <!-- prompt / generation block (left) -->
+  <rect x="48" y="96" width="190" height="228" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="48" y="96" width="190" height="228" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="68" cy="118" r="4" fill="#6366f1"/>
+  <line x1="84" y1="118" x2="150" y2="118" stroke="#f5f0e8" stroke-width="3" opacity="0.4"/>
+  <line x1="68" y1="150" x2="218" y2="150" stroke="#6366f1" stroke-width="5" opacity="0.85"/>
+  <line x1="68" y1="172" x2="188" y2="172" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="84" y1="194" x2="218" y2="194" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="84" y1="216" x2="164" y2="216" stroke="#6366f1" stroke-width="5" opacity="0.6"/>
+  <line x1="68" y1="238" x2="206" y2="238" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="68" y1="260" x2="140" y2="260" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="84" y1="282" x2="218" y2="282" stroke="#6366f1" stroke-width="5" opacity="0.6"/>
+
+  <!-- flow arrow -->
+  <path d="M258 210 L318 210" stroke="#6366f1" stroke-width="2.5" opacity="0.8"/>
+  <path d="M308 202 L320 210 L308 218" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+
+  <!-- browser window (center) -->
+  <rect x="336" y="96" width="256" height="228" rx="12" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="336" y="96" width="256" height="228" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.5" opacity="0.35"/>
+  <line x1="336" y1="128" x2="592" y2="128" stroke="#f5f0e8" stroke-width="1.5" opacity="0.3"/>
+  <circle cx="356" cy="112" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="372" cy="112" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="388" cy="112" r="4" fill="#f5f0e8" opacity="0.3"/>
+
+  <!-- happy path row: green check -->
+  <rect x="360" y="152" width="208" height="34" rx="7" fill="#4ade80" opacity="0.12"/>
+  <path d="M374 169 L381 176 L394 161" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <line x1="410" y1="169" x2="548" y2="169" stroke="#4ade80" stroke-width="4" opacity="0.5"/>
+
+  <!-- failing rows: red bug markers -->
+  <rect x="360" y="198" width="208" height="34" rx="7" fill="#f87171" opacity="0.14"/>
+  <circle cx="382" cy="215" r="8" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="378" y1="211" x2="386" y2="219" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="386" y1="211" x2="378" y2="219" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="410" y1="215" x2="520" y2="215" stroke="#f87171" stroke-width="4" opacity="0.55"/>
+
+  <rect x="360" y="244" width="208" height="34" rx="7" fill="#f87171" opacity="0.14"/>
+  <circle cx="382" cy="261" r="8" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="378" y1="257" x2="386" y2="265" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="386" y1="257" x2="378" y2="265" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="410" y1="261" x2="496" y2="261" stroke="#f87171" stroke-width="4" opacity="0.55"/>
+
+  <rect x="360" y="290" width="208" height="20" rx="6" fill="#f5f0e8" opacity="0.08"/>
+
+  <!-- arrow to verification -->
+  <path d="M612 210 L672 210" stroke="#6366f1" stroke-width="2.5" opacity="0.8"/>
+  <path d="M662 202 L674 210 L662 218" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+
+  <!-- verification stack (right): three checks -->
+  <rect x="690" y="140" width="62" height="44" rx="9" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.8"/>
+  <path d="M706 162 L715 171 L736 150" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="690" y="196" width="62" height="44" rx="9" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.8"/>
+  <path d="M706 218 L715 227 L736 206" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="690" y="252" width="62" height="44" rx="9" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M706 274 L715 283 L736 262" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+
+  <rect x="0" y="417" width="800" height="3" fill="#6366f1" opacity="0.4"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>The most common vibe coding mistakes are shipping code nobody read, testing only the happy path, enforcing permissions in the UI instead of on the server, and regenerating a broken file instead of debugging it. They are not model failures — they are gaps in the loop around the model, because generated code compiles and looks finished whether or not it works. The fix is a verification step, not a better prompt.</div>
+    <div class="prose"><p>The most <strong>common vibe coding mistakes</strong> are shipping code nobody read, testing only the happy path, enforcing permissions in the UI instead of on the server, and regenerating a broken file instead of debugging it. None of these are failures of the model. They are failures of the loop around it: tools like Cursor, Bolt, Lovable, v0 and Replit produce code that compiles, renders and looks finished, so there is never a moment that forces a human to check whether it actually works. The fix is a verification step, not a better prompt.</p>
+
+<h2>What are the most common vibe coding mistakes?</h2>
+
+<p>Across vibe-coded apps, the same handful of failures show up again and again. They cluster into three groups: things you never read, things you never tested, and things you never secured.</p>
+
+<table>
+  <tr><th>Mistake</th><th>What it looks like in production</th><th>The cheap fix</th></tr>
+  <tr><td>Accepting code you did not read</td><td>A function silently swallows errors; nobody knows until a user reports "nothing happens when I click save"</td><td>Skim every generated diff for error handling and network calls before accepting</td></tr>
+  <tr><td>Happy-path-only testing</td><td>Works when you type a valid email; breaks on an empty form, a slow network, or a duplicate signup</td><td>Try the three ugly inputs: empty, wrong, and twice</td></tr>
+  <tr><td>Auth enforced in the UI</td><td>A hidden button still has a live endpoint behind it</td><td>Check the server route, not the component</td></tr>
+  <tr><td>Database left open by default</td><td>Client-side keys can read tables they should never see</td><td>Turn on row-level security and test with a logged-out client</td></tr>
+  <tr><td>Regenerating instead of debugging</td><td>Each "fix it" prompt rewrites working code and introduces a new bug</td><td>Reproduce first, read the console, change one thing</td></tr>
+  <tr><td>No loading or error states</td><td>The app looks frozen on slow connections</td><td>Throttle the network in devtools and watch what the user sees</td></tr>
+  <tr><td>Never opening the browser console</td><td>Warnings and failed requests pile up invisibly</td><td>Keep the console open while you click through</td></tr>
+</table>
+
+<p>If you only fix one thing on this list, make it the last one. The browser console is free, already installed, and quietly reports most of the failures above before a user ever hits them.</p>
+
+<h2>Why does AI-generated code fail differently from hand-written code?</h2>
+
+<p>When a developer writes a feature by hand, the hard parts feel hard. You notice you have not handled the empty state because you had to decide what to render. Generated code removes that friction: the empty state is either handled well or absent entirely, and both outcomes look identical in the editor.</p>
+
+<p>That changes the <em>shape</em> of the bugs. Hand-written code tends to fail at the parts the author found confusing. AI-generated code tends to fail at the parts the author never thought to specify — because the model filled them in with something plausible rather than something correct. The result is code that is syntactically clean, stylistically consistent, and wrong in ways that only surface under real conditions: a real user with a slow phone, a duplicate account, an expired session, or a 3,000-character paste into a field you assumed would hold a name.</p>
+
+<p>A second effect compounds it. Because generating code is fast, vibe-coded apps accumulate features faster than any human reads them. The codebase grows past the point where the person who "wrote" it can hold it in their head, and that happens in days rather than months. We covered the full picture in <a href="/blog/is-vibe-coded-code-safe-to-ship">is vibe-coded code safe to ship</a>.</p>
+
+<h2>Which vibe coding mistakes are actual security risks?</h2>
+
+<p>Three of them, and they are worth separating from the cosmetic bugs because the blast radius is different.</p>
+
+<ol>
+  <li><strong>Secrets in client-side code.</strong> Anything in your frontend bundle is public. An API key for a paid service pasted into a component is readable by anyone who opens devtools, whether or not it is in a variable named <em>secret</em>. Keys belong in server-side environment variables, behind an endpoint you control.</li>
+  <li><strong>Permissions checked only in the UI.</strong> Hiding an admin button does not protect the route behind it. If the endpoint does not independently verify who is calling it, the feature is open to anyone who can guess the URL.</li>
+  <li><strong>Backend tables left world-readable.</strong> Managed backends hand you a public anon key on purpose — it is designed to be shipped in the browser, and the actual access control is a separate setting. If row-level security is off, that key reads the table. Verify it the direct way: sign out, then try to fetch a record that belongs to another user.</li>
+</ol>
+
+<p>These three share a property that makes them dangerous: the app behaves perfectly while they are broken. Nothing is slow, nothing errors, no user complains. You find out from a bill, a leak, or a stranger.</p>
+
+<h2>How do you catch these mistakes without a QA team?</h2>
+
+<p>You need something that exercises the app the way a stranger would, because you cannot do it yourself. You know which button to click and in what order, and that knowledge is exactly what hides the bugs. Three practical layers, cheapest first:</p>
+
+<ul>
+  <li><strong>A five-minute manual pass with the console open.</strong> Sign up as a brand-new user, on a phone-sized window, on a throttled connection. Submit every form empty once. This catches more real bugs per minute than any other activity available to a solo builder.</li>
+  <li><strong>Structured reports when someone else finds something.</strong> When a friend, client or early user hits a bug, "it's broken on my end" costs you an hour of guessing. <a href="/snap">Snap</a> turns a right-click into a report carrying the screenshot, console errors, network requests and browser context — so you debug the failure instead of reconstructing it.</li>
+  <li><strong>Automated exploration by personas who do not know your happy path.</strong> <a href="/sims">Sims</a> runs AI personas through your app the way different real users would — the impatient one, the one who double-submits, the one who pastes nonsense into the name field — and reports what broke. <a href="/autosim">AutoSim</a> then locks the flows that matter into E2E tests that repair their own selectors when your AI assistant renames a component next week.</li>
+</ul>
+
+<h2>What does a minimum QA safety net look like for a vibe-coded app?</h2>
+
+<p>Not a test suite. A test suite written by the same assistant that wrote the bug will happily assert the buggy behaviour. Start with three things instead:</p>
+
+<ol>
+  <li><strong>One critical path that must never break.</strong> Usually signup through to the first moment of value. Automate that one, and nothing else, until it is genuinely stable.</li>
+  <li><strong>A logged-out check on every data-bearing endpoint.</strong> One pass, repeated after any change to auth or schema.</li>
+  <li><strong>A bug intake that captures context automatically.</strong> The gap between "something's wrong" and a reproducible report is where most solo-builder time disappears.</li>
+</ol>
+
+<p>That is the whole floor. It is deliberately small, because a QA process you skip is worth less than a five-minute one you actually run. For the step-by-step version, see <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a>, and for the wider context on automated verification, our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>The pattern underneath all of them</h2>
+
+<p>Every common vibe coding mistake on this page is the same mistake wearing different clothes: generation got faster and verification did not. You can close that gap with discipline — reading every diff, testing every edge case by hand — or you can close it by making verification as automatic as generation already is. Most people who ship regularly end up choosing the second.</p>
+
+<p><a href="/onboarding">Try Klavity free</a> and let AI personas find the edge cases in your vibe-coded app before your users do.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read every generated diff for error handling and network calls before accepting it</li><li>Test the three ugly inputs on every form: empty, wrong, and twice</li><li>Verify auth on the server route, not in the component — and test logged out</li><li>Keep the browser console open while you click through your own app</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the most common vibe coding mistake?</summary><p>Accepting generated code without reading it. Because AI-generated code compiles and renders, there is no moment that forces you to check whether it handles errors, empty states or network failures — so nobody does, and the gap surfaces in production.</p></details><details><summary>Are vibe coding mistakes a security risk?</summary><p>Three of them are: secrets pasted into client-side code (anything in your frontend bundle is public), permissions checked only in the UI (hiding a button does not protect the endpoint behind it), and backend tables left world-readable because row-level security was never switched on. All three leave the app behaving perfectly while it is exposed.</p></details><details><summary>How do I test a vibe-coded app if I am not technical?</summary><p>Do a five-minute manual pass with the browser console open: sign up as a brand-new user, in a phone-sized window, on a throttled connection, and submit every form empty once. Then add automated persona testing so someone who does not know your happy path exercises the app for you.</p></details><details><summary>Why does AI-generated code fail differently from hand-written code?</summary><p>Hand-written code tends to fail where the author found the problem hard. AI-generated code tends to fail where the author never thought to specify anything, because the model filled the gap with something plausible rather than something correct — so the bugs only appear under real conditions like slow networks, duplicate accounts or expired sessions.</p></details><details><summary>Should I ask the AI to write tests for its own code?</summary><p>Not as your only safety net. A test suite written by the same assistant that wrote the bug will often assert the buggy behaviour as correct. Start with one automated critical path, a logged-out check on every data-bearing endpoint, and a bug intake that captures context automatically.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

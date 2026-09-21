@@ -670,5 +670,26 @@
     "excerpt": "The best AI QA tools in 2026 split into four layers: bug capture, exploratory AI agents, self-healing E2E tests, and production monitoring.",
     "category": "Compare",
     "date": "2026-09-18"
+  },
+  {
+    "slug": "what-is-autonomous-qa",
+    "title": "What Is Autonomous QA? Definition, Levels, and Limits",
+    "excerpt": "Autonomous QA is quality assurance where software decides what to test, runs the checks, and reports defects itself — not just replays human-written tests.",
+    "category": "Learn",
+    "date": "2026-09-19"
+  },
+  {
+    "slug": "common-vibe-coding-mistakes",
+    "title": "9 Common Vibe Coding Mistakes That Ship Bugs to Users",
+    "excerpt": "The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.",
+    "category": "Guides",
+    "date": "2026-09-20"
+  },
+  {
+    "slug": "ai-test-automation-vs-manual-testing",
+    "title": "AI Test Automation vs Manual Testing: How to Choose",
+    "excerpt": "AI test automation vs manual testing is a division of labour, not a choice: automate repeatable regression, keep humans for judgement and new features.",
+    "category": "Guides",
+    "date": "2026-09-21"
   }
 ]

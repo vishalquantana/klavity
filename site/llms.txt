@@ -3,6 +3,10 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+
+- [AI Test Automation vs Manual Testing: How to Choose](https://klavity.in/blog/ai-test-automation-vs-manual-testing) — AI test automation vs manual testing is a division of labour, not a choice: automate repeatable regression, keep humans for judgement and new features.
+- [9 Common Vibe Coding Mistakes That Ship Bugs to Users](https://klavity.in/blog/common-vibe-coding-mistakes) — The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.
+- [What Is Autonomous QA? Definition, Levels, and Limits](https://klavity.in/blog/what-is-autonomous-qa) — Autonomous QA is quality assurance where software decides what to test, runs the checks, and reports defects itself — not just replays human-written tests.
 - [Best AI QA Tools in 2026: A Buyer's Guide for Agencies](https://klavity.in/blog/best-ai-qa-tools-2026) — The best AI QA tools in 2026 split into four layers: bug capture, exploratory AI agents, self-healing E2E tests, and production monitoring.
 - [Is Vibe-Coded Code Safe to Ship? What to Verify First](https://klavity.in/blog/is-vibe-coded-code-safe-to-ship) — Vibe-coded code is safe to ship once you verify what the AI couldn't: authorization, data writes, error states, and the real end-to-end flow.
 - [How to Use AI for QA Testing: A Practical 6-Step Guide](https://klavity.in/blog/how-to-use-ai-for-qa-testing) — To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.
@@ -101,6 +105,7 @@
 - [How to write a bug report developers will actually act on](https://klavity.in/blog/how-to-write-a-bug-report-developers-act-on) — A bug report gets fixed fast when it carries three things: exact steps, the environment, and evidence (screenshot + console + network). Here's the format.
 
 ## Product
+
 - [Snap — in-app bug reporting](https://klavity.in/snap)
 - [Sims — AI persona testing](https://klavity.in/sims)
 - [AutoSim — self-healing E2E tests](https://klavity.in/autosim)

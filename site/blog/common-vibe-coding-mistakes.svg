@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Common vibe coding mistakes: AI-generated code passing the happy path but failing on edge cases">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.7"/>
+
+  <!-- prompt / generation block (left) -->
+  <rect x="48" y="96" width="190" height="228" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="48" y="96" width="190" height="228" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="68" cy="118" r="4" fill="#6366f1"/>
+  <line x1="84" y1="118" x2="150" y2="118" stroke="#f5f0e8" stroke-width="3" opacity="0.4"/>
+  <line x1="68" y1="150" x2="218" y2="150" stroke="#6366f1" stroke-width="5" opacity="0.85"/>
+  <line x1="68" y1="172" x2="188" y2="172" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="84" y1="194" x2="218" y2="194" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="84" y1="216" x2="164" y2="216" stroke="#6366f1" stroke-width="5" opacity="0.6"/>
+  <line x1="68" y1="238" x2="206" y2="238" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="68" y1="260" x2="140" y2="260" stroke="#f5f0e8" stroke-width="5" opacity="0.22"/>
+  <line x1="84" y1="282" x2="218" y2="282" stroke="#6366f1" stroke-width="5" opacity="0.6"/>
+
+  <!-- flow arrow -->
+  <path d="M258 210 L318 210" stroke="#6366f1" stroke-width="2.5" opacity="0.8"/>
+  <path d="M308 202 L320 210 L308 218" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+
+  <!-- browser window (center) -->
+  <rect x="336" y="96" width="256" height="228" rx="12" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="336" y="96" width="256" height="228" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.5" opacity="0.35"/>
+  <line x1="336" y1="128" x2="592" y2="128" stroke="#f5f0e8" stroke-width="1.5" opacity="0.3"/>
+  <circle cx="356" cy="112" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="372" cy="112" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="388" cy="112" r="4" fill="#f5f0e8" opacity="0.3"/>
+
+  <!-- happy path row: green check -->
+  <rect x="360" y="152" width="208" height="34" rx="7" fill="#4ade80" opacity="0.12"/>
+  <path d="M374 169 L381 176 L394 161" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <line x1="410" y1="169" x2="548" y2="169" stroke="#4ade80" stroke-width="4" opacity="0.5"/>
+
+  <!-- failing rows: red bug markers -->
+  <rect x="360" y="198" width="208" height="34" rx="7" fill="#f87171" opacity="0.14"/>
+  <circle cx="382" cy="215" r="8" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="378" y1="211" x2="386" y2="219" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="386" y1="211" x2="378" y2="219" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="410" y1="215" x2="520" y2="215" stroke="#f87171" stroke-width="4" opacity="0.55"/>
+
+  <rect x="360" y="244" width="208" height="34" rx="7" fill="#f87171" opacity="0.14"/>
+  <circle cx="382" cy="261" r="8" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="378" y1="257" x2="386" y2="265" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="386" y1="257" x2="378" y2="265" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="410" y1="261" x2="496" y2="261" stroke="#f87171" stroke-width="4" opacity="0.55"/>
+
+  <rect x="360" y="290" width="208" height="20" rx="6" fill="#f5f0e8" opacity="0.08"/>
+
+  <!-- arrow to verification -->
+  <path d="M612 210 L672 210" stroke="#6366f1" stroke-width="2.5" opacity="0.8"/>
+  <path d="M662 202 L674 210 L662 218" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+
+  <!-- verification stack (right): three checks -->
+  <rect x="690" y="140" width="62" height="44" rx="9" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.8"/>
+  <path d="M706 162 L715 171 L736 150" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="690" y="196" width="62" height="44" rx="9" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.8"/>
+  <path d="M706 218 L715 227 L736 206" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="690" y="252" width="62" height="44" rx="9" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M706 274 L715 283 L736 262" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+
+  <rect x="0" y="417" width="800" height="3" fill="#6366f1" opacity="0.4"/>
+</svg>

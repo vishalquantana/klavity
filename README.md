@@ -154,7 +154,6 @@ pnpm -r build         # build extension + SDK
 The `prototype/` Cloud backend runs on **Bun** (`cd prototype && bun install && bun run server.ts`).
 
 ---
-
 ## License
 
 [FSL-1.1-ALv2](LICENSE) (Functional Source License) — free for any non-competing use; converts to Apache 2.0 on the second anniversary of each release.

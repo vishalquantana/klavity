@@ -1,16 +1,19 @@
 {
-  "_comment": "Source of truth for which target keywords are already covered, per tier. The daily-blog routine reads this at STEP 2 to pick the next uncovered keyword, and appends a new entry here at STEP 9 (SHIP) every time it publishes a Tier A/B/C/D keyword. This replaces the old approach of hand-editing DONE tags in the routine prompt, which drifted out of sync (fixed 2026-09-17 \u2014 see KLAVITYKLA ticket for context).",
+  "_comment": "Source of truth for which target keywords are already covered, per tier. The daily-blog routine reads this at STEP 2 to pick the next uncovered keyword, and appends a new entry here at STEP 9 (SHIP) every time it publishes a Tier A/B/C/D keyword. This replaces the old approach of hand-editing DONE tags in the routine prompt, which drifted out of sync (fixed 2026-09-17 — see KLAVITYKLA ticket for context).",
   "tier-a": {
     "ai qa": "ai-qa-complete-guide",
     "ai testing tools for web agencies": "ai-testing-tools-for-web-agencies",
     "ai code review tool": "ai-code-review-tool-for-web-agencies",
     "autonomous testing": "autonomous-testing-web-agencies",
-    "how to use ai for qa testing": "how-to-use-ai-for-qa-testing"
+    "how to use ai for qa testing": "how-to-use-ai-for-qa-testing",
+    "what is autonomous qa": "what-is-autonomous-qa",
+    "ai test automation vs manual testing": "ai-test-automation-vs-manual-testing"
   },
   "tier-b": {
     "how to qa a vibe-coded app": "how-to-qa-a-vibe-coded-app",
     "is vibe-coded code safe to ship": "is-vibe-coded-code-safe-to-ship",
-    "vibe coding bugs": "vibe-coding-bugs-web-agencies"
+    "vibe coding bugs": "vibe-coding-bugs-web-agencies",
+    "common vibe coding mistakes": "common-vibe-coding-mistakes"
   },
   "tier-c": {
     "marker.io alternative": "marker-io-alternative",
