@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI test automation versus manual testing: an automated grid of repeated passing checks on the left, a human-led exploratory path finding a bug on the right">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <line x1="400" y1="52" x2="400" y2="368" stroke="#f5f0e8" stroke-opacity="0.14" stroke-width="1.5" stroke-dasharray="6 8"/>
+
+  <rect x="56" y="48" width="290" height="26" rx="6" fill="#6366f1" fill-opacity="0.18"/>
+  <rect x="454" y="48" width="290" height="26" rx="6" fill="#f5f0e8" fill-opacity="0.09"/>
+
+  <rect x="56" y="100" width="290" height="176" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="56" y="100" width="290" height="24" rx="12" fill="#6366f1" fill-opacity="0.22"/>
+  <circle cx="72" cy="112" r="4" fill="#6366f1"/>
+  <circle cx="86" cy="112" r="4" fill="#6366f1" fill-opacity="0.5"/>
+
+  <rect x="76" y="142" width="58" height="42" rx="7" fill="#4ade80" fill-opacity="0.14" stroke="#4ade80" stroke-opacity="0.6"/>
+  <polyline points="90,163 100,173 120,152" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="148" y="142" width="58" height="42" rx="7" fill="#4ade80" fill-opacity="0.14" stroke="#4ade80" stroke-opacity="0.6"/>
+  <polyline points="162,163 172,173 192,152" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="220" y="142" width="58" height="42" rx="7" fill="#4ade80" fill-opacity="0.14" stroke="#4ade80" stroke-opacity="0.6"/>
+  <polyline points="234,163 244,173 264,152" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="76" y="198" width="58" height="42" rx="7" fill="#4ade80" fill-opacity="0.14" stroke="#4ade80" stroke-opacity="0.6"/>
+  <polyline points="90,219 100,229 120,208" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="148" y="198" width="58" height="42" rx="7" fill="#f87171" fill-opacity="0.16" stroke="#f87171" stroke-opacity="0.7"/>
+  <line x1="164" y1="209" x2="190" y2="230" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="190" y1="209" x2="164" y2="230" stroke="#f87171" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="220" y="198" width="58" height="42" rx="7" fill="#4ade80" fill-opacity="0.14" stroke="#4ade80" stroke-opacity="0.6"/>
+  <polyline points="234,219 244,229 264,208" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="290" y="142" width="40" height="98" rx="7" fill="#6366f1" fill-opacity="0.12" stroke="#6366f1" stroke-opacity="0.35" stroke-dasharray="4 5"/>
+
+  <rect x="454" y="100" width="290" height="176" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="1.5"/>
+  <rect x="454" y="100" width="290" height="24" rx="12" fill="#f5f0e8" fill-opacity="0.1"/>
+  <circle cx="470" cy="112" r="4" fill="#f5f0e8" fill-opacity="0.55"/>
+
+  <circle cx="500" cy="176" r="15" fill="none" stroke="#f5f0e8" stroke-opacity="0.75" stroke-width="2.5"/>
+  <path d="M486 212c4-13 24-13 28 0" fill="none" stroke="#f5f0e8" stroke-opacity="0.75" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M535 196c26-34 52 30 78-6 18-25 40-8 52 18" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-dasharray="9 7"/>
+  <circle cx="665" cy="208" r="17" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="2.5"/>
+  <circle cx="665" cy="203" r="3.2" fill="#f87171"/>
+  <line x1="665" y1="210" x2="665" y2="216" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+
+  <path d="M665 240c-70 34-150 40-232 22" fill="none" stroke="#4ade80" stroke-opacity="0.75" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="443,254 433,262 443,270" fill="none" stroke="#4ade80" stroke-opacity="0.75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="236" y="300" width="330" height="44" rx="10" fill="#4ade80" fill-opacity="0.1" stroke="#4ade80" stroke-opacity="0.45" stroke-width="1.5"/>
+  <polyline points="262,322 272,332 292,311" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="310" y="316" width="230" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.22"/>
+</svg>

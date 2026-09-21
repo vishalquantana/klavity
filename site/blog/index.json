@@ -684,5 +684,12 @@
     "excerpt": "The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.",
     "category": "Guides",
     "date": "2026-09-20"
+  },
+  {
+    "slug": "ai-test-automation-vs-manual-testing",
+    "title": "AI Test Automation vs Manual Testing: How to Choose",
+    "excerpt": "AI test automation vs manual testing is a division of labour, not a choice: automate repeatable regression, keep humans for judgement and new features.",
+    "category": "Guides",
+    "date": "2026-09-21"
   }
 ]
