@@ -691,5 +691,12 @@
     "excerpt": "AI test automation vs manual testing is a division of labour, not a choice: automate repeatable regression, keep humans for judgement and new features.",
     "category": "Guides",
     "date": "2026-09-21"
+  },
+  {
+    "slug": "testing-ai-generated-code",
+    "title": "Testing AI-Generated Code: A Practical QA Playbook",
+    "excerpt": "Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.",
+    "category": "Guides",
+    "date": "2026-09-22"
   }
 ]

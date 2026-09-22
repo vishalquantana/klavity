@@ -3,7 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
-
+- [Testing AI-Generated Code: A Practical QA Playbook](https://klavity.in/blog/testing-ai-generated-code) — Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.
 - [AI Test Automation vs Manual Testing: How to Choose](https://klavity.in/blog/ai-test-automation-vs-manual-testing) — AI test automation vs manual testing is a division of labour, not a choice: automate repeatable regression, keep humans for judgement and new features.
 - [9 Common Vibe Coding Mistakes That Ship Bugs to Users](https://klavity.in/blog/common-vibe-coding-mistakes) — The most common vibe coding mistakes: shipping unread code, happy-path-only testing, UI-only auth checks, and regenerating instead of debugging.
 - [What Is Autonomous QA? Definition, Levels, and Limits](https://klavity.in/blog/what-is-autonomous-qa) — Autonomous QA is quality assurance where software decides what to test, runs the checks, and reports defects itself — not just replays human-written tests.
@@ -12,14 +12,14 @@
 - [How to Use AI for QA Testing: A Practical 6-Step Guide](https://klavity.in/blog/how-to-use-ai-for-qa-testing) — To use AI for QA testing, apply it at four points: generating test cases, exploring like a real user, triaging bug reports, and maintaining tests.
 - [How to QA a Vibe-Coded App: A Practical 7-Step Process](https://klavity.in/blog/how-to-qa-a-vibe-coded-app) — To QA a vibe-coded app, verify what the AI cannot: authorization boundaries, data writes, error states, and the paths real users actually take.
 - [Sentry vs Klavity: Which Bug Tool Is Right for Web Agencies?](https://klavity.in/blog/sentry-vs-klavity) — Sentry catches errors in production code. Klavity captures bugs before they ship. Here is how to choose between them for your web agency workflow.
-- [Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch](https://klavity.in/blog/vibe-coding-bugs-web-agencies) — AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.
 - [Test doubles explained: mock vs. stub vs. fake vs. spy](https://klavity.in/blog/mock-vs-stub-vs-fake-vs-spy-test-doubles) — Mock, stub, fake, and spy are all test doubles, but each verifies something different. Stubs and fakes feed data; spies and mocks check calls.
-- [The Best Marker.io Alternative for Web Agencies in 2026](https://klavity.in/blog/marker-io-alternative) — Marker.io captures client bug reports beautifully — but it can't find bugs on its own. Here's the best Marker.io alternative for agencies that want proactive AI QA.
-- [The Best BugHerd Alternative for Web Agencies in 2026](https://klavity.in/blog/bugherd-alternative) — BugHerd lets clients report bugs but can't catch them first. Here's the best BugHerd alternative for web agencies that want proactive AI-powered QA.
-- [What Is Autonomous Testing? A Web Agency Guide](https://klavity.in/blog/autonomous-testing-web-agencies) — Autonomous testing is software that runs QA without human input — finding bugs, reporting them, and learning your sites over time. Here's what it means for web agencies.
-- [The Best AI Testing Tools for Web Agencies in 2026](https://klavity.in/blog/ai-testing-tools-for-web-agencies) — AI testing tools find bugs automatically before your clients do. Here are the best options for web agencies in 2026, compared by agency fit, setup time, and detection capability.
 - [What is AI QA? The Complete Guide for Web Agencies](https://klavity.in/blog/ai-qa-complete-guide) — AI QA uses machine learning to find bugs, reproduce issues, and triage defects automatically — without writing test scripts. Here's everything web agencies need to know.
 - [The Best AI Code Review Tool for Web Agencies in 2026](https://klavity.in/blog/ai-code-review-tool-for-web-agencies) — AI code review tools automatically scan your codebase for bugs, security issues, and quality problems before clients ever see them. Here is how web agencies use them to ship cleaner work faster.
+- [Vibe Coding Is Creating Bugs Your Test Suite Will Never Catch](https://klavity.in/blog/vibe-coding-bugs-web-agencies) — AI-generated code ships fast but breaks differently. Here's why vibe-coded client sites produce bugs that traditional test suites miss — and how web agencies are catching them before clients do.
+- [The Best BugHerd Alternative for Web Agencies in 2026](https://klavity.in/blog/bugherd-alternative) — BugHerd lets clients report bugs but can't catch them first. Here's the best BugHerd alternative for web agencies that want proactive AI-powered QA.
+- [The Best Marker.io Alternative for Web Agencies in 2026](https://klavity.in/blog/marker-io-alternative) — Marker.io captures client bug reports beautifully — but it can't find bugs on its own. Here's the best Marker.io alternative for agencies that want proactive AI QA.
+- [The Best AI Testing Tools for Web Agencies in 2026](https://klavity.in/blog/ai-testing-tools-for-web-agencies) — AI testing tools find bugs automatically before your clients do. Here are the best options for web agencies in 2026, compared by agency fit, setup time, and detection capability.
+- [What Is Autonomous Testing? A Web Agency Guide](https://klavity.in/blog/autonomous-testing-web-agencies) — Autonomous testing is software that runs QA without human input — finding bugs, reporting them, and learning your sites over time. Here's what it means for web agencies.
 - [Bug vs. Feature Request: How to Tell Them Apart in Triage](https://klavity.in/blog/bug-vs-feature-request) — A bug means the product broke a promise it already made; a feature request asks it to make a new one. Here's how to tell them apart in triage.
 - [QA vs. QC: Quality Assurance vs. Quality Control Explained](https://klavity.in/blog/qa-vs-qc-quality-assurance-vs-quality-control) — Quality assurance prevents defects by improving the process; quality control catches them in the product. Here's how each works and where they overlap.
 - [How to Test for Edge Cases: A Practical QA Checklist](https://klavity.in/blog/how-to-test-for-edge-cases-checklist) — Edge cases are inputs and conditions at the limits of what a feature expects. Here's a checklist of ten categories to test, and how to find those you miss.
@@ -105,7 +105,6 @@
 - [How to write a bug report developers will actually act on](https://klavity.in/blog/how-to-write-a-bug-report-developers-act-on) — A bug report gets fixed fast when it carries three things: exact steps, the environment, and evidence (screenshot + console + network). Here's the format.
 
 ## Product
-
 - [Snap — in-app bug reporting](https://klavity.in/snap)
 - [Sims — AI persona testing](https://klavity.in/sims)
 - [AutoSim — self-healing E2E tests](https://klavity.in/autosim)
