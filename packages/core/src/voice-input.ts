@@ -1,5 +1,8 @@
 export class VoiceInput {
   onTranscript = (text: string) => {}
+  // KD-164: a live, in-progress (not-yet-final) partial — lets the host paint text AS the reporter talks
+  // instead of only once the browser decides a phrase is done (which can be a couple of seconds behind).
+  onInterim = (text: string) => {}
   onError = (type: string, message: string) => {}
   onStop = () => {}
   // KLAVITYKLA-495: neutral, non-alarming status while we auto-recover from a transient drop. type is
@@ -65,15 +68,24 @@ export class VoiceInput {
     const rec = new SR()
     this._recognition = rec
     rec.continuous = true
-    rec.interimResults = false
+    // KD-164: request interim (in-progress) results too, so the caller can reflect speech AS it happens —
+    // previously only a completed/final phrase ever painted, which could lag a couple of seconds behind.
+    rec.interimResults = true
     rec.lang = (typeof document !== 'undefined' && document.documentElement.lang) || 'en-US'
     // A successful (re)start means the backend is healthy — clear the failure budget + any status row.
     rec.onstart = () => { this._recovered() }
     rec.onresult = (event: any) => {
       this._recovered()
+      // At most one result is genuinely "in progress" per event — the last non-final one in this batch.
+      // Only fire onInterim when this event actually carries one — an all-final event (the common case for
+      // a short utterance) must not paint a phantom empty preview after the final already committed.
+      let interim: string | null = null
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) this.onTranscript(event.results[i][0].transcript)
+        const r = event.results[i]
+        if (r.isFinal) this.onTranscript(r[0].transcript)
+        else interim = r[0].transcript
       }
+      if (interim !== null) this.onInterim(interim)
     }
     rec.onerror = (event: any) => {
       if (this._stopping || !this._recording) return
@@ -678,4 +690,17 @@ export function pickDictationMode(opts: {
   if (opts.hasEndpoint && opts.mediaRecorderSupported) return 'server'
   if (opts.webSpeechSupported) return 'webspeech'
   return 'none'
+}
+
+// KD-164: landing on 'webspeech' silently trades the fast, punctuated Deepgram-powered dictation for the
+// browser's own (slower, unpunctuated, quality-varies-by-browser) built-in engine — with no signal to the
+// reporter that anything degraded. The single most common cause: `mediaRecorderSupported` above is false
+// because `navigator.mediaDevices` itself doesn't exist outside a secure context (https, or the literal
+// hostname localhost/127.0.0.1) — a plain `http://` customer site on a custom hostname loses BOTH this and
+// "Record me" the same way. Pure + separate from pickDictationMode so the composer can show a specific,
+// actionable note instead of just degrading quietly.
+export type DictationDegradeReason = 'insecure-context' | 'unsupported' | null
+export function dictationDegradeReason(opts: { voiceMode: DictationMode; isSecureContext: boolean }): DictationDegradeReason {
+  if (opts.voiceMode !== 'webspeech') return null
+  return opts.isSecureContext ? 'unsupported' : 'insecure-context'
 }

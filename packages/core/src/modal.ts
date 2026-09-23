@@ -2,7 +2,7 @@ import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shap
 import { Annotator } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
-import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from './voice-input'
+import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, dictationDegradeReason } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
@@ -769,6 +769,12 @@ export function buildModal(
     webSpeechSupported: VoiceInput.isSupported(),
   })
   const voiceSupported = voiceMode !== 'none'
+  // KD-164: when dictation lands on the (slower, unpunctuated) Web Speech fallback, tell the reporter why
+  // instead of silently degrading — see dictationDegradeReason's comment for the most common cause.
+  const voiceDegradeReason = dictationDegradeReason({
+    voiceMode,
+    isSecureContext: typeof window !== 'undefined' ? window.isSecureContext !== false : true,
+  })
   const MAX_RECORDINGS = 2
   let recordings: ReportRecording[] = []
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
@@ -2942,9 +2948,21 @@ export function buildModal(
 
     // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
     const wire = (engine: DictationEngine) => {
+      const sep = () => (streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : '')
+      // KD-164: track the latest not-yet-final partial so it can (a) render live as it arrives and (b) be
+      // committed on Stop if the engine never got around to finalizing it — mirrors wireStreaming's same
+      // KLA-774 pattern below, now shared by Web Speech (and batch server, though it has no interim to give).
+      let lastInterim = ''
       engine.onTranscript = (text) => {
-        const existing = desc.value
-        desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+        lastInterim = ''
+        streamBase = streamBase + sep() + text
+        desc.value = streamBase
+        refreshSubmit()
+      }
+      // A live, in-progress partial — shown as a transient preview, replaced on the next interim/final.
+      engine.onInterim = (text) => {
+        lastInterim = text || ''
+        desc.value = streamBase + sep() + text
         refreshSubmit()
       }
       // Non-alarming reconnect status while an engine auto-retries a transient drop. When it recovers ('idle')
@@ -2958,6 +2976,9 @@ export function buildModal(
         setVoiceStatus('err', message, 4000)
       }
       engine.onStop = () => {
+        // Commit a still-uncommitted interim (Stop pressed before the engine finalized it) so the last
+        // spoken words aren't dropped.
+        if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = ''; desc.value = streamBase; refreshSubmit() }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
@@ -3038,6 +3059,14 @@ export function buildModal(
         voice = makeEngine() // fresh engine per session (a prior fallback may have swapped it)
         voiceRecording = true
         setVoiceBtnMode(true) // instant, obvious feedback AT the control: red glow + stop-square glyph (KLA-613)
+        // KD-164: this session is starting on the degraded Web Speech engine SPECIFICALLY because this
+        // page isn't a secure context — say so, once, non-blocking. Scoped to that one reason only: KLA-613
+        // deliberately keeps this row silent for a routine session (a host that simply never wires the
+        // server endpoint, or a browser that genuinely lacks MediaRecorder, isn't a surprise degradation —
+        // it's just what the button does there, and there's nothing actionable for the reporter to do).
+        if (voiceDegradeReason === 'insecure-context') {
+          setVoiceStatus('info', 'Voice-to-text quality is limited here — this page isn’t on a secure (https) connection.', 6000)
+        }
         void voice.start(); startRing()
       } else {
         voice.stop()

@@ -40,10 +40,11 @@ describe('VoiceInput.isSupported', () => {
 })
 
 describe('VoiceInput.start', () => {
-  it('configures continuous=true, interimResults=false', () => {
+  // KD-164: interimResults is now true — "it should reflect while talking" — see onInterim tests below.
+  it('configures continuous=true, interimResults=true', () => {
     const v = new VoiceInput(); v.start()
     expect(mockSR.continuous).toBe(true)
-    expect(mockSR.interimResults).toBe(false)
+    expect(mockSR.interimResults).toBe(true)
     expect(mockSR.start).toHaveBeenCalledOnce()
   })
   it('no-op if already recording', () => { const v = new VoiceInput(); v.start(); v.start(); expect(mockSR.start).toHaveBeenCalledOnce() })
@@ -57,6 +58,26 @@ describe('VoiceInput onTranscript', () => {
   it('does not fire for isFinal=false', () => {
     const v = new VoiceInput(); const got = []; v.onTranscript = t => got.push(t); v.start()
     mockSR._fireResult('partial', false); expect(got).toHaveLength(0)
+  })
+})
+
+// KD-164: "it should reflect while talking" — the in-progress transcript now flows out live via onInterim,
+// separately from onTranscript's completed-phrase-only contract (unchanged, still isFinal-gated above).
+describe('VoiceInput onInterim', () => {
+  it('fires with the in-progress transcript for isFinal=false', () => {
+    const v = new VoiceInput(); const got = []; v.onInterim = t => got.push(t); v.start()
+    mockSR._fireResult('partial', false); expect(got).toEqual(['partial'])
+  })
+  it('does NOT fire on an event that is entirely final (no phantom empty interim)', () => {
+    const v = new VoiceInput(); const got = []; v.onInterim = t => got.push(t); v.start()
+    mockSR._fireResult('hello', true); expect(got).toHaveLength(0)
+  })
+  it('does not fire onTranscript for an interim result', () => {
+    const v = new VoiceInput(); const transcripts = []; const interims = []
+    v.onTranscript = t => transcripts.push(t); v.onInterim = t => interims.push(t); v.start()
+    mockSR._fireResult('partial', false)
+    expect(transcripts).toHaveLength(0)
+    expect(interims).toEqual(['partial'])
   })
 })
 
