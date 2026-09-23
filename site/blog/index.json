@@ -698,5 +698,12 @@
     "excerpt": "Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.",
     "category": "Guides",
     "date": "2026-09-22"
+  },
+  {
+    "slug": "vibe-coding-qa-checklist",
+    "title": "Vibe Coding QA Checklist: 24 Checks Before You Ship",
+    "excerpt": "A vibe coding QA checklist is a short, repeatable set of checks on an AI-generated app, ordered by blast radius. Here are the 24 that matter.",
+    "category": "Guides",
+    "date": "2026-09-23"
   }
 ]
