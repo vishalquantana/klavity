@@ -6,7 +6,7 @@
 //   * getUserMedia denial ⇒ onError('not-allowed') + onStop, no half-open mic
 //   * stop() ends the session and stops the mic tracks
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { LiveDictation, pickDictationMode } from '../src/voice-input'
+import { LiveDictation, pickDictationMode, dictationDegradeReason } from '../src/voice-input'
 
 // A MediaRecorder stand-in: start()/stop() flip state; stop() emits ONE data chunk then fires onstop,
 // exactly like a real recorder producing a complete blob per segment.
@@ -58,6 +58,26 @@ describe('pickDictationMode', () => {
   })
   it('none when nothing is supported', () => {
     expect(pickDictationMode({ hasEndpoint: false, mediaRecorderSupported: false, webSpeechSupported: false })).toBe('none')
+  })
+})
+
+// KD-164: the ticket's "slow + inaccurate + no punctuation" symptoms all trace to one cause — dictation
+// silently landing on the browser's Web Speech engine instead of the fast, punctuated Deepgram path. The
+// most common reason mediaRecorderSupported is false: an insecure (http, non-localhost) page has no
+// navigator.mediaDevices at all. dictationDegradeReason lets the composer say so instead of degrading quietly.
+describe('dictationDegradeReason', () => {
+  it('null on the server (fast/punctuated) path — nothing degraded', () => {
+    expect(dictationDegradeReason({ voiceMode: 'server', isSecureContext: true })).toBeNull()
+    expect(dictationDegradeReason({ voiceMode: 'server', isSecureContext: false })).toBeNull()
+  })
+  it('null when nothing is supported at all (button is hidden, no notice needed)', () => {
+    expect(dictationDegradeReason({ voiceMode: 'none', isSecureContext: true })).toBeNull()
+  })
+  it('"insecure-context" on webspeech when the page itself is not a secure context', () => {
+    expect(dictationDegradeReason({ voiceMode: 'webspeech', isSecureContext: false })).toBe('insecure-context')
+  })
+  it('"unsupported" on webspeech when the page IS secure (a genuinely unsupported browser, e.g. iOS Safari)', () => {
+    expect(dictationDegradeReason({ voiceMode: 'webspeech', isSecureContext: true })).toBe('unsupported')
   })
 })
 

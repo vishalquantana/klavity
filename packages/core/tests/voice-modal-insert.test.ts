@@ -132,3 +132,89 @@ describe('voice dictation → description (server LiveDictation engine)', () => 
     vi.unstubAllGlobals()
   }, 10000)
 })
+
+// KD-164: the reporter's "slow + inaccurate + no punctuation" all trace to one cause — dictation silently
+// landing here (Web Speech) instead of the fast, punctuated server path, with nothing telling the reporter
+// why. Starting a session on this fallback must now surface a specific, non-blocking note.
+// KD-164: "it should reflect while talking" — a completed/final phrase could previously lag a couple of
+// seconds behind actual speech (Web Speech was requesting interimResults:false and nothing downstream
+// painted a partial anyway). Interim results now flow through live.
+describe('live interim reflection while talking (KD-164)', () => {
+  it('paints an in-progress (not yet final) partial into the description as it arrives', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    const desc = q(ctrl, '#klavity-desc') as HTMLElement & { value: string }
+    voiceBtn.click()
+    liveRec.fireResult('the butt', false) // still being spoken
+    expect(desc.value).toBe('the butt')
+    liveRec.fireResult('the button is', false) // browser revised the in-progress guess
+    expect(desc.value).toBe('the button is')
+    liveRec.fireResult('the button is broken', true) // now final
+    expect(desc.value).toBe('the button is broken')
+    ctrl.close()
+  })
+
+  it('an all-final event does not leave a stray trailing separator behind', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    const desc = q(ctrl, '#klavity-desc') as HTMLElement & { value: string }
+    voiceBtn.click()
+    liveRec.fireResult('hello world', true) // final with no preceding interim in this event
+    expect(desc.value).toBe('hello world')
+    ctrl.close()
+  })
+
+  it('stopping mid-utterance commits the last-seen interim instead of dropping it', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    const desc = q(ctrl, '#klavity-desc') as HTMLElement & { value: string }
+    voiceBtn.click()
+    liveRec.fireResult('spoken but never finalized', false)
+    voiceBtn.click() // Stop, before the engine ever fires a final for it
+    expect(desc.value).toBe('spoken but never finalized')
+    ctrl.close()
+  })
+})
+
+describe('voice dictation degrade notice (KD-164)', () => {
+  it('shows an "insecure connection" note when the page itself is not a secure context', () => {
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false })
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    voiceBtn.click()
+    const status = q(ctrl, '#klavity-voice-status') as HTMLElement
+    expect(status.hidden).toBe(false)
+    expect(status.textContent).toContain('secure')
+    ctrl.close()
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+  })
+
+  it('shows NO note on a secure page with no server endpoint wired (KLA-613: routine sessions stay silent)', () => {
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    voiceBtn.click()
+    const status = q(ctrl, '#klavity-voice-status') as HTMLElement
+    expect(status.hidden).toBe(true)
+    ctrl.close()
+  })
+
+  it('shows NO degrade note on the fast server path', () => {
+    class MockMediaRecorder {
+      state = 'inactive'; ondataavailable: any = null; onstop: any = null
+      static isTypeSupported() { return true }
+      constructor(public stream: any, public opts?: any) {}
+      start() { this.state = 'recording' }
+      stop() {}
+    }
+    vi.stubGlobal('MediaRecorder', MockMediaRecorder)
+    const track = { stop: vi.fn() }
+    Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [track] }) } })
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', onDictate: async () => ({ text: 'hi' }), onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    const voiceBtn = q(ctrl, '#klavity-voice') as HTMLButtonElement
+    voiceBtn.click()
+    const status = q(ctrl, '#klavity-voice-status') as HTMLElement
+    expect(status.hidden).toBe(true)
+    ctrl.close()
+    vi.unstubAllGlobals()
+  })
+})
