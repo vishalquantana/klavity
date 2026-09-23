@@ -15,6 +15,9 @@
 // Phase 2 (transcript) is intentionally NOT built here. The RecordingAttachment carries a stable `id`
 // so a transcript produced later can be attached back to the exact recording (recordings_json row).
 
+import fixWebmDuration from 'fix-webm-duration'
+import type { RecordingDraftWriter } from './recording-draft'
+
 // ── Caps ──────────────────────────────────────────────────────────────────────────────────────────────
 // Length cap: 3 min hard auto-stop (keeps blobs bounded + cheap to transcribe later). Size cap: ~50MB —
 // mirrors the server's RECORDING_MAX_BYTES so a client-accepted recording also passes server intake.
@@ -97,6 +100,10 @@ export interface StartRecordingOptions {
   // Called once if getUserMedia (camera/mic) rejects — e.g. the customer site's Permissions-Policy blocks
   // camera/microphone for embedded tools. The recording continues SCREEN-ONLY; the UI surfaces the hint.
   onFallback?: (reason: string) => void
+  // KD-163: when provided, every recorder chunk is persisted as it arrives (and the draft is opened at start),
+  // so a full page navigation — which destroys the page and stops the recording — keeps everything captured
+  // so far. The engine only feeds it; clearing on normal exits is the caller's (recordMe's) job.
+  persist?: RecordingDraftWriter
 }
 
 export interface RecordingController {
@@ -163,6 +170,22 @@ export function recordingSupported(deps: Partial<RecorderDeps> & { mediaDevices?
   const md = deps.mediaDevices
   const MR = (deps as any).MediaRecorder ?? (globalThis as any).MediaRecorder
   return !!md && typeof md.getDisplayMedia === 'function' && typeof MR !== 'undefined'
+}
+
+// Patch the EBML Duration into a MediaRecorder WebM. Only WebM is touched (Safari's mp4 already carries one);
+// a hung/failed patch resolves to the ORIGINAL blob after a short bound so submit is never blocked.
+const FIX_DURATION_TIMEOUT_MS = 5000
+export async function withFixedWebmDuration(blob: Blob, durationMs: number): Promise<Blob> {
+  if (!/webm/i.test(blob.type) || !(durationMs > 0)) return blob
+  try {
+    const fixed = await Promise.race([
+      fixWebmDuration(blob, durationMs),
+      new Promise<Blob>((_, rej) => setTimeout(() => rej(new Error('fix-webm-duration timed out')), FIX_DURATION_TIMEOUT_MS)),
+    ])
+    return fixed && fixed.size > 0 ? fixed : blob
+  } catch {
+    return blob
+  }
 }
 
 function newRecordingId(): string {
@@ -331,7 +354,10 @@ export async function startRecording(
   }
 
   recorder.ondataavailable = (ev: any) => {
-    if (ev?.data && ev.data.size) { chunks.push(ev.data); totalBytes += ev.data.size }
+    if (ev?.data && ev.data.size) {
+      chunks.push(ev.data); totalBytes += ev.data.size
+      try { opts.persist?.chunk(ev.data, elapsedMs()) } catch { /* draft persistence is best-effort */ }
+    }
     try { opts.onStats?.({ elapsedMs: elapsedMs(), bytes: totalBytes }) } catch { /* no-op */ }
     // Size cap: stop the moment the accumulated blob would exceed the byte ceiling.
     if (totalBytes >= caps.maxBytes) stop()
@@ -346,12 +372,17 @@ export async function startRecording(
     deps.caf(rafId)
     if (tickId) { deps.clearInterval(tickId); tickId = 0 }
     const durationMs = elapsedMs()
-    const blob = new Blob(chunks, { type: mime.split(';')[0] })
+    const rawBlob = new Blob(chunks, { type: mime.split(';')[0] })
     cleanupStreams()
     setState('stopped')
-    resolveDone({
-      id, blob, mime: blob.type || mime, durationMs, bytes: blob.size || totalBytes,
-      width: canvas.width, height: canvas.height, screenOnly, hadCamera, hadAudio,
+    // MediaRecorder WebM is streamed: no Duration/Cues in the header, so video.duration === Infinity, the seek
+    // bar can't track, and stricter players call the file corrupt (KD-163). Write the known elapsed time into the
+    // header before handing the blob on; on any failure keep the original bytes (never lose the recording).
+    void withFixedWebmDuration(rawBlob, durationMs).then((blob) => {
+      resolveDone({
+        id, blob, mime: blob.type || mime, durationMs, bytes: blob.size || totalBytes,
+        width: canvas.width, height: canvas.height, screenOnly, hadCamera, hadAudio,
+      })
     })
   }
 
@@ -365,6 +396,7 @@ export async function startRecording(
   try { screenTrack?.addEventListener?.('ended', () => stop()) } catch { /* no-op */ }
 
   // Emit a chunk every 1s so live size/elapsed readouts update; length-cap auto-stop is checked here.
+  try { opts.persist?.start({ id, mime, width: canvas.width, height: canvas.height, screenOnly, hadCamera, hadAudio }) } catch { /* best-effort */ }
   recorder.start(1000)
   startedAt = deps.now()
   setState('recording')
@@ -486,6 +518,8 @@ export function startCameraPreview(stream: any | null): HTMLElement | null {
 // self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of the shared composer
 // (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
 export interface RecordMeOptions {
+  // KD-163: draft writer (see recording-draft.ts) so the clip survives a full page navigation.
+  persist?: RecordingDraftWriter
   caps?: Partial<RecordingCaps>
   deps?: RecorderDeps
   // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore the
@@ -552,7 +586,15 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       // and swallow the key so the underlying modal does NOT also close behind us.
       if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); finish(null) }
     }
-    const onPageHide = () => { teardownRecorder() }
+    // KD-163: 'pagehide' is the REAL unload — stop the tracks there, and mark that we're leaving so finish() does
+    // not clear the saved draft (the next page recovers it). 'beforeunload' only WARNS while a recording is
+    // live: it fires before the user has confirmed leaving, so stopping the recording there would kill it even
+    // if they cancel the navigation.
+    let leaving = false
+    const onPageHide = () => { leaving = true; teardownRecorder() }
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (controller && controller.state() === 'recording') { e.preventDefault(); e.returnValue = '' }
+    }
     // KLA-620: backdrop pointerdown. host is the full-screen dim layer that centers the card; a pointerdown whose
     // target is host itself (i.e. OUTSIDE the card) while the consent panel is up dismisses like Cancel. Clicks
     // landing on the card (or its descendants) have target !== host and are ignored, so the card stays put.
@@ -562,14 +604,16 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     }
     host.addEventListener('pointerdown', onBackdropDown)
     document.addEventListener('keydown', onKeydown, { capture: true })
-    if (typeof window !== 'undefined') { window.addEventListener('pagehide', onPageHide); window.addEventListener('beforeunload', onPageHide) }
+    if (typeof window !== 'undefined') { window.addEventListener('pagehide', onPageHide); window.addEventListener('beforeunload', onBeforeUnload) }
     const finish = (val: RecordingAttachment | null) => {
       if (settled) return
       settled = true
       teardownRecorder() // stop any live camera/mic/screen tracks on EVERY exit (cancel/attach/redo/esc/close)
       host.removeEventListener('pointerdown', onBackdropDown)
       document.removeEventListener('keydown', onKeydown, { capture: true })
-      if (typeof window !== 'undefined') { window.removeEventListener('pagehide', onPageHide); window.removeEventListener('beforeunload', onPageHide) }
+      if (typeof window !== 'undefined') { window.removeEventListener('pagehide', onPageHide); window.removeEventListener('beforeunload', onBeforeUnload) }
+      // Every NORMAL exit (attached / cancelled / re-record / Esc) drops the draft; a navigation leaves it.
+      if (!leaving) { try { opts.persist?.clear() } catch { /* best-effort */ } }
       try { host.remove() } catch { /* no-op */ }
       resolve(val)
     }
@@ -611,7 +655,7 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
       let fallbackReason: string | null = null
       try {
         controller = await startRecording({
-          wantCamera, wantMic, caps: opts.caps,
+          wantCamera, wantMic, caps: opts.caps, persist: opts.persist,
           onFallback: (reason) => { fallbackReason = reason },
           onStats: ({ elapsedMs, bytes }) => {
             const t = card.querySelector('#klr-timer'); if (t) t.textContent = 'REC ' + fmtTime(elapsedMs)

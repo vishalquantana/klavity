@@ -63,6 +63,9 @@ importers:
       '@klavity/core':
         specifier: workspace:*
         version: link:../core
+      fix-webm-duration:
+        specifier: ^1.0.6
+        version: 1.0.6
       heic2any:
         specifier: ^0.0.4
         version: 0.0.4
@@ -748,6 +751,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fix-webm-duration@1.0.6:
+    resolution: {integrity: sha512-zVAqi4gE+8ywxJuAyV/rlJVX6CMtvyapEbQx6jyoeX9TMjdqAlt/FdG5d7rXSSkDVzTvS0H7CtwzHcH/vh4FPA==}
 
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
@@ -1774,6 +1780,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
+
+  fix-webm-duration@1.0.6: {}
 
   foreground-child@3.3.1:
     dependencies:

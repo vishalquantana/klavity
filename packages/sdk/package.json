@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@klavity/core": "workspace:*",
+    "fix-webm-duration": "^1.0.6",
     "heic2any": "^0.0.4",
     "modern-screenshot": "^4.7.0",
     "rrweb": "^2.0.1"

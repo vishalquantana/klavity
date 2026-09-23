@@ -563,6 +563,9 @@ export interface ModalController {
   // the fresh capture, not the first seeded one. (addScreenshot leaves activeIndex alone for silent seeds.)
   addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => void
   close: () => void
+  // KD-163: attach a recording the host already has (e.g. the partial clip recovered after a page navigation
+  // interrupted "Record me") as the selected, removable video tile. Returns false when the recordings cap is full.
+  addRecording: (rec: ReportRecording) => boolean
   // KLA-772: a JSON-safe snapshot of every shot's drawn overlay (strip index → { w, h, shapes }). The host
   // reads it on minimize to persist all annotations into the evidence session in one pass. Empty => {}.
   getAnnotations: () => Record<number, any>
@@ -1719,6 +1722,14 @@ export function buildModal(
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
     addCapturedShot: (dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, suggestSharp?: boolean, capture?: ShotCapture) => addScreenshot(dataUrl, quality, pageMeta, true, !!suggestSharp, capture),
     close,
+    addRecording: (rec: ReportRecording) => {
+      if (_closed || recordings.length >= MAX_RECORDINGS) return false
+      recordings.push(rec)
+      activeRecordingIndex = recordings.length - 1
+      activeVideoIndex = null
+      renderRecordings()
+      return true
+    },
     // KLA-772: expose the full per-image overlay map so the host can persist it on minimize.
     getAnnotations: getAnnotationsSnapshot,
     setReplayState,

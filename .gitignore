@@ -20,3 +20,10 @@ docs/DEPLOYMENT.md
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Local dev DB (prototype/server.ts run with TURSO_DATABASE_URL=file:local.db) and its libSQL sidecars —
+# never the prod Turso DB. Server logs from local runs.
+prototype/local.db
+prototype/local.db-shm
+prototype/local.db-wal
+prototype/*.log

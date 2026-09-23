@@ -3,6 +3,7 @@ import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
+import type { ReportRecording } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
@@ -18,7 +19,8 @@ import { icon } from "@klavity/core/icons"
 import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
 import { createSessionReplay, type SessionReplay } from "./session-replay"
-import { recordMe, recordingSupported } from "./recorder"
+import { recordMe, recordingSupported, withFixedWebmDuration } from "./recorder"
+import { createDraftWriter, loadDraft, clearDraft } from "./recording-draft"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
@@ -1052,6 +1054,73 @@ async function mount() {
     if (evDockEl) evDockEl.style.display = "none"
     paintLauncher() // restore the normal launcher (respects hidden/icon/full modes)
   }
+  // ── KD-163: "Record me" interrupted by a FULL page navigation ─────────────────────────────────────────
+  // The recorder saves each chunk as it arrives (recording-draft.ts), so the clip up to the moment the page
+  // changed is on disk. On the next page we offer it back: a small dock (same look as the evidence dock)
+  // with "Attach to report" (opens the composer with the clip attached) and a discard X. The screen/camera/
+  // mic are NOT resumed — only what was already captured is recovered.
+  let recDraftDockEl: HTMLElement | null = null
+  let recoveredRec: ReportRecording | null = null
+  const fmtRecTime = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") }
+  function hideRecDraftDock() {
+    if (recDraftDockEl) { recDraftDockEl.remove(); recDraftDockEl = null }
+    if (!evDockEl || evDockEl.style.display === "none") paintLauncher()
+  }
+  async function discardRecordingDraft() {
+    recoveredRec = null
+    hideRecDraftDock()
+    try { await clearDraft() } catch { /* best-effort */ }
+  }
+  async function attachRecoveredRecording() {
+    const rec = recoveredRec
+    if (!rec) return
+    if (!(composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected)) {
+      let session: EvidenceSession | null = null
+      try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
+      if (session) evSession = session
+      openReport("bug", session ? { evidence: { session } } : undefined)
+    }
+    if (composer && composer.addRecording(rec)) {
+      recoveredRec = null
+      hideRecDraftDock()
+      try { await clearDraft() } catch { /* best-effort */ }
+    } else {
+      evBanner("Couldn't attach the recovered recording — remove one and try again.")
+    }
+  }
+  function showRecDraftDock(elapsedMs: number) {
+    ensureEvDockStyle()
+    reportDock.style.display = "none"
+    if (recDraftDockEl) recDraftDockEl.remove()
+    const d = document.createElement("div")
+    d.className = "kl-evdock"
+    const pulse = document.createElement("span"); pulse.className = "kl-evpulse"
+    const lab = document.createElement("div"); lab.className = "kl-evlab"
+    const t = document.createElement("b"); t.textContent = "Recording saved"
+    const sub = document.createElement("small"); sub.textContent = fmtRecTime(elapsedMs) + " recorded before the page changed"
+    lab.append(t, sub)
+    const attach = document.createElement("button"); attach.className = "kl-evbtn res"; attach.type = "button"; attach.textContent = "Attach to report"
+    attach.addEventListener("click", (e) => { e.stopPropagation(); void attachRecoveredRecording() })
+    const x = document.createElement("button"); x.className = "kl-evx"; x.type = "button"; x.title = "Discard this recording"; x.setAttribute("aria-label", "Discard recording"); x.textContent = "x"
+    x.addEventListener("click", (e) => { e.stopPropagation(); void discardRecordingDraft() })
+    d.append(pulse, lab, attach, x)
+    recDraftDockEl = d
+    reportDock.parentElement?.appendChild(d)
+  }
+  async function recoverRecordingDraft() {
+    let draft: Awaited<ReturnType<typeof loadDraft>> = null
+    try { draft = await loadDraft(cfg.projectId) } catch { return }
+    if (!draft) return
+    try {
+      const blob = await withFixedWebmDuration(draft.blob, draft.meta.elapsedMs)
+      recoveredRec = {
+        id: draft.meta.id, dataUrl: await blobToDataUrl(blob), mime: blob.type || draft.meta.mime,
+        durationMs: draft.meta.elapsedMs, bytes: blob.size, width: draft.meta.width, height: draft.meta.height,
+        screenOnly: draft.meta.screenOnly,
+      }
+      showRecDraftDock(draft.meta.elapsedMs)
+    } catch { /* unreadable draft — nothing to offer; it ages out via the TTL */ }
+  }
   async function captureHereFromDock(btn: HTMLButtonElement) {
     if (!evSession) return
     const prev = btn.textContent
@@ -1479,7 +1548,7 @@ async function mount() {
       allowRecording: composerRecord,
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
-      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase, persist: createDraftWriter({ projectId: cfg.projectId, origin: evOrigin, pageUrl: location.href }) })) : undefined,
       // KLA-505: server-side live dictation for the Voice button (replaces the flaky Web Speech backend).
       // The composer records a short mic clip and hands each audio Blob here; we POST it to the STT endpoint
       // (POST /api/voice/transcribe, multipart: audio + projectId) and resolve the recognized text. On ANY
@@ -2233,6 +2302,8 @@ async function mount() {
       const active = await getActiveSession(cfg.projectId, evOrigin)
       if (active && active.shots.length > 0) { evSession = active; showEvDock() }
     } catch { /* IndexedDB unavailable — normal launcher stands */ }
+    // KD-163: offer back a "Record me" clip a full page navigation interrupted (best-effort, own storage).
+    void recoverRecordingDraft()
   })()
 
   // KLAVITYKLA-506: the launcher + right-click above were already created/armed SYNCHRONOUSLY (present
