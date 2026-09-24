@@ -24,7 +24,7 @@ import { createDraftWriter, loadDraft, clearDraft } from "./recording-draft"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
-  makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations,
+  makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -665,6 +665,23 @@ function withSharpSuggestion(
 // Active watch-engine controller — torn down when Sims are undeployed.
 let _simsWatchCtrl: SimsWatchController | null = null
 
+// KD-162: only worth listing when the reporter ACTUALLY navigated across pages while capturing evidence
+// — a single-shot session gains nothing over the structured urlPath field already sent with the report,
+// and unconditionally appending it here was clobbering the JTBD-1.10 "empty description" signal
+// (submitFeedback's `description.trim() ? ... : ""` check) for the common single-page case, which meant
+// the server's own clean fallback (fallbackDraftTitle) never got a chance to run — the reporter's ticket
+// showed this raw trail (a full page URL) as its description instead. Module-scope (not nested inside
+// mount()) so it's directly unit-testable, matching the extension's identical fix (evidence-store.ts).
+export function buildPagesTrail(shots: EvidenceShot[]): string {
+  if (!shots || shots.length < 2) return ""
+  const lines = shots.map((s, i) => {
+    const path = s.pagePath || s.pageUrl || "(unknown)"
+    const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
+    return `${i + 1}. ${path}${full}`
+  })
+  return "Pages captured:\n" + lines.join("\n")
+}
+
 async function mount() {
   const cfg = parseScriptConfig(currentScript())
   if (!cfg.projectId || !cfg.backendUrl) return
@@ -930,6 +947,16 @@ async function mount() {
       updateEvDock()
     } catch { /* best-effort: a failed persist must never break capture */ }
   }
+  // KD-166: persist the reporter's typed description to the active session, mirroring persistEvShot — a
+  // real page navigation (e.g. leaving the SPA entirely for a legacy full-reload page) already recovers
+  // the screenshot via this same session; without this, the typed text was silently lost even though the
+  // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
+  async function persistEvDesc(sessionId: string, text: string): Promise<void> {
+    try {
+      const updated = await updateEvidenceFields(sessionId, { desc: text })
+      if (updated) evSession = updated
+    } catch { /* best-effort: a failed persist must never break typing */ }
+  }
   // Remove the session shot at a composer strip index (indices stay aligned with seed+append order).
   function removeEvShotAt(index: number): void {
     // KLA-772: the modal shifts its per-image overlay map down on a mid-strip delete; snapshot the composer's
@@ -967,15 +994,6 @@ async function mount() {
     let byIndex: Record<number, unknown> = {}
     try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
     void queueEvWrite(() => persistAllAnnotations(sessionId, byIndex))
-  }
-  function buildPagesTrail(shots: EvidenceShot[]): string {
-    if (!shots || !shots.length) return ""
-    const lines = shots.map((s, i) => {
-      const path = s.pagePath || s.pageUrl || "(unknown)"
-      const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
-      return `${i + 1}. ${path}${full}`
-    })
-    return "Pages captured:\n" + lines.join("\n")
   }
 
   // ── Minimized dock (the mockup's dark pill) ──
@@ -1142,7 +1160,9 @@ async function mount() {
     try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep in-memory copy */ }
     if (!evSession) { hideEvDock(); return }
     if (evDockEl) evDockEl.style.display = "none"
-    openReport("bug", { evidence: { session: evSession } })
+    // KD-166: restore the typed description alongside the recovered screenshot(s) — previously only the
+    // shots came back; the text was silently dropped even though it was the thing most recently persisted.
+    openReport("bug", { evidence: { session: evSession }, initialDescription: evSession.desc })
   }
   async function discardEvidence() {
     const s = evSession
@@ -1189,11 +1209,13 @@ async function mount() {
           return
         }
         // Composer closed/minimized → reopen seeded with the existing shots, and this fresh capture appended last.
-        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined })
+        // KD-166: an explicit caller-supplied initialDescription (e.g. the Sim-observation prefill) always
+        // wins; otherwise restore whatever was last persisted to the session.
+        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined, initialDescription: opts?.initialDescription ?? session?.desc })
         return
       }
     }
-    openReport("bug", session ? { ...opts, evidence: { session } } : opts)
+    openReport("bug", session ? { ...opts, evidence: { session }, initialDescription: opts?.initialDescription ?? session.desc } : opts)
   }
 
   // Track deployed Sims so the context menu can show their icons without a fetch.
@@ -1413,7 +1435,15 @@ async function mount() {
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
       // KLAVITYKLA-473: if the DOM render is blank/partial-white, flag suggestSharp so the composer nudges
       // the user to the Screen button — NO auto getDisplayMedia (the #460 surprise-prompt regression).
-      onCaptureFull: async () => withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })),
+      // Out-of-memory fix: capture documentElement (not body — see fullPageCaptureSize's KLAVITYKLA-404
+      // note on app-shell layouts collapsing body's own box) at fullPageCaptureSize()'s pre-clamped
+      // {width,height}, exactly like safeToPngFullPage already does for the Sim live-review path — a very
+      // tall page's unbounded natural height was letting the renderer attempt a native-size canvas
+      // allocation BEFORE ever shrinking to a safe max, spiking memory enough to OOM-crash the tab.
+      onCaptureFull: async () => {
+        const { width, height } = fullPageCaptureSize()
+        return withSharpSuggestion(await safeToPngWithQuality(document.documentElement, { filter: notKlavityChrome, width, height }))
+      },
       // KLAVITYKLA-509: fast above-the-fold render used as the IMMEDIATE preview — the composer shows a real
       // image within ~1s while onCaptureFull() finishes the full-page render in the background and swaps in.
       onCaptureViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
@@ -1690,6 +1720,8 @@ async function mount() {
       // KLA-412: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste
       // / auto-capture) to the session, tagged with the current page. Serialized to avoid lost updates.
       onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
+      // KD-166: same idea, for the typed description (see onDescriptionChange's doc comment in modal.ts).
+      onDescriptionChange: ev ? (text: string) => { void queueEvWrite(() => persistEvDesc(ev.id, text)) } : undefined,
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
       // KLA-772: persist a shot's drawn overlay incrementally as the reporter draws/edits/undoes it, so the
@@ -2384,11 +2416,11 @@ function fmtMB(bytes: number): string { return (bytes / 1048576).toFixed(1) }
 // A rough total-bytes estimate from the retained payload, used for the pill's initial "0 / N MB"
 // readout before the browser reports the real on-the-wire total. dataUrl base64 decodes to ~0.75×
 // its string length; recordings carry an exact byte count.
-function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string }> }): number {
+function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string; blob?: Blob }> }): number {
   let n = 0
   for (const s of p.screenshots || []) n += Math.round(s.length * 0.75)
   for (const r of p.recordings || []) n += r.bytes || 0
-  for (const f of p.files || []) n += Math.round((f.dataUrl?.length || 0) * 0.75)
+  for (const f of p.files || []) n += f.blob ? f.blob.size : Math.round((f.dataUrl?.length || 0) * 0.75)
   return n
 }
 // Human label of what's riding along, e.g. "screenshot + recording".
@@ -2596,7 +2628,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes

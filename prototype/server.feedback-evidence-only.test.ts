@@ -96,10 +96,12 @@ test("screenshot-only report (no description) succeeds and gets a fallback title
   const row = await rawClient.execute({ sql: "SELECT observation, url_path FROM feedback WHERE id=?", args: [j.id] })
   expect(row.rows.length).toBe(1)
   const obs = String(row.rows[0].observation || "")
-  // Title is drafted (never blank / "Untitled") — the deterministic fallback references the page path.
+  // KD-162: the deterministic fallback description is now a readable page title + labeled path + capture
+  // time (never blank / "Untitled"), not a bare "Screenshot report on X" line.
   expect(obs.length).toBeGreaterThan(0)
-  expect(obs).toContain("/checkout")
-  expect(obs.toLowerCase()).toContain("screenshot")
+  expect(obs).toContain("Checkout page")
+  expect(obs).toContain("Application path : /checkout")
+  expect(obs).toMatch(/Captured: \d{2} \w{3} \d{4}, \d{2}:\d{2} (AM|PM) UTC/)
 })
 
 test("replay-only report (no description, no screenshot) succeeds with a fallback title", async () => {

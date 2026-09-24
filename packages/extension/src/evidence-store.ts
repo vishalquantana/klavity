@@ -125,9 +125,14 @@ export function evCountText(session: ExtEvidenceSession | null): string {
   return `${n} shot${n === 1 ? '' : 's'} · ${m} page${m === 1 ? '' : 's'} · not lost`
 }
 
+// KD-162: only worth listing when the reporter ACTUALLY navigated across pages while capturing evidence
+// — a single-shot session gains nothing over the structured page-path field already sent with the
+// report, and unconditionally appending it was clobbering the "empty description" signal the server
+// relies on to draft a clean fallback description, so a single-page report's description showed this
+// raw trail (a full page URL) instead.
 /** The "Pages captured:" trail appended to the report description (numbered, path + full URL). */
 export function buildPagesTrail(shots: ExtEvidenceShot[]): string {
-  if (!shots || !shots.length) return ''
+  if (!shots || shots.length < 2) return ''
   const lines = shots.map((s, i) => {
     const path = s.pagePath || s.pageUrl || '(unknown)'
     const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? ' - ' + s.pageUrl : ''

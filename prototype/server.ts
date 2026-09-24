@@ -11,7 +11,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -137,7 +137,7 @@ import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/si
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
-import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
+import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
@@ -923,6 +923,63 @@ async function enrichReportFromTranscript(opts: { feedbackId: string; projectId:
       try { await kfRv?.settle({ ok: newAtts.length > 0, aiCallId: null }) } catch {}
     }
   } catch (e: any) { console.warn("[video-enrich] keyframe extraction failed (non-fatal):", e?.message || e) }
+}
+
+// KD-162: POST-INTAKE vision captioning for a screenshot-only report (no typed description). The
+// synchronous fallback (fallbackDraftDescription, set at insert time) already gives the ticket a
+// readable page title + path + capture time — a vision call is too slow to add to that critical path, so
+// this appends a short AI-generated caption of the actual screenshot as a 4th line, fire-and-forget,
+// mirroring enrichReportFromTranscript's screenshot-fetch pattern above. `expectedObservation` is the
+// EXACT text intake stored; the append is a compare-and-swap (appendObservationIfUnchanged) so a human
+// edit to the description in the meantime is never clobbered.
+async function captionScreenshotForFeedback(opts: { feedbackId: string; projectId: string; expectedObservation: string }): Promise<void> {
+  const { feedbackId, projectId, expectedObservation } = opts
+  if (!db || !KEY) return
+  let fb: any
+  try { fb = await feedbackById(projectId, feedbackId) } catch (e: any) { console.warn("[screenshot-caption] load skipped (non-fatal):", e?.message || e); return }
+  if (!fb || !fb.screenshotId) return
+
+  let shotDataUrl = ""
+  try {
+    const shot = await screenshotById(String(fb.screenshotId))
+    if (shot) {
+      const { bytes, contentType } = await getObjectBytes(shot.s3Key)
+      if (bytes.byteLength <= ENHANCE_MAX_SHOT_BYTES) {
+        shotDataUrl = `data:${contentType || "image/png"};base64,${Buffer.from(bytes).toString("base64")}`
+      }
+    }
+  } catch (e: any) { console.warn("[screenshot-caption] screenshot fetch skipped (non-fatal):", e?.message || e) }
+  if (!/^data:image\/(png|jpe?g|webp);base64,/.test(shotDataUrl)) return
+
+  let caption = ""
+  try {
+    const { content } = await chat(
+      [
+        {
+          role: "system",
+          content: "Describe what is shown in this bug-report screenshot in ONE short, specific sentence "
+            + "(max ~20 words) — the page/UI content a triager would find useful, not generic commentary. "
+            + "Plain text only, no markdown, no preamble." + UNTRUSTED_GUARD,
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "PAGE PATH (untrusted):\n" + wrapUntrusted(String(fb.urlPath || "(unknown)")) },
+            { type: "image_url", image_url: { url: shotDataUrl } },
+          ],
+        },
+      ],
+      120, false,
+      { type: "screenshot-caption", feature: "screenshot-caption", model: ENHANCE_MODEL, projectId, email: fb.actorEmail ?? null, temperature: 0.2 },
+    )
+    caption = String(content || "").trim().slice(0, 300)
+  } catch (e: any) { console.warn("[screenshot-caption] AI call failed (non-fatal):", e?.message || e); return }
+  if (!caption) return
+
+  const appended = `${expectedObservation}\n${caption}`
+  const applied = await appendObservationIfUnchanged(feedbackId, projectId, expectedObservation, appended)
+    .catch((e: any) => { console.warn("[screenshot-caption] persist skipped (non-fatal):", e?.message || e); return false })
+  if (!applied) console.log(`[screenshot-caption] skipped for ${feedbackId} — description was edited before the caption landed`)
 }
 
 // parseJSON is imported from ./lib/parse-json (extracted for unit-testability).
@@ -5899,6 +5956,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const observation = klavityRerouteNote
                 ? `${klavityRerouteNote}\n\n${observationBase}`
                 : observationBase
+              // KD-162: hoisted out of the fresh-insert branch below so the fire-and-forget caption job
+              // (further down, after insertFeedback) can compare-and-swap against the EXACT text intake
+              // stored, without re-deriving it (a re-derivation could drift if Date.now() ticked a second).
+              let storedObservation = observation
               const sentiment = String(form.get("sentiment") || "") || null
               const priority = String(form.get("priority") || "") || null
               let suggestedBug: any = null
@@ -6003,9 +6064,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                     priorFeedbackCount = Number((r.rows[0] as any)?.n ?? 1)
                   } catch { /* non-fatal */ }
                 }
+                // KD-162: a screenshot-only report's `observation` (used above for the deterministic
+                // issueKey / dedup identity) stays the minimal fallbackDraftTitle string — untouched, so
+                // issueKey/dedup behavior is unaffected. What actually gets STORED/shown as the ticket's
+                // description is a richer version composed here (page + capture time), so the reporter
+                // never sees a bare/noisy fallback as their issue description. A 4th line (an AI caption
+                // of the screenshot) is appended asynchronously below, after this row is inserted.
+                if (draftedTitle) storedObservation = fallbackDraftDescription({ reportType, pageUrl, createdAt: Date.now(), reportEnv })
                 feedbackId = await insertFeedback({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
-                  observation, sentiment, priority, screenshotId, suggestedBug,
+                  observation: storedObservation, sentiment, priority, screenshotId, suggestedBug,
                   citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
                   sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
                   planeIssueKey: null, planeIssueUrl: null,
@@ -6179,6 +6247,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // THEN export. autoFileHumanSnap no-ops for Sim rows / 'review' mode / no connector.
                   if (willAutofile) autoFileHumanSnap(fbEnrichId, projectId, rawSimId, actor, priority, trustedProvenance)
                 })().catch((err: any) => console.warn("[title→export] non-fatal:", err?.message || err))
+
+                // KD-162: append an AI screenshot caption to the fallback description. Independent of the
+                // title→export chain above (draftTitleForFeedback now stamps `title`, never `observation` —
+                // see its own comment — so there's no write-write race to order against); may land seconds
+                // after the response, appending a 4th line whenever the vision call completes.
+                if (draftedTitle) {
+                  void captionScreenshotForFeedback({ feedbackId: fbEnrichId, projectId, expectedObservation: storedObservation })
+                    .catch((err: any) => console.warn("[screenshot-caption] non-fatal:", err?.message || err))
+                }
               }
 
               // KLAVITYKLA-438 (Phase 2) + KLAVITYKLA-480: async STT transcription of "Record me" clips AND
@@ -12505,7 +12582,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/priority
         if (req.method === "PATCH" && !feedbackSubroute) {
           const body = await req.json().catch(() => ({}))
-          const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
+          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
           if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
             return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
           }
@@ -13251,7 +13328,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // PX4 #411: Task/Query join Bug/Feature so admins can remap where they land per-project. Both
               // default to the tracker's default issue type (autoMatch may still suggest a "Task" match by name).
               const KINDS = [{ key: "bug", label: "Bug" }, { key: "feature", label: "Feature" }, { key: "task", label: "Task" }, { key: "query", label: "Query" }]
-              const STATUSES = [{ key: "new", label: "New" }, { key: "open", label: "Open" }, { key: "in_progress", label: "In Progress" }, { key: "done", label: "Done" }, { key: "dismissed", label: "Dismissed" }]
+              const STATUSES = [{ key: "new", label: "New" }, { key: "open", label: "Open" }, { key: "in_progress", label: "In Progress" }, { key: "qa_review", label: "QA Review" }, { key: "done", label: "Done" }, { key: "dismissed", label: "Dismissed" }]
               const typeRows = KINDS.map(k => autoMatch(k, typeOpts))
               const statusRows = STATUSES.map(s => autoMatch(s, statusOpts))
               const issue_type_map: Record<string, string> = {}
@@ -14325,7 +14402,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
           if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
-          const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
+          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
           const VALID_PRI = ["urgent", "high", "medium", "low"]
 
           const hasStatus = body.status !== undefined

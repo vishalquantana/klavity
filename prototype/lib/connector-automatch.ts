@@ -9,6 +9,8 @@ export const STATUS_SYNONYMS: Record<string,string[]> = {
   new: ["new", "to do", "todo", "backlog", "triage", "open"],
   open: ["open", "in progress", "doing", "selected for development", "accepted"],
   in_progress: ["in progress", "doing", "started", "wip"],
+  // KD-165: a QA-review board stage. Trackers name this column all sorts of things — cover the common ones.
+  qa_review: ["qa review", "qa", "in review", "review", "code review", "testing", "ready for qa", "ready for review"],
   done: ["done", "closed", "complete", "completed", "resolved", "fixed"],
   dismissed: ["dismissed", "won't do", "wont do", "won't fix", "wont fix", "cancelled", "canceled", "rejected", "invalid", "not a bug"],
 }

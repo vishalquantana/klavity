@@ -353,6 +353,13 @@ export interface ModalCallbacks {
   // host can forward it to the clarity endpoint — the coach must never ask the reporter for anything already
   // on the report (URL/screenshot/browser/screen). `images` is the current screenshot count in the composer.
   onClarityTip?: (text: string, ctx?: { images?: number }) => Promise<{ tip: string } | null>
+  // KD-166: debounced description persistence. A page disruption mid-report (a link that navigates away,
+  // not just a reload) tears down this composer entirely — the widget already recovers a captured
+  // screenshot via its evidence session, but nothing previously saved the TYPED description alongside it,
+  // so it was silently lost even though the shot survived. Fired ~600ms after typing pauses, with the
+  // full current text (not a diff) so the host can just persist-overwrite. Best-effort, fire-and-forget —
+  // never blocks typing or Submit. Absent → composer identical to today (no persistence, full back-compat).
+  onDescriptionChange?: (text: string) => void
   // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
   // AI" button appears under the description; clicking it hands the reporter's current text + the primary
   // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
@@ -759,6 +766,14 @@ export function buildModal(
   const upgradeUrl = callbacks.upgradeUrl
   const MAX_FILES_TOTAL_BYTES = Math.max(120 * 1024 * 1024, PER_FILE_MAX_BYTES + 20 * 1024 * 1024) // holds one max-size file
   let attachedFiles: ReportFileAttachment[] = []
+  // Object-URL previews for blob-backed (video) attachments — revoked on remove/close so a big video isn't pinned.
+  const attachmentPreviewUrls = new WeakMap<ReportFileAttachment, string>()
+  const canBlobPreview = () => typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+  const attachmentSrc = (f: ReportFileAttachment): string => attachmentPreviewUrls.get(f) || f.dataUrl
+  const revokeAttachmentPreview = (f: ReportFileAttachment) => {
+    const u = attachmentPreviewUrls.get(f)
+    if (u) { try { URL.revokeObjectURL(u) } catch { /* noop */ } attachmentPreviewUrls.delete(f) }
+  }
   // KLA-591: current aggregate upload percent while a submit is in flight (null = not uploading). Painted
   // onto every video tile + file chip so the reporter sees a large video actually uploading.
   let uploadProgressPct: number | null = null
@@ -1862,7 +1877,7 @@ export function buildModal(
       wrap.className = 'klavity-thumb kl-video-thumb'
       if (activeVideoIndex === fi) wrap.classList.add('kl-thumb-active')
       const vid = document.createElement('video')
-      vid.src = f.dataUrl
+      vid.src = attachmentSrc(f)
       vid.muted = true
       vid.preload = 'metadata'
       vid.setAttribute('playsinline', '')
@@ -2201,6 +2216,7 @@ export function buildModal(
   // active-video hero in sync. If the removed item was the active video hero, drop the hero selection.
   function removeAttachmentAt(index: number) {
     const wasVideo = attachedFiles[index] && attachmentKind(attachedFiles[index]) === 'video'
+    if (attachedFiles[index]) revokeAttachmentPreview(attachedFiles[index])
     attachedFiles.splice(index, 1)
     if (activeVideoIndex != null) {
       if (wasVideo && activeVideoIndex === index) activeVideoIndex = null
@@ -2303,7 +2319,14 @@ export function buildModal(
         // the server's content-type-based 100MB video cap agrees with the client (KLA-560 item 6). Non-video
         // or already-typed files keep their reported type.
         const effectiveType = file.type || (isVideoFile(file) ? videoContentType(file.name) : '')
-        const idx = attachedFiles.push({ name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) }) - 1
+        // Videos (up to ~100MB) stay as the original File + an object-URL preview — base64-ing one and
+        // round-tripping it through atob at submit peaked at ~500MB+ and crashed the tab. Docs stay data URLs.
+        const keepAsBlob = isVideoFile(file) && canBlobPreview()
+        const entry: ReportFileAttachment = keepAsBlob
+          ? { name: file.name, type: effectiveType, size: file.size, dataUrl: '', blob: file }
+          : { name: file.name, type: effectiveType, size: file.size, dataUrl: await fileToDataUrl(file) }
+        if (keepAsBlob) { try { attachmentPreviewUrls.set(entry, URL.createObjectURL(file)) } catch { /* preview falls back to nothing; upload still works */ } }
+        const idx = attachedFiles.push(entry) - 1
         renderFiles()
         // KLA-591: a freshly-added video becomes the active hero (inline playable preview) + shows in the strip.
         if (attachmentKind(attachedFiles[idx]) === 'video') activeVideoIndex = idx
@@ -2337,6 +2360,7 @@ export function buildModal(
     // call could kill a reopened composer.
     if (_closed) return
     _closed = true
+    for (const f of attachedFiles) revokeAttachmentPreview(f)
     _stopVoice?.()
     if (autodismissTimeout) {
       clearTimeout(autodismissTimeout)
@@ -2624,6 +2648,16 @@ export function buildModal(
   desc.addEventListener('input', autosizeDesc)
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
+
+  // KD-166: debounced description persistence (see onDescriptionChange's doc comment above).
+  if (callbacks.onDescriptionChange) {
+    const onDescriptionChange = callbacks.onDescriptionChange
+    let descPersistTimer: ReturnType<typeof setTimeout> | null = null
+    desc.addEventListener('input', () => {
+      if (descPersistTimer) clearTimeout(descPersistTimer)
+      descPersistTimer = setTimeout(() => { try { onDescriptionChange(desc.value) } catch { /* best-effort */ } }, 600)
+    })
+  }
 
   // ── KLA-586: AI "Enhance" — replace the reporter's one-liner IN PLACE with a structured, developer-ready
   // draft rendered as WhatsApp Markdown, from the auto-captured screenshot + picked element. Opt-in: wired
@@ -3616,7 +3650,7 @@ export function buildModal(
     }
     // A selected "Record me" recording takes hero priority (inline <video controls>), same as a video attachment.
     if (activeRecordingIndex != null) { mountHeroVideoSrc(recordings[activeRecordingIndex].dataUrl); return }
-    if (activeVideoIndex != null) { mountHeroVideoSrc(attachedFiles[activeVideoIndex]?.dataUrl); return }
+    if (activeVideoIndex != null) { mountHeroVideoSrc(attachedFiles[activeVideoIndex] ? attachmentSrc(attachedFiles[activeVideoIndex]) : undefined); return }
     if (screenshots.length === 0) { activeIndex = 0; renderHeroEmpty(); return }
     if (activeIndex >= screenshots.length) activeIndex = screenshots.length - 1
     if (activeIndex < 0) activeIndex = 0

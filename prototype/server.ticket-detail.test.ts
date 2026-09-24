@@ -291,6 +291,23 @@ test("PATCH round-trips the full state machine: dismiss → re-triage to New →
   expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_status_changed" && i.meta?.to === "new")).toBe(true)
 })
 
+// KD-165: QA Review — accepted by PATCH, round-trips through a fresh GET, timeline-tracked, and can
+// move on to Done just like any other status transition.
+test("PATCH accepts the new qa_review status and round-trips it (KD-165)", async () => {
+  const toQa = await req("PATCH", `/api/feedback/${FID}`, { status: "qa_review" })
+  expect(toQa.status).toBe(200)
+  let fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.status).toBe("qa_review")
+
+  const toDone = await req("PATCH", `/api/feedback/${FID}`, { status: "done" })
+  expect(toDone.status).toBe(200)
+  fresh = await (await req("GET", `/api/feedback/${FID}`)).json()
+  expect(fresh.report.status).toBe("done")
+
+  const { items } = await (await req("GET", `/api/feedback/${FID}/timeline`)).json()
+  expect(items.some((i: any) => i.kind === "activity" && i.type === "ticket_status_changed" && i.meta?.to === "qa_review")).toBe(true)
+})
+
 test("PATCH priority persists, reflects in a fresh GET, and lands in the timeline (KLA-206)", async () => {
   const p = await req("PATCH", `/api/feedback/${FID}`, { priority: "urgent" })
   expect(p.status).toBe(200)
