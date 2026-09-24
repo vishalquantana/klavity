@@ -1190,16 +1190,24 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* KLA-776: align-items:stretch makes every column the height of the tallest one, so a short/empty
    column's swim lane is still a full-height drop target (paired with .kb-list{flex:1}). */
 .kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:stretch;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
-/* #676: columns GROW to fill the board when there's room (no dead space with few columns) but keep a
-   MIN width so a crowded board still scrolls sideways instead of squishing. */
-.kb-col{flex:1 1 300px;min-width:300px;max-width:none;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
+/* KD-165: each column is now independently drag-resizable (Jira-board style — see wireKanbanResize),
+   which needs a real per-column WIDTH to drag, not #676's "grow to fill" flex-basis. --kb-w is set
+   per-column (persisted to localStorage) by wireKanbanResize; a column with no saved width falls back
+   to the 300px default, same as before. This trades away #676's "no dead space with few columns" — a
+   short board now leaves empty space to the right, same as a real Jira board — in exchange for widths
+   that mean something (and stay put) once you resize one. */
+.kb-col{flex:0 0 var(--kb-w,300px);width:var(--kb-w,300px);min-width:220px;max-width:640px;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;position:relative}
 .kb-col.drag-over{border-color:var(--indigo);box-shadow:0 0 0 1px var(--indigo-soft)}
+/* Thin drag handle on the column's right edge — mirrors .t3-gutter's look/feel (#707). */
+.kb-resize{position:absolute;top:0;right:-7px;bottom:0;width:14px;cursor:col-resize;touch-action:none;user-select:none;z-index:3}
+.kb-resize::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
+.kb-resize:hover::after,.kb-resize.drag::after{background:var(--indigo);width:2px}
 /* Sticky column header: stays visible as the page scrolls past long card stacks. */
 .kb-head{position:sticky;top:0;z-index:2;background:var(--ink);display:flex;align-items:center;gap:8px;padding:6px 4px;margin:-4px -4px 0;border-radius:10px}
 .kb-head .kb-title{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-faint)}
 .kb-head .kb-n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--paper-faint);background:var(--ink-3);border-radius:20px;padding:1px 8px}
 .kb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--paper-faint)}
-.kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-done{background:var(--green)}.kb-dot-dismissed{background:var(--paper-faint)}
+.kb-dot-new{background:var(--rose)}.kb-dot-open{background:var(--amber)}.kb-dot-in_progress{background:var(--indigo)}.kb-dot-qa_review{background:#0891b2}.kb-dot-done{background:var(--green)}.kb-dot-dismissed{background:var(--paper-faint)}
 /* KLA-776: flex:1 lets the card list fill the column's stretched height so the empty area below the
    last card is part of the swim lane and accepts drops. */
 .kb-list{display:flex;flex-direction:column;gap:8px;min-height:64px;flex:1 1 auto}
@@ -1484,7 +1492,7 @@ body.tkt-page-open .wrap{max-width:none}
 .kb-item .tkt-detail{border-radius:12px;border-top:1px solid var(--line);margin-top:8px}
 /* #636: columns keep their fixed width at every breakpoint; the board scrolls horizontally instead of
    collapsing to fewer/narrower columns. Slightly narrower fixed columns on small screens. */
-@media(max-width:760px){.kb-col{flex:0 0 84vw;min-width:84vw;max-width:84vw}}
+@media(max-width:760px){.kb-col{flex:0 0 84vw;min-width:84vw;max-width:84vw}.kb-resize{display:none}}
 .tkt-fields{display:flex;gap:10px;flex-wrap:wrap}
 .tkt-field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px}
 .tkt-field label{font-size:11px;color:var(--paper-faint)}
@@ -2607,7 +2615,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       <!-- KLA-169: Shared filter bar (reused by board + list views) — KLA-562: collapsed by default -->
       <div class="tkt-fb hide" id="tktFilterBar">
         <span class="tkt-fb-label">Filter</span>
-        <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option><option value="closed">Closed</option></select>
+        <select id="fbStatus" title="Filter by status"><option value="">All statuses</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="qa_review">QA Review</option><option value="done">Done</option><option value="dismissed">Dismissed</option><option value="closed">Closed</option></select>
         <select id="fbPriority" title="Filter by priority"><option value="">All priorities</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
         <select id="fbLabel" title="Filter by label"><option value="">All labels</option></select>
         <select id="fbAssignee" title="Filter by assignee"><option value="">All assignees</option><option value="__unassigned__">Unassigned</option></select>
@@ -3639,7 +3647,7 @@ async function _prefetchTarget(target, pid, signal) {
     if (_tktBoardProjId === pid && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) return false  // board already warm
     if (swrRead("tickets:" + pid) != null) return false                   // prefetched recently & still fresh
     const sp = new URLSearchParams()
-    sp.set("status", "new,open,in_progress,done,dismissed")
+    sp.set("status", "new,open,in_progress,qa_review,done,dismissed")
     sp.set("page", "1"); sp.set("limit", "200")
     const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets?" + sp.toString(), { signal })
     if (!r || !r.ok) return true
@@ -6880,7 +6888,7 @@ async function removeMemberClick(btn) {
   }
 }
 
-const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", done: "Done", dismissed: "Dismissed" }
+const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", qa_review: "QA Review", done: "Done", dismissed: "Dismissed" }
 
 function projectMemberEmails() {
   // `state` is still null when a deep link (/dashboard#tickets) renders this view before the first
@@ -7303,7 +7311,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     // Status segmented control — full state machine (KLA-206): New and Dismissed included so
     // un-dismissing and re-triaging (back to New/Open) are one click from detail, matching the
     // PATCH /api/feedback/:id VALID_STATUS set.
-    const statuses = ["new", "open", "in_progress", "done", "dismissed"]
+    const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
     const curStatus = t.status || "open"
     // #630(a): STATUS as a compact <select> (mirrors the Priority picker beside it) instead of 5 inline
     // pills — far less clutter on the single-ticket view. Same option set / state machine as before.
@@ -8930,6 +8938,8 @@ const KANBAN_COLS = [
   { key: "new",         status: "new",         label: "New",         statuses: ["new"] },
   { key: "open",        status: "open",        label: "Open",        statuses: ["open"] },
   { key: "in_progress", status: "in_progress", label: "In Progress", statuses: ["in_progress"] },
+  // KD-165: QA Review sits between In Progress and Done — dev work done, awaiting QA sign-off.
+  { key: "qa_review",   status: "qa_review",   label: "QA Review",   statuses: ["qa_review"] },
   { key: "done",        status: "done",        label: "Done",        statuses: ["done"] },
   { key: "dismissed",   status: "dismissed",   label: "Dismissed",   statuses: ["dismissed"] },
 ]
@@ -9868,7 +9878,7 @@ function tktMatchesSelectFilters(t) {
 function ticketStatusParamFor(view) {
   if (_tktFilters.status === "closed") return "done,dismissed"
   if (_tktFilters.status) return _tktFilters.status
-  return view === "board" ? "new,open,in_progress,done,dismissed" : ""
+  return view === "board" ? "new,open,in_progress,qa_review,done,dismissed" : ""
 }
 
 function ticketQueryParams(view, page, limit) {
@@ -9961,7 +9971,7 @@ async function fetchAndRenderTktBoard() {
   // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
   // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
   const sp = new URLSearchParams()
-  sp.set("status", "new,open,in_progress,done,dismissed")
+  sp.set("status", "new,open,in_progress,qa_review,done,dismissed")
   sp.set("page", "1")
   sp.set("limit", "200")
 
@@ -10233,7 +10243,7 @@ function buildBulkBar(listEl, projId, opts) {
     `<button class="btn btn-ghost btn-sm" id="bulkClear" type="button" style="padding:4px 8px;font-size:11px">${window.kicon("x",{size:11})} Clear</button>` +
     `<span class="bulk-sep"></span>` +
     `<span class="bulk-lbl">Status:</span>` +
-    `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>` +
+    `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="qa_review">QA Review</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>` +
     `<span class="bulk-sep"></span>` +
     `<span class="bulk-lbl">Priority:</span>` +
     `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
@@ -10472,6 +10482,7 @@ function goToTicketsFiltered(filter) {
 function kanbanKeyForStatus(status) {
   if (status === "new") return "new"
   if (status === "in_progress") return "in_progress"
+  if (status === "qa_review") return "qa_review"
   if (status === "done") return "done"
   if (status === "dismissed") return "dismissed"
   return "open"
@@ -10532,6 +10543,52 @@ function kbSyncColumnCounts() {
     const empty = list.querySelector(".kb-empty")
     if (n === 0 && !empty) { const e = document.createElement("div"); e.className = "kb-empty muted"; e.textContent = "—"; list.appendChild(e) }
     else if (n > 0 && empty) empty.remove()
+  })
+}
+// KD-165: Jira-style drag-to-resize for the ticket board's columns. Unlike #707's wireT3Resize (2 fixed
+// gutters sharing ONE grid, each setting a named CSS var on that shared parent), every kanban column is
+// independent — each drags its OWN width, set directly on that .kb-col's --kb-w and persisted to
+// localStorage keyed by column (so "In Progress" wider / "Dismissed" narrower survives a reload,
+// independently, same as a real Jira board). Re-wired on every render (columns are rebuilt from
+// scratch each time) — cheap: only as many listeners as visible columns.
+function wireKanbanResize(boardEl) {
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+  const storeKey = (key) => "klav:kbcol:" + key
+  boardEl.querySelectorAll(".kb-col").forEach(col => {
+    const key = col.getAttribute("data-key")
+    const handle = col.querySelector(".kb-resize")
+    if (!key || !handle) return
+    // Restore a persisted width (instant, optimistic) — absent → the CSS default (300px) applies.
+    try {
+      const saved = parseFloat(localStorage.getItem(storeKey(key)))
+      if (!isNaN(saved)) col.style.setProperty("--kb-w", clamp(saved, 220, 640) + "px")
+    } catch (e) {}
+    let dragging = false, startX = 0, startW = 0
+    handle.addEventListener("pointerdown", e => {
+      dragging = true; startX = e.clientX; startW = col.getBoundingClientRect().width
+      handle.classList.add("drag")
+      try { handle.setPointerCapture(e.pointerId) } catch (_) {}
+      e.preventDefault()
+    })
+    handle.addEventListener("pointermove", e => {
+      if (!dragging) return
+      const v = clamp(startW + (e.clientX - startX), 220, 640)
+      col.style.setProperty("--kb-w", v + "px")
+      try { localStorage.setItem(storeKey(key), String(Math.round(v))) } catch (_) {}
+    })
+    const end = e => {
+      if (!dragging) return
+      dragging = false
+      handle.classList.remove("drag")
+      try { handle.releasePointerCapture(e.pointerId) } catch (_) {}
+    }
+    handle.addEventListener("pointerup", end)
+    handle.addEventListener("pointercancel", end)
+    // Double-click the handle to reset this one column back to the default width (mirrors Jira).
+    handle.addEventListener("dblclick", () => {
+      col.style.removeProperty("--kb-w")
+      try { localStorage.removeItem(storeKey(key)) } catch (_) {}
+    })
   })
 }
 function renderTicketsKanban(boardTickets) {
@@ -10608,6 +10665,12 @@ function renderTicketsKanban(boardTickets) {
     colEl.className = "kb-col"
     colEl.setAttribute("data-status", col.status)
     colEl.setAttribute("data-key", col.key)
+    // KD-165: Jira-style drag-to-resize handle on the column's right edge — wired (+ persisted width
+    // restored) by wireKanbanResize() once the board is attached, below.
+    const resizeHandle = document.createElement("div")
+    resizeHandle.className = "kb-resize"
+    resizeHandle.title = "Drag to resize · double-click to reset"
+    colEl.appendChild(resizeHandle)
     const head = document.createElement("div")
     head.className = "kb-head"
     head.innerHTML = `<span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
@@ -10734,6 +10797,7 @@ function renderTicketsKanban(boardTickets) {
   const bulkBar = buildBulkBar(board, projId, { onDone: rerenderBoard, onClear: rerenderBoard, optimistic: boardBulkOptimistic })
   board.appendChild(bulkBar)
   board.appendChild(boardEl)
+  wireKanbanResize(boardEl) // KD-165: restore + wire each column's drag-resize handle
   // Live count/visibility sync when selection changes via checkbox or shift-click (no full rebuild).
   syncKbSelectionUi = () => {
     const bar = board.querySelector("#tktBulkBar")
@@ -12240,7 +12304,7 @@ function renderConnectorFields(type, editConfig) {
 // row objects for. Kept in one place so collectConnMaps() can bucket <select> values without
 // re-deriving them from the loaded rows.
 const CONN_MAP_KIND_KEYS = ["bug", "feature", "task", "query"]
-const CONN_MAP_STATUS_KEYS = ["new", "open", "in_progress", "done", "dismissed"]
+const CONN_MAP_STATUS_KEYS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
 
 // Client mirror of prototype/lib/connectors/resolve-issue-type.ts's parseJsonMap — issue_type_map
 // / status_map are stored as JSON strings on connector config; this only needs to read them back
