@@ -7077,7 +7077,9 @@ function buildRecordingsHtml(t) {
           + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline></video>'
           + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading recording…</div>'
           + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This recording couldn’t play here. Download it to view.</div>'
-          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.webm" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
+          // KD-163: same-origin download route (Content-Disposition: attachment). The presigned URL is
+          // cross-origin, where the download attribute is ignored and the browser just opened the raw object.
+          + '<a class="tkt-rec-dl" href="' + (r.id ? esc('/api/feedback/' + encodeURIComponent(String(t.id)) + '/recordings/' + encodeURIComponent(String(r.id)) + '/download') : esc(String(r.url))) + '" download="recording-' + rid + '.webm" rel="noopener">' + _dlSvg + ' Download recording</a>'
         + '</div>'
       : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
     var st = r.transcript_status || "none"
@@ -7137,6 +7139,7 @@ function wireRecordingVideos(root) {
       if (!isFinite(v.duration) || v.duration <= 0) {
         repairing = true
         try { v.currentTime = 1e101 } catch (e) {}
+        setTimeout(function () { if (repairing) { repairing = false; try { v.currentTime = 0 } catch (e) {} } }, 4000) // KD-163: never stay stuck mid-repair
       }
     })
     v.addEventListener("durationchange", function () {

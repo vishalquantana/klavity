@@ -56,7 +56,9 @@ import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
+import { mediaSrcDirective } from "./lib/csp-media"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
+import { remuxWebmForSeeking } from "./lib/video-remux"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
@@ -3265,7 +3267,8 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   "img-src 'self' data: blob: https:",
-  "media-src 'self' blob: data:",
+  // KD-163: recordings play from presigned storage URLs on a different origin — allow that origin.
+  mediaSrcDirective(process.env.S3_ENDPOINT),
   "worker-src 'self' blob:",
   "connect-src 'self' https:",
   "frame-ancestors 'self'",
@@ -4068,7 +4071,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // deploy propagates to embedded widgets immediately instead of sitting stale for up to 5 minutes.
       // Bun.file sets Last-Modified/ETag, so unchanged loads return a cheap 304 rather than re-downloading.
       // Previously `public, max-age=300` cached it for 5 min with no revalidation → "widget didn't refresh".
-      return new Response(Bun.file("../packages/sdk/dist/klavity-widget.iife.js"), {
+      // Resolved from the file's own location (like every other path in this file — see REPO_ROOT above),
+      // NOT process.cwd(): a bare relative path here silently 404/500s the moment the server is started
+      // from a different working directory (e.g. the repo root instead of prototype/).
+      return new Response(Bun.file(REPO_ROOT + "/packages/sdk/dist/klavity-widget.iife.js"), {
         headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
       })
     }
@@ -5730,11 +5736,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (rf.size > RECORDING_MAX_BYTES) return wjson({ error: `Recording ${rf.name} exceeds ${mbLabel(RECORDING_MAX_BYTES)}.` }, 400)
           const m = recMeta[ri] || {}
           try {
-            const rbuf = new Uint8Array(await rf.arrayBuffer())
+            let rbuf = new Uint8Array(await rf.arrayBuffer())
+            // KD-163 follow-up: the SDK already patches the Duration header (withFixedWebmDuration), but
+            // MediaRecorder's WebM has no Cues (seek index) — fine for in-browser <video>, but a downloaded
+            // clip plays but can't seek to the end in a standalone player. Remux once, here, so every stored
+            // recording gets a real seek index; best-effort — falls back to the original bytes on any failure
+            // (missing ffmpeg, malformed input, timeout), never blocks or loses the upload.
+            if (/^video\/webm/.test(rf.type || "video/webm")) rbuf = await remuxWebmForSeeking(rbuf)
             const up = await uploadAttachment(rbuf, rf.name || `recording-${ri}.webm`, rf.type || "video/webm")
             recordingDescs.push({
               id: String(m.id || ("rec_" + crypto.randomUUID())),
-              key: up.key, contentType: up.contentType, bytes: rf.size,
+              key: up.key, contentType: up.contentType, bytes: rbuf.length,
               durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
               screenOnly: m.screenOnly === true,
               // KLAVITYKLA-438 (Phase 2): the row starts "pending" — an async STT pass (fired after the
@@ -12144,13 +12156,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       // ── Ticket management: PATCH /api/feedback/:id and POST /api/feedback/:id/export ──
       // Resolve the feedback's project via feedbackById across accessible projects.
-      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments(?:\/([^/]+))?|\/attachments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels)?$/)
+      const feedbackIdMatch = path.match(/^\/api\/feedback\/([^/]+?)(\/export-request|\/export|\/replay|\/memory|\/merge|\/split|\/comments(?:\/([^/]+))?|\/attachments|\/timeline|\/activity|\/regression-receipt|\/annotations|\/labels(?:\/([^/]+))?|\/suggest-labels|\/recordings\/([^/]+)\/download)?$/)
       if (feedbackIdMatch) {
         let fid = feedbackIdMatch[1]
-        const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/comments\/[^/]+$/, "/comments").replace(/\/labels\/[^/]+$/, "/labels") || ""
+        const feedbackSubroute = feedbackIdMatch[2]?.replace(/\/comments\/[^/]+$/, "/comments").replace(/\/labels\/[^/]+$/, "/labels").replace(/\/recordings\/[^/]+\/download$/, "/recordings-download") || ""
         // KD-158: comment id for PATCH/DELETE /api/feedback/:id/comments/:commentId (undefined on every other subroute).
         const commentIdParam = feedbackIdMatch[3] || null
         const labelIdParam = feedbackIdMatch[4] || null
+        // KD-163: recording id for GET /api/feedback/:id/recordings/:recId/download.
+        const recordingIdParam = feedbackIdMatch[5] || null
+        const isRecordingDownload = feedbackSubroute === "/recordings-download"
         const isExport = feedbackSubroute === "/export"
         const isExportRequest = feedbackSubroute === "/export-request"
         const isReplay = feedbackSubroute === "/replay"
@@ -12260,6 +12275,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               "x-klv-created": String(raw.createdAt),
             },
           }))
+        }
+
+        // KD-163: same-origin DOWNLOAD of a recording. The dashboard's link pointed at the cross-origin
+        // presigned URL, where the download attribute is ignored — the browser just navigated to the raw
+        // object. Stream it through here (member-gated: fbRow only loads for project members on this
+        // subroute) with Content-Disposition: attachment so it saves as a real .webm/.mp4 file.
+        if (req.method === "GET" && isRecordingDownload && recordingIdParam) {
+          const rec = (Array.isArray(fbRow.recordings) ? fbRow.recordings : []).find((r: any) => String(r?.id) === recordingIdParam)
+          if (!rec || !rec.key) return json({ error: "Recording not found." }, 404)
+          try {
+            const { stream, contentType, size } = await getObjectStream(String(rec.key))
+            void recordS3Egress({ projectId: fbRow.projectId, bytes: rec.bytes ?? size ?? 0, meta: { via: "recording-download" } })
+            const ct = /^video\//i.test(String(rec.contentType || "")) ? String(rec.contentType) : (/^video\//i.test(contentType) ? contentType : "video/webm")
+            const ext = /mp4/i.test(ct) ? "mp4" : "webm"
+            const safeId = String(rec.id).replace(/[^A-Za-z0-9_.-]/g, "_")
+            const headers: Record<string, string> = {
+              "content-type": ct,
+              "content-disposition": `attachment; filename="recording-${safeId}.${ext}"`,
+              "cache-control": "private, no-store",
+              "x-content-type-options": "nosniff",
+            }
+            if (size != null) headers["content-length"] = String(size)
+            return new Response(stream, { headers })
+          } catch (e: any) { return json(oops(e, "recording-download"), 500) }
         }
 
         if (req.method === "GET" && isComments) {
