@@ -203,6 +203,24 @@ describe('pure helpers', () => {
     expect(buildPagesTrail([])).toBe('')
   })
 
+  it('KD-162: buildPagesTrail is empty for a SINGLE shot', () => {
+    // A one-page report gains nothing from a trail over the structured page-path field already sent
+    // with the report, and a non-empty trail here was clobbering the "empty description" signal the
+    // server needs to draft a clean fallback — so the reporter's ticket showed this raw page URL as
+    // its description instead of something useful.
+    expect(buildPagesTrail([shot({ pageUrl: 'https://a.com/list', pagePath: '/list' })])).toBe('')
+  })
+
+  it('KD-162: buildPagesTrail lists pages once there are 2+ shots (genuine multi-page evidence)', () => {
+    const trail = buildPagesTrail([
+      shot({ pageUrl: 'https://a.com/list', pagePath: '/list' }),
+      shot({ pageUrl: 'https://a.com/detail', pagePath: '/detail' }),
+    ])
+    expect(trail).toContain('Pages captured:')
+    expect(trail).toContain('1. /list')
+    expect(trail).toContain('2. /detail')
+  })
+
   it('isFresh honours the TTL boundary', () => {
     const now = 1_000_000
     expect(isFresh({ updatedAt: now } as ExtEvidenceSession, now)).toBe(true)

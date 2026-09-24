@@ -701,6 +701,21 @@ export async function submitViaSW(
   }
   // KLA-727: generate index-aligned thumbnails here (content script has canvas; the SW does not) so the
   // dashboard list loads a lightweight preview — same idea as widget-lib buildThumbnail. Best-effort.
+  // Blob-backed attachments (large videos the composer keeps as a File to avoid base64 copies) can't cross
+  // chrome.runtime messaging (Blob JSON-serialises to {}), so encode them to a data URL once, here at submit.
+  const filesForSW: ReportFileAttachment[] | undefined = p.files
+    ? await Promise.all(p.files.map(async (f) => {
+        if (!f.blob) return f
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const r = new FileReader()
+          r.onload = () => resolve(String(r.result))
+          r.onerror = () => reject(r.error || new Error('file read failed'))
+          r.readAsDataURL(f.blob!)
+        })
+        const { blob: _blob, ...rest } = f
+        return { ...rest, dataUrl }
+      }))
+    : undefined
   const screenshotThumbs = await buildExtThumbnails(p.screenshots).catch(() => [] as string[])
   const payload: SubmitReportPayload = {
     type: p.type,
@@ -717,7 +732,7 @@ export async function submitViaSW(
     screenshots: [...p.screenshots],
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
     // their own path; these ride the /api/feedback `files` field (forwarded in the background).
-    ...(p.files && p.files.length ? { files: p.files } : {}),
+    ...(filesForSW && filesForSW.length ? { files: filesForSW } : {}),
     // KLA-727 (ext↔widget parity): "Record me" video recordings → /api/feedback `recording` + `recording_meta`.
     ...(p.recordings && p.recordings.length ? { recordings: p.recordings } : {}),
     // KLA-727 (ext↔widget parity): structured annotation overlay → `annotations_json`. Previously DROPPED.

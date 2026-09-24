@@ -8560,6 +8560,20 @@ export async function renameFeedbackTitle(feedbackId: string, projectId: string,
   return Number(r.rowsAffected) > 0
 }
 
+// KD-162: append the async AI screenshot caption to a screenshot-only report's fallback description —
+// but ONLY if `observation` still exactly matches what intake set it to (`expectedCurrent`). If a human
+// edited the description in the meantime (the dashboard's click-to-edit), this compare-and-swap silently
+// no-ops instead of clobbering their edit; the caller treats a false return as "skipped, not an error."
+export async function appendObservationIfUnchanged(
+  feedbackId: string, projectId: string, expectedCurrent: string, next: string,
+): Promise<boolean> {
+  const r = await db!.execute({
+    sql: `UPDATE feedback SET observation=?, updated_at=${MONOTONIC_UPDATED_AT_SQL} WHERE id=? AND project_id=? AND observation=?`,
+    args: [next, Date.now(), feedbackId, projectId, expectedCurrent],
+  })
+  return Number(r.rowsAffected) > 0
+}
+
 // #738: overwrite a ticket's markup layer (annotations_json) after a triager re-annotates the evidence
 // screenshot in the dashboard. Project-scoped. The CLEAN original screenshot S3 object is never touched —
 // this only rewrites the vector shapes the read pipeline (buildAnnotationSvg / mountAnnotationOverlay)

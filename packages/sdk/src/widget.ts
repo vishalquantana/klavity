@@ -663,6 +663,23 @@ function withSharpSuggestion(
 // Active watch-engine controller — torn down when Sims are undeployed.
 let _simsWatchCtrl: SimsWatchController | null = null
 
+// KD-162: only worth listing when the reporter ACTUALLY navigated across pages while capturing evidence
+// — a single-shot session gains nothing over the structured urlPath field already sent with the report,
+// and unconditionally appending it here was clobbering the JTBD-1.10 "empty description" signal
+// (submitFeedback's `description.trim() ? ... : ""` check) for the common single-page case, which meant
+// the server's own clean fallback (fallbackDraftTitle) never got a chance to run — the reporter's ticket
+// showed this raw trail (a full page URL) as its description instead. Module-scope (not nested inside
+// mount()) so it's directly unit-testable, matching the extension's identical fix (evidence-store.ts).
+export function buildPagesTrail(shots: EvidenceShot[]): string {
+  if (!shots || shots.length < 2) return ""
+  const lines = shots.map((s, i) => {
+    const path = s.pagePath || s.pageUrl || "(unknown)"
+    const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
+    return `${i + 1}. ${path}${full}`
+  })
+  return "Pages captured:\n" + lines.join("\n")
+}
+
 async function mount() {
   const cfg = parseScriptConfig(currentScript())
   if (!cfg.projectId || !cfg.backendUrl) return
@@ -975,15 +992,6 @@ async function mount() {
     let byIndex: Record<number, unknown> = {}
     try { byIndex = composer?.getAnnotations?.() ?? {} } catch { byIndex = {} }
     void queueEvWrite(() => persistAllAnnotations(sessionId, byIndex))
-  }
-  function buildPagesTrail(shots: EvidenceShot[]): string {
-    if (!shots || !shots.length) return ""
-    const lines = shots.map((s, i) => {
-      const path = s.pagePath || s.pageUrl || "(unknown)"
-      const full = s.pageUrl && s.pagePath && s.pageUrl !== s.pagePath ? " - " + s.pageUrl : ""
-      return `${i + 1}. ${path}${full}`
-    })
-    return "Pages captured:\n" + lines.join("\n")
   }
 
   // ── Minimized dock (the mockup's dark pill) ──
@@ -1358,7 +1366,15 @@ async function mount() {
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
       // KLAVITYKLA-473: if the DOM render is blank/partial-white, flag suggestSharp so the composer nudges
       // the user to the Screen button — NO auto getDisplayMedia (the #460 surprise-prompt regression).
-      onCaptureFull: async () => withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })),
+      // Out-of-memory fix: capture documentElement (not body — see fullPageCaptureSize's KLAVITYKLA-404
+      // note on app-shell layouts collapsing body's own box) at fullPageCaptureSize()'s pre-clamped
+      // {width,height}, exactly like safeToPngFullPage already does for the Sim live-review path — a very
+      // tall page's unbounded natural height was letting the renderer attempt a native-size canvas
+      // allocation BEFORE ever shrinking to a safe max, spiking memory enough to OOM-crash the tab.
+      onCaptureFull: async () => {
+        const { width, height } = fullPageCaptureSize()
+        return withSharpSuggestion(await safeToPngWithQuality(document.documentElement, { filter: notKlavityChrome, width, height }))
+      },
       // KLAVITYKLA-509: fast above-the-fold render used as the IMMEDIATE preview — the composer shows a real
       // image within ~1s while onCaptureFull() finishes the full-page render in the background and swaps in.
       onCaptureViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
@@ -2329,11 +2345,11 @@ function fmtMB(bytes: number): string { return (bytes / 1048576).toFixed(1) }
 // A rough total-bytes estimate from the retained payload, used for the pill's initial "0 / N MB"
 // readout before the browser reports the real on-the-wire total. dataUrl base64 decodes to ~0.75×
 // its string length; recordings carry an exact byte count.
-function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string }> }): number {
+function estimatePayloadBytes(p: { screenshots?: string[]; recordings?: Array<{ bytes: number }>; files?: Array<{ dataUrl: string; blob?: Blob }> }): number {
   let n = 0
   for (const s of p.screenshots || []) n += Math.round(s.length * 0.75)
   for (const r of p.recordings || []) n += r.bytes || 0
-  for (const f of p.files || []) n += Math.round((f.dataUrl?.length || 0) * 0.75)
+  for (const f of p.files || []) n += f.blob ? f.blob.size : Math.round((f.dataUrl?.length || 0) * 0.75)
   return n
 }
 // Human label of what's riding along, e.g. "screenshot + recording".
@@ -2541,7 +2557,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes

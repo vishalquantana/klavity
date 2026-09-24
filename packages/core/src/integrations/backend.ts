@@ -99,7 +99,7 @@ export function buildFeedbackFormData(payload: FeedbackFormPayload): FormData {
   if (payload.clientInfo && Object.keys(payload.clientInfo).length) form.set('client_info', JSON.stringify(payload.clientInfo))
   if (payload.files) {
     for (const f of payload.files) {
-      try { form.append('files', dataUrlToBlob(f.dataUrl, f.type), f.name) } catch { /* skip a malformed data URL */ }
+      try { form.append('files', f.blob ?? dataUrlToBlob(f.dataUrl, f.type), f.name) } catch { /* skip a malformed data URL */ }
     }
   }
   if (payload.recordings && payload.recordings.length) {
