@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [Cursor IDE Testing: How to QA the Code Cursor Writes](https://klavity.in/blog/cursor-ide-testing) — Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist.
 - [Vibe Coding QA Checklist: 24 Checks Before You Ship](https://klavity.in/blog/vibe-coding-qa-checklist) — A vibe coding QA checklist is a short, repeatable set of checks on an AI-generated app, ordered by blast radius. Here are the 24 that matter.
 - [Testing AI-Generated Code: A Practical QA Playbook](https://klavity.in/blog/testing-ai-generated-code) — Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.
 - [AI Test Automation vs Manual Testing: How to Choose](https://klavity.in/blog/ai-test-automation-vs-manual-testing) — AI test automation vs manual testing is a division of labour, not a choice: automate repeatable regression, keep humans for judgement and new features.
