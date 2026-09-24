@@ -353,6 +353,13 @@ export interface ModalCallbacks {
   // host can forward it to the clarity endpoint — the coach must never ask the reporter for anything already
   // on the report (URL/screenshot/browser/screen). `images` is the current screenshot count in the composer.
   onClarityTip?: (text: string, ctx?: { images?: number }) => Promise<{ tip: string } | null>
+  // KD-166: debounced description persistence. A page disruption mid-report (a link that navigates away,
+  // not just a reload) tears down this composer entirely — the widget already recovers a captured
+  // screenshot via its evidence session, but nothing previously saved the TYPED description alongside it,
+  // so it was silently lost even though the shot survived. Fired ~600ms after typing pauses, with the
+  // full current text (not a diff) so the host can just persist-overwrite. Best-effort, fire-and-forget —
+  // never blocks typing or Submit. Absent → composer identical to today (no persistence, full back-compat).
+  onDescriptionChange?: (text: string) => void
   // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
   // AI" button appears under the description; clicking it hands the reporter's current text + the primary
   // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
@@ -2630,6 +2637,16 @@ export function buildModal(
   desc.addEventListener('input', autosizeDesc)
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
+
+  // KD-166: debounced description persistence (see onDescriptionChange's doc comment above).
+  if (callbacks.onDescriptionChange) {
+    const onDescriptionChange = callbacks.onDescriptionChange
+    let descPersistTimer: ReturnType<typeof setTimeout> | null = null
+    desc.addEventListener('input', () => {
+      if (descPersistTimer) clearTimeout(descPersistTimer)
+      descPersistTimer = setTimeout(() => { try { onDescriptionChange(desc.value) } catch { /* best-effort */ } }, 600)
+    })
+  }
 
   // ── KLA-586: AI "Enhance" — replace the reporter's one-liner IN PLACE with a structured, developer-ready
   // draft rendered as WhatsApp Markdown, from the auto-captured screenshot + picked element. Opt-in: wired

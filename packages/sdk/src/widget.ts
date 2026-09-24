@@ -22,7 +22,7 @@ import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
-  makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations,
+  makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -945,6 +945,16 @@ async function mount() {
       updateEvDock()
     } catch { /* best-effort: a failed persist must never break capture */ }
   }
+  // KD-166: persist the reporter's typed description to the active session, mirroring persistEvShot — a
+  // real page navigation (e.g. leaving the SPA entirely for a legacy full-reload page) already recovers
+  // the screenshot via this same session; without this, the typed text was silently lost even though the
+  // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
+  async function persistEvDesc(sessionId: string, text: string): Promise<void> {
+    try {
+      const updated = await updateEvidenceFields(sessionId, { desc: text })
+      if (updated) evSession = updated
+    } catch { /* best-effort: a failed persist must never break typing */ }
+  }
   // Remove the session shot at a composer strip index (indices stay aligned with seed+append order).
   function removeEvShotAt(index: number): void {
     // KLA-772: the modal shifts its per-image overlay map down on a mid-strip delete; snapshot the composer's
@@ -1081,7 +1091,9 @@ async function mount() {
     try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep in-memory copy */ }
     if (!evSession) { hideEvDock(); return }
     if (evDockEl) evDockEl.style.display = "none"
-    openReport("bug", { evidence: { session: evSession } })
+    // KD-166: restore the typed description alongside the recovered screenshot(s) — previously only the
+    // shots came back; the text was silently dropped even though it was the thing most recently persisted.
+    openReport("bug", { evidence: { session: evSession }, initialDescription: evSession.desc })
   }
   async function discardEvidence() {
     const s = evSession
@@ -1128,11 +1140,13 @@ async function mount() {
           return
         }
         // Composer closed/minimized → reopen seeded with the existing shots, and this fresh capture appended last.
-        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined })
+        // KD-166: an explicit caller-supplied initialDescription (e.g. the Sim-observation prefill) always
+        // wins; otherwise restore whatever was last persisted to the session.
+        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined, initialDescription: opts?.initialDescription ?? session?.desc })
         return
       }
     }
-    openReport("bug", session ? { ...opts, evidence: { session } } : opts)
+    openReport("bug", session ? { ...opts, evidence: { session }, initialDescription: opts?.initialDescription ?? session.desc } : opts)
   }
 
   // Track deployed Sims so the context menu can show their icons without a fetch.
@@ -1637,6 +1651,8 @@ async function mount() {
       // KLA-412: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste
       // / auto-capture) to the session, tagged with the current page. Serialized to avoid lost updates.
       onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
+      // KD-166: same idea, for the typed description (see onDescriptionChange's doc comment in modal.ts).
+      onDescriptionChange: ev ? (text: string) => { void queueEvWrite(() => persistEvDesc(ev.id, text)) } : undefined,
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
       // KLA-772: persist a shot's drawn overlay incrementally as the reporter draws/edits/undoes it, so the

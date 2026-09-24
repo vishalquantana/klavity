@@ -1,0 +1,181 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing AI-Generated Code: A Practical QA Playbook · Klavity</title>
+<meta name="description" content="Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.">
+<link rel="canonical" href="https://klavity.in/blog/testing-ai-generated-code">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Testing AI-Generated Code: A Practical QA Playbook"><meta property="og:description" content="Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.">
+<meta property="og:url" content="https://klavity.in/blog/testing-ai-generated-code"><meta property="og:image" content="https://klavity.in/blog/testing-ai-generated-code.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Testing AI-Generated Code: A Practical QA Playbook"><meta name="twitter:description" content="Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself."><meta name="twitter:image" content="https://klavity.in/blog/testing-ai-generated-code.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Testing AI-Generated Code: A Practical QA Playbook","description":"Testing AI-generated code means verifying behavior you never wrote. Test at the seams, use your prompt as the spec, and never let the model grade itself.","datePublished":"2026-09-22","dateModified":"2026-09-22","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/testing-ai-generated-code.svg"}},"mainEntityOfPage":"https://klavity.in/blog/testing-ai-generated-code","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Testing AI-Generated Code: A Practical QA Playbook","item":"https://klavity.in/blog/testing-ai-generated-code"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/testing-ai-generated-code"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Do I still need to test AI-generated code if it runs without errors?","acceptedAnswer":{"@type":"Answer","text":"Yes. Running without errors only proves the code is syntactically valid and that the happy path executes. AI generators produce code that satisfies the prompt, not code that is consistent with the rest of your app, so the failures show up at integration points — a missing auth check, state that does not survive a reload, an empty list that renders a blank screen instead of a message."}},{"@type":"Question","name":"Can I just ask the AI to write tests for the code it generated?","acceptedAnswer":{"@type":"Answer","text":"Not as your only safety net. If the model misunderstood the requirement, it will encode the same misunderstanding in the test, and the test will pass against a broken implementation. AI-written tests are useful for coverage of code you have already reviewed; they are not a substitute for a check written from the requirement rather than from the code."}},{"@type":"Question","name":"What should I test first in an AI-generated feature?","acceptedAnswer":{"@type":"Answer","text":"Authorization on every new endpoint or query, data that must persist across a page reload, error and empty states, anything touching money or user data, and whether secrets ended up in the client bundle. These are the areas where a generated implementation most often looks correct and behaves incorrectly."}},{"@type":"Question","name":"How do I test code I do not fully understand?","acceptedAnswer":{"@type":"Answer","text":"Test it from the outside. Write down what the feature should do in plain language, then verify each statement through the UI or the API as a user would experience it. Black-box behavioral checks do not require you to understand the implementation, and they stay valid when the AI rewrites that implementation next week."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-22</div>
+    <h1>Testing AI-Generated Code: A Practical QA Playbook</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Testing AI-generated code: generated code flows into a browser where seam checks pass and one fails">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1"/>
+
+  <rect x="48" y="96" width="210" height="180" rx="14" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-width="1.5"/>
+  <path d="M88 124 l7 -16 l7 16 l16 7 l-16 7 l-7 16 l-7 -16 l-16 -7 z" fill="#6366f1"/>
+  <rect x="126" y="122" width="96" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.35"/>
+  <rect x="78" y="164" width="150" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="78" y="186" width="112" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="78" y="208" width="138" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="78" y="230" width="86" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.14"/>
+
+  <line x1="272" y1="186" x2="352" y2="186" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="9 7"/>
+  <polyline points="342,178 354,186 342,194" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="372" y="78" width="380" height="216" rx="14" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <line x1="372" y1="110" x2="752" y2="110" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <circle cx="392" cy="94" r="4.5" fill="#f87171"/>
+  <circle cx="408" cy="94" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <circle cx="424" cy="94" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+
+  <line x1="444" y1="200" x2="558" y2="200" stroke="#4ade80" stroke-width="2.5"/>
+  <line x1="606" y1="200" x2="694" y2="200" stroke="#f87171" stroke-width="2.5" stroke-dasharray="6 6"/>
+  <circle cx="434" cy="200" r="22" fill="#1e1b2e" stroke="#4ade80" stroke-width="2.5"/>
+  <polyline points="425,200 431,207 444,192" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="582" cy="200" r="22" fill="#1e1b2e" stroke="#4ade80" stroke-width="2.5"/>
+  <polyline points="573,200 579,207 592,192" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="704" cy="200" r="24" fill="#1e1b2e" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="696" y1="192" x2="712" y2="208" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="712" y1="192" x2="696" y2="208" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M704 148 v18" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="704" cy="140" r="5" fill="#f87171"/>
+
+  <rect x="404" y="244" width="120" height="8" rx="4" fill="#4ade80" fill-opacity="0.35"/>
+  <rect x="540" y="244" width="84" height="8" rx="4" fill="#4ade80" fill-opacity="0.35"/>
+  <rect x="640" y="244" width="72" height="8" rx="4" fill="#f87171" fill-opacity="0.45"/>
+
+  <rect x="48" y="322" width="140" height="30" rx="15" fill="#6366f1" fill-opacity="0.18" stroke="#6366f1" stroke-width="1.2"/>
+  <rect x="204" y="322" width="140" height="30" rx="15" fill="#6366f1" fill-opacity="0.18" stroke="#6366f1" stroke-width="1.2"/>
+  <rect x="360" y="322" width="140" height="30" rx="15" fill="#6366f1" fill-opacity="0.18" stroke="#6366f1" stroke-width="1.2"/>
+  <rect x="516" y="322" width="140" height="30" rx="15" fill="#6366f1" fill-opacity="0.18" stroke="#6366f1" stroke-width="1.2"/>
+  <rect x="672" y="322" width="80" height="30" rx="15" fill="#f87171" fill-opacity="0.2" stroke="#f87171" stroke-width="1.2"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Testing AI-generated code is different from testing your own: you are verifying behavior you never designed, so you cannot rely on the mental model that normally tells you where to look. Test at the seams (auth, state, data persistence, third-party calls) rather than at the function level, treat your original prompt as the acceptance spec, and never let the same model that wrote the code be the only thing that tests it.</div>
+    <div class="prose"><p><strong>Testing AI-generated code means verifying behavior you never designed</strong>, so the instinct that normally tells you where bugs hide does not apply. The practical approach is to test at the seams rather than at the function level: check authorization on every new endpoint, state that must survive a reload, error and empty states, and anything touching money or user data. Treat the prompt you wrote as the acceptance spec, verify each statement from the outside as a user would experience it, and never let the same model that generated the code be the only thing that tests it.</p>
+
+<h2>Why does testing AI-generated code need a different approach?</h2>
+<p>When you write code yourself, you carry a map of it. You know which branch you rushed, which helper you copied from elsewhere, which assumption you made about the shape of the data. That map is what makes normal testing efficient — you test the parts you already suspect.</p>
+<p>With generated code, the map does not exist. The model produced something that satisfies the prompt in isolation, and it produced it with total confidence and no memory of the rest of your application. So the defects cluster differently. A generated function is usually internally coherent; what it gets wrong is how it connects to everything around it. That is why unit-testing generated functions one at a time feels productive and catches almost nothing.</p>
+<p>The second difference is churn. AI-assisted code gets regenerated, not edited. Ask for a change and you often get a new implementation rather than a patch, which means any test coupled to internal structure — mocked private calls, asserted call order, snapshot of an internal shape — breaks on a change that did not break the feature. Tests for generated code need to be written against behavior, because behavior is the only thing that stays still.</p>
+
+<h2>What should you check first in AI-generated code?</h2>
+<p>Five areas account for most of what slips through. Check them in this order, because they are ranked by how badly they fail in production versus how convincing they look in review.</p>
+<table>
+<thead><tr><th>Area</th><th>What generated code typically gets wrong</th><th>How to check it in a minute</th></tr></thead>
+<tbody>
+<tr><td><strong>Authorization</strong></td><td>The endpoint or query checks that a user is logged in, but not that <em>this</em> user owns the record</td><td>Log in as a second account and request the first account's record by ID</td></tr>
+<tr><td><strong>Persistence</strong></td><td>State lives in component memory; it looks saved until the page reloads</td><td>Do the action, hard-refresh, confirm it is still there</td></tr>
+<tr><td><strong>Empty and error states</strong></td><td>The happy path is rendered; zero results or a failed request render a blank screen</td><td>Load the view with no data, then with the network throttled or offline</td></tr>
+<tr><td><strong>Secrets and keys</strong></td><td>An API key sits in client-side code because the prompt did not specify a server call</td><td>Search the built bundle for the key prefix; check the network tab for third-party calls from the browser</td></tr>
+<tr><td><strong>Money and destructive actions</strong></td><td>Amounts computed in floating point, or a delete with no confirmation and no ownership check</td><td>Run one transaction end to end and read the stored value, not the displayed one</td></tr>
+</tbody>
+</table>
+<p>None of these require you to read the implementation. That is the point — they are checks you can run against a feature whose code you have not internalized, which is the situation you are actually in.</p>
+
+<h2>How do you test code you did not write and do not fully understand?</h2>
+<p>Test it from the outside, and let your prompt be the specification.</p>
+<p>The prompt you typed is the closest thing to a requirements document that exists for this feature. Open it and split it into individual claims: <em>users can upload a file</em>, <em>only images under 5&nbsp;MB are accepted</em>, <em>the upload appears in their library immediately</em>. Each claim is now an acceptance check. Walk through them in the running app, one at a time, and mark each as verified or not. This takes minutes, requires no knowledge of the implementation, and reliably surfaces the requirement the model quietly dropped — usually the constraint in the middle of a long sentence.</p>
+<p>Then extend each claim by one step the prompt did not mention. If images under 5&nbsp;MB are accepted, what happens at 50&nbsp;MB — a clear message, or a silent failure? If the upload appears in the library, does it still appear after a reload? Generated code is almost always complete on the path described and thin one step off it, so the step off the path is where you spend your time.</p>
+<p>This is also the discipline we cover in depth in our guide on <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a>, and the specific failure patterns are catalogued in <a href="/blog/common-vibe-coding-mistakes">common vibe coding mistakes</a>.</p>
+
+<h2>Why shouldn't the AI write its own tests?</h2>
+<p>Asking the model that wrote a feature to also write the tests for it produces tests that are guaranteed to pass and prove nothing. The reason is structural rather than a matter of model quality: the tests are derived from the implementation, so any misreading of the requirement is present on both sides of the comparison. The test asserts that the code does what the code does.</p>
+<p>You can see this most clearly when the requirement was misunderstood. If the model decided that "archive" means delete, it will write a test asserting that archiving removes the record — and that test will pass, in CI, in green, forever, while your users lose data.</p>
+<p>Generated tests still have a place. They are good at filling in coverage for code you have already read and confirmed, at exercising input permutations you would not bother to type, and at producing fixtures. The rule that keeps them honest is one of independence: <strong>the thing that defines correct behavior must come from outside the code.</strong> Either you write the assertion from the requirement, or you generate the test from the requirement in a separate session with no sight of the implementation.</p>
+
+<h2>What does a practical test loop for AI-generated code look like?</h2>
+<p>You do not need a full test pyramid on day one. You need layered checks that each catch a different class of failure, in rough order of cost.</p>
+<table>
+<thead><tr><th>Layer</th><th>Catches</th><th>Effort</th></tr></thead>
+<tbody>
+<tr><td>Prompt-as-spec walkthrough</td><td>Dropped requirements, misread constraints</td><td>Minutes, manual, do it every time</td></tr>
+<tr><td>Seam checklist (the five areas above)</td><td>Auth holes, lost state, blank error screens, leaked keys</td><td>Minutes, manual, do it before any client sees it</td></tr>
+<tr><td>AI persona runs</td><td>Real-user paths nobody scripted — the wrong order, the back button, the half-filled form</td><td>Automated; this is what <a href="/sims">Sims</a> does</td></tr>
+<tr><td>Behavioral E2E on critical journeys</td><td>Regressions when the AI regenerates the feature next week</td><td>Automated and self-healing with <a href="/autosim">AutoSim</a>, so selector churn does not break the suite</td></tr>
+<tr><td>In-app bug capture</td><td>Everything the above missed, with reproduction context attached</td><td><a href="/snap">Snap</a> — right-click, report, console and network included</td></tr>
+</tbody>
+</table>
+<p>The ordering matters more than the completeness. The top two layers cost almost nothing and catch the defects that embarrass you in front of a client; the automated layers stop those defects from coming back the next time the code is regenerated. For the broader picture of how these fit together, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>How do you keep tests from rotting when the AI rewrites the code?</h2>
+<p>Three habits do most of the work. First, assert on user-visible outcomes — text on screen, a record in the database, a status code — never on internal call sequences. Second, select elements by role, label, or a stable test ID rather than by generated class names, which change on every regeneration. Third, when a test fails after a regeneration, resist the urge to update the assertion until you have confirmed the new behavior is actually correct; a rewritten implementation that quietly changed behavior looks identical to a stale test, and treating one as the other is how silent regressions ship.</p>
+<p>Self-healing E2E exists precisely because selector churn is the dominant maintenance cost here. But no amount of healing distinguishes an intentional change from a regression — that judgement stays with you, and it is why the prompt-as-spec habit is worth keeping even after automation is in place.</p>
+
+<h2>Start testing your AI-generated code today</h2>
+<p>Pick your most recently generated feature and run the five-area seam check on it right now. It takes under ten minutes, needs no knowledge of the implementation, and those five areas are where a generated feature is most likely to hand something back.</p>
+<p>Klavity gives you the automated layers on top: Sims runs AI personas across your app to find the paths nobody scripted, AutoSim turns the journeys that matter into self-healing E2E tests, and Snap captures anything that still gets through with console logs, network activity, and a reproduction trail attached. <a href="/onboarding"><strong>Try Klavity free</strong></a> and scan your next AI-built feature before your client does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test at the seams — auth, state, persistence, third-party calls — not at the function level</li><li>Treat the prompt you wrote as the acceptance spec and verify it line by line</li><li>Never ship with tests written only by the model that wrote the code</li><li>Use black-box behavioral checks so tests survive the next AI rewrite</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Do I still need to test AI-generated code if it runs without errors?</summary><p>Yes. Running without errors only proves the code is syntactically valid and that the happy path executes. AI generators produce code that satisfies the prompt, not code that is consistent with the rest of your app, so the failures show up at integration points — a missing auth check, state that does not survive a reload, an empty list that renders a blank screen instead of a message.</p></details><details><summary>Can I just ask the AI to write tests for the code it generated?</summary><p>Not as your only safety net. If the model misunderstood the requirement, it will encode the same misunderstanding in the test, and the test will pass against a broken implementation. AI-written tests are useful for coverage of code you have already reviewed; they are not a substitute for a check written from the requirement rather than from the code.</p></details><details><summary>What should I test first in an AI-generated feature?</summary><p>Authorization on every new endpoint or query, data that must persist across a page reload, error and empty states, anything touching money or user data, and whether secrets ended up in the client bundle. These are the areas where a generated implementation most often looks correct and behaves incorrectly.</p></details><details><summary>How do I test code I do not fully understand?</summary><p>Test it from the outside. Write down what the feature should do in plain language, then verify each statement through the UI or the API as a user would experience it. Black-box behavioral checks do not require you to understand the implementation, and they stay valid when the AI rewrites that implementation next week.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

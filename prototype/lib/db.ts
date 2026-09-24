@@ -1188,7 +1188,7 @@ export async function applySchema(c: Client) {
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_sig_idx ON feedback (project_id, signature)`)
     .catch((e: any) => console.warn("feedback_sig_idx skipped:", e?.message || e))
   // #722 (P2.1): status-filtered reads — triage inbox (listTriageFeedback WHERE project_id=? AND status='new')
-  // and the dashboard-insights counts (computeDashboardInsights: status='new' / status IN ('open','in_progress')
+  // and the dashboard-insights counts (computeDashboardInsights: status='new' / status IN ('open','in_progress','qa_review')
   // / status!='dismissed'). Only fb_proj_idx (project_id, created_at) existed, so those scanned the whole
   // project partition and filtered status in memory; this composite lets the planner range-scan by
   // (project_id, status) and stay ordered by created_at. Created here (not in the base batch) because the
@@ -7855,7 +7855,7 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
 // Aggregate "so what" insights for the Overview, computed across ALL of a project's feedback
 // (not just the recent 12 the dashboard lists). Cheap GROUP BY queries; degrades to zeros with no DB.
 // created_at is stored as a millisecond epoch integer.
-// Triage-aware: openBySeverity/hotspots count only accepted (status IN ('open','in_progress'));
+// Triage-aware: openBySeverity/hotspots count only accepted (status IN ('open','in_progress','qa_review'));
 // recurring and sentiment exclude dismissed; needsTriage counts status='new'.
 export async function computeDashboardInsights(projectId: string) {
   const empty = {
@@ -7878,9 +7878,9 @@ export async function computeDashboardInsights(projectId: string) {
     // KLA-780: every insight query excludes merged-away rows (merged_into IS NULL) — their evidence and
     // recurrence were already folded onto the survivor, so counting them too would double-count.
     const [sevRows, sentRows, hotRows, volRows, recRow, throughputRows, triageRow] = await Promise.all([
-      db.execute({ sql: `SELECT COALESCE(priority,severity,'none') sev, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('open','in_progress') GROUP BY sev`, args: [projectId] }),
+      db.execute({ sql: `SELECT COALESCE(priority,severity,'none') sev, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('open','in_progress','qa_review') GROUP BY sev`, args: [projectId] }),
       db.execute({ sql: `SELECT COALESCE(sentiment,'') s, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status!='dismissed' GROUP BY s`, args: [projectId] }),
-      db.execute({ sql: `SELECT COALESCE(NULLIF(url_path,''),'(unknown)') area, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('open','in_progress') GROUP BY area ORDER BY n DESC LIMIT 6`, args: [projectId] }),
+      db.execute({ sql: `SELECT COALESCE(NULLIF(url_path,''),'(unknown)') area, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('open','in_progress','qa_review') GROUP BY area ORDER BY n DESC LIMIT 6`, args: [projectId] }),
       db.execute({ sql: `SELECT CAST(created_at/86400000 AS INTEGER) d, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND created_at>? GROUP BY d`, args: [projectId, weekAgo] }),
       db.execute({ sql: `SELECT COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND recurrence_count>=3 AND status!='dismissed'`, args: [projectId] }),
       db.execute({ sql: `SELECT (CASE WHEN status='done' THEN 'resolved' ELSE 'opened' END) k, COUNT(*) n FROM feedback WHERE project_id=? AND merged_into IS NULL AND created_at>? AND status!='dismissed' GROUP BY k`, args: [projectId, weekAgo] }),

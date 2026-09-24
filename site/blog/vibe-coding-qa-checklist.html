@@ -1,0 +1,224 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Coding QA Checklist: 24 Checks Before You Ship · Klavity</title>
+<meta name="description" content="A vibe coding QA checklist is a short, repeatable set of checks on an AI-generated app, ordered by blast radius. Here are the 24 that matter.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coding-qa-checklist">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe Coding QA Checklist: 24 Checks Before You Ship"><meta property="og:description" content="A vibe coding QA checklist is a short, repeatable set of checks on an AI-generated app, ordered by blast radius. Here are the 24 that matter.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coding-qa-checklist"><meta property="og:image" content="https://klavity.in/blog/vibe-coding-qa-checklist.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe Coding QA Checklist: 24 Checks Before You Ship"><meta name="twitter:description" content="A vibe coding QA checklist is a short, repeatable set of checks on an AI-generated app, ordered by blast radius. Here are the 24 that matter."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coding-qa-checklist.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe Coding QA Checklist: 24 Checks Before You Ship","description":"A vibe coding QA checklist is a short, repeatable set of checks on an AI-generated app, ordered by blast radius. Here are the 24 that matter.","datePublished":"2026-09-23","dateModified":"2026-09-23","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coding-qa-checklist.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coding-qa-checklist","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe Coding QA Checklist: 24 Checks Before You Ship","item":"https://klavity.in/blog/vibe-coding-qa-checklist"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coding-qa-checklist"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What should be on a vibe coding QA checklist?","acceptedAnswer":{"@type":"Answer","text":"Seven groups of black-box checks: access and authorization on every new route, persistence after a hard reload, form and input handling including double-clicks, empty and error states on a brand-new account, money and irreversible actions, secrets that leaked into the client bundle, and real-device and cross-browser conditions. All of them can be run without reading the source code."}},{"@type":"Question","name":"Can I run a vibe coding QA checklist if I am not technical?","acceptedAnswer":{"@type":"Answer","text":"Yes. Every check in this list is executed from the outside — through the browser, a second test account and the devtools network tab. You do not need to read the generated code, which is also why the checks stay valid the next time the AI rewrites that code."}},{"@type":"Question","name":"Which checks should I run first if I have very little time?","acceptedAnswer":{"@type":"Answer","text":"Authorization first: log out and visit every new URL, then create a second account and try to reach the first account's records. Then hard-reload after a write to confirm data actually persisted. Then search the client bundle and network payloads for API keys. These three produce incidents rather than merely a bad experience."}},{"@type":"Question","name":"How often should I run the checklist on a vibe-coded app?","acceptedAnswer":{"@type":"Answer","text":"After every meaningful AI edit, not just before a launch. AI tools rewrite adjacent code while implementing an unrelated request, so a feature that passed last week can regress without anyone touching it directly. Automating the mechanical groups is what makes that cadence realistic."}},{"@type":"Question","name":"Why does the AI tool's preview pane hide these bugs?","acceptedAnswer":{"@type":"Answer","text":"Preview panes typically run with a single logged-in session, permissive settings and seeded data. That configuration conceals exactly the failures this checklist targets: missing authorization, unpersisted writes and unbuilt empty states. Run the checklist against a real build in a real browser."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-23</div>
+    <h1>Vibe Coding QA Checklist: 24 Checks Before You Ship</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A vibe coding QA checklist panel with passing checks and one failure, pointed at a browser window where a bug is found">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1"/>
+
+  <rect x="56" y="76" width="300" height="268" rx="14" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="176" y="62" width="60" height="22" rx="7" fill="#6366f1"/>
+
+  <circle cx="98" cy="126" r="15" fill="#1e1b2e" stroke="#4ade80" stroke-width="2.2"/>
+  <polyline points="90,126 96,133 108,119" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="128" y="120" width="182" height="11" rx="5.5" fill="#f5f0e8" fill-opacity="0.26"/>
+
+  <circle cx="98" cy="170" r="15" fill="#1e1b2e" stroke="#4ade80" stroke-width="2.2"/>
+  <polyline points="90,170 96,177 108,163" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="128" y="164" width="148" height="11" rx="5.5" fill="#f5f0e8" fill-opacity="0.26"/>
+
+  <circle cx="98" cy="214" r="16" fill="#1e1b2e" stroke="#f87171" stroke-width="2.4"/>
+  <line x1="91" y1="207" x2="105" y2="221" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="105" y1="207" x2="91" y2="221" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="128" y="208" width="196" height="11" rx="5.5" fill="#f87171" fill-opacity="0.42"/>
+
+  <circle cx="98" cy="258" r="15" fill="#1e1b2e" stroke="#4ade80" stroke-width="2.2"/>
+  <polyline points="90,258 96,265 108,251" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="128" y="252" width="164" height="11" rx="5.5" fill="#f5f0e8" fill-opacity="0.26"/>
+
+  <circle cx="98" cy="302" r="15" fill="#1e1b2e" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="2.2"/>
+  <rect x="128" y="296" width="122" height="11" rx="5.5" fill="#f5f0e8" fill-opacity="0.12"/>
+
+  <line x1="374" y1="210" x2="428" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="9 7"/>
+  <polyline points="418,202 430,210 418,218" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="448" y="92" width="296" height="236" rx="14" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <line x1="448" y1="124" x2="744" y2="124" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <circle cx="470" cy="108" r="4.5" fill="#f87171"/>
+  <circle cx="486" cy="108" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <circle cx="502" cy="108" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+
+  <rect x="474" y="150" width="128" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="474" y="176" width="96" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="474" y="256" width="150" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="474" y="282" width="110" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.14"/>
+
+  <rect x="474" y="204" width="238" height="38" rx="9" fill="#f87171" fill-opacity="0.14" stroke="#f87171" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <circle cx="500" cy="223" r="9" fill="#f87171"/>
+  <path d="M500 205 v-14" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <rect x="524" y="218" width="120" height="10" rx="5" fill="#f87171" fill-opacity="0.45"/>
+
+  <rect x="56" y="368" width="176" height="10" rx="5" fill="#4ade80" fill-opacity="0.42"/>
+  <rect x="240" y="368" width="44" height="10" rx="5" fill="#f87171" fill-opacity="0.5"/>
+  <rect x="292" y="368" width="64" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.12"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>A vibe coding QA checklist targets seams, not code: where AI-generated code meets your existing auth, database and real users. Run access, persistence, forms, empty states, money, secrets and real-device checks — all black-box, so they stay valid after the AI rewrites the implementation. With 30 minutes, do authorization, the hard-reload test, and a secrets scan of the client bundle.</div>
+    <div class="prose"><p>A vibe coding QA checklist is a short, repeatable list of checks you run on an AI-generated app before you ship it — ordered by blast radius, not by code structure. It exists because tools like Cursor, Bolt, Lovable, v0 and Replit produce code that compiles and renders correctly while quietly skipping the things nobody prompted for: authorization on a new endpoint, persistence after a reload, the empty state, the second click on a submit button. The checklist below is 24 checks in seven groups. You do not need to read the code to run any of them.</p>
+
+<h2>What is a vibe coding QA checklist, and why does AI-generated code need its own?</h2>
+<p>A traditional QA checklist assumes a developer wrote the code with the whole app in their head, so it focuses on regressions at the margins. AI-generated code inverts that assumption: the model sees your prompt and a slice of context — not the auth model you established four features ago, not the fact that your other forms all disable the submit button while in flight.</p>
+<p>The result is a specific failure shape: the feature works when you demo it the way you described it, and breaks at the seams. So a vibe coding QA checklist is not a longer checklist — it is one pointed at seams, where generated code meets your existing app, your database, your auth, and a real user doing something you never typed into a prompt.</p>
+
+<h2>What is on the vibe coding QA checklist?</h2>
+<p>Run these on a real build in a real browser, not in the AI tool's preview pane. Preview panes often run with permissive settings and a single logged-in session, which hides exactly the failures below.</p>
+
+<h3>1. Access and authorization (4 checks)</h3>
+<ul>
+<li><strong>Log out and visit every new URL.</strong> A page that should require a login and renders anyway is the single highest-severity bug an AI generator produces.</li>
+<li><strong>Create a second account and request the first account's data directly.</strong> Take an ID out of a URL or a network request while logged in as user A, then paste it while logged in as user B. Generated endpoints frequently check <em>that</em> you are logged in and not <em>who</em> you are.</li>
+<li><strong>Check the write path, not just the read path.</strong> Can user B edit or delete user A's record, even if they cannot see it in a list?</li>
+<li><strong>Try the admin route as a normal user.</strong> If a screen is hidden by conditional rendering only, it is not protected.</li>
+</ul>
+
+<h3>2. Persistence (3 checks)</h3>
+<ul>
+<li><strong>Hard-reload after every write.</strong> AI-generated features often update local state and skip the server call, so the app looks correct until the page refreshes.</li>
+<li><strong>Open the same record in a second tab.</strong> This catches changes that only ever lived in one component's memory.</li>
+<li><strong>Verify the delete actually deleted.</strong> Reload and confirm the item is gone rather than just removed from the list on screen.</li>
+</ul>
+
+<h3>3. Forms and input (4 checks)</h3>
+<ul>
+<li><strong>Submit the form empty.</strong> Then submit it with only whitespace.</li>
+<li><strong>Double-click every submit button.</strong> Duplicate records and double charges come from missing in-flight state, which prompts almost never mention.</li>
+<li><strong>Paste something long and something strange</strong> — a 5,000-character string, an emoji, an apostrophe in a name, a leading zero in a phone number.</li>
+<li><strong>Check what happens on a validation failure.</strong> Does the user's input survive, or does the form clear and make them start over?</li>
+</ul>
+
+<h3>4. Empty, loading and error states (4 checks)</h3>
+<ul>
+<li><strong>Sign up as a brand-new user and walk every screen with zero data.</strong> Generated UIs are built against seeded or imagined data, so first-run screens are the most reliably broken part of a vibe-coded app.</li>
+<li><strong>Throttle your connection in devtools</strong> and watch for missing loading states, layout jumps and buttons that can be clicked twice while a request is pending.</li>
+<li><strong>Force a failure.</strong> Go offline mid-action, or block the request in devtools. An error that silently does nothing is worse than an error message.</li>
+<li><strong>Look for the spinner that never ends.</strong> A failed request with no error branch usually leaves one behind.</li>
+</ul>
+
+<h3>5. Money and irreversible actions (3 checks)</h3>
+<ul>
+<li><strong>Confirm the amount is calculated on the server.</strong> If a price, total or quantity is computed in the browser and posted up, it can be edited.</li>
+<li><strong>Test the cancel and failure paths of any payment flow</strong>, not only the success path a prompt describes.</li>
+<li><strong>Confirm every destructive action is confirmed and scoped.</strong> A "delete" that removes more than the thing you clicked is a generated-code classic.</li>
+</ul>
+
+<h3>6. Secrets and what ships to the browser (3 checks)</h3>
+<ul>
+<li><strong>Search your client bundle and network payloads for keys.</strong> Open devtools, look through Sources and the response bodies for <code>key</code>, <code>secret</code>, <code>token</code>, <code>sk-</code>. AI tools happily put an API key in front-end code when the prompt did not say where it should live.</li>
+<li><strong>Check that server-only environment variables are not prefixed for client exposure</strong> (the <em>PUBLIC</em>- or <em>NEXT_PUBLIC</em>-style prefixes in most frameworks).</li>
+<li><strong>Read the network tab on one page load.</strong> Any response returning whole user records, password hashes or internal fields is a leak even if the UI never shows them.</li>
+</ul>
+
+<h3>7. Real-world conditions (3 checks)</h3>
+<ul>
+<li><strong>Open it on an actual phone.</strong> Not a resized desktop window — a phone, where the keyboard covers inputs and tap targets are smaller.</li>
+<li><strong>Check one browser you did not develop in</strong>, most usefully Safari.</li>
+<li><strong>Watch one person who has never seen the app use it without narration.</strong> This finds the class of bug no checklist can enumerate.</li>
+</ul>
+
+<h2>Which vibe coding QA checklist items matter most if you only have 30 minutes?</h2>
+<p>Do group 1, then the reload check from group 2, then the secrets scan from group 6. In that order. The logic is severity, not effort: an authorization hole exposes other people's data and cannot be walked back once it is live, a persistence bug destroys work your users did, and a leaked key can be exploited by anyone who views source. Everything else in the list produces a bad experience. Those three produce an incident.</p>
+<p>With ten more minutes, add the double-click check and the fresh-account empty-state walk — the two cheapest checks with the highest hit rate on AI-generated code.</p>
+
+<h2>How is this different from a normal website QA checklist?</h2>
+<table>
+<tr><th>Area</th><th>Traditional QA checklist</th><th>Vibe coding QA checklist</th></tr>
+<tr><td>Assumption</td><td>The author understood the whole system</td><td>The author saw a prompt and a slice of context</td></tr>
+<tr><td>Auth</td><td>Spot-checked; the pattern is established</td><td>Re-verified on every new route and every new query</td></tr>
+<tr><td>Focus</td><td>Regressions in existing features</td><td>Seams where generated code meets the existing app</td></tr>
+<tr><td>Empty states</td><td>Usually already handled</td><td>Assume they were never built</td></tr>
+<tr><td>Cadence</td><td>Per release</td><td>Per AI edit, because generators rewrite adjacent code</td></tr>
+<tr><td>Who runs it</td><td>A QA person or the developer</td><td>Often a non-technical founder, from the outside</td></tr>
+</table>
+<p>That last row is the real constraint. Most people shipping vibe-coded apps have no QA function, so a checklist only survives if every item runs without reading the source. Every check above is black-box for that reason — which also means it stays valid the next time the AI rewrites the implementation underneath it.</p>
+
+<h2>How do you run this checklist every time without it becoming a chore?</h2>
+<p>A manual checklist decays. You will run all 24 checks before your first launch, a handful before the second, and none by the fourth week. Three things keep it alive:</p>
+<ol>
+<li><strong>Write the checks down as your app's checks, not generic ones.</strong> Replace "check authorization" with the actual URLs and the two test accounts you use. Specific instructions get followed; abstract ones get skipped.</li>
+<li><strong>Automate the repeatable middle.</strong> The checks in groups 1 through 4 are mechanical and identical every time — exactly what an automated pass is for. <a href="/autosim">AutoSim</a> turns these flows into end-to-end tests that repair their own selectors when the AI renames a button, so a regenerated UI does not leave you with a wall of red tests to triage.</li>
+<li><strong>Get the unenumerable class from real behavior.</strong> <a href="/sims">Sims</a> runs AI personas through your app the way real users would — the impatient one, the one with a long name, the one who clicks back mid-checkout — which finds the bugs no list predicts. When a user does hit something, <a href="/snap">Snap</a> captures it as a right-click report with console, network and reproduction steps attached, so you are not debugging from "it's broken on my phone."</li>
+</ol>
+<p>For the wider picture of how automated and human checks fit together, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>. If you want the process rather than the list, <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a> walks through the workflow, and <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> covers building durable tests around code you did not write.</p>
+
+<h2>Run your next pre-ship check in minutes</h2>
+<p>Start with the 24 checks above on your current build — the first group alone usually finds something. Then automate the mechanical parts so the checklist still happens in week four, not just week one.</p>
+<p><a href="/onboarding"><strong>Try Klavity free</strong></a> — point it at your vibe-coded app and see what the checklist would have caught.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Log out and re-check every new URL — then repeat as a second user</li><li>Hard-reload after every write to prove data actually persisted</li><li>Search the client bundle and network payloads for leaked API keys</li><li>Re-run the checklist after every AI edit, not just before launch</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What should be on a vibe coding QA checklist?</summary><p>Seven groups of black-box checks: access and authorization on every new route, persistence after a hard reload, form and input handling including double-clicks, empty and error states on a brand-new account, money and irreversible actions, secrets that leaked into the client bundle, and real-device and cross-browser conditions. All of them can be run without reading the source code.</p></details><details><summary>Can I run a vibe coding QA checklist if I am not technical?</summary><p>Yes. Every check in this list is executed from the outside — through the browser, a second test account and the devtools network tab. You do not need to read the generated code, which is also why the checks stay valid the next time the AI rewrites that code.</p></details><details><summary>Which checks should I run first if I have very little time?</summary><p>Authorization first: log out and visit every new URL, then create a second account and try to reach the first account's records. Then hard-reload after a write to confirm data actually persisted. Then search the client bundle and network payloads for API keys. These three produce incidents rather than merely a bad experience.</p></details><details><summary>How often should I run the checklist on a vibe-coded app?</summary><p>After every meaningful AI edit, not just before a launch. AI tools rewrite adjacent code while implementing an unrelated request, so a feature that passed last week can regress without anyone touching it directly. Automating the mechanical groups is what makes that cadence realistic.</p></details><details><summary>Why does the AI tool's preview pane hide these bugs?</summary><p>Preview panes typically run with a single logged-in session, permissive settings and seeded data. That configuration conceals exactly the failures this checklist targets: missing authorization, unpersisted writes and unbuilt empty states. Run the checklist against a real build in a real browser.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

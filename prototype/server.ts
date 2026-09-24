@@ -12543,7 +12543,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/priority
         if (req.method === "PATCH" && !feedbackSubroute) {
           const body = await req.json().catch(() => ({}))
-          const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
+          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
           if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
             return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
           }
@@ -13289,7 +13289,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // PX4 #411: Task/Query join Bug/Feature so admins can remap where they land per-project. Both
               // default to the tracker's default issue type (autoMatch may still suggest a "Task" match by name).
               const KINDS = [{ key: "bug", label: "Bug" }, { key: "feature", label: "Feature" }, { key: "task", label: "Task" }, { key: "query", label: "Query" }]
-              const STATUSES = [{ key: "new", label: "New" }, { key: "open", label: "Open" }, { key: "in_progress", label: "In Progress" }, { key: "done", label: "Done" }, { key: "dismissed", label: "Dismissed" }]
+              const STATUSES = [{ key: "new", label: "New" }, { key: "open", label: "Open" }, { key: "in_progress", label: "In Progress" }, { key: "qa_review", label: "QA Review" }, { key: "done", label: "Done" }, { key: "dismissed", label: "Dismissed" }]
               const typeRows = KINDS.map(k => autoMatch(k, typeOpts))
               const statusRows = STATUSES.map(s => autoMatch(s, statusOpts))
               const issue_type_map: Record<string, string> = {}
@@ -14363,7 +14363,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
           if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
-          const VALID_STATUS = ["new", "open", "in_progress", "done", "dismissed"]
+          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
           const VALID_PRI = ["urgent", "high", "medium", "low"]
 
           const hasStatus = body.status !== undefined
