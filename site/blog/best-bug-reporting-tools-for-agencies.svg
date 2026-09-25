@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Three categories of bug reporting tools for agencies: client feedback, error monitoring and AI QA scanning">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="4" fill="#6366f1"/>
+
+  <rect x="48" y="52" width="200" height="22" rx="6" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="290" y="52" width="200" height="22" rx="6" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="532" y="52" width="220" height="22" rx="6" fill="#6366f1" opacity="0.38"/>
+
+  <rect x="48" y="96" width="200" height="176" rx="14" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="48" y="96" width="200" height="176" rx="14" fill="none" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="68" y="118" width="160" height="72" rx="7" fill="none" stroke="#f5f0e8" stroke-opacity="0.34" stroke-width="1.5"/>
+  <line x1="68" y1="136" x2="228" y2="136" stroke="#f5f0e8" stroke-opacity="0.24" stroke-width="1.5"/>
+  <circle cx="79" cy="127" r="3" fill="#f87171"/>
+  <path d="M150 158 l16 26 l-9 1 l6 14 l-7 3 l-6 -14 l-7 6 z" fill="#f5f0e8" opacity="0.7"/>
+  <circle cx="148" cy="228" r="16" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="148" y1="220" x2="148" y2="230" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="148" cy="236" r="1.6" fill="#f87171"/>
+
+  <rect x="290" y="96" width="200" height="176" rx="14" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="290" y="96" width="200" height="176" rx="14" fill="none" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <rect x="310" y="118" width="160" height="96" rx="7" fill="#1e1b2e" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="1.5"/>
+  <line x1="324" y1="136" x2="404" y2="136" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <line x1="324" y1="150" x2="452" y2="150" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <line x1="324" y1="164" x2="436" y2="164" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <line x1="324" y1="178" x2="388" y2="178" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <line x1="324" y1="192" x2="444" y2="192" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="310,244 340,244 352,230 366,256 378,240 470,240" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="532" y="96" width="220" height="176" rx="14" fill="#6366f1" opacity="0.14"/>
+  <rect x="532" y="96" width="220" height="176" rx="14" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <rect x="556" y="120" width="172" height="60" rx="7" fill="none" stroke="#6366f1" stroke-width="1.8"/>
+  <line x1="556" y1="138" x2="728" y2="138" stroke="#6366f1" stroke-width="1.5" opacity="0.7"/>
+  <line x1="556" y1="200" x2="642" y2="200" stroke="#6366f1" stroke-width="2" stroke-dasharray="6 6" opacity="0.8"/>
+  <polyline points="560,228 572,240 596,214" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="616,228 628,240 652,214" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="672,228 684,240 708,214" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M248 184 L284 184" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>
+  <path d="M276 178 L284 184 L276 190" fill="none" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M490 184 L526 184" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M518 178 L526 184 L518 190" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="48" y="316" width="704" height="56" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="48" y="316" width="704" height="56" rx="12" fill="none" stroke="#f5f0e8" stroke-opacity="0.16" stroke-width="1.5"/>
+  <circle cx="92" cy="344" r="9" fill="none" stroke="#f87171" stroke-width="2"/>
+  <circle cx="400" cy="344" r="9" fill="none" stroke="#f87171" stroke-width="2"/>
+  <circle cx="708" cy="344" r="9" fill="#4ade80"/>
+  <line x1="110" y1="344" x2="382" y2="344" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="2"/>
+  <line x1="418" y1="344" x2="690" y2="344" stroke="#6366f1" stroke-width="2"/>
+</svg>

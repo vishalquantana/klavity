@@ -712,5 +712,12 @@
     "excerpt": "Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist.",
     "category": "Guides",
     "date": "2026-09-24"
+  },
+  {
+    "slug": "best-bug-reporting-tools-for-agencies",
+    "title": "Best Bug Reporting Tools for Agencies: 2026 Buyer's Guide",
+    "excerpt": "The best bug reporting tools for agencies fall into three categories: client feedback capture, error monitoring, and AI QA. Here's which one to start with.",
+    "category": "Compare",
+    "date": "2026-09-25"
   }
 ]
