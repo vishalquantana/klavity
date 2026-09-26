@@ -719,5 +719,12 @@
     "excerpt": "The best bug reporting tools for agencies fall into three categories: client feedback capture, error monitoring, and AI QA. Here's which one to start with.",
     "category": "Compare",
     "date": "2026-09-25"
+  },
+  {
+    "slug": "copilot-code-quality",
+    "title": "Copilot Code Quality: What It Is and How to Verify It",
+    "excerpt": "Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.",
+    "category": "Learn",
+    "date": "2026-09-26"
   }
 ]

@@ -1,0 +1,205 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copilot Code Quality: What It Is and How to Verify It · Klavity</title>
+<meta name="description" content="Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.">
+<link rel="canonical" href="https://klavity.in/blog/copilot-code-quality">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Copilot Code Quality: What It Is and How to Verify It"><meta property="og:description" content="Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.">
+<meta property="og:url" content="https://klavity.in/blog/copilot-code-quality"><meta property="og:image" content="https://klavity.in/blog/copilot-code-quality.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Copilot Code Quality: What It Is and How to Verify It"><meta name="twitter:description" content="Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it."><meta name="twitter:image" content="https://klavity.in/blog/copilot-code-quality.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Copilot Code Quality: What It Is and How to Verify It","description":"Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.","datePublished":"2026-09-26","dateModified":"2026-09-26","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/copilot-code-quality.svg"}},"mainEntityOfPage":"https://klavity.in/blog/copilot-code-quality","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Copilot Code Quality: What It Is and How to Verify It","item":"https://klavity.in/blog/copilot-code-quality"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/copilot-code-quality"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is GitHub Copilot code good enough to ship without review?","acceptedAnswer":{"@type":"Answer","text":"No. Copilot is reliable for conventional code — boilerplate, scaffolding, well-known library calls — but it cannot see your business rules, your permission model or your runtime state, so it produces correct-looking code that implements a subtly different requirement. Every AI-assisted diff needs a human read plus a behavioural check in a real browser before it ships."}},{"@type":"Question","name":"How do you measure Copilot code quality?","acceptedAnswer":{"@type":"Answer","text":"Ignore suggestion acceptance rate — it measures agreeableness, not correctness. Track outcomes instead: rework or revert rate on AI-assisted code within two weeks of merge, escaped defects found by clients or production rather than by your own pre-ship pass, review comment density on AI-heavy pull requests, and the gap between 'works locally' and 'verified in a browser'."}},{"@type":"Question","name":"Can Copilot write the tests for its own code?","acceptedAnswer":{"@type":"Answer","text":"It can, but they are not verification. If the same model writes the implementation and the tests, both inherit the same interpretation of the requirement, so a misread requirement yields wrong code, wrong assertions and a green CI run. Confirm the behaviour independently first, then keep the AI-written tests as a regression net."}},{"@type":"Question","name":"What are the most common defects in Copilot-generated code?","acceptedAnswer":{"@type":"Answer","text":"Four classes cover most of what escapes review: plausible-but-wrong logic that reads well and does the wrong thing; hallucinated or wrong-version APIs and package names; missing negative paths such as empty results, failed requests and expired sessions; and silent scope drift where the suggestion edits adjacent code you did not ask it to touch."}},{"@type":"Question","name":"Does Copilot code review catch these problems?","acceptedAnswer":{"@type":"Answer","text":"Partly. Copilot code review and Copilot Autofix add useful static layers on pull requests and security alerts, but none of them run your application and watch what a user experiences. The defects that reach clients are usually behavioural, which is why an independent runtime pass matters."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-09-26</div>
+    <h1>Copilot Code Quality: What It Is and How to Verify It</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Copilot-generated code passing through a verification gate where bugs are caught">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.55"/>
+
+  <rect x="48" y="86" width="196" height="248" rx="12" fill="#f5f0e8" opacity="0.045" stroke="#6366f1" stroke-opacity="0.35"/>
+  <circle cx="72" cy="110" r="5" fill="#6366f1"/>
+  <circle cx="88" cy="110" r="5" fill="#6366f1" opacity="0.45"/>
+  <rect x="70" y="140" width="130" height="9" rx="4.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="70" y="160" width="152" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="84" y="180" width="110" height="9" rx="4.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="84" y="200" width="138" height="9" rx="4.5" fill="#6366f1" opacity="0.5"/>
+  <rect x="70" y="220" width="96" height="9" rx="4.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="84" y="240" width="126" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="70" y="260" width="148" height="9" rx="4.5" fill="#6366f1" opacity="0.4"/>
+
+  <line x1="252" y1="210" x2="330" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M322 202 L334 210 L322 218" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+
+  <rect x="344" y="120" width="132" height="180" rx="14" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="9 7"/>
+  <circle cx="410" cy="210" r="42" fill="#6366f1" opacity="0.1"/>
+  <circle cx="410" cy="210" r="42" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <path d="M392 210 L404 224 L430 196" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="368,150 410,132 452,150" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="368,270 410,288 452,270" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/>
+
+  <line x1="484" y1="164" x2="560" y2="126" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <line x1="484" y1="256" x2="560" y2="294" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <line x1="484" y1="210" x2="568" y2="210" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M560 202 L572 210 L560 218" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+
+  <circle cx="602" cy="112" r="20" fill="#f87171" opacity="0.14" stroke="#f87171" stroke-width="2"/>
+  <circle cx="602" cy="112" r="7" fill="#f87171"/>
+  <line x1="602" y1="88" x2="602" y2="80" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="619" y1="95" x2="626" y2="88" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="585" y1="95" x2="578" y2="88" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <circle cx="602" cy="308" r="20" fill="#f87171" opacity="0.14" stroke="#f87171" stroke-width="2"/>
+  <circle cx="602" cy="308" r="7" fill="#f87171"/>
+  <line x1="602" y1="332" x2="602" y2="340" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="619" y1="325" x2="626" y2="332" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="585" y1="325" x2="578" y2="332" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="612" y="168" width="140" height="84" rx="12" fill="#4ade80" opacity="0.08"/>
+  <rect x="612" y="168" width="140" height="84" rx="12" fill="none" stroke="#4ade80" stroke-opacity="0.6" stroke-width="2"/>
+  <rect x="634" y="192" width="82" height="8" rx="4" fill="#4ade80" opacity="0.7"/>
+  <rect x="634" y="212" width="60" height="8" rx="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="634" y="228" width="96" height="8" rx="4" fill="#f5f0e8" opacity="0.15"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Copilot code quality is not a fixed property of the tool — it is a property of the verification layer behind it. Copilot is strong on boilerplate and well-known library calls, and weakest on your business rules, authorisation and edge cases. Tests written by the same model that wrote the code cannot detect a misread requirement; they can only lock it in place.</div>
+    <div class="prose"><p><strong>Copilot code quality</strong> is a measure of two separate things: how correct and maintainable the code GitHub Copilot suggests is, and how reliably your own process catches the cases where it is wrong. Copilot is strong at code that has been written a million times before — boilerplate, well-known library calls, tests for pure functions, repetitive transforms. It is weakest exactly where quality matters most: your business rules, your permission model, your edge cases, and anything that depends on runtime state it cannot see. So the honest answer is that Copilot code quality is not a fixed property of the tool. It is a property of the review and verification layer you put behind it.</p>
+
+<h2>What does "Copilot code quality" actually mean?</h2>
+<p>The phrase gets used for three different questions, and they have different answers:</p>
+<ul>
+<li><strong>Is the suggestion correct?</strong> Does it do what you intended, for all inputs, not just the one you were thinking about when you accepted it.</li>
+<li><strong>Is it good code?</strong> Does it match your conventions, reuse what already exists in the repo, handle errors the way the rest of the codebase does, and stay readable six months later.</li>
+<li><strong>Is it safe?</strong> Does it validate input, enforce authorisation on the server, avoid leaking secrets, and avoid the insecure-but-common patterns that are abundant in public training data.</li>
+</ul>
+<p>Copilot's own product surface has grown to cover parts of this. Completions and Copilot Chat write the code; Copilot code review comments on pull requests; Copilot Autofix proposes patches for CodeQL security alerts. Those are real, useful layers. What none of them do is run your application and watch what a user experiences — and that is where the defects that reach your client actually live.</p>
+
+<h2>Where does Copilot code quality hold up, and where does it break?</h2>
+<p>A realistic split, based on how the tool works rather than how it is marketed. Copilot predicts likely code from the context it can see — your open files, related files, and the prompt. Quality tracks that directly: the more the correct answer is determined by visible context and common convention, the better it does.</p>
+<table>
+<thead><tr><th>Task</th><th>Typical Copilot quality</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Boilerplate, scaffolding, config</td><td>High</td><td>Highly conventional; thousands of near-identical examples</td></tr>
+<tr><td>Well-known library and framework calls</td><td>Good, but version-drifty</td><td>Patterns are common; the version it suggests may not be the one in your lockfile</td></tr>
+<tr><td>Pure functions and their unit tests</td><td>Good</td><td>Inputs and outputs are fully visible in context</td></tr>
+<tr><td>Business rules specific to your product</td><td>Low</td><td>The rule exists in your head or a spec, not in the code it can see</td></tr>
+<tr><td>Authorisation and multi-tenant data access</td><td>Low — and high risk</td><td>Produces UI-level checks that look right while the endpoint stays open</td></tr>
+<tr><td>Error, empty and boundary states</td><td>Low</td><td>Happy path is the statistically likely completion</td></tr>
+<tr><td>Cross-feature side effects</td><td>Low</td><td>Shared state outside the context window is invisible to it</td></tr>
+</tbody>
+</table>
+<p>Four defect classes account for most of what escapes review:</p>
+<ol>
+<li><strong>Plausible-but-wrong.</strong> Correct-looking code implementing a subtly different rule than the one you meant. It survives skim-review because nothing about it looks unusual.</li>
+<li><strong>Hallucinated or wrong-version APIs.</strong> A method, option or package name that does not exist, or existed in a previous major version. Typecheck catches some of it; a wrong-but-valid option name it will not. Invented package names are also a supply-chain risk — verify a dependency exists and is the one you meant before installing it.</li>
+<li><strong>Missing negative paths.</strong> No handling for empty results, failed requests, double submits, or expired sessions, because none of those are the likely next token.</li>
+<li><strong>Silent scope drift.</strong> A suggestion that also reformats or "improves" adjacent code, widening the diff past what you asked for.</li>
+</ol>
+
+<h2>Why can't you measure Copilot code quality with tests Copilot wrote?</h2>
+<p>This is the single most important structural point, and it is easy to miss because the result looks so reassuring. If the same model writes the implementation and the tests, both inherit the same interpretation of the requirement. A misread requirement produces an implementation that is wrong, a test suite that asserts the wrong behaviour, and a passing CI run. Green does not mean correct; it means self-consistent.</p>
+<p>That does not make AI-written tests worthless — they are a good regression net once the behaviour is confirmed correct. It means the confirmation has to come from outside the model: from you reading the diff against the requirement, from someone using the feature in a browser, or from an independent system exercising the app the way a user would. The order matters. Verify behaviour first, then let the AI-written tests lock it in.</p>
+
+<h2>How do you measure Copilot code quality on a real team?</h2>
+<p>Acceptance rate is the metric most readily available and the least useful — it measures how agreeable the suggestions are, not how good they turn out to be. Track outcomes instead:</p>
+<ul>
+<li><strong>Rework rate.</strong> How much AI-assisted code gets rewritten or reverted within two weeks of merging. Rising rework is the clearest signal that suggestions are being accepted faster than they are being understood.</li>
+<li><strong>Escaped defects per release.</strong> Bugs found by a client, a user, or production monitoring rather than by your own pre-ship pass. This is the number that actually costs you money and reputation.</li>
+<li><strong>Review depth on AI-heavy diffs.</strong> Whether large AI-assisted pull requests get proportionally more review comments, or fewer. Fewer is the warning sign — it usually means the diff got too big to read.</li>
+<li><strong>Time from "works on my machine" to "verified in a browser."</strong> If that gap is growing, generation has outpaced verification and something will ship broken.</li>
+</ul>
+<p>None of these need a new tool. They need you to stop treating a green pipeline as the finish line.</p>
+
+<h2>What checks actually catch Copilot's defects?</h2>
+<p>A short pass, run on every AI-assisted change before it leaves your machine:</p>
+<ol>
+<li>Read the whole diff. Every changed file should be one you expected to change.</li>
+<li>Check each new API call, option and package against the version in your lockfile — not against memory.</li>
+<li>Test the requirement, not the summary: run the feature and confirm it does what you asked, not what the chat log claims it does.</li>
+<li>Try the negative paths by hand — empty input, double submit, mid-flow reload, expired session, logged-out access.</li>
+<li>Hit every endpoint the change touches without the UI, as the wrong user. Authorisation belongs on the server.</li>
+<li>Exercise the neighbouring feature that shares state with this one.</li>
+<li>Check the browser console and network tab for errors and unexpected status codes.</li>
+<li>Only then add or keep AI-written tests, as a regression net around behaviour you have confirmed.</li>
+</ol>
+
+<h2>How does Klavity fit into a Copilot workflow?</h2>
+<p>Klavity exists to make the verification layer as fast as the generation layer, so the two stay in balance:</p>
+<ul>
+<li><strong><a href="/sims">Sims</a></strong> runs AI personas through your app the way real users do — clicking the wrong things, entering unexpected input, abandoning flows halfway — and reports what broke with reproduction steps. It is an independent check, which is exactly what self-written tests cannot be.</li>
+<li><strong><a href="/snap">Snap</a></strong> turns anything a human notices into a report a developer can act on: right-click, and the console log, network requests, browser details and exact steps travel with the screenshot. Paste that back into Copilot Chat and it has the context to fix the bug instead of guessing.</li>
+<li><strong><a href="/autosim">AutoSim</a></strong> keeps working flows working. When AI writes a large share of your code, regressions arrive faster than hand-maintained end-to-end suites get updated, so self-healing tests matter more, not less.</li>
+</ul>
+<p>For the broader problem this sits inside, see our playbook on <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> and our comparison of the <a href="/blog/ai-code-review-tool-for-web-agencies">best AI code review tools for web agencies</a>. The wider discipline is covered in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Try it on your next Copilot-assisted build</h2>
+<p>Copilot makes writing code fast. Quality is decided by what happens between "accepted" and "shipped" — and if that step is a human skim of a large diff, some of it will reach your users. <a href="/onboarding"><strong>Try Klavity free</strong></a> and let it find the bugs before your client does.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read the full diff — every changed file should be one you expected.</li><li>Verify each new API, option and package against your lockfile.</li><li>Test negative paths and endpoint authorisation by hand, not via the UI.</li><li>Confirm behaviour independently before trusting AI-written tests.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is GitHub Copilot code good enough to ship without review?</summary><p>No. Copilot is reliable for conventional code — boilerplate, scaffolding, well-known library calls — but it cannot see your business rules, your permission model or your runtime state, so it produces correct-looking code that implements a subtly different requirement. Every AI-assisted diff needs a human read plus a behavioural check in a real browser before it ships.</p></details><details><summary>How do you measure Copilot code quality?</summary><p>Ignore suggestion acceptance rate — it measures agreeableness, not correctness. Track outcomes instead: rework or revert rate on AI-assisted code within two weeks of merge, escaped defects found by clients or production rather than by your own pre-ship pass, review comment density on AI-heavy pull requests, and the gap between 'works locally' and 'verified in a browser'.</p></details><details><summary>Can Copilot write the tests for its own code?</summary><p>It can, but they are not verification. If the same model writes the implementation and the tests, both inherit the same interpretation of the requirement, so a misread requirement yields wrong code, wrong assertions and a green CI run. Confirm the behaviour independently first, then keep the AI-written tests as a regression net.</p></details><details><summary>What are the most common defects in Copilot-generated code?</summary><p>Four classes cover most of what escapes review: plausible-but-wrong logic that reads well and does the wrong thing; hallucinated or wrong-version APIs and package names; missing negative paths such as empty results, failed requests and expired sessions; and silent scope drift where the suggestion edits adjacent code you did not ask it to touch.</p></details><details><summary>Does Copilot code review catch these problems?</summary><p>Partly. Copilot code review and Copilot Autofix add useful static layers on pull requests and security alerts, but none of them run your application and watch what a user experiences. The defects that reach clients are usually behavioural, which is why an independent runtime pass matters.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
