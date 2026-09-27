@@ -726,5 +726,12 @@
     "excerpt": "Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.",
     "category": "Learn",
     "date": "2026-09-26"
+  },
+  {
+    "slug": "ai-generated-code-bugs",
+    "title": "AI Generated Code Bugs: 8 Patterns That Keep Recurring",
+    "excerpt": "AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.",
+    "category": "Insights",
+    "date": "2026-09-27"
   }
 ]

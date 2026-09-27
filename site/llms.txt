@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [AI Generated Code Bugs: 8 Patterns That Keep Recurring](https://klavity.in/blog/ai-generated-code-bugs) — AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.
 - [Copilot Code Quality: What It Is and How to Verify It](https://klavity.in/blog/copilot-code-quality) — Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.
 - [Best Bug Reporting Tools for Agencies: 2026 Buyer's Guide](https://klavity.in/blog/best-bug-reporting-tools-for-agencies) — The best bug reporting tools for agencies fall into three categories: client feedback capture, error monitoring, and AI QA. Here's which one to start with.
 - [Cursor IDE Testing: How to QA the Code Cursor Writes](https://klavity.in/blog/cursor-ide-testing) — Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist.
