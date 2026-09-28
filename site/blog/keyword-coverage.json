@@ -29,6 +29,7 @@
   },
   "tier-d": {
     "how to reduce cannot reproduce bug reports": "reduce-cannot-reproduce-bug-tickets",
-    "how to write a bug report developers won't hate": "how-to-write-a-bug-report-developers-act-on"
+    "how to write a bug report developers won't hate": "how-to-write-a-bug-report-developers-act-on",
+    "website qa checklist": "website-qa-checklist"
   }
 }

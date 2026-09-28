@@ -733,5 +733,12 @@
     "excerpt": "AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.",
     "category": "Insights",
     "date": "2026-09-27"
+  },
+  {
+    "slug": "website-qa-checklist",
+    "title": "Website QA Checklist: What to Test Before You Launch",
+    "excerpt": "A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list.",
+    "category": "Guides",
+    "date": "2026-09-28"
   }
 ]

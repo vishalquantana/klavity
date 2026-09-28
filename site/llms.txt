@@ -3,6 +3,8 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+
+- [Website QA Checklist: What to Test Before You Launch](https://klavity.in/blog/website-qa-checklist) — A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list.
 - [AI Generated Code Bugs: 8 Patterns That Keep Recurring](https://klavity.in/blog/ai-generated-code-bugs) — AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.
 - [Copilot Code Quality: What It Is and How to Verify It](https://klavity.in/blog/copilot-code-quality) — Copilot code quality is high for boilerplate and weakest on your business rules, auth and edge cases. Here's how to measure and verify it.
 - [Best Bug Reporting Tools for Agencies: 2026 Buyer's Guide](https://klavity.in/blog/best-bug-reporting-tools-for-agencies) — The best bug reporting tools for agencies fall into three categories: client feedback capture, error monitoring, and AI QA. Here's which one to start with.
@@ -110,6 +112,7 @@
 - [How to write a bug report developers will actually act on](https://klavity.in/blog/how-to-write-a-bug-report-developers-act-on) — A bug report gets fixed fast when it carries three things: exact steps, the environment, and evidence (screenshot + console + network). Here's the format.
 
 ## Product
+
 - [Snap — in-app bug reporting](https://klavity.in/snap)
 - [Sims — AI persona testing](https://klavity.in/sims)
 - [AutoSim — self-healing E2E tests](https://klavity.in/autosim)
