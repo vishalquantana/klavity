@@ -1,0 +1,201 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pre-Launch QA Checklist for Web Agencies (Client-Ready) · Klavity</title>
+<meta name="description" content="A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content.">
+<link rel="canonical" href="https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Pre-Launch QA Checklist for Web Agencies (Client-Ready)"><meta property="og:description" content="A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content.">
+<meta property="og:url" content="https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies"><meta property="og:image" content="https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Pre-Launch QA Checklist for Web Agencies (Client-Ready)"><meta name="twitter:description" content="A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content."><meta name="twitter:image" content="https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Pre-Launch QA Checklist for Web Agencies (Client-Ready)","description":"A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content.","datePublished":"2026-09-29","dateModified":"2026-09-29","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies.svg"}},"mainEntityOfPage":"https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Pre-Launch QA Checklist for Web Agencies (Client-Ready)","item":"https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long should a pre-launch QA pass take for a typical agency site?","acceptedAnswer":{"@type":"Answer","text":"Budget it as a named line item, not leftover time. For a small marketing site, a focused pass over the seven gates is usually a matter of hours; for a site with e-commerce, auth, or multiple integrations it is a multi-day activity because each integration needs a live end-to-end test. The useful rule is that QA time scales with the number of paths that can take a client's money or capture a lead, not with page count."}},{"@type":"Question","name":"Who should run pre-launch QA — the developer who built the site or someone else?","acceptedAnswer":{"@type":"Answer","text":"Someone other than the person who wrote the code, wherever your team size allows it. Builders test the paths they had in mind; the bugs that reach clients live on the paths they did not. If you are a solo freelancer and there is no second person, substitute distance: run the checklist on the live staging URL from a different device, a day after you finish building, against the written checklist rather than from memory."}},{"@type":"Question","name":"What is the difference between a pre-launch QA checklist and a release readiness checklist?","acceptedAnswer":{"@type":"Answer","text":"A pre-launch QA checklist asks whether the build is correct. A release readiness checklist asks whether the organisation is ready to ship it — backups, rollback plan, DNS cutover, who is on call, who signs off. Agencies need both, and they run in that order: QA gates the build, readiness gates the launch."}},{"@type":"Question","name":"Should the client do their own QA before launch?","acceptedAnswer":{"@type":"Answer","text":"Client review is valuable for content and brand judgement, and close to useless as a substitute for QA. Clients test happy paths on one browser, and they interpret anything they find as evidence you shipped carelessly. Run your own pass first, then hand them a review scoped to the things only they can judge: copy, imagery, tone, and whether the site says what their business does."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-29</div>
+    <h1>Pre-Launch QA Checklist for Web Agencies (Client-Ready)</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A seven-gate pre-launch QA checklist feeding a verified client handoff">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="80" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="380" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="58" width="300" height="304" rx="16" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="58" width="300" height="304" rx="16" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <rect x="80" y="82" width="120" height="9" rx="4.5" fill="#f5f0e8" opacity="0.4"/>
+
+  <circle cx="92" cy="128" r="11" fill="#4ade80" opacity="0.18"/>
+  <polyline points="87,128 91,132 98,124" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="114" y="123" width="196" height="9" rx="4.5" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="92" cy="166" r="11" fill="#4ade80" opacity="0.18"/>
+  <polyline points="87,166 91,170 98,162" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="114" y="161" width="162" height="9" rx="4.5" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="92" cy="204" r="11" fill="#f87171" opacity="0.2"/>
+  <line x1="88" y1="200" x2="96" y2="208" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="96" y1="200" x2="88" y2="208" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="114" y="199" width="184" height="9" rx="4.5" fill="#f87171" opacity="0.45"/>
+
+  <circle cx="92" cy="242" r="11" fill="#4ade80" opacity="0.18"/>
+  <polyline points="87,242 91,246 98,238" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="114" y="237" width="140" height="9" rx="4.5" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="92" cy="280" r="11" fill="#4ade80" opacity="0.18"/>
+  <polyline points="87,280 91,284 98,276" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="114" y="275" width="176" height="9" rx="4.5" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="92" cy="318" r="11" fill="#6366f1" opacity="0.25"/>
+  <circle cx="92" cy="318" r="4" fill="#6366f1"/>
+  <rect x="114" y="313" width="120" height="9" rx="4.5" fill="#f5f0e8" opacity="0.18"/>
+
+  <path d="M372 210 H436" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M428 202 L438 210 L428 218" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="456" y="96" width="288" height="228" rx="14" fill="#1e1b2e" stroke="#6366f1" stroke-width="1.8"/>
+  <path d="M456 130 H744" stroke="#6366f1" stroke-width="1.4" opacity="0.6"/>
+  <circle cx="478" cy="113" r="5" fill="#f87171" opacity="0.75"/>
+  <circle cx="496" cy="113" r="5" fill="#f5f0e8" opacity="0.35"/>
+  <circle cx="514" cy="113" r="5" fill="#4ade80" opacity="0.7"/>
+  <rect x="540" y="108" width="120" height="10" rx="5" fill="#f5f0e8" opacity="0.14"/>
+
+  <rect x="484" y="156" width="232" height="52" rx="8" fill="#6366f1" opacity="0.16"/>
+  <rect x="502" y="230" width="104" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="502" y="252" width="152" height="9" rx="4.5" fill="#f5f0e8" opacity="0.14"/>
+
+  <circle cx="676" cy="282" r="26" fill="#4ade80" opacity="0.16"/>
+  <circle cx="676" cy="282" r="26" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="664,282 672,291 689,272" fill="none" stroke="#4ade80" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>A pre-launch QA checklist for web agencies is a written pass over seven gates — critical user journeys, forms and integrations, cross-browser, responsive, performance, accessibility, and content — run on the production build before the client ever sees it. What makes it an agency checklist rather than a generic one is that it produces a signed artifact: a dated record of what was checked, on what build, by whom. That record is what protects the invoice when a bug surfaces in week three.</div>
+    <div class="prose"><p>A <strong>pre-launch QA checklist for web agencies</strong> is a written pass over seven gates, run on the production build before the client ever opens the site: critical user journeys, forms and integrations, cross-browser rendering, responsive layout, performance, accessibility, and content accuracy. What separates an agency checklist from a generic testing list is the output — it produces a dated, signed record of what was verified, on which build, by whom. That record is what stands between you and an awkward conversation when a bug surfaces in week three of the warranty period.</p>
+
+<h2>What should a pre-launch QA checklist for web agencies include?</h2>
+<p>Seven gates, in this order. The order matters: each one is cheaper to fix than the one after it is to discover.</p>
+
+<h3>1. Critical user journeys</h3>
+<p>List every path where the client's business outcome happens, then walk each one start to finish as a real user would. For a marketing site that is usually two or three journeys: land on a page, read it, submit the enquiry form. For e-commerce it is browse, add to cart, checkout, receive confirmation. For a product with accounts it is sign up, verify email, log in, do the core action, log out, log back in. A page can render perfectly and still be a dead end.</p>
+
+<h3>2. Forms and integrations, tested live</h3>
+<p>This is the gate agencies fail most often, because forms usually work in staging and then silently break in production. Submit every form with real data and confirm the data arrived where it is supposed to: the inbox, the CRM, the spreadsheet, the webhook endpoint. Check the confirmation the user sees, the notification the client receives, and the spam folder. Then submit each form <em>badly</em> — empty required fields, a malformed email, an oversized file, a double-click on submit — and confirm it fails gracefully rather than losing the lead.</p>
+
+<h3>3. Cross-browser rendering</h3>
+<p>Check the site in Chrome, Safari, and Firefox at minimum, and specifically in Safari on iOS, which has its own rendering and scrolling behaviour and is where a large share of your client's mobile visitors will be. If the client's team runs a browser you do not use daily, check that one too — the worst bug report is the client's managing director finding a broken layout themselves.</p>
+
+<h3>4. Responsive layout at real breakpoints</h3>
+<p>Resizing a desktop window is a smoke test, not a check. Load the site on an actual phone and an actual tablet. Look for the failures that only appear on real devices: horizontal overflow, text overlapping at awkward intermediate widths, tap targets too small or too close together, sticky headers that eat half a small screen, and modals that cannot be dismissed without a mouse.</p>
+
+<h3>5. Performance on the production build</h3>
+<p>Measure the built, deployed site — not a dev server, which has no minification, no CDN, and no real network latency. Run a Lighthouse pass on a throttled mobile profile and look at the largest contentful paint and layout shift, because those are the two a client feels. The usual culprits are the same every time: unoptimised hero images, a font strategy that flashes, and a third-party script added late and never measured.</p>
+
+<h3>6. Accessibility basics</h3>
+<p>Run an automated scan and fix what it finds, then do the three manual checks a scanner cannot make: tab through the whole page and confirm you can reach and operate everything with the keyboard, confirm the focus ring is visible, and confirm images carry alt text that describes the image rather than repeating the filename. For clients in the public sector, education, healthcare, or finance, accessibility is often a contractual requirement rather than a nice-to-have — check the contract before you assume it is optional.</p>
+
+<h3>7. Content and metadata</h3>
+<p>The gate that causes the most embarrassment per unit of effort. Hunt for placeholder text, lorem ipsum, stock images that were meant to be replaced, the developer's own email address in a mailto link, and last year's copyright year. Then check the things that are invisible on the page but very visible everywhere else: page titles and meta descriptions, the Open Graph image that renders when the client shares the site on LinkedIn, the favicon, the 404 page, and whether robots.txt and the noindex tags from staging were removed.</p>
+
+<h2>Which checks should be automated and which stay manual?</h2>
+<p>The dividing line is stability. Automate the checks whose expected answer never changes; keep human judgement for the checks that need taste.</p>
+<table>
+<thead><tr><th>Check</th><th>Best handled by</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Critical journeys (signup, checkout)</td><td>Automated E2E</td><td>Same steps every release; expensive to miss</td></tr>
+<tr><td>Form submission reaches destination</td><td>Automated, with a live assertion</td><td>Silently breaks on config changes</td></tr>
+<tr><td>Broken links, missing meta tags</td><td>Automated crawler</td><td>Purely mechanical</td></tr>
+<tr><td>Accessibility rule violations</td><td>Automated scan, then manual keyboard pass</td><td>Scanners catch rule violations, not usability barriers</td></tr>
+<tr><td>Visual polish, spacing, brand fit</td><td>Manual</td><td>Requires judgement</td></tr>
+<tr><td>Copy accuracy and tone</td><td>Manual, ideally the client</td><td>Only they know their business</td></tr>
+<tr><td>Does this feel finished?</td><td>Manual</td><td>No tool has this opinion</td></tr>
+</tbody>
+</table>
+<p>If the site was largely assembled with an AI coding tool, weight the manual side more heavily than you would for hand-written code. AI-generated code tends to be locally plausible and globally inconsistent — each component looks right in isolation while the seams between them do not line up. Our guide to <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> covers where those seams usually split.</p>
+
+<h2>How does an agency turn the checklist into a client-facing artifact?</h2>
+<p>This is the part most checklists leave out, and it is the part that earns its keep commercially. A QA pass nobody can point to later is indistinguishable from no QA pass at all.</p>
+<ul>
+<li><strong>Record the build, not the date.</strong> Note the commit hash or deploy ID you tested. "QA passed on the 12th" is worthless if three deploys went out that afternoon.</li>
+<li><strong>Name the person who ran each gate.</strong> Accountability makes the checklist real. An unsigned checklist gets skimmed.</li>
+<li><strong>List known-and-accepted issues explicitly.</strong> Every launch ships with something imperfect. Writing it down converts a future complaint into a decision the client already agreed to.</li>
+<li><strong>Attach it to the handoff.</strong> Put it in the same place as the credentials and the documentation, so it is part of the deliverable rather than an internal note.</li>
+<li><strong>State what was not tested.</strong> Load at scale, third-party systems you do not control, and anything behind a client-owned credential you never received. Silence on these reads as a claim you tested them.</li>
+</ul>
+
+<h2>What does a pre-launch checklist not protect you from?</h2>
+<p>Three things, and being honest about them with yourself is what keeps the checklist from becoming theatre.</p>
+<p><strong>Everything that happens after launch.</strong> A pre-launch pass certifies one build at one moment. The content editor who pastes a 4 MB image into the hero next Tuesday is outside its scope entirely. Most client-reported bugs arrive weeks after launch, on changes nobody tested, which is why post-launch reporting matters as much as pre-launch checking.</p>
+<p><strong>The paths you did not think to list.</strong> Your journey list reflects your mental model of the site. Real users take routes you never imagined — back button mid-checkout, two tabs open, a stale session, a link from an email opened six days later. This is the gap <a href="/sims">AI persona testing</a> is built for: simulated users with different intents exercise paths a checklist author would not write down.</p>
+<p><strong>The report quality when a bug does appear.</strong> If the client's feedback channel is a WhatsApp message saying "the form is broken," you will lose an hour reproducing it before you can start fixing. Give them a way to report that captures the URL, the browser, the console, and the network state in one action — <a href="/snap">Snap</a> does this from a right-click — and your first reply is a fix instead of a question. Our guide on <a href="/blog/reduce-cannot-reproduce-bug-tickets">reducing 'cannot reproduce' tickets</a> goes through the four kinds of state you need.</p>
+
+<h2>Where should you start if you have no checklist today?</h2>
+<p>Do not write a hundred-item document you will abandon on the second project. Start with the two gates that cause the most client-visible damage: walk the critical journeys on the production build, and submit every form with real data and confirm it arrived. Then add one gate per project until all seven are routine, and keep the checklist in version control next to the code so it improves with every launch instead of resetting.</p>
+<p>For the organisational side of shipping — rollback, DNS, on-call, sign-off — pair this with our <a href="/blog/release-readiness-checklist-pre-launch-qa">release readiness checklist</a>. For a broader view of where automated QA fits into agency delivery, start with the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Find the bugs before your client does</h2>
+<p>A checklist tells you what to look at. Klavity tells you what is broken: Snap turns a client's right-click into a reproducible bug report with console and network state attached, Sims runs AI personas through the journeys your checklist never listed, and AutoSim keeps your E2E tests passing as the site changes. <a href="/onboarding">Scan your next client site free</a> — no credit card, no sales call.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Run the checklist on the production build, not on localhost or a stale staging copy.</li><li>Test every path that takes money or captures a lead end to end, with a real submission.</li><li>Give the client a scoped content review, never the QA pass itself.</li><li>Ship the checklist as a dated, signed artifact attached to the handoff.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How long should a pre-launch QA pass take for a typical agency site?</summary><p>Budget it as a named line item, not leftover time. For a small marketing site, a focused pass over the seven gates is usually a matter of hours; for a site with e-commerce, auth, or multiple integrations it is a multi-day activity because each integration needs a live end-to-end test. The useful rule is that QA time scales with the number of paths that can take a client's money or capture a lead, not with page count.</p></details><details><summary>Who should run pre-launch QA — the developer who built the site or someone else?</summary><p>Someone other than the person who wrote the code, wherever your team size allows it. Builders test the paths they had in mind; the bugs that reach clients live on the paths they did not. If you are a solo freelancer and there is no second person, substitute distance: run the checklist on the live staging URL from a different device, a day after you finish building, against the written checklist rather than from memory.</p></details><details><summary>What is the difference between a pre-launch QA checklist and a release readiness checklist?</summary><p>A pre-launch QA checklist asks whether the build is correct. A release readiness checklist asks whether the organisation is ready to ship it — backups, rollback plan, DNS cutover, who is on call, who signs off. Agencies need both, and they run in that order: QA gates the build, readiness gates the launch.</p></details><details><summary>Should the client do their own QA before launch?</summary><p>Client review is valuable for content and brand judgement, and close to useless as a substitute for QA. Clients test happy paths on one browser, and they interpret anything they find as evidence you shipped carelessly. Run your own pass first, then hand them a review scoped to the things only they can judge: copy, imagery, tone, and whether the site says what their business does.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

@@ -740,5 +740,12 @@
     "excerpt": "A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list.",
     "category": "Guides",
     "date": "2026-09-28"
+  },
+  {
+    "slug": "pre-launch-qa-checklist-for-web-agencies",
+    "title": "Pre-Launch QA Checklist for Web Agencies (Client-Ready)",
+    "excerpt": "A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content.",
+    "category": "Guides",
+    "date": "2026-09-29"
   }
 ]
