@@ -159,6 +159,41 @@ describe("viewport-first capture — app-shell blank fix (founder P1, PX4)", () 
   })
 })
 
+describe("KD-Snap-tab-permission: viewportCaptureSize must trust window dimensions, not the larger of two sources", () => {
+  // Real bug: viewportCaptureSize() took Math.max(window.innerHeight, documentElement.clientHeight).
+  // clientHeight is SUPPOSED to equal the viewport height for the root element, but on a quirks-mode
+  // page (missing/invalid DOCTYPE — the widget is embedded on arbitrary THIRD-PARTY customer pages, it
+  // cannot assume standards mode) or any layout where the root's client box isn't viewport-clamped,
+  // clientHeight can report something close to the FULL CONTENT height instead. Math.max then always
+  // picks that larger, wrong value — so "viewport capture" silently requests a full-page-sized render,
+  // which is exactly what was reported as "Snap capturing the full page". fullPageCaptureSize()
+  // correctly wants the LARGEST available height (to capture everything); viewportCaptureSize() must
+  // do the opposite — trust window.innerHeight/innerWidth and only fall back to the document's client
+  // box when the window dimension is truly unavailable (0), never take the larger of the two.
+  const setClient = (el: HTMLElement, w: number, h: number) => {
+    Object.defineProperty(el, "clientWidth", { configurable: true, value: w })
+    Object.defineProperty(el, "clientHeight", { configurable: true, value: h })
+  }
+
+  it("uses window.innerHeight/innerWidth even when documentElement.clientHeight/clientWidth report a much larger (quirks-mode-like) value", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 })
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 })
+    setClient(document.documentElement, 1280, 9000) // e.g. quirks mode: clientHeight ≈ full content height
+    const { width, height } = viewportCaptureSize()
+    expect(height).toBe(800)
+    expect(width).toBe(1280)
+  })
+
+  it("still falls back to documentElement's client box when window dimensions are truly unavailable", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 0 })
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 0 })
+    setClient(document.documentElement, 1024, 768)
+    const { width, height } = viewportCaptureSize()
+    expect(width).toBe(1024)
+    expect(height).toBe(768)
+  })
+})
+
 describe("KD-Snap-tab-permission: viewport capture reflects the CURRENT scroll position", () => {
   // Root cause (confirmed from modern-screenshot's own source): domToPng clones the DOM and renders it
   // from scroll position (0,0) by default — `restoreScrollPosition` (their name for "render scrolled

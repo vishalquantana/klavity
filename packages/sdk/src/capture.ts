@@ -873,9 +873,17 @@ export function viewportCaptureSize(): { width: number; height: number } {
   const viewportW = typeof window !== "undefined" ? (window.innerWidth || 0) : 0
   const viewportH = typeof window !== "undefined" ? (window.innerHeight || 0) : 0
   const doc = typeof document !== "undefined" ? document.documentElement : null
+  // KD-Snap-tab-permission: TRUST window.innerWidth/innerHeight — the unambiguous viewport size in every
+  // browser — and only fall back to documentElement's client box when the window dimension is truly
+  // unavailable (0). Previously this took Math.max() of the two, which is correct for fullPageCaptureSize
+  // (which WANTS the largest available height, to capture everything) but wrong here: on a page the
+  // widget doesn't control the markup of (quirks mode — missing/invalid DOCTYPE — or any layout where the
+  // root's client box isn't viewport-clamped), documentElement.clientHeight can report something close to
+  // the full CONTENT height instead of the viewport, and Math.max always picked that larger, wrong value
+  // — silently turning "viewport capture" into a full-page-sized render.
   return {
-    width: Math.max(viewportW, doc?.clientWidth ?? 0, 1),
-    height: Math.max(viewportH, doc?.clientHeight ?? 0, 1),
+    width: viewportW || doc?.clientWidth || 1,
+    height: viewportH || doc?.clientHeight || 1,
   }
 }
 
