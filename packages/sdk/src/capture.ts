@@ -686,7 +686,7 @@ export type WidgetCaptureQuality = "rendered" | "wireframe"
  */
 export async function safeToPngWithScale(
   node: HTMLElement,
-  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean; width?: number; height?: number } = {},
+  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean; width?: number; height?: number; restoreScrollPosition?: boolean } = {},
 ): Promise<{ dataUrl: string; scale: number; quality: WidgetCaptureQuality; blank: boolean; partial: boolean; skippedImages: number }> {
   let skipped = 0
   const callerFilter = opts.filter
@@ -725,10 +725,17 @@ export async function safeToPngWithScale(
     //       (skip the doomed native re-fetch → no CSP spam) and still steer the reporter to Screen for a
     //       truly pixel-perfect shot. The fast viewport preview (skipFonts) also uses `font:false`.
     const fontOption = (!opts.skipFonts && fontEmbed.cssText) ? { cssText: fontEmbed.cssText } : false as const
+    // KD-Snap-tab-permission: modern-screenshot clones the DOM and renders it from scroll position (0,0)
+    // by DEFAULT — its own `restoreScrollPosition` feature (off by default) is what makes a scrolled
+    // element's clone render AS scrolled. Without it, a viewport-sized capture always shows the TOP of
+    // the page, never wherever the reporter has actually scrolled to. Full-page/region-source renders
+    // must NOT enable this — they intentionally capture the whole document from its natural top-to-bottom
+    // layout regardless of scroll (Region crops the scroll offset out separately via cumulativeScrollForRect).
     const out = await withTimeout(domToPng(node, {
       scale: pixelRatio,
       ...(explicitSize ?? {}),
       font: fontOption,
+      ...(opts.restoreScrollPosition ? { features: { restoreScrollPosition: true } } : {}),
       onCloneEachNode: (cloned: Node) => blankUnrenderableIconGlyphs(cloned, fontEmbed.embeddedFamilies),
       maximumCanvasSize: MAX_CAPTURE_CANVAS_EDGE,
       fetch: { placeholderImage: TRANSPARENT_PIXEL },
@@ -866,9 +873,17 @@ export function viewportCaptureSize(): { width: number; height: number } {
   const viewportW = typeof window !== "undefined" ? (window.innerWidth || 0) : 0
   const viewportH = typeof window !== "undefined" ? (window.innerHeight || 0) : 0
   const doc = typeof document !== "undefined" ? document.documentElement : null
+  // KD-Snap-tab-permission: TRUST window.innerWidth/innerHeight — the unambiguous viewport size in every
+  // browser — and only fall back to documentElement's client box when the window dimension is truly
+  // unavailable (0). Previously this took Math.max() of the two, which is correct for fullPageCaptureSize
+  // (which WANTS the largest available height, to capture everything) but wrong here: on a page the
+  // widget doesn't control the markup of (quirks mode — missing/invalid DOCTYPE — or any layout where the
+  // root's client box isn't viewport-clamped), documentElement.clientHeight can report something close to
+  // the full CONTENT height instead of the viewport, and Math.max always picked that larger, wrong value
+  // — silently turning "viewport capture" into a full-page-sized render.
   return {
-    width: Math.max(viewportW, doc?.clientWidth ?? 0, 1),
-    height: Math.max(viewportH, doc?.clientHeight ?? 0, 1),
+    width: viewportW || doc?.clientWidth || 1,
+    height: viewportH || doc?.clientHeight || 1,
   }
 }
 
@@ -896,6 +911,8 @@ export async function safeToPngViewport(
 ): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean; partial: boolean }> {
   const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
   const { width, height } = viewportCaptureSize()
-  const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, { ...opts, width, height, skipFonts: true })
+  // KD-Snap-tab-permission: restoreScrollPosition:true makes this render reflect the CURRENT scroll
+  // position instead of always showing the top of the page — see safeToPngWithScale for why.
+  const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, { ...opts, width, height, skipFonts: true, restoreScrollPosition: true })
   return { dataUrl, quality, blank, partial }
 }
