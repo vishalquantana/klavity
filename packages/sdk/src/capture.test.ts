@@ -158,3 +158,24 @@ describe("viewport-first capture — app-shell blank fix (founder P1, PX4)", () 
     expect(blank).toBe(true)
   })
 })
+
+describe("KD-Snap-tab-permission: viewport capture reflects the CURRENT scroll position", () => {
+  // Root cause (confirmed from modern-screenshot's own source): domToPng clones the DOM and renders it
+  // from scroll position (0,0) by default — `restoreScrollPosition` (their name for "render scrolled
+  // content as scrolled") defaults to FALSE. Without it, a viewport-sized render always shows the TOP of
+  // the page, never wherever the reporter has actually scrolled to — which is what both the initial
+  // on-open capture and the Snap button need, since they both call safeToPngViewport.
+  it("safeToPngViewport enables restoreScrollPosition so the render reflects where the reporter has scrolled to", async () => {
+    ;(domToPng as unknown as ReturnType<typeof vi.fn>).mockClear()
+    await safeToPngViewport()
+    const opts = (domToPng as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as { features?: unknown }
+    expect(opts.features).toMatchObject({ restoreScrollPosition: true })
+  })
+
+  it("safeToPngFullPage does NOT enable restoreScrollPosition — the whole document must render top-to-bottom from its natural layout", async () => {
+    ;(domToPng as unknown as ReturnType<typeof vi.fn>).mockClear()
+    await safeToPngFullPage({ skipFonts: true })
+    const opts = (domToPng as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as { features?: unknown }
+    expect(opts.features).toBeUndefined()
+  })
+})
