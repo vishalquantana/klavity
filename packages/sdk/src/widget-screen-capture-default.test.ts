@@ -147,6 +147,33 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     expect(cropModule.cropDataUrl).not.toHaveBeenCalled()
   })
 
+  // KD-Snap-tab-permission (follow-up #3): calling the onCaptureFull CALLBACK directly (as the two tests
+  // above do) does NOT exercise modal.ts's real "Full Page" button — its click handler (KLA-587's owner
+  // directive) tries runScreenCapture() FIRST whenever onCaptureSharp is wired, and only falls through to
+  // onCaptureFull if that "failed". Historically onCaptureSharp meant real getDisplayMedia pixels, so a
+  // successful result WAS an acceptable Full-Page substitute. Now that onCaptureSharp is a viewport-only
+  // DOM crop (never throws, never declines), that early-return would ALWAYS fire — meaning a REAL click on
+  // "Full Page" would silently capture only the viewport, never reaching onCaptureFull at all. This drives
+  // the ACTUAL composer DOM (not the callback in isolation) to prove the real button still reaches the
+  // real full-page path.
+  it("clicking the REAL Full Page button in the composer still reaches onCaptureFull, not just Snap's viewport crop", async () => {
+    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
+    await mountAndOpen()
+
+    let composerShadow: ShadowRoot | null = null
+    for (const el of Array.from(document.body.querySelectorAll("div")) as HTMLElement[]) {
+      if (el.shadowRoot?.getElementById("klavity-full")) { composerShadow = el.shadowRoot; break }
+    }
+    if (!composerShadow) throw new Error("composer shadow root with #klavity-full not found")
+    const fullBtn = composerShadow.getElementById("klavity-full") as HTMLButtonElement
+    fullBtn.click()
+    // Full Page now does one wasted "try Screen first" pass (captureCurrentViewport, non-real-pixel, so it
+    // falls through) before reaching its own real capture — slower than a single pass, needs a longer wait.
+    await new Promise((r) => setTimeout(r, 500))
+
+    expect(fullPageSpy).toHaveBeenCalled()
+  })
+
   it("does not wire Retake-sharp (no real-pixel shot exists to redo)", async () => {
     await mountAndOpen()
     expect(capturedCallbacks.onRetakeSharp).toBeUndefined()
