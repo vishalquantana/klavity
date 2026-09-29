@@ -1385,13 +1385,16 @@ async function mount() {
         // composer; we no longer auto-invoke getDisplayMedia here (it surprised users with a share prompt).
         return await captureRegionCrop(rect)
       },
-      // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images) +
-      // scroll-stitch to a full-page image. Feature-detected — undefined on iOS Safari (no getDisplayMedia),
-      // where the modal hides the Sharp button and users fall back to the html-to-image "Full Page" above.
-      // Tagged 'real-pixel' so its thumbnail shows the sharp badge and no retake.
-      onCaptureSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }) : undefined,
-      // KLA composer-polish: viewport-scoped real-pixel Screen frame for the on-open DEFAULT capture (single
-      // visible frame, no scroll-stitch → not a tall full-page image). The manual Screen button still stitches.
+      // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images).
+      // Feature-detected — undefined on iOS Safari (no getDisplayMedia), where the modal hides the Sharp
+      // button and users fall back to the html-to-image "Full Page" above. Tagged 'real-pixel' so its
+      // thumbnail shows the sharp badge and no retake.
+      //
+      // KD-Snap-tab-permission: the manual Snap button now grabs the SAME single VIEWPORT-scoped frame as
+      // the on-open default (captureSharpViewport) — "whatever's currently on screen", not the full-page
+      // scroll-stitch (captureSharpFullPage) it used to run. Full Page keeps its own separate full-page
+      // capture (onCaptureFull) untouched.
+      onCaptureSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }) : undefined,
       onCaptureSharpViewport: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }) : undefined,
       // JTBD 1.9 + KLA-621: "Retake" on a degraded thumbnail redoes the SAME selection it came from, cropped
       // pixel-perfect from the shared Snap frame — a Region shot re-crops its rect; a Pick-element shot re-crops
