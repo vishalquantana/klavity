@@ -3289,9 +3289,17 @@ export function buildModal(
     // is preserved. It falls back (returns false) ONLY when Screen capture is unavailable (iOS Safari, no
     // onCaptureSharp) or the user declines / loses the share gesture — in which case we drop to the fast DOM
     // render below so the user still gets a shot (with the usual suggestSharp nudge).
+    //
+    // KD-Snap-tab-permission: this short-circuit is ONLY a valid Full-Page substitute when it actually got
+    // REAL PIXELS (quality:'real-pixel') — the historical getDisplayMedia case this directive was written
+    // for. A host whose onCaptureSharp is just a plain (never-declining) DOM render — e.g. Snap capture
+    // with getDisplayMedia disabled — would otherwise ALWAYS "succeed" here and silently replace Full
+    // Page's own full-page render with Snap's viewport-scoped one. Gating on quality keeps existing hosts
+    // (real getDisplayMedia) byte-for-byte unchanged while letting a non-real-pixel onCaptureSharp fall
+    // through to the real onCaptureFull below, same as an unwired/declined Screen capture always has.
     if (callbacks.onCaptureSharp) {
-      const added = await runScreenCapture()
-      if (added) return
+      const result = await runScreenCapture()
+      if (result.added && result.quality === 'real-pixel') return
     }
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
@@ -3314,16 +3322,19 @@ export function buildModal(
   // KLA-587: shared "capture via real Screen (getDisplayMedia)" runner — used by BOTH the Screen button
   // (manual click) and the on-open DEFAULT capture (founder decision). Hides the composer so it isn't in the
   // shot, fires onCaptureSharp (which calls getDisplayMedia as its FIRST step so the click's/opening user
-  // gesture is preserved), and adds the resulting real-pixel shot. Returns true when a shot was added; false
-  // on a user DECLINE / lost-gesture / unsupported / empty result so the caller can fall back to a rendered
-  // capture. NEVER surfaces an error for a decline — the fallback is silent (per the founder decision).
-  async function runScreenCapture(opts?: { viewport?: boolean }): Promise<boolean> {
+  // gesture is preserved), and adds the resulting real-pixel shot. Returns `added:true` (+ the shot's
+  // quality) when a shot was added; `added:false` on a user DECLINE / lost-gesture / unsupported / empty
+  // result so the caller can fall back to a rendered capture. NEVER surfaces an error for a decline — the
+  // fallback is silent (per the founder decision). KD-Snap-tab-permission: `quality` on the result lets
+  // fullBtn's click handler tell an ACTUAL real-pixel capture apart from a host whose onCaptureSharp is
+  // just a plain (never-declining) DOM render — see that call site.
+  async function runScreenCapture(opts?: { viewport?: boolean }): Promise<{ added: boolean; quality?: CaptureQuality }> {
     // KLA composer-polish: the on-open DEFAULT capture asks for the VIEWPORT-scoped Screen frame (single
     // visible frame, no scroll-stitch) when the host wired onCaptureSharpViewport; the manual Screen button
     // asks for the full-page onCaptureSharp. Falls back to onCaptureSharp when the viewport variant isn't
     // wired (e.g. the extension), so no host regresses.
     const capFn = (opts?.viewport && callbacks.onCaptureSharpViewport) ? callbacks.onCaptureSharpViewport : callbacks.onCaptureSharp
-    if (busy || !capFn || !sharpBtn) return false // re-entrancy / not wired
+    if (busy || !capFn || !sharpBtn) return { added: false } // re-entrancy / not wired
     // The "Screen" word lives in its own span so the "Capturing…" state never clobbers the icon or the (i).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
     lockComposer(true)
@@ -3333,6 +3344,7 @@ export function buildModal(
     const orig = target.textContent
     target.textContent = 'Capturing…'
     let added = false
+    let addedQuality: CaptureQuality | undefined
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       let shot: CaptureResult | undefined
@@ -3341,7 +3353,10 @@ export function buildModal(
       if (shot) {
         const { dataUrl, quality } = normalizeCapture(shot)
         // KLA-621: tag the sharp shot's mode (viewport vs full-page) so Retake redoes the SAME mode.
-        if (dataUrl) { addScreenshot(dataUrl, quality ?? 'real-pixel', undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true; shareCaptureSucceeded = true /* snap-share-hint: they've shared once → stop nudging */ }
+        if (dataUrl) {
+          addedQuality = quality ?? 'real-pixel'
+          addScreenshot(dataUrl, addedQuality, undefined, true, false, { kind: opts?.viewport ? 'viewport' : 'full' }); setActiveCapture(sharpBtn); added = true; shareCaptureSucceeded = true /* snap-share-hint: they've shared once → stop nudging */
+        }
       }
     } catch (err) {
       // A cancelled picker or a spent user-gesture rejects as NotAllowedError|AbortError — an expected outcome
@@ -3360,7 +3375,7 @@ export function buildModal(
       sharpBtn.classList.remove('kl-loading')
       lockComposer(false)
     }
-    return added
+    return { added, quality: addedQuality }
   }
   if (sharpBtn && callbacks.onCaptureSharp) {
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
@@ -4648,8 +4663,8 @@ export function buildModal(
         void (async () => {
           // KLA composer-polish (founder PX4 repro): the DEFAULT on-open Screen capture is VIEWPORT-scoped —
           // a single visible frame, NOT the full-page scroll-stitch. The manual Screen button stays full-page.
-          const ok = await runScreenCapture({ viewport: true })
-          if (ok) { capturing = false; updateStrip(); return }
+          const { added } = await runScreenCapture({ viewport: true })
+          if (added) { capturing = false; updateStrip(); return }
           if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
           // Silent fallback → rendered viewport (or full render where no viewport path is wired).
           capturing = true; updateStrip()

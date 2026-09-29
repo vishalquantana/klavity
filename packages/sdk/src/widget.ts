@@ -1,7 +1,7 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
-import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
+import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
@@ -71,6 +71,31 @@ export async function captureRegionCrop(rect: Rect, opts?: { forceSnap?: boolean
   const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
   const { width, height } = fullPageCaptureSize()
   const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(node, { filter: notKlavityChrome, width, height })
+  const { scrollX, scrollY } = cumulativeScrollForRect(rect)
+  let cropped: string
+  let degenerate = false
+  try {
+    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale, { strict: true })
+  } catch {
+    degenerate = true
+    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale)
+  }
+  const suggestSharp = (!!(blank || partial || degenerate) || hasUncapturableEmbeds()) && sharpCaptureSupported()
+  return { dataUrl: cropped, quality, suggestSharp }
+}
+
+// KD-Snap-tab-permission: "Snap" = capture exactly what's on screen RIGHT NOW. It is NOT
+// safeToPngViewport (KLA-509's fast above-the-fold PREVIEW, which always renders from scrollY=0 —
+// correct for a first-paint placeholder, wrong for "Snap" once the reporter has scrolled). Instead this
+// renders the FULL page (same source captureRegionCrop uses) and crops out the rect that's currently
+// visible, at the CURRENT window scroll offset — same crop mechanism as a Region selection, just with
+// the rect pinned to the whole viewport instead of a dragged box. Deliberately does not touch
+// getDisplayMedia/snapCropForRect — this must never prompt.
+async function captureCurrentViewport(): Promise<{ dataUrl: string; quality: CaptureQuality; suggestSharp: boolean }> {
+  const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
+  const { width, height } = fullPageCaptureSize()
+  const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(node, { filter: notKlavityChrome, width, height })
+  const rect: Rect = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }
   const { scrollX, scrollY } = cumulativeScrollForRect(rect)
   let cropped: string
   let degenerate = false
@@ -1284,30 +1309,9 @@ async function mount() {
   // Wait for the (non-blocking) config to settle so launcherMode is final before deciding to show it.
   try { Promise.resolve(configReady).then(() => setTimeout(() => { try { showFabIntro() } catch { /* non-fatal */ } }, 800)).catch(() => {}) } catch { /* non-fatal */ }
 
-  // ── snap-share-hint: on FAB hover, preview the browser's "Allow … to see this tab?" dialog so the reporter
-  // knows the upcoming system prompt and to click Allow. Only when screen-share is supported + not yet granted,
-  // and never stacked on the first-run intro. Auto-suppressed once they've shared once (localStorage flag).
-  if (sharpCaptureSupported()) {
-    let fabShareHint: HTMLElement | null = null
-    let fabHover = false
-    const sharedBefore = () => { try { return localStorage.getItem("klavity_share_ok") === "1" } catch { return false } }
-    reportBtn.addEventListener("mouseenter", async () => {
-      fabHover = true
-      if (sharedBefore() || introEl || launcherMode === "hidden") return
-      if (await shareCaptureLikelyGranted()) return
-      if (!fabHover) return // pointer left during the async permission check
-      if (!fabShareHint) {
-        fabShareHint = createSharePickerHint({
-          title: "Report an issue with a screenshot",
-          steer: "When the dialog appears, just click Allow so we can capture the issue.",
-        })
-        fabShareHint.style.right = "0"; fabShareHint.style.bottom = "56px" // above the 44px FAB, right-aligned
-        reportDock.appendChild(fabShareHint)
-      }
-      requestAnimationFrame(() => { if (fabHover && fabShareHint) fabShareHint.classList.add("kl-show") })
-    })
-    reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
-  }
+  // KD-Snap-tab-permission: the FAB's on-hover "snap-share-hint" preview (priming the reporter for the
+  // upcoming getDisplayMedia prompt) is removed — getDisplayMedia-based capture is disabled entirely, so
+  // that dialog never appears and the hint would just be a wrong promise.
 
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
@@ -1355,12 +1359,11 @@ async function mount() {
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
-      // KLA-587 (founder decision, 2026-08-25 — REVERSES the #460/#473 "no auto-prompt" stance): real Screen
-      // capture (getDisplayMedia) is the ACTUAL default capture on open. Feature-detected — false on iOS Safari
-      // (no getDisplayMedia) so the rendered viewport stays the default there. The composer fires the share
-      // picker chained to the opening gesture; on decline/lost-gesture it silently falls back to the rendered
-      // viewport capture and leaves Screen as the primed one-tap primary button. The founder wants this prompt.
-      screenCaptureDefault: sharpCaptureSupported(),
+      // KD-Snap-tab-permission: reverts KLA-587's auto-prompt default (2026-08-25 founder decision).
+      // Real Screen capture (getDisplayMedia) fired its browser permission prompt on every composer
+      // open, which is no longer wanted. The rendered viewport/full-page capture (no permission
+      // prompt) is the default again.
+      screenCaptureDefault: false,
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
       // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
@@ -1385,45 +1388,20 @@ async function mount() {
         // composer; we no longer auto-invoke getDisplayMedia here (it surprised users with a share prompt).
         return await captureRegionCrop(rect)
       },
-      // Sharp capture: real tab pixels via getDisplayMedia (no CORS issues, captures cross-origin images).
-      // Feature-detected — undefined on iOS Safari (no getDisplayMedia), where the modal hides the Sharp
-      // button and users fall back to the html-to-image "Full Page" above. Tagged 'real-pixel' so its
-      // thumbnail shows the sharp badge and no retake.
-      //
-      // KD-Snap-tab-permission: the manual Snap button now grabs the SAME single VIEWPORT-scoped frame as
-      // the on-open default (captureSharpViewport) — "whatever's currently on screen", not the full-page
-      // scroll-stitch (captureSharpFullPage) it used to run. Full Page keeps its own separate full-page
-      // capture (onCaptureFull) untouched.
-      onCaptureSharp: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }) : undefined,
-      onCaptureSharpViewport: sharpCaptureSupported() ? async () => ({ dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }) : undefined,
-      // JTBD 1.9 + KLA-621: "Retake" on a degraded thumbnail redoes the SAME selection it came from, cropped
-      // pixel-perfect from the shared Snap frame — a Region shot re-crops its rect; a Pick-element shot re-crops
-      // that element (re-resolved LIVE from its selector so it survives scroll/layout shifts, rect as fallback);
-      // a viewport shot redoes the viewport frame; a full/unknown shot redoes the full-page stitch. It must NOT
-      // collapse to a full-screen grab and lose the selection (the founder's disconnect). Only wired when the
-      // browser supports getDisplayMedia (no retake affordance on iOS Safari).
-      onRetakeSharp: sharpCaptureSupported() ? async (capture?: ShotCapture) => {
-        if (capture && (capture.kind === "region" || capture.kind === "element")) {
-          // Re-resolve the picked element's live rect from its selector; fall back to the stored rect.
-          let rect: Rect | undefined = capture.rect
-          if (capture.kind === "element" && capture.selector) {
-            try {
-              const el = document.querySelector(capture.selector)
-              if (el) { const r = el.getBoundingClientRect(); if (r.width >= 1 && r.height >= 1) rect = { x: r.left, y: r.top, w: r.width, h: r.height } }
-            } catch { /* stale selector → use the stored rect */ }
-          }
-          if (rect) {
-            const snap = await snapCropForRect(rect)
-            // Prefer the shared-frame crop; even a declined Snap falls back to the DOM-render crop of the SAME
-            // rect (still the selection), never a full-screen grab.
-            if (snap) return { dataUrl: snap, quality: "real-pixel" as const }
-            const dom = await captureRegionCrop(rect)
-            return { dataUrl: dom.dataUrl, quality: dom.quality, suggestSharp: dom.suggestSharp }
-          }
-        }
-        if (capture && capture.kind === "viewport") return { dataUrl: await captureSharpViewport(), quality: "real-pixel" as const }
-        return { dataUrl: await captureSharpFullPage(), quality: "real-pixel" as const }
-      } : undefined,
+      // KD-Snap-tab-permission: getDisplayMedia-based capture is fully disabled — Chrome ALWAYS shows its
+      // native screen-share prompt for getDisplayMedia, with no way for site code to suppress it, and the
+      // "Snap" button's own click handler (runScreenCapture in modal.ts) plus Full Page's "try Screen
+      // first" step (same function) both call straight into getDisplayMedia whenever onCaptureSharp is
+      // wired. But the "Snap" button (id="klavity-sharp") only RENDERS AT ALL when onCaptureSharp is
+      // truthy (see modal.ts's composer template) — leaving it `undefined` would make the button
+      // disappear entirely, which is not what's wanted. So it stays wired, but points at
+      // captureCurrentViewport() — "Snap" means "capture exactly what I'm currently looking at"
+      // (scroll-position aware), the same non-prompting DOM-render path the on-open default already
+      // uses. onRetakeSharp stays undefined — the "Retake" affordance is separately template-gated on
+      // it and only ever existed to redo a real-pixel shot, which no longer exists.
+      onCaptureSharp: captureCurrentViewport,
+      onCaptureSharpViewport: captureCurrentViewport,
+      onRetakeSharp: undefined,
       // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal
       // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector
       // pinned to the report as annotations.selector (the server sanitizer + ticket drawer already read it).
