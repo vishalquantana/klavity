@@ -3,11 +3,14 @@
 // composer action — not on open (KLA-587 made real Screen capture the default there), not on the manual
 // Snap button, not on Full Page's own "try Screen first" step (2026-08-26 owner directive), not on Retake.
 // getDisplayMedia-based capture is fully disabled: screenCaptureDefault is unconditionally false, and
-// onCaptureSharp/onCaptureSharpViewport are wired to captureCurrentViewport() — the same non-prompting,
-// scroll-position-aware DOM-render crop used everywhere else — so the "Snap" button (id="klavity-sharp")
-// stays visible (the composer only renders it when onCaptureSharp is wired) and behaves exactly like the
-// on-open default. onRetakeSharp stays undefined (it only ever existed to redo a real-pixel shot, which
-// no longer exists). Full Page (onCaptureFull/onCaptureViewport) is untouched.
+// onCaptureSharp/onCaptureSharpViewport are wired to safeToPngViewport() — the EXACT SAME proven,
+// production-verified function the on-open default (onCaptureViewport) already uses to capture just the
+// visible screen — so the "Snap" button (id="klavity-sharp") stays visible (the composer only renders it
+// when onCaptureSharp is wired) and behaves exactly like the on-open default. An earlier attempt used a
+// full-page-render-then-crop approach to be scroll-position aware, but that was slower and produced a
+// wrong/undersized result in production — safeToPngViewport alone is what's actually proven correct.
+// onRetakeSharp stays undefined (it only ever existed to redo a real-pixel shot, which no longer exists).
+// Full Page (onCaptureFull/onCaptureViewport) is untouched.
 //
 // Uses the same buildModal-capture harness as widget-enhance.test.ts to avoid driving the whole
 // composer UI (autocapture/getDisplayMedia timing) while still exercising the real widget wiring.
@@ -24,18 +27,10 @@ vi.mock("./widget-lib", async () => {
   const actual = await vi.importActual<typeof import("./widget-lib")>("./widget-lib")
   return { ...actual, parseScriptConfig: vi.fn(() => ({ projectId: "", backendUrl: "" })) }
 })
-// Passthrough mock so we can spy on which capture function Snap actually calls (viewport vs full-page)
-// without losing the real capture behavior other tests in this file rely on.
+// Passthrough mock so we can spy on which capture function Snap actually calls.
 vi.mock("./capture", async () => {
   const actual = await vi.importActual<typeof import("./capture")>("./capture")
   return { ...actual }
-})
-// cropDataUrl loads the dataUrl into a real <img> and awaits decode, which jsdom never fires (no real
-// image decoder) — mocked out (same pattern as widget-region-drag-snap.test.ts) so we can assert on the
-// call args without hanging. cumulativeScrollForRect is pure/synchronous — kept real.
-vi.mock("@klavity/core/crop", async () => {
-  const actual = await vi.importActual<typeof import("@klavity/core/crop")>("@klavity/core/crop")
-  return { ...actual, cropDataUrl: vi.fn(async () => "data:image/png;base64,CROPPED") }
 })
 
 let capturedCallbacks: any = null
@@ -53,7 +48,6 @@ vi.mock("@klavity/core/modal", async () => {
 import { mount } from "./widget"
 import { parseScriptConfig } from "./widget-lib"
 import * as captureModule from "./capture"
-import * as cropModule from "@klavity/core/crop"
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
@@ -94,7 +88,10 @@ async function mountAndOpen() {
   installFetchStub()
   await mount()
   ;(window as any).Klavity.open("bug")
-  await new Promise((r) => setTimeout(r, 20)) // let openReport build the composer
+  // Long enough for openReport to build the composer AND for the auto-capture-on-open's deferred
+  // (requestIdleCallback/rAF) runCapture() to actually fire and resolve — otherwise it can land AFTER
+  // a test's own mockClear(), polluting call counts on whichever capture spy the test is watching.
+  await new Promise((r) => setTimeout(r, 150))
   if (!capturedCallbacks) throw new Error("composer never opened / callbacks not captured")
 }
 
@@ -113,35 +110,39 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     expect((navigator.mediaDevices as any).getDisplayMedia).not.toHaveBeenCalled()
   })
 
-  it("Snap crops to the CURRENT scroll position, not always the top of the page", async () => {
-    Object.defineProperty(window, "scrollY", { value: 400, configurable: true })
-    Object.defineProperty(window, "scrollX", { value: 0, configurable: true })
-    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithScale")
-    await mountAndOpen()
-
-    await capturedCallbacks.onCaptureSharp()
-
-    expect(fullPageSpy).toHaveBeenCalled()
-    expect(cropModule.cropDataUrl).toHaveBeenCalled()
-    const [, rect, , scrollY] = vi.mocked(cropModule.cropDataUrl).mock.calls[0]
-    expect(rect).toMatchObject({ x: 0, y: 0 })
-    expect(scrollY).toBe(400)
-  })
-
-  it("Full Page is untouched — still renders the whole document, not a viewport crop", async () => {
+  it("Snap uses the SAME proven safeToPngViewport function as the on-open default, never the full-page render", async () => {
+    const viewportSpy = vi.spyOn(captureModule, "safeToPngViewport")
     const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
     await mountAndOpen()
+    viewportSpy.mockClear() // drop the auto-capture-on-open's own safeToPngViewport call
+    fullPageSpy.mockClear()
+
+    await capturedCallbacks.onCaptureSharp()
+    expect(viewportSpy).toHaveBeenCalledTimes(1)
+    expect(fullPageSpy).not.toHaveBeenCalled()
+
+    viewportSpy.mockClear()
+    await capturedCallbacks.onCaptureSharpViewport()
+    expect(viewportSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("Full Page is untouched — still renders the whole document via safeToPngWithQuality", async () => {
+    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
+    const viewportSpy = vi.spyOn(captureModule, "safeToPngViewport")
+    await mountAndOpen()
+    fullPageSpy.mockClear() // drop the auto-capture-on-open's own call
+    viewportSpy.mockClear()
 
     await capturedCallbacks.onCaptureFull()
     expect(fullPageSpy).toHaveBeenCalled()
-    expect(cropModule.cropDataUrl).not.toHaveBeenCalled()
+    expect(viewportSpy).not.toHaveBeenCalled()
   })
 
   // Calling the onCaptureFull CALLBACK directly (above) doesn't exercise modal.ts's real "Full Page"
   // button — its click handler tries runScreenCapture() FIRST whenever onCaptureSharp is wired, and only
   // falls through to onCaptureFull if that didn't return real pixels. Drives the ACTUAL composer DOM to
   // prove the real button still reaches the real full-page path (see modal.ts's quality gate).
-  it("clicking the REAL Full Page button in the composer still reaches onCaptureFull, not just Snap's viewport crop", async () => {
+  it("clicking the REAL Full Page button in the composer still reaches onCaptureFull, not just Snap's viewport capture", async () => {
     const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
     await mountAndOpen()
 
@@ -152,7 +153,7 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     if (!composerShadow) throw new Error("composer shadow root with #klavity-full not found")
     const fullBtn = composerShadow.getElementById("klavity-full") as HTMLButtonElement
     fullBtn.click()
-    // Full Page does one wasted "try Screen first" pass (captureCurrentViewport, non-real-pixel, so it
+    // Full Page does one wasted "try Screen first" pass (Snap's viewport capture, non-real-pixel, so it
     // falls through) before reaching its own real capture — needs a longer wait than a single pass.
     await new Promise((r) => setTimeout(r, 500))
 

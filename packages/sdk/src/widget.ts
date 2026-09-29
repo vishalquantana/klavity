@@ -84,36 +84,6 @@ export async function captureRegionCrop(rect: Rect, opts?: { forceSnap?: boolean
   return { dataUrl: cropped, quality, suggestSharp }
 }
 
-// KD-Snap-tab-permission: "Snap" = capture exactly what's on screen RIGHT NOW. It is NOT
-// safeToPngViewport (KLA-509's fast above-the-fold PREVIEW, which always renders from scrollY=0 —
-// correct for a first-paint placeholder, wrong for "Snap" once the reporter has scrolled). Instead this
-// renders the FULL page (same source captureRegionCrop uses) and crops out the rect that's currently
-// visible, at the CURRENT window scroll offset — same crop mechanism as a Region selection, just with
-// the rect pinned to the whole viewport instead of a dragged box. Deliberately does not touch
-// getDisplayMedia/snapCropForRect — this must never prompt.
-async function captureCurrentViewport(): Promise<{ dataUrl: string; quality: CaptureQuality; suggestSharp: boolean }> {
-  const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
-  const { width, height } = fullPageCaptureSize()
-  const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(node, { filter: notKlavityChrome, width, height })
-  const rect: Rect = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }
-  const { scrollX, scrollY } = cumulativeScrollForRect(rect)
-  let cropped: string
-  let degenerate = false
-  try {
-    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale, { strict: true })
-  } catch (e) {
-    degenerate = true
-    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale)
-    // TEMP DIAGNOSTIC (KD-Snap-tab-permission): the strict crop threw (degenerate — the requested
-    // viewport rect maps mostly/fully outside the captured image). Remove once root-caused.
-    try { console.warn("[Klavity][snap-debug] strict crop failed, falling back:", e, { rect, scrollX, scrollY, scale, pageWidth: width, pageHeight: height }) } catch {}
-  }
-  // TEMP DIAGNOSTIC (KD-Snap-tab-permission): compare source vs cropped byte size — if they're close,
-  // the "crop" isn't actually shrinking anything. Remove once root-caused.
-  try { console.warn("[Klavity][snap-debug]", { rect, scrollX, scrollY, scale, degenerate, sourceBytes: dataUrl.length, croppedBytes: cropped.length, pageWidth: width, pageHeight: height, innerWidth: window.innerWidth, innerHeight: window.innerHeight }) } catch {}
-  const suggestSharp = (!!(blank || partial || degenerate) || hasUncapturableEmbeds()) && sharpCaptureSupported()
-  return { dataUrl: cropped, quality, suggestSharp }
-}
 const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
@@ -1401,12 +1371,15 @@ async function mount() {
       // wired. But the "Snap" button (id="klavity-sharp") only RENDERS AT ALL when onCaptureSharp is
       // truthy (see modal.ts's composer template) — leaving it `undefined` would make the button
       // disappear entirely, which is not what's wanted. So it stays wired, but points at
-      // captureCurrentViewport() — "Snap" means "capture exactly what I'm currently looking at"
-      // (scroll-position aware), the same non-prompting DOM-render path the on-open default already
-      // uses. onRetakeSharp stays undefined — the "Retake" affordance is separately template-gated on
-      // it and only ever existed to redo a real-pixel shot, which no longer exists.
-      onCaptureSharp: captureCurrentViewport,
-      onCaptureSharpViewport: captureCurrentViewport,
+      // safeToPngViewport() — the EXACT SAME proven, production-verified function the on-open default
+      // (onCaptureViewport below) already uses to capture just the visible screen. An earlier attempt
+      // used a full-page-render-then-crop approach (captureCurrentViewport) to be scroll-position aware,
+      // but that was slower and produced a wrong/undersized result — safeToPngViewport already captures
+      // correctly with no crop step needed. onRetakeSharp stays undefined — the "Retake" affordance is
+      // separately template-gated on it and only ever existed to redo a real-pixel shot, which no longer
+      // exists.
+      onCaptureSharp: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
+      onCaptureSharpViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
       onRetakeSharp: undefined,
       // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal
       // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector
