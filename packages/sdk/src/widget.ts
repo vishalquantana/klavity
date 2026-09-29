@@ -83,6 +83,31 @@ export async function captureRegionCrop(rect: Rect, opts?: { forceSnap?: boolean
   const suggestSharp = (!!(blank || partial || degenerate) || hasUncapturableEmbeds()) && sharpCaptureSupported()
   return { dataUrl: cropped, quality, suggestSharp }
 }
+
+// KD-Snap-tab-permission (follow-up #2): "Snap" = capture exactly what's on screen RIGHT NOW. It is
+// NOT safeToPngViewport (KLA-509's fast above-the-fold PREVIEW, which always renders from scrollY=0 —
+// correct for a first-paint placeholder, wrong for "Snap" once the reporter has scrolled). Instead this
+// renders the FULL page (same source captureRegionCrop uses) and crops out the rect that's currently
+// visible, at the CURRENT window scroll offset — same crop mechanism as a Region selection, just with
+// the rect pinned to the whole viewport instead of a dragged box. Deliberately does not touch
+// getDisplayMedia/snapCropForRect — this must never prompt.
+async function captureCurrentViewport(): Promise<{ dataUrl: string; quality: CaptureQuality; suggestSharp: boolean }> {
+  const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
+  const { width, height } = fullPageCaptureSize()
+  const { dataUrl, scale, quality, blank, partial } = await safeToPngWithScale(node, { filter: notKlavityChrome, width, height })
+  const rect: Rect = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }
+  const { scrollX, scrollY } = cumulativeScrollForRect(rect)
+  let cropped: string
+  let degenerate = false
+  try {
+    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale, { strict: true })
+  } catch {
+    degenerate = true
+    cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale)
+  }
+  const suggestSharp = (!!(blank || partial || degenerate) || hasUncapturableEmbeds()) && sharpCaptureSupported()
+  return { dataUrl: cropped, quality, suggestSharp }
+}
 const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
@@ -1372,13 +1397,13 @@ async function mount() {
       // first" step (same function) both call straight into getDisplayMedia whenever onCaptureSharp is
       // wired. But the "Snap" button (id="klavity-sharp") only RENDERS AT ALL when onCaptureSharp is
       // truthy (see modal.ts's composer template) — leaving it `undefined` made the button disappear
-      // entirely, which is not what was wanted. So it stays wired, but points at the non-prompting
-      // VIEWPORT DOM-render — "Snap" means "capture what I'm currently looking at", NOT the scrolled
-      // full-page stitch (that stays Full Page's job, untouched). onRetakeSharp stays undefined — the
-      // "Retake" affordance is separately template-gated on it and only ever existed to redo a
+      // entirely, which is not what was wanted. So it stays wired, but points at captureCurrentViewport()
+      // — "Snap" means "capture exactly what I'm currently looking at" (scroll-position aware), NOT the
+      // scrolled full-page stitch (that stays Full Page's job, untouched). onRetakeSharp stays undefined
+      // — the "Retake" affordance is separately template-gated on it and only ever existed to redo a
       // real-pixel shot, which no longer exists.
-      onCaptureSharp: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
-      onCaptureSharpViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
+      onCaptureSharp: captureCurrentViewport,
+      onCaptureSharpViewport: captureCurrentViewport,
       onRetakeSharp: undefined,
       // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal
       // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector

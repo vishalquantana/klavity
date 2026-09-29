@@ -32,6 +32,13 @@ vi.mock("./capture", async () => {
   const actual = await vi.importActual<typeof import("./capture")>("./capture")
   return { ...actual }
 })
+// cropDataUrl loads the dataUrl into a real <img> and awaits decode, which jsdom never fires (no real
+// image decoder) — mocked out (same pattern as widget-region-drag-snap.test.ts) so we can assert on the
+// call args without hanging. cumulativeScrollForRect is pure/synchronous — kept real.
+vi.mock("@klavity/core/crop", async () => {
+  const actual = await vi.importActual<typeof import("@klavity/core/crop")>("@klavity/core/crop")
+  return { ...actual, cropDataUrl: vi.fn(async () => "data:image/png;base64,CROPPED") }
+})
 
 let capturedCallbacks: any = null
 vi.mock("@klavity/core/modal", async () => {
@@ -48,6 +55,7 @@ vi.mock("@klavity/core/modal", async () => {
 import { mount } from "./widget"
 import { parseScriptConfig } from "./widget-lib"
 import * as captureModule from "./capture"
+import * as cropModule from "@klavity/core/crop"
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
@@ -69,6 +77,7 @@ function installFetchStub() {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   document.body.innerHTML = ""
   capturedCallbacks = null
   vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent() { return false } }))
@@ -106,20 +115,36 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     expect((navigator.mediaDevices as any).getDisplayMedia).not.toHaveBeenCalled()
   })
 
-  // KD-Snap-tab-permission (follow-up): "Snap" must capture only the current VIEWPORT — "whatever
-  // screen I am seeing" — never the scrolled full-page render. Full Page must be untouched.
-  it("Snap captures the VIEWPORT only, never the full-page render", async () => {
-    const viewportSpy = vi.spyOn(captureModule, "safeToPngViewport")
-    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
+  // KD-Snap-tab-permission (follow-up #2): "Snap" must reflect the CURRENT SCROLL POSITION — "whatever
+  // screen I am seeing right now" — not always the top of the page. safeToPngViewport (KLA-509's fast
+  // above-the-fold PREVIEW) always renders from scrollY=0, which is wrong for this: a reporter who has
+  // scrolled down and clicks Snap must get what's actually on screen, cropped from a full-page render
+  // at the current scroll offset (the same crop mechanism captureRegionCrop already uses for Region).
+  // Full Page (onCaptureFull/onCaptureViewport) must be completely untouched.
+  it("Snap crops to the CURRENT scroll position, not always the top of the page", async () => {
+    Object.defineProperty(window, "scrollY", { value: 400, configurable: true })
+    Object.defineProperty(window, "scrollX", { value: 0, configurable: true })
+    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithScale")
     await mountAndOpen()
 
     await capturedCallbacks.onCaptureSharp()
-    expect(viewportSpy).toHaveBeenCalled()
-    expect(fullPageSpy).not.toHaveBeenCalled()
 
-    viewportSpy.mockClear(); fullPageSpy.mockClear()
+    // The source render is the FULL page (so cropping at any scroll offset has real pixels to crop from) —
+    // never the always-top-of-page viewport preview.
+    expect(fullPageSpy).toHaveBeenCalled()
+    expect(cropModule.cropDataUrl).toHaveBeenCalled()
+    const [, rect, , scrollY] = vi.mocked(cropModule.cropDataUrl).mock.calls[0]
+    expect(rect).toMatchObject({ x: 0, y: 0 })
+    expect(scrollY).toBe(400) // reflects the CURRENT scroll position, not 0
+  })
+
+  it("Full Page is untouched — still renders the whole document, not a viewport crop", async () => {
+    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
+    await mountAndOpen()
+
     await capturedCallbacks.onCaptureFull()
     expect(fullPageSpy).toHaveBeenCalled()
+    expect(cropModule.cropDataUrl).not.toHaveBeenCalled()
   })
 
   it("does not wire Retake-sharp (no real-pixel shot exists to redo)", async () => {
