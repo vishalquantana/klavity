@@ -2,9 +2,14 @@
 // KD-Snap-tab-permission: KLA-587 made real Screen capture (getDisplayMedia) the DEFAULT capture on
 // composer open, and a follow-up owner directive (2026-08-26) also made the manual "Full Page" button
 // try getDisplayMedia FIRST — so the browser's native screen-share prompt could fire on composer open,
-// on "Full Page", on the dedicated "Screen"/Sharp button, AND on "Retake" of a degraded shot. Per user
-// request, NONE of these should ever prompt: getDisplayMedia-based capture is fully disabled, so every
-// capture path (default, Full Page, manual Sharp, Retake) uses only the non-prompting DOM-render path.
+// on "Full Page", on the dedicated "Snap"/Sharp button, AND on "Retake" of a degraded shot. Per user
+// request, NONE of these should ever prompt. The composer's "Snap" button (id="klavity-sharp") only
+// renders at all when `onCaptureSharp` is wired (see modal.ts's template), so removing the wiring
+// entirely made the button DISAPPEAR — not what was wanted. Instead, onCaptureSharp/onCaptureSharpViewport
+// are wired to the SAME non-prompting DOM-render functions as onCaptureFull/onCaptureViewport: the
+// button stays visible and clickable, it just never touches getDisplayMedia. onRetakeSharp stays
+// undefined — the "Retake" affordance is also template-gated on it and only mattered for redoing a
+// real-pixel shot, which no longer exists.
 //
 // Uses the same buildModal-capture harness as widget-enhance.test.ts to avoid driving the whole
 // composer UI (autocapture/getDisplayMedia timing) while still exercising the real widget wiring.
@@ -85,10 +90,17 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     expect(capturedCallbacks.screenCaptureDefault).toBe(false)
   })
 
-  it("does not wire any getDisplayMedia-based capture, even when the browser supports it", async () => {
+  it("keeps the Snap button wired (visible) but never touches getDisplayMedia", async () => {
     await mountAndOpen()
-    expect(capturedCallbacks.onCaptureSharp).toBeUndefined()
-    expect(capturedCallbacks.onCaptureSharpViewport).toBeUndefined()
+    expect(typeof capturedCallbacks.onCaptureSharp).toBe("function")
+    expect(typeof capturedCallbacks.onCaptureSharpViewport).toBe("function")
+    await capturedCallbacks.onCaptureSharp()
+    await capturedCallbacks.onCaptureSharpViewport()
+    expect((navigator.mediaDevices as any).getDisplayMedia).not.toHaveBeenCalled()
+  })
+
+  it("does not wire Retake-sharp (no real-pixel shot exists to redo)", async () => {
+    await mountAndOpen()
     expect(capturedCallbacks.onRetakeSharp).toBeUndefined()
   })
 

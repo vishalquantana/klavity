@@ -1342,8 +1342,9 @@ async function mount() {
       // pixel-perfect real-tab pixels.
       screenCaptureDefault: false,
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
-      // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
-      // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
+      // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. KD-Snap-tab-permission:
+      // there is no more "Retake sharp" real-pixel path (onRetakeSharp below is undefined) — a degraded
+      // shot's only retake is re-running the same DOM-render capture via the regular capture buttons.
       // KLAVITYKLA-473: if the DOM render is blank/partial-white, flag suggestSharp so the composer nudges
       // the user to the Screen button — NO auto getDisplayMedia (the #460 surprise-prompt regression).
       // Out-of-memory fix: capture documentElement (not body — see fullPageCaptureSize's KLAVITYKLA-404
@@ -1365,17 +1366,21 @@ async function mount() {
         // composer; we no longer auto-invoke getDisplayMedia here (it surprised users with a share prompt).
         return await captureRegionCrop(rect)
       },
-      // KD-Snap-tab-permission: getDisplayMedia-based capture (Sharp/Screen, and its Retake variant) is
-      // fully disabled — every wiring is `undefined`, unconditionally (not feature-detected). Chrome
-      // ALWAYS shows its native screen-share prompt for getDisplayMedia; there is no way for site code
-      // to suppress it. Per explicit user request, no composer action should ever trigger it — Full
-      // Page's own "try Screen first" step (runScreenCapture in modal.ts) and the dedicated Sharp button
-      // are both gated on `onCaptureSharp` being wired, so leaving it undefined here disables both, and
-      // Retake falls out of the picture with it. Every capture path now runs the same non-prompting
-      // DOM-render (onCaptureFull/onCaptureViewport/onRegionCapture above) — this is the same
-      // configuration iOS Safari already runs in (no getDisplayMedia there either), not a novel state.
-      onCaptureSharp: undefined,
-      onCaptureSharpViewport: undefined,
+      // KD-Snap-tab-permission: getDisplayMedia-based capture is fully disabled — Chrome ALWAYS shows its
+      // native screen-share prompt for getDisplayMedia, with no way for site code to suppress it, and the
+      // "Snap" button's own click handler (runScreenCapture in modal.ts) plus Full Page's "try Screen
+      // first" step (same function) both call straight into getDisplayMedia whenever onCaptureSharp is
+      // wired. But the "Snap" button (id="klavity-sharp") only RENDERS AT ALL when onCaptureSharp is
+      // truthy (see modal.ts's composer template) — leaving it `undefined` made the button disappear
+      // entirely, which is not what was wanted. So it stays wired, just pointed at the SAME non-prompting
+      // DOM-render capture as Full Page/viewport: the button is visible and clickable, it simply never
+      // touches getDisplayMedia. onRetakeSharp stays undefined — the "Retake" affordance is separately
+      // template-gated on it and only ever existed to redo a real-pixel shot, which no longer exists.
+      onCaptureSharp: async () => {
+        const { width, height } = fullPageCaptureSize()
+        return withSharpSuggestion(await safeToPngWithQuality(document.documentElement, { filter: notKlavityChrome, width, height }))
+      },
+      onCaptureSharpViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
       onRetakeSharp: undefined,
       // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal
       // hides itself, the picker highlights elements on hover, and the click resolves a robust CSS selector
