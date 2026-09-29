@@ -1372,14 +1372,12 @@ async function mount() {
       // first" step (same function) both call straight into getDisplayMedia whenever onCaptureSharp is
       // wired. But the "Snap" button (id="klavity-sharp") only RENDERS AT ALL when onCaptureSharp is
       // truthy (see modal.ts's composer template) — leaving it `undefined` made the button disappear
-      // entirely, which is not what was wanted. So it stays wired, just pointed at the SAME non-prompting
-      // DOM-render capture as Full Page/viewport: the button is visible and clickable, it simply never
-      // touches getDisplayMedia. onRetakeSharp stays undefined — the "Retake" affordance is separately
-      // template-gated on it and only ever existed to redo a real-pixel shot, which no longer exists.
-      onCaptureSharp: async () => {
-        const { width, height } = fullPageCaptureSize()
-        return withSharpSuggestion(await safeToPngWithQuality(document.documentElement, { filter: notKlavityChrome, width, height }))
-      },
+      // entirely, which is not what was wanted. So it stays wired, but points at the non-prompting
+      // VIEWPORT DOM-render — "Snap" means "capture what I'm currently looking at", NOT the scrolled
+      // full-page stitch (that stays Full Page's job, untouched). onRetakeSharp stays undefined — the
+      // "Retake" affordance is separately template-gated on it and only ever existed to redo a
+      // real-pixel shot, which no longer exists.
+      onCaptureSharp: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
       onCaptureSharpViewport: async () => withSharpSuggestion(await safeToPngViewport({ filter: notKlavityChrome })),
       onRetakeSharp: undefined,
       // JTBD 1.11 (KLAVITYKLA-228): let the reporter click the exact broken element on the page. The modal

@@ -26,6 +26,12 @@ vi.mock("./widget-lib", async () => {
   const actual = await vi.importActual<typeof import("./widget-lib")>("./widget-lib")
   return { ...actual, parseScriptConfig: vi.fn(() => ({ projectId: "", backendUrl: "" })) }
 })
+// Passthrough mock so we can spy on which capture function Snap actually calls (viewport vs full-page)
+// without losing the real capture behavior other tests in this file rely on.
+vi.mock("./capture", async () => {
+  const actual = await vi.importActual<typeof import("./capture")>("./capture")
+  return { ...actual }
+})
 
 let capturedCallbacks: any = null
 vi.mock("@klavity/core/modal", async () => {
@@ -41,6 +47,7 @@ vi.mock("@klavity/core/modal", async () => {
 
 import { mount } from "./widget"
 import { parseScriptConfig } from "./widget-lib"
+import * as captureModule from "./capture"
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
@@ -97,6 +104,22 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     await capturedCallbacks.onCaptureSharp()
     await capturedCallbacks.onCaptureSharpViewport()
     expect((navigator.mediaDevices as any).getDisplayMedia).not.toHaveBeenCalled()
+  })
+
+  // KD-Snap-tab-permission (follow-up): "Snap" must capture only the current VIEWPORT — "whatever
+  // screen I am seeing" — never the scrolled full-page render. Full Page must be untouched.
+  it("Snap captures the VIEWPORT only, never the full-page render", async () => {
+    const viewportSpy = vi.spyOn(captureModule, "safeToPngViewport")
+    const fullPageSpy = vi.spyOn(captureModule, "safeToPngWithQuality")
+    await mountAndOpen()
+
+    await capturedCallbacks.onCaptureSharp()
+    expect(viewportSpy).toHaveBeenCalled()
+    expect(fullPageSpy).not.toHaveBeenCalled()
+
+    viewportSpy.mockClear(); fullPageSpy.mockClear()
+    await capturedCallbacks.onCaptureFull()
+    expect(fullPageSpy).toHaveBeenCalled()
   })
 
   it("does not wire Retake-sharp (no real-pixel shot exists to redo)", async () => {
