@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 // KD-Snap-tab-permission: KLA-587 made real Screen capture (getDisplayMedia) the DEFAULT capture on
-// composer open, firing the browser's native screen-share permission prompt immediately every time a
-// report is opened. Per user request, the prompt should not fire automatically — Screen/Sharp capture
-// stays available as an opt-in button (onCaptureSharp/onCaptureSharpViewport still wired), but the
-// composer's default auto-capture on open must be the non-prompting DOM-render path (viewport/full).
+// composer open, and a follow-up owner directive (2026-08-26) also made the manual "Full Page" button
+// try getDisplayMedia FIRST — so the browser's native screen-share prompt could fire on composer open,
+// on "Full Page", on the dedicated "Screen"/Sharp button, AND on "Retake" of a degraded shot. Per user
+// request, NONE of these should ever prompt: getDisplayMedia-based capture is fully disabled, so every
+// capture path (default, Full Page, manual Sharp, Retake) uses only the non-prompting DOM-render path.
 //
 // Uses the same buildModal-capture harness as widget-enhance.test.ts to avoid driving the whole
 // composer UI (autocapture/getDisplayMedia timing) while still exercising the real widget wiring.
@@ -84,9 +85,16 @@ describe("widget screen-capture default (KD-Snap-tab-permission)", () => {
     expect(capturedCallbacks.screenCaptureDefault).toBe(false)
   })
 
-  it("still wires Sharp capture as an available (opt-in) capability", async () => {
+  it("does not wire any getDisplayMedia-based capture, even when the browser supports it", async () => {
     await mountAndOpen()
-    expect(typeof capturedCallbacks.onCaptureSharp).toBe("function")
-    expect(typeof capturedCallbacks.onCaptureSharpViewport).toBe("function")
+    expect(capturedCallbacks.onCaptureSharp).toBeUndefined()
+    expect(capturedCallbacks.onCaptureSharpViewport).toBeUndefined()
+    expect(capturedCallbacks.onRetakeSharp).toBeUndefined()
+  })
+
+  it("still wires the non-prompting DOM-render capture (default Full Page / viewport)", async () => {
+    await mountAndOpen()
+    expect(typeof capturedCallbacks.onCaptureFull).toBe("function")
+    expect(typeof capturedCallbacks.onCaptureViewport).toBe("function")
   })
 })
