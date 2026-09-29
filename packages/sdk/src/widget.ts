@@ -101,10 +101,16 @@ async function captureCurrentViewport(): Promise<{ dataUrl: string; quality: Cap
   let degenerate = false
   try {
     cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale, { strict: true })
-  } catch {
+  } catch (e) {
     degenerate = true
     cropped = await cropDataUrl(dataUrl, rect, scrollX, scrollY, scale)
+    // TEMP DIAGNOSTIC (KD-Snap-tab-permission): the strict crop threw (degenerate — the requested
+    // viewport rect maps mostly/fully outside the captured image). Remove once root-caused.
+    try { console.warn("[Klavity][snap-debug] strict crop failed, falling back:", e, { rect, scrollX, scrollY, scale, pageWidth: width, pageHeight: height }) } catch {}
   }
+  // TEMP DIAGNOSTIC (KD-Snap-tab-permission): compare source vs cropped byte size — if they're close,
+  // the "crop" isn't actually shrinking anything. Remove once root-caused.
+  try { console.warn("[Klavity][snap-debug]", { rect, scrollX, scrollY, scale, degenerate, sourceBytes: dataUrl.length, croppedBytes: cropped.length, pageWidth: width, pageHeight: height, innerWidth: window.innerWidth, innerHeight: window.innerHeight }) } catch {}
   const suggestSharp = (!!(blank || partial || degenerate) || hasUncapturableEmbeds()) && sharpCaptureSupported()
   return { dataUrl: cropped, quality, suggestSharp }
 }
