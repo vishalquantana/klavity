@@ -1355,12 +1355,13 @@ async function mount() {
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
-      // KLA-587 (founder decision, 2026-08-25 — REVERSES the #460/#473 "no auto-prompt" stance): real Screen
-      // capture (getDisplayMedia) is the ACTUAL default capture on open. Feature-detected — false on iOS Safari
-      // (no getDisplayMedia) so the rendered viewport stays the default there. The composer fires the share
-      // picker chained to the opening gesture; on decline/lost-gesture it silently falls back to the rendered
-      // viewport capture and leaves Screen as the primed one-tap primary button. The founder wants this prompt.
-      screenCaptureDefault: sharpCaptureSupported(),
+      // KD-Snap-tab-permission: reverts KLA-587's auto-prompt default (2026-08-25 founder decision).
+      // Real Screen capture (getDisplayMedia) fired its browser permission prompt on every composer
+      // open, which is no longer wanted. The rendered viewport/full-page capture (no permission
+      // prompt) is the default again; Screen/Sharp capture stays available as an opt-in button
+      // (onCaptureSharp/onCaptureSharpViewport below are still wired) for a reporter who wants
+      // pixel-perfect real-tab pixels.
+      screenCaptureDefault: false,
       // JTBD 1.9: report the capture-quality tag so the composer badges the thumbnail — 'rendered' on the
       // html-to-image path, 'wireframe' when it fell back to the fetch-free painter. Degraded shots get the
       // one-tap "Retake sharp" (getDisplayMedia real-pixel path via onRetakeSharp below).
