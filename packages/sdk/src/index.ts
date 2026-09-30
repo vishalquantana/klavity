@@ -1,6 +1,6 @@
 import { safeToPng } from './capture'
 import { icon } from '@klavity/core/icons'
-import { safeRemove } from '@klavity/core'
+import { safeRemove, sealFromHostPage } from '@klavity/core'
 import type { KlavitySettings, ReportType, SubmitReportPayload, ReportIdentity } from '@klavity/core'
 import { DEFAULT_SETTINGS, DEFAULT_BACKEND_URL } from '@klavity/core'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
@@ -225,6 +225,7 @@ function ensureSdkMarker() {
     host.id = 'klavity-sdk-host'
     host.style.cssText = 'display:none!important;position:fixed;width:0;height:0;pointer-events:none;'
     document.body.appendChild(host)
+    sealFromHostPage(host) // KLA-37
   }
   host.setAttribute('data-klavity-ui', 'sdk')
 }
@@ -284,6 +285,7 @@ function addContextMenu() {
     menu.style.left = e.clientX + 'px'
     menu.style.top = '-9999px'
     document.body.appendChild(menu)
+    sealFromHostPage(menu) // KLA-37
     const PAD = 8
     const left = Math.max(PAD, Math.min(e.clientX, window.innerWidth - menu.offsetWidth - PAD))
     const top = Math.max(PAD, Math.min(e.clientY, window.innerHeight - menu.offsetHeight - PAD))

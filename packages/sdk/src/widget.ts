@@ -2,7 +2,7 @@
 import { injectSimStyles } from "@klavity/core/sim"
 import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
-import { safeRemove } from "@klavity/core"
+import { safeRemove, sealFromHostPage } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
 import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
@@ -688,6 +688,10 @@ async function mount() {
   host.setAttribute("data-klavity-ui", "launcher")
   host.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483646;pointer-events:none"
   document.body.appendChild(host)
+  // KLA-37: the launcher and everything in its shadow root are ours — a click here must never reach the
+  // host page's click-outside handlers, which would dismiss the popover the reporter is trying to capture.
+  // See sealFromHostPage() for exactly which events are sealed and why the rest are not.
+  sealFromHostPage(host)
   const root = host.attachShadow({ mode: "open" })
   injectSimStyles(root)
   const chrome = document.createElement("div")
@@ -2345,6 +2349,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
   // reflowPillStack(), not a stale querySelectorAll count.
   host.style.cssText = "position:fixed;right:18px;z-index:2147483646;pointer-events:none"
   document.body.appendChild(host)
+  sealFromHostPage(host) // KLA-37: the pill's dismiss/undo clicks are ours, not the host page's
   addPillToStack(host)
   const root = host.attachShadow({ mode: "open" })
   const style = document.createElement("style")

@@ -39,6 +39,7 @@
 import { createSim, injectSimStyles, type SimProps } from '../../core/src/sim'
 import { icon } from '../../core/src/icons'
 import { safeRemove } from '../../core/src/safe-remove'
+import { sealFromHostPage } from '../../core/src/seal-events'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -675,6 +676,7 @@ function ensureHost(): ShadowRoot {
   const style = document.createElement('style'); style.textContent = PANEL_CSS
   shadowRoot.appendChild(style)
   document.body.appendChild(hostEl)
+  sealFromHostPage(hostEl) // KLA-37
   return shadowRoot
 }
 
@@ -691,6 +693,7 @@ function ensureOverlay(): HTMLElement {
   overlayEl.id = OVERLAY_HOST_ID
   overlayEl.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483640;pointer-events:none;overflow:visible;'
   document.body.appendChild(overlayEl)
+  sealFromHostPage(overlayEl) // KLA-37
   return overlayEl
 }
 

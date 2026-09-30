@@ -6,6 +6,7 @@ import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
+import { sealFromHostPage } from './seal-events'
 import { klavityAttributionUrl } from './attribution'
 import { createSharePickerHint, shareCaptureLikelyGranted } from './share-hint'
 // Re-export so the widget/launcher (which already imports from '@klavity/core/modal') can build the same hint.
@@ -696,6 +697,9 @@ export function buildModal(
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;'
   const shadowRoot = host.attachShadow({ mode: 'open' })
   document.body.appendChild(host)
+  // KLA-37: nothing the reporter does inside the composer may reach the host page's click-outside
+  // handlers — otherwise filling in a report dismisses the panel/popover being reported.
+  sealFromHostPage(host)
 
   let screenshots: string[] = []
   // KLAVITYKLA-509: true while auto-capture-on-open is rendering the first shot, so updateStrip() shows a
@@ -4025,6 +4029,7 @@ export function buildModal(
           const sz = textSize, ol = textOutline
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;padding:0;margin:0;line-height:1;box-sizing:content-box;background:transparent;border:0;color:${activeColor};font-size:${inputFont}px;font-family:sans-serif;font-weight:700;text-shadow:${shadow};outline:1px dashed ${activeColor};z-index:2147483647;min-width:80px;`
           document.body.appendChild(input)
+          sealFromHostPage(input) // KLA-37: the annotator's floating text box is ours, not the page's
           // Track the live text input so the document-level tool-hotkey handler can bail unconditionally while
           // it exists (belt-and-suspenders alongside its composedPath guard).
           activeTextInput = input
@@ -4359,6 +4364,7 @@ export function buildModal(
           const input = document.createElement('input')
           input.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;background:transparent;border:1px dashed ${activeColor};color:${activeColor};font-size:16px;outline:none;z-index:9999999;min-width:80px;`
           document.body.appendChild(input)
+          sealFromHostPage(input) // KLA-37: the annotator's floating text box is ours, not the page's
           // KLA-593 BUG 0: defer focus to the next frame so the browser's default mousedown focus-shift (to
           // the unfocusable canvas) doesn't immediately blur + remove this empty input before the user types.
           requestAnimationFrame(() => { if (document.body.contains(input)) input.focus() })
@@ -4673,6 +4679,7 @@ function mountRegionOverlay(
   overlay.style.cssText = 'position:fixed;inset:0;cursor:crosshair;z-index:2147483646;user-select:none;'
   overlay.setAttribute('data-klavity-region-overlay', '')
   document.body.appendChild(overlay)
+  sealFromHostPage(overlay) // KLA-37; pointermove/up stay unsealed so the drag still completes
 
   const hint = document.createElement('div')
   hint.textContent = 'Drag to select an area · Esc to cancel'

@@ -606,3 +606,81 @@ describe("white-label: right-click menu footer", () => {
     expect(foot).toBeTruthy()
   })
 })
+
+// ── KLA-37: widget clicks must not escape to the host page ────────────────────
+// Host apps close popovers from a document-level "click outside" listener. Because
+// our UI is in a shadow root, the retargeted target is the host element — never
+// inside their popover — so clicking the launcher used to dismiss whatever the user
+// was about to report (PX4: `document.addEventListener('click', …)` →
+// `$('#list1').removeClass('visible')` on every list page's filter panel).
+
+describe("KLA-37: host-page click-outside handlers must not see widget clicks", () => {
+  it("does not let a launcher click reach a document-level bubble listener", async () => {
+    await mountWith({ launcherMode: "full" })
+    const outside = vi.fn()
+    document.addEventListener("click", outside)
+    try {
+      launcherButton().dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }))
+      expect(outside).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener("click", outside)
+    }
+  })
+
+  it("reproduces the PX4 filter panel: the popover stays open when the icon is clicked", async () => {
+    await mountWith({ launcherMode: "icon" })
+    // Same shape as the real handler in application/views/px4res_content/*.php
+    const panel = document.createElement("div")
+    panel.id = "list1"
+    panel.className = "visible"
+    document.body.appendChild(panel)
+    const closeOnOutside = (event: Event) => {
+      if (!panel.contains(event.target as Node)) panel.classList.remove("visible")
+    }
+    document.addEventListener("click", closeOnOutside)
+    try {
+      launcherButton().dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }))
+      expect(panel.classList.contains("visible")).toBe(true)
+      // Control: a genuine click elsewhere on the page must still close it.
+      document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      expect(panel.classList.contains("visible")).toBe(false)
+    } finally {
+      document.removeEventListener("click", closeOnOutside)
+      panel.remove()
+    }
+  })
+
+  it("also stops mousedown and pointerdown, which many popovers close on", async () => {
+    await mountWith({ launcherMode: "full" })
+    const onMouseDown = vi.fn()
+    const onPointerDown = vi.fn()
+    document.addEventListener("mousedown", onMouseDown)
+    document.addEventListener("pointerdown", onPointerDown)
+    try {
+      launcherButton().dispatchEvent(new MouseEvent("mousedown", { bubbles: true, composed: true }))
+      launcherButton().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, composed: true }))
+      expect(onMouseDown).not.toHaveBeenCalled()
+      expect(onPointerDown).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener("mousedown", onMouseDown)
+      document.removeEventListener("pointerdown", onPointerDown)
+    }
+  })
+
+  it("leaves document CAPTURE listeners and mouseup untouched", async () => {
+    await mountWith({ launcherMode: "full" })
+    const onCapture = vi.fn()
+    const onMouseUp = vi.fn()
+    document.addEventListener("click", onCapture, true)
+    document.addEventListener("mouseup", onMouseUp)
+    try {
+      launcherButton().dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }))
+      launcherButton().dispatchEvent(new MouseEvent("mouseup", { bubbles: true, composed: true }))
+      expect(onCapture).toHaveBeenCalled()
+      expect(onMouseUp).toHaveBeenCalled()
+    } finally {
+      document.removeEventListener("click", onCapture, true)
+      document.removeEventListener("mouseup", onMouseUp)
+    }
+  })
+})

@@ -18,6 +18,8 @@
 // ── Caps ──────────────────────────────────────────────────────────────────────────────────────────────
 // Length cap: 3 min hard auto-stop (keeps blobs bounded + cheap to transcribe later). Size cap: ~50MB —
 // mirrors the server's RECORDING_MAX_BYTES so a client-accepted recording also passes server intake.
+import { sealFromHostPage } from '../../core/src/seal-events'
+
 export const RECORDING_MAX_DURATION_MS = 3 * 60 * 1000
 export const RECORDING_MAX_BYTES = 50 * 1024 * 1024
 
@@ -511,6 +513,7 @@ export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAtt
     host.setAttribute('data-klavity-ui', 'recorder')
     const card = document.createElement('div')
     host.appendChild(card); document.body.appendChild(host)
+    sealFromHostPage(host) // KLA-37
 
     const FONT = 'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#19140f'
     // KLA-555 (walkthrough mode): the overlay chrome is per-phase, not static.
