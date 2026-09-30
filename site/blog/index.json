@@ -747,5 +747,12 @@
     "excerpt": "A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content.",
     "category": "Guides",
     "date": "2026-09-29"
+  },
+  {
+    "slug": "screenshot-evidence-in-bug-reports",
+    "title": "Screenshot Evidence in Bug Reports: What Makes It Useful",
+    "excerpt": "Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs.",
+    "category": "Guides",
+    "date": "2026-09-30"
   }
 ]

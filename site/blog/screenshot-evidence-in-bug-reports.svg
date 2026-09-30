@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A browser screenshot with an annotated defect, paired with metadata, console and network evidence">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="80" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <!-- main browser window = the screenshot -->
+  <rect x="48" y="66" width="400" height="288" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="2"/>
+  <line x1="48" y1="100" x2="448" y2="100" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="68" cy="83" r="4.5" fill="#f87171"/>
+  <circle cx="84" cy="83" r="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="100" cy="83" r="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="118" y="77" width="312" height="12" rx="6" fill="#f5f0e8" opacity="0.12"/>
+
+  <!-- page content lines -->
+  <rect x="72" y="124" width="150" height="10" rx="5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="72" y="146" width="300" height="8" rx="4" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="72" y="164" width="256" height="8" rx="4" fill="#f5f0e8" opacity="0.12"/>
+
+  <!-- the defect region, boxed in red -->
+  <rect x="72" y="198" width="180" height="56" rx="8" fill="#f87171" opacity="0.14"/>
+  <rect x="72" y="198" width="180" height="56" rx="8" fill="none" stroke="#f87171" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <rect x="88" y="218" width="96" height="9" rx="4.5" fill="#f87171" opacity="0.75"/>
+  <rect x="88" y="234" width="60" height="7" rx="3.5" fill="#f87171" opacity="0.45"/>
+
+  <!-- annotation arrow pointing at the defect -->
+  <path d="M348 168 C316 184 292 196 264 218" stroke="#f87171" stroke-width="2.5" fill="none"/>
+  <path d="M264 218 l17 -3 l-9 -12 z" fill="#f87171"/>
+  <rect x="344" y="146" width="88" height="24" rx="6" fill="#f87171" opacity="0.2"/>
+
+  <rect x="72" y="284" width="340" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="72" y="302" width="210" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+
+  <!-- flow arrow to the evidence bundle -->
+  <line x1="460" y1="210" x2="524" y2="210" stroke="#6366f1" stroke-width="2.5"/>
+  <path d="M524 210 l-13 -7 v14 z" fill="#6366f1"/>
+
+  <!-- evidence bundle: metadata / console / network, each verified -->
+  <rect x="540" y="86" width="216" height="68" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="558" y="104" width="120" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="558" y="122" width="92" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <path d="M700 122 l9 10 l17 -20" stroke="#4ade80" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+
+  <rect x="540" y="176" width="216" height="68" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="558" y="194" width="104" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="558" y="212" width="76" height="7" rx="3.5" fill="#f87171" opacity="0.6"/>
+  <path d="M700 212 l9 10 l17 -20" stroke="#4ade80" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+
+  <rect x="540" y="266" width="216" height="68" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="558" y="284" width="132" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="558" y="302" width="60" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <path d="M700 302 l9 10 l17 -20" stroke="#4ade80" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+
+  <!-- timestamp tick joining the three -->
+  <line x1="528" y1="120" x2="528" y2="300" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.7"/>
+</svg>

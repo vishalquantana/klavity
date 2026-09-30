@@ -1,0 +1,208 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screenshot Evidence in Bug Reports: What Makes It Useful · Klavity</title>
+<meta name="description" content="Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs.">
+<link rel="canonical" href="https://klavity.in/blog/screenshot-evidence-in-bug-reports">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Screenshot Evidence in Bug Reports: What Makes It Useful"><meta property="og:description" content="Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs.">
+<meta property="og:url" content="https://klavity.in/blog/screenshot-evidence-in-bug-reports"><meta property="og:image" content="https://klavity.in/blog/screenshot-evidence-in-bug-reports.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Screenshot Evidence in Bug Reports: What Makes It Useful"><meta name="twitter:description" content="Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs."><meta name="twitter:image" content="https://klavity.in/blog/screenshot-evidence-in-bug-reports.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Screenshot Evidence in Bug Reports: What Makes It Useful","description":"Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs.","datePublished":"2026-09-30","dateModified":"2026-09-30","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/screenshot-evidence-in-bug-reports.svg"}},"mainEntityOfPage":"https://klavity.in/blog/screenshot-evidence-in-bug-reports","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Screenshot Evidence in Bug Reports: What Makes It Useful","item":"https://klavity.in/blog/screenshot-evidence-in-bug-reports"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/screenshot-evidence-in-bug-reports"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What should a screenshot in a bug report include?","acceptedAnswer":{"@type":"Answer","text":"The defect plus enough surrounding interface to locate it, captured at the viewport level rather than as a tight crop. Alongside the image, include the full URL with query string, viewport dimensions, browser and OS version, the logged-in role or account state, the app build version, and a timestamp with timezone so the screenshot can be joined to console and network logs from the same moment."}},{"@type":"Question","name":"Is a screenshot enough evidence for a bug report?","acceptedAnswer":{"@type":"Answer","text":"No. A screenshot records output, not cause. It cannot show why a value is wrong, whether the underlying request was made at all, what errors the console threw, or whether the bug is intermittent. Pair it with console output and network requests from the same session; screenshot-only tickets are a recurring source of 'cannot reproduce' replies."}},{"@type":"Question","name":"Should I annotate screenshots in bug reports?","acceptedAnswer":{"@type":"Answer","text":"Yes, but minimally. Use one arrow or box on the defect and write the expected result next to it, since only the reporter can state what should have happened. Annotate the wide shot rather than cropping to the annotation, and keep the unannotated original so interpretation never replaces evidence."}},{"@type":"Question","name":"How do I redact sensitive data from a bug screenshot?","acceptedAnswer":{"@type":"Answer","text":"Draw opaque boxes over the data before attaching the image, never blur or reduce opacity, because both can be partially reversed. Redact before upload rather than after, since editing an attachment usually leaves the original in the ticket history. Where possible, reproduce with a test account holding synthetic data so there is nothing to redact."}},{"@type":"Question","name":"Full-page or viewport screenshot for a bug report?","acceptedAnswer":{"@type":"Answer","text":"Viewport by default, because it shows what the user actually saw at their real window size. Add a full-page capture when the bug involves layout, overflow, scroll behaviour, or missing and duplicated sections. A region crop is a useful close-up but should never be the only image attached."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-30</div>
+    <h1>Screenshot Evidence in Bug Reports: What Makes It Useful</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A browser screenshot with an annotated defect, paired with metadata, console and network evidence">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="80" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <!-- main browser window = the screenshot -->
+  <rect x="48" y="66" width="400" height="288" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="2"/>
+  <line x1="48" y1="100" x2="448" y2="100" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="68" cy="83" r="4.5" fill="#f87171"/>
+  <circle cx="84" cy="83" r="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="100" cy="83" r="4.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="118" y="77" width="312" height="12" rx="6" fill="#f5f0e8" opacity="0.12"/>
+
+  <!-- page content lines -->
+  <rect x="72" y="124" width="150" height="10" rx="5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="72" y="146" width="300" height="8" rx="4" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="72" y="164" width="256" height="8" rx="4" fill="#f5f0e8" opacity="0.12"/>
+
+  <!-- the defect region, boxed in red -->
+  <rect x="72" y="198" width="180" height="56" rx="8" fill="#f87171" opacity="0.14"/>
+  <rect x="72" y="198" width="180" height="56" rx="8" fill="none" stroke="#f87171" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <rect x="88" y="218" width="96" height="9" rx="4.5" fill="#f87171" opacity="0.75"/>
+  <rect x="88" y="234" width="60" height="7" rx="3.5" fill="#f87171" opacity="0.45"/>
+
+  <!-- annotation arrow pointing at the defect -->
+  <path d="M348 168 C316 184 292 196 264 218" stroke="#f87171" stroke-width="2.5" fill="none"/>
+  <path d="M264 218 l17 -3 l-9 -12 z" fill="#f87171"/>
+  <rect x="344" y="146" width="88" height="24" rx="6" fill="#f87171" opacity="0.2"/>
+
+  <rect x="72" y="284" width="340" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="72" y="302" width="210" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+
+  <!-- flow arrow to the evidence bundle -->
+  <line x1="460" y1="210" x2="524" y2="210" stroke="#6366f1" stroke-width="2.5"/>
+  <path d="M524 210 l-13 -7 v14 z" fill="#6366f1"/>
+
+  <!-- evidence bundle: metadata / console / network, each verified -->
+  <rect x="540" y="86" width="216" height="68" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="558" y="104" width="120" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="558" y="122" width="92" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <path d="M700 122 l9 10 l17 -20" stroke="#4ade80" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+
+  <rect x="540" y="176" width="216" height="68" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="558" y="194" width="104" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="558" y="212" width="76" height="7" rx="3.5" fill="#f87171" opacity="0.6"/>
+  <path d="M700 212 l9 10 l17 -20" stroke="#4ade80" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+
+  <rect x="540" y="266" width="216" height="68" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="558" y="284" width="132" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="558" y="302" width="60" height="7" rx="3.5" fill="#f5f0e8" opacity="0.2"/>
+  <path d="M700 302 l9 10 l17 -20" stroke="#4ade80" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+
+  <!-- timestamp tick joining the three -->
+  <line x1="528" y1="120" x2="528" y2="300" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.7"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Screenshot evidence in bug reports is only useful when three things travel with the image: the region of the interface that is wrong, the state that produced it (URL, viewport size, browser, logged-in role, build), and a timestamp that joins it to the console and network logs from the same moment. Capture the viewport by default, annotate with one pointer plus the stated expectation, and redact with opaque boxes before upload. A screenshot records output, never cause, so it belongs in a bundle with console and network evidence rather than alone.</div>
+    <div class="prose"><p><strong>Screenshot evidence in bug reports</strong> is only useful when it carries three things beyond the picture itself: the exact region of the interface that is wrong, the state that produced it (URL, viewport size, browser, logged-in role), and a timestamp that lines up with the console and network logs from the same moment. A bare cropped image proves that something looked wrong on someone's screen once. A screenshot with that context attached lets a developer reproduce the bug without asking a single follow-up question &mdash; which is the only real measure of whether the evidence did its job.</p>
+
+<h2>What makes screenshot evidence in bug reports actually useful?</h2>
+<p>A screenshot answers exactly one question well: <em>what did the user see?</em> That is genuinely valuable, because rendering bugs, layout breakage, wrong copy, wrong currency, a misaligned modal, and a truncated label are all things that no stack trace will ever describe. Where screenshots fail is when they are treated as the whole report instead of one exhibit in it.</p>
+<p>The difference between a screenshot that closes a ticket and one that starts an argument comes down to four properties:</p>
+<ul>
+<li><strong>It shows the defect and enough surroundings to locate it.</strong> A 200&times;80 crop of an error message tells a developer nothing about which page, which step, or which component rendered it.</li>
+<li><strong>It is unedited apart from annotation.</strong> Cropping out the parts that "aren't relevant" removes exactly the context the developer needs to find the component in the codebase.</li>
+<li><strong>It is anchored in time.</strong> If the screenshot was taken at 14:32:07, the console error at 14:32:07 is almost certainly the cause. Without a timestamp, the two pieces of evidence can't be joined.</li>
+<li><strong>It travels with its environment.</strong> The same page renders differently at 1440px and 375px, in Safari and in Chrome, and for an admin versus a trial user. A screenshot without that metadata is unfalsifiable.</li>
+</ul>
+
+<h2>Should you capture the region, the viewport, or the full page?</h2>
+<p>All three are legitimate, and each hides something the others show. The practical rule: capture the viewport by default, the full page when layout or scroll behaviour is involved, and a region only as an <em>additional</em> close-up, never as the only image.</p>
+<table>
+<thead><tr><th>Capture type</th><th>What it proves</th><th>What it hides</th><th>Best for</th></tr></thead>
+<tbody>
+<tr><td>Region / crop</td><td>The precise defect, zoomed</td><td>Page identity, layout context, surrounding state</td><td>A close-up attached alongside a wider shot</td></tr>
+<tr><td>Viewport</td><td>What the user saw, at their real window size</td><td>Content below the fold; scroll-dependent bugs</td><td>The default for most bug reports</td></tr>
+<tr><td>Full page</td><td>Total layout, overflow, duplicated or missing sections</td><td>What was actually on screen; sticky elements often render oddly</td><td>Layout, spacing, and long-form content bugs</td></tr>
+<tr><td>Screen recording</td><td>Sequence, timing, and interaction order</td><td>Nothing visual &mdash; but it is slow to review and hard to diff</td><td>Bugs that only appear mid-interaction</td></tr>
+</tbody>
+</table>
+<p>If you are choosing between a still and a video, our guide on <a href="/blog/screenshot-vs-screen-recording-bug-evidence">screenshot vs. screen recording as bug evidence</a> covers that trade-off in depth. For everything else, a viewport screenshot plus a full-page screenshot is cheaper to produce and far faster for a developer to scan than a 40-second clip.</p>
+
+<h2>What metadata has to travel with the screenshot?</h2>
+<p>This is where most bug reports quietly fail. The image is attached; the state that produced it is not. At minimum, ship these fields next to every screenshot:</p>
+<ol>
+<li><strong>Full URL, including query string and hash.</strong> Not "the checkout page" &mdash; the actual URL, because the parameters are often the reproduction steps.</li>
+<li><strong>Viewport dimensions and device pixel ratio.</strong> A responsive bug is a function of width; without the width, it isn't reproducible.</li>
+<li><strong>Browser and OS version.</strong> "Chrome" is not a version. Rendering and API behaviour differ across releases.</li>
+<li><strong>Authenticated role and account state.</strong> Admin, trial, expired, empty-state, or a specific tenant &mdash; many bugs only exist for one of them.</li>
+<li><strong>Timestamp with timezone.</strong> The join key between the screenshot, the console log, and the server-side trace.</li>
+<li><strong>App or build version.</strong> Tells the developer whether the bug is already fixed on <code>main</code> before anyone investigates.</li>
+</ol>
+<p>Every one of these is available to the browser at capture time, which is why collecting them by hand is a waste of a reporter's attention. It should be automatic.</p>
+
+<h2>How should you annotate a screenshot without destroying the evidence?</h2>
+<p>Annotation is the one edit that adds information rather than removing it. Keep it disciplined:</p>
+<ul>
+<li><strong>Point, don't paint.</strong> One arrow or one box around the defect. Three colours of scribble make reviewers hunt for the actual claim.</li>
+<li><strong>Write the expectation on the image.</strong> "Should read &pound;, shows $" next to the arrow removes an entire round-trip. The screenshot shows what happened; only you can say what should have happened.</li>
+<li><strong>Never crop to the annotation.</strong> Annotate the wide shot, then attach a crop separately if the detail is small.</li>
+<li><strong>Keep the original.</strong> If the annotated copy is the only copy, you have replaced evidence with interpretation.</li>
+</ul>
+<p>The same discipline that makes a good annotation makes a good report body. The format we recommend is in <a href="/blog/how-to-write-a-bug-report-developers-act-on">how to write a bug report developers will actually act on</a>.</p>
+
+<h2>What can screenshot evidence never prove?</h2>
+<p>A screenshot is a record of output, not of cause. It cannot show you:</p>
+<ul>
+<li><strong>Why</strong> the value is wrong &mdash; that lives in the network response or the application state, not in the pixels.</li>
+<li><strong>Whether the request even happened.</strong> A blank table looks identical whether the API 500'd, returned an empty array, or was never called.</li>
+<li><strong>Console errors</strong> thrown before, during, or after the frame you captured.</li>
+<li><strong>Intermittent behaviour.</strong> One image cannot distinguish "always broken" from "broken one time in twenty", and that distinction changes the priority.</li>
+</ul>
+<p>This is why screenshot evidence belongs in a bundle, not alone. Pair it with the console output and the network requests from the same session, and the report stops being a claim and becomes a reproduction. Screenshot-only tickets are a recurring source of "cannot reproduce" replies, and the wider pattern &mdash; evidence gathered after the fact instead of at the moment of failure &mdash; is what <a href="/blog/ai-qa-complete-guide">our complete guide to AI QA</a> is about.</p>
+
+<h2>How do you keep screenshot evidence safe to share?</h2>
+<p>Screenshots are the highest-risk attachment in a bug tracker, because they capture whatever happened to be on screen: a customer's real name and address, an email inbox, a session token in a URL bar, an API key in a devtools panel. Once that image is in a ticket, it is in the ticket's history, its notifications, and its exports.</p>
+<p>Three habits keep this manageable. Redact before attaching, not after &mdash; editing an already-uploaded image rarely removes the original. Prefer test accounts with synthetic data for reproduction shots, so there is nothing to redact. And treat masking as destructive: draw opaque boxes, never blur or lower opacity, both of which can be partially reversed.</p>
+
+<h2>How do you make good screenshot evidence the default?</h2>
+<p>Every rule above is mechanical, which means asking humans to follow it is the wrong solution. Reporters are usually clients, testers, or teammates mid-task; they will send one cropped phone photo and a sentence, because that is what is easy.</p>
+<p>The fix is to make the complete capture cheaper than the incomplete one. <a href="/snap">Klavity Snap</a> does this by capturing on right-click: the screenshot, the URL, the viewport, the browser, the console errors, and the network requests from that moment are collected together and filed as one report, with annotation and redaction in the same step. The reporter's job shrinks to pointing at the problem and saying what they expected &mdash; the two things only they can supply.</p>
+
+<h2>The bottom line</h2>
+<p>Treat a screenshot as one exhibit with a chain of custody, not as the report. Capture the viewport rather than a crop, attach the URL, viewport size, browser, role, build, and timestamp, annotate with a single pointer and a stated expectation, redact destructively before upload, and always pair the image with console and network evidence from the same second. A report built that way is the difference between a developer opening a ticket and starting work, and a developer opening a ticket and starting a conversation.</p>
+
+<p><a href="/onboarding">Try Klavity free</a> and let your next client site collect its own evidence &mdash; screenshot, console, and network, in one right-click.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Capture the viewport by default; add a full-page shot for layout bugs</li><li>Attach URL, viewport size, browser, role, build, and timestamp every time</li><li>Annotate with one pointer and the expected result, never crop to it</li><li>Redact with opaque boxes before upload, and pair the image with console and network logs</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What should a screenshot in a bug report include?</summary><p>The defect plus enough surrounding interface to locate it, captured at the viewport level rather than as a tight crop. Alongside the image, include the full URL with query string, viewport dimensions, browser and OS version, the logged-in role or account state, the app build version, and a timestamp with timezone so the screenshot can be joined to console and network logs from the same moment.</p></details><details><summary>Is a screenshot enough evidence for a bug report?</summary><p>No. A screenshot records output, not cause. It cannot show why a value is wrong, whether the underlying request was made at all, what errors the console threw, or whether the bug is intermittent. Pair it with console output and network requests from the same session; screenshot-only tickets are a recurring source of 'cannot reproduce' replies.</p></details><details><summary>Should I annotate screenshots in bug reports?</summary><p>Yes, but minimally. Use one arrow or box on the defect and write the expected result next to it, since only the reporter can state what should have happened. Annotate the wide shot rather than cropping to the annotation, and keep the unannotated original so interpretation never replaces evidence.</p></details><details><summary>How do I redact sensitive data from a bug screenshot?</summary><p>Draw opaque boxes over the data before attaching the image, never blur or reduce opacity, because both can be partially reversed. Redact before upload rather than after, since editing an attachment usually leaves the original in the ticket history. Where possible, reproduce with a test account holding synthetic data so there is nothing to redact.</p></details><details><summary>Full-page or viewport screenshot for a bug report?</summary><p>Viewport by default, because it shows what the user actually saw at their real window size. Add a full-page capture when the bug involves layout, overflow, scroll behaviour, or missing and duplicated sections. A region crop is a useful close-up but should never be the only image attached.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
