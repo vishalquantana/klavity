@@ -3900,6 +3900,10 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
 
 export type FeedbackRow = {
   id: string; projectId: string; simId: string | null; actorEmail: string | null
+  // QPQ-31: the address the reporter typed into the composer's Email field (feedback.contact_email,
+  // written by setFeedbackContactEmail). actorEmail is the signed-in filer; an anonymous widget report
+  // has none, so the dashboard's Reporter falls back to this.
+  contactEmail: string | null
   urlHost: string | null; urlPath: string | null; sourceReferrer: string | null; observation: string | null
   title: string | null
   sentiment: string | null; priority: string | null; screenshotId: string | null
@@ -3917,6 +3921,7 @@ function rowToFeedback(x: any): FeedbackRow {
     id: String(x.id), projectId: String(x.project_id),
     simId: x.sim_id != null ? String(x.sim_id) : null,
     actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    contactEmail: x.contact_email != null ? String(x.contact_email) : null,
     urlHost: x.url_host != null ? String(x.url_host) : null,
     urlPath: x.url_path != null ? String(x.url_path) : null,
     sourceReferrer: x.source_referrer != null ? String(x.source_referrer) : null,
@@ -8263,6 +8268,10 @@ export async function listTicketsPaginated(
       priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
       status: x.status != null ? String(x.status) : "open",
       assignee: x.assignee != null ? String(x.assignee) : null,
+      // QPQ-31: the detail popup's Reporter row also opens from the board/list, not just from
+      // /api/dashboard, so this projection needs the same field. The SELECT is `f.*`, so both
+      // columns are already in hand.
+      reporterEmail: (x.contact_email ?? x.actor_email) != null ? String(x.contact_email ?? x.actor_email) : null,
       notes: x.notes != null ? String(x.notes) : null,
       urlPath: x.url_path != null ? String(x.url_path) : null,
       urlHost: x.url_host != null ? String(x.url_host) : null,
