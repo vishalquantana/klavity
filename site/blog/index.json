@@ -754,5 +754,12 @@
     "excerpt": "Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs.",
     "category": "Guides",
     "date": "2026-09-30"
+  },
+  {
+    "slug": "playwright-alternatives-for-qa",
+    "title": "Playwright Alternatives for QA: What to Use Instead",
+    "excerpt": "The best Playwright alternatives for QA are Cypress, Selenium, WebdriverIO, Puppeteer and hosted self-healing platforms. How to pick one.",
+    "category": "Compare",
+    "date": "2026-10-01"
   }
 ]

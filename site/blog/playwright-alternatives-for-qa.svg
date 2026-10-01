@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Comparing Playwright alternatives for QA: code-based test suites that break on selector churn versus a self-healing hosted run">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- left column: code-based suites -->
+  <rect x="48" y="60" width="300" height="300" rx="14" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="48" y="60" width="300" height="300" rx="14" fill="none" stroke="#f5f0e8" stroke-opacity="0.14"/>
+  <rect x="72" y="86" width="96" height="10" rx="5" fill="#f5f0e8" opacity="0.32"/>
+
+  <!-- three spec files with code lines -->
+  <rect x="72" y="116" width="252" height="64" rx="8" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="88" y="134" width="150" height="7" rx="3.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="88" y="150" width="200" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="88" y="162" width="112" height="7" rx="3.5" fill="#f5f0e8" opacity="0.14"/>
+
+  <rect x="72" y="192" width="252" height="64" rx="8" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="88" y="210" width="128" height="7" rx="3.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="88" y="226" width="186" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="88" y="238" width="140" height="7" rx="3.5" fill="#f5f0e8" opacity="0.14"/>
+
+  <rect x="72" y="268" width="252" height="64" rx="8" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="88" y="286" width="164" height="7" rx="3.5" fill="#6366f1" opacity="0.75"/>
+
+  <!-- broken-selector failures on the code side -->
+  <circle cx="300" cy="148" r="11" fill="#f87171" opacity="0.9"/>
+  <path d="M295 143l10 10M305 143l-10 10" stroke="#1e1b2e" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="300" cy="224" r="11" fill="#f87171" opacity="0.9"/>
+  <path d="M295 219l10 10M305 219l-10 10" stroke="#1e1b2e" stroke-width="2.2" stroke-linecap="round"/>
+
+  <!-- healing arrow across the gap -->
+  <path d="M368 210h56" stroke="#6366f1" stroke-width="2.6" stroke-linecap="round"/>
+  <polyline points="416,202 426,210 416,218" fill="none" stroke="#6366f1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M372 182c18-14 40-14 56 0" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 5" opacity="0.8"/>
+
+  <!-- right column: hosted self-healing run -->
+  <rect x="452" y="60" width="300" height="300" rx="14" fill="#6366f1" opacity="0.1"/>
+  <rect x="452" y="60" width="300" height="300" rx="14" fill="none" stroke="#6366f1" stroke-opacity="0.45"/>
+  <rect x="476" y="86" width="120" height="10" rx="5" fill="#6366f1" opacity="0.85"/>
+
+  <!-- browser window with passing flow steps -->
+  <rect x="476" y="116" width="252" height="216" rx="10" fill="#1e1b2e" stroke="#f5f0e8" stroke-opacity="0.16"/>
+  <line x1="476" y1="140" x2="728" y2="140" stroke="#f5f0e8" stroke-opacity="0.16"/>
+  <circle cx="492" cy="128" r="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="504" cy="128" r="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="516" cy="128" r="3.5" fill="#f5f0e8" opacity="0.3"/>
+
+  <rect x="496" y="160" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.26"/>
+  <circle cx="700" cy="164" r="10" fill="#4ade80" opacity="0.9"/>
+  <polyline points="695,164 699,168 706,160" fill="none" stroke="#1e1b2e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="496" y="208" width="178" height="8" rx="4" fill="#f5f0e8" opacity="0.26"/>
+  <circle cx="700" cy="212" r="10" fill="#4ade80" opacity="0.9"/>
+  <polyline points="695,212 699,216 706,208" fill="none" stroke="#1e1b2e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="496" y="256" width="120" height="8" rx="4" fill="#f5f0e8" opacity="0.26"/>
+  <circle cx="700" cy="260" r="10" fill="#4ade80" opacity="0.9"/>
+  <polyline points="695,260 699,264 706,256" fill="none" stroke="#1e1b2e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="496" y="300" width="204" height="8" rx="4" fill="#6366f1" opacity="0.5"/>
+</svg>
