@@ -1,0 +1,201 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marker.io vs BugHerd: Which Fits Your Agency in 2026? · Klavity</title>
+<meta name="description" content="Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.">
+<link rel="canonical" href="https://klavity.in/blog/marker-io-vs-bugherd">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Marker.io vs BugHerd: Which Fits Your Agency in 2026?"><meta property="og:description" content="Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.">
+<meta property="og:url" content="https://klavity.in/blog/marker-io-vs-bugherd"><meta property="og:image" content="https://klavity.in/blog/marker-io-vs-bugherd.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Marker.io vs BugHerd: Which Fits Your Agency in 2026?"><meta name="twitter:description" content="Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose."><meta name="twitter:image" content="https://klavity.in/blog/marker-io-vs-bugherd.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Marker.io vs BugHerd: Which Fits Your Agency in 2026?","description":"Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.","datePublished":"2026-10-02","dateModified":"2026-10-02","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/marker-io-vs-bugherd.svg"}},"mainEntityOfPage":"https://klavity.in/blog/marker-io-vs-bugherd","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Marker.io vs BugHerd: Which Fits Your Agency in 2026?","item":"https://klavity.in/blog/marker-io-vs-bugherd"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/marker-io-vs-bugherd"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is Marker.io or BugHerd better for a web agency?","acceptedAnswer":{"@type":"Answer","text":"Marker.io suits dev-led teams who want client feedback as ready-to-work tickets in the tracker they already use. BugHerd suits PM-led teams with many non-technical reviewers who need feedback filtered on a separate board before it reaches a sprint. Neither detects bugs on its own."}},{"@type":"Question","name":"Do Marker.io and BugHerd find bugs automatically?","acceptedAnswer":{"@type":"Answer","text":"No. Both are capture tools: a human has to load the page, notice the problem and submit a report. Silent regressions, accessibility issues and background request failures typically go unreported because no reviewer sees them."}},{"@type":"Question","name":"Can you use Marker.io or BugHerd alongside automated QA?","acceptedAnswer":{"@type":"Answer","text":"Yes, and that is the usual setup. Run automated detection against staging after each deploy to catch functional and visual regressions, then keep a capture tool for the subjective feedback only a person can give — copy, brand and perceived performance."}},{"@type":"Question","name":"Which is easier for clients to adopt?","acceptedAnswer":{"@type":"Answer","text":"A plain script-tag widget that needs no account, as Marker.io uses for guest reporters, generally has the lowest friction. Any step that asks a client to install or sign in costs you reviewers, and adoption in both tools tends to decay after the first week regardless."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Compare · 2026-10-02</div>
+    <h1>Marker.io vs BugHerd: Which Fits Your Agency in 2026?</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="48" y="70" width="300" height="190" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.45"/>
+  <rect x="48" y="70" width="300" height="26" rx="12" fill="#6366f1" fill-opacity="0.18"/>
+  <circle cx="68" cy="83" r="4" fill="#f87171"/>
+  <circle cx="82" cy="83" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="96" cy="83" r="4" fill="#f5f0e8" fill-opacity="0.2"/>
+  <rect x="68" y="120" width="150" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="68" y="142" width="210" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="68" y="186" width="120" height="44" rx="8" fill="#6366f1" fill-opacity="0.3" stroke="#6366f1"/>
+  <path d="M232 196 l16 16 -16 16 z" fill="#f87171" fill-opacity="0.8"/>
+  <circle cx="286" cy="212" r="16" fill="none" stroke="#f87171" stroke-width="3"/>
+  <line x1="286" y1="204" x2="286" y2="215" stroke="#f87171" stroke-width="3"/>
+  <circle cx="286" cy="221" r="2" fill="#f87171"/>
+  <rect x="452" y="70" width="300" height="190" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.45"/>
+  <rect x="452" y="70" width="300" height="26" rx="12" fill="#6366f1" fill-opacity="0.18"/>
+  <rect x="472" y="118" width="80" height="120" rx="8" fill="#f5f0e8" fill-opacity="0.07" stroke="#6366f1" stroke-opacity="0.3"/>
+  <rect x="562" y="118" width="80" height="120" rx="8" fill="#f5f0e8" fill-opacity="0.07" stroke="#6366f1" stroke-opacity="0.3"/>
+  <rect x="652" y="118" width="80" height="120" rx="8" fill="#f5f0e8" fill-opacity="0.07" stroke="#6366f1" stroke-opacity="0.3"/>
+  <rect x="482" y="132" width="60" height="22" rx="5" fill="#f87171" fill-opacity="0.55"/>
+  <rect x="482" y="162" width="60" height="22" rx="5" fill="#f87171" fill-opacity="0.3"/>
+  <rect x="572" y="132" width="60" height="22" rx="5" fill="#6366f1" fill-opacity="0.65"/>
+  <rect x="662" y="132" width="60" height="22" rx="5" fill="#4ade80" fill-opacity="0.6"/>
+  <path d="M676 143 l6 7 11 -13" fill="none" stroke="#1e1b2e" stroke-width="3" stroke-linecap="round"/>
+  <line x1="400" y1="96" x2="400" y2="300" stroke="#f5f0e8" stroke-opacity="0.18" stroke-dasharray="6 7"/>
+  <polyline points="348 165 388 165" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <polyline points="412 165 452 165" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <rect x="200" y="320" width="400" height="60" rx="14" fill="#6366f1" fill-opacity="0.16" stroke="#4ade80" stroke-opacity="0.7"/>
+  <circle cx="240" cy="350" r="14" fill="#4ade80" fill-opacity="0.25" stroke="#4ade80" stroke-width="2"/>
+  <path d="M233 350 l5 6 9 -12" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="268" y="338" width="190" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="268" y="356" width="130" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.16"/>
+  <polyline points="400 300 400 318 393 308 407 308 400 318" fill="none" stroke="#4ade80" stroke-opacity="0.8" stroke-width="2"/>
+  <line x1="520" y1="350" x2="576" y2="350" stroke="#4ade80" stroke-opacity="0.5" stroke-width="2"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Marker.io vs BugHerd is a choice between a bridge and a destination: Marker.io pushes annotated client reports straight into Jira, Linear or GitHub, while BugHerd triages them on its own kanban board first. Both are reactive — neither finds a bug until a human notices it and reports it, which is why agencies pair one with an automated detection layer.</div>
+    <div class="prose"><p><strong>Marker.io vs BugHerd</strong> comes down to one question: do you want client feedback pushed straight into the tracker your developers already live in, or do you want a feedback board of its own that non-technical clients can work in? Marker.io is built as a bridge — an on-page widget that turns a client's annotated screenshot into a fully-detailed ticket in Jira, Linear, GitHub, Asana or Trello. BugHerd is built as a destination — on-page pinning plus its own kanban board where feedback is triaged before anything reaches your dev workflow. Both are reactive by design: neither finds a bug until a human notices one and chooses to report it. That shared limitation, not the feature list, is usually what decides whether either tool fixes your agency's real problem.</p>
+
+<h2>What is the real difference between Marker.io and BugHerd?</h2>
+
+<p>Feature grids make these two look nearly identical, because at the capture layer they are. Both let a reviewer mark up the page, and both attach the technical context a developer needs to reproduce the issue — browser and OS, viewport size, the exact URL, console output and recent network activity. The divergence is what happens after submit.</p>
+
+<table>
+<tr><th>Dimension</th><th>Marker.io</th><th>BugHerd</th><th>Klavity</th></tr>
+<tr><td>Core model</td><td>Bridge into your existing tracker</td><td>Standalone feedback board</td><td>Finds bugs before anyone reports them</td></tr>
+<tr><td>Client install</td><td>JS widget on the site; guests need no account</td><td>On-page sidebar, typically via extension or script</td><td>Nothing for the client to install</td></tr>
+<tr><td>Where feedback lands</td><td>Jira / Linear / GitHub / Asana / Trello ticket</td><td>BugHerd kanban board, then synced out</td><td>Agency dashboard, before client review</td></tr>
+<tr><td>Who triages</td><td>Your team, inside the tracker</td><td>Project manager, inside BugHerd</td><td>Nobody — issues arrive pre-triaged</td></tr>
+<tr><td>Detects bugs on its own</td><td>No</td><td>No</td><td>Yes — AI scan of the URL</td></tr>
+<tr><td>Best fit</td><td>Dev-led teams with a tracker they trust</td><td>PM-led teams with many non-technical reviewers</td><td>Catching issues before the client opens the page</td></tr>
+</table>
+
+<h3>Marker.io: a bridge, not a second inbox</h3>
+
+<p>Marker.io's design assumption is that your tracker is already the single source of truth, and that adding a second place to look is the problem rather than the solution. A client clicks the widget, draws on the broken element, types a sentence, and your developer opens a ticket in Jira that already contains the environment data they would otherwise have to ask for. Guest reporters do not need a seat, which matters when a client's marketing team wants three people reviewing.</p>
+
+<p>The trade-off: if your tracker is messy, Marker.io pipes client feedback into the mess. Agencies without a disciplined backlog sometimes find raw client comments and real defects sitting in the same column, which is a triage problem no widget can solve.</p>
+
+<h3>BugHerd: a board clients can actually work in</h3>
+
+<p>BugHerd assumes the opposite — that clients and stakeholders should never be asked to look at a developer tool. Feedback is pinned to the element it concerns and lands on a kanban board designed for a project manager to sort, merge, reject and prioritise before engineering sees any of it. For an agency running five client sites with a dozen non-technical reviewers each, that buffer is the product.</p>
+
+<p>The trade-off: it is one more system to keep in sync. Status in BugHerd and status in your tracker drift apart unless someone owns the integration, and the on-page layer asks more of the client's browser setup than a plain script tag does.</p>
+
+<h2>Which one should your agency pick?</h2>
+
+<ul>
+<li><strong>Pick Marker.io</strong> if your developers already trust Jira, Linear or GitHub Issues and your main complaint is that client bug reports arrive without enough detail to reproduce.</li>
+<li><strong>Pick BugHerd</strong> if your main complaint is volume and noise — many reviewers, lots of opinion mixed with defects — and you want a project manager to filter before anything reaches a sprint.</li>
+<li><strong>Pick either</strong> if the goal is simply to replace WhatsApp screenshots and "the thing is broken on my phone" emails. Both do that well.</li>
+<li><strong>Pick neither, yet,</strong> if the actual failure in your process is that the client is finding the bug first. Neither tool changes that.</li>
+</ul>
+
+<p>On cost, check both vendors' current pricing pages before you commit: tiers, seat rules and project limits change, and the per-project maths differs sharply between an agency running three retainers and one running thirty.</p>
+
+<h2>Why do Marker.io and BugHerd leave the same gap?</h2>
+
+<p>Both tools sit downstream of human attention. A bug exists the moment it ships; it enters either tool only when someone loads the affected page, notices the problem, cares enough to report it, and remembers the widget is there. Each of those steps leaks.</p>
+
+<p>Three failure modes show up in agency retrospectives regardless of which tool is installed:</p>
+
+<ol>
+<li><strong>Adoption decay.</strong> Clients report heavily in week one, then drift back to email and Slack DMs. The widget is still on the page; nobody clicks it.</li>
+<li><strong>Silent regressions.</strong> A deploy breaks a mobile breakpoint or a checkout button. No reviewer visits that page for a week, so nothing is reported — and the gap between "broken" and "known" is measured in days.</li>
+<li><strong>Invisible classes of bug.</strong> Clients report what looks wrong. They do not report missing form labels, broken keyboard focus order, a 500 on a background request, or a layout that shifted by eight pixels. Those need a checker, not a reporter.</li>
+</ol>
+
+<p>This is also where our <a href="/blog/marker-io-alternative">Marker.io alternative</a> and <a href="/blog/bugherd-alternative">BugHerd alternative</a> write-ups land: the tools are good at their job, but their job is capture, not detection.</p>
+
+<h2>What does a two-layer QA stack look like?</h2>
+
+<p>The agencies that stop getting surprised by client emails run detection and capture as separate layers rather than hoping one tool does both:</p>
+
+<ol>
+<li><strong>Detection, before handoff.</strong> Scan the staging URL after every deploy. <a href="/autosim">AutoSim</a> re-runs the critical flows, and <a href="/sims">Sims</a> walks the site as different personas to surface what a scripted test would not. Fix what comes back before the review call is scheduled.</li>
+<li><strong>Capture, after handoff.</strong> Keep a reporting path for the subjective calls only a human makes — copy, brand, "this feels slow". <a href="/snap">Snap</a> covers this with right-click reports that carry console and network context; Marker.io or BugHerd cover it too if you prefer their client experience.</li>
+<li><strong>One triage destination.</strong> Whichever capture tool you keep, route everything to a single queue. Two inboxes is how bugs go missing.</li>
+</ol>
+
+<p>Read the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> for how the detection layer fits a client delivery schedule.</p>
+
+<h2>Does this change if the site was built with AI?</h2>
+
+<p>It raises the stakes. A site assembled in Cursor, Bolt, Lovable or v0 can reach a client preview link in an afternoon, with no one having read every line that shipped. The common failure pattern is not ugly code — it is plausible code that handles the happy path and quietly breaks on an empty state, a failed request or a second concurrent user.</p>
+
+<p>Marker.io and BugHerd will both faithfully record the moment your client discovers that. Neither will tell you first. If you are shipping AI-generated work to paying clients, the detection layer is not the optional half of the stack.</p>
+
+<h2>What should you check before you commit to either tool?</h2>
+
+<ul>
+<li><strong>Does it install without asking the client to do anything?</strong> Every install step costs you reviewers.</li>
+<li><strong>Does a report arrive reproducible?</strong> Environment, console, network and a URL — or you will spend the week asking follow-up questions.</li>
+<li><strong>Does it fit one triage queue?</strong> Confirm the tracker sync is two-way before you rely on it.</li>
+<li><strong>What finds the bugs nobody reports?</strong> If the answer is "we hope someone notices", that is the gap to close first.</li>
+</ul>
+
+<p>Marker.io and BugHerd are both reasonable answers to "how do clients tell us about bugs". Neither answers "how do we know before they do". <a href="/onboarding">Scan your next client site free</a> and see what a detection layer catches before the review call.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Choose Marker.io for tracker-native tickets, BugHerd for a PM-filtered board</li><li>Treat both as capture tools — neither detects bugs on its own</li><li>Scan staging after every deploy so clients stop finding bugs first</li><li>Route all feedback to one triage queue, never two inboxes</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Is Marker.io or BugHerd better for a web agency?</summary><p>Marker.io suits dev-led teams who want client feedback as ready-to-work tickets in the tracker they already use. BugHerd suits PM-led teams with many non-technical reviewers who need feedback filtered on a separate board before it reaches a sprint. Neither detects bugs on its own.</p></details><details><summary>Do Marker.io and BugHerd find bugs automatically?</summary><p>No. Both are capture tools: a human has to load the page, notice the problem and submit a report. Silent regressions, accessibility issues and background request failures typically go unreported because no reviewer sees them.</p></details><details><summary>Can you use Marker.io or BugHerd alongside automated QA?</summary><p>Yes, and that is the usual setup. Run automated detection against staging after each deploy to catch functional and visual regressions, then keep a capture tool for the subjective feedback only a person can give — copy, brand and perceived performance.</p></details><details><summary>Which is easier for clients to adopt?</summary><p>A plain script-tag widget that needs no account, as Marker.io uses for guest reporters, generally has the lowest friction. Any step that asks a client to install or sign in costs you reviewers, and adoption in both tools tends to decay after the first week regardless.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

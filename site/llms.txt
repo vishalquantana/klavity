@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [Marker.io vs BugHerd: Which Fits Your Agency in 2026?](https://klavity.in/blog/marker-io-vs-bugherd) — Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.
 - [Playwright Alternatives for QA: What to Use Instead](https://klavity.in/blog/playwright-alternatives-for-qa) — The best Playwright alternatives for QA are Cypress, Selenium, WebdriverIO, Puppeteer and hosted self-healing platforms. How to pick one.
 - [Screenshot Evidence in Bug Reports: What Makes It Useful](https://klavity.in/blog/screenshot-evidence-in-bug-reports) — Screenshot evidence only works when it carries the region, the state that produced it, and a timestamp that lines up with the console and network logs.
 - [Pre-Launch QA Checklist for Web Agencies (Client-Ready)](https://klavity.in/blog/pre-launch-qa-checklist-for-web-agencies) — A pre-launch QA checklist for web agencies covers seven gates: functional, forms, cross-browser, responsive, performance, accessibility, and content.

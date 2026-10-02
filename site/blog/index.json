@@ -761,5 +761,12 @@
     "excerpt": "The best Playwright alternatives for QA are Cypress, Selenium, WebdriverIO, Puppeteer and hosted self-healing platforms. How to pick one.",
     "category": "Compare",
     "date": "2026-10-01"
+  },
+  {
+    "slug": "marker-io-vs-bugherd",
+    "title": "Marker.io vs BugHerd: Which Fits Your Agency in 2026?",
+    "excerpt": "Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.",
+    "category": "Compare",
+    "date": "2026-10-02"
   }
 ]
