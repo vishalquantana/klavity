@@ -768,5 +768,12 @@
     "excerpt": "Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.",
     "category": "Compare",
     "date": "2026-10-02"
+  },
+  {
+    "slug": "what-is-vibe-coding",
+    "title": "What Is Vibe Coding? Definition, Risks, and QA Basics",
+    "excerpt": "Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it.",
+    "category": "Learn",
+    "date": "2026-10-03"
   }
 ]
