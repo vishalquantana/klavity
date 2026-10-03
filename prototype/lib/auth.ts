@@ -73,3 +73,19 @@ export function parseCookies(header: string | null): Record<string, string> {
   })
   return out
 }
+
+// Step 5: `klav_uid` — opaque per-user browser-cache namespace marker (see userCacheUid in lib/crypto.ts).
+// Deliberately NOT HttpOnly: dashboard.html must read it synchronously, before painting any cached data, to scope
+// its localStorage cache to the authenticated user. It is not a credential and the server never trusts it.
+// Same Path/SameSite/Secure conventions as projectCookie; Max-Age mirrors the session so both expire together.
+export function uidCookie(uid: string, maxAge: number, secure: boolean): string {
+  return `klav_uid=${uid}; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
+}
+export function clearUidCookie(secure: boolean): string {
+  return `klav_uid=; Path=/; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`
+}
+// Clears the non-HttpOnly last-selected-project cookie (projectCookie) — on logout it must not outlive the session,
+// or the NEXT user's bare /api/dashboard would be resolved against the previous user's project hint.
+export function clearProjectCookie(secure: boolean): string {
+  return `klav_proj=; Path=/; SameSite=Lax; Max-Age=0${secure ? "; Secure" : ""}`
+}

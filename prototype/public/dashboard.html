@@ -3545,18 +3545,49 @@ function activeProjectParam() {
 // Generic + keyed (dashboard per project, triage per project, …); versioned + TTL'd
 // so it never serves stale-forever data. Every access is wrapped: corrupt JSON, a
 // missing key, or disabled/full localStorage all degrade to a normal cold load.
-const SWR_V = 1                              // bump when any cached payload's shape changes
+const SWR_V = 2                              // bump when any cached payload's shape or the namespace scheme changes (v2: per-user namespace)
 const SWR_TTL_MS = 24 * 60 * 60 * 1000       // don't paint cache older than this (SWR still revalidates every load)
 const SWR_PREFIX = "klav:swr:v" + SWR_V + ":"
-function swrKey(k) { return SWR_PREFIX + k }
+// Step 5 — USER ISOLATION. Every SWR entry (dashboard, triage, tickets, tktlist, sim-matches, trails, expectations,
+// page-bugs, …) goes through swrKey/swrRead/swrWrite/swrInvalidate, so isolating them HERE isolates all consumers.
+// `klav_uid` is a non-secret, opaque, per-user cookie the server sets alongside the session (and on this page's own
+// response); it is ONLY a cache namespace + continuity marker — never an auth input. Key = klav:swr:v2:<uid>:<key>,
+// and the envelope also carries the uid and is rejected on mismatch. FAIL CLOSED: no uid → nothing is read or written.
+function swrReadUid() {
+  try { const m = /(?:^|;\s*)klav_uid=([0-9a-f]{32})(?:;|$)/.exec(document.cookie || ""); return m ? m[1] : null } catch (e) { return null }
+}
+const _pageUid = swrReadUid()   // the identity this page was served for — captured ONCE, before any cache read
+// The uid SWR may use right now: the page's own uid, and only while the cookie still matches it. If the browser-wide
+// session changed user under this tab (login as someone else elsewhere) this is null → the tab reads/writes nothing.
+function swrUid() { const u = swrReadUid(); return (u && u === _pageUid) ? u : null }
+function dashIdentityChanged() { return swrReadUid() !== _pageUid }
+function swrKey(k) { const u = swrUid(); return u ? SWR_PREFIX + u + ":" + k : null }
+// Boot purge, BEFORE the first swrRead: delete every Klavity SWR entry that is not this user's current-version
+// namespace (legacy unscoped v1, other users, other versions) and every dashboard pointer that is not this user's —
+// including the legacy unscoped "klav:dash:last". By KEY NAME only: old payloads are never parsed or rendered.
+function swrBootPurge() {
+  try {
+    const keepPrefix = _pageUid ? SWR_PREFIX + _pageUid + ":" : null
+    const keepPtr = _pageUid ? "klav:dash:last:" + _pageUid : null
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (!k) continue
+      if (k.indexOf("klav:swr:") === 0) { if (!keepPrefix || k.indexOf(keepPrefix) !== 0) localStorage.removeItem(k) }
+      else if (k.indexOf("klav:dash:last") === 0) { if (k !== keepPtr) localStorage.removeItem(k) }
+    }
+  } catch (e) {}
+}
+swrBootPurge()
 
 function swrRead(k) {
   if (!k) return null
+  const u = swrUid(), sk = swrKey(k)
+  if (!u || !sk) return null   // no/changed identity → fail closed
   try {
-    const raw = localStorage.getItem(swrKey(k))
+    const raw = localStorage.getItem(sk)
     if (!raw) return null
     const env = JSON.parse(raw)
-    if (!env || env.v !== SWR_V || typeof env.t !== "number") return null   // wrong/old version or malformed
+    if (!env || env.v !== SWR_V || env.u !== u || typeof env.t !== "number") return null   // wrong/old version, other user's, or malformed
     if (Date.now() - env.t > SWR_TTL_MS) return null                        // too stale to paint
     return env.data == null ? null : env.data
   } catch (e) { return null }   // corrupt JSON / storage disabled → cold load
@@ -3576,21 +3607,24 @@ function swrPrune(keepKey) {
 
 function swrWrite(k, data) {
   if (!k || data == null) return
+  const u = swrUid(), sk = swrKey(k)
+  if (!u || !sk) return   // no/changed identity → never write (fail closed)
   let payload
-  try { payload = JSON.stringify({ v: SWR_V, t: Date.now(), data }) } catch (e) { return }  // unserializable → skip
+  try { payload = JSON.stringify({ v: SWR_V, u, t: Date.now(), data }) } catch (e) { return }  // unserializable → skip
   try {
-    localStorage.setItem(swrKey(k), payload)
+    localStorage.setItem(sk, payload)
   } catch (e) {
     // Most likely quota: drop older entries and retry once, then give up silently.
-    try { swrPrune(k); localStorage.setItem(swrKey(k), payload) } catch (e2) {}
+    try { swrPrune(k); localStorage.setItem(sk, payload) } catch (e2) {}
   }
 }
 
 // Drop a single SWR entry so the next swrSection() for that key revalidates from the network
 // instead of painting a now-stale snapshot (KLAVITYKLA-511: a fresh submit must bust "triage:"+pid).
 function swrInvalidate(k) {
-  if (!k) return
-  try { localStorage.removeItem(swrKey(k)) } catch (e) {}
+  const sk = k ? swrKey(k) : null
+  if (!sk) return
+  try { localStorage.removeItem(sk) } catch (e) {}
 }
 
 // ── #652: idle prefetch of the likely-next views ──────────────────────────────
@@ -3810,12 +3844,88 @@ function safeRender(label, fn) {
 
 // Dashboard payload is cached per resolved project id; a "last" pointer lets the
 // no-?project= default load paint instantly too.
-const DASH_LAST_KEY = "klav:dash:last"
+const DASH_LAST_KEY = "klav:dash:last:" + (_pageUid || "")   // per-user pointer (the legacy unscoped one is purged at boot, never read)
 function dashCacheKey(pid) { return "dash:" + pid }
 function dashTargetProjId() {
   const p = activeProjectParam()
   if (p) return p
   try { return localStorage.getItem(DASH_LAST_KEY) } catch (e) { return null }
+}
+
+// Step 3 — request registry: /api/dashboard requests currently in flight, keyed by the EXACT request URL
+// (bare "/api/dashboard" and "?project=<id>" are distinct keys; nothing is ever shared across keys).
+// Background polls (focus / visibilitychange / 25s tick) SKIP when their own key is in flight instead of
+// issuing a duplicate. Mutation-triggered refreshes and load() never skip — they always fetch fresh (an
+// older in-flight request may predate the mutation) but still register, so polls stay suppressed meanwhile.
+const _dashInflight = new Map()
+// Response ordering. Every ACTUAL dashboard HTTP request (a skipped poll never gets one; each load() retry
+// attempt and the bare fallback each get their own) is stamped from `_dashSeq` when it is issued.
+// `_dashAppliedSeq` is the stamp of the newest response actually applied to `state`. A response older than
+// that must not overwrite it; one older than only a merely-in-flight (or failed) request still may apply.
+let _dashSeq = 0
+let _dashAppliedSeq = 0
+// Step 4 — minimum background-refresh gap. `_dashLastAppliedRequestAt` is the ISSUE time (Date.now() when the
+// HTTP request was sent — NOT when it completed, so a slow response can't stretch the suppression window) of the
+// newest dashboard response actually applied to `state` (set only beside `_dashAppliedSeq`: so never for a
+// failure, error/empty payload, project mismatch or superseded response). A background poll (focus /
+// visibilitychange / 25s timer — refreshAll(true)) is skipped while the dashboard is that fresh. Mutation
+// refreshes and load() are never gated. A negative age (wall clock moved backwards) counts as NOT fresh.
+const DASH_MIN_REFRESH_GAP_MS = 10000
+let _dashLastAppliedRequestAt = 0
+function dashFreshEnough() {
+  if (!_dashLastAppliedRequestAt) return false
+  const age = Date.now() - _dashLastAppliedRequestAt
+  return age >= 0 && age < DASH_MIN_REFRESH_GAP_MS
+}
+function dashRequestUrl(pid) { return "/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : "") }
+// Register `url` as in flight; returns the entry to hand back to dashInflightLeave(). Leave ALWAYS runs
+// (success OR failure) and only removes the entry if it is still THIS request's — an older request
+// finishing late must not clear a newer one's entry.
+function dashInflightEnter(url) { const entry = { url }; _dashInflight.set(url, entry); return entry }
+function dashInflightLeave(entry) { if (_dashInflight.get(entry.url) === entry) _dashInflight.delete(entry.url) }
+async function dashRegistered(url, run) {
+  const entry = dashInflightEnter(url)
+  try { return await run() }
+  finally { dashInflightLeave(entry) }
+}
+// True when the project this response was requested for is no longer the one currently targeted, so the
+// response must be discarded rather than overwrite the current project's state.
+function dashResponseStale(reqUrl) { return dashRequestUrl(dashTargetProjId()) !== reqUrl }
+// Step 5 — provenance. `state` painted from the SWR cache is NOT network-confirmed. Only a dashboard response actually
+// applied during THIS page lifetime sets this, and the KLA-717/KLA-764 empty-payload guards only protect state that has
+// been confirmed — an authoritative empty response may replace cache-derived state, never the reverse.
+let _dashStateNetworkConfirmed = false
+function dashNoteNetworkApplied() {
+  _dashStateNetworkConfirmed = true
+  try { sessionStorage.removeItem("klav:dash:reset") } catch (e) {}   // a successful load re-arms the one-shot reset below
+}
+// The pointer to a project that errored is always dropped (KLA-829). When access was DENIED (403) the project's cached
+// dashboard and the stale klav_proj cookie (which would make the bare retry 403 too) are dropped as well.
+function dashForgetProject(pid, denied) {
+  try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+  if (!denied) return
+  try { swrInvalidate(dashCacheKey(pid)) } catch (e) {}
+  try { document.cookie = "klav_proj=; Path=/; Max-Age=0; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "") } catch (e) {}
+}
+// Revoked-access reset: drop the stale DOM/state by reloading bare. One-shot per tab session (cleared by the next
+// successful network apply) so a persistent 403 can never become a reload loop.
+function dashHardReset() {
+  try {
+    if (sessionStorage.getItem("klav:dash:reset")) return false
+    sessionStorage.setItem("klav:dash:reset", "1")
+  } catch (e) { return false }
+  location.replace("/dashboard")
+  return true
+}
+// Explicit logout: remove every Klavity SWR entry (all versions/users) and every dashboard pointer, by key prefix only —
+// never localStorage.clear(), so unrelated keys survive.
+function dashClearClientCache() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (k && (k.indexOf("klav:swr:") === 0 || k.indexOf("klav:dash:last") === 0)) localStorage.removeItem(k)
+    }
+  } catch (e) {}
 }
 
 async function load() {
@@ -3834,10 +3944,14 @@ async function load() {
   // chosen project sticks across reloads/navigation, not just when ?project= is in the URL.
   let data
   let redirected = false
+  let reqUrl = null, reqSeq = 0, reqAt = 0   // URL, sequence stamp and issue time of the request the final `data` came from
+  let inflight = null, inflight2 = null   // Step 3: registry entries held for this load()'s dashboard requests
   kbar.start()
   try {
     const pid = dashTargetProjId()
     const dashUrl = "/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : "")
+    reqUrl = dashUrl; inflight = dashInflightEnter(dashUrl)   // registered for the whole retry sequence
+    const stamp = () => { reqSeq = ++_dashSeq; reqAt = Date.now() }   // per ACTUAL HTTP attempt (retries + fallback)
     // KLA-764: a transient network blip or a racey empty payload used to overwrite good state and
     // blank the project switcher to "—" (only browser-Back — via bfcache — could recover it). Retry
     // a hard failure a couple of times before giving up so one flaky fetch can't wipe the switcher.
@@ -3846,14 +3960,14 @@ async function load() {
       // abort — the most common transient failure) retries instead of escaping to the outer catch and
       // failing on the first blip. A resolved-but-error response is handled below the same way.
       try {
-        const r = await fetchWithTimeout(dashUrl)
+        stamp(); const r = await fetchWithTimeout(dashUrl)
         if (r.status === 401) { location.href = "/login"; redirected = true; break }
         data = await r.json().catch(() => null)
         // KLA-829: recover from ANY errored project hint — stale/inaccessible id, dead bookmark, or an
         // EXPLICIT ?project= switch the old guard (pid !== activeProjectParam()) skipped → blank dead page.
         // Clear the pointer + strip the bad ?project=, then retry bare → first accessible project.
         if (data && data.error && pid) {
-          try { localStorage.removeItem(DASH_LAST_KEY) } catch (e) {}
+          dashForgetProject(pid, r.status === 403)
           if (activeProjectParam()) {
             try {
               const u = new URL(location.href)
@@ -3861,6 +3975,7 @@ async function load() {
               history.replaceState(null, "", u.pathname + u.search + u.hash)
             } catch (e) {}
           }
+          inflight2 = dashInflightEnter(reqUrl = "/api/dashboard"); stamp()
           const r2 = await fetchWithTimeout("/api/dashboard")
           if (r2.status === 401) { location.href = "/login"; redirected = true; break }
           data = await r2.json().catch(() => null)
@@ -3872,13 +3987,19 @@ async function load() {
       if (attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)))
     }
   } catch (e) { data = null }
-  finally { kbar.done() }
+  finally { kbar.done(); if (inflight) dashInflightLeave(inflight); if (inflight2) dashInflightLeave(inflight2) }
   if (redirected) return
+  // Step 5: the browser-wide session changed user while this was in flight → apply/render/cache NOTHING; re-init cleanly.
+  if (dashIdentityChanged()) { location.reload(); return }
+  // Step 3: if the targeted project changed while this was in flight, don't let the old project's payload
+  // overwrite what's showing. Only when there is already state to keep — a cold boot (state === null) must
+  // still paint what it fetched rather than be left on skeletons.
+  if (data && !data.error && state !== null && reqUrl && dashResponseStale(reqUrl)) return
   // KLA-764: never let a transient EMPTY payload ({active:null, projects:[]}) blank an already-loaded
   // switcher (same guard as refreshAll's KLA-717). load() re-runs while state is populated (e.g. after a
   // plan-override change), so a racey empty revalidation could paint "—"; keep the good state instead.
   if (data && Array.isArray(data.projects) && data.projects.length === 0 && !data.active
-      && state && Array.isArray(state.projects) && state.projects.length > 0) return
+      && _dashStateNetworkConfirmed && state && Array.isArray(state.projects) && state.projects.length > 0) return
   if (!data || data.error) {
     // Keep whatever we painted from cache; only surface the error on a true cold miss.
     if (state === null) {
@@ -3894,8 +4015,13 @@ async function load() {
     return
   }
   // SWR step 3 — swap in fresh data, re-render, and re-cache.
-  state = data
-  render()
+  // Response ordering: if a NEWER response was already applied (e.g. a mutation's refreshAll() landed first),
+  // this payload is superseded — skip ONLY its state/render/cache application and still run the boot
+  // initialization below. `data` is repointed at the current accepted `state`, so that initialization
+  // (last-project bookkeeping, URL replaceState) never depends on the discarded payload.
+  const superseded = reqSeq < _dashAppliedSeq
+  if (superseded) data = state
+  else { _dashAppliedSeq = reqSeq; _dashLastAppliedRequestAt = reqAt; dashNoteNetworkApplied(); state = data; render() }
   // #654/#655: hydrate whatever view is currently shown (usually overview → the trend chart). The
   // boot-time setView() ran before state existed (loadViewData no-ops without state), so this is the
   // first chance to lazily load the initial view's on-demand data. Settings data still waits for a
@@ -3903,7 +4029,7 @@ async function load() {
   if (typeof loadViewData === "function") loadViewData(document.body.getAttribute("data-view") || "overview")
   mountReportWidget()
   if (data.active && data.active.id) {
-    swrWrite(dashCacheKey(data.active.id), data)
+    if (!superseded) swrWrite(dashCacheKey(data.active.id), data)
     try { localStorage.setItem(DASH_LAST_KEY, data.active.id) } catch (e) {}
     // KLAVITYKLA-299: silently update the URL so it reflects the active project even when
     // the user landed on /dashboard without a ?project= param (bookmarkable; back/forward safe).
@@ -3941,28 +4067,50 @@ function mountReportWidget() {
 // update. `isPoll` (passed only by the ~25s liveness tick / focus refresh) scopes the re-render to the
 // active view (#658); mutation-driven callers pass nothing → a full render.
 async function refreshAll(isPoll) {
+  // KLAVITYKLA-299: use dashTargetProjId() so the stored project id is honoured, not just the URL param.
+  const pid = dashTargetProjId()
+  const reqUrl = dashRequestUrl(pid)
+  // Step 3: a background poll (focus / visibility / 25s tick) skips when the same request is already in
+  // flight, OR when a dashboard response was applied less than DASH_MIN_REFRESH_GAP_MS ago (Step 4). Checked
+  // BEFORE kbar.start() and ++_dashSeq so the progress bar stays balanced and a skipped poll consumes no sequence
+  // number. Mutation callers (no isPoll) never skip: an older in-flight request may predate their mutation, and
+  // "fresh" data may predate it too, so they always fetch fresh.
+  if (isPoll === true && (_dashInflight.has(reqUrl) || dashFreshEnough())) return
+  const seq = ++_dashSeq   // stamped only for a request that is actually issued (a skipped poll returns above)
   let data
   const fetchStart = Date.now()   // #532: anything saved after this the poll must not overwrite
   kbar.start()
   try {
-    // KLAVITYKLA-299: use dashTargetProjId() so the stored project id is honoured, not just the URL param.
-    const pid = dashTargetProjId()
-    const r = await fetchWithTimeout("/api/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : ""))
-    if (r.status === 401) { location.href = "/login"; return }
-    if (!r.ok) return
-    data = await r.json()
+    const res = await dashRegistered(reqUrl, async () => {
+      const r = await fetchWithTimeout(reqUrl)
+      return { r, body: (r.status === 401 || !r.ok) ? null : await r.json() }
+    })
+    // Step 5: user changed under this tab → discard (no apply, no cache write) and re-init under the current session.
+    if (dashIdentityChanged()) { location.reload(); return }
+    if (res.r.status === 401) { location.href = "/login"; return }
+    // Step 5: authoritative 403 for the CURRENT project (access revoked) → forget it and hard-reset (one-shot).
+    if (res.r.status === 403 && !dashResponseStale(reqUrl)) { dashForgetProject(pid, true); dashHardReset(); return }
+    if (!res.r.ok) return
+    data = res.body
   } catch (e) { return }
   finally { kbar.done() }
   if (!data || data.error) return
+  // Step 3: the targeted project changed while this was in flight → discard the stale response.
+  if (dashResponseStale(reqUrl)) return
   // KLAVITYKLA-717 (defense in depth): never let a stray EMPTY payload ({active:null, projects:[]})
   // blank an already-loaded switcher. A transient session blip / race can return the empty shape;
   // if we already had projects, keep the good state instead of painting an empty dropdown + a
   // "Couldn't load your project" Settings pane that only a full reload would recover from.
   if (data && Array.isArray(data.projects) && data.projects.length === 0 && !data.active
-      && state && Array.isArray(state.projects) && state.projects.length > 0) { return }
+      && _dashStateNetworkConfirmed && state && Array.isArray(state.projects) && state.projects.length > 0) { return }
+  // Response ordering: a newer response was already applied → this older one must not overwrite it.
+  if (seq < _dashAppliedSeq) return
   // #532: overlay locally-edited fields the fresh payload may not yet reflect (belt-and-suspenders
   // behind the __klavMutating guard) so a lagging poll read can never clobber a just-saved value.
   mergeLocalEdits(data, fetchStart)
+  _dashAppliedSeq = seq
+  _dashLastAppliedRequestAt = fetchStart   // request ISSUE time (taken just before the fetch), not completion time
+  dashNoteNetworkApplied()
   state = data
   render(false, isPoll === true)   // #658: poll → scoped to the active view; mutation refresh → full
   if (data.active && data.active.id) {                                       // keep cache fresh after triage actions
@@ -13821,7 +13969,7 @@ const wireNewProjectModal = () => {
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wireNewProjectModal)
 else wireNewProjectModal()
-$("logout").onclick = async () => { await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" }
+$("logout").onclick = async () => { dashClearClientCache(); await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" }
 
 // ── G1 session replay viewer (rrweb-player, lazy-loaded vendor asset) ─────────────────
 var __replayState = { player: null, loaded: false }

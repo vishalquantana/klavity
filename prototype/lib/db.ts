@@ -3199,6 +3199,23 @@ export async function projectAccess(email: string, projectId: string): Promise<'
   return null
 }
 
+// Same authorization as projectAccess(), but for a caller that ALREADY holds the project row from the same
+// request (e.g. /api/dashboard, which got it from listAccessibleProjects). Skips only projectAccess's own
+// projectById round-trip; the accountRole + project_members checks below are identical to projectAccess().
+// Keep in lockstep with projectAccess().
+export async function projectAccessForRow(email: string, proj: ProjectRow): Promise<'admin' | 'member' | null> {
+  const acctRole = await accountRole(proj.accountId, email)
+  if (acctRole === "owner" || acctRole === "admin") return "admin"
+  const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [proj.id, email] })
+  if (r.rows.length) {
+    const role = String((r.rows[0] as any).project_role)
+    if (role === "admin") return "admin"
+    if (role === "viewer") return null
+    return "member"
+  }
+  return null
+}
+
 // KLA-833 (perf): projectAccess + projectById in ONE pass. The hot /api/projects/:id/* block (tickets
 // board load, the 15s /tickets/rev poll, triage, members, …) previously called projectAccess(me,pid)
 // — which itself fetches projectById internally — and THEN called projectById(pid) a SECOND time for
@@ -3965,6 +3982,36 @@ export async function listFeedback(projectId: string, opts: { withTicketOnly?: b
   }
   const r = await db!.execute({ sql, args: [projectId, limit] })
   return r.rows.map(rowToFeedback)
+}
+
+// Mutable-state + recurrence-memory columns of a feedback row that rowToFeedback() drops. Used by
+// /api/dashboard so it need not re-SELECT the same rows by id.
+export type FeedbackMeta = {
+  status: string; assignee: string | null; notes: string | null; recurrence: number
+  recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number
+}
+// Opt-in variant of listFeedback (identical SQL/rows/order): additionally returns, per row id, the meta
+// columns already present on the SELECT * result. FeedbackRow itself is deliberately unchanged.
+export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
+  const limit = opts.limit ?? 20
+  const sql = opts.simOnly
+    ? "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
+    : "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
+  const r = await db!.execute({ sql, args: [projectId, limit] })
+  const meta: Record<string, FeedbackMeta> = {}
+  for (const x of r.rows as any[]) {
+    meta[String(x.id)] = {
+      status: x.status ? String(x.status) : "open",
+      assignee: x.assignee != null ? String(x.assignee) : null,
+      notes: x.notes != null ? String(x.notes) : null,
+      recurrence: Number(x.recurrence_count ?? 1),
+      recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
+      lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
+      resolvedAt: x.resolved_at != null ? Number(x.resolved_at) : null,
+      createdAt: Number(x.created_at),
+    }
+  }
+  return { rows: r.rows.map(rowToFeedback), meta }
 }
 
 // ── Sim Profile: a Sim's own feedback, annotated with its TRIAGE OUTCOME ──
