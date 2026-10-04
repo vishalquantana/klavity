@@ -775,5 +775,12 @@
     "excerpt": "Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it.",
     "category": "Learn",
     "date": "2026-10-03"
+  },
+  {
+    "slug": "ai-qa-workflow",
+    "title": "AI QA Workflow: A Step-by-Step Guide for Web Agencies",
+    "excerpt": "An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture.",
+    "category": "Guides",
+    "date": "2026-10-04"
   }
 ]

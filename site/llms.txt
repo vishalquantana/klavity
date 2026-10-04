@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [AI QA Workflow: A Step-by-Step Guide for Web Agencies](https://klavity.in/blog/ai-qa-workflow) — An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture.
 - [What Is Vibe Coding? Definition, Risks, and QA Basics](https://klavity.in/blog/what-is-vibe-coding) — Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it.
 - [Marker.io vs BugHerd: Which Fits Your Agency in 2026?](https://klavity.in/blog/marker-io-vs-bugherd) — Marker.io bridges client feedback into your tracker; BugHerd gives it a board of its own. Both are reactive — here's how agencies choose.
 - [Playwright Alternatives for QA: What to Use Instead](https://klavity.in/blog/playwright-alternatives-for-qa) — The best Playwright alternatives for QA are Cypress, Selenium, WebdriverIO, Puppeteer and hosted self-healing platforms. How to pick one.
