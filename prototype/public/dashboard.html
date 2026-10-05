@@ -1926,6 +1926,15 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
      different from an idle button, instead of silently doing nothing for the duration of the POST. */
   #newTktSubmit svg{animation:tktRecSpin 1s linear infinite;margin-right:2px;vertical-align:-2px}
   #newTktSubmit:disabled{opacity:.65;cursor:not-allowed}
+  /* KD-100: attachments on the New ticket dialog — drop zone + preview grid */
+  .newtkt-drop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--paper-faint)}
+  .newtkt-drop.over{border-color:var(--indigo,#6366f1);background:rgba(99,102,241,.08)}
+  .newtkt-files{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:10px}
+  .newtkt-files:empty{display:none}
+  .newtkt-file{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--ink)}
+  .newtkt-file img,.newtkt-file video{display:block;width:100%;height:84px;object-fit:cover;background:#000}
+  .newtkt-file .nf-meta{padding:5px 8px;font-size:11px;color:var(--paper-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .newtkt-file .nf-rm{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;cursor:pointer;font-size:14px;line-height:22px;padding:0}
   .tkt-rec-error{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--rose);background:rgba(219,39,119,.08);border:1px solid rgba(219,39,119,.28);border-radius:8px;padding:8px 10px}
   .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-video{display:none}
   .tkt-rec-dl{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;font-size:12px;font-weight:600;color:var(--indigo);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:5px 11px;transition:background var(--mi-dur) var(--mi-ease),border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
@@ -1947,6 +1956,25 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-attach-size{color:var(--paper-faint);flex:none}
   .tkt-attach-unavailable{color:var(--paper-faint);cursor:default}
   .tkt-attach-add-btn{align-self:flex-start}
+  /* KD-100: inline previews for image/video attachments (ticket detail) + the shared click-to-enlarge viewer */
+  .tkt-attach-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+  .tkt-attach-thumb{position:relative;display:block;padding:0;text-align:left;color:inherit;font:inherit;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--ink);cursor:zoom-in}
+  .tkt-attach-thumb:hover{border-color:var(--indigo)}
+  .tkt-attach-thumb img,.tkt-attach-thumb video{display:block;width:100%;height:80px;object-fit:cover;background:#000}
+  .tkt-attach-cap{display:block;padding:4px 7px;font-size:11px;color:var(--paper-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tkt-attach-play,.newtkt-play{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;pointer-events:none}
+  .tkt-attach-play{top:25px}
+  .newtkt-play{top:27px}
+  .newtkt-file{cursor:zoom-in}
+  .media-pv-bg{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:24px}
+  .media-pv-box{display:flex;flex-direction:column;gap:10px;max-width:min(1100px,96vw);max-height:94vh}
+  .media-pv-box img,.media-pv-box video{max-width:100%;max-height:78vh;border-radius:10px;background:#000;object-fit:contain}
+  .media-pv-bar{display:flex;align-items:center;gap:12px;color:#fff;font-size:13px}
+  .media-pv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .media-pv-bar a{color:#fff;background:rgba(255,255,255,.14);border:0;border-radius:8px;padding:6px 11px;font:inherit;font-size:12.5px;cursor:pointer;text-decoration:none}
+  .media-pv-bar a:hover{background:rgba(255,255,255,.26)}
+  .media-pv-close{position:absolute;top:16px;right:20px;width:38px;height:38px;border:0;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font-size:24px;line-height:38px;padding:0;cursor:pointer}
+  .media-pv-close:hover{background:rgba(255,255,255,.3)}
 
 /* ===== Add-a-Sim modal (first-run + "New Sim") ===== */
 .sm-ov{position:fixed;inset:0;background:rgba(25,20,15,.5);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;z-index:2147483646;overflow:auto;padding:40px 18px}
@@ -7308,6 +7336,48 @@ function _attachFmtBytes(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB"
   return (n / (1024 * 1024)).toFixed(1) + " MB"
 }
+// KD-100: what kind of preview an attachment gets — "image" | "video" | "" (everything else stays a plain download link).
+// Prefers the stored content type, falls back to the file extension. Pure.
+function attachKind(a) {
+  const ct = String((a && a.contentType) || "").toLowerCase()
+  if (ct.indexOf("image/") === 0) return "image"
+  if (ct.indexOf("video/") === 0) return "video"
+  const m = /\.([a-z0-9]{1,5})$/i.exec(String((a && a.filename) || ""))
+  const ext = m ? m[1].toLowerCase() : ""
+  if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"].indexOf(ext) >= 0) return "image"
+  if (["mp4", "webm", "mov", "m4v", "ogv"].indexOf(ext) >= 0) return "video"
+  return ""
+}
+// Shared click-to-enlarge viewer for images and videos (ticket-detail attachments + the New ticket dialog's held files).
+// o = { url, name, kind: "image"|"video", openUrl? }. Esc / backdrop click / the top-right × dismiss it; a playing video is paused on close.
+let _mediaPvEl = null
+function _mediaPvKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMediaPreview() } }
+function closeMediaPreview() {
+  if (!_mediaPvEl) return
+  const v = _mediaPvEl.querySelector("video"); if (v) { try { v.pause() } catch (e) {} }
+  _mediaPvEl.remove(); _mediaPvEl = null
+  document.removeEventListener("keydown", _mediaPvKey, true)
+}
+function openMediaPreview(o) {
+  closeMediaPreview()
+  const bg = document.createElement("div"); bg.className = "media-pv-bg"
+  bg.setAttribute("role", "dialog"); bg.setAttribute("aria-modal", "true"); bg.setAttribute("aria-label", "Preview: " + o.name)
+  const box = document.createElement("div"); box.className = "media-pv-box"
+  const media = document.createElement(o.kind === "video" ? "video" : "img")
+  if (o.kind === "video") { media.controls = true; media.autoplay = true; media.setAttribute("playsinline", "") } else { media.alt = o.name }
+  media.src = o.url
+  const bar = document.createElement("div"); bar.className = "media-pv-bar"
+  const nm = document.createElement("span"); nm.className = "media-pv-name"; nm.textContent = o.name; nm.title = o.name
+  bar.appendChild(nm)
+  if (o.openUrl) { const a = document.createElement("a"); a.href = o.openUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open original"; bar.appendChild(a) }
+  const close = document.createElement("button"); close.type = "button"; close.className = "media-pv-close"
+  close.textContent = "\u00d7"; close.setAttribute("aria-label", "Close preview"); close.title = "Close (Esc)"
+  close.addEventListener("click", closeMediaPreview)
+  box.appendChild(media); box.appendChild(bar); bg.appendChild(box); bg.appendChild(close)   // × sits in the top-right corner of the overlay
+  bg.addEventListener("click", function (e) { if (e.target === bg) closeMediaPreview() })
+  document.addEventListener("keydown", _mediaPvKey, true)
+  document.body.appendChild(bg); _mediaPvEl = bg
+}
 // KD-158: file attachments (non-image evidence — PDFs, logs, docs — uploaded at intake, #425/
 // KLAVITYKLA-480) were captured + presigned by the server but never rendered anywhere in the
 // dashboard. This renders the existing list; wireAttachments() (below) wires "+ Add attachment" so
@@ -7315,9 +7385,19 @@ function _attachFmtBytes(n) {
 function buildAttachmentsHtml(t) {
   var atts = Array.isArray(t.attachments) ? t.attachments : []
   var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+  var thumbs = ""
   var items = atts.map(function (a, i) {
     var name = esc(String(a.filename || ("attachment-" + (i + 1))))
     var size = a.size ? _attachFmtBytes(a.size) : ""
+    var kind = a.url ? attachKind(a) : ""
+    if (kind) {   // KD-100: previewable → a clickable tile (opens the viewer); the viewer links to the original
+      thumbs += '<button type="button" class="tkt-attach-thumb" data-idx="' + i + '" title="' + name + '">'
+        + (kind === "image"
+            ? '<img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy">'
+            : '<video src="' + esc(String(a.url)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
+        + '<span class="tkt-attach-cap">' + name + '</span></button>'
+      return ""
+    }
     return a.url
       ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener">'
           + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span>'
@@ -7326,6 +7406,7 @@ function buildAttachmentsHtml(t) {
   }).join("")
   return '<div class="tkt-attach-wrap">'
     + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
+    + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
     + '<div class="tkt-attach-list">' + items + '</div>'
     + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button">' + kicon('paperclip', { size: 13 }) + ' Add attachment</button>'
     + '<input type="file" class="tkt-attach-input" multiple hidden>'
@@ -7339,6 +7420,13 @@ function wireAttachments(detailEl, t, ticketId) {
   var addBtn = wrap.querySelector(".tkt-attach-add-btn")
   var input = wrap.querySelector(".tkt-attach-input")
   var msgEl = wrap.querySelector(".tkt-attach-msg")
+  wrap.querySelectorAll(".tkt-attach-thumb").forEach(function (b) {   // KD-100: enlarge an image / play a video
+    b.addEventListener("click", function (ev) {
+      ev.stopPropagation()
+      var a = (Array.isArray(t.attachments) ? t.attachments : [])[Number(b.getAttribute("data-idx"))]
+      if (a && a.url) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url })
+    })
+  })
   if (!addBtn || !input) return
   addBtn.addEventListener("click", function () { input.click() })
   input.addEventListener("change", async function () {
@@ -9615,6 +9703,177 @@ function closeSingleTicket() {
   window.__klavTktInvoker = null
 }
 
+// ── KD-100: attachments on the New ticket dialog ─────────────────────────────────────────────────
+// Files are held client-side (previewed + removable) and uploaded AFTER the ticket is created, through the existing
+// POST /api/feedback/:id/attachments (member-gated; the server stays authoritative for type/size). The limits below
+// mirror that endpoint's defaults so the common mistakes are caught before a round-trip.
+const NEW_TKT_MAX_FILES = 5                       // the endpoint keeps only the first 5 files of a request
+const NEW_TKT_IMG_MAX = 8 * 1024 * 1024           // SCREENSHOT_MAX_BYTES default
+const NEW_TKT_VIDEO_MAX = 100 * 1024 * 1024       // ATTACH_VIDEO_MAX_BYTES default
+const NEW_TKT_TOTAL_MAX = 120 * 1024 * 1024       // ATTACH_TOTAL_MAX_BYTES default
+let _newTktFiles = []
+const _newTktUrls = new Map()                     // File → object URL for its preview (revoked on remove/close)
+// Pure: merge `incoming` into `current`, enforcing type (image/video only), de-dupe, count and size limits.
+function newTktFilterFiles(current, incoming) {
+  const files = current.slice(), rejected = []
+  let total = files.reduce((n, f) => n + f.size, 0)
+  for (const f of incoming) {
+    const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || "")
+    if (!isImg && !isVid) { rejected.push(f.name + ": only images and videos can be attached"); continue }
+    if (!f.size) { rejected.push(f.name + ": file is empty"); continue }
+    if (files.some(a => a.name === f.name && a.size === f.size && a.lastModified === f.lastModified)) continue   // already added
+    if (files.length >= NEW_TKT_MAX_FILES) { rejected.push(f.name + ": you can attach up to " + NEW_TKT_MAX_FILES + " files"); continue }
+    const cap = isVid ? NEW_TKT_VIDEO_MAX : NEW_TKT_IMG_MAX
+    if (f.size > cap) { rejected.push(f.name + ": larger than " + _attachFmtBytes(cap)); continue }
+    if (total + f.size > NEW_TKT_TOTAL_MAX) { rejected.push(f.name + ": total would exceed " + _attachFmtBytes(NEW_TKT_TOTAL_MAX)); continue }
+    files.push(f); total += f.size
+  }
+  return { files, rejected }
+}
+function clearNewTktFiles() {
+  _newTktUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch (e) {} })
+  _newTktUrls.clear()
+  _newTktFiles = []
+  renderNewTktFiles()
+  const m = document.getElementById("newTktFilesMsg"); if (m) m.textContent = ""
+}
+function removeNewTktFile(f) {
+  const u = _newTktUrls.get(f); if (u) { try { URL.revokeObjectURL(u) } catch (e) {} ; _newTktUrls.delete(f) }
+  _newTktFiles = _newTktFiles.filter(x => x !== f)
+  renderNewTktFiles()
+}
+function renderNewTktFiles() {
+  const grid = document.getElementById("newTktFilesGrid")
+  const count = document.getElementById("newTktFilesCount")
+  if (count) count.textContent = _newTktFiles.length ? "(" + _newTktFiles.length + "/" + NEW_TKT_MAX_FILES + ")" : "(optional)"
+  if (!grid) return
+  grid.innerHTML = ""
+  _newTktFiles.forEach(f => {
+    let url = _newTktUrls.get(f)
+    if (!url) { url = URL.createObjectURL(f); _newTktUrls.set(f, url) }
+    const item = document.createElement("div"); item.className = "newtkt-file"
+    const isVid = /^video\//i.test(f.type || "")
+    const media = document.createElement(isVid ? "video" : "img")
+    if (isVid) { media.muted = true; media.preload = "metadata"; media.setAttribute("playsinline", "") } else { media.alt = f.name }
+    media.src = url
+    const meta = document.createElement("div"); meta.className = "nf-meta"; meta.textContent = f.name + " · " + _attachFmtBytes(f.size); meta.title = f.name
+    const rm = document.createElement("button"); rm.type = "button"; rm.className = "nf-rm"; rm.textContent = "\u00d7"
+    rm.setAttribute("aria-label", "Remove " + f.name); rm.title = "Remove"
+    rm.addEventListener("click", ev => { ev.stopPropagation(); removeNewTktFile(f) })
+    item.appendChild(media)
+    if (isVid) { const pl = document.createElement("span"); pl.className = "newtkt-play"; pl.innerHTML = kicon('play', { size: 16 }); item.appendChild(pl) }
+    item.appendChild(meta); item.appendChild(rm)
+    item.addEventListener("click", () => openMediaPreview({ url, name: f.name, kind: isVid ? "video" : "image" }))   // enlarge / play
+    grid.appendChild(item)
+  })
+}
+function newTktAddFiles(list) {
+  const r = newTktFilterFiles(_newTktFiles, Array.prototype.slice.call(list || []))
+  _newTktFiles = r.files
+  const m = document.getElementById("newTktFilesMsg"); if (m) m.textContent = r.rejected.join(" · ")
+  renderNewTktFiles()
+}
+// Upload the held files to the just-created ticket. Resolves { ok } / { ok:false, error } — never throws.
+async function uploadNewTicketAttachments(ticketId, files) {
+  const fd = new FormData()
+  files.forEach(f => fd.append("files", f))
+  const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/attachments", { method: "POST", body: fd }).catch(() => null)
+  const d = r ? await r.json().catch(() => ({})) : {}
+  return (r && r.ok && d.ok) ? { ok: true } : { ok: false, error: d.error || "Upload failed." }
+}
+function setNewTktExpanded(on) {
+  const modal = document.getElementById("newTktModal"), btn = document.getElementById("newTktExpand"), body = document.getElementById("newTktBodyInp")
+  if (modal) modal.style.maxWidth = on ? "min(1100px,96vw)" : "min(680px,96vw)"
+  if (body) body.rows = on ? 10 : 4
+  if (btn) { btn.textContent = on ? "Collapse" : "Expand"; btn.setAttribute("aria-pressed", on ? "true" : "false") }
+}
+// KD-100: the Assignee dropdown lists EVERY user on the project (state.members), the current user first. `me` is always
+// included (an account owner/admin is an implicit project admin and may not have a project_members row). Pure.
+function newTktAssigneeEmails(members, me) {
+  const mine = String(me || "").trim().toLowerCase()
+  const rest = [...new Set((members || []).map(m => m && m.email).filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(e => e && e !== mine))].sort()
+  return mine ? [mine, ...rest] : rest
+}
+function populateNewTktAssignees() {
+  const sel = document.getElementById("newTktAssigneeSel"), inp = document.getElementById("newTktAssigneeInp")
+  if (!sel || !inp) return
+  const me = (state && state.email) || ""
+  sel.innerHTML = ""
+  newTktAssigneeEmails(state && state.members, me).forEach(e => {
+    const o = document.createElement("option"); o.value = e; o.textContent = e === String(me).trim().toLowerCase() ? e + " (you)" : e
+    sel.appendChild(o)
+  })
+  // default = the current user (one-click "assign to me"); the hidden input stays the single source of truth for submit
+  if (sel.options.length) sel.value = sel.options[0].value
+  syncNewTktAssignee()
+}
+// Keep the hidden input (what submitNewTicket reads) in step with the dropdown.
+function syncNewTktAssignee() {
+  const sel = document.getElementById("newTktAssigneeSel"), inp = document.getElementById("newTktAssigneeInp")
+  if (!sel || !inp) return
+  inp.value = sel.value || ""
+}
+// The Reporter field always shows — and is always re-forced to — the signed-in user's email. This is a UX guard against
+// DevTools edits (removing readonly, typing, changing the value attribute); it is NOT the security boundary: the server
+// ignores any reporter in the request and records the SESSION user (POST /api/projects/:id/tickets uses actorEmail = me).
+let _newTktReporterObs = null
+function lockNewTktReporter() {
+  const inp = document.getElementById("newTktReporterInp"); if (!inp) return
+  const me = (state && state.email) || ""
+  const force = () => {
+    if (inp.value !== me) inp.value = me
+    if (!inp.readOnly) inp.readOnly = true
+    if (inp.getAttribute("aria-readonly") !== "true") inp.setAttribute("aria-readonly", "true")
+    if (inp.getAttribute("value") !== null && inp.getAttribute("value") !== me) inp.setAttribute("value", me)
+  }
+  force()
+  if (!inp._klavLocked) {
+    inp._klavLocked = true
+    ;["input", "change"].forEach(t => inp.addEventListener(t, force))   // keydown is NOT blocked (it would trap Tab); readonly already stops typing and these re-force if it was removed
+    ;["paste", "drop"].forEach(t => inp.addEventListener(t, e => e.preventDefault()))
+    try { _newTktReporterObs = new MutationObserver(force); _newTktReporterObs.observe(inp, { attributes: true, attributeFilter: ["readonly", "value", "aria-readonly", "disabled"] }) } catch (e) {}
+  }
+}
+// Pure: the image files on the clipboard (a pasted screenshot). Pasted images all arrive named "image.png", so give
+// each a unique name — the preview grid and the upload then show distinct files. Non-image / text pastes → [].
+function newTktImagesFromClipboard(files) {
+  const out = []
+  Array.prototype.forEach.call(files || [], (f, i) => {
+    if (!/^image\//i.test(f.type || "")) return
+    const generic = !f.name || /^image\.[a-z0-9]+$/i.test(f.name)
+    const ext = (/^image\/([a-z0-9]+)/i.exec(f.type) || [, "png"])[1].toLowerCase().replace("jpeg", "jpg")
+    out.push(generic ? new File([f], "pasted-" + Date.now() + "-" + i + "." + ext, { type: f.type, lastModified: f.lastModified }) : f)
+  })
+  return out
+}
+// Pure: the human key ("KD-101") of a just-created ticket from the lists the dashboard already holds ("" if unknown).
+function newTicketCreatedLabel(lists, ticketId) {
+  for (const l of lists) { const t = Array.isArray(l) ? l.find(x => x && x.id === ticketId) : null; if (t) return ticketKeyLabel(t) }
+  return ""
+}
+// Jira-style confirmation: "KD-101 created · View ticket" (opens the ticket). Same toast chrome as the other dashboard toasts.
+let _ticketCreatedTimer = null
+function ticketCreatedToast(ticketId) {
+  const label = newTicketCreatedLabel([_tktBoardTickets, state && state.tickets], ticketId)
+  let toast = $("ticketCreatedToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "ticketCreatedToast"; document.body.appendChild(toast) }
+  toast.className = "tg-toast"
+  if (_ticketCreatedTimer) { clearTimeout(_ticketCreatedTimer); _ticketCreatedTimer = null }
+  toast.innerHTML = `<span class="tg-toast-msg">${kicon('check', { size: 15 })} ${label ? "<b>" + esc(label) + "</b> created" : "Ticket created"}</span><button class="tg-toast-undo" type="button">View ticket</button>`
+  toast.querySelector("button").addEventListener("click", () => { toast.classList.remove("show"); openSingleTicket(ticketId) })
+  toast.classList.add("show")
+  _ticketCreatedTimer = setTimeout(() => { toast.classList.remove("show") }, 8000)
+}
+// "Create another": keep the dialog open for the next ticket — clear what is per-ticket (title, description,
+// attachments, messages) and keep Priority/Assignee, which are usually the same for a batch.
+function resetNewTicketForNext() {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v }
+  set("newTktTitleInp", ""); set("newTktBodyInp", "")
+  clearNewTktFiles()
+  ;["newTktTitleErr", "newTktAssigneeErr", "newTktMsg"].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = "" })
+  const t = document.getElementById("newTktTitleInp"); if (t) { try { t.focus() } catch (e) {} }
+}
+
 // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
 function openNewTicketModal() {
   const bg = document.getElementById("newTktBg"); if (!bg) return
@@ -9630,10 +9889,15 @@ function openNewTicketModal() {
   // #541: prefill the current user's email as the default assignee (assignee is now required) so it's a
   // one-click create for the common "assign to me" case; the user can still change it.
   if (assignee) assignee.value = (state && state.email) || ""
+  populateNewTktAssignees()   // KD-100: dropdown of all project users, current user selected
   if (err) err.textContent = ""
   const aerr = document.getElementById("newTktAssigneeErr")
   if (aerr) aerr.textContent = ""
   if (msg) msg.textContent = ""
+  clearNewTktFiles()   // KD-100: start every dialog with no held attachments
+  setNewTktExpanded(false)
+  const another_ = document.getElementById("newTktAnother"); if (another_) another_.checked = false
+  lockNewTktReporter()   // the logged-in user is the reporter (read-only, re-forced if tampered with)
   bg.classList.add("show")
   document.body.style.overflow = "hidden"  // #539: lock background scroll behind the backdrop
   setTimeout(() => inp && inp.focus(), 60)
@@ -9641,6 +9905,7 @@ function openNewTicketModal() {
 function closeNewTicketModal() {
   const bg = document.getElementById("newTktBg"); if (bg) bg.classList.remove("show")
   document.body.style.overflow = ""  // #539: restore background scroll
+  clearNewTktFiles()   // KD-100: release preview object URLs
 }
 // #542: module-level in-flight flag guards BOTH the click and Enter-key paths against a double-submit
 // (rapid double-Enter previously fired two POST /tickets → two tickets). The submitBtn.disabled toggle
@@ -9684,7 +9949,9 @@ async function submitNewTicket() {
   // recording-loading state already uses) and restore the original label in `finally` either way.
   const _origBtnHtml = submitBtn ? submitBtn.innerHTML : ""
   if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = kicon('loader', { size: 13 }) + " Creating…" }
-  let r, created = {}
+  let r, created = {}, attachRes = null
+  const heldFiles = _newTktFiles.slice()   // KD-100
+  lockNewTktReporter()   // re-assert the signed-in user as reporter (the server ignores any client-sent reporter anyway)
   try {
     r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets`, {
       method: "POST", headers: { "content-type": "application/json" },
@@ -9696,6 +9963,12 @@ async function submitNewTicket() {
       })
     }).catch(() => null)
     created = r ? await r.json().catch(() => ({})) : {}
+    // KD-100: the ticket exists now → upload the held attachments to it. Stays inside the try so the
+    // double-submit guard and the poll pause (__klavMutating) cover the upload too.
+    if (r && r.ok && created.ticketId && heldFiles.length) {
+      if (submitBtn) submitBtn.innerHTML = kicon('loader', { size: 13 }) + " Uploading…"
+      attachRes = await uploadNewTicketAttachments(created.ticketId, heldFiles)
+    }
   } finally {
     newTktSubmitting = false   // #542
     window.__klavMutating--
@@ -9707,7 +9980,11 @@ async function submitNewTicket() {
   }
   // JTBD 2.15: if the ticket was assigned but the notification email was silently skipped, warn.
   if (created.assigneeEmailSent === false) assignEmailWarnToast("Ticket created and assigned, but the notification email could not be sent.")
-  closeNewTicketModal()
+  const createAnother = !!(document.getElementById("newTktAnother") || {}).checked
+  if (createAnother) resetNewTicketForNext(); else closeNewTicketModal()
+  // KD-100: the ticket was created but its attachments did not upload → say so (the ticket detail's
+  // "+ Add attachment" can retry); never imply the whole create failed.
+  if (attachRes && !attachRes.ok) assignEmailWarnToast("Ticket created, but the " + heldFiles.length + " attachment" + (heldFiles.length === 1 ? "" : "s") + " could not be uploaded (" + attachRes.error + "). Add them from the ticket.")
   // #534: invalidate the cached triage/tickets payload for this project so the newly created ticket
   // (and any server-side new→open autofile advance) shows up on the next paint instead of waiting for
   // the 25s guarded poll (which is suppressed whenever a detail/input/modal is open).
@@ -9721,6 +9998,9 @@ async function submitNewTicket() {
   if (typeof fetchAndRenderTktBoard === "function") await fetchAndRenderTktBoard()
   // Refresh the tickets list/board (now harmless — _tktBoardTickets is fresh) so other view state syncs.
   if (typeof renderTicketsView === "function") renderTicketsView()
+  // KD-100: Jira-style "KD-101 created · View ticket" confirmation (the upload-failure warning above already
+  // says the ticket was created, so it replaces this one rather than stacking two toasts).
+  if (!(attachRes && !attachRes.ok) && created.ticketId) ticketCreatedToast(created.ticketId)
   // Re-fetch dashboard data so the overview count + Tickets rows update right away.
   refreshAll()
 }
@@ -15286,10 +15566,13 @@ load()
 
 <!-- KLA-173: New ticket compose modal -->
 <div class="modal-bg" id="newTktBg" role="dialog" aria-modal="true" aria-labelledby="newTktTitle">
-  <div class="modal" style="max-width:540px">
+  <div class="modal" id="newTktModal" style="max-width:min(680px,96vw)">
     <div class="mhead">
       <h3 id="newTktTitle">New ticket</h3>
-      <button class="mclose" id="newTktClose" aria-label="Close">&times;</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-ghost btn-sm" id="newTktExpand" type="button" aria-pressed="false" title="Make this dialog larger">Expand</button>
+        <button class="mclose" id="newTktClose" aria-label="Close">&times;</button>
+      </div>
     </div>
     <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
       Title <span style="font-weight:400;color:var(--rose);display:inline" id="newTktTitleErr"></span>
@@ -15301,7 +15584,7 @@ load()
     </label>
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
-        Priority
+        <span>Priority</span>
         <select id="newTktPriInp" style="width:100%;box-sizing:border-box;appearance:none;-webkit-appearance:none;background:var(--ink) url(&quot;data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'&gt;&lt;path d='M2 4l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/&gt;&lt;/svg&gt;&quot;) no-repeat right 12px center;border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 30px 9px 12px;outline:none">
           <option value="urgent">Urgent</option>
           <option value="high">High</option>
@@ -15310,15 +15593,31 @@ load()
         </select>
       </label>
       <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);flex:1">
-        Assignee <span style="color:var(--rose)">*</span>
-        <input id="newTktAssigneeInp" type="email" list="tktAssigneeOptions" placeholder="name@company.com" maxlength="200" required aria-required="true" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none" />
+        <span>Assignee <span style="color:var(--rose)">*</span></span>
+        <select id="newTktAssigneeSel" aria-label="Assignee" style="width:100%;box-sizing:border-box;appearance:none;-webkit-appearance:none;background:var(--ink) url(&quot;data:image/svg+xml;utf8,&lt;svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'&gt;&lt;path d='M2 4l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/&gt;&lt;/svg&gt;&quot;) no-repeat right 12px center;border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 30px 9px 12px;outline:none"></select>
+        <input id="newTktAssigneeInp" type="hidden">
         <span id="newTktAssigneeErr" style="font-size:11px;color:var(--rose);min-height:14px"></span>
       </label>
+    </div>
+    <label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+      <span>Reporter</span>
+      <input id="newTktReporterInp" type="email" readonly aria-readonly="true" title="You are the reporter" style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box;cursor:default;opacity:.8">
+    </label>
+    <div id="newTktAttach" style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:5px">Attachments <span id="newTktFilesCount" style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span></div>
+      <div class="newtkt-drop" id="newTktDrop">
+        <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach images or videos</button>
+        <span>or drop them here</span>
+      </div>
+      <input type="file" id="newTktFileInp" accept="image/*,video/*" multiple hidden>
+      <div class="newtkt-files" id="newTktFilesGrid"></div>
+      <div id="newTktFilesMsg" style="font-size:12px;color:var(--rose);margin-top:6px"></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
       <button class="btn btn-indigo" id="newTktSubmit" type="button">Create ticket</button>
       <button class="btn btn-ghost" id="newTktCancel" type="button">Cancel</button>
       <span id="newTktMsg" style="font-size:12px;color:var(--rose)"></span>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--paper-dim);cursor:pointer;white-space:nowrap"><input type="checkbox" id="newTktAnother"> Create another</label>
     </div>
   </div>
 </div>
@@ -17495,6 +17794,38 @@ load()
     if (cancelBtn) cancelBtn.addEventListener("click", closeNewTicketModal)
     const submitBtn = document.getElementById("newTktSubmit")
     if (submitBtn) submitBtn.addEventListener("click", submitNewTicket)
+    // KD-100: attachments (picker + drop zone) and the Expand toggle.
+    const attachBtn = document.getElementById("newTktAttachBtn"), fileInp = document.getElementById("newTktFileInp"), drop = document.getElementById("newTktDrop")
+    if (attachBtn && fileInp) {
+      attachBtn.innerHTML = kicon('paperclip', { size: 13 }) + " Attach images or videos"
+      attachBtn.addEventListener("click", function() { fileInp.click() })
+      fileInp.addEventListener("change", function() { newTktAddFiles(fileInp.files); fileInp.value = "" })
+    }
+    if (drop) {
+      ;["dragenter", "dragover"].forEach(function(t) { drop.addEventListener(t, function(e) { e.preventDefault(); drop.classList.add("over") }) })
+      ;["dragleave", "drop"].forEach(function(t) { drop.addEventListener(t, function(e) { e.preventDefault(); drop.classList.remove("over") }) })
+      drop.addEventListener("drop", function(e) { newTktAddFiles(e.dataTransfer && e.dataTransfer.files) })
+    }
+    // Paste a screenshot straight into the dialog (Ctrl/Cmd+V anywhere in it) → becomes an attachment. A plain text
+    // paste has no image files and is left alone.
+    newTktBg.addEventListener("paste", function(e) {
+      const imgs = newTktImagesFromClipboard(e.clipboardData && e.clipboardData.files)
+      if (!imgs.length) return
+      e.preventDefault()
+      newTktAddFiles(imgs)
+    })
+    // Ctrl/Cmd+Enter creates the ticket from any field (incl. the multi-line description, where plain Enter is a newline).
+    newTktBg.addEventListener("keydown", function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault()
+        if (submitBtn && submitBtn.disabled) return
+        submitNewTicket()
+      }
+    })
+    const assigneeSel = document.getElementById("newTktAssigneeSel")
+    if (assigneeSel) assigneeSel.addEventListener("change", syncNewTktAssignee)
+    const expandBtn = document.getElementById("newTktExpand")
+    if (expandBtn) expandBtn.addEventListener("click", function() { setNewTktExpanded(expandBtn.getAttribute("aria-pressed") !== "true") })
     const titleInp = document.getElementById("newTktTitleInp")
     if (titleInp) titleInp.addEventListener("keydown", function(e) {
       // #542: no-op the Enter path while a submit is already in flight (guards keyboard double-submit).
