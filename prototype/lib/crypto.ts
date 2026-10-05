@@ -36,3 +36,17 @@ export async function decryptSecret(blob: string): Promise<string> {
 export function sha256hex(s: string): string {
   return new Bun.CryptoHasher('sha256').update(s).digest('hex')
 }
+
+// Opaque, deterministic, per-user BROWSER-CACHE NAMESPACE marker (the `klav_uid` cookie). HMAC-SHA256 keyed by
+// KLAV_SECRET over a domain-separated, lower-cased email, truncated to 32 hex chars (128 bits). It lets the
+// dashboard scope its localStorage (SWR) cache to the authenticated user BEFORE any cached data is painted, and
+// notice when the browser-wide session changes user. It is NOT a credential and must NEVER be used by the server
+// for authentication, authorization, session lookup, project access or role decisions — the session cookie
+// remains the only thing the server trusts. Not reversible without KLAV_SECRET; exposes no email/secret.
+// Returns "" when KLAV_SECRET/email is missing (callers then set no cookie → the client fails closed).
+export function userCacheUid(email: string): string {
+  const raw = process.env.KLAV_SECRET
+  const e = (email || "").trim().toLowerCase()
+  if (!raw || !e) return ""
+  return new Bun.CryptoHasher('sha256', raw).update('klav_uid:v1:' + e).digest('hex').slice(0, 32)
+}
