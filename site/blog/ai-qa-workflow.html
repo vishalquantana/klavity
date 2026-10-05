@@ -1,0 +1,186 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA Workflow: A Step-by-Step Guide for Web Agencies · Klavity</title>
+<meta name="description" content="An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-workflow">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA Workflow: A Step-by-Step Guide for Web Agencies"><meta property="og:description" content="An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-workflow"><meta property="og:image" content="https://klavity.in/blog/ai-qa-workflow.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA Workflow: A Step-by-Step Guide for Web Agencies"><meta name="twitter:description" content="An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-workflow.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA Workflow: A Step-by-Step Guide for Web Agencies","description":"An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture.","datePublished":"2026-10-04","dateModified":"2026-10-04","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-workflow.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-workflow","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA Workflow: A Step-by-Step Guide for Web Agencies","item":"https://klavity.in/blog/ai-qa-workflow"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-workflow"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is an AI QA workflow?","acceptedAnswer":{"@type":"Answer","text":"An AI QA workflow is a delivery process where AI handles continuous test coverage, unscripted user-path exploration, and bug-context capture, instead of QA being a single manual phase before launch. It typically has three checkpoints: automated regression on every deploy, AI persona passes before handover, and structured in-app bug reporting after handover."}},{"@type":"Question","name":"Does an AI QA workflow replace manual QA?","acceptedAnswer":{"@type":"Answer","text":"No. AI handles breadth, repetition, and evidence collection — regression runs, cross-browser sweeps, capturing console and network state. Humans keep judgement calls: whether a design is right, how severe a bug is, and accessibility questions that automated rules cannot decide."}},{"@type":"Question","name":"How do small agencies start an AI QA workflow?","acceptedAnswer":{"@type":"Answer","text":"Start on one project, not across the agency. Add a single self-healing end-to-end test on the critical path, run one AI persona pass before handover, and install in-app bug capture on handover day. Then compare client-reported defects in the first thirty days against your last comparable project."}},{"@type":"Question","name":"Why do AI-assisted teams need QA more, not less?","acceptedAnswer":{"@type":"Answer","text":"Because code is now produced faster than it can be reviewed. Tools like Cursor and Copilot increase output, but review and verification capacity has not scaled at the same rate, so the gap between code that looks right and code that is correct for every user has widened."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-04</div>
+    <h1>AI QA Workflow: A Step-by-Step Guide for Web Agencies</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI QA workflow: commit, staging E2E, persona pass, handover capture">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="420" fill="#6366f1" opacity="0.04"/>
+
+  <line x1="90" y1="210" x2="710" y2="210" stroke="#6366f1" stroke-width="2" opacity="0.35"/>
+  <polyline points="694,202 710,210 694,218" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+
+  <circle cx="130" cy="210" r="34" fill="#1e1b2e" stroke="#6366f1" stroke-width="2"/>
+  <rect x="116" y="200" width="28" height="4" rx="2" fill="#f5f0e8" opacity="0.65"/>
+  <rect x="116" y="210" width="20" height="4" rx="2" fill="#f5f0e8" opacity="0.45"/>
+  <rect x="116" y="220" width="24" height="4" rx="2" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="310" cy="210" r="42" fill="#1e1b2e" stroke="#6366f1" stroke-width="2"/>
+  <rect x="286" y="188" width="48" height="36" rx="4" fill="none" stroke="#f5f0e8" stroke-width="1.6" opacity="0.5"/>
+  <line x1="286" y1="197" x2="334" y2="197" stroke="#f5f0e8" stroke-width="1.6" opacity="0.4"/>
+  <path d="M296 212 l7 8 l14 -16" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M300 160 a34 34 0 0 1 34 -14" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.7"/>
+  <polyline points="330,140 336,147 328,152" fill="none" stroke="#4ade80" stroke-width="2"/>
+
+  <circle cx="490" cy="210" r="42" fill="#1e1b2e" stroke="#6366f1" stroke-width="2"/>
+  <circle cx="474" cy="200" r="9" fill="#6366f1" opacity="0.85"/>
+  <circle cx="500" cy="196" r="7" fill="#f5f0e8" opacity="0.35"/>
+  <circle cx="488" cy="222" r="7" fill="#f5f0e8" opacity="0.2"/>
+  <path d="M462 232 q28 -18 56 -6" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.5"/>
+  <circle cx="518" cy="182" r="6" fill="#f87171"/>
+
+  <circle cx="670" cy="210" r="34" fill="#1e1b2e" stroke="#6366f1" stroke-width="2"/>
+  <rect x="652" y="194" width="36" height="28" rx="3" fill="none" stroke="#f5f0e8" stroke-width="1.6" opacity="0.55"/>
+  <circle cx="670" cy="208" r="5" fill="#f87171"/>
+  <line x1="670" y1="213" x2="670" y2="232" stroke="#f87171" stroke-width="2"/>
+
+  <rect x="96" y="268" width="68" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="262" y="278" width="96" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="442" y="278" width="96" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="636" y="268" width="68" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+
+  <rect x="96" y="116" width="120" height="3" rx="1.5" fill="#6366f1" opacity="0.3"/>
+  <rect x="584" y="116" width="120" height="3" rx="1.5" fill="#6366f1" opacity="0.3"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>An AI QA workflow replaces the single pre-launch QA phase with three continuous checkpoints: self-healing end-to-end tests on every staging deploy, AI persona passes before client handover, and structured in-app bug capture afterwards. The goal is that your pipeline finds the bug before your client does, because a client-found bug costs the fix plus the trust.</div>
+    <div class="prose"><p>An <strong>AI QA workflow</strong> is a repeatable delivery process where AI handles the three parts of quality assurance that humans are worst at doing consistently: generating test coverage, exercising the app the way real users do, and capturing enough context when something breaks that the bug is fixable on first read. In practice it means three checkpoints — automated regression runs on every push, AI persona passes before handover, and structured in-app bug capture after handover — instead of one frantic manual sweep the night before launch. The point is not to replace your developers' judgement. It is to make sure nobody ships a client site whose checkout is broken on Safari because QA was the step that got compressed when the deadline moved.</p>
+
+<h2>What is an AI QA workflow, exactly?</h2>
+<p>A traditional QA workflow is a phase: build, then test, then launch. An AI QA workflow is a set of always-on checks woven into the work you already do. The distinction matters because the phase model only works when the schedule holds — and on client projects the schedule never holds. QA is the elastic step. It absorbs every slipped deadline.</p>
+<p>The AI version removes the elasticity by making verification continuous and cheap enough that no one is tempted to skip it. Three layers do the work:</p>
+<ul>
+<li><strong>Automated end-to-end coverage</strong> that runs on every deploy and repairs itself when the DOM shifts — so a class rename doesn't produce a red build nobody trusts. That's <a href="/autosim">AutoSim</a>.</li>
+<li><strong>AI persona testing</strong> that walks the site as an impatient mobile user, a screen-reader user, a shopper who abandons and comes back — the paths your team never takes because they know the happy route. That's <a href="/sims">Sims</a>.</li>
+<li><strong>Structured bug capture</strong> so when a client or a real user does hit something, the report arrives with the URL, console errors, network calls, browser, and viewport attached instead of "the form is broken." That's <a href="/snap">Snap</a>.</li>
+</ul>
+<p>Read the full landscape in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>. This post is about sequencing — where each layer goes in an agency's week.</p>
+
+<h2>Why do agencies need an AI QA workflow now?</h2>
+<p>Because the ratio between how fast code is written and how fast it can be verified has changed. A developer using Cursor, Copilot, or v0 produces working-looking code far faster than they did two years ago, but review and testing capacity has not scaled with it. The gap between "it compiles and looks right" and "it is correct for every user on every device" has widened, and that gap is where client-found bugs live.</p>
+<p>There's a second, commercial reason. For an agency, a bug found by the client is not just a defect — it's a trust event. The client now wonders what else you missed, and your next invoice gets read more carefully. A bug found by your own pipeline costs an hour. The same bug found by the client costs the hour plus an apology email, a status call, and some portion of the relationship.</p>
+
+<h2>What are the stages of an AI QA workflow?</h2>
+<h3>1. On every commit — fast automated checks</h3>
+<p>Lint, typecheck, and unit tests stay exactly where they are. AI doesn't improve this layer much; it's already fast and deterministic. Don't let a QA overhaul become an excuse to rebuild tooling that works.</p>
+<h3>2. On every deploy to staging — self-healing E2E</h3>
+<p>Run the critical-path suite: signup, login, the primary conversion action, checkout, contact form submission. The reason to use self-healing tests specifically is maintenance economics. Agencies abandon E2E suites not because the tests fail to find bugs but because every design tweak breaks ten selectors and fixing them is unbillable. A suite that re-anchors itself when markup changes survives the second month, which is the only month that matters.</p>
+<h3>3. Before client handover — AI persona passes</h3>
+<p>This is the layer most agencies are missing entirely. Scripted tests verify what you thought to specify. Persona testing explores what you didn't. Run personas across the real device and viewport mix in the client's analytics, not a default desktop Chrome. See <a href="/blog/pre-launch-qa-checklist-for-web-agencies">our pre-launch QA checklist</a> for what to cover at this gate.</p>
+<h3>4. After handover — structured capture</h3>
+<p>Your client will find things. Give them a right-click bug report instead of a Slack message, and the report arrives reproducible. This single change is usually the fastest measurable win, because "cannot reproduce" tickets stop being a category of work.</p>
+
+<h2>Where should AI sit versus humans in your QA process?</h2>
+<p>AI is good at breadth, repetition, and evidence collection. Humans are good at judgement, taste, and knowing what the client actually meant. Split the work on those lines:</p>
+<table>
+<thead><tr><th>QA activity</th><th>Best handled by</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Regression on known flows</td><td>AI / automation</td><td>Repetitive, high volume, zero judgement needed</td></tr>
+<tr><td>Cross-browser and viewport sweeps</td><td>AI / automation</td><td>Combinatorial — humans sample, machines enumerate</td></tr>
+<tr><td>Exploring unscripted user paths</td><td>AI personas</td><td>Your team is too expert to stumble naturally</td></tr>
+<tr><td>Capturing reproduction context</td><td>AI / tooling</td><td>Humans forget console logs and network state</td></tr>
+<tr><td>Is this the right design?</td><td>Human</td><td>Requires client context and taste</td></tr>
+<tr><td>Severity and priority calls</td><td>Human</td><td>Depends on contract, launch date, and business impact</td></tr>
+<tr><td>Accessibility judgement beyond automated rules</td><td>Human</td><td>Automated checks catch a subset; the rest needs a person</td></tr>
+</tbody>
+</table>
+<p>The mistake to avoid is treating an AI finding as a verdict. Treat it as a well-evidenced report from a very thorough junior tester: usually right about <em>what</em> happened, not always right about whether it matters.</p>
+
+<h2>What does this look like on a real client project?</h2>
+<p>Take a typical marketing site with a booking flow, four weeks of build, two developers. The AI QA workflow adds roughly this:</p>
+<ol>
+<li><strong>Week 1:</strong> as soon as the booking flow has a working skeleton, record the critical path as an E2E test. One test, not forty. It runs on every staging deploy from then on.</li>
+<li><strong>Weeks 2–3:</strong> add tests only when a bug is found — every bug becomes a test, so the same defect can't return. The suite grows from real failures rather than from a planning exercise.</li>
+<li><strong>Week 4, before handover:</strong> run persona passes across the device mix from the client's current analytics. Triage findings into blocking, post-launch, and won't-fix, and send the client the won't-fix list proactively.</li>
+<li><strong>Handover day:</strong> install in-app bug capture and spend ten minutes showing the client how to right-click and report. This is also a positioning move — it tells the client you expect feedback and have a system for it.</li>
+<li><strong>Ongoing:</strong> the E2E suite keeps running on their site. When a third-party script or CMS change breaks something, you know before they do.</li>
+</ol>
+
+<h2>How do you roll out an AI QA workflow without disrupting delivery?</h2>
+<p>Don't roll it out across the whole agency at once. Pick the next project that starts, apply the full workflow there, and measure one thing: how many defects the client reports in the first thirty days after handover, compared to your last comparable project. That is the number that justifies the process internally and, eventually, justifies a QA line item in proposals.</p>
+<p>Two practical warnings. First, resist writing a large test suite up front — unmaintained tests are worse than no tests, because a red build everyone ignores trains the team to ignore red builds. Second, decide who triages AI findings before you turn anything on. An unowned queue of findings becomes noise within a week, and noise is how good tooling gets abandoned.</p>
+
+<h2>What should an AI QA workflow never do?</h2>
+<p>It should never auto-merge a fix to a client's production site without review. It should never be the only accessibility check you run. And it should never be sold to a client as a guarantee of a bug-free launch — no process delivers that, and promising it converts a normal defect into a broken promise. The honest pitch is better anyway: you find your own bugs before the client does, and when one slips through you can reproduce and fix it the same day.</p>
+
+<h2>Try it on your next client site</h2>
+<p>You don't need to restructure your agency to start. Add one self-healing test on the critical path, run one persona pass before handover, and give your client a right-click bug button. That's the whole workflow in its smallest useful form.</p>
+<p><a href="/onboarding"><strong>Scan your next client site free →</strong></a></p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Make QA continuous, not a phase that gets compressed when deadlines slip</li><li>Add one self-healing E2E test on the critical path in week one</li><li>Run AI persona passes on the client's real device mix before handover</li><li>Give clients right-click bug capture so reports arrive reproducible</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is an AI QA workflow?</summary><p>An AI QA workflow is a delivery process where AI handles continuous test coverage, unscripted user-path exploration, and bug-context capture, instead of QA being a single manual phase before launch. It typically has three checkpoints: automated regression on every deploy, AI persona passes before handover, and structured in-app bug reporting after handover.</p></details><details><summary>Does an AI QA workflow replace manual QA?</summary><p>No. AI handles breadth, repetition, and evidence collection — regression runs, cross-browser sweeps, capturing console and network state. Humans keep judgement calls: whether a design is right, how severe a bug is, and accessibility questions that automated rules cannot decide.</p></details><details><summary>How do small agencies start an AI QA workflow?</summary><p>Start on one project, not across the agency. Add a single self-healing end-to-end test on the critical path, run one AI persona pass before handover, and install in-app bug capture on handover day. Then compare client-reported defects in the first thirty days against your last comparable project.</p></details><details><summary>Why do AI-assisted teams need QA more, not less?</summary><p>Because code is now produced faster than it can be reviewed. Tools like Cursor and Copilot increase output, but review and verification capacity has not scaled at the same rate, so the gap between code that looks right and code that is correct for every user has widened.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

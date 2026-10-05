@@ -42,17 +42,42 @@ test("kanbanKeyForStatus routes done and dismissed to distinct keys (KLA-206)", 
   // and both status dots are styled.
   expect(html).toContain('.kanban{display:flex;flex-wrap:nowrap')
   expect(html).toContain('overflow-x:auto')
-  // KLA-719: columns now grow to fill (flex:1 1 300px) but never squish below 300px
-  // thanks to min-width:300px — the "don't squish" intent is preserved via min-width.
-  expect(html).toContain('.kb-col{flex:1 1 300px')
-  expect(html).toContain('min-width:300px')
+  // KD-165: KLA-719's "grow to fill" flex-basis was replaced by a per-column WIDTH (--kb-w) so each
+  // column can be independently drag-resized, Jira-board style — a short board now leaves empty space
+  // on the right instead of stretching, same trade-off a real Jira board makes.
+  expect(html).toContain('.kb-col{flex:0 0 var(--kb-w,300px);width:var(--kb-w,300px);min-width:220px;max-width:640px')
   expect(html).toContain('.kb-dot-done{')
   expect(html).toContain('.kb-dot-dismissed{')
 })
 
+test("KD-165: QA Review is a first-class status alongside the other 5", () => {
+  // Board column, between In Progress and Done.
+  expect(html).toContain('{ key: "qa_review",   status: "qa_review",   label: "QA Review",   statuses: ["qa_review"] }')
+  expect(html).toContain('if (status === "qa_review") return "qa_review"')
+  expect(html).toContain('qa_review: "QA Review"')
+  expect(html).toContain('.kb-dot-qa_review{')
+  // Fetched by default alongside the others — otherwise a QA-Review ticket would never load onto the board.
+  expect(html).toContain('"new,open,in_progress,qa_review,done,dismissed"')
+  // Reachable from the ticket-detail status control, the board filter, and bulk status-change.
+  expect(html).toContain('const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]')
+  expect(html).toContain('<option value="qa_review">QA Review</option>')
+})
+
+test("KD-165: kanban columns are Jira-style drag-resizable, independently, per column", () => {
+  expect(html).toContain('resizeHandle.className = "kb-resize"')
+  expect(html).toContain('function wireKanbanResize(boardEl)')
+  expect(html).toContain('wireKanbanResize(boardEl)')
+  // Independent per-column width, keyed by the column so each one persists on its own.
+  expect(html).toContain('"klav:kbcol:" + key')
+  expect(html).toContain('col.style.setProperty("--kb-w"')
+  // Clamped, and resettable (double-click), mirroring the existing #707 gutter-resize UX.
+  expect(html).toContain("clamp(startW + (e.clientX - startX), 220, 640)")
+  expect(html).toContain('handle.addEventListener("dblclick"')
+})
+
 test("Ticket detail status control exposes the full state machine incl. New + Dismissed (KLA-206)", () => {
-  // Un-dismissing / re-triaging back to New or Open is one click from detail.
-  expect(html).toContain('const statuses = ["new", "open", "in_progress", "done", "dismissed"]')
+  // Un-dismissing / re-triaging back to New or Open is one click from detail. KD-165: now also QA Review.
+  expect(html).toContain('const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]')
 })
 
 test("Opening single-ticket detail fetches fresh state from GET /api/feedback/:id (KLA-206)", () => {
@@ -73,7 +98,7 @@ test("Ticket detail priority editor persists via PATCH and is timeline-tracked (
 })
 
 test("Tickets kanban fetch includes all board statuses by default and supports Closed filter", () => {
-  expect(html).toContain('return view === "board" ? "new,open,in_progress,done,dismissed" : ""')
+  expect(html).toContain('return view === "board" ? "new,open,in_progress,qa_review,done,dismissed" : ""')
   expect(html).toContain('if (_tktFilters.status === "closed") return "done,dismissed"')
   expect(html).toContain('<option value="closed">Closed</option>')
 })

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Copilot-generated code passing through a verification gate where bugs are caught">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.55"/>
+
+  <rect x="48" y="86" width="196" height="248" rx="12" fill="#f5f0e8" opacity="0.045" stroke="#6366f1" stroke-opacity="0.35"/>
+  <circle cx="72" cy="110" r="5" fill="#6366f1"/>
+  <circle cx="88" cy="110" r="5" fill="#6366f1" opacity="0.45"/>
+  <rect x="70" y="140" width="130" height="9" rx="4.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="70" y="160" width="152" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="84" y="180" width="110" height="9" rx="4.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="84" y="200" width="138" height="9" rx="4.5" fill="#6366f1" opacity="0.5"/>
+  <rect x="70" y="220" width="96" height="9" rx="4.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="84" y="240" width="126" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="70" y="260" width="148" height="9" rx="4.5" fill="#6366f1" opacity="0.4"/>
+
+  <line x1="252" y1="210" x2="330" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M322 202 L334 210 L322 218" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+
+  <rect x="344" y="120" width="132" height="180" rx="14" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="9 7"/>
+  <circle cx="410" cy="210" r="42" fill="#6366f1" opacity="0.1"/>
+  <circle cx="410" cy="210" r="42" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <path d="M392 210 L404 224 L430 196" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="368,150 410,132 452,150" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="368,270 410,288 452,270" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/>
+
+  <line x1="484" y1="164" x2="560" y2="126" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <line x1="484" y1="256" x2="560" y2="294" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 6"/>
+  <line x1="484" y1="210" x2="568" y2="210" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M560 202 L572 210 L560 218" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+
+  <circle cx="602" cy="112" r="20" fill="#f87171" opacity="0.14" stroke="#f87171" stroke-width="2"/>
+  <circle cx="602" cy="112" r="7" fill="#f87171"/>
+  <line x1="602" y1="88" x2="602" y2="80" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="619" y1="95" x2="626" y2="88" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="585" y1="95" x2="578" y2="88" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <circle cx="602" cy="308" r="20" fill="#f87171" opacity="0.14" stroke="#f87171" stroke-width="2"/>
+  <circle cx="602" cy="308" r="7" fill="#f87171"/>
+  <line x1="602" y1="332" x2="602" y2="340" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="619" y1="325" x2="626" y2="332" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="585" y1="325" x2="578" y2="332" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="612" y="168" width="140" height="84" rx="12" fill="#4ade80" opacity="0.08"/>
+  <rect x="612" y="168" width="140" height="84" rx="12" fill="none" stroke="#4ade80" stroke-opacity="0.6" stroke-width="2"/>
+  <rect x="634" y="192" width="82" height="8" rx="4" fill="#4ade80" opacity="0.7"/>
+  <rect x="634" y="212" width="60" height="8" rx="4" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="634" y="228" width="96" height="8" rx="4" fill="#f5f0e8" opacity="0.15"/>
+</svg>

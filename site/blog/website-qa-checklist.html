@@ -1,0 +1,268 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website QA Checklist: What to Test Before You Launch · Klavity</title>
+<meta name="description" content="A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list.">
+<link rel="canonical" href="https://klavity.in/blog/website-qa-checklist">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Website QA Checklist: What to Test Before You Launch"><meta property="og:description" content="A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list.">
+<meta property="og:url" content="https://klavity.in/blog/website-qa-checklist"><meta property="og:image" content="https://klavity.in/blog/website-qa-checklist.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Website QA Checklist: What to Test Before You Launch"><meta name="twitter:description" content="A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list."><meta name="twitter:image" content="https://klavity.in/blog/website-qa-checklist.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Website QA Checklist: What to Test Before You Launch","description":"A website QA checklist covers eight areas: functionality, forms, cross-browser, mobile, performance, accessibility, SEO, and content. Here's the full list.","datePublished":"2026-09-28","dateModified":"2026-09-28","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/website-qa-checklist.svg"}},"mainEntityOfPage":"https://klavity.in/blog/website-qa-checklist","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Website QA Checklist: What to Test Before You Launch","item":"https://klavity.in/blog/website-qa-checklist"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/website-qa-checklist"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What are the eight sections of a website QA checklist?","acceptedAnswer":{"@type":"Answer","text":"Core functionality, forms and data handling, cross-browser rendering, responsive and mobile behaviour, performance, accessibility, SEO and metadata, and content and legal pages. Work them in that order — broken functionality makes performance measurements meaningless."}},{"@type":"Question","name":"How often should a website QA checklist be run?","acceptedAnswer":{"@type":"Answer","text":"Use three depths tied to three triggers: a full pass before launch and after major redesigns or framework upgrades, a five-check smoke pass on every deploy, and a monthly drift pass covering links, performance, integrations, and expiring keys and certificates."}},{"@type":"Question","name":"Which website QA checks can be automated?","acceptedAnswer":{"@type":"Answer","text":"Automate anything deterministic: broken links, missing metadata, colour contrast, Core Web Vitals, and critical user journeys as end-to-end tests. Keep humans on judgement calls — whether copy makes sense, whether a layout is right — and use AI persona testing for the unscripted paths no checklist contains."}},{"@type":"Question","name":"What is the most common launch-day QA miss?","acceptedAnswer":{"@type":"Answer","text":"A noindex tag or robots.txt block left over from staging, which keeps the live site out of search results. Canonical URLs pointing at the staging domain are a close second. Both belong in the SEO and metadata section of the pre-launch pass."}},{"@type":"Question","name":"Does the checklist differ for AI-generated or vibe-coded sites?","acceptedAnswer":{"@type":"Answer","text":"The sections are the same but the weighting shifts. AI-generated code usually produces a working happy path with thin error handling, so spend the extra time on form validation and failure branches, authentication and access control, and anything touching payments or personal data."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-28</div>
+    <h1>Website QA Checklist: What to Test Before You Launch</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A website being checked against an eight-point QA checklist, with passes, one failure, and one pending item">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <rect x="56" y="86" width="310" height="250" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="86" width="310" height="250" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.55"/>
+  <line x1="56" y1="120" x2="366" y2="120" stroke="#6366f1" stroke-width="1.5" opacity="0.55"/>
+  <circle cx="76" cy="103" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="90" cy="103" r="4" fill="#f5f0e8" opacity="0.35"/>
+  <circle cx="104" cy="103" r="4" fill="#4ade80" opacity="0.7"/>
+  <rect x="126" y="99" width="150" height="9" rx="4.5" fill="#f5f0e8" opacity="0.14"/>
+
+  <rect x="80" y="142" width="120" height="14" rx="4" fill="#6366f1" opacity="0.85"/>
+  <rect x="80" y="170" width="262" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="80" y="188" width="228" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="80" y="218" width="118" height="70" rx="8" fill="#6366f1" opacity="0.2"/>
+  <rect x="212" y="218" width="130" height="32" rx="6" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="212" y="260" width="88" height="28" rx="6" fill="#6366f1" opacity="0.7"/>
+  <rect x="80" y="306" width="180" height="8" rx="4" fill="#f5f0e8" opacity="0.12"/>
+
+  <path d="M372 211 L424 211" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M414 204 L424 211 L414 218" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+
+  <rect x="436" y="66" width="300" height="290" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="436" y="66" width="300" height="290" rx="12" fill="none" stroke="#f5f0e8" stroke-width="1.2" opacity="0.18"/>
+  <rect x="462" y="90" width="132" height="10" rx="5" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="470" cy="128" r="9" fill="#4ade80" opacity="0.85"/>
+  <polyline points="466,128 469.5,131.5 475,124" fill="none" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="490" y="123" width="190" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+
+  <circle cx="470" cy="160" r="9" fill="#4ade80" opacity="0.85"/>
+  <polyline points="466,160 469.5,163.5 475,156" fill="none" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="490" y="155" width="160" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+
+  <circle cx="470" cy="192" r="9" fill="#4ade80" opacity="0.85"/>
+  <polyline points="466,192 469.5,195.5 475,188" fill="none" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="490" y="187" width="206" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+
+  <circle cx="470" cy="224" r="9" fill="#f87171"/>
+  <path d="M466 220 L474 228 M474 220 L466 228" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="490" y="219" width="174" height="9" rx="4.5" fill="#f87171" opacity="0.5"/>
+
+  <circle cx="470" cy="256" r="9" fill="#4ade80" opacity="0.85"/>
+  <polyline points="466,256 469.5,259.5 475,248" fill="none" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="490" y="251" width="140" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+
+  <circle cx="470" cy="288" r="9" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+  <rect x="490" y="283" width="196" height="9" rx="4.5" fill="#f5f0e8" opacity="0.12"/>
+
+  <circle cx="470" cy="320" r="9" fill="none" stroke="#6366f1" stroke-width="2.5" opacity="0.5"/>
+  <rect x="490" y="315" width="118" height="9" rx="4.5" fill="#f5f0e8" opacity="0.08"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>A website QA checklist is a repeatable list of checks run before launch and after every change, covering eight areas: core functionality, forms and data, cross-browser rendering, responsive behaviour, performance, accessibility, SEO metadata, and content and legal. Split it into three depths — a full pass pre-launch, a five-check smoke pass every deploy, and a monthly drift pass — so it stays sustainable. The checklist cannot catch unscripted user paths or changes made since the last pass, which is what exploratory and continuous testing are for.</div>
+    <div class="prose"><p>A <strong>website QA checklist</strong> is a fixed, repeatable list of checks you run against a site before launch and again after every meaningful change. A good one covers eight areas in order: core functionality, forms and data handling, cross-browser rendering, responsive and mobile behaviour, performance, accessibility, SEO and metadata, and content and legal pages. The point of writing it down is that it stops being a memory exercise — the same checks run the same way on every project, so the bug your client finds on launch day is one you have already looked for.</p>
+
+<h2>What should a website QA checklist cover?</h2>
+
+<p>Eight sections, worked top to bottom. The order matters: broken functionality makes performance numbers meaningless, so fix what is broken before you measure what is slow.</p>
+
+<h3>1. Core functionality</h3>
+<ul>
+  <li>Every navigation link, footer link, and in-body link resolves — no 404s, no links to staging domains.</li>
+  <li>Every call-to-action button does what its label promises.</li>
+  <li>Search, filters, sorting, and pagination return correct results, including for zero results.</li>
+  <li>Authentication: sign up, log in, log out, password reset, and session expiry.</li>
+  <li>Any transaction path end to end — cart, checkout, booking, quote request — including the failure branch (declined card, unavailable slot).</li>
+</ul>
+
+<h3>2. Forms and data handling</h3>
+<ul>
+  <li>Required-field validation fires, and the error message says which field and why.</li>
+  <li>Invalid input is rejected: malformed emails, letters in numeric fields, dates in the past where only future dates are valid.</li>
+  <li>The submission actually lands somewhere — inbox, CRM, database — and the confirmation the user sees matches what was stored.</li>
+  <li>Double submission does not create two records.</li>
+  <li>File uploads handle the wrong type and an oversized file without a raw server error.</li>
+</ul>
+
+<h3>3. Cross-browser rendering</h3>
+<ul>
+  <li>Current Chrome, Safari, Firefox, and Edge at minimum. Safari is the one that usually breaks: it differs on date inputs, flex and grid edge cases, and video autoplay.</li>
+  <li>Check iOS Safari separately from desktop Safari — they are not the same engine build.</li>
+</ul>
+
+<h3>4. Responsive and mobile behaviour</h3>
+<ul>
+  <li>Test the breakpoints the design defines, plus one width between each pair — that is where layouts collapse.</li>
+  <li>No horizontal scroll at any width. Tap targets are large enough to hit with a thumb.</li>
+  <li>Sticky headers, modals, and dropdowns behave with the mobile keyboard open.</li>
+  <li>Build the device list from the site's own analytics where it exists, not from a generic top-ten list. An audience skewed to older Android devices needs different coverage than one on recent iPhones.</li>
+</ul>
+
+<h3>5. Performance</h3>
+<ul>
+  <li>Measure Core Web Vitals (LCP, CLS, INP) on a throttled mobile connection, not on your office fibre.</li>
+  <li>Images sized and compressed for their display size; modern formats where supported.</li>
+  <li>No render-blocking third-party scripts; check what analytics and chat widgets add.</li>
+</ul>
+
+<h3>6. Accessibility</h3>
+<ul>
+  <li>Keyboard-only: tab through every interactive element, confirm visible focus, confirm no keyboard trap in modals.</li>
+  <li>Images have meaningful alt text; decorative images have empty alt.</li>
+  <li>Form inputs have associated labels, not just placeholders.</li>
+  <li>Colour contrast meets WCAG AA. Run an automated scanner, then verify the interactive paths by hand — scanners miss most real barriers.</li>
+</ul>
+
+<h3>7. SEO and metadata</h3>
+<ul>
+  <li>Unique title and meta description per page; one H1 per page.</li>
+  <li>Canonical URLs correct; no <em>noindex</em> left over from staging. This is the single most common launch-day mistake.</li>
+  <li>robots.txt and sitemap.xml present and accurate; Open Graph tags render correctly when a URL is pasted into Slack or LinkedIn.</li>
+</ul>
+
+<h3>8. Content and legal</h3>
+<ul>
+  <li>No lorem ipsum, no placeholder images, no "Client Name Here".</li>
+  <li>Contact details, pricing, and business hours match what the client signed off.</li>
+  <li>Privacy policy, terms, and cookie consent present where required.</li>
+  <li>404 page exists and offers a route back.</li>
+</ul>
+
+<h2>How often should you run the website QA checklist?</h2>
+
+<p>Running all eight sections on every deploy is not sustainable, and teams that try it soon stop running anything. Split the checklist into three depths tied to three triggers:</p>
+
+<table>
+  <thead><tr><th>Depth</th><th>Trigger</th><th>What runs</th></tr></thead>
+  <tbody>
+    <tr><td>Full pass</td><td>Pre-launch, major redesign, CMS or framework upgrade</td><td>All eight sections</td></tr>
+    <tr><td>Smoke pass</td><td>Every deploy</td><td>Homepage renders, primary nav, one form submits, the money path completes, no new console errors</td></tr>
+    <tr><td>Drift pass</td><td>Monthly, or after any third-party or dependency update</td><td>Links, performance, integrations, expired API keys and certificates</td></tr>
+  </tbody>
+</table>
+
+<p>The drift pass is the one most agencies skip, and it is where client-facing breakage quietly accumulates: an expired certificate, a payment gateway API version sunset, a form handler that stopped delivering weeks ago.</p>
+
+<h2>Which checks should be automated and which stay manual?</h2>
+
+<p>Automate anything deterministic and repeated. Keep human judgement for anything about meaning or intent.</p>
+
+<table>
+  <thead><tr><th>Check</th><th>Best handled by</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Broken links, missing metadata, contrast ratios</td><td>Automated scanner</td><td>Pass/fail with no interpretation needed</td></tr>
+    <tr><td>Core Web Vitals</td><td>Automated, in CI</td><td>Needs consistent conditions to be comparable</td></tr>
+    <tr><td>Critical user journeys (checkout, signup)</td><td>Automated E2E test</td><td>High cost of failure, runs on every deploy</td></tr>
+    <tr><td>Does the copy make sense? Is the layout right?</td><td>Human</td><td>Requires judgement a script cannot encode</td></tr>
+    <tr><td>Unscripted paths real users take</td><td><a href="/sims">AI persona testing</a></td><td>By definition not in a script you wrote</td></tr>
+  </tbody>
+</table>
+
+<p>Automated end-to-end tests are worth writing for the money path, but they break whenever the DOM changes, which is why agencies abandon them by the third redesign. Self-healing runners like <a href="/autosim">AutoSim</a> exist to absorb that churn so the suite survives the site it tests.</p>
+
+<h2>What do you do with the bugs the checklist finds?</h2>
+
+<p>A checklist that produces vague tickets creates a second problem. Every bug the pass turns up needs four things attached or it comes back as "cannot reproduce":</p>
+
+<ol>
+  <li><strong>Exact steps</strong> from a known starting URL.</li>
+  <li><strong>Environment</strong> — browser, version, OS, viewport width.</li>
+  <li><strong>Visual evidence</strong> — annotated screenshot or a short capture.</li>
+  <li><strong>Technical state</strong> — console errors and failed network requests at the moment it broke.</li>
+</ol>
+
+<p>Collecting those by hand is the reason QA passes drag. <a href="/snap">Snap</a> captures all four from a right-click on the page, which is also what makes it usable by the non-technical people who often run the content and copy sections of the checklist. For more on the format itself, see <a href="/blog/how-to-write-a-bug-report-developers-act-on">how to write a bug report developers will actually act on</a>.</p>
+
+<h2>What does a website QA checklist not catch?</h2>
+
+<p>Two blind spots, both structural:</p>
+
+<p><strong>Paths you did not think of.</strong> A checklist tests what you expected. Real users arrive with a stale cookie, a back-button mid-checkout, a form half-filled from autofill, three tabs open. Those combinations are not on any list — which is the argument for exploratory testing alongside the checklist, and for <a href="/blog/ai-qa-complete-guide">AI QA</a> approaches that generate paths rather than replay them.</p>
+
+<p><strong>What changed since you last looked.</strong> A pass is a snapshot. Dependencies update, third-party scripts change, content editors publish. The drift pass above is the mitigation, and continuous checks are the better version of it.</p>
+
+<h2>Does the checklist change for AI-generated sites?</h2>
+
+<p>The sections stay the same, but the weighting shifts. Code generated by Cursor, Lovable, v0, or Bolt tends to produce a plausible happy path with thin error handling, so the checks that earn the most time are forms and data handling (validation and the failure branch), authentication and access control, and anything touching money or personal data. Generated code also tends to be confidently wrong in ways that look finished, which makes the "does this actually store what it says it stored" check more valuable than any amount of visual review. The <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> covers that variant in detail.</p>
+
+<h2>Where to start if you have no checklist today</h2>
+
+<p>Do not try to write all eight sections before the next launch. Start with the smoke pass — five checks, ten minutes, every deploy — and add a section to the full pass each time a client finds something you missed. A checklist grown from your own escaped bugs fits your work better than any template, including this one.</p>
+
+<p><a href="/onboarding">Try Klavity free</a> and run your next client site through Snap, Sims, and AutoSim before the client does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Run all eight sections as a full pre-launch pass, not deploy by deploy</li><li>Define a five-check smoke pass that runs on every single deploy</li><li>Add a monthly drift pass for links, integrations, and expiring certificates</li><li>Attach steps, environment, screenshot, and console state to every bug found</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What are the eight sections of a website QA checklist?</summary><p>Core functionality, forms and data handling, cross-browser rendering, responsive and mobile behaviour, performance, accessibility, SEO and metadata, and content and legal pages. Work them in that order — broken functionality makes performance measurements meaningless.</p></details><details><summary>How often should a website QA checklist be run?</summary><p>Use three depths tied to three triggers: a full pass before launch and after major redesigns or framework upgrades, a five-check smoke pass on every deploy, and a monthly drift pass covering links, performance, integrations, and expiring keys and certificates.</p></details><details><summary>Which website QA checks can be automated?</summary><p>Automate anything deterministic: broken links, missing metadata, colour contrast, Core Web Vitals, and critical user journeys as end-to-end tests. Keep humans on judgement calls — whether copy makes sense, whether a layout is right — and use AI persona testing for the unscripted paths no checklist contains.</p></details><details><summary>What is the most common launch-day QA miss?</summary><p>A noindex tag or robots.txt block left over from staging, which keeps the live site out of search results. Canonical URLs pointing at the staging domain are a close second. Both belong in the SEO and metadata section of the pre-launch pass.</p></details><details><summary>Does the checklist differ for AI-generated or vibe-coded sites?</summary><p>The sections are the same but the weighting shifts. AI-generated code usually produces a working happy path with thin error handling, so spend the extra time on form validation and failure branches, authentication and access control, and anything touching payments or personal data.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

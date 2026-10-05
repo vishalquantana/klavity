@@ -1,0 +1,209 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Generated Code Bugs: 8 Patterns That Keep Recurring · Klavity</title>
+<meta name="description" content="AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.">
+<link rel="canonical" href="https://klavity.in/blog/ai-generated-code-bugs">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Generated Code Bugs: 8 Patterns That Keep Recurring"><meta property="og:description" content="AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.">
+<meta property="og:url" content="https://klavity.in/blog/ai-generated-code-bugs"><meta property="og:image" content="https://klavity.in/blog/ai-generated-code-bugs.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Generated Code Bugs: 8 Patterns That Keep Recurring"><meta name="twitter:description" content="AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each."><meta name="twitter:image" content="https://klavity.in/blog/ai-generated-code-bugs.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Generated Code Bugs: 8 Patterns That Keep Recurring","description":"AI generated code bugs cluster into eight repeating patterns — invented APIs, missing server authorization, contract drift. Here's how to catch each.","datePublished":"2026-09-27","dateModified":"2026-09-27","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-generated-code-bugs.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-generated-code-bugs","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Generated Code Bugs: 8 Patterns That Keep Recurring","item":"https://klavity.in/blog/ai-generated-code-bugs"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-generated-code-bugs"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the most common AI generated code bug?","acceptedAnswer":{"@type":"Answer","text":"Missing server-side authorization. When asked to restrict a feature, models reliably hide the UI but often leave the endpoint behind it unprotected, so the feature demos correctly while any logged-in user can call it directly. Test every generated route by calling it as a second, unrelated account."}},{"@type":"Question","name":"Why don't linters and unit tests catch AI generated code bugs?","acceptedAnswer":{"@type":"Answer","text":"Because most of these bugs are omissions rather than errors. There is no failing test for an error state that was never written, no lint rule for an endpoint that lacks an ownership check, and no type error when two separately generated files agree internally but disagree with each other. Catching them takes behavioural testing that runs the app as a real user would."}},{"@type":"Question","name":"Does AI-generated code have more bugs than human code?","acceptedAnswer":{"@type":"Answer","text":"It has different bugs. Human code skews toward typos, off-by-ones and logic slips, which existing tooling catches well. AI code skews toward missing authorization, absent error handling, stale library idioms and contract drift between layers — defects that look correct on review and only surface under real use."}},{"@type":"Question","name":"How do you test AI-generated code without writing tests for everything?","acceptedAnswer":{"@type":"Answer","text":"Test the known failure distribution first: call each data-touching endpoint as the wrong user, force a network failure and a server error, submit every form empty and twice, then run a fixed adversarial input set for pagination, dates, money and names. That short list covers the majority of AI generated code bugs."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-09-27</div>
+    <h1>AI Generated Code Bugs: 8 Patterns That Keep Recurring</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI-generated code on the left feeding a grid of eight bug patterns, with caught defects marked in red and verified checks in green">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.55"/>
+
+  <rect x="44" y="72" width="212" height="276" rx="12" fill="#f5f0e8" opacity="0.045"/>
+  <rect x="44" y="72" width="212" height="276" rx="12" fill="none" stroke="#6366f1" stroke-opacity="0.35"/>
+  <circle cx="68" cy="96" r="5" fill="#6366f1"/>
+  <circle cx="84" cy="96" r="5" fill="#6366f1" opacity="0.4"/>
+  <rect x="66" y="124" width="140" height="9" rx="4.5" fill="#6366f1" opacity="0.75"/>
+  <rect x="66" y="146" width="168" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="82" y="168" width="118" height="9" rx="4.5" fill="#f87171" opacity="0.8"/>
+  <rect x="82" y="190" width="146" height="9" rx="4.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="66" y="212" width="104" height="9" rx="4.5" fill="#6366f1" opacity="0.5"/>
+  <rect x="82" y="234" width="156" height="9" rx="4.5" fill="#f87171" opacity="0.7"/>
+  <rect x="82" y="256" width="122" height="9" rx="4.5" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="66" y="278" width="138" height="9" rx="4.5" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="66" y="300" width="96" height="9" rx="4.5" fill="#6366f1" opacity="0.35"/>
+
+  <line x1="266" y1="210" x2="336" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M327 201 L339 210 L327 219" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+
+  <rect x="360" y="86" width="110" height="112" rx="10" fill="none" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.6"/>
+  <rect x="482" y="86" width="110" height="112" rx="10" fill="none" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.6"/>
+  <rect x="360" y="222" width="110" height="112" rx="10" fill="none" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.6"/>
+  <rect x="482" y="222" width="110" height="112" rx="10" fill="none" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.6"/>
+
+  <circle cx="415" cy="142" r="19" fill="#f87171" opacity="0.18"/>
+  <circle cx="415" cy="142" r="8" fill="#f87171"/>
+  <circle cx="537" cy="142" r="19" fill="#f87171" opacity="0.18"/>
+  <circle cx="537" cy="142" r="8" fill="#f87171"/>
+  <circle cx="415" cy="278" r="19" fill="#4ade80" opacity="0.16"/>
+  <polyline points="406,278 413,285 425,271" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="537" cy="278" r="19" fill="#f87171" opacity="0.18"/>
+  <circle cx="537" cy="278" r="8" fill="#f87171"/>
+
+  <line x1="614" y1="210" x2="678" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M669 201 L681 210 L669 219" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+
+  <path d="M726 132 L766 150 L766 212 Q726 262 686 212 L686 150 Z" fill="#6366f1" opacity="0.14"/>
+  <path d="M726 132 L766 150 L766 212 Q726 262 686 212 L686 150 Z" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <polyline points="708,190 722,204 746,172" fill="none" stroke="#4ade80" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="686" y="288" width="80" height="8" rx="4" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="700" y="306" width="52" height="8" rx="4" fill="#6366f1" opacity="0.45"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI generated code bugs are not random: they cluster into eight patterns, led by invented APIs, stale library idioms, missing server-side authorization and happy-path-only error handling. They pass linters and unit tests because they are omissions and mismatches, not typos. Prioritise by blast radius — data exposure first, duplicate writes second, core user paths third.</div>
+    <div class="prose"><p><strong>AI generated code bugs</strong> are defects that come from code an assistant wrote rather than code a person reasoned through — and they cluster into a small number of repeating patterns: invented APIs, stale library idioms, missing server-side authorization, happy-path-only error handling, and contract drift between layers the model generated separately. They are not random. Because the model optimises for code that <em>looks</em> correct in context, the bugs it leaves behind are the ones that look correct too: syntactically valid, stylistically consistent, and wrong only when a real user hits a path the prompt never described.</p>
+
+<p>That is the useful part. A predictable failure distribution means you can test for it directly instead of testing everything equally. This guide lists the eight patterns worth checking every time, where each one hides, and how to catch it before a client does.</p>
+
+<h2>Why does AI-generated code fail differently from hand-written code?</h2>
+
+<p>A developer writing a feature carries context the model does not have: which other parts of the system touch this data, what the client asked for last month, which edge case bit you in production last year. An assistant has the prompt, the open files, and a statistical sense of what code like this usually looks like.</p>
+
+<p>Three consequences follow, and they explain almost every pattern below:</p>
+
+<ul>
+<li><strong>It fills gaps with plausibility, not knowledge.</strong> Asked for something it has not seen, a model produces the shape of a correct answer — a method name that <em>should</em> exist, a config key that <em>sounds</em> right.</li>
+<li><strong>It answers the prompt, not the system.</strong> If you asked for a working signup form, you get a working signup form. You did not ask what happens when the email already exists, so that path may not exist either.</li>
+<li><strong>Its training is a snapshot.</strong> Library APIs, auth flows and framework conventions move faster than any model's cutoff, so yesterday's idiom gets written into today's codebase.</li>
+</ul>
+
+<p>Human bugs tend to be typos, off-by-ones and logic slips — things linters and unit tests catch. AI bugs tend to be <em>omissions and mismatches</em>, which pass every check you have because there is no test for the code that was never written. That is why <a href="/blog/ai-qa-complete-guide">AI QA</a> puts so much weight on behavioural verification rather than static analysis alone.</p>
+
+<h2>What are the 8 most common AI generated code bugs?</h2>
+
+<h3>1. Hallucinated APIs and invented parameters</h3>
+<p>The model calls a function that does not exist, passes an option the library ignores, or imports from a path that was never published. In TypeScript this often surfaces at build time; in Python, JavaScript and template languages it survives all the way to runtime, and only on the branch that calls it. Anything behind a conditional — an error handler, an admin path, a retry — can ship broken and stay quiet for weeks.</p>
+
+<h3>2. Stale library patterns</h3>
+<p>Deprecated method names, old authentication middleware, superseded config formats, a framework router API from two majors ago. The code runs, sometimes with a deprecation warning nobody reads, until a dependency bump removes the old path. Stale security idioms are the dangerous subset: an outdated password-hashing call or a permissive cookie default is a real vulnerability that works perfectly in testing.</p>
+
+<h3>3. Missing authorization on the server</h3>
+<p>The most consistent and most expensive pattern. Asked to "only show this to admins", models very reliably hide the UI — and very often leave the endpoint that backs it unprotected. The feature demos correctly, and any logged-in user who guesses the URL or replays the request gets through. Every generated route that reads or writes data belonging to a specific user needs its own server-side ownership check, verified by actually calling it as the wrong user.</p>
+
+<h3>4. Happy-path-only error handling</h3>
+<p>No empty state, no loading state, no handling for a failed request, no message when validation fails. Generated code frequently assumes the network succeeds and the response has the expected shape. Users find this within minutes: a blank screen on a slow connection, a spinner that never resolves, a form that silently discards input.</p>
+
+<h3>5. Contract drift between generated layers</h3>
+<p>You generated the API in one session and the UI in another. The backend returns <strong>user_id</strong>, the frontend reads <strong>userId</strong>; the endpoint returns an array, the component expects an object with a <strong>data</strong> key; a field is nullable on one side and assumed present on the other. Each half is internally consistent, which is why review of either file in isolation finds nothing. The same drift shows up as duplicated business rules — the same discount logic written twice, then edited once.</p>
+
+<h3>6. Boundary and locale bugs</h3>
+<p>Pagination that drops the last page or repeats a row, timezone handling that stores local time as UTC, currency rounded in floating point, a name with an apostrophe or a non-Latin script breaking a query or a layout. These are exactly the cases a prompt never spells out and a demo never exercises.</p>
+
+<h3>7. Concurrency and double-submit bugs</h3>
+<p>No disabled button after submit, no idempotency key on a write, no guard on a webhook that can be delivered twice, two async updates racing on the same record. Generated code is usually written as if one user does one thing at a time. Duplicate orders and double-charged payments come from here.</p>
+
+<h3>8. Over-permissive defaults and exposed configuration</h3>
+<p>CORS set to <strong>*</strong>, a storage bucket or database rule left public, debug mode on, an API key placed in a client-side bundle or a committed <strong>.env</strong>. Permissive defaults are what make generated code run on the first try, so they are what models tend to produce — and nothing about the running app looks wrong.</p>
+
+<h2>Where does each pattern hide, and how do you catch it?</h2>
+
+<table>
+<tr><th>Bug pattern</th><th>Where it hides</th><th>How to catch it</th></tr>
+<tr><td>Hallucinated APIs</td><td>Error handlers, rare branches, admin paths</td><td>Typecheck plus execute every branch once; grep generated imports against installed versions</td></tr>
+<tr><td>Stale library patterns</td><td>Auth, config, framework glue</td><td>Read the current docs for every security-relevant call the model wrote</td></tr>
+<tr><td>Missing server authorization</td><td>API routes behind hidden UI</td><td>Call each endpoint as a second, unrelated logged-in user</td></tr>
+<tr><td>Happy-path-only handling</td><td>Loading, empty, failure states</td><td>Throttle the network, force a 500, submit an empty form</td></tr>
+<tr><td>Contract drift</td><td>Seams between separately generated files</td><td>End-to-end test that crosses the seam with real data</td></tr>
+<tr><td>Boundary and locale</td><td>Lists, dates, money, names</td><td>Fixed adversarial input set: page 2, DST, 0.1+0.2, O'Brien, emoji</td></tr>
+<tr><td>Concurrency</td><td>Submits, webhooks, background jobs</td><td>Double-click every submit; replay one webhook twice</td></tr>
+<tr><td>Permissive defaults</td><td>Config files, deploy settings, client bundle</td><td>Diff config against a known-good baseline before every deploy</td></tr>
+</table>
+
+<h2>How should you prioritise AI generated code bugs?</h2>
+
+<p>Order the work by blast radius, not by how easy each check is:</p>
+
+<ol>
+<li><strong>Anything that leaks or destroys data.</strong> Missing authorization, public storage rules, exposed keys. One of these ends a client relationship; a broken empty state does not.</li>
+<li><strong>Anything that takes money or writes records twice.</strong> Payments, orders, webhook handlers, any non-idempotent write.</li>
+<li><strong>Anything on the path every user walks.</strong> Signup, login, the primary action of the app — including its failure states.</li>
+<li><strong>Everything else.</strong> Cosmetic and edge-case issues, worked through in order.</li>
+</ol>
+
+<p>Two habits pay for themselves immediately. First, treat your prompt as the specification: the difference between what you asked for and what the code does is where the bugs live, so re-read the prompt beside the diff. Second, never let the model that wrote the code be the only thing that grades it — it will confirm its own assumptions, including the wrong ones. That principle is expanded in <a href="/blog/testing-ai-generated-code">our playbook for testing AI-generated code</a>, and the assistant-specific quirks are covered in <a href="/blog/copilot-code-quality">how to verify Copilot code quality</a> and <a href="/blog/cursor-ide-testing">Cursor IDE testing</a>.</p>
+
+<h2>Can you automate the hunt for these bugs?</h2>
+
+<p>Partly, and the split matters. Patterns 1, 2 and 8 are largely static: typecheckers, dependency audits and a config diff find most of them without running the app. Patterns 3 through 7 are behavioural — they only appear when something exercises the product the way a user would, with the wrong account, a failing network, or two clicks instead of one.</p>
+
+<p>That is the gap Klavity is built for. <a href="/sims">Sims</a> runs AI personas through your app to probe exactly those paths — wrong user, empty state, broken network, adversarial input — and reports what actually happened. <a href="/autosim">AutoSim</a> turns the flows that matter into self-healing end-to-end tests, so a generated refactor next week does not silently break them. And <a href="/snap">Snap</a> gives clients and testers a right-click bug report that arrives with the console, network and reproduction steps already attached, so the bugs that do escape come back reproducible instead of as "the page is broken".</p>
+
+<p>AI writes code faster than any team can read it. The answer is not to read less carefully — it is to point your verification at the eight places the failures actually are.</p>
+
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> — point it at your next AI-generated build and see which of these eight patterns it is carrying.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Call every generated endpoint as a second, unrelated user</li><li>Force a failed request and an empty state on every screen</li><li>Double-click every submit and replay each webhook once</li><li>Diff config and deploy settings before every release</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the most common AI generated code bug?</summary><p>Missing server-side authorization. When asked to restrict a feature, models reliably hide the UI but often leave the endpoint behind it unprotected, so the feature demos correctly while any logged-in user can call it directly. Test every generated route by calling it as a second, unrelated account.</p></details><details><summary>Why don't linters and unit tests catch AI generated code bugs?</summary><p>Because most of these bugs are omissions rather than errors. There is no failing test for an error state that was never written, no lint rule for an endpoint that lacks an ownership check, and no type error when two separately generated files agree internally but disagree with each other. Catching them takes behavioural testing that runs the app as a real user would.</p></details><details><summary>Does AI-generated code have more bugs than human code?</summary><p>It has different bugs. Human code skews toward typos, off-by-ones and logic slips, which existing tooling catches well. AI code skews toward missing authorization, absent error handling, stale library idioms and contract drift between layers — defects that look correct on review and only surface under real use.</p></details><details><summary>How do you test AI-generated code without writing tests for everything?</summary><p>Test the known failure distribution first: call each data-touching endpoint as the wrong user, force a network failure and a server error, submit every form empty and twice, then run a fixed adversarial input set for pagination, dates, money and names. That short list covers the majority of AI generated code bugs.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

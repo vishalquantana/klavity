@@ -791,10 +791,15 @@ export async function safeToPngWithScale(
  * {@link safeToPngWithScale} for the widget's onCaptureFull, where the crop scale is irrelevant but the
  * composer still needs to know whether the shot is a faithful 'rendered' capture or the degraded
  * 'wireframe' fallback so it can badge it and offer "Retake sharp".
+ *
+ * width/height: pass {@link fullPageCaptureSize}'s pre-clamped box so the renderer never measures the
+ * node's own (potentially unbounded) natural size — without this, a very tall page can make the renderer
+ * attempt to allocate its working canvas at native size BEFORE shrinking to a safe max, spiking memory
+ * enough to OOM-crash the tab outright (no JS try/catch can intercept a real browser OOM).
  */
 export async function safeToPngWithQuality(
   node: HTMLElement,
-  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean } = {},
+  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean; width?: number; height?: number } = {},
 ): Promise<{ dataUrl: string; quality: WidgetCaptureQuality; blank: boolean; partial: boolean }> {
   const { dataUrl, quality, blank, partial } = await safeToPngWithScale(node, opts)
   return { dataUrl, quality, blank, partial }

@@ -24,3 +24,14 @@ test("openBySeverity counts only accepted (open/in_progress) bugs; needsTriage c
   expect(ins.needsTriage).toBe(1)           // b only (c dismissed)
   expect(ins.sentiment.total).toBe(2)       // a + b ; c dismissed excluded
 })
+
+// KD-165: a ticket sitting in the new QA Review stage is still open work-in-progress, not resolved and
+// not dismissed — it must keep counting toward the same buckets open/in_progress already do, or moving a
+// ticket to QA Review would make it silently vanish from the severity breakdown and hotspots.
+test("openBySeverity and hotspots still count a qa_review ticket (KD-165)", async () => {
+  const a = await insertFeedback({ projectId: P, priority: "high", urlPath: "/qa-area" })
+  await setStatus(a, "qa_review")
+  const ins = await computeDashboardInsights(P)
+  expect(ins.openBySeverity.high).toBeGreaterThanOrEqual(1)
+  expect(ins.hotspots.some((h) => h.area === "/qa-area")).toBe(true)
+})

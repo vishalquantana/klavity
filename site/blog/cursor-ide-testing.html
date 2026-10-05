@@ -1,0 +1,206 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cursor IDE Testing: How to QA the Code Cursor Writes · Klavity</title>
+<meta name="description" content="Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist.">
+<link rel="canonical" href="https://klavity.in/blog/cursor-ide-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Cursor IDE Testing: How to QA the Code Cursor Writes"><meta property="og:description" content="Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist.">
+<meta property="og:url" content="https://klavity.in/blog/cursor-ide-testing"><meta property="og:image" content="https://klavity.in/blog/cursor-ide-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Cursor IDE Testing: How to QA the Code Cursor Writes"><meta name="twitter:description" content="Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist."><meta name="twitter:image" content="https://klavity.in/blog/cursor-ide-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Cursor IDE Testing: How to QA the Code Cursor Writes","description":"Cursor IDE testing means verifying AI-written code before it reaches a branch or a client. Here's the workflow, the failure modes, and a checklist.","datePublished":"2026-09-24","dateModified":"2026-09-24","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/cursor-ide-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/cursor-ide-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Cursor IDE Testing: How to QA the Code Cursor Writes","item":"https://klavity.in/blog/cursor-ide-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/cursor-ide-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is Cursor IDE testing?","acceptedAnswer":{"@type":"Answer","text":"Cursor IDE testing is the practice of verifying code generated inside the Cursor editor before it is merged or shipped. It combines the checks Cursor can run itself — lint, type-check, existing unit tests in its terminal — with outside verification that Cursor cannot do: running the feature in a real browser, exercising unhappy paths, and checking that untouched parts of the app still work."}},{"@type":"Question","name":"Does Cursor test the code it writes?","acceptedAnswer":{"@type":"Answer","text":"Cursor can write tests and run commands in its integrated terminal, and its agent mode can read the output and iterate until the command passes. But it only tests what you ask it to test, against the assumptions it made while writing the code. If the model misunderstood the requirement, the tests it writes will confirm the misunderstanding rather than catch it."}},{"@type":"Question","name":"Should I trust tests that Cursor wrote?","acceptedAnswer":{"@type":"Answer","text":"Trust them as a regression net, not as verification. AI-written tests are good at locking in current behaviour so future changes cannot silently break it. They are weak at proving the current behaviour is what you actually wanted, because the same model that wrote the code wrote the test — one misreading of the requirement produces both."}},{"@type":"Question","name":"What is the fastest way to QA a feature Cursor just built?","acceptedAnswer":{"@type":"Answer","text":"Open it in a browser and use it wrong. Submit the form empty, submit it twice, reload mid-flow, and open the page as a logged-out user. Those four actions catch a large share of the error-handling and permission gaps that AI-generated code tends to leave behind, and they take under two minutes."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-09-24</div>
+    <h1>Cursor IDE Testing: How to QA the Code Cursor Writes</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Cursor IDE testing: AI-written code in an editor passing through a browser verification pass">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="660" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="370" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="48" y="86" width="270" height="250" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="48" y="86" width="270" height="250" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="48" y1="118" x2="318" y2="118" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="68" cy="102" r="4" fill="#f87171" opacity="0.7"/>
+  <circle cx="84" cy="102" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="100" cy="102" r="4" fill="#4ade80" opacity="0.6"/>
+
+  <rect x="72" y="142" width="150" height="9" rx="4" fill="#6366f1" opacity="0.75"/>
+  <rect x="88" y="163" width="190" height="9" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="88" y="184" width="120" height="9" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="104" y="205" width="160" height="9" rx="4" fill="#6366f1" opacity="0.45"/>
+  <rect x="104" y="226" width="96" height="9" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="88" y="247" width="172" height="9" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="72" y="268" width="128" height="9" rx="4" fill="#6366f1" opacity="0.6"/>
+  <path d="M243 290 l9 9 -9 9" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="262" y="295" width="34" height="9" rx="4" fill="#f5f0e8" opacity="0.3"/>
+
+  <path d="M336 210 h84" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M410 200 l14 10 -14 10" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="444" y="86" width="308" height="250" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="444" y="86" width="308" height="250" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="444" y1="118" x2="752" y2="118" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <rect x="492" y="96" width="228" height="14" rx="7" fill="#f5f0e8" opacity="0.12"/>
+  <circle cx="464" cy="102" r="4" fill="#f5f0e8" opacity="0.3"/>
+
+  <circle cx="486" cy="152" r="11" fill="none" stroke="#4ade80" stroke-width="2.5"/>
+  <path d="M481 152 l4 5 7 -9" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="510" y="147" width="176" height="10" rx="5" fill="#f5f0e8" opacity="0.24"/>
+
+  <circle cx="486" cy="196" r="11" fill="none" stroke="#4ade80" stroke-width="2.5"/>
+  <path d="M481 196 l4 5 7 -9" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="510" y="191" width="140" height="10" rx="5" fill="#f5f0e8" opacity="0.24"/>
+
+  <circle cx="486" cy="240" r="11" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <path d="M481 235 l10 10 M491 235 l-10 10" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="510" y="235" width="200" height="10" rx="5" fill="#f87171" opacity="0.4"/>
+  <rect x="510" y="256" width="118" height="8" rx="4" fill="#f87171" opacity="0.2"/>
+
+  <circle cx="486" cy="294" r="11" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <path d="M481 289 l10 10 M491 289 l-10 10" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="510" y="289" width="162" height="10" rx="5" fill="#f87171" opacity="0.4"/>
+
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Cursor IDE testing is the practice of verifying code an AI editor generated before it lands in a branch, a client site, or production. Cursor can run your tests and lint for you, but it cannot tell you whether the feature behaves correctly in a real browser, on real data, for a user who does something unexpected. The gap that needs covering is behavioural: unhappy paths, permission boundaries, and the seams where new AI-written code meets code that already existed.</div>
+    <div class="prose"><p><strong>Cursor IDE testing</strong> is the practice of verifying code the Cursor editor generated for you before it reaches a branch, a client site, or production. Cursor can run lint, type-checks and your existing test suite in its own terminal and iterate until they pass — but a green terminal only proves the code compiles and matches the assumptions the model made while writing it. The verification that actually matters happens outside the editor: run the feature in a real browser, use it wrong on purpose, and check that the parts of the app you did not ask it to touch still work.</p>
+
+<h2>What does Cursor IDE testing actually mean?</h2>
+<p>It means splitting verification into two layers, because Cursor genuinely covers one of them and genuinely cannot cover the other.</p>
+<p>Cursor is an AI-first editor built on VS Code. Its agent modes can read your repository, write a change across several files, run commands in the integrated terminal, read the resulting output, and correct themselves. Project rules files let you encode conventions the model should follow. All of that is a real productivity gain, and it means the mechanical layer of testing — does it build, does it type-check, does the existing suite still pass — can largely be delegated.</p>
+<p>What cannot be delegated is the behavioural layer. The model wrote the code from an interpretation of your prompt. If that interpretation was subtly wrong, every artefact downstream of it inherits the same error: the implementation, the tests it wrote for the implementation, and its confident summary of what it did. A test suite written by the same model that wrote the code cannot detect a misread requirement. It can only lock the misreading in place.</p>
+<p>So Cursor IDE testing, done properly, is: let the editor own the mechanical checks, and spend your own attention entirely on behaviour, edges, and the boundaries of the change.</p>
+
+<h2>Why does code from Cursor need a different QA pass?</h2>
+<p>AI-generated code fails differently from hand-written code. A developer who does not understand an API usually writes something that breaks loudly. A model that does not understand an API writes something that looks exactly like code written by someone who does. The failure modes worth learning to spot:</p>
+<ul>
+<li><strong>Plausible-but-wrong.</strong> The code reads well, names things sensibly, and does the wrong thing. Because it passes review-by-skimming, it survives longer than a human's equivalent mistake would.</li>
+<li><strong>Scope drift.</strong> You asked for a change to one component; the agent also reformatted a helper, renamed a prop, or "improved" an adjacent function it decided was related. The diff is bigger than the request.</li>
+<li><strong>Missing error paths.</strong> Models are trained heavily on happy-path examples. The success case is usually well handled; the empty response, the timeout, the rejected payment, and the duplicate submit frequently are not.</li>
+<li><strong>Stale APIs.</strong> A model's knowledge of a library is a snapshot. It will reach for the method signature that was correct a few versions ago with complete confidence, and the code may even still run — badly.</li>
+<li><strong>Permission gaps.</strong> The UI hides the admin button for non-admins, and the underlying endpoint checks nothing. This is the single most costly category, because it is invisible in the browser until someone goes looking.</li>
+</ul>
+<p>None of these are caught by "the tests pass." All of them are caught by looking.</p>
+
+<h2>What should a Cursor IDE testing workflow look like?</h2>
+<p>Five steps, in order. The first two happen inside the editor; the last three do not.</p>
+<ol>
+<li><strong>Read the entire diff before accepting it.</strong> Not the summary the agent wrote — the actual changed lines. You are looking for one thing first: files you did not expect to see. An unexpected file in the diff is the cheapest bug you will ever catch.</li>
+<li><strong>Let Cursor run the mechanical checks.</strong> Lint, type-check, build, existing suite. Ask it to run them and fix what breaks. This is the part it is good at, and doing it by hand is wasted effort.</li>
+<li><strong>Run the feature and use it correctly once.</strong> Confirm the happy path does what you asked for. If it does not, stop here — there is no point testing edges of a feature that does not work at all.</li>
+<li><strong>Use it wrong, deliberately.</strong> Four actions, under two minutes: submit the form with nothing in it, submit it twice fast, reload the page halfway through the flow, and open the same page logged out or as a lower-privileged user. This sequence targets exactly the categories AI-generated code under-covers.</li>
+<li><strong>Check the seams.</strong> New code rarely breaks itself; it breaks its neighbours. Whatever the new code reads from or writes to — shared state, a cached list, a parent component's props, a database table another feature also queries — exercise that neighbour once.</li>
+</ol>
+<p>If you only ever do steps 1 and 4, you will still catch most of what matters.</p>
+
+<h2>What can Cursor verify itself, and where does it stop?</h2>
+<table>
+<thead><tr><th>Check</th><th>Cursor can do it</th><th>Needs an outside pass</th></tr></thead>
+<tbody>
+<tr><td>Compiles / type-checks</td><td>Yes — runs it and fixes failures</td><td>—</td></tr>
+<tr><td>Lint and formatting rules</td><td>Yes, especially with project rules files</td><td>—</td></tr>
+<tr><td>Existing unit tests still pass</td><td>Yes — runs the suite in its terminal</td><td>—</td></tr>
+<tr><td>New tests for new code</td><td>Writes them quickly</td><td>Yes — same model, same assumptions</td></tr>
+<tr><td>Requirement was understood correctly</td><td>No</td><td>Yes — only you know the requirement</td></tr>
+<tr><td>Renders correctly in a real browser</td><td>No</td><td>Yes</td></tr>
+<tr><td>Error and empty states behave</td><td>Partially, if asked explicitly</td><td>Yes</td></tr>
+<tr><td>Permission boundaries hold server-side</td><td>No</td><td>Yes</td></tr>
+<tr><td>Untouched features still work</td><td>Only where tests already existed</td><td>Yes</td></tr>
+</tbody>
+</table>
+<p>The right-hand column is the whole job. Everything in it is behavioural, and none of it is visible from inside the editor.</p>
+
+<h2>How do you test Cursor-generated code in the browser?</h2>
+<p>The outside pass needs to be fast enough that you actually do it every time, which means it has to be a tool rather than a ritual. Three pieces cover the gap:</p>
+<ul>
+<li><strong><a href="/sims">Sims</a></strong> drives your app the way real users do — AI personas that click through flows, try the unexpected input, and report what broke, with the reproduction steps attached. This is the closest automated equivalent of "use it wrong on purpose," and it scales past the four actions you would do by hand.</li>
+<li><strong><a href="/snap">Snap</a></strong> turns anything a human spots into a report a developer can act on: right-click, and the console log, network requests, browser and exact steps travel with the screenshot. Paste that straight back into Cursor and the agent has the context it needs to fix the bug rather than guess at it.</li>
+<li><strong><a href="/autosim">AutoSim</a></strong> keeps the flows that already work working. When AI writes a large share of your code, regressions arrive faster than hand-maintained end-to-end suites can be updated — self-healing tests matter more, not less.</li>
+</ul>
+<p>For a broader treatment of the underlying problem, see our guide to <a href="/blog/testing-ai-generated-code">testing AI-generated code</a>, and the practical <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> for a pre-ship pass you can run in ten minutes. The wider discipline is covered in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>What does a practical Cursor IDE testing checklist look like?</h2>
+<p>Run this before any Cursor-assisted change leaves your machine:</p>
+<ol>
+<li>Every file in the diff is one I expected to change.</li>
+<li>Lint, types and the existing suite are green.</li>
+<li>The happy path does what I actually asked for — not what the summary claims.</li>
+<li>Empty input, double submit, mid-flow reload and logged-out access all behave.</li>
+<li>Any endpoint the change touches enforces permissions server-side, not just in the UI.</li>
+<li>Every library call the model introduced matches the version in the lockfile.</li>
+<li>The neighbouring feature that shares state with this one still works.</li>
+<li>Console is clean and no request is returning an unexpected status.</li>
+</ol>
+<p>Eight lines. It is not sophisticated, and that is the point — a check you will run every day beats a test strategy you will set up once and abandon.</p>
+
+<h2>Try it on your next Cursor build</h2>
+<p>Cursor makes writing the code fast. Klavity makes verifying it fast, so the two stay in balance and your client is not the one who finds the bug. <a href="/onboarding"><strong>Try Klavity free</strong></a> — point it at your next Cursor-built feature and see what the browser pass turns up.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read the full diff before accepting — scope drift is the most common Cursor failure.</li><li>Treat AI-written tests as a regression net, not as proof of correctness.</li><li>Always exercise the unhappy path: empty input, double submit, reload, logged out.</li><li>Check the seams where new AI code meets code that already existed.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is Cursor IDE testing?</summary><p>Cursor IDE testing is the practice of verifying code generated inside the Cursor editor before it is merged or shipped. It combines the checks Cursor can run itself — lint, type-check, existing unit tests in its terminal — with outside verification that Cursor cannot do: running the feature in a real browser, exercising unhappy paths, and checking that untouched parts of the app still work.</p></details><details><summary>Does Cursor test the code it writes?</summary><p>Cursor can write tests and run commands in its integrated terminal, and its agent mode can read the output and iterate until the command passes. But it only tests what you ask it to test, against the assumptions it made while writing the code. If the model misunderstood the requirement, the tests it writes will confirm the misunderstanding rather than catch it.</p></details><details><summary>Should I trust tests that Cursor wrote?</summary><p>Trust them as a regression net, not as verification. AI-written tests are good at locking in current behaviour so future changes cannot silently break it. They are weak at proving the current behaviour is what you actually wanted, because the same model that wrote the code wrote the test — one misreading of the requirement produces both.</p></details><details><summary>What is the fastest way to QA a feature Cursor just built?</summary><p>Open it in a browser and use it wrong. Submit the form empty, submit it twice, reload mid-flow, and open the page as a logged-out user. Those four actions catch a large share of the error-handling and permission gaps that AI-generated code tends to leave behind, and they take under two minutes.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

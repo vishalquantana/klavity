@@ -1,0 +1,230 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Vibe Coding? Definition, Risks, and QA Basics · Klavity</title>
+<meta name="description" content="Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-vibe-coding">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Vibe Coding? Definition, Risks, and QA Basics"><meta property="og:description" content="Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-vibe-coding"><meta property="og:image" content="https://klavity.in/blog/what-is-vibe-coding.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Vibe Coding? Definition, Risks, and QA Basics"><meta name="twitter:description" content="Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it."><meta name="twitter:image" content="https://klavity.in/blog/what-is-vibe-coding.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Vibe Coding? Definition, Risks, and QA Basics","description":"Vibe coding means prompting an AI to write code and shipping it without reading most of it. Here's the definition, the real risks, and how to QA it.","datePublished":"2026-10-03","dateModified":"2026-10-03","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/what-is-vibe-coding.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-vibe-coding","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Vibe Coding? Definition, Risks, and QA Basics","item":"https://klavity.in/blog/what-is-vibe-coding"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-vibe-coding"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is vibe coding?","acceptedAnswer":{"@type":"Answer","text":"Vibe coding is building software by describing what you want in natural language, letting an AI model write the code, and shipping the result without reading most of it. The term was coined by Andrej Karpathy in February 2025. The defining feature is that the code review step is absent rather than lighter."}},{"@type":"Question","name":"Who coined the term vibe coding?","acceptedAnswer":{"@type":"Answer","text":"Andrej Karpathy, in February 2025, describing a workflow where you accept AI-generated diffs without fully reading them and paste errors back to the model. He framed it as a mode for throwaway weekend projects, a caveat that largely dropped away as the term spread. Collins Dictionary named vibe coding its word of the year for 2025."}},{"@type":"Question","name":"Is vibe coding safe for production apps?","acceptedAnswer":{"@type":"Answer","text":"It depends on what a bug costs. For personal projects and demos it is fine. For client sites, apps with user accounts, or anything touching payments, vibe coding needs a verification layer added back to replace the code review it skips: behaviour-level testing, an explicit look at authorization code, and regression tests on the flows that matter."}},{"@type":"Question","name":"What bugs does vibe coding typically cause?","acceptedAnswer":{"@type":"Answer","text":"AI-generated code fails in patterns: happy-path bias where only the flow you prompted for works, object-level authorization gaps where an endpoint does not check record ownership, imports of packages that do not exist, divergent duplicate logic after multi-file edits, and API keys placed in client-side code."}},{"@type":"Question","name":"How is vibe coding different from using an AI coding assistant?","acceptedAnswer":{"@type":"Answer","text":"The difference is who reads the diff. With AI-assisted coding a developer reviews the change before it merges and evaluates the code. With vibe coding nobody reads it and you evaluate the running app instead, so defects surface in production rather than in review or CI."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-10-03</div>
+    <h1>What Is Vibe Coding? Definition, Risks, and QA Basics</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Vibe coding: a prompt generates unreviewed code that looks correct on the surface while bugs hide underneath">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="0" y="0" width="800" height="3" fill="#6366f1" opacity="0.5"/>
+
+  <rect x="48" y="96" width="176" height="128" rx="14" fill="#6366f1" opacity="0.12"/>
+  <rect x="48" y="96" width="176" height="128" rx="14" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="70" y="124" width="104" height="7" rx="3.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="70" y="144" width="132" height="7" rx="3.5" fill="#f5f0e8" opacity="0.32"/>
+  <rect x="70" y="164" width="86" height="7" rx="3.5" fill="#f5f0e8" opacity="0.32"/>
+  <rect x="70" y="190" width="52" height="14" rx="7" fill="#6366f1" opacity="0.85"/>
+
+  <line x1="236" y1="160" x2="300" y2="160" stroke="#6366f1" stroke-width="2"/>
+  <polyline points="288,151 300,160 288,169" fill="none" stroke="#6366f1" stroke-width="2"/>
+
+  <rect x="312" y="56" width="176" height="208" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="312" y="56" width="176" height="208" rx="12" fill="none" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <line x1="312" y1="84" x2="488" y2="84" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="1.5"/>
+  <circle cx="328" cy="70" r="3.5" fill="#f87171" opacity="0.6"/>
+  <circle cx="340" cy="70" r="3.5" fill="#f5f0e8" opacity="0.25"/>
+  <rect x="330" y="102" width="118" height="6" rx="3" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="330" y="120" width="88" height="6" rx="3" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="344" y="138" width="106" height="6" rx="3" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="344" y="156" width="70" height="6" rx="3" fill="#f87171" opacity="0.75"/>
+  <rect x="330" y="174" width="124" height="6" rx="3" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="344" y="192" width="54" height="6" rx="3" fill="#f87171" opacity="0.75"/>
+  <rect x="330" y="210" width="96" height="6" rx="3" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="330" y="232" width="62" height="6" rx="3" fill="#f5f0e8" opacity="0.18"/>
+
+  <line x1="500" y1="160" x2="564" y2="160" stroke="#6366f1" stroke-width="2" stroke-dasharray="6 5"/>
+  <polyline points="552,151 564,160 552,169" fill="none" stroke="#6366f1" stroke-width="2"/>
+
+  <rect x="576" y="80" width="176" height="80" rx="12" fill="#4ade80" opacity="0.1"/>
+  <rect x="576" y="80" width="176" height="80" rx="12" fill="none" stroke="#4ade80" stroke-width="1.5"/>
+  <polyline points="602,120 614,132 638,106" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="656" y="116" width="72" height="7" rx="3.5" fill="#4ade80" opacity="0.55"/>
+
+  <rect x="576" y="184" width="176" height="80" rx="12" fill="#f87171" opacity="0.1"/>
+  <rect x="576" y="184" width="176" height="80" rx="12" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <circle cx="616" cy="224" r="13" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="616" y1="211" x2="616" y2="227" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="616" cy="233" r="1.8" fill="#f87171"/>
+  <rect x="656" y="220" width="58" height="7" rx="3.5" fill="#f87171" opacity="0.55"/>
+
+  <rect x="48" y="320" width="704" height="1" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="48" y="344" width="128" height="8" rx="4" fill="#6366f1" opacity="0.7"/>
+  <rect x="192" y="344" width="96" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="304" y="344" width="72" height="8" rx="4" fill="#f87171" opacity="0.5"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Vibe coding is building software by prompting an AI and shipping its output without reviewing most of the code. Coined by Andrej Karpathy in February 2025 for throwaway projects, it is now used for client sites and payment flows. The defining risk is not that AI wrote the code, but that the review step is absent rather than lighter.</div>
+    <div class="prose"><p><strong>Vibe coding</strong> is building software by describing what you want in natural language, letting an AI model write the code, and shipping the result without reading most of it. The term was coined by Andrej Karpathy in February 2025 to describe a workflow where you "fully give in to the vibes" &mdash; accepting diffs, pasting error messages back into the model, and judging the output by whether the app appears to work rather than by reviewing what it does. Vibe coding is fast and genuinely useful for prototypes. The risk is structural: when it ships, nobody on the team has read the code now running in production.</p>
+
+<p>Collins Dictionary named "vibe coding" its word of the year for 2025, which tells you how quickly the practice went from one developer's description of a Saturday habit to a default way of building. Cursor, Claude Code, Bolt, Lovable, v0 and Replit Agent are all built around some version of the loop. What has not kept pace is the verification step on the other side of it.</p>
+
+<h2>Where did the term "vibe coding" come from?</h2>
+
+<p>Karpathy's original framing matters, because it is narrower than how the term is now used. He described it as a mode for "throwaway weekend projects" &mdash; code where the cost of being wrong is near zero, so skipping review is a rational trade. He was explicit that he barely touched the keyboard and did not always understand the diffs he accepted.</p>
+
+<p>The term then detached from that caveat. Today "vibe coding" describes the same loop applied to client websites, SaaS MVPs, internal dashboards and payment flows &mdash; contexts where being wrong is expensive. The technique did not change. The stakes did.</p>
+
+<h2>What does vibe coding look like in practice?</h2>
+
+<p>The loop is consistent across tools:</p>
+
+<ol class="scan-list">
+<li>Describe a feature in a prompt, in product language rather than technical spec.</li>
+<li>Accept the generated diff without reading it closely, or at all.</li>
+<li>Run the app and click through the path you had in mind.</li>
+<li>If something breaks, paste the error back to the model and accept the next diff.</li>
+<li>Repeat until the screen looks right, then ship.</li>
+</ol>
+
+<p>The defining characteristic is not that AI wrote the code. It is that <strong>the review step is absent rather than lighter</strong>. In a conventional workflow, a human reads the change before it merges and a test suite checks it afterwards. Vibe coding removes the first gate, and most vibe-coded projects never had the second.</p>
+
+<h2>What kinds of bugs does vibe coding produce?</h2>
+
+<p>AI-generated code fails in patterns, not at random. Knowing the patterns is what lets you test a vibe-coded app efficiently instead of auditing every line:</p>
+
+<ul>
+<li><strong>Happy-path bias.</strong> A model writes code that satisfies the example in your prompt. The paths you did not mention &mdash; empty lists, zero results, a failed network call, a very long string, a duplicate submit &mdash; are where behaviour is undefined.</li>
+<li><strong>Authorization gaps at object level.</strong> The endpoint authenticates the user and then fetches the record by the ID in the URL, without checking that this user owns that record. The feature works perfectly in your own account, which is the only account you tested.</li>
+<li><strong>Invented dependencies.</strong> Models sometimes import packages that do not exist. This is a documented failure mode, and it has a documented attack built on top of it: adversaries register the hallucinated names so the next install resolves to their code. Any package name you did not choose deliberately deserves a look.</li>
+<li><strong>Divergent state after multi-file edits.</strong> When a model edits several files across a session, it can leave two places that both own the same piece of logic. Fixing the bug in one does not fix it in the other, and the second one surfaces weeks later.</li>
+<li><strong>Keys in the client bundle.</strong> API credentials put into frontend code work in the browser, which is exactly why they look correct, and are readable by anyone who opens devtools.</li>
+</ul>
+
+<p>None of these show up when you click the path you asked for. All of them show up when a real user does something slightly different.</p>
+
+<h2>Is vibe coding the same as using an AI coding assistant?</h2>
+
+<p>No, and conflating them is how teams talk past each other. The difference is who reads the diff.</p>
+
+<table>
+<thead><tr><th>&nbsp;</th><th>AI-assisted coding</th><th>Vibe coding</th></tr></thead>
+<tbody>
+<tr><td>Who reads the change</td><td>A developer, before it merges</td><td>Usually nobody</td></tr>
+<tr><td>What you evaluate</td><td>The code</td><td>The running app</td></tr>
+<tr><td>Where defects surface</td><td>Review and CI</td><td>Production, or a user's inbox</td></tr>
+<tr><td>Prerequisite</td><td>Can read the language</td><td>None</td></tr>
+<tr><td>Good fit for</td><td>Production code at any stakes</td><td>Prototypes, demos, throwaways</td></tr>
+<tr><td>Main failure mode</td><td>Rubber-stamped review</td><td>Shipped code nobody understands</td></tr>
+</tbody>
+</table>
+
+<p>Most working developers are doing the left column. Most non-technical founders shipping with Bolt or Lovable are doing the right column. The same tool supports both, so the label tells you about the process, not the product.</p>
+
+<h2>When is vibe coding safe to ship?</h2>
+
+<p>Match the verification effort to what breaking costs you:</p>
+
+<table>
+<thead><tr><th>What you're building</th><th>Cost of a bug</th><th>What it needs before shipping</th></tr></thead>
+<tbody>
+<tr><td>Weekend project, personal script</td><td>Your own time</td><td>Nothing. Karpathy's original use case.</td></tr>
+<tr><td>Internal tool, no customer data</td><td>An annoyed colleague</td><td>Click the main flows yourself</td></tr>
+<tr><td>Client marketing site</td><td>Your reputation with the client</td><td>A pre-launch pass across browsers, forms and mobile</td></tr>
+<tr><td>App with accounts or user data</td><td>A breach or a leak</td><td>Read the auth and permission code specifically</td></tr>
+<tr><td>Anything touching payments</td><td>Real money, real liability</td><td>Human review plus automated regression tests</td></tr>
+</tbody>
+</table>
+
+<p>The honest version of the rule: vibe coding is a prototyping technique. It becomes a production technique only once you add back a verification layer to replace the review you skipped.</p>
+
+<h2>How do you QA a vibe-coded app without reading every line?</h2>
+
+<p>If you cannot review the code &mdash; because there is too much of it, or because you do not read that language &mdash; you verify at the level of behaviour instead. Three layers cover most of it:</p>
+
+<h3>1. Capture defects with enough evidence to fix them</h3>
+<p>When something is wrong, the bottleneck is usually the report, not the fix. A screenshot with no URL, console log or browser version turns into a round of questions. <a href="/snap">Snap</a> captures the page state, console errors and network activity with the report so the ticket arrives reproducible.</p>
+
+<h3>2. Have something explore the paths you didn't think of</h3>
+<p>Your own clicking is biased toward the flows you built. <a href="/sims">Sims</a> runs AI personas through the app with different goals and behaviours &mdash; the impatient user, the one with an empty account, the one who submits twice &mdash; which is where happy-path bias surfaces.</p>
+
+<h3>3. Lock the fixed behaviour down</h3>
+<p>Vibe-coded projects regress easily, because each new prompt can rewrite code the last one depended on. <a href="/autosim">AutoSim</a> turns verified flows into end-to-end tests that repair their own selectors when the UI shifts, so a working feature stays working through the next round of generation.</p>
+
+<p>For the step-by-step version of this, see <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a> and the <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a>. For the broader category, start with the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>What should you take away about vibe coding?</h2>
+
+<p>Vibe coding is a real and legitimate way to build. It removes the slowest part of software development for people who were previously blocked entirely, and it produces working software. What it does not do is produce <em>verified</em> software, and the gap between those two is where client escalations and 2am incidents live. Treat the generated code as a draft from a fast contributor who never tests edge cases, and put a verification layer where the code review used to be.</p>
+
+<div class="cta">
+<h2>Ship vibe-coded apps you can actually stand behind</h2>
+<p>Klavity finds the bugs in AI-generated code before your users or your client do.</p>
+<p><a href="/onboarding"><strong>Try Klavity free &rarr;</strong></a></p>
+</div></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Treat vibe coding as prototyping, not a production process</li><li>Test empty, error and duplicate-submit states first</li><li>Read the auth and permission code even if you read nothing else</li><li>Verify every package name the model imported</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is vibe coding?</summary><p>Vibe coding is building software by describing what you want in natural language, letting an AI model write the code, and shipping the result without reading most of it. The term was coined by Andrej Karpathy in February 2025. The defining feature is that the code review step is absent rather than lighter.</p></details><details><summary>Who coined the term vibe coding?</summary><p>Andrej Karpathy, in February 2025, describing a workflow where you accept AI-generated diffs without fully reading them and paste errors back to the model. He framed it as a mode for throwaway weekend projects, a caveat that largely dropped away as the term spread. Collins Dictionary named vibe coding its word of the year for 2025.</p></details><details><summary>Is vibe coding safe for production apps?</summary><p>It depends on what a bug costs. For personal projects and demos it is fine. For client sites, apps with user accounts, or anything touching payments, vibe coding needs a verification layer added back to replace the code review it skips: behaviour-level testing, an explicit look at authorization code, and regression tests on the flows that matter.</p></details><details><summary>What bugs does vibe coding typically cause?</summary><p>AI-generated code fails in patterns: happy-path bias where only the flow you prompted for works, object-level authorization gaps where an endpoint does not check record ownership, imports of packages that do not exist, divergent duplicate logic after multi-file edits, and API keys placed in client-side code.</p></details><details><summary>How is vibe coding different from using an AI coding assistant?</summary><p>The difference is who reads the diff. With AI-assisted coding a developer reviews the change before it merges and evaluates the code. With vibe coding nobody reads it and you evaluate the running app instead, so defects surface in production rather than in review or CI.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
