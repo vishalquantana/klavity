@@ -782,5 +782,12 @@
     "excerpt": "An AI QA workflow replaces the pre-launch QA phase with three always-on checks: self-healing regression, AI persona passes, and structured bug capture.",
     "category": "Guides",
     "date": "2026-10-04"
+  },
+  {
+    "slug": "lovable-app-testing",
+    "title": "Lovable App Testing: How to QA an App the AI Built",
+    "excerpt": "Lovable app testing starts at the data layer: verify row-level security, auth boundaries, and server-side validation before you trust the UI.",
+    "category": "Guides",
+    "date": "2026-10-05"
   }
 ]

@@ -1,0 +1,214 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lovable App Testing: How to QA an App the AI Built · Klavity</title>
+<meta name="description" content="Lovable app testing starts at the data layer: verify row-level security, auth boundaries, and server-side validation before you trust the UI.">
+<link rel="canonical" href="https://klavity.in/blog/lovable-app-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Lovable App Testing: How to QA an App the AI Built"><meta property="og:description" content="Lovable app testing starts at the data layer: verify row-level security, auth boundaries, and server-side validation before you trust the UI.">
+<meta property="og:url" content="https://klavity.in/blog/lovable-app-testing"><meta property="og:image" content="https://klavity.in/blog/lovable-app-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Lovable App Testing: How to QA an App the AI Built"><meta name="twitter:description" content="Lovable app testing starts at the data layer: verify row-level security, auth boundaries, and server-side validation before you trust the UI."><meta name="twitter:image" content="https://klavity.in/blog/lovable-app-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Lovable App Testing: How to QA an App the AI Built","description":"Lovable app testing starts at the data layer: verify row-level security, auth boundaries, and server-side validation before you trust the UI.","datePublished":"2026-10-05","dateModified":"2026-10-05","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/lovable-app-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/lovable-app-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Lovable App Testing: How to QA an App the AI Built","item":"https://klavity.in/blog/lovable-app-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/lovable-app-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Do I need to know how to code to test a Lovable app?","acceptedAnswer":{"@type":"Answer","text":"No. The highest-value tests are behavioural: open the app logged out and see if private data appears, log in as a second user and try to open the first user's records by changing an ID in the URL, and submit every form empty and with absurd input. Two accounts and ten minutes will surface more real risk than reading the generated code."}},{"@type":"Question","name":"Why is row-level security the first thing to test?","acceptedAnswer":{"@type":"Answer","text":"Because in the common Lovable and Supabase setup, the frontend holds a public anon key and queries the database directly. Anyone can read that key from the browser and issue their own queries, so row-level security policies are the only real gate. Hiding a page in the UI does not protect the data behind it."}},{"@type":"Question","name":"How do I stop re-prompting from breaking features that already worked?","acceptedAnswer":{"@type":"Answer","text":"Turn your three to five defining journeys — sign up, create the main object, pay, invite a teammate — into automated end-to-end tests and run them after every meaningful prompt. Write selectors against stable attributes rather than generated class names, since regeneration reshuffles styling more often than intent."}},{"@type":"Question","name":"Is testing an AI-built app different from testing a hand-coded one?","acceptedAnswer":{"@type":"Answer","text":"The bugs cluster differently. Hand-written defects gather around the parts the developer knew were hard; generated defects gather around requirements nobody ever stated, which the model fills with plausible defaults. Test the cases you never put in the prompt: empty inputs, wrong users, slow networks, and error states."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-05</div>
+    <h1>Lovable App Testing: How to QA an App the AI Built</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Prompt generates an app; QA probes its data layer">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="30" y="118" width="170" height="130" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.5"/>
+  <rect x="50" y="142" width="104" height="9" rx="4.5" fill="#6366f1" fill-opacity="0.75"/>
+  <rect x="50" y="162" width="130" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="50" y="182" width="78" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="50" y="213" width="58" height="20" rx="10" fill="#6366f1"/>
+  <path d="M206 183 h40" stroke="#6366f1" stroke-width="2.5"/>
+  <path d="M240 175 l10 8 -10 8 z" fill="#6366f1"/>
+  <rect x="262" y="78" width="268" height="210" rx="14" fill="#f5f0e8" fill-opacity="0.07" stroke="#f5f0e8" stroke-opacity="0.2"/>
+  <path d="M262 108 h268" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="1.5"/>
+  <circle cx="282" cy="93" r="4.5" fill="#f87171" fill-opacity="0.8"/>
+  <circle cx="297" cy="93" r="4.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <circle cx="312" cy="93" r="4.5" fill="#4ade80" fill-opacity="0.7"/>
+  <rect x="284" y="128" width="96" height="60" rx="8" fill="#6366f1" fill-opacity="0.3" stroke="#6366f1" stroke-opacity="0.6"/>
+  <rect x="392" y="128" width="116" height="60" rx="8" fill="#f5f0e8" fill-opacity="0.08"/>
+  <rect x="284" y="202" width="224" height="11" rx="5.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="284" y="224" width="164" height="11" rx="5.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="284" y="250" width="70" height="22" rx="11" fill="#6366f1" fill-opacity="0.85"/>
+  <circle cx="486" cy="158" r="17" fill="#f87171" fill-opacity="0.2" stroke="#f87171" stroke-width="2"/>
+  <path d="M480 152 l12 12 M492 152 l-12 12" stroke="#f87171" stroke-width="2.2"/>
+  <path d="M536 183 h42" stroke="#4ade80" stroke-width="2.5" stroke-dasharray="7 5"/>
+  <path d="M572 175 l10 8 -10 8 z" fill="#4ade80"/>
+  <ellipse cx="672" cy="122" rx="74" ry="20" fill="#6366f1" fill-opacity="0.35" stroke="#6366f1" stroke-opacity="0.7"/>
+  <path d="M598 122 v120 a74 20 0 0 0 148 0 v-120" fill="#6366f1" fill-opacity="0.14" stroke="#6366f1" stroke-opacity="0.7" stroke-width="1.5"/>
+  <path d="M598 172 a74 20 0 0 0 148 0" fill="none" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.5"/>
+  <path d="M598 212 a74 20 0 0 0 148 0" fill="none" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="654" y="196" width="36" height="28" rx="6" fill="#4ade80" fill-opacity="0.9"/>
+  <path d="M661 196 v-10 a11 11 0 0 1 22 0 v10" fill="none" stroke="#4ade80" stroke-width="4"/>
+  <path d="M60 322 l12 13 22 -26" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round"/>
+  <rect x="110" y="320" width="150" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.2"/>
+  <path d="M60 372 l12 13 22 -26" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round"/>
+  <rect x="110" y="370" width="210" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.2"/>
+  <path d="M392 328 l14 14 M406 328 l-14 14" stroke="#f87171" stroke-width="4" stroke-linecap="round"/>
+  <rect x="428" y="330" width="178" height="10" rx="5" fill="#f87171" fill-opacity="0.35"/>
+  <path d="M392 374 l12 13 22 -26" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round"/>
+  <rect x="442" y="370" width="134" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.2"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Lovable app testing means checking what the generator could not: that database policies block data users shouldn't see, that core journeys survive each re-prompt, and that bad input is rejected server-side. In a typical Lovable build the browser queries Supabase with a public key, so authorization lives in row-level security policies — not in your UI.</div>
+    <div class="prose"><p><strong>Lovable app testing</strong> means verifying the three things the generator cannot verify for you: that your database rules actually block data a user should never see, that every critical journey still works after the last re-prompt, and that the app behaves sanely when inputs are empty, wrong, or hostile. Start at the data layer — in a typical Lovable build the browser talks straight to Supabase using a public key, so authorization lives in row-level security policies, not in your UI code. Then pin the main user journeys into repeatable tests, so the next prompt cannot silently break what already worked.</p>
+
+<h2>What makes a Lovable app different from a hand-coded one?</h2>
+
+<p>Lovable turns prompts into a working full-stack app — usually a React frontend with Supabase handling auth, database, and file storage, plus a preview URL and a publish step. The code is real code, and you can sync it to GitHub and read every line. What is missing is everything that normally surrounds code written by a team: no pull request, no reviewer, no test suite, no staging environment, and no record of what the last change was supposed to do.</p>
+
+<p>That changes where bugs come from. In a hand-written app, defects cluster around the hard parts the developer knew were hard. In a generated app, they cluster around the parts nobody ever stated: the requirement you never typed into the prompt. The model fills gaps with plausible defaults, and plausible defaults are exactly what a test would have caught. A signup form that accepts an empty name, a dashboard that loads before auth resolves, a delete button with no confirmation — none of these are model failures. They are unstated requirements.</p>
+
+<p>The second difference is regeneration. When you re-prompt to change a feature, the model may rewrite files you did not mention. Without tests, you discover the collateral damage by clicking around and hoping you click the right thing.</p>
+
+<h2>What should you test first in a Lovable app?</h2>
+
+<p>Test in order of what a failure actually costs you. Not every bug is equal: a misaligned button costs you a little credibility, while a readable table of other customers' records costs you the business.</p>
+
+<table>
+  <thead><tr><th>Priority</th><th>What to test</th><th>Why it comes first</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Row-level security on every table</td><td>The client holds a public key; policies are the only real gate</td></tr>
+    <tr><td>2</td><td>Auth boundaries — logged out, logged in, wrong user</td><td>Hidden in the UI is not the same as protected</td></tr>
+    <tr><td>3</td><td>Server-side validation on writes</td><td>Client validation is a hint, not a constraint</td></tr>
+    <tr><td>4</td><td>File uploads — type, size, who can read them</td><td>Public storage buckets leak quietly</td></tr>
+    <tr><td>5</td><td>Payment and webhook paths</td><td>Silent failures here lose money with no error</td></tr>
+    <tr><td>6</td><td>Empty, loading, and error states</td><td>Generated UIs are built against the happy path</td></tr>
+    <tr><td>7</td><td>Mobile layout and long content</td><td>Preview width is not user width</td></tr>
+  </tbody>
+</table>
+
+<p>Work top-down and stop when you run out of time, rather than starting with whatever is easiest to click.</p>
+
+<h2>How do you test authorization when the browser talks straight to the database?</h2>
+
+<p>This is the part most non-technical founders miss, and it is the single highest-value test in a Lovable app testing pass. In the common Supabase setup, your frontend ships a public anon key and queries tables directly. Anyone can open devtools, read that key, and issue their own queries. The only thing standing between a curious visitor and your whole table is the row-level security policy on it.</p>
+
+<p>So test it as an attacker would, with three passes:</p>
+
+<ol>
+  <li><strong>Logged out.</strong> Open the app with no session and try to load a page that shows data. If anything appears that should be private, a policy is missing.</li>
+  <li><strong>Logged in as user A.</strong> Note the record IDs you own. Then change an ID in the URL to one you do not own. If it loads, your filter is in the query, not in a policy.</li>
+  <li><strong>Logged in as user B.</strong> Try to update and delete user A's records. Read access and write access are separate policies, and generated apps frequently cover one and not the other.</li>
+</ol>
+
+<p>Two accounts and ten minutes will tell you more about your app's safety than any amount of reading the code. If any of these three passes shows data it shouldn't, fix the policy — not the UI. Hiding a route does nothing when the data is one fetch call away. We cover the wider version of this question in <a href="/blog/is-vibe-coded-code-safe-to-ship">is vibe-coded code safe to ship</a>.</p>
+
+<h2>How do you stop a re-prompt from breaking what already worked?</h2>
+
+<p>You cannot review every regenerated line, and you should not try. What you can do is make breakage loud. Pick the three to five journeys that define your app — sign up, create the main object, pay, invite a teammate — and turn each into an automated end-to-end test. Run them after every meaningful prompt. A journey that passed yesterday and fails today tells you precisely which re-prompt did it, which is a far better debugging signal than a vague sense that something feels off.</p>
+
+<p>Two practical notes. Write selectors against stable attributes rather than generated class names, because regeneration reshuffles styling far more often than it reshuffles intent. And when a test breaks because the UI legitimately changed, update the test in the same session — a suite you have learned to ignore is worse than no suite, because it costs time and buys nothing.</p>
+
+<p>This is the gap <a href="/autosim">AutoSim</a> is built for: end-to-end tests that repair their own selectors when the markup shifts underneath them, so a cosmetic regeneration doesn't produce a wall of red that trains you to stop looking.</p>
+
+<h2>What does a practical Lovable app testing workflow look like?</h2>
+
+<p>A workflow that survives contact with real building has to be cheap enough to actually run. Four stages:</p>
+
+<h3>1. Before you share the preview link</h3>
+<p>Run the three authorization passes above. Click every destructive action once. Submit every form empty, then with absurd input — 500 characters in a name field, an emoji in a phone number, a negative quantity. Generated validation is usually present and usually shallow.</p>
+
+<h3>2. When real people start using it</h3>
+<p>Give them a way to report what they hit without writing a bug report. Non-technical testers describe symptoms, not state — "it broke" arrives without the URL, the console error, the failed request, or the browser. A right-click capture that attaches all four turns a useless message into something actionable; that's what <a href="/snap">Snap</a> does, and the general principle is covered in <a href="/blog/get-useful-bug-reports-from-non-technical-users">getting useful bug reports from non-technical users</a>.</p>
+
+<h3>3. On a cadence, not just on demand</h3>
+<p>Run your journey tests on a schedule as well as after prompts. Apps built on hosted backends break from the outside too: a policy change, an expired key, a quota.</p>
+
+<h3>4. Before anything that touches money or data</h3>
+<p>Treat payment, deletion, and export flows as a separate review every time they change. These are the flows where a silent failure looks exactly like success.</p>
+
+<h2>Lovable app testing checklist before you publish</h2>
+
+<ul>
+  <li>Every table has an explicit row-level security policy for select, insert, update, and delete</li>
+  <li>A logged-out visitor sees nothing private, on every route</li>
+  <li>User B cannot read, edit, or delete user A's records by changing an ID</li>
+  <li>Storage buckets are private unless the file is genuinely public</li>
+  <li>No API keys or secrets beyond the intended public key appear in the client bundle</li>
+  <li>Every form rejects empty, oversized, and wrong-type input on the server</li>
+  <li>Loading, empty, and error states exist for every data-backed view</li>
+  <li>Destructive actions confirm before they act</li>
+  <li>The app works at 375px wide, not just in the preview pane</li>
+  <li>Your three to five core journeys run as automated tests after every prompt</li>
+</ul>
+
+<p>None of this requires you to become an engineer. It requires you to assume the generator optimized for a demo that works, because that is what it was asked for, and to go test the cases nobody asked for.</p>
+
+<h2>Where does AI testing fit in?</h2>
+
+<p>The reason manual passes fail over time is not that they are wrong — it's that they are a tax on every change, and taxes get dodged. The useful split: automate the journeys you already know matter, and use AI personas to explore the paths you never thought to write down. A persona that behaves like an impatient user with a slow connection and a half-filled form will reach states your own clicking never will, because you know your app too well to use it badly. <a href="/sims">Sims</a> runs that exploration, and the broader method is in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Try Klavity free</h2>
+
+<p>Point Klavity at the app you just built and let it do the pass you don't have time for — authorization probing, journey tests that heal themselves, and one-click bug capture for the people testing it. <a href="/onboarding"><strong>Try Klavity free</strong></a> and scan your next build before your users do.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test row-level security on every table before anything else</li><li>Probe as a logged-out visitor and as a second user</li><li>Pin 3-5 core journeys into automated tests after every prompt</li><li>Validate on the server, not just in the generated form</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Do I need to know how to code to test a Lovable app?</summary><p>No. The highest-value tests are behavioural: open the app logged out and see if private data appears, log in as a second user and try to open the first user's records by changing an ID in the URL, and submit every form empty and with absurd input. Two accounts and ten minutes will surface more real risk than reading the generated code.</p></details><details><summary>Why is row-level security the first thing to test?</summary><p>Because in the common Lovable and Supabase setup, the frontend holds a public anon key and queries the database directly. Anyone can read that key from the browser and issue their own queries, so row-level security policies are the only real gate. Hiding a page in the UI does not protect the data behind it.</p></details><details><summary>How do I stop re-prompting from breaking features that already worked?</summary><p>Turn your three to five defining journeys — sign up, create the main object, pay, invite a teammate — into automated end-to-end tests and run them after every meaningful prompt. Write selectors against stable attributes rather than generated class names, since regeneration reshuffles styling more often than intent.</p></details><details><summary>Is testing an AI-built app different from testing a hand-coded one?</summary><p>The bugs cluster differently. Hand-written defects gather around the parts the developer knew were hard; generated defects gather around requirements nobody ever stated, which the model fills with plausible defaults. Test the cases you never put in the prompt: empty inputs, wrong users, slow networks, and error states.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
