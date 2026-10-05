@@ -135,8 +135,8 @@ import { enrichExpectation } from "./lib/expectations-enrich"
 import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/sims-oracle"
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
-import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle } from "./lib/label-suggest"
+import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels, getSuggestedLabelsState } from "./lib/db"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
@@ -12851,17 +12851,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // GET /api/feedback/:id/suggest-labels — KLA-175: return AI-suggested labels (ghost chips).
         // Returns cached suggestions; if none exist yet, triggers generation synchronously.
         if (req.method === "GET" && isSuggestLabels) {
-          let suggestions = await getSuggestedLabels(fid, fbRow.projectId)
-          if (!suggestions.length) {
+          // The suggestions and the ticket's attached labels are independent reads → one parallel wave.
+          // `computed` distinguishes "never generated" (column NULL) from "generated, no label fits" ([]):
+          // only the former calls the model, so an empty result is served from the DB instead of paying for
+          // an AI call on every request.
+          const [sugState, attachedRows] = await Promise.all([
+            getSuggestedLabelsState(fid, fbRow.projectId),
+            labelsForFeedback(fid),
+          ])
+          let suggestions = sugState.labels
+          if (!sugState.computed) {
             // #543 completeness: feed the ticket's REAL title (manual tickets keep it in its own column)
             // plus the body into label suggestion, so a manual ticket's subject line drives label choice.
             const text = `${effectiveTicketTitle(fbRow)}\n${fbRow.observation || ""}`.slice(0, 2000)
             await suggestLabelsForFeedback({ feedbackId: fid, projectId: fbRow.projectId, text })
               .catch((e: any) => console.warn("[suggest-labels] on-demand (non-fatal):", e?.message || e))
-            suggestions = await getSuggestedLabels(fid, fbRow.projectId)
+            suggestions = (await getSuggestedLabelsState(fid, fbRow.projectId)).labels
           }
           // Filter out already-attached labels so ghost chips never duplicate real chips
-          const attached = new Set((await labelsForFeedback(fid)).map(l => l.id))
+          const attached = new Set(attachedRows.map(l => l.id))
           return json({ suggestions: suggestions.filter(l => !attached.has(l.id)) })
         }
 

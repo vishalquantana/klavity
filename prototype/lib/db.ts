@@ -8734,6 +8734,26 @@ export async function getSuggestedLabels(feedbackId: string, projectId: string):
   return all.filter(l => idSet.has(l.id))
 }
 
+// Same suggestions as getSuggestedLabels, but ALSO reports whether they were ever COMPUTED. The column is NULL
+// until suggestLabelsForFeedback() has stored a result; a stored "[]" means "computed — no label fits". The
+// suggest-labels endpoint uses this so an empty result is not re-generated (an AI call) on every request.
+// An unparsable value is treated as not computed so it self-heals on the next generation.
+export async function getSuggestedLabelsState(feedbackId: string, projectId: string): Promise<{ computed: boolean; labels: LabelRow[] }> {
+  const r = await db!.execute({
+    sql: "SELECT suggested_label_ids_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row || row.suggested_label_ids_json == null) return { computed: false, labels: [] }
+  let ids: unknown
+  try { ids = JSON.parse(String(row.suggested_label_ids_json)) } catch { return { computed: false, labels: [] } }
+  if (!Array.isArray(ids)) return { computed: false, labels: [] }
+  if (!ids.length) return { computed: true, labels: [] }
+  const all = await listLabels(projectId)
+  const idSet = new Set(ids)
+  return { computed: true, labels: all.filter(l => idSet.has(l.id)) }
+}
+
 // ── KLA-255: needsConfirm queue — pending_sim_matches CRUD ──────────────────
 
 export type PendingSimMatch = {

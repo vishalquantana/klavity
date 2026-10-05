@@ -7437,6 +7437,24 @@ function wireT3Resize(detailEl) {
     g.addEventListener("pointerup", end); g.addEventListener("pointercancel", end)
   })
 }
+// AI label suggestions (GET /api/feedback/:id/suggest-labels), cached per ticket for the page session. The server
+// only generates once per ticket and returns [] when nothing fits, so an empty list is a final answer and is cached
+// too. A failed request (null) is NOT cached, so the next open retries. Concurrent callers share one request.
+const _sugCache = new Map()      // ticketId → suggestion rows (possibly empty)
+const _sugInflight = new Map()   // ticketId → Promise<rows|null>
+function loadTicketSuggestions(ticketId) {
+  if (_sugCache.has(ticketId)) return Promise.resolve(_sugCache.get(ticketId))
+  let p = _sugInflight.get(ticketId)
+  if (!p) {
+    p = fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/suggest-labels")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && Array.isArray(d.suggestions)) { _sugCache.set(ticketId, d.suggestions); return d.suggestions } return null })
+      .catch(() => null)
+      .finally(() => { _sugInflight.delete(ticketId) })
+    _sugInflight.set(ticketId, p)
+  }
+  return p
+}
 function buildTktDetail(t, admin, onChange, isSingle = false) {
   const ticketId = t.id
   const exports = t.exports || []
@@ -8318,16 +8336,15 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         renderGhostChips()
       })
 
-      // Fetch AI suggestions async (non-blocking); renders ghost chips when ready
-      fetch(`/api/feedback/${encodeURIComponent(ticketId)}/suggest-labels`)
-        .then(r => r.ok ? r.json() : null)
-        .then(d => {
-          if (d && Array.isArray(d.suggestions) && d.suggestions.length) {
-            suggestedLabels = d.suggestions
-            renderGhostChips()
-          }
+      // Fetch AI suggestions async (non-blocking); renders ghost chips when ready. Only for the detail the user
+      // can actually SEE (the single-ticket view): list rows and kanban cards also build a — hidden — detail for
+      // "Copy to AI", and fetching for each of those fired one request per ticket on every render. Results are
+      // cached per ticket for the page session (loadTicketSuggestions), so re-renders don't refetch.
+      if (isSingle) {
+        loadTicketSuggestions(ticketId).then(list => {
+          if (list && list.length) { suggestedLabels = list; renderGhostChips() }
         })
-        .catch(() => null)
+      }
     }
 
     // #707: "Enhance with AI" (dedicated-page middle column) — POST the current description to the
