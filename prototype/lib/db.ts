@@ -2,6 +2,7 @@
 import { createClient, type Client } from "@libsql/client"
 import { insightsFromTraits, type Trait, type TraitKind, type TraitStatus, type TraitEventRow } from "./provenance"
 import { encryptSecret, sha256hex } from "./crypto"
+import { bumpAuthEpoch } from "./access-cache"   // invalidates the screenshot endpoint's access/row caches
 import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
 import { sanitizeLabelRules, type LabelRule } from "./label-rules"
@@ -2236,6 +2237,7 @@ export async function expiredScreenshotKeys(now = Date.now()): Promise<{ id: str
 }
 export async function deleteScreenshotRow(id: string): Promise<void> {
   await db!.execute({ sql: "DELETE FROM screenshots WHERE id=?", args: [id] })
+  bumpAuthEpoch()   // a deleted screenshot must stop being served from the row cache
 }
 
 // ── accounts / projects / two-tier roles (P2) ──
@@ -3263,6 +3265,7 @@ export async function addProjectMember(projectId: string, accountId: string, ema
 export async function removeProjectMember(projectId: string, email: string): Promise<boolean> {
   const norm = String(email || "").trim().toLowerCase()
   const r = await db!.execute({ sql: "DELETE FROM project_members WHERE project_id=? AND email=?", args: [projectId, norm] })
+  bumpAuthEpoch()   // access may have been revoked → drop cached screenshot access immediately
   return Number(r.rowsAffected || 0) > 0
 }
 
@@ -7889,6 +7892,7 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
   await db!.execute({ sql: "DELETE FROM ai_calls WHERE actor_email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM account_members WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM project_members WHERE email=?", args: [e] })
+  bumpAuthEpoch()   // user erased: screenshots + memberships are gone → drop cached access/rows
   await db!.execute({ sql: "DELETE FROM monitoring_consent WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM extension_tokens WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM login_otps WHERE email=?", args: [e] })

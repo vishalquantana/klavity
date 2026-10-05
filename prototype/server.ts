@@ -58,6 +58,7 @@ import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtR
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
+import { TtlCache } from "./lib/access-cache"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
 import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-config"
@@ -99,6 +100,27 @@ import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-c
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
+
+// KD-195: GET /api/screenshots/:id re-ran the same immutable-row read + project-access check (≈4 sequential DB
+// round-trips) on every request. Cache ONLY positive results, briefly; lib/access-cache.ts bumps an epoch on every
+// membership removal / user erase / screenshot delete so a revoked user or deleted shot is never served from cache.
+const shotRowCache = new TtlCache<NonNullable<Awaited<ReturnType<typeof screenshotById>>>>(500, 60_000)
+const shotAccessCache = new TtlCache<true>(2000, 30_000)
+async function screenshotRowCached(id: string) {
+  const hit = shotRowCache.get(id)
+  if (hit) return hit
+  const row = await screenshotById(id)
+  if (row) shotRowCache.set(id, row)
+  return row
+}
+async function screenshotAccessCached(email: string, projectId: string | null): Promise<boolean> {
+  if (!projectId) return false
+  const key = email + "|" + projectId
+  if (shotAccessCache.get(key)) return true
+  const ok = !!(await projectAccess(email, projectId))
+  if (ok) shotAccessCache.set(key, true)   // never cache a denial
+  return ok
+}
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
@@ -6828,10 +6850,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (req.method === "GET" && shotMatch) {
         const meS = (await sessionEmail(req)) || (await bearerEmail(req))
         if (!meS) return json({ error: "Sign in to continue." }, 401)
-        const shot = await screenshotById(shotMatch[1])
+        const shot = await screenshotRowCached(shotMatch[1])   // KD-195: cached row (immutable fields), positive hits only
         if (!shot) return json({ error: "Not found." }, 404)
-        // Membership check: the screenshot's project must be one the caller can access.
-        if (!shot.projectId || !(await projectAccess(meS, shot.projectId))) return json({ error: "No access to this screenshot." }, 403)
+        // Membership check: the screenshot's project must be one the caller can access (cached ≤30 s, epoch-invalidated).
+        if (!shot.projectId || !(await screenshotAccessCached(meS, shot.projectId))) return json({ error: "No access to this screenshot." }, 403)
         // ?thumb=1 → serve the lightweight thumbnail variant when one was stored (dashboard list previews).
         // Falls back to the full image when this shot has no thumb (older rows, Sim/AutoSim captures), so
         // the caller can always request the thumb and still get a valid image. Thumbs are stored PRIVATE

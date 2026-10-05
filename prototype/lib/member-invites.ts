@@ -14,6 +14,7 @@
 // A project_members row with a matching pending ticket_assignment_invites row = a PENDING member.
 // A project_members row with no invite row, or an accepted one = an ACCEPTED (active) member.
 import { db } from "./db"
+import { bumpAuthEpoch } from "./access-cache"
 
 export type MemberInvite = {
   email: string
@@ -79,5 +80,6 @@ export async function revokeProjectInvite(projectId: string, email: string): Pro
     sql: "DELETE FROM project_members WHERE project_id=? AND email=?",
     args: [projectId, norm],
   })
+  bumpAuthEpoch()   // membership removed → drop cached screenshot access immediately
   return true
 }

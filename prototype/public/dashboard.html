@@ -11260,8 +11260,6 @@ async function loadTktShot(detailEl, annotations) {
   if (!box || box.getAttribute("data-loaded")) return
   box.setAttribute("data-loaded", "1")
   const id = box.getAttribute("data-shot")
-  // #743: warm the SAME-ORIGIN full-res image (byte proxy) on card open so the annotate editor is instant + CORS-clean.
-  if (id) preloadShot(shotProxyUrl(id))
   const hasAnn = annotations && Array.isArray(annotations.shapes) && annotations.shapes.length
   const paint = (url) => {
     const img = document.createElement("img")
@@ -11283,24 +11281,39 @@ async function loadTktShot(detailEl, annotations) {
     return img
   }
   try {
-    // KLAVITYKLA-518: request the lightweight ?thumb=1 variant FIRST for an instant preview (mirrors
-    // the list view), then lazily upgrade to the full-resolution image. Previously this fetched the
-    // presigned URL and then the FULL image before anything showed — two serial round-trips on open.
-    const r = await fetch("/api/screenshots/" + encodeURIComponent(id) + "?thumb=1")
-    const d = await r.json().catch(() => ({}))
-    if (!d.url) { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>'; return }
-    const img = paint(d.url)
-    // Lazily upgrade to the full image (sharper; also what click / "Full size" should open).
-    fetch("/api/screenshots/" + encodeURIComponent(id))
-      .then(fr => fr.json().catch(() => ({})))
-      .then(fd => {
-        if (!fd || !fd.url || fd.url === d.url) return
-        // #531: swap the SAME <img> to full-res behind the existing overlay — the SVG uses a
-        // natural-coord viewBox (preserveAspectRatio=none) so it auto-scales, no re-mount needed.
-        // Re-mounting was what caused the thumb→full double flash and a duplicated overlay.
-        if (img) { img.setAttribute("data-full", fd.url); img.src = fd.url }
-      })
-      .catch(() => {})
+    // KD-195: the ticket preview sat on "Loading screenshot…" for seconds because it chained a signed-link request
+    // (~4 DB round-trips) → the thumbnail fetch from object storage → a SECOND signed-link request for the full image,
+    // with a full-size preload competing from the moment the ticket opened. Now: the thumbnail is the same-origin byte
+    // proxy URL set directly on the <img> (one request; the server caches its DB lookups), and the full image is only
+    // fetched — through the same proxy, which also keeps it canvas-safe for the annotator — AFTER the thumbnail painted.
+    const fullUrl = id ? shotProxyUrl(id) : null
+    if (!fullUrl) { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>'; return }
+    const img = paint(fullUrl + "&thumb=1")
+    let upgraded = false, fellBack = false
+    const upgrade = () => {
+      if (upgraded) return
+      upgraded = true
+      const hi = preloadShot(fullUrl)   // LRU-cached decode warm — also what the annotate editor opens instantly
+      const swap = () => {
+        // #531: swap the SAME <img> to full-res behind the existing overlay — the SVG uses a natural-coord viewBox
+        // (preserveAspectRatio=none) so it auto-scales, no re-mount needed (re-mounting caused a double flash).
+        if (img && img.isConnected) { img.setAttribute("data-full", fullUrl); img.src = fullUrl }
+      }
+      if (hi && hi.complete && hi.naturalWidth) swap()
+      else if (hi) hi.addEventListener("load", swap, { once: true })
+    }
+    img.addEventListener("load", upgrade, { once: true })
+    // Fallback only: if the proxy thumbnail request fails, use the old signed-link path once.
+    img.addEventListener("error", async () => {
+      if (fellBack || img.getAttribute("data-full")) return
+      fellBack = true
+      try {
+        const r = await fetch("/api/screenshots/" + encodeURIComponent(id) + "?thumb=1")
+        const d = await r.json().catch(() => ({}))
+        if (!d.url) { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>'; return }
+        img.src = d.url
+      } catch { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot error</div>' }
+    })
   } catch { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot error</div>' }
 }
 // Re-render the reporter's markup as a toggleable/zoomable SVG overlay over the clean screenshot.

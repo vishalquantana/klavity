@@ -100,10 +100,14 @@ test("KLA-197: icon copy variant shows a toast", () => {
 // ── KLAVITYKLA-518 · thumb-first ticket screenshot ─────────────────────────────
 test("KLA-518: ticket detail requests ?thumb=1 first, then upgrades to full", () => {
   const i = HTML.indexOf("async function loadTktShot(")
-  const region = HTML.slice(i, i + 2800)
-  expect(region).toContain('?thumb=1')
-  // lazily upgrades to the full-resolution image afterwards
-  expect(region).toContain("Lazily upgrade to the full image")
+  const region = HTML.slice(i, i + 4200)
+  // KD-195: the thumbnail is the same-origin proxy URL (&thumb=1) set directly on the <img> — no signed-link JSON hop —
+  // and the legacy signed-link request (?thumb=1) survives only as the error fallback.
+  expect(region).toContain('paint(fullUrl + "&thumb=1")')
+  expect(region).toContain('"?thumb=1"')
+  // still upgrades to the full-resolution image afterwards — but only once the thumbnail has painted
+  expect(region).toContain('img.addEventListener("load", upgrade, { once: true })')
+  expect(region).toContain("img.setAttribute(\"data-full\", fullUrl)")
 })
 
 // ── #743 · evidence screenshot preload + no-blank annotate (CORS/same-origin) ──
@@ -117,7 +121,7 @@ test("#743: server streams screenshot bytes same-origin via ?proxy=1 (gated, no 
   // the proxy branch lives INSIDE the already session+membership-gated /api/screenshots/:id handler
   const h = SERVER.indexOf('path.match(/^\\/api\\/screenshots\\/([^/]+)$/')
   expect(h).toBeGreaterThan(-1)
-  const region = SERVER.slice(h, h + 2200)
+  const region = SERVER.slice(h, h + 2800)   // KD-195 added the cached row/access lookups above the proxy branch
   expect(region).toContain('url.searchParams.get("proxy") === "1"')
   // streams bytes (mirrors the /img permalink) rather than returning the cross-origin presigned JSON
   expect(region).toContain("getObjectStream(streamKey)")
@@ -131,9 +135,11 @@ test("#743: canvas source is the same-origin proxy, not the raw presigned URL", 
   expect(HTML).toContain("new DashAnnotator(canvas, canvasUrl)")
 })
 
-test("#743: full-res image is preloaded on card open + reused (no re-fetch on click)", () => {
+test("#743: full-res image is preloaded (once the thumbnail painted — KD-195) + reused (no re-fetch on click)", () => {
   expect(HTML).toContain("function preloadShot(url)")
-  expect(HTML).toContain("if (id) preloadShot(shotProxyUrl(id))")
+  // KD-195: no longer fired on card open (it competed with the thumbnail); it starts in the thumbnail's load handler
+  expect(HTML).not.toContain("if (id) preloadShot(shotProxyUrl(id))")
+  expect(HTML).toContain("const hi = preloadShot(fullUrl)")
   // the annotator reuses the preloaded, decoded bitmap
   expect(HTML).toContain("whenShotReady(preloadShot(canvasUrl))")
 })
