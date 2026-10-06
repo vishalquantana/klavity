@@ -21618,21 +21618,21 @@
       input.addEventListener("change", function () {
         var files = Array.prototype.slice.call(input.files || [])
         input.value = ""
-        const d = r ? await r.json().catch(() => ({})) : {}
-        if (r && r.ok && d.ok && Array.isArray(d.attachments)) {
-          t.attachments = (Array.isArray(t.attachments) ? t.attachments : []).concat(d.attachments)
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
-          if (tkt) tkt.attachments = t.attachments
-          const single = document.getElementById("ticketSingle")
-          if (single && !single.classList.contains("hide") && typeof _renderSingleTicket === "function") {
-            _renderSingleTicket(ticketId)
-          } else {
-            wrap.outerHTML = buildAttachmentsHtml(t)
-            wireAttachments(detailEl, t, ticketId)   // re-wire the freshly re-rendered wrap
-          }
-        } else if (msgEl) {
-          msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
-        }
+        // const d = r ? await r.json().catch(() => ({})) : {}
+        // if (r && r.ok && d.ok && Array.isArray(d.attachments)) {
+        //   t.attachments = (Array.isArray(t.attachments) ? t.attachments : []).concat(d.attachments)
+        //   const tkt = (state.tickets || []).find(x => x.id === ticketId)
+        //   if (tkt) tkt.attachments = t.attachments
+        //   const single = document.getElementById("ticketSingle")
+        //   if (single && !single.classList.contains("hide") && typeof _renderSingleTicket === "function") {
+        //     _renderSingleTicket(ticketId)
+        //   } else {
+        //     wrap.outerHTML = buildAttachmentsHtml(t)
+        //     wireAttachments(detailEl, t, ticketId)   // re-wire the freshly re-rendered wrap
+        //   }
+        // } else if (msgEl) {
+        //   msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
+        // }
         if (!files.length) return
         var cur = (_attachCtx.get(id) || {}).t || t
         var plan = attachPlanUpload(files, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
