@@ -1,0 +1,192 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Test Case Generation: How It Works and When to Trust It · Klavity</title>
+<meta name="description" content="AI test case generation turns a spec, your code, or the live UI into runnable test cases. Here's how it works, where it fails, and how to review it.">
+<link rel="canonical" href="https://klavity.in/blog/ai-test-case-generation">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Test Case Generation: How It Works and When to Trust It"><meta property="og:description" content="AI test case generation turns a spec, your code, or the live UI into runnable test cases. Here's how it works, where it fails, and how to review it.">
+<meta property="og:url" content="https://klavity.in/blog/ai-test-case-generation"><meta property="og:image" content="https://klavity.in/blog/ai-test-case-generation.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Test Case Generation: How It Works and When to Trust It"><meta name="twitter:description" content="AI test case generation turns a spec, your code, or the live UI into runnable test cases. Here's how it works, where it fails, and how to review it."><meta name="twitter:image" content="https://klavity.in/blog/ai-test-case-generation.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Test Case Generation: How It Works and When to Trust It","description":"AI test case generation turns a spec, your code, or the live UI into runnable test cases. Here's how it works, where it fails, and how to review it.","datePublished":"2026-10-06","dateModified":"2026-10-06","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-test-case-generation.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-test-case-generation","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Test Case Generation: How It Works and When to Trust It","item":"https://klavity.in/blog/ai-test-case-generation"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-test-case-generation"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI test case generation?","acceptedAnswer":{"@type":"Answer","text":"AI test case generation is using a model to read your application — a written spec, the source code, or the live UI — and produce runnable test cases instead of writing each one by hand. A usable generated case names a precondition, ordered steps, literal input data, and one observable expected result."}},{"@type":"Question","name":"Can AI-generated test cases replace a QA engineer?","acceptedAnswer":{"@type":"Answer","text":"No. Generation is good at breadth: enumerating the empty, boundary, unicode, and duplicate variations of an input that people skip under deadline. It cannot know what correct means for your client's business rules — tax logic, tiered pricing, who may see which record — so a human still has to verify every expected result."}},{"@type":"Question","name":"Is it safe to generate tests from AI-written code?","acceptedAnswer":{"@type":"Answer","text":"Only with care. Tests generated from source code encode what the code does, not what it should do, so a bug in the code becomes a test asserting the bug is correct. For AI-written code, generate end-to-end cases from the running app against the stated requirement, and reserve code-derived generation for pure functions whose intent is unambiguous."}},{"@type":"Question","name":"How do you review a generated test case quickly?","acceptedAnswer":{"@type":"Answer","text":"Check four things: that the expected result maps to a real documented rule, that the test actually goes red when you deliberately break the feature, that it does not depend on data or ordering from another test, and that its failure message would tell a future reader something useful."}},{"@type":"Question","name":"Which test cases should you generate first?","acceptedAnswer":{"@type":"Answer","text":"Second-order coverage — the cases you know you need and never get to. That means negative and boundary variations of flows you already test happily, error paths around auth and payments, and accessibility plus mobile-viewport passes on pages only ever checked in desktop Chrome."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-06</div>
+    <h1>AI Test Case Generation: How It Works and When to Trust It</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Three inputs — spec, code and live UI — feeding an AI generator that emits reviewed test cases">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="60" x2="800" y2="60" stroke="#f5f0e8" stroke-opacity="0.06"/>
+  <line x1="0" y1="360" x2="800" y2="360" stroke="#f5f0e8" stroke-opacity="0.06"/>
+
+  <rect x="42" y="82" width="152" height="66" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.55"/>
+  <line x1="62" y1="106" x2="146" y2="106" stroke="#f5f0e8" stroke-opacity="0.38" stroke-width="4"/>
+  <line x1="62" y1="122" x2="120" y2="122" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="4"/>
+
+  <rect x="42" y="177" width="152" height="66" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.55"/>
+  <polyline points="64,198 56,210 64,222" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="96,198 104,210 96,222" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="118" y1="210" x2="170" y2="210" stroke="#f5f0e8" stroke-opacity="0.26" stroke-width="4"/>
+
+  <rect x="42" y="272" width="152" height="66" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.55"/>
+  <line x1="42" y1="292" x2="194" y2="292" stroke="#6366f1" stroke-opacity="0.55"/>
+  <circle cx="57" cy="282" r="3.5" fill="#f87171" fill-opacity="0.75"/>
+  <circle cx="69" cy="282" r="3.5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="60" y="304" width="62" height="20" rx="5" fill="#6366f1" fill-opacity="0.35"/>
+
+  <path d="M200 115 C258 115 262 196 318 203" fill="none" stroke="#6366f1" stroke-opacity="0.7" stroke-width="2"/>
+  <path d="M200 210 C250 210 270 210 318 210" fill="none" stroke="#6366f1" stroke-opacity="0.7" stroke-width="2"/>
+  <path d="M200 305 C258 305 262 224 318 217" fill="none" stroke="#6366f1" stroke-opacity="0.7" stroke-width="2"/>
+
+  <circle cx="378" cy="210" r="58" fill="#6366f1" fill-opacity="0.16" stroke="#6366f1" stroke-width="2"/>
+  <path d="M378 176 L387 201 L412 210 L387 219 L378 244 L369 219 L344 210 L369 201 Z" fill="#6366f1" fill-opacity="0.85"/>
+  <circle cx="412" cy="178" r="4" fill="#f5f0e8" fill-opacity="0.5"/>
+
+  <path d="M440 210 L556 210" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <path d="M548 203 L558 210 L548 217" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M568 96 L558 96 L558 324 L568 324" fill="none" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="2"/>
+
+  <rect x="580" y="84" width="180" height="52" rx="9" fill="#f5f0e8" fill-opacity="0.05" stroke="#4ade80" stroke-opacity="0.6"/>
+  <circle cx="606" cy="110" r="11" fill="#4ade80" fill-opacity="0.2" stroke="#4ade80"/>
+  <path d="M601 110 L605 115 L612 105" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="628" y1="110" x2="740" y2="110" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="4"/>
+
+  <rect x="580" y="148" width="180" height="52" rx="9" fill="#f5f0e8" fill-opacity="0.05" stroke="#4ade80" stroke-opacity="0.6"/>
+  <circle cx="606" cy="174" r="11" fill="#4ade80" fill-opacity="0.2" stroke="#4ade80"/>
+  <path d="M601 174 L605 179 L612 169" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="628" y1="174" x2="722" y2="174" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="4"/>
+
+  <rect x="580" y="212" width="180" height="52" rx="9" fill="#f87171" fill-opacity="0.08" stroke="#f87171" stroke-opacity="0.7"/>
+  <circle cx="606" cy="238" r="11" fill="#f87171" fill-opacity="0.2" stroke="#f87171"/>
+  <path d="M602 234 L610 242 M610 234 L602 242" fill="none" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="628" y1="238" x2="744" y2="238" stroke="#f87171" stroke-opacity="0.45" stroke-width="4"/>
+
+  <rect x="580" y="276" width="180" height="52" rx="9" fill="#f5f0e8" fill-opacity="0.05" stroke="#4ade80" stroke-opacity="0.6"/>
+  <circle cx="606" cy="302" r="11" fill="#4ade80" fill-opacity="0.2" stroke="#4ade80"/>
+  <path d="M601 302 L605 307 L612 297" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="628" y1="302" x2="712" y2="302" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="4"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI test case generation reads a spec, your source code, or the live UI and emits runnable test cases with preconditions, steps, data, and an expected result. It is strong at enumerating the negative and boundary variations humans skip, and weak at knowing what 'correct' means for your business rules. Generate from the running app for end-to-end coverage, and always keep a human on the expected-result line.</div>
+    <div class="prose"><p><strong>AI test case generation</strong> is the use of a model to read your application — a written spec, the source code, or the live UI — and emit test cases you can actually run, instead of writing each one by hand. Good output is concrete: a precondition, ordered steps, specific input data, and exactly one expected result, ideally as executable test code rather than prose. It is strong at breadth, covering the negative paths and boundary values people skip when a deadline moves, and weak at judgement, because it does not know what "correct" means for your client's business rules. Treat generated cases as a reviewed first draft, never as a suite you trust unseen.</p>
+
+<h2>What does a generated test case look like when it is actually useful?</h2>
+<p>The difference between a generated case that earns its place in your suite and one that wastes a review cycle is specificity. "Verify the checkout form works" is not a test case; it is a wish. A usable case names four things:</p>
+<ul>
+<li><strong>Precondition</strong> — the exact state the app must be in. A logged-in user with one item in the cart, not "a user."</li>
+<li><strong>Steps</strong> — ordered, unambiguous, and free of assumed knowledge. Someone who has never seen the app should be able to follow them.</li>
+<li><strong>Data</strong> — the literal values. A coupon code that has expired, a 17-character postcode, an email with a plus sign in it.</li>
+<li><strong>Expected result</strong> — one assertion, stated as an observable outcome. "An inline error reads 'Coupon expired' and the total is unchanged," not "it handles it gracefully."</li>
+</ul>
+<p>If you are new to the vocabulary here, our primer on <a href="/blog/what-is-a-test-case">what a test case is</a> covers the anatomy in more detail. The reason it matters for AI generation specifically: a model will happily produce a hundred vague cases, because vagueness is cheap. Insist on the four fields and the output volume drops while its value rises.</p>
+
+<h2>How does AI test case generation actually work?</h2>
+<p>Mechanically, there are three steps, and each one is a place where quality is won or lost.</p>
+<p><strong>First, the model builds a map of the surface area.</strong> From source code it reads function signatures, branches, and error handling. From a live page it reads the DOM: form fields, their validation attributes, buttons, links, and state changes. From a spec it reads stated rules and, more usefully, the gaps between them.</p>
+<p><strong>Second, it enumerates variations.</strong> This is the part that genuinely beats a tired human. Given a field marked <em>required, email, max 64 characters</em>, a model will reliably produce the empty case, the whitespace-only case, the missing-@ case, the 65-character case, the unicode case, and the duplicate-of-an-existing-account case. People produce the first two and move on.</p>
+<p><strong>Third, it writes the assertion</strong> — and this is the weak link. The model has to guess what should happen, and it has no access to the decision your client made in a meeting six weeks ago. It will often assume the sensible default rather than the actual rule. Everything you do in review should concentrate here.</p>
+
+<h2>Should you generate test cases from the spec, the code, or the live UI?</h2>
+<p>All three work, and they fail differently. Pick based on what you are trying to catch.</p>
+<table>
+<thead><tr><th>Input source</th><th>Best at</th><th>Blind to</th></tr></thead>
+<tbody>
+<tr><td><strong>Written spec or ticket</strong></td><td>Finding requirements nobody implemented; catching contradictions between rules</td><td>Anything the spec does not mention — which on most agency projects is most of the app</td></tr>
+<tr><td><strong>Source code</strong></td><td>Branch and error-path coverage; unit and integration-level cases</td><td>Whether the behaviour is <em>right</em>. It encodes what the code does, bugs included</td></tr>
+<tr><td><strong>Live UI / DOM</strong></td><td>Realistic end-to-end flows, form validation, cross-browser and viewport issues</td><td>Server-side rules, race conditions, and anything behind a state you never navigated to</td></tr>
+</tbody>
+</table>
+<p>The sharpest trap is the second row, and it gets worse when the code was itself AI-written. Generate tests from code that contains a bug and you get a test that asserts the bug is correct — a green suite guarding the wrong behaviour. This is the classic oracle problem, and it is the single strongest argument for keeping a human on the expected-result line. It is also why we generally recommend generating end-to-end cases from the running app and reserving code-derived generation for pure functions where the intent is unambiguous.</p>
+
+<h2>Where does AI test case generation fail?</h2>
+<p>Four failure modes come up repeatedly, and all four are survivable if you expect them.</p>
+<ol>
+<li><strong>Confident wrong assertions.</strong> The model states an expected result in the same tone whether it knows the rule or invented it. Prose gives you no confidence signal.</li>
+<li><strong>Brittle selectors.</strong> Generated end-to-end code tends to reach for whatever locator is at hand — a CSS class, an nth-child index — and those break on the next redesign. Our guide to <a href="/blog/how-to-write-resilient-test-selectors">resilient test selectors</a> is worth a pass before you commit generated code.</li>
+<li><strong>Duplicate coverage.</strong> Run generation twice on overlapping areas and you get near-identical cases with different names, which inflates your suite runtime without adding signal.</li>
+<li><strong>Business logic it cannot know.</strong> Tax rules, tiered pricing, who is allowed to see which record. A model cannot infer these from a DOM, and it will not tell you it is guessing.</li>
+</ol>
+
+<h2>How do you review a generated test case in under two minutes?</h2>
+<p>You do not need a full read. Check four things in order and reject fast:</p>
+<ul>
+<li><strong>Is the expected result a real rule?</strong> If you cannot point to a ticket, a spec line, or a client decision that makes it true, do not keep the assertion. Ask, or delete the case.</li>
+<li><strong>Does it fail for the right reason?</strong> Break the feature deliberately and confirm the test goes red. A generated test that passes against broken code is worse than no test.</li>
+<li><strong>Is it independent?</strong> No reliance on data another test created, no fixed record IDs, no assumption about execution order.</li>
+<li><strong>Will the failure message tell you anything?</strong> If a future failure reads only "expected true, got false," add the context now while you still have it in your head.</li>
+</ul>
+
+<h2>Which cases should you generate first?</h2>
+<p>Do not try to generate a whole suite from nothing; you will spend longer reviewing than you would have spent writing. Generate second-order coverage — the cases you know you should have and never get to. In practice that means the negative and boundary variations of flows you have already tested happily, the error paths around payments and auth, and the accessibility and mobile-viewport passes on pages that were only ever checked on a desktop Chrome window. If you are deciding what deserves automation at all, <a href="/blog/which-tests-to-automate-first">which tests to automate first</a> is the companion read, and the wider landscape is in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>How does this fit into a small team's QA workflow?</h2>
+<p>Generation is one layer, not a QA process. It gives you scripted coverage of paths you can describe. It does not tell you what a confused first-time user will do, and it does not help when a client emails "the booking page is broken" with no further detail. A workable stack for an agency or a solo founder has three parts: generated and self-healing end-to-end tests that run on every deploy (<a href="/autosim">AutoSim</a>), AI persona passes that explore the paths nobody scripted (<a href="/sims">Sims</a>), and structured in-app bug capture so a real report arrives with the URL, console errors, network calls, browser, and viewport already attached (<a href="/snap">Snap</a>).</p>
+<p>Generated cases catch the regressions. Personas catch the things you did not think to test. Snap catches what still escapes. Each layer is cheap on its own; what is expensive is having none of them and finding out from the client.</p>
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> — generate self-healing end-to-end coverage for your next client site, and run an AI persona pass before you hand it over.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Demand four fields per case: precondition, steps, literal data, one expected result.</li><li>Generate end-to-end cases from the running app, not from AI-written code.</li><li>Verify every generated test goes red when you break the feature on purpose.</li><li>Generate the negative and boundary cases you never get to, not the whole suite.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI test case generation?</summary><p>AI test case generation is using a model to read your application — a written spec, the source code, or the live UI — and produce runnable test cases instead of writing each one by hand. A usable generated case names a precondition, ordered steps, literal input data, and one observable expected result.</p></details><details><summary>Can AI-generated test cases replace a QA engineer?</summary><p>No. Generation is good at breadth: enumerating the empty, boundary, unicode, and duplicate variations of an input that people skip under deadline. It cannot know what correct means for your client's business rules — tax logic, tiered pricing, who may see which record — so a human still has to verify every expected result.</p></details><details><summary>Is it safe to generate tests from AI-written code?</summary><p>Only with care. Tests generated from source code encode what the code does, not what it should do, so a bug in the code becomes a test asserting the bug is correct. For AI-written code, generate end-to-end cases from the running app against the stated requirement, and reserve code-derived generation for pure functions whose intent is unambiguous.</p></details><details><summary>How do you review a generated test case quickly?</summary><p>Check four things: that the expected result maps to a real documented rule, that the test actually goes red when you deliberately break the feature, that it does not depend on data or ordering from another test, and that its failure message would tell a future reader something useful.</p></details><details><summary>Which test cases should you generate first?</summary><p>Second-order coverage — the cases you know you need and never get to. That means negative and boundary variations of flows you already test happily, error paths around auth and payments, and accessibility plus mobile-viewport passes on pages only ever checked in desktop Chrome.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

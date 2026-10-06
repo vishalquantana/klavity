@@ -789,5 +789,12 @@
     "excerpt": "Lovable app testing starts at the data layer: verify row-level security, auth boundaries, and server-side validation before you trust the UI.",
     "category": "Guides",
     "date": "2026-10-05"
+  },
+  {
+    "slug": "ai-test-case-generation",
+    "title": "AI Test Case Generation: How It Works and When to Trust It",
+    "excerpt": "AI test case generation turns a spec, your code, or the live UI into runnable test cases. Here's how it works, where it fails, and how to review it.",
+    "category": "Guides",
+    "date": "2026-10-06"
   }
 ]
