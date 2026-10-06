@@ -136,8 +136,8 @@ describe("on-open Screen-default capture + decline fallback (KLA-587)", () => {
 
 // KLA composer-polish (founder PX4 repro): the on-open DEFAULT Screen capture must be VIEWPORT-scoped (a single
 // visible frame), NOT the full-page scroll-stitch. When the host wires onCaptureSharpViewport, the default fires
-// THAT; the manual Screen button still fires the full-page onCaptureSharp.
-describe("on-open default is VIEWPORT-scoped Screen, manual Screen stays full-page (composer-polish)", () => {
+// THAT; the manual Snap button fires the same viewport capture (Full Page is a separate button).
+describe("on-open default is VIEWPORT-scoped Screen, manual Snap is viewport too (composer-polish)", () => {
   const cbs = (onCaptureSharp: any, onCaptureSharpViewport: any) => ({
     onCaptureFull: vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,FULL", quality: "rendered" as const }),
     onCaptureViewport: vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,VIEWPORT", quality: "rendered" as const }),
@@ -162,7 +162,7 @@ describe("on-open default is VIEWPORT-scoped Screen, manual Screen stays full-pa
     expect(c.onCaptureViewport).not.toHaveBeenCalled()
   })
 
-  it("clicking the manual Screen button still fires the FULL-PAGE capture (onCaptureSharp), not the viewport one", async () => {
+  it("clicking the manual Snap button fires the VIEWPORT capture (onCaptureSharpViewport), not the full-page one", async () => {
     const onCaptureSharp = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_FULL", quality: "real-pixel" as const })
     const onCaptureSharpViewport = vi.fn().mockResolvedValue({ dataUrl: "data:image/png;base64,SHARP_VIEWPORT", quality: "real-pixel" as const })
     // No autoCaptureOnOpen so we isolate the manual click.
@@ -171,8 +171,8 @@ describe("on-open default is VIEWPORT-scoped Screen, manual Screen stays full-pa
     const shadow = modalShadow()
     ;(shadow.getElementById("klavity-sharp") as HTMLButtonElement).click()
     await wait(30)
-    expect(onCaptureSharp).toHaveBeenCalledTimes(1)
-    expect(onCaptureSharpViewport).not.toHaveBeenCalled()
+    expect(onCaptureSharpViewport).toHaveBeenCalledTimes(1)
+    expect(onCaptureSharp).not.toHaveBeenCalled()
   })
 
   it("falls back to the full-page onCaptureSharp on open when no viewport variant is wired (unchanged hosts)", async () => {

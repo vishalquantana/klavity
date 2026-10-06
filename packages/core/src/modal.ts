@@ -317,7 +317,7 @@ export interface ModalCallbacks {
   // KLA composer-polish (viewport-default, founder PX4 repro): the SAME getDisplayMedia real-pixel path as
   // onCaptureSharp but capturing a SINGLE VISIBLE-VIEWPORT frame (no scroll-stitch → not a tall full-page
   // image). When wired, the on-open DEFAULT Screen capture uses THIS so the auto shot is viewport-scoped
-  // (what the reporter actually sees). The manual "Screen" button still uses the full-page onCaptureSharp,
+  // (what the reporter actually sees). The manual Snap button now also uses this viewport variant,
   // and "Full Page" stays an explicit opt-in. Absent → the default falls back to onCaptureSharp (unchanged).
   onCaptureSharpViewport?: () => Promise<CaptureResult>
   // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
@@ -1519,7 +1519,7 @@ export function buildModal(
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
-        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs <b>what's visible on screen — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
         <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
              image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
@@ -3365,7 +3365,9 @@ export function buildModal(
   if (sharpBtn && callbacks.onCaptureSharp) {
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
     // handler (preserving the click's user gesture).
-    sharpBtn.addEventListener('click', () => { void runScreenCapture() })
+    // The Snap button grabs the VISIBLE viewport — same frame as the auto-fired initial capture; the separate
+    // "Full Page" button stays the explicit opt-in for the tall scroll-stitch.
+    sharpBtn.addEventListener('click', () => { void runScreenCapture({ viewport: true }) })
   }
   // KLA-591: ONE unified attach control. When file attachments are enabled the single button opens one
   // picker (broad accept) and routes EVERY selection through ingestAttachments — which fans images out to
