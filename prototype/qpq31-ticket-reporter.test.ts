@@ -38,13 +38,9 @@ test("the whole pair is omitted when the reporter stayed anonymous (no dangling 
 test("the address is escaped and mailto-linked, never interpolated raw", () => {
   const guard = HTML.match(/\$\{t\.reporterEmail \? `<span class="tkt-prop-lb">Reporter<\/span>[\s\S]*?` : ""\}/)![0]
   expect(guard).toContain("mailto:${esc(t.reporterEmail)}")
-  // QPQ-31 contacts: the link text is the contact's NAME when we know one, else the address — either way
-  // it goes through esc(). The address itself also appears beneath the name, likewise escaped.
-  expect(guard).toContain("${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</a>")
-  expect(guard).toContain('<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>')
-  // nothing in the pair interpolates the address (or a contact name) un-escaped
+  expect(guard).toContain("${esc(t.reporterEmail)}</a>")
+  // no unescaped interpolation of the address anywhere in the pair
   expect(guard).not.toContain("${t.reporterEmail}")
-  expect(guard).not.toContain("${contactNameFor(t.reporterEmail)}")
 })
 
 test("the Reporter value truncates instead of widening the property grid", () => {
