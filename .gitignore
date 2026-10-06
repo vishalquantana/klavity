@@ -18,5 +18,6 @@ sdd/
 # Prod deployment runbook — contains SSH/host access coordinates; keep OUT of the repo
 docs/DEPLOYMENT.md
 
-# graft's local graph cache — regenerable, not committed (run `graft build`).
-/graft/
+# Local uploads fallback
+public/uploads/
+prototype/public/uploads/
