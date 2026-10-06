@@ -11,7 +11,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -98,6 +98,7 @@ import { validateModalConfigInput, resolveModalConfig } from "../packages/core/s
 import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-clarity"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
 import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
@@ -5489,6 +5490,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { const u = new URL(raw); return u.origin + u.pathname } catch { return raw.split(/[?#]/)[0] || null }
         })()
         const reporterEmail = String(form.get("reporter_email") || "").trim()
+        // QPQ-31: the reporter picked "Add <email> as a contact" under the composer's Email field. Intent
+        // only — the server still decides what it grants, and a contact grants NO access to the project.
+        // Creation is tied to an actual report rather than a standalone anonymous endpoint, so it inherits
+        // the submit path's rate limits and can't be used to bulk-mint rows.
+        const wantsContact = String(form.get("create_contact") || "") === "1"
         const validReporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reporterEmail) && reporterEmail.length <= 200
         // Report type from the composer's issue-type selector (packages/core submit payload `type`/`kind`).
         // PX4 #411: the enhanced composer can file Task/Query in addition to Bug/Feature; those map to the
@@ -6198,6 +6204,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (feedbackId && validReporterEmail) {
                 try { await setFeedbackContactEmail(feedbackId, projectId, reporterEmail) }
                 catch (e: any) { console.warn("reporter email save (non-fatal):", e?.message || e) }
+                // QPQ-31: and register them as a project CONTACT so the team can see/@mention/assign the
+                // person who filed this. Idempotent, and deliberately NOT a project_members row.
+                if (wantsContact) {
+                  try {
+                    await upsertProjectContact(projectId, reporterEmail, {
+                      name: (reporter && typeof reporter.name === "string") ? reporter.name : null,
+                      source: "report",
+                      feedbackId,
+                    })
+                  } catch (e: any) { console.warn("contact upsert (non-fatal):", e?.message || e) }
+                }
               }
               // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
               if (suggestedBug && feedbackId && db) {
@@ -11189,7 +11206,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               title: r.title || r.observation || null, // prefer the explicit Title, else the observation
               status: r.status,
               severity: r.priority || r.severity || null, // effective priority wins, else stored severity
-              reporterEmail: r.actorEmail || r.contactEmail || null,
+              // QPQ-31: the address the REPORTER typed into the composer's Email field wins; the signed-in
+              // filer is only the fallback when they typed nothing. (Was actorEmail-first, which showed a
+              // staff member's login on reports they filed on a customer's behalf, and disagreed with the
+              // submit-time alert email, which has always shown the typed address.)
+              reporterEmail: r.contactEmail || r.actorEmail || null,
               createdAt: r.createdAt,
               screenshotUrl,
               pageUrl,
@@ -11324,7 +11345,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const allProjects = await listAccessibleProjects(me)
           if (!allProjects.length) {
             // No project yet — return an empty-but-valid shape so the UI renders skeleton/empty states.
-            return json({ email: me, projects: [], active: null, members: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
+            return json({ email: me, projects: [], active: null, members: [], contacts: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
           }
           // KLAVITYKLA-299: when no ?project= param is present, fall back to the klav_proj cookie
           // (set on a previous successful load) so the user's selection persists across reloads.
@@ -11386,6 +11407,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
           const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null, planOverride: activeProj?.planOverride ?? null, entitlement: projectEntitlement(activeProj?.planOverride) }
           const members = rawMembers.map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
+          // QPQ-31: project CONTACTS ride alongside members so the board can show, @mention and assign a
+          // reporter who typed a new address in the composer. These carry NO access - they are not members
+          // and are kept in a separate array so nothing mistakes one for a teammate.
+          const contacts = (await listProjectContacts(projectId)).map(c => ({ email: c.email, name: c.name, source: c.source, createdAt: c.createdAt }))
 
           // Index personas for name/role/accent lookups by sim_id.
           const personaById = new Map(personas.map(p => [p.id, p]))
@@ -11494,6 +11519,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               sentiment: f.sentiment, screenshotId: f.screenshotId,
               sourceQuote: f.sourceQuote, sourceDate: f.sourceDate,
               notes: meta.notes, hasReplay: ticketsWithReplay.has(f.id),
+              // QPQ-31: who filed it — the signed-in actor, else the email typed into the composer's
+              // Email field. Same projection the /t/:ref page and the inbox already use, and member-gated
+              // by the surrounding /api/dashboard access check.
+              reporterEmail: f.contactEmail || f.actorEmail || null,
               recurrence: meta.recurrence, annotations: f.annotations,
               // KLA-2 regression-memory fields — consumed by dashboard UI via recurBadgeHtml/regrBannerHtml
               recurrenceCount: meta.recurrence,
@@ -11521,7 +11550,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const hasTranscriptSim = personas.some(p => p.simSource === "transcript")
           const hasSimReaction = simObservations.length > 0
           return json(
-            { email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
+            { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
             200,
             { "Set-Cookie": projectCookie(projectId, SECURE) },
           )
@@ -12385,33 +12414,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!fbAccess) return json({ error: "Only project members can add attachments." }, 403)
           const form = await req.formData().catch(() => null)
           if (!form) return json({ error: "Expected multipart/form-data." }, 400)
-          const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
+          const allAttachFiles = form.getAll("files").filter((f): f is File => f instanceof File)
+          const attachFiles = allAttachFiles.slice(0, 5)
+          // KD-193: files beyond the 5-file cap used to be dropped silently — now they are reported back so the UI can say so.
+          const ignoredFiles = allAttachFiles.slice(5).map((f) => f.name)
           if (!attachFiles.length) return json({ error: "No files provided." }, 400)
-          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
-          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
-          let attachTotalBytes = 0
-          const newAtts: Array<Record<string, any>> = []
+          // KD-193: the same file (name + size) already on this ticket — or repeated within this request — is NOT uploaded again.
+          // A user who saw no feedback and picked the file twice used to get two identical attachments.
+          const attKey = (name: unknown, size: unknown) => String(name ?? "").trim().toLowerCase() + "|" + Number(size ?? 0)
+          const seenAtt = new Set<string>((Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []).map((a: any) => attKey(a?.filename, a?.size)))
+          const duplicateFiles: string[] = []
+          const uploadFiles: File[] = []
           for (const af of attachFiles) {
             if (af.size <= 0) continue
-            const typeIsGeneric = !af.type || af.type === "application/octet-stream"
-            const videoMime = videoMimeFromName(af.name || "")
-            const isVideo = isVideoAttachment(af.type, af.name)
-            const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
+            const k = attKey(af.name, af.size)
+            if (seenAtt.has(k)) { duplicateFiles.push(af.name); continue }
+            seenAtt.add(k); uploadFiles.push(af)
+          }
+          if (!uploadFiles.length) return json({ ok: true, attachments: [], duplicates: duplicateFiles, ignored: ignoredFiles }, 200)
+          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
+          // validate every file's size BEFORE uploading anything (so a rejected request never leaves orphan objects behind)
+          let attachTotalBytes = 0
+          for (const af of uploadFiles) {
+            const perFileCap = isVideoAttachment(af.type, af.name) ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
             if (af.size > perFileCap) return json({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
             attachTotalBytes += af.size
             if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return json({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
+          }
+          // KD-193: upload to storage in PARALLEL (it was one file after another) — order of the stored list is preserved.
+          const uploadedAtts = await Promise.all(uploadFiles.map(async (af) => {
             try {
+              const typeIsGeneric = !af.type || af.type === "application/octet-stream"
+              const videoMime = videoMimeFromName(af.name || "")
               const abuf = new Uint8Array(await af.arrayBuffer())
               const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
               const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
               const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
                 { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
               if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-              newAtts.push(desc)
+              return desc
             } catch (aErr: any) {
               console.error("attachment upload failed (non-fatal):", aErr?.message || aErr)
+              return null
             }
-          }
+          }))
+          const newAtts: Array<Record<string, any>> = uploadedAtts.filter((d): d is NonNullable<typeof d> => !!d)
           if (!newAtts.length) return json({ error: "No attachments could be uploaded." }, 500)
           await appendFeedbackAttachments(fid, fbRow.projectId, newAtts)
           void insertActivity({
@@ -12424,7 +12472,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Presign each new attachment the same way the GET response does (#425/KLAVITYKLA-480), so the
           // dashboard can render/download it immediately without a second round-trip.
           const signedNewAtts = newAtts.map((a) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
-          return json({ ok: true, attachments: signedNewAtts }, 201)
+          return json({ ok: true, attachments: signedNewAtts, duplicates: duplicateFiles, ignored: ignoredFiles }, 201)
+        }
+
+        // KD-193: DELETE /api/feedback/:id/attachments?key=<storage key> — remove one attachment from a ticket (members only, like add).
+        // The list entry is removed atomically (compare-and-swap); the stored object is deleted afterwards (best effort) unless another
+        // ticket still references it (merged tickets share attachment keys).
+        if (req.method === "DELETE" && isAttachments) {
+          if (!fbAccess) return json({ error: "Only project members can remove attachments." }, 403)
+          const attKeyParam = String(url.searchParams.get("key") || "")
+          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          const rm = await removeFeedbackAttachment(fid, fbRow.projectId, attKeyParam)
+          if (!rm.ok) return json({ error: "Attachment not found." }, 404)
+          void (async () => {
+            try { if (!(await attachmentKeyReferencedElsewhere(attKeyParam, fid))) await deleteObject(attKeyParam) }
+            catch (e: any) { console.warn("attachment object cleanup skipped:", e?.message || e) }
+          })()
+          void insertActivity({
+            projectId: fbRow.projectId,
+            type: "ticket_attachment_removed",
+            actorEmail: me,
+            feedbackId: fid,
+            meta: { filename: String(rm.removed?.filename || "") },
+          }).catch((e: any) => console.warn("ticket attachment removal activity skipped:", e?.message || e))
+          return json({ ok: true, removed: attKeyParam })
         }
 
         // #738: POST /api/feedback/:id/annotations — persist a re-annotated evidence screenshot's markup.
@@ -12525,7 +12596,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // KLAVITYKLA-491: reporter + a single resolved page URL, mirroring the /api/dashboard ticket
             // projection so the standalone /t/:ref page renders reporter + page context without a second
             // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
-            reporterEmail: fbRow.actorEmail || fbRow.contactEmail || null,
+            reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
             pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
             ref: String(fbRow.id).split("-")[0],
             sourceReferrer: fbRow.sourceReferrer,
@@ -13060,7 +13131,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -14622,6 +14693,48 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
         if (req.method === "GET" && sub === "/members") {
           return json({ members: await membersOfProject(pid) })
+        }
+        // QPQ-31: people lookup behind the composer's "on behalf of" typeahead — project members plus
+        // project contacts, filtered by a typed prefix. SESSION-GATED by the surrounding projMatch access
+        // check, and that gate is the point: the composer also runs anonymously on a customer's own site,
+        // where handing back a directory of names and addresses would let any visitor enumerate the team.
+        // An anonymous caller never reaches here, so its typeahead simply offers Create and nothing else.
+        if (req.method === "GET" && sub === "/people") {
+          const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
+          // "The team for this project" is wider than project_members: an account owner/admin can open
+          // every project in the account, so they belong in the list even without a per-project row.
+          // Without this the picker was empty on a project whose only roster entry is the owner.
+          const projRow = await projectById(pid)
+          const [mem, acct, con] = await Promise.all([
+            membersOfProject(pid),
+            projRow ? accountMembersRaw(projRow.accountId) : Promise.resolve([] as Array<{ email: string; role: string }>),
+            listProjectContacts(pid),
+          ])
+          const seen = new Set<string>()
+          const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
+          for (const m of mem) {
+            const e = String(m.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: null, kind: "member" })
+          }
+          for (const a of acct) {
+            const e = String(a.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: null, kind: "member" })
+          }
+          for (const c of con) {
+            const e = String(c.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: c.name, kind: "contact" })
+          }
+          // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
+          // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
+          // a normal-sized team.
+          const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 200)
+          return json({ people: hits })
         }
         if (req.method === "POST" && sub === "/invite") {
           // Any project member (admin or plain member) can invite — was admin-only. A non-admin

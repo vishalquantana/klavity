@@ -1429,6 +1429,21 @@ async function mount() {
       // whether this project already tracks a matching known/recurring issue; on a hit the composer shows
       // an inline "Already reported — status: X" note (the user can still submit or dismiss). Best-effort:
       // any failure resolves null so the composer is never blocked by the lookup.
+      // QPQ-31: resolve people for the Email field's typeahead. Credentials are sent so a signed-in
+      // reporter (our own dashboard, or a logged-in embedder) gets the project's members + contacts;
+      // the endpoint is session-gated, so an anonymous visitor on a customer's site simply gets nothing
+      // back and their dropdown offers Create only — the team's addresses never leave the server.
+      onLookupPeople: async (q: string) => {
+        try {
+          const res = await fetchWithTimeout(
+            cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/people?q=" + encodeURIComponent(q),
+            { credentials: "include" },
+          )
+          if (!res.ok) return []
+          const j = await res.json().catch(() => null) as any
+          return Array.isArray(j?.people) ? j.people : []
+        } catch { return [] }
+      },
       onCheckKnown: async (description: string) => {
         try {
           const res = await fetchWithTimeout(cfg.backendUrl + "/api/widget/known-check", {
@@ -1596,6 +1611,8 @@ async function mount() {
           // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
           // project rejects the submit with 400. On the default anonymous gate this is undefined.
           reporterEmail: p.reporterEmail, turnstileToken,
+          // QPQ-31: carry the reporter's "add me as a contact" choice through to the submit form.
+          createContact: p.createContact,
           // KLA submit-target: carry the reporter's destination choice ('project' default | 'klavity'). The
           // SERVER resolves the real Klavity intake project from KLAVITY_INTAKE_PROJECT_ID — the client only
           // ever sends this flag (never a target project id), so a report can't be routed to an arbitrary project.
@@ -2557,7 +2574,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
 
 export async function submitFeedback(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
   // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
   // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
   // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes
@@ -2605,6 +2622,9 @@ export async function submitFeedback(
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
   if (payload.reporterEmail) fd.set("reporter_email", payload.reporterEmail)
+  // QPQ-31: the reporter chose "Add <email> as a contact" under the Email field. Only ever sent with a
+  // reporter_email — a flag on its own has nothing to register.
+  if (payload.reporterEmail && payload.createContact) fd.set("create_contact", "1")
   // JTBD 1.7: Turnstile token for the anonymous submit path — the server verifies it (when
   // TURNSTILE_SECRET_KEY is set) to replace the email gate's spam-shield role. Omitted when Turnstile
   // isn't configured for the project, in which case the server's rate limits remain the only bound.
