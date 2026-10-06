@@ -115,16 +115,18 @@ test("wiring is idempotent (calling it twice does not double-bind)", () => {
 })
 
 // ── source pins for what needs the real page ──────────────────────────────────────────────────────────────────────
-test("placement: the Create button sits in the top nav right beside the new-project button", () => {
-  const iNew = HTML.indexOf('id="projNewBtn"'), iCreate = HTML.indexOf('id="createWrap"'), iBarEnd = HTML.indexOf('<div class="right">')
-  expect(iNew).toBeGreaterThan(-1)
-  expect(iCreate).toBeGreaterThan(iNew)
-  expect(HTML.slice(iNew, iCreate)).not.toContain('class="proj-combo-btn"')   // directly after the new-project button, not elsewhere in the bar
-  expect(iCreate).toBeLessThan(iBarEnd)                                    // still in the left/center part of the bar, before the right-hand tools
+test("placement: 'Create New' is the third left-hand action, after Snap Reports and Sims Studio (top-nav redesign)", () => {
+  const iSnap = HTML.indexOf('id="snapNavBtn"'), iStudio = HTML.indexOf('id="studioNavBtn"'), iCreate = HTML.indexOf('id="createWrap"'), iCenter = HTML.indexOf('<div class="bar-center">')
+  expect(iSnap).toBeGreaterThan(-1)
+  expect(iStudio).toBeGreaterThan(iSnap)
+  expect(iCreate).toBeGreaterThan(iStudio)
+  expect(iCreate).toBeLessThan(iCenter)                                    // inside the left group, before the centered project picker
+  expect(HTML).toContain('<span class="create-lbl">Create New</span>')
   expect(HTML).toContain('id="createBtn"')
   expect(HTML).toMatch(/aria-haspopup="menu" aria-expanded="false" aria-controls="createMenu"/)
   expect(HTML).toContain('id="createItemTicket"')
   expect(HTML).toContain('id="createItemSim"')
+  expect(HTML).toContain('id="createItemAutoSim"')
 })
 
 test("New Sim in the menu is role-gated exactly like the existing #newSimBtn (project admins only); New Ticket is not gated", () => {
@@ -135,7 +137,7 @@ test("New Sim in the menu is role-gated exactly like the existing #newSimBtn (pr
 })
 
 test("the menu is wired at load time and the existing in-context buttons are untouched", () => {
-  expect(HTML).toContain("wireCreateMenu()   // global \"+ Create\" dropdown in the top nav")
+  expect(HTML).toContain('wireCreateMenu()   // top-nav "Create New" dropdown')
   expect(HTML).toContain('id="newTicketBtn"')    // Tickets toolbar button still there
   expect(HTML).toContain('id="newSimBtn"')       // Sims heading button still there
 })
