@@ -1120,6 +1120,13 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
    assignee email rather than widening the property grid on a long address. */
 .tkt-reporter{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:inherit;text-decoration:none;border-bottom:1px solid transparent}
 .tkt-reporter:hover{border-bottom-color:currentColor}
+/* QPQ-31: a contact's name leads, with the address beneath it, plus a quiet tag so a reporter is never
+   mistaken for a teammate who can open the dashboard. */
+.tkt-reporter-sub{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.contacts-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:18px 0 8px;font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.contacts-note{font-weight:400;text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--muted)}
+.rolepill.r-contact{background:var(--ink-3);color:var(--muted)}
+.tkt-contact-tag{flex:none;font-size:10.5px;line-height:1;padding:3px 6px;border-radius:999px;background:var(--ink-3);color:var(--muted);text-transform:lowercase;letter-spacing:.02em}
 /* #679a: force a perfect circle — equal w/h + aspect-ratio + flex:none so no flex context can
    stretch it into an oval, box-sizing so a future border can't distort it. */
 .tkt-av{width:20px!important;height:20px!important;min-width:20px!important;max-width:20px!important;min-height:20px!important;max-height:20px!important;aspect-ratio:1/1;box-sizing:border-box;border-radius:50%;background:var(--indigo);color:#fff;display:grid;place-items:center;font-size:10.5px;line-height:1;font-weight:700;flex:none;align-self:center;padding:0;overflow:hidden}
@@ -6818,6 +6825,33 @@ function renderMembers(admin) {
   $("members").querySelectorAll(".mem-remove").forEach(btn => {
     btn.addEventListener("click", () => removeMemberClick(btn))
   })
+  renderContacts()
+}
+
+// QPQ-31: project CONTACTS, listed under the team on the Team page. Rendered as their OWN group, never
+// mixed into the member rows: a contact is someone a reporter named when filing and has NO access to the
+// project, so showing them with a role pill alongside teammates would misrepresent what they can do.
+function renderContacts() {
+  const host = $("members")
+  if (!host) return
+  const old = document.getElementById("contactsGroup")
+  if (old) old.remove()
+  const contacts = (state && state.contacts) || []
+  if (!contacts.length) return
+  const wrap = document.createElement("div")
+  wrap.id = "contactsGroup"
+  wrap.innerHTML =
+    '<div class="contacts-head">Contacts <span class="count">' + contacts.length + '</span>' +
+    '<span class="contacts-note">Reporters who filed from the widget — no access to this project</span></div>' +
+    contacts.map(c => {
+      const who = c.name ? esc(c.name) : esc(c.email)
+      return '<div class="member">' +
+        '<div class="av" style="background:' + col(c.email) + '">' + initials(c.email) + '</div>' +
+        '<span class="m-email">' + who + (c.name ? ' <span class="muted">' + esc(c.email) + '</span>' : '') + '</span>' +
+        '<span class="rolepill r-contact">contact</span>' +
+      '</div>'
+    }).join("")
+  host.parentNode.insertBefore(wrap, host.nextSibling)
 }
 
 // QPLANE-407: admin-only "Resend" — one click re-dispatches the sign-in/access email to an
@@ -6891,7 +6925,24 @@ function projectMemberEmails() {
   // data load — reading .members threw and aborted the rest of the bootstrap.
   const fromMembers = ((state && state.members) || []).map(m => m.email)
   const fromTickets = ((state && state.tickets) || []).map(t => t.assignee)
-  return [...new Set([...fromMembers, ...fromTickets].filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(Boolean))].sort()
+  // QPQ-31: project CONTACTS (reporters who asked to be added when filing) are listed here too, so the
+  // team can @mention and assign them. A contact has NO access to the project — this list only drives
+  // the pickers, never permissions.
+  const fromContacts = ((state && state.contacts) || []).map(c => c.email)
+  return [...new Set([...fromMembers, ...fromTickets, ...fromContacts].filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(Boolean))].sort()
+}
+// QPQ-31: a contact's display name when we learned one at report time, else null.
+function contactNameFor(email) {
+  const e = String(email || "").trim().toLowerCase()
+  const hit = ((state && state.contacts) || []).find(c => String(c.email || "").toLowerCase() === e)
+  return (hit && hit.name) ? hit.name : null
+}
+// QPQ-31: true when this address is a contact rather than a teammate — the pickers label it so nobody
+// mistakes a reporter for someone who can open the dashboard.
+function isProjectContact(email) {
+  const e = String(email || "").trim().toLowerCase()
+  if (((state && state.members) || []).some(m => String(m.email || "").toLowerCase() === e)) return false
+  return ((state && state.contacts) || []).some(c => String(c.email || "").toLowerCase() === e)
 }
 function refreshAssigneeOptions() {
   const emails = projectMemberEmails()
@@ -7422,7 +7473,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
              report, not something a triager sets. The whole pair is omitted when the reporter stayed
              anonymous, so the grid never shows a dangling empty label. */''}
         ${t.reporterEmail ? `<span class="tkt-prop-lb">Reporter</span>
-        <span class="tkt-prop-vv"><a class="tkt-reporter" href="mailto:${esc(t.reporterEmail)}" title="Email the reporter">${esc(t.reporterEmail)}</a></span>` : ""}
+        <span class="tkt-prop-vv"><a class="tkt-reporter" href="mailto:${esc(t.reporterEmail)}" title="Email the reporter">${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</a>${contactNameFor(t.reporterEmail) ? `<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>` : ""}${isProjectContact(t.reporterEmail) ? `<span class="tkt-contact-tag" title="A contact: known to this project, with no access to it">contact</span>` : ""}</span>` : ""}
         <span class="tkt-prop-lb">Labels</span>
         <span class="tkt-prop-vv">
           <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">

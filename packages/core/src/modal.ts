@@ -388,6 +388,9 @@ export interface ModalCallbacks {
     // backend as reporter_email, otherwise an "email"-gated project rejects the submit with 400
     // "A valid email is required to submit." Undefined when no email field was shown.
     reporterEmail?: string
+    // QPQ-31: the reporter asked to be added as a project CONTACT (no access granted). The host forwards
+    // it as create_contact=1; absent/false means the address is still only attached to this one ticket.
+    createContact?: boolean
     // KLA submit-target: where the reporter chose to send this report. 'project' (DEFAULT) → the site
     // owner's project, exactly as today; 'klavity' → the reporter flagged Klavity's own tool/widget as
     // broken and the SERVER reroutes it into the designated Klavity intake project. Only present when the
@@ -468,6 +471,10 @@ export interface ModalCallbacks {
   // so an end-user can file a ticket without a Klavity account. Default false → extension/authed
   // paths are unaffected (they already carry an identity).
   requireEmail?: boolean
+  // QPQ-31: resolve people for the Email field's typeahead (project members + contacts). The host wires
+  // this to a SESSION-GATED endpoint, so an anonymous cross-origin reporter resolves nothing and their
+  // dropdown offers Create only — a site visitor must never be able to enumerate the team.
+  onLookupPeople?: (q: string) => Promise<Array<{ email: string; name?: string | null; kind?: string }>>
   // PX4 #439: when the reporter identity is already known (Identify API / config / fallback), pre-fill the
   // required-email field so the user doesn't retype it. Ignored unless requireEmail rendered the field.
   // The value stays user-editable; it only seeds the initial input. Absent → no pre-fill (as today).
@@ -1245,6 +1252,21 @@ export function buildModal(
     .klavity-nudge button.kl-nudge-anyway{background:none;color:var(--kl-muted);}
     .klavity-nudge button:hover{filter:brightness(1.03);}
     .klavity-nudge button:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
+    .klavity-remail-sugg{margin:-4px 0 10px;border:1px solid var(--kl-border);border-radius:8px;background:var(--kl-input-bg);overflow:hidden;}
+    .klavity-remail-sugg-opt{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;cursor:pointer;font-size:13px;color:var(--kl-fg);font-family:inherit;}
+    .klavity-remail-sugg-opt:hover,.klavity-remail-sugg-opt:focus-visible{background:color-mix(in srgb,var(--kl-accent) 10%,transparent);outline:none;}
+    .klavity-remail-sugg-opt[aria-selected="true"]{background:color-mix(in srgb,var(--kl-accent) 14%,transparent);}
+    .klavity-remail-sugg-av{flex:0 0 auto;width:18px;height:18px;border-radius:50%;border:1px dashed var(--kl-accent);color:var(--kl-accent);display:grid;place-items:center;font-size:12px;line-height:1;}
+    .klavity-remail-sugg-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+    .klavity-remail-sugg-check{flex:0 0 auto;margin-left:auto;color:var(--kl-accent);display:inline-flex;}
+    .klavity-remail-sugg-check[hidden]{display:none;}
+    .klavity-remail-sugg-opt[hidden]{display:none;}
+    .klavity-remail-person{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:0;padding:7px 10px;cursor:pointer;font-size:13px;color:var(--kl-fg);font-family:inherit;}
+    .klavity-remail-person:hover,.klavity-remail-person:focus-visible{background:color-mix(in srgb,var(--kl-accent) 10%,transparent);outline:none;}
+    .klavity-remail-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;letter-spacing:.02em;}
+    .klavity-remail-who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+    .klavity-remail-who i{font-style:normal;color:var(--kl-muted);}
+    .klavity-remail-sugg-hint{padding:0 10px 8px;font-size:11.5px;color:var(--kl-muted);line-height:1.35;}
     .klavity-remail-label{display:block;margin:2px 0 6px;font-size:12.5px;font-weight:600;color:var(--kl-muted);}
     input.klavity-remail{width:100%;background:var(--kl-input-bg);color:var(--kl-fg);border:1px solid var(--kl-border);border-radius:8px;padding:10px;font-size:14px;margin-bottom:10px;box-sizing:border-box;box-shadow:0 1px 2px rgba(25,20,15,.04);}
     .klavity-submit{width:100%;min-height:40px;padding:12px;background:var(--kl-accent);color:var(--kl-on-accent);border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;}
@@ -1547,6 +1569,21 @@ export function buildModal(
            reporter_email forwarding are unchanged. */''}
       <label class="klavity-remail-label" for="klavity-remail">Email${callbacks.requireEmail ? '' : ' (optional)'}</label>
       <input type="email" class="klavity-remail" id="klavity-remail" placeholder="name@company.com" autocomplete="email">
+      ${/* QPQ-31: suggestion under the Email field — "Add <email> as a contact". Offered for ANY
+           well-formed address rather than only unknown ones: answering "does this email exist?" for an
+           anonymous cross-origin caller would be an email-enumeration oracle, and the server's upsert is
+           idempotent anyway, so an address it already knows is simply a no-op. Selecting it only sets
+           intent (create_contact=1 on submit); the server decides what that grants, and a contact gets
+           NO access to the project. */''}
+      <div class="klavity-remail-sugg" id="klavity-remail-sugg" role="listbox" aria-label="People" hidden>
+        <div class="klavity-remail-matches" id="klavity-remail-matches"></div>
+        <button type="button" class="klavity-remail-sugg-opt klavity-remail-create" id="klavity-remail-addcontact" role="option" aria-selected="false" hidden>
+          <span class="klavity-remail-sugg-av" aria-hidden="true">+</span>
+          <span class="klavity-remail-sugg-txt">Create "<b class="klavity-remail-sugg-em"></b>"</span>
+          <span class="klavity-remail-sugg-check" aria-hidden="true" hidden>${icon('check', { size: 13 })}</span>
+        </button>
+        <div class="klavity-remail-sugg-hint" id="klavity-remail-sugg-hint">So the team can reply and tag you on this report.</div>
+      </div>
       ${voiceSupported ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
       ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
         <div class="kl-clr-bar"><i></i><i></i><i></i></div>
@@ -2620,6 +2657,96 @@ export function buildModal(
   desc.addEventListener('input', refreshSubmit)
   remail?.addEventListener('input', refreshSubmit)
 
+  // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
+  // Shown for any well-formed address (see the markup note on why we never ask the server whether it
+  // exists). Selecting it is a toggle, so a mistaken tap is undoable, and it is cleared the moment the
+  // address changes — intent must never outlive the address it was given for.
+  const remailSugg = modal.querySelector('#klavity-remail-sugg') as HTMLElement | null
+  const remailMatches = modal.querySelector('#klavity-remail-matches') as HTMLElement | null
+  const remailHint = modal.querySelector('#klavity-remail-sugg-hint') as HTMLElement | null
+  const addContactBtn = modal.querySelector('#klavity-remail-addcontact') as HTMLButtonElement | null
+  const suggEm = modal.querySelector('.klavity-remail-sugg-em') as HTMLElement | null
+  const suggCheck = modal.querySelector('.klavity-remail-sugg-check') as HTMLElement | null
+  let createContact = false
+  let contactFor = ''
+  let people: Array<{ email: string; name?: string | null; kind?: string }> = []
+  let peopleFor = ''
+  let peopleSeq = 0
+  const emailLooksValid = (v: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)
+  const initialsOf = (p: { email: string; name?: string | null }) => {
+    const base = (p.name || p.email).trim()
+    const parts = base.split(/[\s._-]+/).filter(Boolean)
+    return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || base.slice(0, 1).toUpperCase()
+  }
+  // Deterministic avatar tint, so the same person keeps the same colour between opens.
+  const tintOf = (e: string) => {
+    let h = 0
+    for (let i = 0; i < e.length; i++) h = (h * 31 + e.charCodeAt(i)) >>> 0
+    return `hsl(${h % 360} 58% 42%)`
+  }
+  // Directory lookup. Session-gated server-side: an anonymous cross-origin reporter gets nothing back,
+  // so their dropdown offers Create only and the team's addresses are never exposed to a site visitor.
+  async function loadPeople(q: string) {
+    if (!callbacks.onLookupPeople) { people = []; peopleFor = q; return }
+    const seq = ++peopleSeq
+    try {
+      const res = await callbacks.onLookupPeople(q)
+      if (seq !== peopleSeq) return                    // a newer keystroke already won
+      people = Array.isArray(res) ? res.slice(0, 8) : []
+    } catch { people = [] }
+    peopleFor = q
+    paintContactSugg()
+  }
+  function paintContactSugg() {
+    if (!remailSugg || !remail) return
+    const v = remail.value.trim()
+    const vl = v.toLowerCase()
+    // A pending choice belongs to ONE address; retyping invalidates it.
+    if (createContact && vl !== contactFor) { createContact = false; contactFor = '' }
+    const matches = vl.length >= 2
+      ? people.filter(p => p.email.toLowerCase().includes(vl) || (p.name || '').toLowerCase().includes(vl))
+      : []
+    const exact = matches.some(p => p.email.toLowerCase() === vl)
+    const canCreate = emailLooksValid(v) && !exact
+    if (remailMatches) {
+      remailMatches.innerHTML = matches.map(p => `
+        <button type="button" class="klavity-remail-person" role="option" data-email="${escHtml(p.email)}">
+          <span class="klavity-remail-av" style="background:${escHtml(tintOf(p.email))}">${escHtml(initialsOf(p))}</span>
+          <span class="klavity-remail-who">${p.name ? `${escHtml(p.name)} <i>(${escHtml(p.email)})</i>` : escHtml(p.email)}</span>
+        </button>`).join('')
+      remailMatches.querySelectorAll('.klavity-remail-person').forEach(btn => {
+        btn.addEventListener('click', () => {
+          remail.value = (btn as HTMLElement).getAttribute('data-email') || ''
+          createContact = false; contactFor = ''   // an existing person needs no creating
+          paintContactSugg()
+          refreshSubmit()
+        })
+      })
+    }
+    if (addContactBtn) addContactBtn.hidden = !canCreate
+    if (remailHint) remailHint.hidden = !canCreate
+    remailSugg.hidden = !(matches.length || canCreate)
+    if (suggEm) suggEm.textContent = v
+    if (suggCheck) suggCheck.hidden = !createContact
+    addContactBtn?.setAttribute('aria-selected', createContact ? 'true' : 'false')
+  }
+  addContactBtn?.addEventListener('click', () => {
+    const v = remail?.value.trim() || ''
+    if (!emailLooksValid(v)) return
+    createContact = !createContact
+    contactFor = createContact ? v.toLowerCase() : ''
+    paintContactSugg()
+  })
+  let peopleTimer: ReturnType<typeof setTimeout> | null = null
+  remail?.addEventListener('input', () => {
+    paintContactSugg()                               // repaint immediately from what we already have
+    const q = remail.value.trim().toLowerCase()
+    if (q.length < 2 || q === peopleFor) return
+    if (peopleTimer) clearTimeout(peopleTimer)
+    peopleTimer = setTimeout(() => { void loadPeople(q) }, 180)   // one lookup per pause, not per keystroke
+  })
+  paintContactSugg()
+
   // ── KLA-586: AI "Enhance" — replace the reporter's one-liner IN PLACE with a structured, developer-ready
   // draft rendered as WhatsApp Markdown, from the auto-captured screenshot + picked element. Opt-in: wired
   // only when the host supplied onEnhance (widget path; the extension omits it, like onClarityTip). Undo
@@ -3086,6 +3213,8 @@ export function buildModal(
     const emailSnapshot = emailTyped && (callbacks.requireEmail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailTyped))
       ? emailTyped
       : undefined
+    // QPQ-31: only claim contact intent when the choice still matches the address being submitted.
+    const createContactSnapshot = !!(emailSnapshot && createContact && emailSnapshot.toLowerCase() === contactFor)
     lockComposer(true) // disable Submit + every capture button + the payload mutators for the upload duration
     submitBtn.textContent = 'Uploading…'
     const errEl = shadowRoot.getElementById('klavity-err')!
@@ -3120,6 +3249,7 @@ export function buildModal(
         ...(recordingsSnapshot.length ? { recordings: recordingsSnapshot } : {}),
         annotations: annotationsSnapshot,
         reporterEmail: emailSnapshot,
+        createContact: createContactSnapshot,
         // KLA submit-target: ride the reporter's destination choice through onSubmit. Only present when the
         // segmented control was rendered (cfg.submitTargetToggle !== false); default 'project' (never surprise-
         // route to Klavity). The server resolves the real Klavity intake project — the client only says 'klavity'.
