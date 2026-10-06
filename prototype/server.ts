@@ -11172,7 +11172,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               title: r.title || r.observation || null, // prefer the explicit Title, else the observation
               status: r.status,
               severity: r.priority || r.severity || null, // effective priority wins, else stored severity
-              reporterEmail: r.actorEmail || r.contactEmail || null,
+              // QPQ-31: the address the REPORTER typed into the composer's Email field wins; the signed-in
+              // filer is only the fallback when they typed nothing. (Was actorEmail-first, which showed a
+              // staff member's login on reports they filed on a customer's behalf, and disagreed with the
+              // submit-time alert email, which has always shown the typed address.)
+              reporterEmail: r.contactEmail || r.actorEmail || null,
               createdAt: r.createdAt,
               screenshotUrl,
               pageUrl,
@@ -11477,6 +11481,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               sentiment: f.sentiment, screenshotId: f.screenshotId,
               sourceQuote: f.sourceQuote, sourceDate: f.sourceDate,
               notes: meta.notes, hasReplay: ticketsWithReplay.has(f.id),
+              // QPQ-31: who filed it — the signed-in actor, else the email typed into the composer's
+              // Email field. Same projection the /t/:ref page and the inbox already use, and member-gated
+              // by the surrounding /api/dashboard access check.
+              reporterEmail: f.contactEmail || f.actorEmail || null,
               recurrence: meta.recurrence, annotations: f.annotations,
               // KLA-2 regression-memory fields — consumed by dashboard UI via recurBadgeHtml/regrBannerHtml
               recurrenceCount: meta.recurrence,
@@ -12508,7 +12516,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // KLAVITYKLA-491: reporter + a single resolved page URL, mirroring the /api/dashboard ticket
             // projection so the standalone /t/:ref page renders reporter + page context without a second
             // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
-            reporterEmail: fbRow.actorEmail || fbRow.contactEmail || null,
+            reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
             pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
             ref: String(fbRow.id).split("-")[0],
             sourceReferrer: fbRow.sourceReferrer,
