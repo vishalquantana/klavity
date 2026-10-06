@@ -1118,8 +1118,8 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 .tkt-assignee-email{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* QPQ-31: Reporter value — a plain mailto that inherits the panel's type scale and truncates like the
    assignee email rather than widening the property grid on a long address. */
-.tkt-reporter{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:inherit;text-decoration:none;border-bottom:1px solid transparent}
-.tkt-reporter:hover{border-bottom-color:currentColor}
+/* Matches the Assignee control's type exactly (see .tkt-assignee-ctrl) so the two property rows read as siblings. */
+.tkt-reporter{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:inherit;font-family:var(--body);font-size:13px;font-weight:600}
 /* QPQ-31: a contact's name leads, with the address beneath it, plus a quiet tag so a reporter is never
    mistaken for a teammate who can open the dashboard. */
 .tkt-reporter-sub{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -7735,7 +7735,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
              report, not something a triager sets. The whole pair is omitted when the reporter stayed
              anonymous, so the grid never shows a dangling empty label. */''}
         ${t.reporterEmail ? `<span class="tkt-prop-lb">Reporter</span>
-        <span class="tkt-prop-vv"><a class="tkt-reporter" href="mailto:${esc(t.reporterEmail)}" title="Email the reporter">${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</a>${contactNameFor(t.reporterEmail) ? `<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>` : ""}${isProjectContact(t.reporterEmail) ? `<span class="tkt-contact-tag" title="A contact: known to this project, with no access to it">contact</span>` : ""}</span>` : ""}
+        <span class="tkt-prop-vv"><span class="tkt-reporter" title="${esc(t.reporterEmail)}">${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</span>${contactNameFor(t.reporterEmail) ? `<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>` : ""}${isProjectContact(t.reporterEmail) ? `<span class="tkt-contact-tag" title="A contact: known to this project, with no access to it">contact</span>` : ""}</span>` : ""}
         <span class="tkt-prop-lb">Labels</span>
         <span class="tkt-prop-vv">
           <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">

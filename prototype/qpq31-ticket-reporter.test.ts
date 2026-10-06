@@ -35,12 +35,14 @@ test("the whole pair is omitted when the reporter stayed anonymous (no dangling 
   expect(guard![0]).toContain('class="tkt-reporter"')
 })
 
-test("the address is escaped and mailto-linked, never interpolated raw", () => {
+test("the address is plain escaped text, not a link", () => {
   const guard = HTML.match(/\$\{t\.reporterEmail \? `<span class="tkt-prop-lb">Reporter<\/span>[\s\S]*?` : ""\}/)![0]
-  expect(guard).toContain("mailto:${esc(t.reporterEmail)}")
+  // Reporter is a fact about the report, shown as text at the same size as Assignee -- no mailto.
+  expect(guard).not.toContain("mailto:")
+  expect(guard).not.toContain("<a ")
   // QPQ-31 contacts: the link text is the contact's NAME when we know one, else the address — either way
   // it goes through esc(). The address itself also appears beneath the name, likewise escaped.
-  expect(guard).toContain("${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</a>")
+  expect(guard).toContain("${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</span>")
   expect(guard).toContain('<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>')
   // nothing in the pair interpolates the address (or a contact name) un-escaped
   expect(guard).not.toContain("${t.reporterEmail}")
@@ -86,4 +88,13 @@ test("FeedbackRow carries contactEmail and rowToFeedback maps the column", () =>
 test("the reporter email is still persisted from the submit path", () => {
   // Guards the far end of the chain: an email that never reaches contact_email can never be shown.
   expect(SERVER).toContain("setFeedbackContactEmail(feedbackId, projectId, reporterEmail)")
+})
+
+test("Reporter uses the same type as the Assignee control, so the rows read as siblings", () => {
+  const rep = HTML.match(/\.tkt-reporter\{[^}]*\}/)?.[0] || ""
+  const asg = HTML.match(/\.tkt-assignee-ctrl\{[^}]*\}/)?.[0] || ""
+  for (const decl of ["font-size:13px", "font-weight:600", "font-family:var(--body)"]) {
+    expect(asg).toContain(decl)   // the reference
+    expect(rep).toContain(decl)   // and Reporter matches it
+  }
 })
