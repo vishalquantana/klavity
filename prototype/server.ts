@@ -98,6 +98,7 @@ import { validateModalConfigInput, resolveModalConfig } from "../packages/core/s
 import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-clarity"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
 import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
@@ -12368,33 +12369,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!fbAccess) return json({ error: "Only project members can add attachments." }, 403)
           const form = await req.formData().catch(() => null)
           if (!form) return json({ error: "Expected multipart/form-data." }, 400)
-          const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
+          const allAttachFiles = form.getAll("files").filter((f): f is File => f instanceof File)
+          const attachFiles = allAttachFiles.slice(0, 5)
+          // KD-193: files beyond the 5-file cap used to be dropped silently — now they are reported back so the UI can say so.
+          const ignoredFiles = allAttachFiles.slice(5).map((f) => f.name)
           if (!attachFiles.length) return json({ error: "No files provided." }, 400)
-          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
-          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
-          let attachTotalBytes = 0
-          const newAtts: Array<Record<string, any>> = []
+          // KD-193: the same file (name + size) already on this ticket — or repeated within this request — is NOT uploaded again.
+          // A user who saw no feedback and picked the file twice used to get two identical attachments.
+          const attKey = (name: unknown, size: unknown) => String(name ?? "").trim().toLowerCase() + "|" + Number(size ?? 0)
+          const seenAtt = new Set<string>((Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []).map((a: any) => attKey(a?.filename, a?.size)))
+          const duplicateFiles: string[] = []
+          const uploadFiles: File[] = []
           for (const af of attachFiles) {
             if (af.size <= 0) continue
-            const typeIsGeneric = !af.type || af.type === "application/octet-stream"
-            const videoMime = videoMimeFromName(af.name || "")
-            const isVideo = isVideoAttachment(af.type, af.name)
-            const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
+            const k = attKey(af.name, af.size)
+            if (seenAtt.has(k)) { duplicateFiles.push(af.name); continue }
+            seenAtt.add(k); uploadFiles.push(af)
+          }
+          if (!uploadFiles.length) return json({ ok: true, attachments: [], duplicates: duplicateFiles, ignored: ignoredFiles }, 200)
+          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
+          // validate every file's size BEFORE uploading anything (so a rejected request never leaves orphan objects behind)
+          let attachTotalBytes = 0
+          for (const af of uploadFiles) {
+            const perFileCap = isVideoAttachment(af.type, af.name) ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
             if (af.size > perFileCap) return json({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
             attachTotalBytes += af.size
             if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return json({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
+          }
+          // KD-193: upload to storage in PARALLEL (it was one file after another) — order of the stored list is preserved.
+          const uploadedAtts = await Promise.all(uploadFiles.map(async (af) => {
             try {
+              const typeIsGeneric = !af.type || af.type === "application/octet-stream"
+              const videoMime = videoMimeFromName(af.name || "")
               const abuf = new Uint8Array(await af.arrayBuffer())
               const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
               const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
               const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
                 { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
               if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-              newAtts.push(desc)
+              return desc
             } catch (aErr: any) {
               console.error("attachment upload failed (non-fatal):", aErr?.message || aErr)
+              return null
             }
-          }
+          }))
+          const newAtts: Array<Record<string, any>> = uploadedAtts.filter((d): d is NonNullable<typeof d> => !!d)
           if (!newAtts.length) return json({ error: "No attachments could be uploaded." }, 500)
           await appendFeedbackAttachments(fid, fbRow.projectId, newAtts)
           void insertActivity({
@@ -12407,7 +12427,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Presign each new attachment the same way the GET response does (#425/KLAVITYKLA-480), so the
           // dashboard can render/download it immediately without a second round-trip.
           const signedNewAtts = newAtts.map((a) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
-          return json({ ok: true, attachments: signedNewAtts }, 201)
+          return json({ ok: true, attachments: signedNewAtts, duplicates: duplicateFiles, ignored: ignoredFiles }, 201)
+        }
+
+        // KD-193: DELETE /api/feedback/:id/attachments?key=<storage key> — remove one attachment from a ticket (members only, like add).
+        // The list entry is removed atomically (compare-and-swap); the stored object is deleted afterwards (best effort) unless another
+        // ticket still references it (merged tickets share attachment keys).
+        if (req.method === "DELETE" && isAttachments) {
+          if (!fbAccess) return json({ error: "Only project members can remove attachments." }, 403)
+          const attKeyParam = String(url.searchParams.get("key") || "")
+          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          const rm = await removeFeedbackAttachment(fid, fbRow.projectId, attKeyParam)
+          if (!rm.ok) return json({ error: "Attachment not found." }, 404)
+          void (async () => {
+            try { if (!(await attachmentKeyReferencedElsewhere(attKeyParam, fid))) await deleteObject(attKeyParam) }
+            catch (e: any) { console.warn("attachment object cleanup skipped:", e?.message || e) }
+          })()
+          void insertActivity({
+            projectId: fbRow.projectId,
+            type: "ticket_attachment_removed",
+            actorEmail: me,
+            feedbackId: fid,
+            meta: { filename: String(rm.removed?.filename || "") },
+          }).catch((e: any) => console.warn("ticket attachment removal activity skipped:", e?.message || e))
+          return json({ ok: true, removed: attKeyParam })
         }
 
         // #738: POST /api/feedback/:id/annotations — persist a re-annotated evidence screenshot's markup.
