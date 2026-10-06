@@ -341,6 +341,19 @@ export async function applySchema(c: Client) {
        project_role TEXT NOT NULL,           -- 'admin' | 'member'
        invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
     `CREATE INDEX IF NOT EXISTS proj_mem_email_idx ON project_members (email)`,
+    // ── QPQ-31 project CONTACTS: people known to a project WITHOUT any access to it. A reporter who
+    // types a new address in the Snap composer lands here, so the team can see who filed a ticket and
+    // @mention/assign them — but a contact row grants NOTHING. Dashboard access still requires a
+    // project_members (or account_members) row, which is deliberately NOT created here: the composer is
+    // anonymous and cross-origin, so letting it mint members would let any visitor to the customer's
+    // site read that project's ticket board. `source` records how we learned about them.
+    `CREATE TABLE IF NOT EXISTS project_contacts (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL,
+       name TEXT,
+       source TEXT NOT NULL DEFAULT 'report',  -- 'report' | 'manual'
+       first_feedback_id TEXT,
+       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
+    `CREATE INDEX IF NOT EXISTS proj_contact_project_idx ON project_contacts (project_id)`,
     // ── Shared-ticket viewers (per-ticket, free & unlimited). A grant unlocks the full ticket +
     // commenting for `email`. status 'active' = unblurred now; 'pending_approval' = waiting for an
     // admin (share_mode='approval', Phase 2). UNIQUE(feedback_id,email) makes a grant idempotent.
@@ -3137,6 +3150,50 @@ export async function setProjectTrailsAutofile(projectId: string, enabled: boole
   await db!.execute({ sql: "UPDATE projects SET trails_autofile_enabled=?, updated_at=? WHERE id=?", args: [enabled ? 1 : 0, Date.now(), projectId] })
 }
 
+// ── QPQ-31 project contacts ──────────────────────────────────────────────────────────────────────
+// A contact is someone a project knows about but who has NO access to it (see the project_contacts
+// schema note). Used so the team can see, @mention and assign the person who filed a report.
+export type ProjectContact = { projectId: string; email: string; name: string | null; source: string; firstFeedbackId: string | null; createdAt: number }
+
+function contactRow(x: any): ProjectContact {
+  return {
+    projectId: String(x.project_id), email: String(x.email),
+    name: x.name != null ? String(x.name) : null,
+    source: String(x.source || "report"),
+    firstFeedbackId: x.first_feedback_id != null ? String(x.first_feedback_id) : null,
+    createdAt: Number(x.created_at),
+  }
+}
+
+// Idempotent: a repeat report from the same address updates the name (when we learn one) and the
+// timestamp instead of erroring, so the composer never has to ask "does this person exist?" — which
+// would hand an anonymous caller an email-enumeration oracle.
+export async function upsertProjectContact(
+  projectId: string, email: string, opts: { name?: string | null; source?: string; feedbackId?: string | null } = {},
+): Promise<boolean> {
+  const e = String(email || "").trim().toLowerCase()
+  if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) || e.length > 200) return false
+  const now = Date.now()
+  const name = opts.name ? String(opts.name).slice(0, 200) : null
+  await db!.execute({
+    sql: `INSERT INTO project_contacts (id, project_id, email, name, source, first_feedback_id, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,?,?)
+          ON CONFLICT(project_id, email) DO UPDATE SET
+            name = COALESCE(excluded.name, project_contacts.name),
+            updated_at = excluded.updated_at`,
+    args: ["pc_" + projectId + "_" + e, projectId, e, name, opts.source || "report", opts.feedbackId ?? null, now, now],
+  })
+  return true
+}
+
+export async function listProjectContacts(projectId: string, limit = 200): Promise<ProjectContact[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM project_contacts WHERE project_id=? ORDER BY updated_at DESC LIMIT ?",
+    args: [projectId, Math.max(1, Math.min(1000, limit))],
+  })
+  return r.rows.map(contactRow)
+}
+
 export async function setFeedbackContactEmail(feedbackId: string, projectId: string, email: string): Promise<boolean> {
   // KLA-780 round-3 (Muse C3-6, checklist L): redirect a contact-email write on a MERGED (hidden) row to
   // the live survivor so the reporter email attaches to the ticket that's actually shown.
@@ -3917,6 +3974,10 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
 
 export type FeedbackRow = {
   id: string; projectId: string; simId: string | null; actorEmail: string | null
+  // QPQ-31: the address the reporter typed into the composer's Email field (feedback.contact_email,
+  // written by setFeedbackContactEmail). actorEmail is the signed-in filer; an anonymous widget report
+  // has none, so the dashboard's Reporter falls back to this.
+  contactEmail: string | null
   urlHost: string | null; urlPath: string | null; sourceReferrer: string | null; observation: string | null
   title: string | null
   sentiment: string | null; priority: string | null; screenshotId: string | null
@@ -3934,6 +3995,7 @@ function rowToFeedback(x: any): FeedbackRow {
     id: String(x.id), projectId: String(x.project_id),
     simId: x.sim_id != null ? String(x.sim_id) : null,
     actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    contactEmail: x.contact_email != null ? String(x.contact_email) : null,
     urlHost: x.url_host != null ? String(x.url_host) : null,
     urlPath: x.url_path != null ? String(x.url_path) : null,
     sourceReferrer: x.source_referrer != null ? String(x.source_referrer) : null,
@@ -8356,6 +8418,10 @@ export async function listTicketsPaginated(
       priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
       status: x.status != null ? String(x.status) : "open",
       assignee: x.assignee != null ? String(x.assignee) : null,
+      // QPQ-31: the detail popup's Reporter row also opens from the board/list, not just from
+      // /api/dashboard, so this projection needs the same field. The SELECT is `f.*`, so both
+      // columns are already in hand.
+      reporterEmail: (x.contact_email ?? x.actor_email) != null ? String(x.contact_email ?? x.actor_email) : null,
       notes: x.notes != null ? String(x.notes) : null,
       urlPath: x.url_path != null ? String(x.url_path) : null,
       urlHost: x.url_host != null ? String(x.url_host) : null,
