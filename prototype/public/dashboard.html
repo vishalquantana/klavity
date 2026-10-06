@@ -1388,7 +1388,7 @@ body.tkt-page-open .wrap{max-width:none}
    narrow content area (sidebar open) can never overflow; col3 keeps a 200px floor so PROPERTIES never
    crushes to ~1ch (was: title overlap + one-char-per-line description). Below the card-width breakpoint
    it stacks entirely — see the @container rule below. */
-#ticketSingle.tkt-page .t3-cols{display:grid;grid-template-columns:minmax(0,var(--t3c1,480px)) 8px minmax(0,1fr) 8px minmax(200px,var(--t3c3,280px))}
+#ticketSingle.tkt-page .t3-cols{display:grid;grid-template-columns:minmax(0,1fr) 8px minmax(240px,var(--t3c2,300px))}
 .t3-col{padding:16px 22px;min-width:0;border-top:1px solid var(--line)}
 .t3-gutter{cursor:col-resize;background:transparent;position:relative;border-top:1px solid var(--line);touch-action:none;user-select:none}
 .t3-gutter::after{content:"";position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line);transform:translateX(-.5px);transition:background .12s,width .12s}
@@ -1427,38 +1427,20 @@ body.tkt-page-open .wrap{max-width:none}
   #ticketSingle.tkt-page .t3-cols{display:block}
   #ticketSingle.tkt-page .t3-gutter{display:none}
 }
-/* #726: Single Ticket Studio Cockpit — a faithful re-style of the #725 3-col PAGE into an edge-to-edge
-   media cockpit. LEFT = Evidence & Media (big browser stage + thumbnail strip + occurrence receipts);
-   MIDDLE = editorial title + description + activity; RIGHT = borderless Properties rail + Copy prompt +
-   dashed Merge. Uses ONLY the app's own tokens (var(--display)/--body/--mono/--ink*/--paper*/--line/
-   --indigo/--amber/--rose) — no external fonts or images. Scoped to the full page so panel/board are
-   untouched. Additive overrides only (never edits the property-rail / footer rules the guards assert). */
+/* 2-column Layout: MAIN (ticket details / description / attachments / occurrence / activity) and PROPERTIES */
 #ticketSingle.tkt-page .tkt3-card{box-shadow:var(--mi-shadow-card)}
-/* the grid runs clean to the card top now that the editorial title lives IN the middle column */
+/* the grid runs clean to the card top now that the editorial title lives IN the main column */
 #ticketSingle.tkt-page .t3-col{border-top:none;padding:22px 24px}
-#ticketSingle.tkt-page .t3-left{background:rgba(120,120,120,.022);display:flex;flex-direction:column;gap:18px}
-#ticketSingle.tkt-page .t3-mid{display:flex;flex-direction:column;gap:13px}
+#ticketSingle.tkt-page .t3-mid{display:flex;flex-direction:column;gap:16px}
 #ticketSingle.tkt-page .t3-right{background:rgba(120,120,120,.022);display:flex;flex-direction:column;gap:18px}
 #ticketSingle.tkt-page .t3-colh{margin:0}
-/* editorial headline relocated into the middle column */
+/* editorial headline relocated into the main column */
 #ticketSingle.tkt-page .t3-mid .single-head{padding:0;margin:0;gap:12px;max-width:none}
 #ticketSingle.tkt-page .t3-mid .single-title{font-size:26px;letter-spacing:-.015em;line-height:1.25}
 #ticketSingle.tkt-page .t3-mid .single-meta{font-family:var(--mono);font-size:11.5px;color:var(--paper-faint);margin-top:6px}
-/* bigger, softer media stage */
-#ticketSingle.tkt-page .t3-left .tkt-browser{border-radius:14px;box-shadow:0 6px 20px rgba(25,20,15,.06);margin:0}
-/* evidence thumbnail strip (screenshot + session replay + recordings) */
-.t3-evidence{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:8px}
-.t3-ev-thumb{position:relative;aspect-ratio:16/10;border-radius:8px;overflow:hidden;border:2px solid transparent;padding:0;cursor:pointer;background:var(--ink-3);transition:transform var(--mi-dur) var(--mi-ease),border-color .15s,box-shadow .15s}
-.t3-ev-thumb:hover{transform:var(--mi-lift);border-color:var(--paper-faint)}
-.t3-ev-thumb.active{border-color:var(--indigo);box-shadow:0 0 0 2px rgba(99,102,241,.3)}
-.t3-ev-thumb:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
-.t3-ev-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.t3-ev-fallback{width:100%;height:100%;display:grid;place-items:center;color:var(--paper-faint)}
-.t3-ev-play{position:absolute;inset:0;display:grid;place-items:center;color:#fff;background:rgba(25,20,15,.35)}
-.t3-ev-badge{position:absolute;bottom:2px;right:3px;font-family:var(--mono);font-size:8.5px;font-weight:700;color:#fff;background:rgba(25,20,15,.78);padding:1px 4px;border-radius:3px;letter-spacing:.02em}
-.t3-ev-badge.vid{background:var(--rose)}
-/* occurrence receipts boxed into the left column */
-#ticketSingle.tkt-page .t3-left .tkt-occ-wrap{border:1px solid var(--line);border-radius:12px;background:var(--ink-2);padding:14px;margin:0}
+/* occurrence timeline placed below attachments in the main column */
+#ticketSingle.tkt-page .t3-occ-mount{margin:4px 0 0}
+#ticketSingle.tkt-page .t3-occ-mount .tkt-occ-wrap{border:1px solid var(--line);border-radius:12px;background:var(--ink-2);padding:14px;margin:0}
 /* merge relocated into the right column as a dashed "consolidate" container */
 #ticketSingle.tkt-page .t3-right .tkt-merge-wrap{border:1px dashed var(--line);border-radius:10px;background:var(--ink-2);padding:12px;margin:0}
 /* description reads as an editorial editable block */
@@ -1966,15 +1948,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-attach-play{top:25px}
   .newtkt-play{top:27px}
   .newtkt-file{cursor:zoom-in}
-  .media-pv-bg{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:24px}
-  .media-pv-box{display:flex;flex-direction:column;gap:10px;max-width:min(1100px,96vw);max-height:94vh}
-  .media-pv-box img,.media-pv-box video{max-width:100%;max-height:78vh;border-radius:10px;background:#000;object-fit:contain}
-  .media-pv-bar{display:flex;align-items:center;gap:12px;color:#fff;font-size:13px}
-  .media-pv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .media-pv-bar a{color:#fff;background:rgba(255,255,255,.14);border:0;border-radius:8px;padding:6px 11px;font:inherit;font-size:12.5px;cursor:pointer;text-decoration:none}
-  .media-pv-bar a:hover{background:rgba(255,255,255,.26)}
-  .media-pv-close{position:absolute;top:16px;right:20px;width:38px;height:38px;border:0;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font-size:24px;line-height:38px;padding:0;cursor:pointer}
+  .media-pv-bg{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(4px)}
+  .media-pv-box{display:flex;flex-direction:column;gap:12px;max-width:min(1100px,96vw);max-height:94vh;width:100%;align-items:center}
+  .media-pv-media-holder{position:relative;display:flex;align-items:center;justify-content:center;max-width:100%;max-height:78vh;overflow:hidden;border-radius:12px;background:#050507;border:1px solid rgba(255,255,255,.1)}
+  .media-pv-imgwrap{position:relative;display:inline-block;max-width:100%;max-height:78vh;line-height:0;transition:transform .2s}
+  .media-pv-imgwrap.zoomed{overflow:auto;max-height:78vh;cursor:zoom-out}
+  .media-pv-imgwrap.zoomed img{transform:scale(1.75);transform-origin:top left}
+  .media-pv-imgwrap img,.media-pv-media-holder video{display:block;max-width:100%;max-height:78vh;object-fit:contain}
+  .media-pv-imgwrap .tkt-ann-svg,.media-pv-imgwrap .tkt-ann-redact{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .media-pv-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;color:#fff;font-size:13px}
+  .media-pv-name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .media-pv-count{font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.6)}
+  .media-pv-tools{display:flex;align-items:center;gap:8px}
+  .media-pv-btn,.media-pv-bar a{color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 12px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .15s}
+  .media-pv-btn:hover,.media-pv-bar a:hover{background:rgba(255,255,255,.26)}
+  .media-pv-btn.active{background:var(--indigo-d);border-color:var(--indigo-d)}
+  .media-pv-close{position:absolute;top:16px;right:20px;width:38px;height:38px;border:0;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font-size:24px;line-height:38px;padding:0;cursor:pointer;display:grid;place-items:center;transition:background .15s}
   .media-pv-close:hover{background:rgba(255,255,255,.3)}
+  .media-pv-nav button{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:26px;cursor:pointer;display:grid;place-items:center;transition:background .15s}
+  .media-pv-nav button:hover{background:rgba(255,255,255,.3)}
+  .media-pv-prev{left:20px}
+  .media-pv-next{right:20px}
 
 /* ===== Add-a-Sim modal (first-run + "New Sim") ===== */
 .sm-ov{position:fixed;inset:0;background:rgba(25,20,15,.5);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;z-index:2147483646;overflow:auto;padding:40px 18px}
@@ -7349,31 +7343,129 @@ function attachKind(a) {
   return ""
 }
 // Shared click-to-enlarge viewer for images and videos (ticket-detail attachments + the New ticket dialog's held files).
-// o = { url, name, kind: "image"|"video", openUrl? }. Esc / backdrop click / the top-right × dismiss it; a playing video is paused on close.
+// o = { url, name, kind: "image"|"video", openUrl?, annotations?, ticketId?, items?, index? }. Esc / backdrop click / the top-right × dismiss it; a playing video is paused on close.
 let _mediaPvEl = null
-function _mediaPvKey(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMediaPreview() } }
+let _mediaPvCurrent = null
+function _mediaPvKey(e) {
+  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMediaPreview() }
+  else if (e.key === "ArrowLeft" && _mediaPvCurrent && _mediaPvCurrent.items && _mediaPvCurrent.items.length > 1) {
+    e.preventDefault(); _mediaPvNav(-1)
+  }
+  else if (e.key === "ArrowRight" && _mediaPvCurrent && _mediaPvCurrent.items && _mediaPvCurrent.items.length > 1) {
+    e.preventDefault(); _mediaPvNav(1)
+  }
+}
+function _mediaPvNav(dir) {
+  if (!_mediaPvCurrent || !_mediaPvCurrent.items) return
+  const items = _mediaPvCurrent.items
+  let nextIdx = (_mediaPvCurrent.index + dir + items.length) % items.length
+  const nextItem = items[nextIdx]
+  openMediaPreview(Object.assign({}, nextItem, { items, index: nextIdx }))
+}
 function closeMediaPreview() {
   if (!_mediaPvEl) return
   const v = _mediaPvEl.querySelector("video"); if (v) { try { v.pause() } catch (e) {} }
-  _mediaPvEl.remove(); _mediaPvEl = null
+  _mediaPvEl.remove(); _mediaPvEl = null; _mediaPvCurrent = null
   document.removeEventListener("keydown", _mediaPvKey, true)
 }
 function openMediaPreview(o) {
   closeMediaPreview()
+  _mediaPvCurrent = o
   const bg = document.createElement("div"); bg.className = "media-pv-bg"
   bg.setAttribute("role", "dialog"); bg.setAttribute("aria-modal", "true"); bg.setAttribute("aria-label", "Preview: " + o.name)
   const box = document.createElement("div"); box.className = "media-pv-box"
+
+  const holder = document.createElement("div"); holder.className = "media-pv-media-holder"
   const media = document.createElement(o.kind === "video" ? "video" : "img")
   if (o.kind === "video") { media.controls = true; media.autoplay = true; media.setAttribute("playsinline", "") } else { media.alt = o.name }
   media.src = o.url
+
+  let annSvgWrap = null
+  if (o.kind !== "video") {
+    const imgWrap = document.createElement("div"); imgWrap.className = "media-pv-imgwrap"
+    imgWrap.appendChild(media)
+    if (o.annotations) {
+      const redact = typeof buildRedactionSvg === "function" ? buildRedactionSvg(o.annotations) : null
+      if (redact) imgWrap.appendChild(redact)
+      const res = typeof buildAnnotationSvg === "function" ? buildAnnotationSvg(o.annotations) : null
+      if (res && res.svg) {
+        annSvgWrap = res.svg
+        imgWrap.appendChild(res.svg)
+      }
+      if (typeof mountPinnedSelector === "function") mountPinnedSelector(imgWrap, o.annotations)
+    }
+    holder.appendChild(imgWrap)
+  } else {
+    holder.appendChild(media)
+  }
+
   const bar = document.createElement("div"); bar.className = "media-pv-bar"
   const nm = document.createElement("span"); nm.className = "media-pv-name"; nm.textContent = o.name; nm.title = o.name
   bar.appendChild(nm)
-  if (o.openUrl) { const a = document.createElement("a"); a.href = o.openUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open original"; bar.appendChild(a) }
+
+  if (o.items && o.items.length > 1) {
+    const counter = document.createElement("span")
+    counter.className = "media-pv-count"
+    counter.textContent = `${o.index + 1} / ${o.items.length}`
+    bar.appendChild(counter)
+  }
+
+  const tools = document.createElement("div"); tools.className = "media-pv-tools"
+  if (o.kind !== "video") {
+    const zoomBtn = document.createElement("button")
+    zoomBtn.type = "button"; zoomBtn.className = "media-pv-btn"
+    zoomBtn.innerHTML = `${kicon('search', { size: 13 })} Zoom`
+    zoomBtn.addEventListener("click", () => {
+      const wrap = box.querySelector(".media-pv-imgwrap")
+      if (wrap) wrap.classList.toggle("zoomed")
+    })
+    tools.appendChild(zoomBtn)
+  }
+
+  if (annSvgWrap) {
+    const markupBtn = document.createElement("button")
+    markupBtn.type = "button"; markupBtn.className = "media-pv-btn active"
+    markupBtn.innerHTML = `Markup`
+    markupBtn.addEventListener("click", () => {
+      const isHidden = annSvgWrap.style.display === "none"
+      annSvgWrap.style.display = isHidden ? "" : "none"
+      markupBtn.classList.toggle("active", isHidden)
+    })
+    tools.appendChild(markupBtn)
+  }
+
+  if (o.kind !== "video" && typeof openEvidenceAnnotator === "function" && o.ticketId) {
+    const annBtn = document.createElement("button")
+    annBtn.type = "button"; annBtn.className = "media-pv-btn"
+    annBtn.innerHTML = `${kicon('pencil', { size: 13 })} Annotate`
+    annBtn.addEventListener("click", () => {
+      const detailEl = document.querySelector(`[data-id="${o.ticketId}"]`)
+      if (detailEl) {
+        closeMediaPreview()
+        openEvidenceAnnotator(detailEl, o.url, o.annotations)
+      }
+    })
+    tools.appendChild(annBtn)
+  }
+
+  if (o.openUrl) { const a = document.createElement("a"); a.href = o.openUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open original"; tools.appendChild(a) }
+  bar.appendChild(tools)
+
+  if (o.items && o.items.length > 1) {
+    const nav = document.createElement("div"); nav.className = "media-pv-nav"
+    const prevBtn = document.createElement("button"); prevBtn.type = "button"; prevBtn.className = "media-pv-prev"
+    prevBtn.innerHTML = "‹"; prevBtn.setAttribute("aria-label", "Previous"); prevBtn.addEventListener("click", () => _mediaPvNav(-1))
+    const nextBtn = document.createElement("button"); nextBtn.type = "button"; nextBtn.className = "media-pv-next"
+    nextBtn.innerHTML = "›"; nextBtn.setAttribute("aria-label", "Next"); nextBtn.addEventListener("click", () => _mediaPvNav(1))
+    nav.appendChild(prevBtn); nav.appendChild(nextBtn)
+    bg.appendChild(nav)
+  }
+
   const close = document.createElement("button"); close.type = "button"; close.className = "media-pv-close"
   close.textContent = "\u00d7"; close.setAttribute("aria-label", "Close preview"); close.title = "Close (Esc)"
   close.addEventListener("click", closeMediaPreview)
-  box.appendChild(media); box.appendChild(bar); bg.appendChild(box); bg.appendChild(close)   // × sits in the top-right corner of the overlay
+
+  box.appendChild(holder); box.appendChild(bar); bg.appendChild(box); bg.appendChild(close)
   bg.addEventListener("click", function (e) { if (e.target === bg) closeMediaPreview() })
   document.addEventListener("keydown", _mediaPvKey, true)
   document.body.appendChild(bg); _mediaPvEl = bg
@@ -7383,7 +7475,16 @@ function openMediaPreview(o) {
 // dashboard. This renders the existing list; wireAttachments() (below) wires "+ Add attachment" so
 // a member can add more to an already-created ticket, not just at intake.
 function buildAttachmentsHtml(t) {
-  var atts = Array.isArray(t.attachments) ? t.attachments : []
+  var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+  if (t.screenshotId && !atts.some(function(a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
+    atts.unshift({
+      filename: "Screenshot",
+      contentType: "image/png",
+      url: shotProxyUrl(String(t.screenshotId)),
+      screenshotId: t.screenshotId,
+      isPrimaryScreenshot: true
+    })
+  }
   var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
   var thumbs = ""
   var items = atts.map(function (a, i) {
@@ -7423,8 +7524,37 @@ function wireAttachments(detailEl, t, ticketId) {
   wrap.querySelectorAll(".tkt-attach-thumb").forEach(function (b) {   // KD-100: enlarge an image / play a video
     b.addEventListener("click", function (ev) {
       ev.stopPropagation()
-      var a = (Array.isArray(t.attachments) ? t.attachments : [])[Number(b.getAttribute("data-idx"))]
-      if (a && a.url) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url })
+      var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+      if (t.screenshotId && !atts.some(function(a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
+        atts.unshift({
+          filename: "Screenshot",
+          contentType: "image/png",
+          url: shotProxyUrl(String(t.screenshotId)),
+          screenshotId: t.screenshotId,
+          isPrimaryScreenshot: true,
+          annotations: t.annotations
+        })
+      }
+      var prevItems = []
+      atts.forEach(function (a, ai) {
+        var k = attachKind(a)
+        if (k && a.url) {
+          prevItems.push({
+            url: a.url,
+            name: String(a.filename || ("attachment-" + (ai + 1))),
+            kind: k,
+            openUrl: a.url,
+            annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null),
+            ticketId: ticketId
+          })
+        }
+      })
+      var clickedIdx = Number(b.getAttribute("data-idx"))
+      var a = atts[clickedIdx]
+      if (!a || !a.url) return
+      var foundIdx = prevItems.findIndex(function (it) { return it.url === a.url })
+      if (foundIdx < 0) foundIdx = 0
+      openMediaPreview({ url: a.url, items: prevItems, index: foundIdx, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url, annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null), ticketId: ticketId })
     })
   })
   if (!addBtn || !input) return
@@ -7759,22 +7889,16 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     if (_pageThreeCol) {
       const _mHost = t.urlHost || "", _mPath = t.urlPath || ""
       const _hostHref = _mHost ? (/^https?:\/\//.test(_mHost) ? _mHost : "https://" + _mHost) : ""
-      const _shotMetaHtml = (_hasShot && (_mHost || _mPath || t.createdAt))
-        ? `<div class="t3-shotmeta">${_mPath ? esc(_mPath) : ""}${(_mPath && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}${((_mPath || t.createdAt) && _mHost) ? " · " : ""}${_mHost ? `<a href="${esc(_hostHref)}" target="_blank" rel="noopener">${esc(_mHost)}</a>` : ""}</div>`
-        : ""
       const _descTools = `<div class="t3-desctools">
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles',{size:13})} Enhance with AI</button>
         <!-- t3-attach-btn -->
       </div>`
       // KD-158: existing attachments + "+ Add attachment" — a reusable fragment, same as _recHtml.
       const _attachHtml = buildAttachmentsHtml(t)
-      const _left = `<div class="t3-col t3-left"><div class="t3-colh">Evidence &amp; Media</div>${_hasShot ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
-      // #725c: the redundant "ACTIVITY & COMMENTS" parent heading is gone — the Activity/Comments tab
-      // row (built by buildTimelineSection) is the section header now. The <hr> still separates the
-      // description/recordings block above from the activity/comments section below.
-      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}${_attachHtml}<hr class="t3-hr"><div class="t3-activity-mount"></div></div>`
+      // 2-column layout: Main column (context, desc tools, recordings, attachments, occurrence mount, activity mount) + Properties column
+      const _mid = `<div class="t3-col t3-mid">${_contextHtml}${_descTools}${_recHtml}${_attachHtml}<div class="t3-occ-mount"></div><hr class="t3-hr"><div class="t3-activity-mount"></div></div>`
       const _right = `<div class="t3-col t3-right"><div class="t3-colh">Properties</div>${_bodyHtml}</div>`
-      detailEl.innerHTML = `<div class="t3-cols">${_left}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_mid}<div class="t3-gutter" data-g="2" aria-hidden="true"></div>${_right}</div>`
+      detailEl.innerHTML = `<div class="t3-cols">${_mid}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_right}</div>`
     } else {
       const _attachHtml = buildAttachmentsHtml(t)
       detailEl.innerHTML = _isTwoCol
@@ -9616,19 +9740,18 @@ function _renderSingleTicket(id) {
   _footer.className = "tkt-detail-footer"
   _footer.appendChild(buildOccurrenceTimeline(t.id))
   _footer.appendChild(buildMergeControl(t.id))
-  // #726 cockpit: on the dedicated PAGE the occurrence receipts live in the LEFT (Evidence) column and
-  // the merge control moves into the RIGHT (Properties) column's dashed "consolidate" slot — matching the
-  // approved mockup. The nodes are the SAME wired elements (built above via _footer, which the guard test
-  // asserts), just re-parented. Panel/board keep the grouped bottom footer. Then build the media strip.
-  const _leftCol = detailEl.querySelector(".t3-left")
+  // On the dedicated 2-column page, occurrence timeline mounts directly below the attachments section
+  // in the main column (.t3-occ-mount), and the merge control moves into the right (Properties) column.
+  const _midCol = detailEl.querySelector(".t3-mid")
   const _rightCol = detailEl.querySelector(".t3-right")
-  if (!panel && _leftCol && _rightCol) {
+  const _occMount = detailEl.querySelector(".t3-occ-mount")
+  if (!panel && _midCol && _rightCol) {
     const _occEl = _footer.querySelector(".tkt-occ-wrap")
     const _mrgEl = _footer.querySelector(".tkt-merge-wrap")
-    if (_occEl) _leftCol.appendChild(_occEl)
+    if (_occEl && _occMount) _occMount.appendChild(_occEl)
+    else if (_occEl) _midCol.appendChild(_occEl)
     if (_mrgEl) _rightCol.appendChild(_mrgEl)
     if (_footer.children.length) single.appendChild(_footer)
-    buildEvidenceStrip(t, detailEl)
   } else {
     single.appendChild(_footer)
   }

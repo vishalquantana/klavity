@@ -1412,7 +1412,7 @@ let DASHBOARD_HTML: string | null = null
 // a cheap 304 instead of re-downloading the whole shell every navigation.
 let _dashRendered: { key: string; body: string; etag: string } | null = null
 async function dashboardPage(req?: Request, me?: string | null): Promise<Response> {
-  if (DASHBOARD_HTML === null) {
+  if (DASHBOARD_HTML === null || process.env.NODE_ENV !== "production") {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
     const raw = await Bun.file(PUB + "/dashboard.html").text()
@@ -1426,7 +1426,7 @@ async function dashboardPage(req?: Request, me?: string | null): Promise<Respons
   const hasFounding = DASHBOARD_HTML.includes("__FOUNDING_STATE__")
   const spots = hasFounding ? await getFoundingSpots(countFoundingAccounts) : null
   const key = replay + "|" + (spots ? `${spots.known}:${spots.taken}:${spots.remaining}:${spots.soldOut}` : "-")
-  if (!_dashRendered || _dashRendered.key !== key) {
+  if (!_dashRendered || _dashRendered.key !== key || process.env.NODE_ENV !== "production") {
     let body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", replay)
     // KLAVITYKLA-366: the in-app Founding ribbon must respect the same sold-out state as the website
     // — the app may never keep promoting an offer we have publicly closed.

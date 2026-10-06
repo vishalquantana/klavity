@@ -18,7 +18,6 @@ test("buildTktDetail checks both screenshotId and attachments for screenshot dis
   expect(fn).toContain("const _firstImgAtt = !t.screenshotId && Array.isArray(t.attachments)")
   expect(fn).toContain("const _hasShot = !!t.screenshotId || !!_firstImgAtt")
   expect(fn).toContain('data-shot-url="${esc(_firstImgAtt.url)}"')
-  expect(fn).toContain('${_hasShot ? _shotHtml : \'<div class="t3-noshot">No screenshot on this report.</div>\'}')
 })
 
 test("buildEvidenceStrip includes attached image evidence alongside or in place of primary screenshot", () => {
