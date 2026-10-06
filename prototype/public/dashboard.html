@@ -1111,6 +1111,10 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
    and scrolls inside itself when height-capped, so no row (e.g. "Invite by email…") is ever cut off by the panel edge. */
 .tkt-assignee-pop{overflow-y:auto;overscroll-behavior:contain}
 .tkt-assignee-pop.up{top:auto;bottom:calc(100% + 4px)}
+/* Responsive: never wider than the screen; 16px search text on phones (stops iOS zooming the page on focus); roomier touch rows */
+.tkt-assignee-pop{max-width:min(300px,calc(100vw - 24px))}
+@media(max-width:640px){.tkt-assignee-pop .tap-search{font-size:16px}}
+@media(pointer:coarse){.tkt-assignee-pop .tap-opt,.tkt-assignee-pop .tap-invite{min-height:40px}}
 .tap-search-row{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:2px 2px 6px;background:var(--ink)}
 .tap-search-row .icon,.tap-search-row svg{color:var(--paper-faint);flex:none}
 .tap-search{border:0;outline:0;background:transparent;font-family:var(--body);font-size:13px;color:var(--paper);width:100%;min-width:0}
@@ -1327,7 +1331,8 @@ body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
 .tkt-panel-btn{display:inline-flex;align-items:center;gap:6px;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
 .tkt-panel-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
 .tkt-panel-btn:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
-@media(max-width:640px){#ticketSingle.tkt-panel{width:100vw;padding:0 16px 32px}}
+/* % (not vw): vw includes a classic scrollbar, which left the panel ~15px wider than the visible area on narrow desktop windows */
+@media(max-width:640px){#ticketSingle.tkt-panel{width:100%;min-width:0;max-width:100%;padding:0 16px 32px}}
 /* KLA-563: dedicated ticket page (/:project/tickets/:key → hash #tickets/<id>). The board is never
    mounted behind it; the page renders directly from a single-ticket fetch. Centered card, max 1180px. */
 body.tkt-page-open #ticketsKanban,body.tkt-page-open #tktListView,body.tkt-page-open .kb-toolbar,
@@ -2304,10 +2309,16 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 /* centered project button + dropdown */
 .bar .proj-combo-btn{background:var(--ink-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-weight:600;font-size:13px;max-width:280px;box-shadow:0 1px 0 rgba(25,20,15,.03)}
 .bar .proj-combo-pop{left:50%;transform:translateX(-50%);top:calc(100% + 8px);width:300px;padding:8px;border-radius:14px}
-.bar .proj-combo-pop .tap-search-row{margin:2px 2px 8px}
+/* search: icon OUTSIDE a smaller, white (surface-colour) field */
+.bar .proj-combo-pop .tap-search-row{border:0;border-radius:0;background:transparent;padding:0;gap:10px;margin:2px 2px 8px}
+.bar .proj-combo-pop .proj-combo-search-ic{color:var(--paper-faint);flex:none}
+.bar .proj-combo-pop .tap-search{height:32px;box-sizing:border-box;padding:0 10px;background:var(--ink-2);border:1px solid var(--line);border-radius:9px;font-size:13px}
+/* ONE blue border on focus. The global `input:focus-visible{outline:2px solid indigo}` rule would otherwise draw a second (outer)
+   blue outline on top of this border, so it is switched off here (this selector out-ranks it) and no extra ring is added. */
+.bar .proj-combo-pop .tap-search:focus,.bar .proj-combo-pop .tap-search:focus-visible{outline:0;border-color:var(--indigo);box-shadow:none}
 .bar .proj-combo-opt{padding:10px 11px;border-radius:10px;font-size:14px}
-.bar .proj-combo-opt.current{background:var(--ink-3)}
-.bar .proj-combo-opt:hover,.bar .proj-combo-opt.active{background:var(--ink-3)}
+/* selected / highlighted project row: a lighter shade than before (--ink-3 → 45% toward the surface colour) */
+.bar .proj-combo-opt.current,.bar .proj-combo-opt:hover,.bar .proj-combo-opt.active{background:color-mix(in srgb,var(--ink-3) 45%,var(--ink-2))}
 .proj-combo-div{height:1px;background:var(--line);margin:8px -8px 6px}
 .proj-combo-div.hide,.proj-new-row.hide{display:none}
 .proj-new-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px 11px;border:0;border-radius:10px;background:transparent;color:var(--paper);font-family:var(--body);font-size:14px;font-weight:500;text-align:left;cursor:pointer}
@@ -7437,15 +7448,29 @@ function popoverPlacement(ctrlTop, ctrlBottom, boundsTop, boundsBottom, need, ga
   const room = up ? above : below
   return { up: up, maxHeight: need > room ? Math.max(minH, Math.floor(room)) : null }
 }
-// The vertical extent that is actually visible for `el`: the viewport intersected with every scrolling/clipping ancestor
-// (e.g. the sliding ticket panel), so a popover is never placed where an ancestor would cut it off.
+// Horizontal nudge (px, + = move right) that keeps a popover spanning [popLeft, popRight] inside [boundsLeft, boundsRight] with
+// `margin` to spare. If it is wider than the bounds it is pinned to the left edge (the caller also narrows it). Pure.
+function popoverHorizontalShift(popLeft, popRight, boundsLeft, boundsRight, margin) {
+  margin = margin == null ? 8 : margin
+  const w = popRight - popLeft, minL = boundsLeft + margin, maxR = boundsRight - margin
+  if (w >= maxR - minL) return minL - popLeft
+  if (popLeft < minL) return minL - popLeft
+  if (popRight > maxR) return maxR - popRight
+  return 0
+}
+// The extent that is actually visible for `el`: the viewport intersected with every scrolling/clipping ancestor (e.g. the sliding
+// ticket panel), so a popover is never placed where an ancestor would cut it off. The ticket panel's sticky header is excluded
+// from the top (a popover opening upward used to be painted over the Close / Full page buttons).
 function visibleBoundsFor(el) {
-  let top = 0, bottom = window.innerHeight
+  let top = 0, bottom = window.innerHeight, left = 0, right = window.innerWidth
   for (let a = el && el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
     const cs = getComputedStyle(a)
     if (/(auto|scroll|hidden|clip)/.test(cs.overflowY)) { const r = a.getBoundingClientRect(); top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom) }
+    if (/(auto|scroll|hidden|clip)/.test(cs.overflowX)) { const r = a.getBoundingClientRect(); left = Math.max(left, r.left); right = Math.min(right, r.right) }
+    const head = a.querySelector && a.querySelector(":scope > .tkt-panel-head")
+    if (head) top = Math.max(top, head.getBoundingClientRect().bottom)
   }
-  return { top: top, bottom: bottom }
+  return { top: top, bottom: bottom, left: left, right: right }
 }
 // KD-100: what kind of preview an attachment gets — "image" | "video" | "" (everything else stays a plain download link).
 // Prefers the stored content type, falls back to the file extension. Pure.
@@ -7954,16 +7979,21 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     // Open below the control, or flip above it / cap the height when the ticket panel or viewport edge would cut it off.
     function _positionAssigneePop() {
       if (!_aPop || !_assigneeCtrlBtn || _aPop.classList.contains("hide")) return
-      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""
+      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
       const b = visibleBoundsFor(_assigneeCtrlBtn), cr = _assigneeCtrlBtn.getBoundingClientRect()
       const pl = popoverPlacement(cr.top, cr.bottom, b.top, b.bottom, _aPop.scrollHeight)
       _aPop.classList.toggle("up", pl.up)
       if (pl.maxHeight != null) _aPop.style.maxHeight = pl.maxHeight + "px"
+      // horizontal: narrower than the visible width, and nudged so neither side leaves the screen / panel
+      const avail = b.right - b.left - 16
+      if (_aPop.getBoundingClientRect().width > avail) _aPop.style.width = Math.max(180, Math.floor(avail)) + "px"
+      const pr = _aPop.getBoundingClientRect(), dx = popoverHorizontalShift(pr.left, pr.right, b.left, b.right, 8)
+      if (dx) _aPop.style.left = (parseFloat(getComputedStyle(_aPop).left) || -8) + dx + "px"
     }
     function _closeAssigneePop() {
       if (!_aPop) return
       _aPop.classList.add("hide")
-      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""
+      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
       if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
       if (_aInviteRow) _aInviteRow.classList.add("hide")
       if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }

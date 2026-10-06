@@ -212,3 +212,39 @@ test("Inbox colours: #fff background and a #AEA8A2 icon, fixed (light AND dark m
   expect(HTML).toContain(".bar .right .nav-icon{width:32px;height:32px}")
   expect(HTML).toContain("background:color-mix(in srgb,var(--ink-3) 40%,var(--ink-2))}")   // the lighter segmented-toggle surface
 })
+
+test("project dropdown search: icon sits OUTSIDE a smaller white field; the selected row uses a lighter shade", () => {
+  // scoped to the nav's project popover (the shared .tap-search-row is also used by the Assignee popover and is untouched)
+  expect(HTML).toContain(".bar .proj-combo-pop .tap-search-row{border:0;border-radius:0;background:transparent;padding:0;gap:10px;margin:2px 2px 8px}")
+  expect(HTML).toContain(".bar .proj-combo-pop .tap-search{height:32px;box-sizing:border-box;padding:0 10px;background:var(--ink-2);border:1px solid var(--line);border-radius:9px;font-size:13px}")
+  // focus: exactly ONE blue border — the 1px indigo border; the global input:focus-visible outline and any extra ring are off
+  expect(HTML).toContain(".bar .proj-combo-pop .tap-search:focus,.bar .proj-combo-pop .tap-search:focus-visible{outline:0;border-color:var(--indigo);box-shadow:none}")
+  expect(HTML).not.toContain(".bar .proj-combo-pop .tap-search:focus{border-color:var(--indigo);box-shadow:0 0 0 3px")
+  expect(HTML).toContain(".bar .proj-combo-opt.current,.bar .proj-combo-opt:hover,.bar .proj-combo-opt.active{background:color-mix(in srgb,var(--ink-3) 45%,var(--ink-2))}")
+  // the old darker shade must not be what the selected / highlighted row uses any more in the nav popover
+  expect(HTML).not.toContain(".bar .proj-combo-opt.current{background:var(--ink-3)}")
+  // markup order: the icon span comes BEFORE the input inside the row (so it can sit outside the field)
+  const row = BAR.slice(BAR.indexOf('<div class="tap-search-row">'), BAR.indexOf('id="projComboList"'))
+  expect(row.indexOf("proj-combo-search-ic")).toBeGreaterThan(-1)
+  expect(row.indexOf("proj-combo-search-ic")).toBeLessThan(row.indexOf('id="projComboSearch"'))
+  // the Assignee popover's search row keeps its original boxed look
+  expect(HTML).toContain(".tap-search-row{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:2px 2px 6px;background:var(--ink)}")
+})
+
+test("project search focus: the single-border rule out-ranks the global input:focus-visible outline (no double blue border)", () => {
+  // the global rule that used to add a SECOND (outer) blue outline whenever a text input is focused
+  expect(HTML).toContain("a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid #8b8bf5;outline-offset:2px;border-radius:5px}")
+  // CSS specificity as [ids, classes/attrs/pseudo-classes, elements]
+  const spec = (sel: string) => {
+    const s = sel.replace(/\([^)]*\)/g, "")
+    return [(s.match(/#[\w-]+/g) || []).length, (s.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) || []).length, (s.match(/(^|[\s>+~])[a-z][\w-]*/gi) || []).length]
+  }
+  const cmp = (a: number[], b: number[]) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0 }
+  const mine = spec(".bar .proj-combo-pop .tap-search:focus-visible"), global = spec("input:focus-visible")
+  expect(mine).toEqual([0, 4, 0]); expect(global).toEqual([0, 1, 1])
+  expect(cmp(mine, global)).toBeGreaterThan(0)
+  // and it is the LAST word on the matter for this input: nothing re-adds a shadow/outline to it afterwards
+  const start = HTML.indexOf(".bar .proj-combo-pop .tap-search:focus,.bar .proj-combo-pop .tap-search:focus-visible{")
+  const after = HTML.slice(HTML.indexOf("}", start) + 1)                 // everything AFTER our rule
+  expect(after).not.toMatch(/\.proj-combo-pop \.tap-search[^{]*\{[^}]*(box-shadow:\s*0 0 0|outline:\s*[1-9])/)
+})

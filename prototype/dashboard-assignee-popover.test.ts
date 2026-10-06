@@ -53,23 +53,48 @@ test("ties go below (up only when there is MORE room above)", () => {
 })
 
 // ── visibleBoundsFor: viewport ∩ every scrolling/clipping ancestor ────────────────────────────────────────────────
-function boundsWith(ancestors: { overflowY: string; top: number; bottom: number }[], vh = 695) {
-  const chain: any[] = ancestors.map(a => ({ _a: a, parentElement: null, getBoundingClientRect: () => ({ top: a.top, bottom: a.bottom }) }))
+type Anc = { overflowY: string; top: number; bottom: number; overflowX?: string; left?: number; right?: number; head?: { bottom: number } }
+function boundsWith(ancestors: Anc[], vh = 695, vw = 1000) {
+  const chain: any[] = ancestors.map(a => ({ _a: a, parentElement: null,
+    getBoundingClientRect: () => ({ top: a.top, bottom: a.bottom, left: a.left ?? 0, right: a.right ?? vw }),
+    querySelector: (sel: string) => (sel === ":scope > .tkt-panel-head" && a.head ? { getBoundingClientRect: () => ({ bottom: a.head!.bottom }) } : null) }))
   const el: any = { parentElement: chain[0] || null }
   chain.forEach((c, i) => { c.parentElement = chain[i + 1] || null })
   const root = {}
   const fn = new Function("window", "document", "getComputedStyle", extractFn(HTML, "function visibleBoundsFor(") + "\nreturn visibleBoundsFor")(
-    { innerHeight: vh }, { documentElement: root }, (a: any) => ({ overflowY: a._a.overflowY })) as (e: any) => { top: number; bottom: number }
+    { innerHeight: vh, innerWidth: vw }, { documentElement: root }, (a: any) => ({ overflowY: a._a.overflowY, overflowX: a._a.overflowX || "visible" })) as (e: any) => { top: number; bottom: number; left: number; right: number }
   return fn(el)
 }
 test("visibleBoundsFor: with no clipping ancestors it is the viewport", () => {
-  expect(boundsWith([])).toEqual({ top: 0, bottom: 695 })
-  expect(boundsWith([{ overflowY: "visible", top: 50, bottom: 400 }])).toEqual({ top: 0, bottom: 695 })   // visible overflow doesn't clip
+  expect(boundsWith([])).toEqual({ top: 0, bottom: 695, left: 0, right: 1000 })
+  expect(boundsWith([{ overflowY: "visible", top: 50, bottom: 400 }])).toEqual({ top: 0, bottom: 695, left: 0, right: 1000 })   // visible overflow doesn't clip
 })
 test("visibleBoundsFor: intersects the viewport with every auto/scroll/hidden/clip ancestor", () => {
-  expect(boundsWith([{ overflowY: "auto", top: 0, bottom: 695 }])).toEqual({ top: 0, bottom: 695 })       // the ticket panel
-  expect(boundsWith([{ overflowY: "auto", top: 80, bottom: 600 }, { overflowY: "hidden", top: 40, bottom: 650 }])).toEqual({ top: 80, bottom: 600 })
-  expect(boundsWith([{ overflowY: "hidden", top: -20, bottom: 900 }])).toEqual({ top: 0, bottom: 695 })   // taller than the viewport → viewport wins
+  expect(boundsWith([{ overflowY: "auto", top: 0, bottom: 695 }])).toEqual({ top: 0, bottom: 695, left: 0, right: 1000 })       // the ticket panel
+  expect(boundsWith([{ overflowY: "auto", top: 80, bottom: 600 }, { overflowY: "hidden", top: 40, bottom: 650 }])).toEqual({ top: 80, bottom: 600, left: 0, right: 1000 })
+  expect(boundsWith([{ overflowY: "hidden", top: -20, bottom: 900 }])).toEqual({ top: 0, bottom: 695, left: 0, right: 1000 })   // taller than the viewport → viewport wins
+})
+test("visibleBoundsFor: horizontal clipping (overflow-x) narrows left/right — e.g. a side panel narrower than the screen", () => {
+  expect(boundsWith([{ overflowY: "auto", overflowX: "hidden", top: 0, bottom: 695, left: 313, right: 753 }])).toEqual({ top: 0, bottom: 695, left: 313, right: 753 })
+  expect(boundsWith([{ overflowY: "visible", overflowX: "hidden", top: 0, bottom: 100, left: -20, right: 2000 }])).toEqual({ top: 0, bottom: 695, left: 0, right: 1000 })   // wider than the viewport → viewport wins
+})
+test("visibleBoundsFor: the panel's sticky header is excluded from the top, so a popover opening upward never paints over Close / Full page", () => {
+  expect(boundsWith([{ overflowY: "auto", top: 0, bottom: 695, head: { bottom: 58 } }])).toEqual({ top: 58, bottom: 695, left: 0, right: 1000 })
+  expect(boundsWith([{ overflowY: "auto", top: 100, bottom: 695, head: { bottom: 58 } }]).top).toBe(100)    // the clip edge is already below the header
+})
+
+// ── horizontal placement (responsive) ─────────────────────────────────────────────────────────────────────────────────
+const shift = new Function(extractFn(HTML, "function popoverHorizontalShift(") + "\nreturn popoverHorizontalShift")() as () => never as unknown as
+  (l: number, r: number, bl: number, br: number, m?: number) => number
+test("popoverHorizontalShift: no nudge when it fits; nudges left / right to keep an 8px margin", () => {
+  expect(shift(100, 364, 0, 1000)).toBe(0)
+  expect(shift(800, 1064, 0, 1000)).toBe(-72)       // 1064 → 992 (= 1000 - 8)
+  expect(shift(-42, 220, 0, 320)).toBe(50)          // 320px phone: control half off-screen left → pull right to x=8
+  expect(shift(-42, 220, 0, 320, 0)).toBe(42)       // custom margin
+})
+test("popoverHorizontalShift: wider than the visible area → pinned to the left margin (the caller narrows it)", () => {
+  expect(shift(60, 400, 0, 300)).toBe(-52)          // 340px wide in 284px of room → left edge at 8
+  expect(shift(300, 600, 0, 300)).toBe(-292)
 })
 
 // ── wiring pins (needs the real page) ─────────────────────────────────────────────────────────────────────────────
@@ -98,4 +123,20 @@ test("_positionAssigneePop measures the natural height, uses the visible bounds,
   expect(fn).toContain('_aPop.classList.remove("up"); _aPop.style.maxHeight = ""')   // measure unconstrained
   expect(fn).toContain("visibleBoundsFor(_assigneeCtrlBtn)")
   expect(fn).toContain("popoverPlacement(cr.top, cr.bottom, b.top, b.bottom, _aPop.scrollHeight)")
+})
+
+test("responsive CSS: the ticket panel can no longer be wider than the screen; popover width/size/touch rules", () => {
+  // min-width:440px used to beat max-width/width on phones → the panel (and its dropdowns) were pushed off the left edge
+  expect(HTML).toContain("@media(max-width:640px){#ticketSingle.tkt-panel{width:100%;min-width:0;max-width:100%;padding:0 16px 32px}}")
+  expect(HTML).toContain(".tkt-assignee-pop{max-width:min(300px,calc(100vw - 24px))}")
+  expect(HTML).toContain("@media(max-width:640px){.tkt-assignee-pop .tap-search{font-size:16px}}")        // no iOS zoom-on-focus
+  expect(HTML).toContain("@media(pointer:coarse){.tkt-assignee-pop .tap-opt,.tkt-assignee-pop .tap-invite{min-height:40px}}")
+})
+
+test("_positionAssigneePop also places horizontally (narrow + nudge) and resets left/width on close", () => {
+  const fn = extractFn(HTML, "function _positionAssigneePop(")
+  expect(fn).toContain('_aPop.style.left = ""; _aPop.style.width = ""')                 // measure from the CSS default each time
+  expect(fn).toContain("popoverHorizontalShift(pr.left, pr.right, b.left, b.right, 8)")
+  expect(fn).toContain("_aPop.style.width = Math.max(180, Math.floor(avail)) + \"px\"")   // never wider than the visible area
+  expect(extractFn(HTML, "function _closeAssigneePop(")).toContain('_aPop.style.left = ""; _aPop.style.width = ""')
 })
