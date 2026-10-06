@@ -510,6 +510,17 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .nav-snap{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;border:1px solid rgba(217,131,36,.28);background:rgba(217,131,36,.08);color:var(--amber);font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
 .nav-snap:hover{background:rgba(217,131,36,.14);border-color:rgba(217,131,36,.4);transform:translateY(-1.5px) scale(1.02)}
 .nav-snap:active{transform:scale(0.97)}
+/* Global "+ Create" dropdown (top nav, beside the new-project button): New Ticket / New Sim */
+.create-wrap{position:relative;display:inline-flex;margin-left:8px}
+.create-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--indigo);background:var(--indigo);color:#fff;font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.create-btn:hover{filter:brightness(1.08)}
+.create-btn[aria-expanded="true"] .create-caret{transform:rotate(180deg)}
+.create-caret{transition:transform .15s}
+.create-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:180px;padding:5px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:2px}
+.create-menu.hide{display:none}
+.create-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--paper);font-family:var(--body);font-size:13px;font-weight:500;text-align:left;cursor:pointer}
+.create-item:hover,.create-item:focus-visible{background:rgba(99,102,241,.12);outline:none}
+.create-item.hide{display:none}
 @media(max-width:500px){.nav-snap .nav-snap-lbl{display:none}.nav-snap{padding:7px 10px}}
 .switcher{display:flex;align-items:center;gap:8px;position:relative}
 .switcher .sw-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
@@ -1096,6 +1107,14 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* #716: Linear/Plane-style assignee picker popover */
 .tkt-assignee-pop{position:absolute;top:calc(100% + 4px);left:-8px;z-index:40;width:264px;max-width:min(300px,82vw);background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:var(--mi-shadow-card);padding:6px}
 .tkt-assignee-pop.hide{display:none}
+/* Viewport-aware placement (positioned by _positionAssigneePop): flips above the control when there is more room there,
+   and scrolls inside itself when height-capped, so no row (e.g. "Invite by email…") is ever cut off by the panel edge. */
+.tkt-assignee-pop{overflow-y:auto;overscroll-behavior:contain}
+.tkt-assignee-pop.up{top:auto;bottom:calc(100% + 4px)}
+/* Responsive: never wider than the screen; 16px search text on phones (stops iOS zooming the page on focus); roomier touch rows */
+.tkt-assignee-pop{max-width:min(300px,calc(100vw - 24px))}
+@media(max-width:640px){.tkt-assignee-pop .tap-search{font-size:16px}}
+@media(pointer:coarse){.tkt-assignee-pop .tap-opt,.tkt-assignee-pop .tap-invite{min-height:40px}}
 .tap-search-row{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:2px 2px 6px;background:var(--ink)}
 .tap-search-row .icon,.tap-search-row svg{color:var(--paper-faint);flex:none}
 .tap-search{border:0;outline:0;background:transparent;font-family:var(--body);font-size:13px;color:var(--paper);width:100%;min-width:0}
@@ -1312,7 +1331,8 @@ body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
 .tkt-panel-btn{display:inline-flex;align-items:center;gap:6px;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
 .tkt-panel-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
 .tkt-panel-btn:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
-@media(max-width:640px){#ticketSingle.tkt-panel{width:100vw;padding:0 16px 32px}}
+/* % (not vw): vw includes a classic scrollbar, which left the panel ~15px wider than the visible area on narrow desktop windows */
+@media(max-width:640px){#ticketSingle.tkt-panel{width:100%;min-width:0;max-width:100%;padding:0 16px 32px}}
 /* KLA-563: dedicated ticket page (/:project/tickets/:key → hash #tickets/<id>). The board is never
    mounted behind it; the page renders directly from a single-ticket fetch. Centered card, max 1180px. */
 body.tkt-page-open #ticketsKanban,body.tkt-page-open #tktListView,body.tkt-page-open .kb-toolbar,
@@ -2267,6 +2287,69 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .driver-popover.klav-tour .driver-popover-arrow-side-right{border-right-color:var(--ink-2)}
 .driver-popover.klav-tour .driver-popover-arrow-side-top{border-top-color:var(--ink-2)}
 .driver-popover.klav-tour .driver-popover-arrow-side-bottom{border-bottom-color:var(--ink-2)}
+/* ===== Top nav redesign: left actions · centered project · right tools ===== */
+.bar-in{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px}
+.bar-left{display:flex;align-items:center;gap:8px;min-width:0}
+.bar-center{display:flex;justify-content:center;min-width:0}
+.bar .right{margin-left:0;justify-self:end;gap:10px}
+.bar .proj-pick{flex:0 1 auto}
+/* left actions */
+.bar .nav-snap{background:var(--paper);color:var(--ink-2);border:1px solid var(--paper);border-radius:9px;padding:7px 13px;font-size:13px;font-weight:600;gap:7px}
+.bar .nav-snap:hover{background:var(--paper);border-color:var(--paper);filter:brightness(1.25);transform:none}
+.bar .nav-snap:active{transform:scale(.98)}
+.bar .nav-studio{background:var(--indigo);color:#fff;border:1px solid var(--indigo);border-radius:9px;padding:7px 13px;font-size:13px;font-weight:600}
+.bar .nav-studio:hover{background:var(--indigo);border-color:var(--indigo);filter:brightness(1.08)}
+.create-btn{background:var(--ink-2);color:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-weight:600;box-shadow:0 1px 0 rgba(25,20,15,.03)}
+.create-btn:hover{filter:none;border-color:var(--paper-faint)}
+.create-btn[aria-expanded="true"]{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+.create-wrap{margin-left:0}
+.create-menu{left:0;min-width:200px;padding:6px;border-radius:14px;gap:2px}
+.create-item{gap:12px;padding:10px 12px;border-radius:10px;font-size:14px}
+.create-item .ci-ic{display:inline-flex;color:var(--paper-faint);flex:none}
+/* centered project button + dropdown */
+.bar .proj-combo-btn{background:var(--ink-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-weight:600;font-size:13px;max-width:280px;box-shadow:0 1px 0 rgba(25,20,15,.03)}
+.bar .proj-combo-pop{left:50%;transform:translateX(-50%);top:calc(100% + 8px);width:300px;padding:8px;border-radius:14px}
+/* search: icon OUTSIDE a smaller, white (surface-colour) field */
+.bar .proj-combo-pop .tap-search-row{border:0;border-radius:0;background:transparent;padding:0;gap:10px;margin:2px 2px 8px}
+.bar .proj-combo-pop .proj-combo-search-ic{color:var(--paper-faint);flex:none}
+.bar .proj-combo-pop .tap-search{height:32px;box-sizing:border-box;padding:0 10px;background:var(--ink-2);border:1px solid var(--line);border-radius:9px;font-size:13px}
+/* ONE blue border on focus. The global `input:focus-visible{outline:2px solid indigo}` rule would otherwise draw a second (outer)
+   blue outline on top of this border, so it is switched off here (this selector out-ranks it) and no extra ring is added. */
+.bar .proj-combo-pop .tap-search:focus,.bar .proj-combo-pop .tap-search:focus-visible{outline:0;border-color:var(--indigo);box-shadow:none}
+.bar .proj-combo-opt{padding:10px 11px;border-radius:10px;font-size:14px}
+/* selected / highlighted project row: a lighter shade than before (--ink-3 → 45% toward the surface colour) */
+.bar .proj-combo-opt.current,.bar .proj-combo-opt:hover,.bar .proj-combo-opt.active{background:color-mix(in srgb,var(--ink-3) 45%,var(--ink-2))}
+.proj-combo-div{height:1px;background:var(--line);margin:8px -8px 6px}
+.proj-combo-div.hide,.proj-new-row.hide{display:none}
+.proj-new-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px 11px;border:0;border-radius:10px;background:transparent;color:var(--paper);font-family:var(--body);font-size:14px;font-weight:500;text-align:left;cursor:pointer}
+.proj-new-row:hover,.proj-new-row:focus-visible{background:var(--ink-3);outline:none}
+.proj-new-row .pnr-ic{display:inline-flex;color:var(--paper-faint)}
+.bar .proj-new-btn{display:none}
+/* right tools: theme segmented · inbox · tour · avatar */
+.theme-seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--ink-3) 40%,var(--ink-2))}
+.theme-seg button{width:26px;height:24px;border:0;border-radius:7px;background:transparent;color:var(--paper-faint);display:grid;place-items:center;cursor:pointer;padding:0}
+.theme-seg button[aria-pressed="true"]{background:var(--ink-2);color:var(--paper);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+/* Inbox: compact rounded square, WHITE (#fff) background with a #AEA8A2 tray icon — same scale as the avatar. Fixed colours (not theme
+   variables), in light and dark mode, with no border. */
+.bar .nav-inbox{width:30px;height:30px;padding:0;justify-content:center;gap:0;border-radius:8px;background:#fff;color:#AEA8A2;border:0;box-shadow:none}
+.bar .nav-inbox:hover{background:#fff;color:#AEA8A2;transform:none;box-shadow:none}
+.bar .nav-inbox svg{width:14px;height:14px;stroke-width:1.75}
+.bar .nav-inbox .nav-inbox-lbl{display:none}
+.bar .right .nav-icon{width:32px;height:32px}
+.avatar-wrap{position:relative;display:inline-flex}
+.avatar-btn{width:30px;height:30px;border-radius:50%;border:0;background:var(--indigo);color:#fff;font-family:var(--body);font-size:13px;font-weight:700;cursor:pointer;padding:0;display:grid;place-items:center}
+.avatar-btn:hover{filter:brightness(1.08)}
+.avatar-btn[aria-expanded="true"]{box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 22%,transparent)}
+/* dark theme lightens --indigo, so white text on it drops to ~3:1 → use the dark text colour (same as the tour's Next button) */
+[data-theme="dark"] .bar .nav-studio,[data-theme="dark"] .avatar-btn{color:#0c0a08}
+.avatar-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:40;min-width:220px;padding:6px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:2px}
+.avatar-menu.hide{display:none}
+.avatar-who{padding:8px 10px 9px;font-size:12.5px;color:var(--paper-dim);border-bottom:1px solid var(--line);margin-bottom:4px;word-break:break-all}
+.avatar-item{display:block;width:100%;padding:9px 10px;border:0;border-radius:9px;background:transparent;color:var(--paper);font-family:var(--body);font-size:13.5px;font-weight:500;text-align:left;cursor:pointer}
+.avatar-item:hover,.avatar-item:focus-visible{background:var(--ink-3);outline:none}
+@media(max-width:900px){.bar-in{display:flex;gap:8px}.bar-left{flex:1 1 auto}.bar-center{flex:0 1 auto}.bar .right{gap:6px}}
+@media(max-width:700px){.create-btn .create-lbl{display:none}.bar .proj-combo-btn{max-width:160px}.theme-seg button{width:24px}}
+@media(max-width:540px){.bar .proj-combo-pop{left:auto;right:-40px;transform:none;width:min(300px,92vw)}}
 </style>
 </head>
 <body data-view="overview">
@@ -2274,46 +2357,59 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
   <div class="brand bar-brand"><span class="spark"><svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="48" height="48" rx="11" fill="#1a1023"/><g fill="white"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g><g stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.35"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg></span><span class="brand-word">Klavity</span></div>
   <span class="ws hide" id="wsName"></span>
-  <!-- Snap shortcut — report widget install, always visible so new users see it immediately -->
-  <button type="button" class="nav-snap mi" id="snapNavBtn" aria-label="Install the report widget on your site (Snap)" title="Add the Klavity report widget to your site" onclick="if(typeof setView==='function')setView('snap')"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="nav-snap-lbl">Report widget</span></button>
-  <!-- Studio shortcut — primary action always visible in the navbar regardless of active tab -->
+  <div class="bar-left">
+    <!-- "Snap Reports": jumps to the sidebar's Reports view (page bugs captured by Snap) -->
+    <button type="button" class="nav-snap mi" id="snapNavBtn" aria-label="Snap Reports — open Reports" title="Snap Reports" onclick="if(typeof setView==='function')setView('pagebugs')"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="nav-snap-lbl">Snap Reports</span></button>
   <a class="nav-studio mi" href="/app" id="studioNavBtn" aria-label="Sims Studio (edit your Sims — not for creating AutoSims)" title="Sims Studio — edit your Sims"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.524.888l-1.267 5.54a.5.5 0 0 0 .595.595l5.54-1.267a2 2 0 0 0 .888-.524z" /><path d="m15.5 5.5 3 3" /></svg><span class="nav-studio-lbl">Sims Studio</span></a>
-  <!-- KLAVITYKLA-201: Inbox link — cross-project morning screen -->
-  <a class="nav-inbox mi" href="/inbox" id="inboxNavBtn" aria-label="Cross-project inbox — morning screen" title="Cross-project inbox"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span class="nav-inbox-lbl">Inbox</span></a>
-  <!-- Project picker in the navbar itself (KLAVITYKLA-14/25). #projSwitcher and #newProj
-       are a swap-pair; JS toggles by ID. -->
-  <!-- KLAVITYKLA-201: The "__new__" magic option has been removed from the <select> to prevent
-       accidental project creation via keyboard arrow / scroll. A dedicated + button (#projNewBtn)
-       is shown for admins instead — explicit click required. -->
-  <div class="proj-pick" id="projPick">
-    <div class="switcher" id="projSwitcher">
-      <span class="sw-lbl">Project</span>
-      <!-- KLA-743: smart command-palette project switcher. The native <select> was unusable
-           past ~20 projects, so the visible control is now a button that opens a searchable
-           popover combobox (type-to-filter + arrow/enter to switch). Keyboard + mouse both work. -->
-      <button class="proj-combo-btn" id="projComboBtn" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="projComboList" aria-label="Active project — search and switch">
-        <span class="proj-combo-name" id="projComboName">—</span>
-        <svg class="proj-combo-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
-      <!-- Admin-only "+" button: explicit click, no accidental keyboard trigger -->
-      <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
-      <!-- Popover: autofocused search input + filtered, keyboard-navigable results list -->
-      <div class="proj-combo-pop hide" id="projComboPop">
-        <div class="tap-search-row">
-          <span class="proj-combo-search-ic" data-ki="search" aria-hidden="true"></span>
-          <input class="tap-search" id="projComboSearch" type="text" placeholder="Search projects…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="projComboList" aria-expanded="true" aria-autocomplete="list" aria-label="Search projects">
-        </div>
-        <div class="proj-combo-list" id="projComboList" role="listbox" aria-label="Projects"></div>
+    <!-- Create New: Ticket (any member) / Sim (project admins — gated in render like #newSimBtn) / AutoSim -->
+    <div class="create-wrap" id="createWrap">
+      <button class="create-btn" id="createBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="createMenu" title="Create a ticket, Sim or AutoSim"><span class="create-lbl">Create New</span> <svg class="create-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+      <div class="create-menu hide" id="createMenu" role="menu" aria-label="Create New">
+        <button class="create-item" id="createItemTicket" type="button" role="menuitem"><span class="ci-ic" data-ki="ticket" aria-hidden="true"></span>Ticket</button>
+        <button class="create-item hide" id="createItemSim" type="button" role="menuitem"><span class="ci-ic" data-ki="users" aria-hidden="true"></span>Sim</button>
+        <button class="create-item" id="createItemAutoSim" type="button" role="menuitem"><span class="ci-ic" data-ki="zap" aria-hidden="true"></span>AutoSim</button>
       </div>
     </div>
-    <!-- KLA-292: new project inline form moved to #npBg modal -->
+  </div>
+  <div class="bar-center">
+    <!-- Selected project, centered. KLA-743: searchable combobox popover (type-to-filter + arrow/enter), with
+         "+ New project" (admins) as its footer row. #projNewBtn stays in the DOM (hidden) so existing wiring keeps working. -->
+    <div class="proj-pick" id="projPick">
+      <div class="switcher" id="projSwitcher">
+        <span class="sw-lbl">Project</span>
+        <button class="proj-combo-btn" id="projComboBtn" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="projComboList" aria-label="Active project — search and switch">
+          <span class="proj-combo-name" id="projComboName">—</span>
+          <svg class="proj-combo-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
+        <div class="proj-combo-pop hide" id="projComboPop">
+          <div class="tap-search-row">
+            <span class="proj-combo-search-ic" data-ki="search" aria-hidden="true"></span>
+            <input class="tap-search" id="projComboSearch" type="text" placeholder="Search projects…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="projComboList" aria-expanded="true" aria-autocomplete="list" aria-label="Search projects">
+          </div>
+          <div class="proj-combo-list" id="projComboList" role="listbox" aria-label="Projects"></div>
+          <div class="proj-combo-div hide" id="projNewDiv"></div>
+          <button class="proj-new-row hide" id="projNewRow" type="button"><span class="pnr-ic" data-ki="plus" aria-hidden="true"></span>New project</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="right">
+    <div class="theme-seg" id="themeToggle" role="group" aria-label="Theme">
+      <button type="button" data-theme-set="light" aria-label="Light mode" title="Light mode"></button>
+      <button type="button" data-theme-set="dark" aria-label="Dark mode" title="Dark mode"></button>
+    </div>
+    <!-- KLAVITYKLA-201: Inbox — cross-project morning screen (icon button beside the theme toggle) -->
+    <a class="nav-inbox mi" href="/inbox" id="inboxNavBtn" aria-label="Cross-project inbox — morning screen" title="Inbox"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></a>
     <!-- Guided tour re-run affordance — small, always available -->
     <button class="nav-icon" id="tourBtn" type="button" aria-label="Take the dashboard tour" title="Take the tour"><span data-ki="footprints"></span></button>
-    <button class="nav-icon" id="themeToggle" type="button" aria-label="Toggle dark mode"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg></button>
-    <span class="who" id="who"></span>
-    <button class="lo" id="logout">Log out</button>
+    <div class="avatar-wrap" id="avatarWrap">
+      <button class="avatar-btn" id="avatarBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="avatarMenu" aria-label="Account menu"><span id="avatarInitial">?</span></button>
+      <div class="avatar-menu hide" id="avatarMenu" role="menu" aria-label="Account">
+        <div class="avatar-who" id="who"></div>
+        <button class="avatar-item" id="logout" type="button" role="menuitem">Log out</button>
+      </div>
+    </div>
   </div>
 </div></div>
 
@@ -3532,7 +3628,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div><!-- /.content -->
 </div>
 
-<script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function paint(){b.innerHTML=dark()?kicon('sun',{size:18}):kicon('moon',{size:18})}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
+<script>(function(){var g=document.getElementById('themeToggle');if(!g)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}var bs=g.querySelectorAll('button[data-theme-set]');for(var i=0;i<bs.length;i++){bs[i].innerHTML=kicon(bs[i].getAttribute('data-theme-set')==='dark'?'moon':'sun',{size:15})}function paint(){for(var i=0;i<bs.length;i++){bs[i].setAttribute('aria-pressed',((bs[i].getAttribute('data-theme-set')==='dark')===dark())?'true':'false')}}function set(n){if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()}paint();g.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('button[data-theme-set]');if(!b)return;set(b.getAttribute('data-theme-set'))})})();</script>
 <script>
 const $ = (id) => document.getElementById(id)
 const COLORS = ["#6366f1","#e8a24a","#10b981","#ec4899","#06b6d4","#8b5cf6"]
@@ -5426,6 +5522,7 @@ function render(fromCache, poll) {
   // Project plan (admin-only) — KLAVITYKLA snap-plan gating admin toggle.
   if (typeof wireProjPlan === "function") wireProjPlan(admin)
   $("who").textContent = state.email
+  { const ai = $("avatarInitial"); if (ai) ai.textContent = String(state.email || "?").trim().charAt(0).toUpperCase() || "?" }
   // KLAVITYKLA-514: paint the header for whichever view is currently showing (Overview → the
   // data-driven greeting; any other view → its own title). Must respect the current view so the
   // liveness poll's render() doesn't reset a non-overview title back to "Welcome back".
@@ -5461,6 +5558,7 @@ function render(fromCache, poll) {
 
   // role-gated controls
   $("newSimBtn").classList.toggle("hide", !admin)
+  { const cs = $("createItemSim"); if (cs) cs.classList.toggle("hide", !admin) }   // "+ Create" → New Sim: admins only
   // Invite is no longer admin-only — any project member can invite a teammate (server caps a
   // non-admin inviter to granting "member", never "admin"; see POST /api/projects/:id/invite).
   $("inviteWrap").classList.remove("hide")
@@ -6517,6 +6615,10 @@ function renderSwitcher() {
     newBtn.classList.toggle("hide", !isAdmin)
     newBtn.onclick = () => openNewProject()
   }
+  // "+ New project" lives in the dropdown's footer now (admins only), reusing the same modal.
+  { const row = $("projNewRow"), div = $("projNewDiv")
+    if (row) { row.classList.toggle("hide", !isAdmin); row.onclick = () => { projSwitchClose(false); openNewProject() } }
+    if (div) div.classList.toggle("hide", !isAdmin) }
   // Re-render the popover list against current data (keeps it fresh when projects change).
   projSwitchWire()
   if (projSwitchIsOpen()) projSwitchFilter($("projComboSearch") ? $("projComboSearch").value : "")
@@ -7336,6 +7438,40 @@ function _attachFmtBytes(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB"
   return (n / (1024 * 1024)).toFixed(1) + " MB"
 }
+// Where should a popover of natural height `need` open relative to its control? Pure.
+// Opens BELOW unless that doesn't fit and there is more room ABOVE; if neither side fits it takes the larger side and caps
+// its height (maxHeight; the popover scrolls inside). Distances are px in viewport coordinates.
+function popoverPlacement(ctrlTop, ctrlBottom, boundsTop, boundsBottom, need, gap, minH) {
+  gap = gap == null ? 8 : gap; minH = minH == null ? 140 : minH
+  const below = boundsBottom - ctrlBottom - gap, above = ctrlTop - boundsTop - gap
+  const up = below < need && above > below
+  const room = up ? above : below
+  return { up: up, maxHeight: need > room ? Math.max(minH, Math.floor(room)) : null }
+}
+// Horizontal nudge (px, + = move right) that keeps a popover spanning [popLeft, popRight] inside [boundsLeft, boundsRight] with
+// `margin` to spare. If it is wider than the bounds it is pinned to the left edge (the caller also narrows it). Pure.
+function popoverHorizontalShift(popLeft, popRight, boundsLeft, boundsRight, margin) {
+  margin = margin == null ? 8 : margin
+  const w = popRight - popLeft, minL = boundsLeft + margin, maxR = boundsRight - margin
+  if (w >= maxR - minL) return minL - popLeft
+  if (popLeft < minL) return minL - popLeft
+  if (popRight > maxR) return maxR - popRight
+  return 0
+}
+// The extent that is actually visible for `el`: the viewport intersected with every scrolling/clipping ancestor (e.g. the sliding
+// ticket panel), so a popover is never placed where an ancestor would cut it off. The ticket panel's sticky header is excluded
+// from the top (a popover opening upward used to be painted over the Close / Full page buttons).
+function visibleBoundsFor(el) {
+  let top = 0, bottom = window.innerHeight, left = 0, right = window.innerWidth
+  for (let a = el && el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+    const cs = getComputedStyle(a)
+    if (/(auto|scroll|hidden|clip)/.test(cs.overflowY)) { const r = a.getBoundingClientRect(); top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom) }
+    if (/(auto|scroll|hidden|clip)/.test(cs.overflowX)) { const r = a.getBoundingClientRect(); left = Math.max(left, r.left); right = Math.min(right, r.right) }
+    const head = a.querySelector && a.querySelector(":scope > .tkt-panel-head")
+    if (head) top = Math.max(top, head.getBoundingClientRect().bottom)
+  }
+  return { top: top, bottom: bottom, left: left, right: right }
+}
 // KD-100: what kind of preview an attachment gets — "image" | "video" | "" (everything else stays a plain download link).
 // Prefers the stored content type, falls back to the file extension. Pure.
 function attachKind(a) {
@@ -7840,12 +7976,29 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         _aList.appendChild(row)
       })
     }
+    // Open below the control, or flip above it / cap the height when the ticket panel or viewport edge would cut it off.
+    function _positionAssigneePop() {
+      if (!_aPop || !_assigneeCtrlBtn || _aPop.classList.contains("hide")) return
+      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
+      const b = visibleBoundsFor(_assigneeCtrlBtn), cr = _assigneeCtrlBtn.getBoundingClientRect()
+      const pl = popoverPlacement(cr.top, cr.bottom, b.top, b.bottom, _aPop.scrollHeight)
+      _aPop.classList.toggle("up", pl.up)
+      if (pl.maxHeight != null) _aPop.style.maxHeight = pl.maxHeight + "px"
+      // horizontal: narrower than the visible width, and nudged so neither side leaves the screen / panel
+      const avail = b.right - b.left - 16
+      if (_aPop.getBoundingClientRect().width > avail) _aPop.style.width = Math.max(180, Math.floor(avail)) + "px"
+      const pr = _aPop.getBoundingClientRect(), dx = popoverHorizontalShift(pr.left, pr.right, b.left, b.right, 8)
+      if (dx) _aPop.style.left = (parseFloat(getComputedStyle(_aPop).left) || -8) + dx + "px"
+    }
     function _closeAssigneePop() {
       if (!_aPop) return
       _aPop.classList.add("hide")
+      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
       if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
       if (_aInviteRow) _aInviteRow.classList.add("hide")
       if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }
+      window.removeEventListener("resize", _positionAssigneePop)
+      document.removeEventListener("scroll", _positionAssigneePop, true)
     }
     function _openAssigneePop() {
       if (!_aPop) return
@@ -7853,7 +8006,11 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.add("open")
       if (_aSearch) _aSearch.value = ""
       _renderAssigneeMembers("")
-      setTimeout(() => { try { if (_aSearch) _aSearch.focus() } catch (e) {} }, 20)
+      _positionAssigneePop()
+      // keep it placed correctly while the panel scrolls / the window resizes
+      window.addEventListener("resize", _positionAssigneePop)
+      document.addEventListener("scroll", _positionAssigneePop, true)
+      setTimeout(() => { try { if (_aSearch) _aSearch.focus({ preventScroll: true }) } catch (e) {} }, 20)
       _aDocHandler = ev => { if (!ev.target.closest(".tkt-assignee-ctrl-wrap")) _closeAssigneePop() }
       setTimeout(() => document.addEventListener("click", _aDocHandler), 0)
     }
@@ -7865,6 +8022,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       if (_aSearch) {
         _aSearch.addEventListener("input", () => {
           _renderAssigneeMembers(_aSearch.value)
+          _positionAssigneePop()
           const q = _aSearch.value.trim()
           const lbl = _aPop.querySelector(".tap-invite-lbl")
           if (lbl) lbl.textContent = (q && q.includes("@")) ? ("Invite “" + q + "”") : "Invite by email…"
@@ -7881,6 +8039,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         _aInviteBtn.addEventListener("click", ev => {
           ev.stopPropagation()
           _aInviteRow.classList.remove("hide")
+          _positionAssigneePop()
           const q = _aSearch ? _aSearch.value.trim() : ""
           if (q && q.includes("@") && _assigneeInpEl) _assigneeInpEl.value = q
           if (_assigneeInpEl) { try { _assigneeInpEl.focus() } catch (e) {} }
@@ -9872,6 +10031,48 @@ function resetNewTicketForNext() {
   clearNewTktFiles()
   ;["newTktTitleErr", "newTktAssigneeErr", "newTktMsg"].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = "" })
   const t = document.getElementById("newTktTitleInp"); if (t) { try { t.focus() } catch (e) {} }
+}
+
+// ── Global "+ Create" dropdown ──────────────────────────────────────────────────────────────────────
+// Click toggles the menu; Esc / outside click / choosing an item closes it; ArrowUp/Down move between the visible items.
+// "New Ticket" opens the New ticket dialog; "New Sim" opens the Add-a-Sim surface (the item is shown to project admins only).
+function wireCreateMenu() {
+  const btn = document.getElementById("createBtn"), menu = document.getElementById("createMenu")
+  if (!btn || !menu || btn._wired) return
+  btn._wired = true
+  const items = () => Array.prototype.filter.call(menu.querySelectorAll(".create-item"), el => !el.classList.contains("hide"))
+  const close = (refocus) => { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); if (refocus) { try { btn.focus() } catch (e) {} } }
+  const open = () => { menu.classList.remove("hide"); btn.setAttribute("aria-expanded", "true"); const f = items()[0]; if (f) { try { f.focus() } catch (e) {} } }
+  const isOpen = () => !menu.classList.contains("hide")
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (isOpen()) close(false); else open() })
+  document.addEventListener("click", (e) => { if (isOpen() && !menu.contains(e.target) && e.target !== btn) close(false) })
+  document.addEventListener("keydown", (e) => {
+    if (!isOpen()) return
+    if (e.key === "Escape") { e.preventDefault(); close(true); return }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const list = items(); if (!list.length) return
+      e.preventDefault()
+      const i = list.indexOf(document.activeElement)
+      const n = e.key === "ArrowDown" ? (i + 1) % list.length : (i <= 0 ? list.length - 1 : i - 1)
+      try { list[n].focus() } catch (err) {}
+    }
+  })
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", () => { close(false); fn() }) }
+  bind("createItemTicket", () => { if (typeof openNewTicketModal === "function") openNewTicketModal() })
+  bind("createItemSim", () => { if (typeof openSimModal === "function") openSimModal() })
+  bind("createItemAutoSim", () => { if (typeof openWizard === "function") openWizard(); else if (typeof setView === "function") setView("autosims") })
+}
+
+// Avatar menu (top-right): the account email + Log out. Esc / outside click close it.
+function wireAvatarMenu() {
+  const btn = document.getElementById("avatarBtn"), menu = document.getElementById("avatarMenu")
+  if (!btn || !menu || btn._wired) return
+  btn._wired = true
+  const isOpen = () => !menu.classList.contains("hide")
+  const close = (refocus) => { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); if (refocus) { try { btn.focus() } catch (e) {} } }
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (isOpen()) close(false); else { menu.classList.remove("hide"); btn.setAttribute("aria-expanded", "true") } })
+  document.addEventListener("click", (e) => { if (isOpen() && !menu.contains(e.target) && e.target !== btn) close(false) })
+  document.addEventListener("keydown", (e) => { if (isOpen() && e.key === "Escape") { e.preventDefault(); close(true) } })
 }
 
 // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
@@ -17785,6 +17986,8 @@ load()
   // toolbar) and #newTktBg (modal markup) are parsed well before this script tag.
   const newTicketBtn = document.getElementById("newTicketBtn")
   if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
+  wireCreateMenu()   // top-nav "Create New" dropdown
+  wireAvatarMenu()   // top-nav account menu (email + Log out)
   const newTktBg = document.getElementById("newTktBg")
   if (newTktBg) {
     newTktBg.addEventListener("click", function(e) { if (e.target === this) closeNewTicketModal() })
@@ -17837,8 +18040,14 @@ load()
     })
   }
 
-  // expose openWizard for inline onclick="openWizard()" in onboarding HTML
-  window.openWizard=openWizard
+  // expose openWizard for inline onclick="openWizard()" in onboarding HTML and the top-nav "Create New → AutoSim".
+  // The wizard's Close / Back / Next / Create / upload handlers are wired inside initTrailsView(), which otherwise only runs
+  // the first time the AutoSims view is opened — opening the wizard from anywhere else (e.g. the Overview) left it with dead
+  // buttons and a full-screen overlay nobody could dismiss. initTrailsView() is idempotent (_inited), so ensure it ran first.
+  window.openWizard=function(){
+    if(typeof window.initTrailsView==="function")window.initTrailsView()
+    openWizard()
+  }
   // B.10: the Guards board is its own top-level view now — expose its loader so the sidebar's
   // setView('guards') (a different script block) can populate it on activation.
   window.loadExpectations=loadExpectations
