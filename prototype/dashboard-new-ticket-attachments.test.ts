@@ -231,8 +231,13 @@ test("assignee dropdown wiring: a <select> of project users only (no free-text e
 
 // ── Attachment preview (images + videos) ────────────────────────────────────────────────────────────────────────────
 const PV = [
+  "const _attachUploads = new Map()",                      // KD-193: buildAttachmentsHtml also renders in-flight uploads from this registry
+  "const _attachMsgs = new Map()", extractFn(HTML, "function attachMsgFor("),   // …and the inline note stored per ticket
+  "const _attachRemoving = new Map()", extractFn(HTML, "function attachRemoveState("), extractFn(HTML, "function _attachRemoveUi("),   // …and the remove (×) UI
   extractFn(HTML, "function _attachFmtBytes("),
   extractFn(HTML, "function attachKind("),
+  extractFn(HTML, "function attachUploadsFor("),
+  extractFn(HTML, "function _attachTileHtml("),
   extractFn(HTML, "function buildAttachmentsHtml("),
 ].join("\n")
 const esc = (x: any) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")

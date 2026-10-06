@@ -6978,22 +6978,68 @@ export async function appendFeedbackAttachments(
   newAttachments: Array<Record<string, any>>,
 ): Promise<boolean> {
   if (!Array.isArray(newAttachments) || !newAttachments.length) return false
-  const r = await db!.execute({
-    sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
-    args: [feedbackId, projectId],
-  })
-  const row = r.rows[0] as any
-  if (!row) return false
-  let atts: any[] = []
-  if (row.attachments_json != null) {
-    try { const parsed = JSON.parse(String(row.attachments_json)); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] }
+  // KD-193: this used to read the list, push, and write the WHOLE list back — two overlapping uploads (or an upload racing the
+  // video-enrich keyframes) could each read the same list and the later write silently dropped the other's attachments.
+  // Now a compare-and-swap: the write only lands if the column still holds exactly what we read; otherwise re-read and retry.
+  // Attachments already present (same storage `key`) are skipped, so a retried/duplicated call never double-adds.
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, Math.random() * Math.min(attempt, 10) * 3))   // jittered backoff so contenders spread out
+    const r = await db!.execute({
+      sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
+      args: [feedbackId, projectId],
+    })
+    const row = r.rows[0] as any
+    if (!row) return false
+    const raw: string | null = row.attachments_json == null ? null : String(row.attachments_json)
+    let atts: any[] = []
+    if (raw != null) {
+      try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] }
+    }
+    const have = new Set(atts.map((a: any) => (a && a.key) ? String(a.key) : "").filter(Boolean))
+    const fresh = newAttachments.filter((a: any) => !(a && a.key && have.has(String(a.key))))
+    if (!fresh.length) return true
+    const u = await db!.execute({
+      sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=? AND attachments_json IS ?",
+      args: [JSON.stringify([...atts, ...fresh]), feedbackId, projectId, raw],
+    })
+    if (Number(u.rowsAffected || 0) > 0) return true
+    // someone else changed the list between our read and write → loop and merge onto the new value
   }
-  atts.push(...newAttachments)
-  await db!.execute({
-    sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?",
-    args: [JSON.stringify(atts), feedbackId, projectId],
+  return false
+}
+
+// KD-193: remove ONE attachment (by its storage key) from a ticket. Same compare-and-swap discipline as the append above, so a
+// removal racing an upload / another removal never resurrects or drops the wrong entries. Returns the removed entry (the caller
+// deletes the stored object) or { ok:false } when the ticket or the attachment isn't there.
+export async function removeFeedbackAttachment(feedbackId: string, projectId: string, key: string): Promise<{ ok: boolean; removed?: Record<string, any> }> {
+  if (!key) return { ok: false }
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, Math.random() * Math.min(attempt, 10) * 3))
+    const r = await db!.execute({ sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?", args: [feedbackId, projectId] })
+    const row = r.rows[0] as any
+    if (!row) return { ok: false }
+    const raw: string | null = row.attachments_json == null ? null : String(row.attachments_json)
+    let atts: any[] = []
+    if (raw != null) { try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] } }
+    const hit = atts.find((a: any) => a && String(a.key) === key)
+    if (!hit) return { ok: false }
+    const u = await db!.execute({
+      sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=? AND attachments_json IS ?",
+      args: [JSON.stringify(atts.filter((a: any) => a !== hit)), feedbackId, projectId, raw],
+    })
+    if (Number(u.rowsAffected || 0) > 0) return { ok: true, removed: hit }
+  }
+  return { ok: false }
+}
+// Does any OTHER ticket still reference this stored object? Merging tickets copies attachment entries by key, so two rows can
+// point at one object — deleting it would break the other. Underscore / percent in the key only widen the LIKE, so at worst we
+// keep an orphan object and never delete a shared one.
+export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND attachments_json LIKE ? LIMIT 1",
+    args: [exceptFeedbackId, "%\"key\":" + JSON.stringify(key) + "%"],
   })
-  return true
+  return r.rows.length > 0
 }
 
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given
