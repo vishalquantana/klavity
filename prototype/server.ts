@@ -14670,7 +14670,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             seen.add(e)
             people.push({ email: e, name: c.name, kind: "contact" })
           }
-          const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 8)
+          // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
+          // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
+          // a normal-sized team.
+          const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 200)
           return json({ people: hits })
         }
         if (req.method === "POST" && sub === "/invite") {

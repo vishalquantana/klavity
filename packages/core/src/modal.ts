@@ -1267,7 +1267,12 @@ export function buildModal(
     .klavity-nudge button.kl-nudge-anyway{background:none;color:var(--kl-muted);}
     .klavity-nudge button:hover{filter:brightness(1.03);}
     .klavity-nudge button:focus-visible{outline:2px solid var(--kl-accent);outline-offset:2px;}
-    .klavity-remail-sugg{margin:-4px 0 10px;border:1px solid var(--kl-border);border-radius:8px;background:var(--kl-input-bg);overflow:hidden;}
+    /* KD-174: an OVERLAY anchored to the field, not an in-flow block. In the side column (a flex
+       column with overflow-y:auto) an in-flow panel that also sets overflow:hidden gets
+       min-height:0, so under vertical pressure it collapsed to its borders -- the list was
+       'open' with zero height. Taking it out of flow removes that failure mode entirely and
+       matches the reference control, which floats over the fields beneath it. */
+    .klavity-remail-sugg{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;border:1px solid var(--kl-border);border-radius:8px;background:var(--kl-input-bg);box-shadow:0 12px 28px rgba(25,20,15,.18),0 2px 6px rgba(25,20,15,.08);overflow:hidden;}
     .klavity-remail-sugg-opt{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;cursor:pointer;font-size:13px;color:var(--kl-fg);font-family:inherit;}
     .klavity-remail-sugg-opt:hover,.klavity-remail-sugg-opt:focus-visible{background:color-mix(in srgb,var(--kl-accent) 10%,transparent);outline:none;}
     .klavity-remail-sugg-opt[aria-selected="true"]{background:color-mix(in srgb,var(--kl-accent) 14%,transparent);}
@@ -1276,10 +1281,12 @@ export function buildModal(
     .klavity-remail-sugg-check{flex:0 0 auto;margin-left:auto;color:var(--kl-accent);display:inline-flex;}
     .klavity-remail-sugg-check[hidden]{display:none;}
     .klavity-remail-wrap{position:relative;display:block;}
+    .klavity-remail-wrap.is-open{z-index:60;}
     .klavity-remail-wrap .klavity-remail{padding-right:30px;}
     .klavity-remail-caret{position:absolute;right:11px;top:calc(50% - 7px);width:0;height:0;border-left:4.5px solid transparent;border-right:4.5px solid transparent;border-top:5px solid var(--kl-muted);pointer-events:none;transition:transform .15s ease;}
     .klavity-remail-wrap.is-open .klavity-remail-caret{transform:rotate(180deg);}
     .klavity-remail-sugg-opt[hidden]{display:none;}
+    .klavity-remail-matches{max-height:188px;overflow-y:auto;overscroll-behavior:contain;}
     .klavity-remail-person{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:transparent;border:0;padding:7px 10px;cursor:pointer;font-size:13px;color:var(--kl-fg);font-family:inherit;}
     .klavity-remail-person:hover,.klavity-remail-person:focus-visible{background:color-mix(in srgb,var(--kl-accent) 10%,transparent);outline:none;}
     .klavity-remail-av{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;letter-spacing:.02em;}
@@ -1590,13 +1597,6 @@ export function buildModal(
       <div class="klavity-remail-wrap">
         <input type="email" class="klavity-remail" id="klavity-remail" placeholder="name@company.com" autocomplete="klavity-off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="klavity-remail-sugg">
         <span class="klavity-remail-caret" id="klavity-remail-caret" aria-hidden="true"></span>
-      </div>
-      ${/* QPQ-31: suggestion under the Email field — "Add <email> as a contact". Offered for ANY
-           well-formed address rather than only unknown ones: answering "does this email exist?" for an
-           anonymous cross-origin caller would be an email-enumeration oracle, and the server's upsert is
-           idempotent anyway, so an address it already knows is simply a no-op. Selecting it only sets
-           intent (create_contact=1 on submit); the server decides what that grants, and a contact gets
-           NO access to the project. */''}
       <div class="klavity-remail-sugg" id="klavity-remail-sugg" role="listbox" aria-label="People" hidden>
         <div class="klavity-remail-matches" id="klavity-remail-matches"></div>
         <button type="button" class="klavity-remail-sugg-opt klavity-remail-create" id="klavity-remail-addcontact" role="option" aria-selected="false" hidden>
@@ -1605,6 +1605,13 @@ export function buildModal(
           <span class="klavity-remail-sugg-check" aria-hidden="true" hidden>${icon('check', { size: 13 })}</span>
         </button>
         <div class="klavity-remail-sugg-hint" id="klavity-remail-sugg-hint">So the team can reply and tag you on this report.</div>
+      </div>
+      ${/* QPQ-31: suggestion under the Email field — "Add <email> as a contact". Offered for ANY
+           well-formed address rather than only unknown ones: answering "does this email exist?" for an
+           anonymous cross-origin caller would be an email-enumeration oracle, and the server's upsert is
+           idempotent anyway, so an address it already knows is simply a no-op. Selecting it only sets
+           intent (create_contact=1 on submit); the server decides what that grants, and a contact gets
+           NO access to the project. */''}
       </div>
       ${voiceSupported ? `<div class="klavity-voice-status" id="klavity-voice-status" role="status" aria-live="polite" hidden></div>` : ''}
       ${cfg.reportClarity ? `<div class="klavity-clarity" id="klavity-clarity" role="status" aria-live="polite" hidden>
@@ -2740,7 +2747,7 @@ export function buildModal(
     try {
       const res = await callbacks.onLookupPeople(q)
       if (seq !== peopleSeq) return                    // a newer keystroke already won
-      people = Array.isArray(res) ? res.slice(0, 8) : []
+      people = Array.isArray(res) ? res : []
     } catch { people = [] }
     peopleFor = q
     peopleLoaded = true
