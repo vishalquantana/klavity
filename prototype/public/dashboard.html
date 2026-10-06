@@ -510,6 +510,17 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .nav-snap{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;border:1px solid rgba(217,131,36,.28);background:rgba(217,131,36,.08);color:var(--amber);font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
 .nav-snap:hover{background:rgba(217,131,36,.14);border-color:rgba(217,131,36,.4);transform:translateY(-1.5px) scale(1.02)}
 .nav-snap:active{transform:scale(0.97)}
+/* Global "+ Create" dropdown (top nav, beside the new-project button): New Ticket / New Sim */
+.create-wrap{position:relative;display:inline-flex;margin-left:8px}
+.create-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--indigo);background:var(--indigo);color:#fff;font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.create-btn:hover{filter:brightness(1.08)}
+.create-btn[aria-expanded="true"] .create-caret{transform:rotate(180deg)}
+.create-caret{transition:transform .15s}
+.create-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:180px;padding:5px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:2px}
+.create-menu.hide{display:none}
+.create-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--paper);font-family:var(--body);font-size:13px;font-weight:500;text-align:left;cursor:pointer}
+.create-item:hover,.create-item:focus-visible{background:rgba(99,102,241,.12);outline:none}
+.create-item.hide{display:none}
 @media(max-width:500px){.nav-snap .nav-snap-lbl{display:none}.nav-snap{padding:7px 10px}}
 .switcher{display:flex;align-items:center;gap:8px;position:relative}
 .switcher .sw-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
@@ -2297,6 +2308,14 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
       </button>
       <!-- Admin-only "+" button: explicit click, no accidental keyboard trigger -->
       <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
+      <!-- Global create menu: New Ticket (any member) / New Sim (project admins — gated in render like #newSimBtn) -->
+      <div class="create-wrap" id="createWrap">
+        <button class="create-btn" id="createBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="createMenu" title="Create a ticket or a Sim">+ Create <svg class="create-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="create-menu hide" id="createMenu" role="menu" aria-label="Create">
+          <button class="create-item" id="createItemTicket" type="button" role="menuitem">New Ticket</button>
+          <button class="create-item hide" id="createItemSim" type="button" role="menuitem">New Sim</button>
+        </div>
+      </div>
       <!-- Popover: autofocused search input + filtered, keyboard-navigable results list -->
       <div class="proj-combo-pop hide" id="projComboPop">
         <div class="tap-search-row">
@@ -5461,6 +5480,7 @@ function render(fromCache, poll) {
 
   // role-gated controls
   $("newSimBtn").classList.toggle("hide", !admin)
+  { const cs = $("createItemSim"); if (cs) cs.classList.toggle("hide", !admin) }   // "+ Create" → New Sim: admins only
   // Invite is no longer admin-only — any project member can invite a teammate (server caps a
   // non-admin inviter to granting "member", never "admin"; see POST /api/projects/:id/invite).
   $("inviteWrap").classList.remove("hide")
@@ -9872,6 +9892,35 @@ function resetNewTicketForNext() {
   clearNewTktFiles()
   ;["newTktTitleErr", "newTktAssigneeErr", "newTktMsg"].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = "" })
   const t = document.getElementById("newTktTitleInp"); if (t) { try { t.focus() } catch (e) {} }
+}
+
+// ── Global "+ Create" dropdown ──────────────────────────────────────────────────────────────────────
+// Click toggles the menu; Esc / outside click / choosing an item closes it; ArrowUp/Down move between the visible items.
+// "New Ticket" opens the New ticket dialog; "New Sim" opens the Add-a-Sim surface (the item is shown to project admins only).
+function wireCreateMenu() {
+  const btn = document.getElementById("createBtn"), menu = document.getElementById("createMenu")
+  if (!btn || !menu || btn._wired) return
+  btn._wired = true
+  const items = () => Array.prototype.filter.call(menu.querySelectorAll(".create-item"), el => !el.classList.contains("hide"))
+  const close = (refocus) => { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); if (refocus) { try { btn.focus() } catch (e) {} } }
+  const open = () => { menu.classList.remove("hide"); btn.setAttribute("aria-expanded", "true"); const f = items()[0]; if (f) { try { f.focus() } catch (e) {} } }
+  const isOpen = () => !menu.classList.contains("hide")
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (isOpen()) close(false); else open() })
+  document.addEventListener("click", (e) => { if (isOpen() && !menu.contains(e.target) && e.target !== btn) close(false) })
+  document.addEventListener("keydown", (e) => {
+    if (!isOpen()) return
+    if (e.key === "Escape") { e.preventDefault(); close(true); return }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const list = items(); if (!list.length) return
+      e.preventDefault()
+      const i = list.indexOf(document.activeElement)
+      const n = e.key === "ArrowDown" ? (i + 1) % list.length : (i <= 0 ? list.length - 1 : i - 1)
+      try { list[n].focus() } catch (err) {}
+    }
+  })
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", () => { close(false); fn() }) }
+  bind("createItemTicket", () => { if (typeof openNewTicketModal === "function") openNewTicketModal() })
+  bind("createItemSim", () => { if (typeof openSimModal === "function") openSimModal() })
 }
 
 // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
@@ -17785,6 +17834,7 @@ load()
   // toolbar) and #newTktBg (modal markup) are parsed well before this script tag.
   const newTicketBtn = document.getElementById("newTicketBtn")
   if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
+  wireCreateMenu()   // global "+ Create" dropdown in the top nav
   const newTktBg = document.getElementById("newTktBg")
   if (newTktBg) {
     newTktBg.addEventListener("click", function(e) { if (e.target === this) closeNewTicketModal() })
