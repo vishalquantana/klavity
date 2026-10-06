@@ -510,6 +510,17 @@ h1{font-family:var(--display);font-weight:450;font-size:32px;letter-spacing:-.02
 .nav-snap{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:9px;border:1px solid rgba(217,131,36,.28);background:rgba(217,131,36,.08);color:var(--amber);font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;transition:background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease),transform var(--mi-dur) var(--mi-ease)}
 .nav-snap:hover{background:rgba(217,131,36,.14);border-color:rgba(217,131,36,.4);transform:translateY(-1.5px) scale(1.02)}
 .nav-snap:active{transform:scale(0.97)}
+/* Global "+ Create" dropdown (top nav, beside the new-project button): New Ticket / New Sim */
+.create-wrap{position:relative;display:inline-flex;margin-left:8px}
+.create-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:9px;border:1px solid var(--indigo);background:var(--indigo);color:#fff;font-family:var(--body);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.create-btn:hover{filter:brightness(1.08)}
+.create-btn[aria-expanded="true"] .create-caret{transform:rotate(180deg)}
+.create-caret{transition:transform .15s}
+.create-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:180px;padding:5px;background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:2px}
+.create-menu.hide{display:none}
+.create-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:var(--paper);font-family:var(--body);font-size:13px;font-weight:500;text-align:left;cursor:pointer}
+.create-item:hover,.create-item:focus-visible{background:rgba(99,102,241,.12);outline:none}
+.create-item.hide{display:none}
 @media(max-width:500px){.nav-snap .nav-snap-lbl{display:none}.nav-snap{padding:7px 10px}}
 .switcher{display:flex;align-items:center;gap:8px;position:relative}
 .switcher .sw-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-faint)}
@@ -1096,6 +1107,14 @@ body[data-view="settings"] details.drawer[data-view~="settings"]>.drawer-in{
 /* #716: Linear/Plane-style assignee picker popover */
 .tkt-assignee-pop{position:absolute;top:calc(100% + 4px);left:-8px;z-index:40;width:264px;max-width:min(300px,82vw);background:var(--ink-2);border:1px solid var(--line);border-radius:12px;box-shadow:var(--mi-shadow-card);padding:6px}
 .tkt-assignee-pop.hide{display:none}
+/* Viewport-aware placement (positioned by _positionAssigneePop): flips above the control when there is more room there,
+   and scrolls inside itself when height-capped, so no row (e.g. "Invite by email…") is ever cut off by the panel edge. */
+.tkt-assignee-pop{overflow-y:auto;overscroll-behavior:contain}
+.tkt-assignee-pop.up{top:auto;bottom:calc(100% + 4px)}
+/* Responsive: never wider than the screen; 16px search text on phones (stops iOS zooming the page on focus); roomier touch rows */
+.tkt-assignee-pop{max-width:min(300px,calc(100vw - 24px))}
+@media(max-width:640px){.tkt-assignee-pop .tap-search{font-size:16px}}
+@media(pointer:coarse){.tkt-assignee-pop .tap-opt,.tkt-assignee-pop .tap-invite{min-height:40px}}
 .tap-search-row{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:5px 9px;margin:2px 2px 6px;background:var(--ink)}
 .tap-search-row .icon,.tap-search-row svg{color:var(--paper-faint);flex:none}
 .tap-search{border:0;outline:0;background:transparent;font-family:var(--body);font-size:13px;color:var(--paper);width:100%;min-width:0}
@@ -1323,7 +1342,8 @@ body.tkt-panel-open #ticketSingle.tkt-panel{transform:none}
 .tkt-panel-btn{display:inline-flex;align-items:center;gap:6px;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--paper-dim);cursor:pointer;transition:border-color .15s,color .15s,transform var(--mi-dur) var(--mi-ease),box-shadow var(--mi-dur) var(--mi-ease)}
 .tkt-panel-btn:hover{border-color:var(--indigo);color:var(--paper);transform:var(--mi-lift);box-shadow:var(--mi-shadow)}
 .tkt-panel-btn:active{transform:var(--mi-press);transition-duration:var(--mi-press-dur)}
-@media(max-width:640px){#ticketSingle.tkt-panel{width:100vw;padding:0 16px 32px}}
+/* % (not vw): vw includes a classic scrollbar, which left the panel ~15px wider than the visible area on narrow desktop windows */
+@media(max-width:640px){#ticketSingle.tkt-panel{width:100%;min-width:0;max-width:100%;padding:0 16px 32px}}
 /* KLA-563: dedicated ticket page (/:project/tickets/:key → hash #tickets/<id>). The board is never
    mounted behind it; the page renders directly from a single-ticket fetch. Centered card, max 1180px. */
 body.tkt-page-open #ticketsKanban,body.tkt-page-open #tktListView,body.tkt-page-open .kb-toolbar,
@@ -1967,6 +1987,33 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   .tkt-attach-size{color:var(--paper-faint);flex:none}
   .tkt-attach-unavailable{color:var(--paper-faint);cursor:default}
   .tkt-attach-add-btn{align-self:flex-start}
+  /* KD-193: in-progress / failed upload tiles + a disabled "Uploading…" Add button */
+  .tkt-attach-pending{position:relative;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--ink);min-height:92px;box-sizing:border-box}
+  .tkt-attach-pending .tkt-attach-spinwrap{color:var(--indigo);display:inline-flex}
+  .tkt-attach-pending .tkt-attach-spinwrap svg,.tkt-spin svg{animation:tktRecSpin 1s linear infinite}
+  .tkt-attach-pending .tkt-attach-bar{display:block;height:6px;border-radius:99px;background:var(--ink-3);overflow:hidden}
+  .tkt-attach-pending .tkt-attach-bar i{display:block;height:100%;background:var(--indigo);transition:width .15s ease}
+  .tkt-attach-pending.saving .tkt-attach-bar i{animation:tktAttachPulse 1.1s ease-in-out infinite}
+  @keyframes tktAttachPulse{50%{opacity:.45}}
+  .tkt-attach-pending .tkt-attach-pct{font-size:11px;color:var(--paper-faint)}
+  .tkt-attach-pending.err{border-color:var(--rose);background:rgba(219,39,119,.06)}
+  .tkt-attach-errmsg{font-size:11.5px;color:var(--rose);line-height:1.35}
+  .tkt-attach-acts{display:flex;gap:6px;flex-wrap:wrap}
+  .tkt-attach-add-btn:disabled{opacity:.65;cursor:not-allowed}
+  .tkt-attach-msg:empty{display:none}
+  /* KD-193: remove (×) + inline confirm on every uploaded attachment; Cancel on an upload that is still being sent */
+  .tkt-attach-tile{position:relative;min-width:0}
+  .tkt-attach-tile .tkt-attach-thumb{width:100%;min-width:0;box-sizing:border-box}
+  .tkt-attach-rm{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;display:grid;place-items:center;cursor:pointer;padding:0;z-index:2}
+  .tkt-attach-rm:hover{background:var(--rose)}
+  .tkt-attach-tile .tkt-attach-confirm,.tkt-attach-tile .tkt-attach-rm-state{position:absolute;inset:0;z-index:3;border-radius:10px;background:rgba(0,0,0,.84);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:12px;text-align:center;padding:6px}
+  .tkt-attach-tile .tkt-attach-confirm .btn{font-size:11px;padding:3px 9px}
+  .tkt-attach-row{display:flex;align-items:center;gap:8px}
+  .tkt-attach-row .tkt-attach-item{flex:1;min-width:0}
+  .tkt-attach-row .tkt-attach-rm{position:static;flex:none;background:transparent;color:var(--paper-faint);width:26px;height:26px}
+  .tkt-attach-row .tkt-attach-rm:hover{background:var(--rose);color:#fff}
+  .tkt-attach-row .tkt-attach-confirm,.tkt-attach-row .tkt-attach-rm-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;flex:none}
+  .tkt-attach-rm-state svg{animation:tktRecSpin 1s linear infinite}
   /* KD-100: inline previews for image/video attachments (ticket detail) + the shared click-to-enlarge viewer */
   .tkt-attach-thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
   .tkt-attach-thumb{position:relative;display:block;padding:0;text-align:left;color:inherit;font:inherit;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--ink);cursor:zoom-in}
@@ -2278,6 +2325,69 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .driver-popover.klav-tour .driver-popover-arrow-side-right{border-right-color:var(--ink-2)}
 .driver-popover.klav-tour .driver-popover-arrow-side-top{border-top-color:var(--ink-2)}
 .driver-popover.klav-tour .driver-popover-arrow-side-bottom{border-bottom-color:var(--ink-2)}
+/* ===== Top nav redesign: left actions · centered project · right tools ===== */
+.bar-in{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px}
+.bar-left{display:flex;align-items:center;gap:8px;min-width:0}
+.bar-center{display:flex;justify-content:center;min-width:0}
+.bar .right{margin-left:0;justify-self:end;gap:10px}
+.bar .proj-pick{flex:0 1 auto}
+/* left actions */
+.bar .nav-snap{background:var(--paper);color:var(--ink-2);border:1px solid var(--paper);border-radius:9px;padding:7px 13px;font-size:13px;font-weight:600;gap:7px}
+.bar .nav-snap:hover{background:var(--paper);border-color:var(--paper);filter:brightness(1.25);transform:none}
+.bar .nav-snap:active{transform:scale(.98)}
+.bar .nav-studio{background:var(--indigo);color:#fff;border:1px solid var(--indigo);border-radius:9px;padding:7px 13px;font-size:13px;font-weight:600}
+.bar .nav-studio:hover{background:var(--indigo);border-color:var(--indigo);filter:brightness(1.08)}
+.create-btn{background:var(--ink-2);color:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-weight:600;box-shadow:0 1px 0 rgba(25,20,15,.03)}
+.create-btn:hover{filter:none;border-color:var(--paper-faint)}
+.create-btn[aria-expanded="true"]{border-color:var(--indigo);box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 18%,transparent)}
+.create-wrap{margin-left:0}
+.create-menu{left:0;min-width:200px;padding:6px;border-radius:14px;gap:2px}
+.create-item{gap:12px;padding:10px 12px;border-radius:10px;font-size:14px}
+.create-item .ci-ic{display:inline-flex;color:var(--paper-faint);flex:none}
+/* centered project button + dropdown */
+.bar .proj-combo-btn{background:var(--ink-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-weight:600;font-size:13px;max-width:280px;box-shadow:0 1px 0 rgba(25,20,15,.03)}
+.bar .proj-combo-pop{left:50%;transform:translateX(-50%);top:calc(100% + 8px);width:300px;padding:8px;border-radius:14px}
+/* search: icon OUTSIDE a smaller, white (surface-colour) field */
+.bar .proj-combo-pop .tap-search-row{border:0;border-radius:0;background:transparent;padding:0;gap:10px;margin:2px 2px 8px}
+.bar .proj-combo-pop .proj-combo-search-ic{color:var(--paper-faint);flex:none}
+.bar .proj-combo-pop .tap-search{height:32px;box-sizing:border-box;padding:0 10px;background:var(--ink-2);border:1px solid var(--line);border-radius:9px;font-size:13px}
+/* ONE blue border on focus. The global `input:focus-visible{outline:2px solid indigo}` rule would otherwise draw a second (outer)
+   blue outline on top of this border, so it is switched off here (this selector out-ranks it) and no extra ring is added. */
+.bar .proj-combo-pop .tap-search:focus,.bar .proj-combo-pop .tap-search:focus-visible{outline:0;border-color:var(--indigo);box-shadow:none}
+.bar .proj-combo-opt{padding:10px 11px;border-radius:10px;font-size:14px}
+/* selected / highlighted project row: a lighter shade than before (--ink-3 → 45% toward the surface colour) */
+.bar .proj-combo-opt.current,.bar .proj-combo-opt:hover,.bar .proj-combo-opt.active{background:color-mix(in srgb,var(--ink-3) 45%,var(--ink-2))}
+.proj-combo-div{height:1px;background:var(--line);margin:8px -8px 6px}
+.proj-combo-div.hide,.proj-new-row.hide{display:none}
+.proj-new-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px 11px;border:0;border-radius:10px;background:transparent;color:var(--paper);font-family:var(--body);font-size:14px;font-weight:500;text-align:left;cursor:pointer}
+.proj-new-row:hover,.proj-new-row:focus-visible{background:var(--ink-3);outline:none}
+.proj-new-row .pnr-ic{display:inline-flex;color:var(--paper-faint)}
+.bar .proj-new-btn{display:none}
+/* right tools: theme segmented · inbox · tour · avatar */
+.theme-seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--ink-3) 40%,var(--ink-2))}
+.theme-seg button{width:26px;height:24px;border:0;border-radius:7px;background:transparent;color:var(--paper-faint);display:grid;place-items:center;cursor:pointer;padding:0}
+.theme-seg button[aria-pressed="true"]{background:var(--ink-2);color:var(--paper);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+/* Inbox: compact rounded square, WHITE (#fff) background with a #AEA8A2 tray icon — same scale as the avatar. Fixed colours (not theme
+   variables), in light and dark mode, with no border. */
+.bar .nav-inbox{width:30px;height:30px;padding:0;justify-content:center;gap:0;border-radius:8px;background:#fff;color:#AEA8A2;border:0;box-shadow:none}
+.bar .nav-inbox:hover{background:#fff;color:#AEA8A2;transform:none;box-shadow:none}
+.bar .nav-inbox svg{width:14px;height:14px;stroke-width:1.75}
+.bar .nav-inbox .nav-inbox-lbl{display:none}
+.bar .right .nav-icon{width:32px;height:32px}
+.avatar-wrap{position:relative;display:inline-flex}
+.avatar-btn{width:30px;height:30px;border-radius:50%;border:0;background:var(--indigo);color:#fff;font-family:var(--body);font-size:13px;font-weight:700;cursor:pointer;padding:0;display:grid;place-items:center}
+.avatar-btn:hover{filter:brightness(1.08)}
+.avatar-btn[aria-expanded="true"]{box-shadow:0 0 0 3px color-mix(in srgb,var(--indigo) 22%,transparent)}
+/* dark theme lightens --indigo, so white text on it drops to ~3:1 → use the dark text colour (same as the tour's Next button) */
+[data-theme="dark"] .bar .nav-studio,[data-theme="dark"] .avatar-btn{color:#0c0a08}
+.avatar-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:40;min-width:220px;padding:6px;background:var(--ink-2);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,.28);display:flex;flex-direction:column;gap:2px}
+.avatar-menu.hide{display:none}
+.avatar-who{padding:8px 10px 9px;font-size:12.5px;color:var(--paper-dim);border-bottom:1px solid var(--line);margin-bottom:4px;word-break:break-all}
+.avatar-item{display:block;width:100%;padding:9px 10px;border:0;border-radius:9px;background:transparent;color:var(--paper);font-family:var(--body);font-size:13.5px;font-weight:500;text-align:left;cursor:pointer}
+.avatar-item:hover,.avatar-item:focus-visible{background:var(--ink-3);outline:none}
+@media(max-width:900px){.bar-in{display:flex;gap:8px}.bar-left{flex:1 1 auto}.bar-center{flex:0 1 auto}.bar .right{gap:6px}}
+@media(max-width:700px){.create-btn .create-lbl{display:none}.bar .proj-combo-btn{max-width:160px}.theme-seg button{width:24px}}
+@media(max-width:540px){.bar .proj-combo-pop{left:auto;right:-40px;transform:none;width:min(300px,92vw)}}
 </style>
 </head>
 <body data-view="overview">
@@ -2285,46 +2395,59 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
   <div class="brand bar-brand"><span class="spark"><svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="48" height="48" rx="11" fill="#1a1023"/><g fill="white"><circle cx="15" cy="9" r="2"/><circle cx="11" cy="16" r="2"/><circle cx="10" cy="24" r="2"/><circle cx="11" cy="32" r="2"/><circle cx="15" cy="39" r="2"/><circle cx="33" cy="9" r="2"/><circle cx="37" cy="16" r="2"/><circle cx="38" cy="24" r="2"/><circle cx="37" cy="32" r="2"/><circle cx="33" cy="39" r="2"/></g><g stroke="white" stroke-width="1.6" stroke-linecap="round" opacity="0.35"><line x1="15" y1="9" x2="33" y2="9"/><line x1="11" y1="16" x2="37" y2="16"/><line x1="10" y1="24" x2="38" y2="24"/><line x1="11" y1="32" x2="37" y2="32"/><line x1="15" y1="39" x2="33" y2="39"/></g></svg></span><span class="brand-word">Klavity</span></div>
   <span class="ws hide" id="wsName"></span>
-  <!-- Snap shortcut — report widget install, always visible so new users see it immediately -->
-  <button type="button" class="nav-snap mi" id="snapNavBtn" aria-label="Install the report widget on your site (Snap)" title="Add the Klavity report widget to your site" onclick="if(typeof setView==='function')setView('snap')"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="nav-snap-lbl">Report widget</span></button>
-  <!-- Studio shortcut — primary action always visible in the navbar regardless of active tab -->
+  <div class="bar-left">
+    <!-- "Snap Reports": jumps to the sidebar's Reports view (page bugs captured by Snap) -->
+    <button type="button" class="nav-snap mi" id="snapNavBtn" aria-label="Snap Reports — open Reports" title="Snap Reports" onclick="if(typeof setView==='function')setView('pagebugs')"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span class="nav-snap-lbl">Snap Reports</span></button>
   <a class="nav-studio mi" href="/app" id="studioNavBtn" aria-label="Sims Studio (edit your Sims — not for creating AutoSims)" title="Sims Studio — edit your Sims"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.524.888l-1.267 5.54a.5.5 0 0 0 .595.595l5.54-1.267a2 2 0 0 0 .888-.524z" /><path d="m15.5 5.5 3 3" /></svg><span class="nav-studio-lbl">Sims Studio</span></a>
-  <!-- KLAVITYKLA-201: Inbox link — cross-project morning screen -->
-  <a class="nav-inbox mi" href="/inbox" id="inboxNavBtn" aria-label="Cross-project inbox — morning screen" title="Cross-project inbox"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg><span class="nav-inbox-lbl">Inbox</span></a>
-  <!-- Project picker in the navbar itself (KLAVITYKLA-14/25). #projSwitcher and #newProj
-       are a swap-pair; JS toggles by ID. -->
-  <!-- KLAVITYKLA-201: The "__new__" magic option has been removed from the <select> to prevent
-       accidental project creation via keyboard arrow / scroll. A dedicated + button (#projNewBtn)
-       is shown for admins instead — explicit click required. -->
-  <div class="proj-pick" id="projPick">
-    <div class="switcher" id="projSwitcher">
-      <span class="sw-lbl">Project</span>
-      <!-- KLA-743: smart command-palette project switcher. The native <select> was unusable
-           past ~20 projects, so the visible control is now a button that opens a searchable
-           popover combobox (type-to-filter + arrow/enter to switch). Keyboard + mouse both work. -->
-      <button class="proj-combo-btn" id="projComboBtn" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="projComboList" aria-label="Active project — search and switch">
-        <span class="proj-combo-name" id="projComboName">—</span>
-        <svg class="proj-combo-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
-      <!-- Admin-only "+" button: explicit click, no accidental keyboard trigger -->
-      <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
-      <!-- Popover: autofocused search input + filtered, keyboard-navigable results list -->
-      <div class="proj-combo-pop hide" id="projComboPop">
-        <div class="tap-search-row">
-          <span class="proj-combo-search-ic" data-ki="search" aria-hidden="true"></span>
-          <input class="tap-search" id="projComboSearch" type="text" placeholder="Search projects…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="projComboList" aria-expanded="true" aria-autocomplete="list" aria-label="Search projects">
-        </div>
-        <div class="proj-combo-list" id="projComboList" role="listbox" aria-label="Projects"></div>
+    <!-- Create New: Ticket (any member) / Sim (project admins — gated in render like #newSimBtn) / AutoSim -->
+    <div class="create-wrap" id="createWrap">
+      <button class="create-btn" id="createBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="createMenu" title="Create a ticket, Sim or AutoSim"><span class="create-lbl">Create New</span> <svg class="create-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+      <div class="create-menu hide" id="createMenu" role="menu" aria-label="Create New">
+        <button class="create-item" id="createItemTicket" type="button" role="menuitem"><span class="ci-ic" data-ki="ticket" aria-hidden="true"></span>Ticket</button>
+        <button class="create-item hide" id="createItemSim" type="button" role="menuitem"><span class="ci-ic" data-ki="users" aria-hidden="true"></span>Sim</button>
+        <button class="create-item" id="createItemAutoSim" type="button" role="menuitem"><span class="ci-ic" data-ki="zap" aria-hidden="true"></span>AutoSim</button>
       </div>
     </div>
-    <!-- KLA-292: new project inline form moved to #npBg modal -->
+  </div>
+  <div class="bar-center">
+    <!-- Selected project, centered. KLA-743: searchable combobox popover (type-to-filter + arrow/enter), with
+         "+ New project" (admins) as its footer row. #projNewBtn stays in the DOM (hidden) so existing wiring keeps working. -->
+    <div class="proj-pick" id="projPick">
+      <div class="switcher" id="projSwitcher">
+        <span class="sw-lbl">Project</span>
+        <button class="proj-combo-btn" id="projComboBtn" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="projComboList" aria-label="Active project — search and switch">
+          <span class="proj-combo-name" id="projComboName">—</span>
+          <svg class="proj-combo-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <button class="proj-new-btn hide" id="projNewBtn" type="button" aria-label="New project" title="Create a new project">＋</button>
+        <div class="proj-combo-pop hide" id="projComboPop">
+          <div class="tap-search-row">
+            <span class="proj-combo-search-ic" data-ki="search" aria-hidden="true"></span>
+            <input class="tap-search" id="projComboSearch" type="text" placeholder="Search projects…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="projComboList" aria-expanded="true" aria-autocomplete="list" aria-label="Search projects">
+          </div>
+          <div class="proj-combo-list" id="projComboList" role="listbox" aria-label="Projects"></div>
+          <div class="proj-combo-div hide" id="projNewDiv"></div>
+          <button class="proj-new-row hide" id="projNewRow" type="button"><span class="pnr-ic" data-ki="plus" aria-hidden="true"></span>New project</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="right">
+    <div class="theme-seg" id="themeToggle" role="group" aria-label="Theme">
+      <button type="button" data-theme-set="light" aria-label="Light mode" title="Light mode"></button>
+      <button type="button" data-theme-set="dark" aria-label="Dark mode" title="Dark mode"></button>
+    </div>
+    <!-- KLAVITYKLA-201: Inbox — cross-project morning screen (icon button beside the theme toggle) -->
+    <a class="nav-inbox mi" href="/inbox" id="inboxNavBtn" aria-label="Cross-project inbox — morning screen" title="Inbox"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></a>
     <!-- Guided tour re-run affordance — small, always available -->
     <button class="nav-icon" id="tourBtn" type="button" aria-label="Take the dashboard tour" title="Take the tour"><span data-ki="footprints"></span></button>
-    <button class="nav-icon" id="themeToggle" type="button" aria-label="Toggle dark mode"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg></button>
-    <span class="who" id="who"></span>
-    <button class="lo" id="logout">Log out</button>
+    <div class="avatar-wrap" id="avatarWrap">
+      <button class="avatar-btn" id="avatarBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="avatarMenu" aria-label="Account menu"><span id="avatarInitial">?</span></button>
+      <div class="avatar-menu hide" id="avatarMenu" role="menu" aria-label="Account">
+        <div class="avatar-who" id="who"></div>
+        <button class="avatar-item" id="logout" type="button" role="menuitem">Log out</button>
+      </div>
+    </div>
   </div>
 </div></div>
 
@@ -3543,7 +3666,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   </div><!-- /.content -->
 </div>
 
-<script>(function(){var b=document.getElementById('themeToggle');if(!b)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}function paint(){b.innerHTML=dark()?kicon('sun',{size:18}):kicon('moon',{size:18})}paint();b.addEventListener('click',function(){var n=dark()?'light':'dark';if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()})})();</script>
+<script>(function(){var g=document.getElementById('themeToggle');if(!g)return;var R=document.documentElement;function dark(){return R.getAttribute('data-theme')==='dark'}var bs=g.querySelectorAll('button[data-theme-set]');for(var i=0;i<bs.length;i++){bs[i].innerHTML=kicon(bs[i].getAttribute('data-theme-set')==='dark'?'moon':'sun',{size:15})}function paint(){for(var i=0;i<bs.length;i++){bs[i].setAttribute('aria-pressed',((bs[i].getAttribute('data-theme-set')==='dark')===dark())?'true':'false')}}function set(n){if(n==='dark')R.setAttribute('data-theme','dark');else R.removeAttribute('data-theme');try{localStorage.setItem('klav-theme',n)}catch(e){}paint()}paint();g.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('button[data-theme-set]');if(!b)return;set(b.getAttribute('data-theme-set'))})})();</script>
 <script>
 const $ = (id) => document.getElementById(id)
 const COLORS = ["#6366f1","#e8a24a","#10b981","#ec4899","#06b6d4","#8b5cf6"]
@@ -5437,6 +5560,7 @@ function render(fromCache, poll) {
   // Project plan (admin-only) — KLAVITYKLA snap-plan gating admin toggle.
   if (typeof wireProjPlan === "function") wireProjPlan(admin)
   $("who").textContent = state.email
+  { const ai = $("avatarInitial"); if (ai) ai.textContent = String(state.email || "?").trim().charAt(0).toUpperCase() || "?" }
   // KLAVITYKLA-514: paint the header for whichever view is currently showing (Overview → the
   // data-driven greeting; any other view → its own title). Must respect the current view so the
   // liveness poll's render() doesn't reset a non-overview title back to "Welcome back".
@@ -5472,6 +5596,7 @@ function render(fromCache, poll) {
 
   // role-gated controls
   $("newSimBtn").classList.toggle("hide", !admin)
+  { const cs = $("createItemSim"); if (cs) cs.classList.toggle("hide", !admin) }   // "+ Create" → New Sim: admins only
   // Invite is no longer admin-only — any project member can invite a teammate (server caps a
   // non-admin inviter to granting "member", never "admin"; see POST /api/projects/:id/invite).
   $("inviteWrap").classList.remove("hide")
@@ -6528,6 +6653,10 @@ function renderSwitcher() {
     newBtn.classList.toggle("hide", !isAdmin)
     newBtn.onclick = () => openNewProject()
   }
+  // "+ New project" lives in the dropdown's footer now (admins only), reusing the same modal.
+  { const row = $("projNewRow"), div = $("projNewDiv")
+    if (row) { row.classList.toggle("hide", !isAdmin); row.onclick = () => { projSwitchClose(false); openNewProject() } }
+    if (div) div.classList.toggle("hide", !isAdmin) }
   // Re-render the popover list against current data (keeps it fresh when projects change).
   projSwitchWire()
   if (projSwitchIsOpen()) projSwitchFilter($("projComboSearch") ? $("projComboSearch").value : "")
@@ -7391,6 +7520,40 @@ function _attachFmtBytes(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB"
   return (n / (1024 * 1024)).toFixed(1) + " MB"
 }
+// Where should a popover of natural height `need` open relative to its control? Pure.
+// Opens BELOW unless that doesn't fit and there is more room ABOVE; if neither side fits it takes the larger side and caps
+// its height (maxHeight; the popover scrolls inside). Distances are px in viewport coordinates.
+function popoverPlacement(ctrlTop, ctrlBottom, boundsTop, boundsBottom, need, gap, minH) {
+  gap = gap == null ? 8 : gap; minH = minH == null ? 140 : minH
+  const below = boundsBottom - ctrlBottom - gap, above = ctrlTop - boundsTop - gap
+  const up = below < need && above > below
+  const room = up ? above : below
+  return { up: up, maxHeight: need > room ? Math.max(minH, Math.floor(room)) : null }
+}
+// Horizontal nudge (px, + = move right) that keeps a popover spanning [popLeft, popRight] inside [boundsLeft, boundsRight] with
+// `margin` to spare. If it is wider than the bounds it is pinned to the left edge (the caller also narrows it). Pure.
+function popoverHorizontalShift(popLeft, popRight, boundsLeft, boundsRight, margin) {
+  margin = margin == null ? 8 : margin
+  const w = popRight - popLeft, minL = boundsLeft + margin, maxR = boundsRight - margin
+  if (w >= maxR - minL) return minL - popLeft
+  if (popLeft < minL) return minL - popLeft
+  if (popRight > maxR) return maxR - popRight
+  return 0
+}
+// The extent that is actually visible for `el`: the viewport intersected with every scrolling/clipping ancestor (e.g. the sliding
+// ticket panel), so a popover is never placed where an ancestor would cut it off. The ticket panel's sticky header is excluded
+// from the top (a popover opening upward used to be painted over the Close / Full page buttons).
+function visibleBoundsFor(el) {
+  let top = 0, bottom = window.innerHeight, left = 0, right = window.innerWidth
+  for (let a = el && el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+    const cs = getComputedStyle(a)
+    if (/(auto|scroll|hidden|clip)/.test(cs.overflowY)) { const r = a.getBoundingClientRect(); top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom) }
+    if (/(auto|scroll|hidden|clip)/.test(cs.overflowX)) { const r = a.getBoundingClientRect(); left = Math.max(left, r.left); right = Math.min(right, r.right) }
+    const head = a.querySelector && a.querySelector(":scope > .tkt-panel-head")
+    if (head) top = Math.max(top, head.getBoundingClientRect().bottom)
+  }
+  return { top: top, bottom: bottom, left: left, right: right }
+}
 // KD-100: what kind of preview an attachment gets — "image" | "video" | "" (everything else stays a plain download link).
 // Prefers the stored content type, falls back to the file extension. Pure.
 function attachKind(a) {
@@ -7433,48 +7596,296 @@ function openMediaPreview(o) {
   document.addEventListener("keydown", _mediaPvKey, true)
   document.body.appendChild(bg); _mediaPvEl = bg
 }
+// ── KD-193: attachment upload manager ─────────────────────────────────────────────────────────────────────────────
+// Uploads on an existing ticket used to give almost no feedback (12px grey "Uploading…" text, no progress, no success message),
+// the result only appeared after a slow round-trip, a full re-render mid-upload wiped the UI state, and picking the same file twice
+// uploaded it twice. State now lives HERE (per ticket, outside the DOM) so any re-render restores the in-flight tiles and the
+// finished upload still lands; progress is real (XMLHttpRequest); duplicates are skipped; a toast confirms the result.
+const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
+const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
+const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
+const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
+const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
+const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
+const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
+let _attachSeq = 0
+function _attachKey(name, size) { return String(name == null ? "" : name).trim().toLowerCase() + "|" + Number(size || 0) }
+function attachUploadsFor(ticketId) { return _attachUploads.get(String(ticketId)) || [] }
+function attachMsgFor(ticketId) { return _attachMsgs.get(String(ticketId)) || { text: "", isErr: false } }
+function attachInFlight(ticketId) { return attachUploadsFor(ticketId).some(function (u) { return u.status === "uploading" }) }
+function _attachMutating(d) { try { window.__klavMutating = Math.max(0, (window.__klavMutating || 0) + d) } catch (e) {} }   // pause the liveness poll while uploading
+// Pure: what to do with a selection. A file already on the ticket (or already uploading) — same name + size — is a DUPLICATE and is skipped.
+function attachPlanUpload(files, existing, pending) {
+  const have = new Set()
+  ;(existing || []).forEach(function (a) { have.add(_attachKey(a && a.filename, a && a.size)) })
+  ;(pending || []).forEach(function (u) { have.add(_attachKey(u.name, u.size)) })
+  const accept = [], duplicates = [], rejected = []
+  let total = 0
+  ;(files || []).forEach(function (f) {
+    if (!f || !f.size) { rejected.push(((f && f.name) || "file") + ": file is empty"); return }
+    const k = _attachKey(f.name, f.size)
+    if (have.has(k)) { duplicates.push(f.name); return }
+    if (accept.length >= ATTACH_MAX_FILES) { rejected.push(f.name + ": at most " + ATTACH_MAX_FILES + " files at a time"); return }
+    const isVid = /^video\//i.test(f.type || "") || attachKind({ filename: f.name, contentType: f.type }) === "video"
+    const cap = isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX
+    if (f.size > cap) { rejected.push(f.name + ": larger than " + _attachFmtBytes(cap)); return }
+    if (total + f.size > ATTACH_TOTAL_MAX) { rejected.push(f.name + ": total would exceed " + _attachFmtBytes(ATTACH_TOTAL_MAX)); return }
+    have.add(k); total += f.size; accept.push(f)
+  })
+  return { accept: accept, duplicates: duplicates, rejected: rejected }
+}
+// One request for the whole selection; every file gets its own tile. hooks: { onChange(id), onProgress(id), onDone(id, res), onFail(id, msg), xhr? }
+function attachStartUpload(ticketId, files, hooks) {
+  const id = String(ticketId), list = _attachUploads.get(id) || []
+  const batch = files.map(function (f) { return { id: ++_attachSeq, file: f, name: f.name, size: f.size, status: "uploading", phase: "sending", pct: 0, error: "" } })
+  batch.forEach(function (u) { list.push(u) })
+  _attachUploads.set(id, list)
+  _attachMutating(1)
+  hooks.onChange(id)   // the placeholder tiles + disabled "Uploading…" button appear IMMEDIATELY
+  const xhr = hooks.xhr ? hooks.xhr() : new XMLHttpRequest()
+  batch.forEach(function (u) { u.xhr = xhr; u.batch = batch })
+  let done = false
+  const settle = function () { if (done) return false; done = true; _attachMutating(-1); return true }
+  const fail = function (msg) {
+    if (!settle()) return
+    batch.forEach(function (u) { u.status = "error"; u.error = msg; u.phase = "" })
+    if (hooks.onFail) hooks.onFail(id, msg); else hooks.onChange(id)
+  }
+  xhr.open("POST", "/api/feedback/" + encodeURIComponent(id) + "/attachments")
+  if (xhr.upload) {
+    xhr.upload.onprogress = function (e) {
+      if (!e || !e.lengthComputable) return
+      const pct = Math.min(99, Math.round(e.loaded * 100 / e.total))
+      batch.forEach(function (u) { u.pct = pct })
+      if (hooks.onProgress) hooks.onProgress(id)
+    }
+    xhr.upload.onload = function () { batch.forEach(function (u) { u.phase = "saving"; u.pct = 100 }); if (hooks.onProgress) hooks.onProgress(id) }
+  }
+  xhr.onload = function () {
+    let d = {}
+    try { d = JSON.parse(xhr.responseText || "{}") } catch (e) { d = {} }
+    const ok = xhr.status >= 200 && xhr.status < 300 && d && d.ok && Array.isArray(d.attachments)
+    if (!ok) { fail((d && d.error) || ("Upload failed (HTTP " + xhr.status + ")")); return }
+    if (!settle()) return
+    _attachUploads.set(id, (_attachUploads.get(id) || []).filter(function (u) { return batch.indexOf(u) < 0 }))
+    hooks.onDone(id, { attachments: d.attachments, duplicates: d.duplicates || [], ignored: d.ignored || [], names: batch.map(function (u) { return u.name }) })
+  }
+  xhr.onerror = function () { fail("Network error — check your connection and retry.") }
+  xhr.ontimeout = function () { fail("The upload timed out — retry.") }
+  xhr.onabort = function () {
+    if (!batch.cancelled) { fail("Upload cancelled."); return }                  // aborted by the browser, not by the user's Cancel
+    if (!settle()) return
+    _attachUploads.set(id, (_attachUploads.get(id) || []).filter(function (u) { return batch.indexOf(u) < 0 }))
+    if (hooks.onCancelled) hooks.onCancelled(id, batch.length); else hooks.onChange(id)
+  }
+  try { xhr.timeout = 10 * 60 * 1000 } catch (e) {}
+  const fd = new FormData()
+  batch.forEach(function (u) { fd.append("files", u.file) })
+  xhr.send(fd)
+  return batch
+}
+function attachDismiss(ticketId, uploadId) {
+  const id = String(ticketId)
+  _attachUploads.set(id, (_attachUploads.get(id) || []).filter(function (u) { return !(u.id === uploadId && u.status === "error") }))
+}
+function attachRetry(ticketId, uploadId, hooks) {
+  const id = String(ticketId), u = (_attachUploads.get(id) || []).find(function (x) { return x.id === uploadId && x.status === "error" })
+  if (!u || attachInFlight(id)) return null
+  attachDismiss(id, uploadId)
+  return attachStartUpload(id, [u.file], hooks)
+}
+function _attachTileHtml(u) {
+  const name = esc(String(u.name || "file"))
+  if (u.status === "error") {
+    return '<div class="tkt-attach-pending err" data-upload-id="' + u.id + '" role="alert">'
+      + '<span class="tkt-attach-cap" title="' + name + '">' + name + '</span>'
+      + '<span class="tkt-attach-errmsg">' + esc(String(u.error || "Upload failed")) + '</span>'
+      + '<span class="tkt-attach-acts"><button type="button" class="btn btn-ghost btn-sm" data-attach-retry="' + u.id + '">Retry</button>'
+      + '<button type="button" class="btn btn-ghost btn-sm" data-attach-dismiss="' + u.id + '">Remove</button></span></div>'
+  }
+  const saving = u.phase === "saving"
+  return '<div class="tkt-attach-pending' + (saving ? " saving" : "") + '" data-upload-id="' + u.id + '" role="status">'
+    + '<span class="tkt-attach-spinwrap">' + kicon('loader', { size: 20 }) + '</span>'
+    + '<span class="tkt-attach-cap" title="' + name + '">' + name + ' · ' + esc(_attachFmtBytes(u.size)) + '</span>'
+    + '<span class="tkt-attach-bar"><i style="width:' + (saving ? 100 : Number(u.pct) || 0) + '%"></i></span>'
+    + '<span class="tkt-attach-pct">' + (saving ? "Saving…" : "Uploading… " + (Number(u.pct) || 0) + "%") + '</span>'
+    + (saving ? "" : '<span class="tkt-attach-acts"><button type="button" class="btn btn-ghost btn-sm" data-attach-cancel="' + u.id + '">Cancel</button></span>') + '</div>'
+}
+// Cancel an upload that is still being SENT (not once the server is saving it — by then it would complete anyway and the tile would lie).
+function attachCancelUpload(ticketId, uploadId) {
+  const u = (_attachUploads.get(String(ticketId)) || []).find(function (x) { return x.id === uploadId && x.status === "uploading" && x.phase === "sending" })
+  if (!u || !u.batch || !u.xhr) return false
+  u.batch.cancelled = true
+  try { u.xhr.abort() } catch (e) {}
+  return true
+}
+// ── Removing an UPLOADED attachment: ask (inline confirm) → DELETE /api/feedback/:id/attachments?key= → drop it everywhere ──
+const _attachRemoving = new Map()                  // ticketId → Map(storage key → "confirm" | "removing")
+function attachRemoveState(ticketId, key) { const m = _attachRemoving.get(String(ticketId)); return (m && m.get(String(key))) || "" }
+function _attachSetRemoveState(ticketId, key, st) {
+  const id = String(ticketId), m = _attachRemoving.get(id) || new Map()
+  if (st) m.set(String(key), st); else m.delete(String(key))
+  _attachRemoving.set(id, m)
+}
+function attachAskRemove(ticketId, key) {
+  if (attachRemoveState(ticketId, key) === "removing") return
+  const m = _attachRemoving.get(String(ticketId))
+  if (m) m.forEach(function (v, k) { if (v === "confirm") m.delete(k) })        // one open confirmation per ticket
+  _attachSetRemoveState(ticketId, key, "confirm")
+}
+function attachCancelRemove(ticketId, key) { if (attachRemoveState(ticketId, key) === "confirm") _attachSetRemoveState(ticketId, key, "") }
+function attachConfirmRemove(ticketId, key, hooks, fetchFn) {
+  const id = String(ticketId)
+  if (attachRemoveState(id, key) === "removing") return null                    // a double-click never sends two deletes
+  _attachSetRemoveState(id, key, "removing"); _attachMutating(1)
+  hooks.onChange(id)
+  const f = fetchFn || function (u, o) { return fetch(u, o) }
+  return f("/api/feedback/" + encodeURIComponent(id) + "/attachments?key=" + encodeURIComponent(String(key)), { method: "DELETE" })
+    .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { return { ok: !!(r.ok && d && d.ok), error: d && d.error, status: r.status } }) })
+    .catch(function () { return { ok: false, error: "Network error — check your connection and retry." } })
+    .then(function (res) {
+      _attachMutating(-1); _attachSetRemoveState(id, key, "")
+      if (res.ok) hooks.onRemoved(id, key)
+      else hooks.onRemoveFail(id, key, res.error || ("Couldn't remove the attachment (HTTP " + res.status + ")"))
+      return res
+    })
+}
+function _attachRemoveUi(t, a) {
+  if (!a || !a.key) return ""                                                    // an entry without a storage key can't be addressed
+  const key = esc(String(a.key)), name = esc(String(a.filename || "attachment")), st = attachRemoveState(t.id, a.key)
+  if (st === "removing") return '<span class="tkt-attach-rm-state" role="status">' + kicon('loader', { size: 14 }) + ' Removing…</span>'
+  if (st === "confirm") return '<span class="tkt-attach-confirm" role="alertdialog" aria-label="Remove ' + name + '?">Remove? '
+    + '<button type="button" class="btn btn-ghost btn-sm" data-attach-remove-yes="' + key + '">Remove</button>'
+    + '<button type="button" class="btn btn-ghost btn-sm" data-attach-remove-no="' + key + '">Cancel</button></span>'
+  return '<button type="button" class="tkt-attach-rm" data-attach-remove="' + key + '" aria-label="Remove ' + name + '" title="Remove">' + kicon('x', { size: 13 }) + '</button>'
+}
+// ── DOM side (re-render safe: always looks the CURRENT attachments block up through _attachCtx) ──
+function _attachWrapFor(ticketId) {
+  const ctx = _attachCtx.get(String(ticketId))
+  if (!ctx || !ctx.detailEl || !ctx.detailEl.isConnected) return null
+  const wrap = ctx.detailEl.querySelector(".tkt-attach-wrap")
+  return wrap ? { ctx: ctx, wrap: wrap } : null
+}
+function attachRerender(ticketId) {
+  const w = _attachWrapFor(ticketId); if (!w) return
+  w.wrap.outerHTML = buildAttachmentsHtml(w.ctx.t)
+  wireAttachments(w.ctx.detailEl, w.ctx.t, String(ticketId))
+}
+function _attachPaintProgress(ticketId) {   // cheap: update bars in place, no re-render
+  const w = _attachWrapFor(ticketId); if (!w) return
+  attachUploadsFor(ticketId).forEach(function (u) {
+    if (u.status !== "uploading") return
+    const el = w.wrap.querySelector('[data-upload-id="' + u.id + '"]'); if (!el) return
+    const saving = u.phase === "saving"
+    el.classList.toggle("saving", saving)
+    const bar = el.querySelector(".tkt-attach-bar i"); if (bar) bar.style.width = (saving ? 100 : u.pct) + "%"
+    const pct = el.querySelector(".tkt-attach-pct"); if (pct) pct.textContent = saving ? "Saving…" : "Uploading… " + u.pct + "%"
+  })
+}
+function attachSetMsg(ticketId, text, isErr) {
+  _attachMsgs.set(String(ticketId), { text: text || "", isErr: !!isErr })
+  const w = _attachWrapFor(ticketId); if (!w) return
+  const m = w.wrap.querySelector(".tkt-attach-msg"); if (!m) return
+  m.style.color = isErr ? "var(--rose)" : "var(--paper-faint)"; m.textContent = text || ""
+}
+let _attachToastTimer = null
+function attachToast(msg, kind) {
+  let toast = $("attachToast")
+  if (!toast) { toast = document.createElement("div"); toast.id = "attachToast"; toast.setAttribute("role", "status"); toast.setAttribute("aria-live", "polite"); document.body.appendChild(toast) }
+  toast.className = "tg-toast" + (kind === "warn" ? " tg-toast-warn" : "")
+  toast.innerHTML = '<span class="tg-toast-msg">' + kicon(kind === "warn" ? 'triangle-alert' : 'check', { size: 15 }) + " " + esc(String(msg)) + "</span>"
+  toast.classList.add("show")
+  if (_attachToastTimer) clearTimeout(_attachToastTimer)
+  _attachToastTimer = setTimeout(function () { toast.classList.remove("show") }, kind === "warn" ? 9000 : 4500)
+}
+// The finished upload is merged into EVERY in-memory copy of the ticket (open panel, overview list, board cache) so it shows
+// immediately and survives the next re-render — not just the object the original click handler happened to hold.
+function _attachApplyServerList(ticketId, newAtts) {
+  const id = String(ticketId), ctx = _attachCtx.get(id)
+  const lists = [typeof state !== "undefined" && state ? state.tickets : null, typeof _tktBoardTickets !== "undefined" ? _tktBoardTickets : null]
+  const targets = []
+  lists.forEach(function (l) { (Array.isArray(l) ? l : []).forEach(function (x) { if (x && String(x.id) === id) targets.push(x) }) })
+  if (ctx && ctx.t && targets.indexOf(ctx.t) < 0) targets.push(ctx.t)
+  targets.forEach(function (x) {
+    const cur = Array.isArray(x.attachments) ? x.attachments : []
+    const have = new Set(cur.map(function (a) { return a && a.key }).filter(Boolean))
+    x.attachments = cur.concat(newAtts.filter(function (n) { return !(n && n.key && have.has(n.key)) }))
+  })
+}
+function _attachRemoveFromLists(ticketId, key) {
+  const id = String(ticketId), ctx = _attachCtx.get(id)
+  const lists = [typeof state !== "undefined" && state ? state.tickets : null, typeof _tktBoardTickets !== "undefined" ? _tktBoardTickets : null]
+  const targets = []
+  lists.forEach(function (l) { (Array.isArray(l) ? l : []).forEach(function (x) { if (x && String(x.id) === id) targets.push(x) }) })
+  if (ctx && ctx.t && targets.indexOf(ctx.t) < 0) targets.push(ctx.t)
+  targets.forEach(function (x) { if (Array.isArray(x.attachments)) x.attachments = x.attachments.filter(function (a) { return !(a && String(a.key) === String(key)) }) })
+}
+const _attachHooks = {
+  onChange: function (id) { attachRerender(id) },
+  onProgress: function (id) { _attachPaintProgress(id) },
+  onCancelled: function (id, n) { attachRerender(id); attachToast(n === 1 ? "Upload cancelled" : "Upload cancelled (" + n + " files)", "ok") },
+  onRemoved: function (id, key) { _attachRemoveFromLists(id, key); attachRerender(id); attachToast("Attachment removed", "ok") },
+  onRemoveFail: function (id, key, msg) { attachRerender(id); attachToast(msg, "warn") },
+  onFail: function (id, msg) { attachRerender(id); attachToast(msg, "warn") },
+  onDone: function (id, res) {
+    _attachApplyServerList(id, res.attachments)
+    attachRerender(id)
+    const n = res.attachments.length, notes = []
+    if (res.duplicates.length) notes.push(res.duplicates.join(", ") + (res.duplicates.length === 1 ? " was" : " were") + " already attached — skipped.")
+    if (res.ignored.length) notes.push(res.ignored.join(", ") + (res.ignored.length === 1 ? " was" : " were") + " not uploaded (at most " + ATTACH_MAX_FILES + " files at a time).")
+    if (n) attachToast(n === 1 ? "Attachment uploaded successfully" : n + " attachments uploaded successfully", "ok")
+    if (notes.length) { attachSetMsg(id, [attachMsgFor(id).text].concat(notes).filter(Boolean).join(" "), true); if (!n) attachToast(notes.join(" "), "warn") }
+  }
+}
 // KD-158: file attachments (non-image evidence — PDFs, logs, docs — uploaded at intake, #425/
 // KLAVITYKLA-480) were captured + presigned by the server but never rendered anywhere in the
 // dashboard. This renders the existing list; wireAttachments() (below) wires "+ Add attachment" so
 // a member can add more to an already-created ticket, not just at intake.
 function buildAttachmentsHtml(t) {
   var atts = Array.isArray(t.attachments) ? t.attachments : []
+  var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
+  var uploading = pending.some(function (u) { return u.status === "uploading" })
+  var pendingHtml = pending.map(_attachTileHtml).join("")
   var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
   var thumbs = ""
   var items = atts.map(function (a, i) {
     var name = esc(String(a.filename || ("attachment-" + (i + 1))))
     var size = a.size ? _attachFmtBytes(a.size) : ""
     var kind = a.url ? attachKind(a) : ""
-    if (kind) {   // KD-100: previewable → a clickable tile (opens the viewer); the viewer links to the original
-      thumbs += '<button type="button" class="tkt-attach-thumb" data-idx="' + i + '" title="' + name + '">'
+    if (kind) {   // KD-100: previewable → a clickable tile (opens the viewer); KD-193: + a remove (×) with inline confirm
+      thumbs += '<div class="tkt-attach-tile"><button type="button" class="tkt-attach-thumb" data-idx="' + i + '" title="' + name + '">'
         + (kind === "image"
             ? '<img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy">'
             : '<video src="' + esc(String(a.url)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
-        + '<span class="tkt-attach-cap">' + name + '</span></button>'
+        + '<span class="tkt-attach-cap">' + name + '</span></button>' + _attachRemoveUi(t, a) + '</div>'
       return ""
     }
-    return a.url
+    var row = a.url
       ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener">'
           + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span>'
           + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + _dlSvg + '</a>'
       : '<span class="tkt-attach-item tkt-attach-unavailable">' + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span><span>unavailable</span></span>'
+    return '<div class="tkt-attach-row">' + row + _attachRemoveUi(t, a) + '</div>'
   }).join("")
-  return '<div class="tkt-attach-wrap">'
+  return '<div class="tkt-attach-wrap" data-ticket="' + esc(String(t.id || "")) + '">'
     + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
+    + (pendingHtml ? '<div class="tkt-attach-thumbs tkt-attach-pendings">' + pendingHtml + '</div>' : '')
     + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
     + '<div class="tkt-attach-list">' + items + '</div>'
-    + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button">' + kicon('paperclip', { size: 13 }) + ' Add attachment</button>'
+    + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button"' + (uploading ? ' disabled aria-busy="true"' : '') + '>'
+      + (uploading ? '<span class="tkt-spin">' + kicon('loader', { size: 13 }) + '</span> Uploading…' : kicon('paperclip', { size: 13 }) + ' Add attachment') + '</button>'
     + '<input type="file" class="tkt-attach-input" multiple hidden>'
-    + '<div class="tkt-attach-msg muted" style="font-size:12px"></div>'
+    + '<div class="tkt-attach-msg muted" style="font-size:12px;color:' + (attachMsgFor(t.id).isErr ? 'var(--rose)' : 'var(--paper-faint)') + '" role="status" aria-live="polite">' + esc(attachMsgFor(t.id).text) + '</div>'
   + '</div>'
 }
 // Wires the "+ Add attachment" control rendered by buildAttachmentsHtml — file picker → multipart
 // POST /api/feedback/:id/attachments → appendFeedbackAttachments (server) → re-render the list.
 function wireAttachments(detailEl, t, ticketId) {
   var wrap = detailEl.querySelector(".tkt-attach-wrap"); if (!wrap) return
+  var id = String(ticketId)
+  _attachCtx.set(id, { detailEl: detailEl, t: t })   // where to repaint when an upload progresses / finishes (refreshed on every re-wire)
   var addBtn = wrap.querySelector(".tkt-attach-add-btn")
   var input = wrap.querySelector(".tkt-attach-input")
-  var msgEl = wrap.querySelector(".tkt-attach-msg")
   wrap.querySelectorAll(".tkt-attach-thumb").forEach(function (b) {   // KD-100: enlarge an image / play a video
     b.addEventListener("click", function (ev) {
       ev.stopPropagation()
@@ -7482,28 +7893,33 @@ function wireAttachments(detailEl, t, ticketId) {
       if (a && a.url) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url })
     })
   })
+  // Retry / Remove on a failed upload tile (delegated: the tiles are re-rendered as uploads progress)
+  wrap.addEventListener("click", function (ev) {
+    var up = function (sel) { return ev.target && ev.target.closest ? ev.target.closest(sel) : null }
+    var r = up("[data-attach-retry]"), d = up("[data-attach-dismiss]"), c = up("[data-attach-cancel]")
+    var rm = up("[data-attach-remove]"), yes = up("[data-attach-remove-yes]"), no = up("[data-attach-remove-no]")
+    if (r) { ev.stopPropagation(); attachRetry(id, Number(r.getAttribute("data-attach-retry")), _attachHooks) }
+    else if (d) { ev.stopPropagation(); attachDismiss(id, Number(d.getAttribute("data-attach-dismiss"))); attachRerender(id) }
+    else if (c) { ev.stopPropagation(); attachCancelUpload(id, Number(c.getAttribute("data-attach-cancel"))) }
+    else if (rm) { ev.stopPropagation(); attachConfirmRemove(id, rm.getAttribute("data-attach-remove"), _attachHooks) }
+    else if (no) { ev.stopPropagation(); attachCancelRemove(id, no.getAttribute("data-attach-remove-no")); attachRerender(id) }
+    else if (yes) { ev.stopPropagation(); attachConfirmRemove(id, yes.getAttribute("data-attach-remove-yes"), _attachHooks) }
+  })
   if (!addBtn || !input) return
-  addBtn.addEventListener("click", function () { input.click() })
-  input.addEventListener("change", async function () {
+  addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+  input.addEventListener("change", function () {
     var files = Array.prototype.slice.call(input.files || [])
-    if (!files.length) return
-    addBtn.disabled = true
-    if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Uploading…" }
-    var fd = new FormData()
-    files.forEach(function (f) { fd.append("files", f) })
-    const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/attachments", { method: "POST", body: fd }).catch(() => null)
-    addBtn.disabled = false
     input.value = ""
-    const d = r ? await r.json().catch(() => ({})) : {}
-    if (r && r.ok && d.ok && Array.isArray(d.attachments)) {
-      t.attachments = (Array.isArray(t.attachments) ? t.attachments : []).concat(d.attachments)
-      const tkt = (state.tickets || []).find(x => x.id === ticketId)
-      if (tkt) tkt.attachments = t.attachments
-      wrap.outerHTML = buildAttachmentsHtml(t)
-      wireAttachments(detailEl, t, ticketId)   // re-wire the freshly re-rendered wrap
-    } else if (msgEl) {
-      msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
-    }
+    if (!files.length) return
+    var cur = (_attachCtx.get(id) || {}).t || t
+    var plan = attachPlanUpload(files, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+    var notes = []
+    if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
+    plan.rejected.forEach(function (x) { notes.push(x) })
+    if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
+    if (!notes.length) attachSetMsg(id, "", false)
+    if (!plan.accept.length) return
+    attachStartUpload(id, plan.accept, _attachHooks)
   })
 }
 // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
@@ -7901,12 +8317,29 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         _aList.appendChild(row)
       })
     }
+    // Open below the control, or flip above it / cap the height when the ticket panel or viewport edge would cut it off.
+    function _positionAssigneePop() {
+      if (!_aPop || !_assigneeCtrlBtn || _aPop.classList.contains("hide")) return
+      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
+      const b = visibleBoundsFor(_assigneeCtrlBtn), cr = _assigneeCtrlBtn.getBoundingClientRect()
+      const pl = popoverPlacement(cr.top, cr.bottom, b.top, b.bottom, _aPop.scrollHeight)
+      _aPop.classList.toggle("up", pl.up)
+      if (pl.maxHeight != null) _aPop.style.maxHeight = pl.maxHeight + "px"
+      // horizontal: narrower than the visible width, and nudged so neither side leaves the screen / panel
+      const avail = b.right - b.left - 16
+      if (_aPop.getBoundingClientRect().width > avail) _aPop.style.width = Math.max(180, Math.floor(avail)) + "px"
+      const pr = _aPop.getBoundingClientRect(), dx = popoverHorizontalShift(pr.left, pr.right, b.left, b.right, 8)
+      if (dx) _aPop.style.left = (parseFloat(getComputedStyle(_aPop).left) || -8) + dx + "px"
+    }
     function _closeAssigneePop() {
       if (!_aPop) return
       _aPop.classList.add("hide")
+      _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
       if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
       if (_aInviteRow) _aInviteRow.classList.add("hide")
       if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }
+      window.removeEventListener("resize", _positionAssigneePop)
+      document.removeEventListener("scroll", _positionAssigneePop, true)
     }
     function _openAssigneePop() {
       if (!_aPop) return
@@ -7914,7 +8347,11 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.add("open")
       if (_aSearch) _aSearch.value = ""
       _renderAssigneeMembers("")
-      setTimeout(() => { try { if (_aSearch) _aSearch.focus() } catch (e) {} }, 20)
+      _positionAssigneePop()
+      // keep it placed correctly while the panel scrolls / the window resizes
+      window.addEventListener("resize", _positionAssigneePop)
+      document.addEventListener("scroll", _positionAssigneePop, true)
+      setTimeout(() => { try { if (_aSearch) _aSearch.focus({ preventScroll: true }) } catch (e) {} }, 20)
       _aDocHandler = ev => { if (!ev.target.closest(".tkt-assignee-ctrl-wrap")) _closeAssigneePop() }
       setTimeout(() => document.addEventListener("click", _aDocHandler), 0)
     }
@@ -7926,6 +8363,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
       if (_aSearch) {
         _aSearch.addEventListener("input", () => {
           _renderAssigneeMembers(_aSearch.value)
+          _positionAssigneePop()
           const q = _aSearch.value.trim()
           const lbl = _aPop.querySelector(".tap-invite-lbl")
           if (lbl) lbl.textContent = (q && q.includes("@")) ? ("Invite “" + q + "”") : "Invite by email…"
@@ -7942,6 +8380,7 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
         _aInviteBtn.addEventListener("click", ev => {
           ev.stopPropagation()
           _aInviteRow.classList.remove("hide")
+          _positionAssigneePop()
           const q = _aSearch ? _aSearch.value.trim() : ""
           if (q && q.includes("@") && _assigneeInpEl) _assigneeInpEl.value = q
           if (_assigneeInpEl) { try { _assigneeInpEl.focus() } catch (e) {} }
@@ -8585,6 +9024,8 @@ const TL_ACTIVITY_LABELS = {
   // KLAVITYKLA-516: the very first fact — the report/Snap arriving — was never written to
   // activity_events, so the timeline showed "No activity yet" and recurrence read 0. Synthesized
   // client-side (see buildTimelineSection) so we never persist a server event.
+  ticket_attachment_added: (m) => { const n = m && typeof m.count === "number" ? m.count : 1; return n > 1 ? "Added " + n + " attachments" : "Added an attachment" + (m && m.filenames && m.filenames[0] ? " · " + m.filenames[0] : "") },
+  ticket_attachment_removed: (m) => "Removed an attachment" + (m && m.filename ? " · " + m.filename : ""),
   report_received: (m) => `Report received${m && m.urlPath ? " · " + m.urlPath : ""}`,
 }
 
@@ -9933,6 +10374,48 @@ function resetNewTicketForNext() {
   clearNewTktFiles()
   ;["newTktTitleErr", "newTktAssigneeErr", "newTktMsg"].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = "" })
   const t = document.getElementById("newTktTitleInp"); if (t) { try { t.focus() } catch (e) {} }
+}
+
+// ── Global "+ Create" dropdown ──────────────────────────────────────────────────────────────────────
+// Click toggles the menu; Esc / outside click / choosing an item closes it; ArrowUp/Down move between the visible items.
+// "New Ticket" opens the New ticket dialog; "New Sim" opens the Add-a-Sim surface (the item is shown to project admins only).
+function wireCreateMenu() {
+  const btn = document.getElementById("createBtn"), menu = document.getElementById("createMenu")
+  if (!btn || !menu || btn._wired) return
+  btn._wired = true
+  const items = () => Array.prototype.filter.call(menu.querySelectorAll(".create-item"), el => !el.classList.contains("hide"))
+  const close = (refocus) => { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); if (refocus) { try { btn.focus() } catch (e) {} } }
+  const open = () => { menu.classList.remove("hide"); btn.setAttribute("aria-expanded", "true"); const f = items()[0]; if (f) { try { f.focus() } catch (e) {} } }
+  const isOpen = () => !menu.classList.contains("hide")
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (isOpen()) close(false); else open() })
+  document.addEventListener("click", (e) => { if (isOpen() && !menu.contains(e.target) && e.target !== btn) close(false) })
+  document.addEventListener("keydown", (e) => {
+    if (!isOpen()) return
+    if (e.key === "Escape") { e.preventDefault(); close(true); return }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      const list = items(); if (!list.length) return
+      e.preventDefault()
+      const i = list.indexOf(document.activeElement)
+      const n = e.key === "ArrowDown" ? (i + 1) % list.length : (i <= 0 ? list.length - 1 : i - 1)
+      try { list[n].focus() } catch (err) {}
+    }
+  })
+  const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", () => { close(false); fn() }) }
+  bind("createItemTicket", () => { if (typeof openNewTicketModal === "function") openNewTicketModal() })
+  bind("createItemSim", () => { if (typeof openSimModal === "function") openSimModal() })
+  bind("createItemAutoSim", () => { if (typeof openWizard === "function") openWizard(); else if (typeof setView === "function") setView("autosims") })
+}
+
+// Avatar menu (top-right): the account email + Log out. Esc / outside click close it.
+function wireAvatarMenu() {
+  const btn = document.getElementById("avatarBtn"), menu = document.getElementById("avatarMenu")
+  if (!btn || !menu || btn._wired) return
+  btn._wired = true
+  const isOpen = () => !menu.classList.contains("hide")
+  const close = (refocus) => { menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); if (refocus) { try { btn.focus() } catch (e) {} } }
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (isOpen()) close(false); else { menu.classList.remove("hide"); btn.setAttribute("aria-expanded", "true") } })
+  document.addEventListener("click", (e) => { if (isOpen() && !menu.contains(e.target) && e.target !== btn) close(false) })
+  document.addEventListener("keydown", (e) => { if (isOpen() && e.key === "Escape") { e.preventDefault(); close(true) } })
 }
 
 // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
@@ -17846,6 +18329,8 @@ load()
   // toolbar) and #newTktBg (modal markup) are parsed well before this script tag.
   const newTicketBtn = document.getElementById("newTicketBtn")
   if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
+  wireCreateMenu()   // top-nav "Create New" dropdown
+  wireAvatarMenu()   // top-nav account menu (email + Log out)
   const newTktBg = document.getElementById("newTktBg")
   if (newTktBg) {
     newTktBg.addEventListener("click", function(e) { if (e.target === this) closeNewTicketModal() })
@@ -17898,8 +18383,14 @@ load()
     })
   }
 
-  // expose openWizard for inline onclick="openWizard()" in onboarding HTML
-  window.openWizard=openWizard
+  // expose openWizard for inline onclick="openWizard()" in onboarding HTML and the top-nav "Create New → AutoSim".
+  // The wizard's Close / Back / Next / Create / upload handlers are wired inside initTrailsView(), which otherwise only runs
+  // the first time the AutoSims view is opened — opening the wizard from anywhere else (e.g. the Overview) left it with dead
+  // buttons and a full-screen overlay nobody could dismiss. initTrailsView() is idempotent (_inited), so ensure it ran first.
+  window.openWizard=function(){
+    if(typeof window.initTrailsView==="function")window.initTrailsView()
+    openWizard()
+  }
   // B.10: the Guards board is its own top-level view now — expose its loader so the sidebar's
   // setView('guards') (a different script block) can populate it on activation.
   window.loadExpectations=loadExpectations
