@@ -7444,8 +7444,13 @@ function wireAttachments(detailEl, t, ticketId) {
       t.attachments = (Array.isArray(t.attachments) ? t.attachments : []).concat(d.attachments)
       const tkt = (state.tickets || []).find(x => x.id === ticketId)
       if (tkt) tkt.attachments = t.attachments
-      wrap.outerHTML = buildAttachmentsHtml(t)
-      wireAttachments(detailEl, t, ticketId)   // re-wire the freshly re-rendered wrap
+      const single = document.getElementById("ticketSingle")
+      if (single && !single.classList.contains("hide") && typeof _renderSingleTicket === "function") {
+        _renderSingleTicket(ticketId)
+      } else {
+        wrap.outerHTML = buildAttachmentsHtml(t)
+        wireAttachments(detailEl, t, ticketId)   // re-wire the freshly re-rendered wrap
+      }
     } else if (msgEl) {
       msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
     }
@@ -7465,26 +7470,61 @@ function buildEvidenceStrip(t, detailEl) {
   try {
     var left = detailEl.querySelector(".t3-left"); if (!left) return
     var recs = Array.isArray(t.recordings) ? t.recordings : []
+    var atts = Array.isArray(t.attachments) ? t.attachments : []
+    var imgAtts = atts.filter(function (a) { return attachKind(a) === "image" && a.url })
     var items = []
-    if (t.screenshotId) items.push({ kind: "shot" })
+    if (t.screenshotId) {
+      items.push({ kind: "shot" })
+      imgAtts.forEach(function (a, i) { items.push({ kind: "attach_img", att: a, idx: i }) })
+    } else if (imgAtts.length) {
+      imgAtts.forEach(function (a, i) { items.push({ kind: "attach_img", att: a, idx: i }) })
+    }
     if (t.hasReplay) items.push({ kind: "replay" })
     recs.forEach(function (r, i) { items.push({ kind: "rec", idx: i }) })
     if (items.length < 2) return
     var strip = document.createElement("div"); strip.className = "t3-evidence"
-    items.forEach(function (it) {
+    items.forEach(function (it, itIdx) {
       var el = document.createElement("button"); el.type = "button"
-      el.className = "t3-ev-thumb" + (it.kind === "shot" ? " active" : "")
+      el.className = "t3-ev-thumb" + (itIdx === 0 ? " active" : "")
       if (it.kind === "shot") {
         var img = document.createElement("img"); img.alt = "Screenshot"
         // Stream the THUMB BYTES (proxy=1) — a bare ?thumb=1 returns JSON {url}, not an image, so setting it
         // as <img src> rendered a BROKEN image. If the thumb object is missing/failed, fall back once to the
         // full image bytes (also same-origin proxy) so the tile is never broken.
-        var _sid = encodeURIComponent(String(t.screenshotId))
-        img.onerror = function () { img.onerror = null; img.src = "/api/screenshots/" + _sid + "?proxy=1" }
-        img.src = "/api/screenshots/" + _sid + "?thumb=1&proxy=1"
+        img.src = "/api/screenshots/" + encodeURIComponent(String(t.screenshotId)) + "?thumb=1" + "&proxy=1"
         el.appendChild(img); el.appendChild(_evBadge("IMG", false))
         el.setAttribute("title", "Screenshot")
-        el.addEventListener("click", function () { _evSelect(strip, el); var w = detailEl.querySelector(".tkt-browser") || detailEl.querySelector(".tkt-shot"); if (w) { try { w.scrollIntoView({ behavior: "smooth", block: "nearest" }) } catch (e) {} } })
+        el.addEventListener("click", function () {
+          _evSelect(strip, el)
+          var box = detailEl.querySelector(".tkt-shot")
+          if (box) {
+            box.removeAttribute("data-loaded"); box.classList.remove("tkt-shotwrap", "zoomed"); box.innerHTML = ""
+            box.setAttribute("data-shot", String(t.screenshotId))
+            box.removeAttribute("data-shot-url")
+            box.removeAttribute("data-shot-name")
+            loadTktShot(detailEl, t.annotations)
+          }
+          var w = detailEl.querySelector(".tkt-browser") || detailEl.querySelector(".tkt-shot")
+          if (w) { try { w.scrollIntoView({ behavior: "smooth", block: "nearest" }) } catch (e) {} }
+        })
+      } else if (it.kind === "attach_img") {
+        var img = document.createElement("img"); img.alt = String(it.att.filename || "Screenshot")
+        img.src = it.att.url
+        el.appendChild(img); el.appendChild(_evBadge("IMG", false))
+        el.setAttribute("title", String(it.att.filename || "Attachment"))
+        el.addEventListener("click", function () {
+          _evSelect(strip, el)
+          var box = detailEl.querySelector(".tkt-shot")
+          if (box) {
+            box.removeAttribute("data-loaded"); box.classList.remove("tkt-shotwrap", "zoomed"); box.innerHTML = ""
+            box.setAttribute("data-shot-url", it.att.url)
+            box.setAttribute("data-shot-name", it.att.filename || "Screenshot")
+            box.removeAttribute("data-shot")
+            loadTktShot(detailEl, null)
+          }
+          var w = detailEl.querySelector(".tkt-browser") || detailEl.querySelector(".tkt-shot")
+          if (w) { try { w.scrollIntoView({ behavior: "smooth", block: "nearest" }) } catch (e) {} }
+        })
       } else if (it.kind === "replay") {
         el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
         el.setAttribute("title", "Session replay")
@@ -7619,7 +7659,9 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
 
     // In single-ticket view the header shows: title, severity, sentiment, simName, url·date.
     // Two-column layout when screenshot exists: shot in col-1, everything else in .tkt-right-body col-2.
-    const _isTwoCol = isSingle && !!t.screenshotId
+    const _firstImgAtt = !t.screenshotId && Array.isArray(t.attachments) ? t.attachments.find(a => attachKind(a) === "image" && a.url) : null
+    const _hasShot = !!t.screenshotId || !!_firstImgAtt
+    const _isTwoCol = isSingle && _hasShot
     // #538: a multi-line description must never be suppressed just because its FIRST line happens
     // to match the ticket title — only hide when the entire (single-line) observation IS the title.
     const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
@@ -7637,11 +7679,13 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     const _hasDupAck = (t.recurrenceCount || t.recurrence || 1) >= 2
     const _hasContextItems = _showObs || _showBug || !!t.sourceQuote
       || (_showSevChip || _showSentiment || _showSimChip) || _hasDupAck || !!t.isRegression
-    const _hasContext = _hasContextItems || (!_isTwoCol && !!t.screenshotId)
+    const _hasContext = _hasContextItems || (!_isTwoCol && _hasShot)
 
     const _shotHtml = t.screenshotId
       ? `<div class="tkt-shot" data-shot="${esc(t.screenshotId)}"><div class="muted" style="font-size:12px">Loading screenshot…</div></div>`
-      : ""
+      : (_firstImgAtt
+          ? `<div class="tkt-shot" data-shot-url="${esc(_firstImgAtt.url)}" data-shot-name="${esc(_firstImgAtt.filename || "Screenshot")}"><div class="muted" style="font-size:12px">Loading screenshot…</div></div>`
+          : "")
     const _contextHtml = _hasContext ? `
       <div class="tkt-context">
         ${dupAckHtml(t)}
@@ -7715,15 +7759,16 @@ function buildTktDetail(t, admin, onChange, isSingle = false) {
     if (_pageThreeCol) {
       const _mHost = t.urlHost || "", _mPath = t.urlPath || ""
       const _hostHref = _mHost ? (/^https?:\/\//.test(_mHost) ? _mHost : "https://" + _mHost) : ""
-      const _shotMetaHtml = (t.screenshotId && (_mHost || _mPath || t.createdAt))
+      const _shotMetaHtml = (_hasShot && (_mHost || _mPath || t.createdAt))
         ? `<div class="t3-shotmeta">${_mPath ? esc(_mPath) : ""}${(_mPath && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}${((_mPath || t.createdAt) && _mHost) ? " · " : ""}${_mHost ? `<a href="${esc(_hostHref)}" target="_blank" rel="noopener">${esc(_mHost)}</a>` : ""}</div>`
         : ""
       const _descTools = `<div class="t3-desctools">
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles',{size:13})} Enhance with AI</button>
+        <!-- t3-attach-btn -->
       </div>`
       // KD-158: existing attachments + "+ Add attachment" — a reusable fragment, same as _recHtml.
       const _attachHtml = buildAttachmentsHtml(t)
-      const _left = `<div class="t3-col t3-left"><div class="t3-colh">Evidence &amp; Media</div>${t.screenshotId ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
+      const _left = `<div class="t3-col t3-left"><div class="t3-colh">Evidence &amp; Media</div>${_hasShot ? _shotHtml : '<div class="t3-noshot">No screenshot on this report.</div>'}${_shotMetaHtml}</div>`
       // #725c: the redundant "ACTIVITY & COMMENTS" parent heading is gone — the Activity/Comments tab
       // row (built by buildTimelineSection) is the section header now. The <hr> still separates the
       // description/recordings block above from the activity/comments section below.
@@ -9545,7 +9590,9 @@ function _renderSingleTicket(id) {
   // #707: the dedicated PAGE renders the 3-col grid INSIDE detailEl and wraps the title + grid in a
   // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
   // PANEL keeps the compact image-left grid (single-has-shot). Board-expand is unaffected (isSingle=false).
+  const _hasAnyShot = !!t.screenshotId || (Array.isArray(t.attachments) && t.attachments.some(a => attachKind(a) === "image" && a.url))
   if (t.screenshotId && panel) detailEl.classList.add("single-has-shot")   // panel: image-left grid
+  else if (_hasAnyShot && panel) detailEl.classList.add("single-has-shot")
   if (!panel) {
     const card = document.createElement("div"); card.className = "tkt3-card"
     card.appendChild(head)
@@ -9559,9 +9606,8 @@ function _renderSingleTicket(id) {
     single.appendChild(head)
     single.appendChild(detailEl)
   }
-  // §6.7: on the dedicated page, dress the screenshot in fake-browser chrome + an immediate placeholder
-  // BEFORE loadTktShot streams the real image into the same box (panel keeps the compact shot).
   if (!panel && t.screenshotId) wrapScreenshotChrome(detailEl, t)
+  else if (!panel && _hasAnyShot) wrapScreenshotChrome(detailEl, t)
   loadTktShot(detailEl, t.annotations)
   // #718: group the secondary/utility actions into one coherent footer so the merge control no longer
   // floats alone under whitespace. A.8: occurrence timeline (receipts) always renders now, with a subtle
@@ -11260,12 +11306,14 @@ async function loadTktShot(detailEl, annotations) {
   if (!box || box.getAttribute("data-loaded")) return
   box.setAttribute("data-loaded", "1")
   const id = box.getAttribute("data-shot")
+  const shotUrl = box.getAttribute("data-shot-url")
   // #743: warm the SAME-ORIGIN full-res image (byte proxy) on card open so the annotate editor is instant + CORS-clean.
   if (id) preloadShot(shotProxyUrl(id))
+  else if (shotUrl) preloadShot(shotUrl)
   const hasAnn = annotations && Array.isArray(annotations.shapes) && annotations.shapes.length
   const paint = (url) => {
     const img = document.createElement("img")
-    img.src = url; img.alt = "Sim screenshot"
+    img.src = url; img.alt = "Screenshot"
     if (hasAnn) {
       // The overlay viewBox is in the reporter's original coordinates (preserveAspectRatio="none"),
       // so it scales correctly over the thumbnail AND the full image alike.
@@ -11282,6 +11330,12 @@ async function loadTktShot(detailEl, annotations) {
     mountPinnedSelector(box, annotations)
     return img
   }
+  if (shotUrl) {
+    const img = paint(shotUrl)
+    if (img) img.setAttribute("data-full", shotUrl)
+    return
+  }
+  if (!id) return
   try {
     // KLAVITYKLA-518: request the lightweight ?thumb=1 variant FIRST for an instant preview (mirrors
     // the list view), then lazily upgrade to the full-resolution image. Previously this fetched the

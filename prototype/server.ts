@@ -4009,6 +4009,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path.startsWith("/fonts/") && /^[a-z0-9-]+\.woff2$/.test(path.slice(7))) {
       return new Response(Bun.file(SITE + "/fonts/" + path.slice(7)), { headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" } })
     }
+    // ── local storage fallback (when S3 is not configured in local dev) ──
+    if (req.method === "GET" && path.startsWith("/uploads/")) {
+      const rel = decodeURIComponent(path.slice(9))
+      if (!rel.includes("..")) {
+        const f = Bun.file(PUB + "/uploads/" + rel)
+        if (await f.exists()) return new Response(f)
+      }
+    }
     // ── permanent signed screenshot link (for external tracker tickets, never expires, revocable) ──
     // /img/<screenshotId>.<hmac> — HMAC-gated (KLAV_SECRET), streams the PRIVATE S3 object. Token is
     // unforgeable; revoked by deleting the screenshots row (→ 404). Keeps the bucket private while the
@@ -8740,11 +8748,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // teaser | pending — redacted. No description, no screenshot, no comment bodies.
         return json({ access, ticket: teaser }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
       }
-      // full — description, screenshot (HMAC-gated /img/ token), page context, comments.
+      // full — description, screenshot (HMAC-gated /img/ token or presigned attachment), page context, comments.
+      let shotUrl: string | null = null
+      if (fbRow.screenshotId) {
+        shotUrl = `${BASE}/img/${signImageToken(fbRow.screenshotId)}`
+      } else if (Array.isArray(fbRow.attachments)) {
+        const imgAtt = fbRow.attachments.find((a: any) => a && (/\.(png|jpe?g|webp|gif|svg)$/i.test(a.filename || "") || /^image\//i.test(a.contentType || "")))
+        if (imgAtt && imgAtt.key) {
+          try { shotUrl = presignGet(String(imgAtt.key), 3600) } catch { shotUrl = null }
+        }
+      }
       const ticket = {
         ...teaser,
         description: fbRow.observation,
-        screenshotUrl: fbRow.screenshotId ? `${BASE}/img/${signImageToken(fbRow.screenshotId)}` : null,
+        screenshotUrl: shotUrl,
         pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
         urlHost: fbRow.urlHost ?? null,
         comments: comments.map((c: any) => ({ author: c.author, body: c.body, createdAt: c.createdAt })),
