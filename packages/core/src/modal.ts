@@ -1641,7 +1641,7 @@ export function buildModal(
           <input type="checkbox" id="klavity-conlog-cb" checked>${icon('file-text', { size: 14 })}<span>Attach console logs</span>
         </label>
       </div>` : ''}
-      <button type="button" class="klavity-submit" id="klavity-submit" title="Submit (S)" disabled>Submit</button>
+      <button type="button" class="klavity-submit" id="klavity-submit" title="Submit" disabled>Submit</button>
       <div class="klavity-progress" id="klavity-progress" role="progressbar" aria-label="Uploading report"><div class="klavity-progress-fill" id="klavity-progress-fill"></div></div>
     </div>
   `

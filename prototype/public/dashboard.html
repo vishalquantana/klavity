@@ -6951,7 +6951,7 @@
     }
 
     .prop-dot.ds-new {
-      background: #e11d63
+      background: var(--rose)
     }
 
     .prop-dot.ds-open {
@@ -6962,6 +6962,18 @@
       background: var(--indigo)
     }
 
+    .prop-dot.ds-blocked {
+      background: #dc2626
+    }
+    .prop-dot.ds-ready_for_deployment {
+      background: #7c3aed
+    }
+    .prop-dot.ds-deployed {
+      background: #0d9488
+    }
+    .prop-dot.ds-qa_review {
+      background: #0891b2
+    }
     .prop-dot.ds-done {
       background: var(--green)
     }
@@ -7886,6 +7898,15 @@
       background: #0891b2
     }
 
+    .kb-dot-blocked {
+      background: #dc2626
+    }
+    .kb-dot-ready_for_deployment {
+      background: #7c3aed
+    }
+    .kb-dot-deployed {
+      background: #0d9488
+    }
     .kb-dot-done {
       background: var(--green)
     }
@@ -8182,6 +8203,34 @@
       background: var(--indigo)
     }
 
+    .tkt-pill.p-blocked {
+      background: rgba(220, 38, 38, .15);
+      color: #dc2626
+    }
+    .tkt-pill.p-blocked .pdot {
+      background: #dc2626
+    }
+    .tkt-pill.p-ready_for_deployment {
+      background: rgba(124, 58, 237, .15);
+      color: #7c3aed
+    }
+    .tkt-pill.p-ready_for_deployment .pdot {
+      background: #7c3aed
+    }
+    .tkt-pill.p-deployed {
+      background: rgba(13, 148, 136, .15);
+      color: #0d9488
+    }
+    .tkt-pill.p-deployed .pdot {
+      background: #0d9488
+    }
+    .tkt-pill.p-qa_review {
+      background: rgba(8, 145, 178, .15);
+      color: #0891b2
+    }
+    .tkt-pill.p-qa_review .pdot {
+      background: #0891b2
+    }
     .tkt-pill.p-done {
       background: rgba(15, 157, 107, .15);
       color: var(--green)
@@ -13961,6 +14010,34 @@
       margin-top: 0
     }
 
+    /* Ticket-view Status / Priority dropdowns — same component language as the top-nav "+ Create"
+       menu (.create-btn / .create-menu / .create-item). The native <select> is kept in the DOM as the
+       state holder (.kdd-native) so the existing save path keeps working; this is only its skin. A
+       custom menu is what lets each option carry its status dot / priority swatch, which a native
+       option list cannot render. */
+    .kdd { position: relative; display: inline-flex; align-items: center }
+    .kdd-native { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none }
+    .kdd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 9px;
+      border: 1px solid transparent; background: transparent; color: var(--paper);
+      font-family: var(--body); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      min-width: 124px; text-transform: capitalize;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease }
+    .kdd-btn:hover { background: var(--ink-3) }
+    .kdd-btn:focus-visible { outline: none; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
+    .kdd-btn[aria-expanded="true"] { background: var(--ink-2); border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
+    .kdd-caret { margin-left: auto; color: var(--muted); transition: transform .15s }
+    .kdd-btn[aria-expanded="true"] .kdd-caret { transform: rotate(180deg) }
+    .kdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 180px; padding: 5px;
+      background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.28); display: flex; flex-direction: column; gap: 2px }
+    .kdd-menu.hide { display: none }
+    .kdd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0;
+      border-radius: 8px; background: transparent; color: var(--paper); font-family: var(--body);
+      font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-transform: capitalize }
+    .kdd-item:hover, .kdd-item:focus-visible { background: rgba(99,102,241,.12); outline: none }
+    .kdd-item[aria-checked="true"] { font-weight: 700 }
+    .kdd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+
     .tkt-pri-sel,
     .tkt-status-sel {
       font-family: var(--body);
@@ -15743,9 +15820,12 @@
             <span class="tkt-fb-label">Filter</span>
             <select id="fbStatus" title="Filter by status">
               <option value="">All statuses</option>
-              <option value="new">New</option>
               <option value="open">Open</option>
+              <option value="new">TO DO</option>
               <option value="in_progress">In progress</option>
+              <option value="blocked">Blocked</option>
+              <option value="ready_for_deployment">Ready for Deployment</option>
+              <option value="deployed">Deployed</option>
               <option value="qa_review">QA Review</option>
               <option value="done">Done</option>
               <option value="dismissed">Dismissed</option>
@@ -17425,7 +17505,7 @@
         if (_tktBoardProjId === pid && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) return false  // board already warm
         if (swrRead("tickets:" + pid) != null) return false                   // prefetched recently & still fresh
         const sp = new URLSearchParams()
-        sp.set("status", "new,open,in_progress,qa_review,done,dismissed")
+        sp.set("status", ALL_STATUSES)
         sp.set("page", "1"); sp.set("limit", "200")
         const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets?" + sp.toString(), { signal })
         if (!r || !r.ok) return true
@@ -20815,7 +20895,12 @@
       }
     }
 
-    const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", qa_review: "QA Review", done: "Done", dismissed: "Dismissed" }
+    // KD-208: `new` is DISPLAYED as "TO DO" -- the stored value stays "new" so existing tickets, saved
+    // tracker mappings and the public API enum all keep working. Order below is the board order.
+    const STATUS_LABELS = { open: "Open", new: "TO DO", in_progress: "In Progress", blocked: "Blocked", ready_for_deployment: "Ready for Deployment", deployed: "Deployed", qa_review: "QA Review", done: "Done", dismissed: "Dismissed" }
+    // One source of truth for board order + the dropdown + every "all statuses" filter string.
+    const STATUS_ORDER = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
+    const ALL_STATUSES = STATUS_ORDER.join(",")
 
     function projectMemberEmails() {
       // `state` is still null when a deep link (/dashboard#tickets) renders this view before the first
@@ -21807,7 +21892,7 @@
       // Status segmented control — full state machine (KLA-206): New and Dismissed included so
       // un-dismissing and re-triaging (back to New/Open) are one click from detail, matching the
       // PATCH /api/feedback/:id VALID_STATUS set.
-      const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+      const statuses = STATUS_ORDER.slice()
       const curStatus = t.status || "open"
       // #630(a): STATUS as a compact <select> (mirrors the Priority picker beside it) instead of 5 inline
       // pills — far less clutter on the single-ticket view. Same option set / state machine as before.
@@ -21915,9 +22000,19 @@
       const _bodyHtml = `
       <div class="tkt-props">
         <span class="tkt-prop-lb">Status</span>
-        <span class="tkt-prop-vv"><label class="prop-ctl"><span class="prop-dot ds-${esc(curStatus)}"></span><select class="tkt-status-sel seg-like prop-sel" aria-label="Status">${statusOpts}</select></label></span>
+        <span class="tkt-prop-vv"><span class="kdd" data-kdd="status">
+          <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Status"><span class="prop-dot ds-${esc(curStatus)}"></span><span class="kdd-txt">${esc(STATUS_LABELS[curStatus] || curStatus)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
+          <span class="kdd-menu hide" role="menu" aria-label="Status">${statuses.map(s2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${s2 === curStatus}" data-val="${esc(s2)}"><span class="prop-dot ds-${esc(s2)}"></span>${esc(STATUS_LABELS[s2] || s2)}</button>`).join("")}</span>
+          ${/* The native select stays as the state holder: picking an item sets its value and fires `change`,
+               so the existing save path (mutation guard, aria-busy, rollback, dot repaint) runs untouched. */''}
+          <select class="tkt-status-sel kdd-native" aria-hidden="true" tabindex="-1">${statusOpts}</select>
+        </span></span>
         <span class="tkt-prop-lb">Priority</span>
-        <span class="tkt-prop-vv"><label class="prop-ctl"><span class="prop-sq dp-${esc(curPri)}"></span><select class="tkt-pri-sel seg-like prop-sel" aria-label="Priority">${priOpts}</select></label></span>
+        <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
+          <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent","high","medium","low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
+          <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
+        </span></span>
         <span class="tkt-prop-lb">Assignee</span>
         <span class="tkt-prop-vv">${assigneePickerHtml(t)}</span>
         ${/* QPQ-31: who reported it — the email typed into the composer's Email field (server sends it as
@@ -22106,7 +22201,7 @@
         _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
         if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
         if (_aInviteRow) _aInviteRow.classList.add("hide")
-        if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }
+        if (_aDocHandler) { document.removeEventListener("click", _aDocHandler, true); _aDocHandler = null }
         window.removeEventListener("resize", _positionAssigneePop)
         document.removeEventListener("scroll", _positionAssigneePop, true)
       }
@@ -22122,7 +22217,7 @@
         document.addEventListener("scroll", _positionAssigneePop, true)
         setTimeout(() => { try { if (_aSearch) _aSearch.focus({ preventScroll: true }) } catch (e) { } }, 20)
         _aDocHandler = ev => { if (!ev.target.closest(".tkt-assignee-ctrl-wrap")) _closeAssigneePop() }
-        setTimeout(() => document.addEventListener("click", _aDocHandler), 0)
+        setTimeout(() => document.addEventListener("click", _aDocHandler, true), 0)
       }
       if (_assigneeCtrlBtn && _aPop) {
         _assigneeCtrlBtn.addEventListener("click", ev => {
@@ -22162,6 +22257,51 @@
 
       // #630(a): Wire up the status <select> (was 5 seg buttons). Same PATCH + optimistic-state logic;
       // a single change handler replaces the per-pill click handlers.
+      // ── Status / Priority dropdown skins ────────────────────────────────────────────────────────
+      // Each custom menu drives its hidden <select>: picking an item sets .value and dispatches
+      // `change`, so every existing guarantee below (mutation guard, aria-busy, rollback, dot repaint)
+      // applies unchanged. The trigger is repainted from the SAME change event, so it can never show a
+      // value the select does not hold.
+      detailEl.querySelectorAll(".kdd").forEach(kdd => {
+        const btn = kdd.querySelector(".kdd-btn")
+        const menu = kdd.querySelector(".kdd-menu")
+        const sel = kdd.querySelector(".kdd-native")
+        if (!btn || !menu || !sel) return
+        const closeAll = (except) => detailEl.querySelectorAll(".kdd-menu").forEach(m => {
+          if (m === except) return
+          m.classList.add("hide")
+          m.parentElement.querySelector(".kdd-btn").setAttribute("aria-expanded", "false")
+        })
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation()                       // the row behind us toggles the panel
+          const willOpen = menu.classList.contains("hide")
+          closeAll(willOpen ? menu : null)
+          menu.classList.toggle("hide", !willOpen)
+          btn.setAttribute("aria-expanded", String(willOpen))
+        })
+        menu.addEventListener("click", (ev) => {
+          const it = ev.target.closest(".kdd-item")
+          if (!it) return
+          ev.stopPropagation()
+          menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false")
+          const v = it.getAttribute("data-val")
+          if (v === sel.value) return                // nothing to save
+          sel.value = v
+          sel.dispatchEvent(new Event("change", { bubbles: true }))
+        })
+        // Repaint from the select itself, so a rollback on a failed save repaints too.
+        sel.addEventListener("change", () => {
+          const v = sel.value
+          const txt = btn.querySelector(".kdd-txt")
+          if (txt) txt.textContent = (sel.options[sel.selectedIndex] || {}).text || v
+          const swatch = btn.querySelector(".prop-dot, .prop-sq")
+          if (swatch) swatch.className = swatch.classList.contains("prop-dot") ? "prop-dot ds-" + v : "prop-sq dp-" + v
+          menu.querySelectorAll(".kdd-item").forEach(i => i.setAttribute("aria-checked", String(i.getAttribute("data-val") === v)))
+        })
+        document.addEventListener("click", () => closeAll(null))
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(null) })
+      })
+
       const statusSelEl = detailEl.querySelector(".tkt-status-sel")
       if (statusSelEl) {
         let _prevStatus = curStatus
@@ -22623,6 +22763,7 @@
               const tkt = (state.tickets || []).find(x => x.id === ticketId)
               if (tkt) tkt.labels = ticketLabels.slice()
               renderLblChips()
+              populateSel()
               renderGhostChips()
             })
           })
@@ -23458,15 +23599,7 @@
     // Tickets view: kanban board grouped by status.
     // KLA-206: split the old "Closed" column into Done + Dismissed so a fixed bug and dismissed
     // noise are visually distinct, and dragging a card can produce either state (drop → col.status).
-    const KANBAN_COLS = [
-      { key: "new", status: "new", label: "New", statuses: ["new"] },
-      { key: "open", status: "open", label: "Open", statuses: ["open"] },
-      { key: "in_progress", status: "in_progress", label: "In Progress", statuses: ["in_progress"] },
-      // KD-165: QA Review sits between In Progress and Done — dev work done, awaiting QA sign-off.
-      { key: "qa_review", status: "qa_review", label: "QA Review", statuses: ["qa_review"] },
-      { key: "done", status: "done", label: "Done", statuses: ["done"] },
-      { key: "dismissed", status: "dismissed", label: "Dismissed", statuses: ["dismissed"] },
-    ]
+    const KANBAN_COLS = STATUS_ORDER.map(s => ({ key: s, status: s, label: STATUS_LABELS[s], statuses: [s] }))
     // Single-ticket view — clicking any ticket (kanban card, recent-tickets row, or Fix-next)
     // opens its full detail here instead of expanding inline, and hides the board.
     // KLA-206: fetch fresh data from GET /api/feedback/:id on open so detail reflects the latest
@@ -24709,7 +24842,7 @@
     function ticketStatusParamFor(view) {
       if (_tktFilters.status === "closed") return "done,dismissed"
       if (_tktFilters.status) return _tktFilters.status
-      return view === "board" ? "new,open,in_progress,qa_review,done,dismissed" : ""
+      return view === "board" ? ALL_STATUSES : ""
     }
 
     function ticketQueryParams(view, page, limit) {
@@ -24802,7 +24935,7 @@
       // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
       // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
       const sp = new URLSearchParams()
-      sp.set("status", "new,open,in_progress,qa_review,done,dismissed")
+      sp.set("status", ALL_STATUSES)
       sp.set("page", "1")
       sp.set("limit", "200")
 
@@ -25074,7 +25207,7 @@
         `<button class="btn btn-ghost btn-sm" id="bulkClear" type="button" style="padding:4px 8px;font-size:11px">${window.kicon("x", { size: 11 })} Clear</button>` +
         `<span class="bulk-sep"></span>` +
         `<span class="bulk-lbl">Status:</span>` +
-        `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="qa_review">QA Review</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>` +
+        `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option>${STATUS_ORDER.map(s => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}</select>` +
         `<span class="bulk-sep"></span>` +
         `<span class="bulk-lbl">Priority:</span>` +
         `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
@@ -25311,12 +25444,7 @@
       if (board) board.scrollIntoView({ behavior: "smooth", block: "start" })
     }
     function kanbanKeyForStatus(status) {
-      if (status === "new") return "new"
-      if (status === "in_progress") return "in_progress"
-      if (status === "qa_review") return "qa_review"
-      if (status === "done") return "done"
-      if (status === "dismissed") return "dismissed"
-      return "open"
+      return STATUS_ORDER.includes(status) ? status : "open"
     }
     function ticketStatusLabel(status) {
       if (status === "dismissed") return "Dismissed"
@@ -27151,7 +27279,7 @@
     // row objects for. Kept in one place so collectConnMaps() can bucket <select> values without
     // re-deriving them from the loaded rows.
     const CONN_MAP_KIND_KEYS = ["bug", "feature", "task", "query"]
-    const CONN_MAP_STATUS_KEYS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+    const CONN_MAP_STATUS_KEYS = STATUS_ORDER.slice()
 
     // Client mirror of prototype/lib/connectors/resolve-issue-type.ts's parseJsonMap — issue_type_map
     // / status_map are stored as JSON strings on connector config; this only needs to read them back

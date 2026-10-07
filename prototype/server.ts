@@ -12746,7 +12746,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/priority
         if (req.method === "PATCH" && !feedbackSubroute) {
           const body = await req.json().catch(() => ({}))
-          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+          const VALID_STATUS = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
           if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
             return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
           }
@@ -14574,7 +14574,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
           if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
-          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+          const VALID_STATUS = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
           const VALID_PRI = ["urgent", "high", "medium", "low"]
 
           const hasStatus = body.status !== undefined
