@@ -6951,7 +6951,7 @@
     }
 
     .prop-dot.ds-new {
-      background: #e11d63
+      background: var(--rose)
     }
 
     .prop-dot.ds-open {
@@ -13996,6 +13996,34 @@
     .tkt-pri-row {
       margin-top: 0
     }
+
+    /* Ticket-view Status / Priority dropdowns — same component language as the top-nav "+ Create"
+       menu (.create-btn / .create-menu / .create-item). The native <select> is kept in the DOM as the
+       state holder (.kdd-native) so the existing save path keeps working; this is only its skin. A
+       custom menu is what lets each option carry its status dot / priority swatch, which a native
+       option list cannot render. */
+    .kdd { position: relative; display: inline-flex; align-items: center }
+    .kdd-native { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none }
+    .kdd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 9px;
+      border: 1px solid transparent; background: transparent; color: var(--paper);
+      font-family: var(--body); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      min-width: 124px; text-transform: capitalize;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease }
+    .kdd-btn:hover { background: var(--ink-3) }
+    .kdd-btn:focus-visible { outline: none; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
+    .kdd-btn[aria-expanded="true"] { background: var(--ink-2); border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
+    .kdd-caret { margin-left: auto; color: var(--muted); transition: transform .15s }
+    .kdd-btn[aria-expanded="true"] .kdd-caret { transform: rotate(180deg) }
+    .kdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 180px; padding: 5px;
+      background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,.28); display: flex; flex-direction: column; gap: 2px }
+    .kdd-menu.hide { display: none }
+    .kdd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0;
+      border-radius: 8px; background: transparent; color: var(--paper); font-family: var(--body);
+      font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-transform: capitalize }
+    .kdd-item:hover, .kdd-item:focus-visible { background: rgba(99,102,241,.12); outline: none }
+    .kdd-item[aria-checked="true"] { font-weight: 700 }
+    .kdd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 
     .tkt-pri-sel,
     .tkt-status-sel {
@@ -21959,9 +21987,19 @@
       const _bodyHtml = `
       <div class="tkt-props">
         <span class="tkt-prop-lb">Status</span>
-        <span class="tkt-prop-vv"><label class="prop-ctl"><span class="prop-dot ds-${esc(curStatus)}"></span><select class="tkt-status-sel seg-like prop-sel" aria-label="Status">${statusOpts}</select></label></span>
+        <span class="tkt-prop-vv"><span class="kdd" data-kdd="status">
+          <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Status"><span class="prop-dot ds-${esc(curStatus)}"></span><span class="kdd-txt">${esc(STATUS_LABELS[curStatus] || curStatus)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
+          <span class="kdd-menu hide" role="menu" aria-label="Status">${statuses.map(s2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${s2 === curStatus}" data-val="${esc(s2)}"><span class="prop-dot ds-${esc(s2)}"></span>${esc(STATUS_LABELS[s2] || s2)}</button>`).join("")}</span>
+          ${/* The native select stays as the state holder: picking an item sets its value and fires `change`,
+               so the existing save path (mutation guard, aria-busy, rollback, dot repaint) runs untouched. */''}
+          <select class="tkt-status-sel kdd-native" aria-hidden="true" tabindex="-1">${statusOpts}</select>
+        </span></span>
         <span class="tkt-prop-lb">Priority</span>
-        <span class="tkt-prop-vv"><label class="prop-ctl"><span class="prop-sq dp-${esc(curPri)}"></span><select class="tkt-pri-sel seg-like prop-sel" aria-label="Priority">${priOpts}</select></label></span>
+        <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
+          <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent","high","medium","low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
+          <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
+        </span></span>
         <span class="tkt-prop-lb">Assignee</span>
         <span class="tkt-prop-vv">${assigneePickerHtml(t)}</span>
         ${/* QPQ-31: who reported it — the email typed into the composer's Email field (server sends it as
@@ -22150,7 +22188,7 @@
         _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
         if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
         if (_aInviteRow) _aInviteRow.classList.add("hide")
-        if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }
+        if (_aDocHandler) { document.removeEventListener("click", _aDocHandler, true); _aDocHandler = null }
         window.removeEventListener("resize", _positionAssigneePop)
         document.removeEventListener("scroll", _positionAssigneePop, true)
       }
@@ -22166,7 +22204,7 @@
         document.addEventListener("scroll", _positionAssigneePop, true)
         setTimeout(() => { try { if (_aSearch) _aSearch.focus({ preventScroll: true }) } catch (e) { } }, 20)
         _aDocHandler = ev => { if (!ev.target.closest(".tkt-assignee-ctrl-wrap")) _closeAssigneePop() }
-        setTimeout(() => document.addEventListener("click", _aDocHandler), 0)
+        setTimeout(() => document.addEventListener("click", _aDocHandler, true), 0)
       }
       if (_assigneeCtrlBtn && _aPop) {
         _assigneeCtrlBtn.addEventListener("click", ev => {
@@ -22206,6 +22244,51 @@
 
       // #630(a): Wire up the status <select> (was 5 seg buttons). Same PATCH + optimistic-state logic;
       // a single change handler replaces the per-pill click handlers.
+      // ── Status / Priority dropdown skins ────────────────────────────────────────────────────────
+      // Each custom menu drives its hidden <select>: picking an item sets .value and dispatches
+      // `change`, so every existing guarantee below (mutation guard, aria-busy, rollback, dot repaint)
+      // applies unchanged. The trigger is repainted from the SAME change event, so it can never show a
+      // value the select does not hold.
+      detailEl.querySelectorAll(".kdd").forEach(kdd => {
+        const btn = kdd.querySelector(".kdd-btn")
+        const menu = kdd.querySelector(".kdd-menu")
+        const sel = kdd.querySelector(".kdd-native")
+        if (!btn || !menu || !sel) return
+        const closeAll = (except) => detailEl.querySelectorAll(".kdd-menu").forEach(m => {
+          if (m === except) return
+          m.classList.add("hide")
+          m.parentElement.querySelector(".kdd-btn").setAttribute("aria-expanded", "false")
+        })
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation()                       // the row behind us toggles the panel
+          const willOpen = menu.classList.contains("hide")
+          closeAll(willOpen ? menu : null)
+          menu.classList.toggle("hide", !willOpen)
+          btn.setAttribute("aria-expanded", String(willOpen))
+        })
+        menu.addEventListener("click", (ev) => {
+          const it = ev.target.closest(".kdd-item")
+          if (!it) return
+          ev.stopPropagation()
+          menu.classList.add("hide"); btn.setAttribute("aria-expanded", "false")
+          const v = it.getAttribute("data-val")
+          if (v === sel.value) return                // nothing to save
+          sel.value = v
+          sel.dispatchEvent(new Event("change", { bubbles: true }))
+        })
+        // Repaint from the select itself, so a rollback on a failed save repaints too.
+        sel.addEventListener("change", () => {
+          const v = sel.value
+          const txt = btn.querySelector(".kdd-txt")
+          if (txt) txt.textContent = (sel.options[sel.selectedIndex] || {}).text || v
+          const swatch = btn.querySelector(".prop-dot, .prop-sq")
+          if (swatch) swatch.className = swatch.classList.contains("prop-dot") ? "prop-dot ds-" + v : "prop-sq dp-" + v
+          menu.querySelectorAll(".kdd-item").forEach(i => i.setAttribute("aria-checked", String(i.getAttribute("data-val") === v)))
+        })
+        document.addEventListener("click", () => closeAll(null))
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(null) })
+      })
+
       const statusSelEl = detailEl.querySelector(".tkt-status-sel")
       if (statusSelEl) {
         let _prevStatus = curStatus
@@ -22667,6 +22750,7 @@
               const tkt = (state.tickets || []).find(x => x.id === ticketId)
               if (tkt) tkt.labels = ticketLabels.slice()
               renderLblChips()
+              populateSel()
               renderGhostChips()
             })
           })
