@@ -10,6 +10,7 @@ import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
+import { gzipReplayField } from "../../core/src/integrations/backend"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
@@ -2619,6 +2620,7 @@ export async function submitFeedback(
     // silently dropped the overlay from the widget submit path.
     annotations: payload.annotations,
   })
+  await gzipReplayField(fd) // latency: send the (large) rolling replay buffer gzipped (plain field kept as the fallback)
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
   if (payload.reporterEmail) fd.set("reporter_email", payload.reporterEmail)
