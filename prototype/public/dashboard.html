@@ -22610,6 +22610,7 @@
               const tkt = (state.tickets || []).find(x => x.id === ticketId)
               if (tkt) tkt.labels = ticketLabels.slice()
               renderLblChips()
+              populateSel()
               renderGhostChips()
             })
           })
