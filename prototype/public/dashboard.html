@@ -6962,6 +6962,18 @@
       background: var(--indigo)
     }
 
+    .prop-dot.ds-blocked {
+      background: #dc2626
+    }
+    .prop-dot.ds-ready_for_deployment {
+      background: #7c3aed
+    }
+    .prop-dot.ds-deployed {
+      background: #0d9488
+    }
+    .prop-dot.ds-qa_review {
+      background: #0891b2
+    }
     .prop-dot.ds-done {
       background: var(--green)
     }
@@ -7886,6 +7898,15 @@
       background: #0891b2
     }
 
+    .kb-dot-blocked {
+      background: #dc2626
+    }
+    .kb-dot-ready_for_deployment {
+      background: #7c3aed
+    }
+    .kb-dot-deployed {
+      background: #0d9488
+    }
     .kb-dot-done {
       background: var(--green)
     }
@@ -8182,6 +8203,34 @@
       background: var(--indigo)
     }
 
+    .tkt-pill.p-blocked {
+      background: rgba(220, 38, 38, .15);
+      color: #dc2626
+    }
+    .tkt-pill.p-blocked .pdot {
+      background: #dc2626
+    }
+    .tkt-pill.p-ready_for_deployment {
+      background: rgba(124, 58, 237, .15);
+      color: #7c3aed
+    }
+    .tkt-pill.p-ready_for_deployment .pdot {
+      background: #7c3aed
+    }
+    .tkt-pill.p-deployed {
+      background: rgba(13, 148, 136, .15);
+      color: #0d9488
+    }
+    .tkt-pill.p-deployed .pdot {
+      background: #0d9488
+    }
+    .tkt-pill.p-qa_review {
+      background: rgba(8, 145, 178, .15);
+      color: #0891b2
+    }
+    .tkt-pill.p-qa_review .pdot {
+      background: #0891b2
+    }
     .tkt-pill.p-done {
       background: rgba(15, 157, 107, .15);
       color: var(--green)
@@ -15730,9 +15779,12 @@
             <span class="tkt-fb-label">Filter</span>
             <select id="fbStatus" title="Filter by status">
               <option value="">All statuses</option>
-              <option value="new">New</option>
               <option value="open">Open</option>
+              <option value="new">TO DO</option>
               <option value="in_progress">In progress</option>
+              <option value="blocked">Blocked</option>
+              <option value="ready_for_deployment">Ready for Deployment</option>
+              <option value="deployed">Deployed</option>
               <option value="qa_review">QA Review</option>
               <option value="done">Done</option>
               <option value="dismissed">Dismissed</option>
@@ -17412,7 +17464,7 @@
         if (_tktBoardProjId === pid && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) return false  // board already warm
         if (swrRead("tickets:" + pid) != null) return false                   // prefetched recently & still fresh
         const sp = new URLSearchParams()
-        sp.set("status", "new,open,in_progress,qa_review,done,dismissed")
+        sp.set("status", ALL_STATUSES)
         sp.set("page", "1"); sp.set("limit", "200")
         const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets?" + sp.toString(), { signal })
         if (!r || !r.ok) return true
@@ -20802,7 +20854,12 @@
       }
     }
 
-    const STATUS_LABELS = { new: "New", open: "Open", in_progress: "In Progress", qa_review: "QA Review", done: "Done", dismissed: "Dismissed" }
+    // KD-208: `new` is DISPLAYED as "TO DO" -- the stored value stays "new" so existing tickets, saved
+    // tracker mappings and the public API enum all keep working. Order below is the board order.
+    const STATUS_LABELS = { open: "Open", new: "TO DO", in_progress: "In Progress", blocked: "Blocked", ready_for_deployment: "Ready for Deployment", deployed: "Deployed", qa_review: "QA Review", done: "Done", dismissed: "Dismissed" }
+    // One source of truth for board order + the dropdown + every "all statuses" filter string.
+    const STATUS_ORDER = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
+    const ALL_STATUSES = STATUS_ORDER.join(",")
 
     function projectMemberEmails() {
       // `state` is still null when a deep link (/dashboard#tickets) renders this view before the first
@@ -21794,7 +21851,7 @@
       // Status segmented control — full state machine (KLA-206): New and Dismissed included so
       // un-dismissing and re-triaging (back to New/Open) are one click from detail, matching the
       // PATCH /api/feedback/:id VALID_STATUS set.
-      const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+      const statuses = STATUS_ORDER.slice()
       const curStatus = t.status || "open"
       // #630(a): STATUS as a compact <select> (mirrors the Priority picker beside it) instead of 5 inline
       // pills — far less clutter on the single-ticket view. Same option set / state machine as before.
@@ -23445,15 +23502,7 @@
     // Tickets view: kanban board grouped by status.
     // KLA-206: split the old "Closed" column into Done + Dismissed so a fixed bug and dismissed
     // noise are visually distinct, and dragging a card can produce either state (drop → col.status).
-    const KANBAN_COLS = [
-      { key: "new", status: "new", label: "New", statuses: ["new"] },
-      { key: "open", status: "open", label: "Open", statuses: ["open"] },
-      { key: "in_progress", status: "in_progress", label: "In Progress", statuses: ["in_progress"] },
-      // KD-165: QA Review sits between In Progress and Done — dev work done, awaiting QA sign-off.
-      { key: "qa_review", status: "qa_review", label: "QA Review", statuses: ["qa_review"] },
-      { key: "done", status: "done", label: "Done", statuses: ["done"] },
-      { key: "dismissed", status: "dismissed", label: "Dismissed", statuses: ["dismissed"] },
-    ]
+    const KANBAN_COLS = STATUS_ORDER.map(s => ({ key: s, status: s, label: STATUS_LABELS[s], statuses: [s] }))
     // Single-ticket view — clicking any ticket (kanban card, recent-tickets row, or Fix-next)
     // opens its full detail here instead of expanding inline, and hides the board.
     // KLA-206: fetch fresh data from GET /api/feedback/:id on open so detail reflects the latest
@@ -24623,7 +24672,7 @@
     function ticketStatusParamFor(view) {
       if (_tktFilters.status === "closed") return "done,dismissed"
       if (_tktFilters.status) return _tktFilters.status
-      return view === "board" ? "new,open,in_progress,qa_review,done,dismissed" : ""
+      return view === "board" ? ALL_STATUSES : ""
     }
 
     function ticketQueryParams(view, page, limit) {
@@ -24716,7 +24765,7 @@
       // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
       // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
       const sp = new URLSearchParams()
-      sp.set("status", "new,open,in_progress,qa_review,done,dismissed")
+      sp.set("status", ALL_STATUSES)
       sp.set("page", "1")
       sp.set("limit", "200")
 
@@ -24988,7 +25037,7 @@
         `<button class="btn btn-ghost btn-sm" id="bulkClear" type="button" style="padding:4px 8px;font-size:11px">${window.kicon("x", { size: 11 })} Clear</button>` +
         `<span class="bulk-sep"></span>` +
         `<span class="bulk-lbl">Status:</span>` +
-        `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option><option value="new">New</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="qa_review">QA Review</option><option value="done">Done</option><option value="dismissed">Dismissed</option></select>` +
+        `<select class="bulk-sel" id="bulkStatus"><option value="">— change —</option>${STATUS_ORDER.map(s => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("")}</select>` +
         `<span class="bulk-sep"></span>` +
         `<span class="bulk-lbl">Priority:</span>` +
         `<select class="bulk-sel" id="bulkPriority"><option value="">— change —</option><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>` +
@@ -25225,12 +25274,7 @@
       if (board) board.scrollIntoView({ behavior: "smooth", block: "start" })
     }
     function kanbanKeyForStatus(status) {
-      if (status === "new") return "new"
-      if (status === "in_progress") return "in_progress"
-      if (status === "qa_review") return "qa_review"
-      if (status === "done") return "done"
-      if (status === "dismissed") return "dismissed"
-      return "open"
+      return STATUS_ORDER.includes(status) ? status : "open"
     }
     function ticketStatusLabel(status) {
       if (status === "dismissed") return "Dismissed"
@@ -27065,7 +27109,7 @@
     // row objects for. Kept in one place so collectConnMaps() can bucket <select> values without
     // re-deriving them from the loaded rows.
     const CONN_MAP_KIND_KEYS = ["bug", "feature", "task", "query"]
-    const CONN_MAP_STATUS_KEYS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+    const CONN_MAP_STATUS_KEYS = STATUS_ORDER.slice()
 
     // Client mirror of prototype/lib/connectors/resolve-issue-type.ts's parseJsonMap — issue_type_map
     // / status_map are stored as JSON strings on connector config; this only needs to read them back
