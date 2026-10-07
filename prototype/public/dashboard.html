@@ -22134,7 +22134,7 @@
         _aPop.classList.remove("up"); _aPop.style.maxHeight = ""; _aPop.style.left = ""; _aPop.style.width = ""
         if (_assigneeCtrlBtn) _assigneeCtrlBtn.classList.remove("open")
         if (_aInviteRow) _aInviteRow.classList.add("hide")
-        if (_aDocHandler) { document.removeEventListener("click", _aDocHandler); _aDocHandler = null }
+        if (_aDocHandler) { document.removeEventListener("click", _aDocHandler, true); _aDocHandler = null }
         window.removeEventListener("resize", _positionAssigneePop)
         document.removeEventListener("scroll", _positionAssigneePop, true)
       }
@@ -22150,7 +22150,7 @@
         document.addEventListener("scroll", _positionAssigneePop, true)
         setTimeout(() => { try { if (_aSearch) _aSearch.focus({ preventScroll: true }) } catch (e) { } }, 20)
         _aDocHandler = ev => { if (!ev.target.closest(".tkt-assignee-ctrl-wrap")) _closeAssigneePop() }
-        setTimeout(() => document.addEventListener("click", _aDocHandler), 0)
+        setTimeout(() => document.addEventListener("click", _aDocHandler, true), 0)
       }
       if (_assigneeCtrlBtn && _aPop) {
         _assigneeCtrlBtn.addEventListener("click", ev => {
