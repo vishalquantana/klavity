@@ -31,11 +31,25 @@ test("the open/focused state gets a defined box + indigo ring on every control",
   expect(HTML).toContain(".tkt-assignee-ctrl.open{background:var(--ink-2);border-color:var(--indigo);box-shadow:0 0 0 3px rgba(99,102,241,.14)}")
 })
 
-test("Status/Priority selects render inside the shared .prop-ctl with a .prop-sel treatment", () => {
-  expect(HTML).toContain('<label class="prop-ctl"><span class="prop-dot ds-')
-  expect(HTML).toContain('<label class="prop-ctl"><span class="prop-sq dp-')
-  expect(HTML).toContain('class="tkt-status-sel seg-like prop-sel"')
-  expect(HTML).toContain('class="tkt-pri-sel seg-like prop-sel"')
+test("Status/Priority render as dropdowns, with the <select> kept as the hidden state holder", () => {
+  // KD-206: the .prop-ctl/.prop-sel treatment was replaced by the top-nav "+ Create" component
+  // language. The selects stay in the DOM (.kdd-native) because the whole save path -- mutation
+  // guard, aria-busy, rollback, dot repaint -- is driven off their `change` event.
+  expect(HTML).toContain('class="tkt-status-sel kdd-native"')
+  expect(HTML).toContain('class="tkt-pri-sel kdd-native"')
+  expect(HTML).toContain('data-kdd="status"')
+  expect(HTML).toContain('data-kdd="priority"')
+  // each option carries its own swatch, which a native <option> list cannot render
+  expect(HTML).toContain('class="kdd-item" role="menuitemradio"')
+  expect(HTML).toMatch(/kdd-item[^>]*>\s*<span class="prop-dot ds-/)
+  expect(HTML).toMatch(/kdd-item[^>]*>\s*<span class="prop-sq dp-/)
+})
+
+test("every status in the list has a dot colour (qa_review was missing one)", () => {
+  // The rule set covered five statuses while the list has six, so QA Review's dot was transparent.
+  for (const s of ["new", "open", "in_progress", "qa_review", "done", "dismissed"]) {
+    expect(HTML).toContain(`.prop-dot.ds-${s} {`)
+  }
 })
 
 test("assignee edit is a picker popover (search + member list + Unassigned + Invite), not a bare email input", () => {
