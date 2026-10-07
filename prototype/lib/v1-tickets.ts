@@ -5,7 +5,7 @@
 // do NOT reimplement any query.
 import { projectAccess } from "./db"
 
-export const V1_TICKET_STATUSES = ["new", "open", "in_progress", "qa_review", "done", "dismissed"] as const
+export const V1_TICKET_STATUSES = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"] as const
 export const V1_TICKET_PRIORITIES = ["urgent", "high", "medium", "low"] as const
 
 export type V1Label = { id: string; name: string; color: string }
