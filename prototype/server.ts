@@ -58,6 +58,7 @@ import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtR
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
 import { phaseTimer } from "./lib/phase-timer"
+import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
@@ -5524,8 +5525,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // the replay buffer. Detect attached evidence cheaply BEFORE the 400: at least one screenshot File
         // or a non-empty replay buffer suffices. A report with NEITHER description NOR evidence still 400s.
         const hasScreenshotEvidence = form.getAll("screenshots").some((f) => f instanceof File && f.size > 0)
-        const replayRawEarly = String(form.get("replay_events") || "")
-        const hasReplayEvidence = replayRawEarly.length > 2 && replayRawEarly !== "[]" && replayRawEarly !== "null"
+        const hasReplayEvidence = replayEvidencePresent(form)   // plain `replay_events` JSON OR the gzip part `replay_events_gz`
         const hasEvidence = hasScreenshotEvidence || hasReplayEvidence
         if (!description && !hasEvidence) return wjson({ error: "Add a description or attach a screenshot." }, 400)
         if (description.length > 5000) return wjson({ error: "Description too long." }, 400)
@@ -5671,12 +5671,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // (a JSON array string). Parse defensively here; an oversize/garbage field must NEVER fail the
         // bug submission. The per-event-buffer byte cap below is a coarse pre-parse guard; the durable
         // size cap (oldest-first trim) lives in saveFeedbackReplay.
-        const REPLAY_RAW_CAP = 6 * 1024 * 1024 // 6MB of raw JSON before gzip — reject anything larger outright
-        let replayEvents: unknown[] | null = null
-        const replayRaw = String(form.get("replay_events") || "")
-        if (replayRaw && replayRaw.length <= REPLAY_RAW_CAP) {
-          try { const parsed = JSON.parse(replayRaw); if (Array.isArray(parsed) && parsed.length) replayEvents = parsed } catch { /* ignore bad replay */ }
-        }
+        // Accepts the gzip part (`replay_events_gz`, what current clients send) or the plain JSON field (older clients); the
+        // inflated size is bounded by REPLAY_RAW_CAP (6MB) so a decompression bomb is ignored, never a failure.
+        const replayEvents: unknown[] | null = await readReplayEvents(form)
 
         // KLAVITYKLA-288: the legacy inline Plane push is GONE. Every external filing now flows
         // through the connector system (auto-copy on triage-accept / explicit export), which is the

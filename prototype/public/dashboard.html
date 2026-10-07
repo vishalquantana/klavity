@@ -21197,6 +21197,59 @@
         })
       })
     }
+    // ── Image optimisation before upload ───────────────────────────────────────────────────────────────────────────────
+    // Pictures picked / dropped / pasted for a ticket (New ticket dialog + a ticket's "Add attachment") are re-encoded in the
+    // browser BEFORE they are sent, so a multi-MB screenshot or phone photo no longer travels at full size: anything wider
+    // than IMG_OPT_MAX_WIDTH is scaled down (height follows, aspect ratio kept) and re-encoded as JPEG (PNG only when the
+    // picture really has transparency). Best-effort: on any failure — or when the result is not actually smaller — the
+    // ORIGINAL file is returned unchanged. GIF (animation), SVG (vector), HEIC/AVIF/unknown types and videos are never touched.
+    const IMG_OPT_MIN_BYTES = 200 * 1024           // a PNG/WebP/BMP below this is not worth decoding
+    const IMG_OPT_JPEG_BYTES = 1.5 * 1024 * 1024   // a JPEG is only re-encoded when it is big (or wide); JPEG→JPEG gains little
+    const IMG_OPT_MAX_WIDTH = 2000
+    const IMG_OPT_QUALITY = 0.82
+    // Pure: should an image of this type/size/dimensions be re-encoded, and into what? hasAlpha = real transparency present.
+    function imgOptPlan(type, size, w, h, hasAlpha) {
+      const t = String(type || "").toLowerCase()
+      if (!/^image\/(png|jpeg|jpg|webp|bmp)$/.test(t)) return { action: "keep" }
+      if (!(w > 0) || !(h > 0)) return { action: "keep" }
+      const isJpeg = t === "image/jpeg" || t === "image/jpg", wide = w > IMG_OPT_MAX_WIDTH
+      if (!wide && size < (isJpeg ? IMG_OPT_JPEG_BYTES : IMG_OPT_MIN_BYTES)) return { action: "keep" }
+      const tw = wide ? IMG_OPT_MAX_WIDTH : w
+      return { action: "reencode", w: tw, h: Math.max(1, Math.round(h * tw / w)), type: (hasAlpha && !isJpeg) ? "image/png" : "image/jpeg" }
+    }
+    // True when optimising could do anything for this file (cheap, no decode) — used to show "Optimising images…" only when needed.
+    function imgOptCandidate(file) {
+      if (!file || typeof file.size !== "number") return false
+      const t = String(file.type || "").toLowerCase()
+      if (!/^image\/(png|jpeg|jpg|webp|bmp)$/.test(t)) return false
+      return file.size >= ((t === "image/jpeg" || t === "image/jpg") ? IMG_OPT_JPEG_BYTES : IMG_OPT_MIN_BYTES)
+    }
+    async function compressImageFile(file) {
+      try {
+        if (!imgOptCandidate(file) || typeof createImageBitmap !== "function") return file
+        const bmp = await createImageBitmap(file)
+        const bw = bmp.width, bh = bmp.height
+        let hasAlpha = false
+        if (!/jpe?g/i.test(file.type)) {
+          // transparency check on a tiny copy — a transparent PNG must stay PNG (JPEG would paint it black/white)
+          const sc = document.createElement("canvas"); sc.width = 64; sc.height = 64
+          const sx = sc.getContext("2d"); sx.drawImage(bmp, 0, 0, 64, 64)
+          const px = sx.getImageData(0, 0, 64, 64).data
+          for (let i = 3; i < px.length; i += 4) { if (px[i] < 250) { hasAlpha = true; break } }
+        }
+        const plan = imgOptPlan(file.type, file.size, bw, bh, hasAlpha)
+        if (plan.action !== "reencode") { if (bmp.close) bmp.close(); return file }
+        const cv = document.createElement("canvas"); cv.width = plan.w; cv.height = plan.h
+        const cx = cv.getContext("2d")
+        if (plan.type === "image/jpeg") { cx.fillStyle = "#fff"; cx.fillRect(0, 0, plan.w, plan.h) }   // opaque matte (JPEG has no alpha)
+        cx.drawImage(bmp, 0, 0, plan.w, plan.h)
+        if (bmp.close) bmp.close()
+        const blob = await new Promise(function (res) { cv.toBlob(res, plan.type, IMG_OPT_QUALITY) })
+        if (!blob || blob.size >= file.size) return file
+        const name = plan.type === "image/jpeg" ? String(file.name || "image").replace(/\.[^./\\]+$/, "") + ".jpg" : file.name
+        return new File([blob], name, { type: plan.type, lastModified: file.lastModified })
+      } catch (e) { return file }
+    }
     function _attachFmtBytes(n) {
       n = Number(n) || 0
       if (n < 1024) return n + " B"
@@ -21746,15 +21799,22 @@
         //   msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
         // }
         if (!files.length) return
-        var cur = (_attachCtx.get(id) || {}).t || t
-        var plan = attachPlanUpload(files, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
-        var notes = []
-        if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
-        plan.rejected.forEach(function (x) { notes.push(x) })
-        if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
-        if (!notes.length) attachSetMsg(id, "", false)
-        if (!plan.accept.length) return
-        attachStartUpload(id, plan.accept, _attachHooks)
+        var proceed = function (picked) {
+          var cur = (_attachCtx.get(id) || {}).t || t
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var notes = []
+          if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
+          plan.rejected.forEach(function (x) { notes.push(x) })
+          if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
+          if (!notes.length) attachSetMsg(id, "", false)
+          if (!plan.accept.length) return
+          attachStartUpload(id, plan.accept, _attachHooks)
+        }
+        // Big pictures are shrunk first (so the size limits and the upload both see the optimised file); small files and
+        // non-images go straight through with no delay.
+        if (!files.some(imgOptCandidate)) { proceed(files); return }
+        attachSetMsg(id, "Optimising images…", false)
+        Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
       })
     }
     // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
@@ -24149,6 +24209,9 @@
     const NEW_TKT_VIDEO_MAX = 100 * 1024 * 1024       // ATTACH_VIDEO_MAX_BYTES default
     const NEW_TKT_TOTAL_MAX = 120 * 1024 * 1024       // ATTACH_TOTAL_MAX_BYTES default
     let _newTktFiles = []
+    // Bumped whenever the held files are cleared (dialog closed / ticket created), so an image optimisation still running for
+    // a dialog the user already closed can't resurrect files into the next one.
+    let _newTktGen = 0
     const _newTktUrls = new Map()                     // File → object URL for its preview (revoked on remove/close)
     // Pure: merge `incoming` into `current`, enforcing type (image/video only), de-dupe, count and size limits.
     function newTktFilterFiles(current, incoming) {
@@ -24168,6 +24231,7 @@
       return { files, rejected }
     }
     function clearNewTktFiles() {
+      _newTktGen++
       _newTktUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch (e) { } })
       _newTktUrls.clear()
       _newTktFiles = []
@@ -24204,10 +24268,19 @@
         grid.appendChild(item)
       })
     }
-    function newTktAddFiles(list) {
-      const r = newTktFilterFiles(_newTktFiles, Array.prototype.slice.call(list || []))
+    async function newTktAddFiles(list) {
+      const incoming = Array.prototype.slice.call(list || [])   // copy NOW — the input's live FileList is emptied right after this call
+      const gen = _newTktGen
+      const m = document.getElementById("newTktFilesMsg")
+      let prepared = incoming
+      if (incoming.some(imgOptCandidate)) {
+        if (m) m.textContent = "Optimising images…"
+        try { prepared = await Promise.all(incoming.map(compressImageFile)) } catch (e) { prepared = incoming }
+        if (gen !== _newTktGen) return
+      }
+      const r = newTktFilterFiles(_newTktFiles, prepared)
       _newTktFiles = r.files
-      const m = document.getElementById("newTktFilesMsg"); if (m) m.textContent = r.rejected.join(" · ")
+      if (m) m.textContent = r.rejected.join(" · ")
       renderNewTktFiles()
     }
     // Upload the held files to the just-created ticket. Resolves { ok } / { ok:false, error } — never throws.
