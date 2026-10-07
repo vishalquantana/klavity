@@ -1,5 +1,5 @@
 {
-  "_comment": "Source of truth for which target keywords are already covered, per tier. The daily-blog routine reads this at STEP 2 to pick the next uncovered keyword, and appends a new entry here at STEP 9 (SHIP) every time it publishes a Tier A/B/C/D keyword. This replaces the old approach of hand-editing DONE tags in the routine prompt, which drifted out of sync (fixed 2026-09-17 \u2014 see KLAVITYKLA ticket for context).",
+  "_comment": "Source of truth for which target keywords are already covered, per tier. The daily-blog routine reads this at STEP 2 to pick the next uncovered keyword, and appends a new entry here at STEP 9 (SHIP) every time it publishes a Tier A/B/C/D keyword. This replaces the old approach of hand-editing DONE tags in the routine prompt, which drifted out of sync (fixed 2026-09-17 — see KLAVITYKLA ticket for context).",
   "tier-a": {
     "ai qa": "ai-qa-complete-guide",
     "ai testing tools for web agencies": "ai-testing-tools-for-web-agencies",
@@ -22,7 +22,8 @@
     "copilot code quality": "copilot-code-quality",
     "ai generated code bugs": "ai-generated-code-bugs",
     "what is vibe coding": "what-is-vibe-coding",
-    "lovable app testing": "lovable-app-testing"
+    "lovable app testing": "lovable-app-testing",
+    "vibe coding security risks": "vibe-coding-security-risks"
   },
   "tier-c": {
     "marker.io alternative": "marker-io-alternative",

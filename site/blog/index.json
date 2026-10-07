@@ -796,5 +796,12 @@
     "excerpt": "AI test case generation turns a spec, your code, or the live UI into runnable test cases. Here's how it works, where it fails, and how to review it.",
     "category": "Guides",
     "date": "2026-10-06"
+  },
+  {
+    "slug": "vibe-coding-security-risks",
+    "title": "Vibe Coding Security Risks: What to Check Before You Ship",
+    "excerpt": "The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast.",
+    "category": "Guides",
+    "date": "2026-10-07"
   }
 ]

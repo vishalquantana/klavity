@@ -1,0 +1,217 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Coding Security Risks: What to Check Before You Ship · Klavity</title>
+<meta name="description" content="The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coding-security-risks">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe Coding Security Risks: What to Check Before You Ship"><meta property="og:description" content="The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coding-security-risks"><meta property="og:image" content="https://klavity.in/blog/vibe-coding-security-risks.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe Coding Security Risks: What to Check Before You Ship"><meta name="twitter:description" content="The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coding-security-risks.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe Coding Security Risks: What to Check Before You Ship","description":"The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast.","datePublished":"2026-10-07","dateModified":"2026-10-07","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coding-security-risks.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coding-security-risks","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe Coding Security Risks: What to Check Before You Ship","item":"https://klavity.in/blog/vibe-coding-security-risks"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coding-security-risks"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the most common security risk in vibe-coded apps?","acceptedAnswer":{"@type":"Answer","text":"Broken access control — an endpoint that verifies you're signed in but not that you own the record you're requesting. AI tools reliably scaffold login, because that's an explicit feature you asked for. Per-record ownership checks depend on your data model's rules, which the model infers rather than reads, so they're routinely missing. Test it by changing an ID in a request to one belonging to another account."}},{"@type":"Question","name":"Are API keys in my frontend code actually exposed?","acceptedAnswer":{"@type":"Answer","text":"Yes. Anything compiled into your frontend bundle is served to every visitor and readable in devtools; minification is not protection. Variables with public prefixes like VITE_ or NEXT_PUBLIC_ are compiled in by design. Move any call needing a privileged key to a server route, and rotate any key that was ever in a bundle or a public repo — deleting it does not un-leak it."}},{"@type":"Question","name":"How do I check if my Supabase or Firebase database is open?","acceptedAnswer":{"@type":"Answer","text":"Create two accounts, then use the first account's session token to request a record owned by the second — directly against the API, not through your UI. If it returns data, your row-level security policies are missing or too permissive. This is common in AI-generated apps because disabling or loosening a policy is the fastest way to clear an error during the build."}},{"@type":"Question","name":"Do I need a security audit before launching an AI-built app?","acceptedAnswer":{"@type":"Answer","text":"A formal audit is proportionate to what you handle — payments, health data or other people's customer records raise the bar. For most apps, a focused self-check first catches the highest-impact issues: secrets in the bundle, database access policies, per-record authorization, server-side validation, production error verbosity, and rate limits on anything expensive."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-07</div>
+    <h1>Vibe Coding Security Risks: What to Check Before You Ship</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Vibe coding security risks: exposed key in the browser bundle, an open database, and a request with a swapped record ID">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="380" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <!-- browser window: the frontend bundle -->
+  <rect x="48" y="58" width="300" height="180" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="48" y1="90" x2="348" y2="90" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="68" cy="74" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="82" cy="74" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="96" cy="74" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="72" y="110" width="150" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="72" y="130" width="196" height="7" rx="3.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="72" y="150" width="210" height="9" rx="4.5" fill="#f87171" opacity="0.85"/>
+  <rect x="72" y="172" width="120" height="7" rx="3.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="72" y="192" width="168" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <path d="M292 148 l20 0 M300 141 l0 14" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="300" cy="155" r="16" fill="none" stroke="#f87171" stroke-width="2" opacity="0.6"/>
+
+  <!-- flow arrow to the database -->
+  <polyline points="360,148 440,148" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M434 141 l10 7 -10 7" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- database with an open padlock -->
+  <ellipse cx="572" cy="92" rx="76" ry="22" fill="#6366f1" opacity="0.35" stroke="#6366f1" stroke-width="1.5"/>
+  <path d="M496 92 L496 196 A76 22 0 0 0 648 196 L648 92" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <ellipse cx="572" cy="144" rx="76" ry="22" fill="none" stroke="#6366f1" stroke-width="1.2" opacity="0.45"/>
+  <rect x="548" y="166" width="48" height="36" rx="6" fill="#f87171" opacity="0.9"/>
+  <path d="M556 166 L556 152 A16 16 0 0 1 588 152" fill="none" stroke="#f87171" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- request rows: two broken, one checked -->
+  <rect x="48" y="282" width="704" height="34" rx="8" fill="#f5f0e8" opacity="0.04" stroke="#f87171" stroke-width="1.2"/>
+  <path d="M70 292 l16 14 M86 292 l-16 14" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="106" y="295" width="300" height="8" rx="4" fill="#f87171" opacity="0.5"/>
+
+  <rect x="48" y="326" width="704" height="34" rx="8" fill="#f5f0e8" opacity="0.04" stroke="#f87171" stroke-width="1.2"/>
+  <path d="M70 336 l16 14 M86 336 l-16 14" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="106" y="339" width="228" height="8" rx="4" fill="#f87171" opacity="0.5"/>
+
+  <rect x="48" y="370" width="704" height="34" rx="8" fill="#4ade80" opacity="0.08" stroke="#4ade80" stroke-width="1.2"/>
+  <path d="M68 387 l9 10 17 -20" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="106" y="383" width="366" height="8" rx="4" fill="#4ade80" opacity="0.55"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>The three vibe coding security risks that matter most are API keys exposed in the frontend bundle, database row-level security left off or permissive, and endpoints that check whether you're logged in but not whether you own the record. AI tools scaffold authentication well and authorization almost never, because the prompt described the happy path. Test all three with two accounts and a terminal before launch.</div>
+    <div class="prose"><p>The biggest <strong>vibe coding security risks</strong> are exposed API keys in client-side code, missing or permissive database row-level security, and absent server-side authorization checks. Each one lets a stranger read or change data that isn't theirs, and all three are easy to miss because the app looks and feels finished. AI coding tools optimise for a working demo, so they scaffold <em>authentication</em> (letting someone log in) while skipping <em>authorization</em> (checking whether that person may touch this specific record) — and they leave development defaults like open CORS, verbose error pages and unlimited request rates in place when you deploy. Before you ship an AI-built app, work through five things in order: secrets, data access rules, per-record permissions, server-side validation, and dependencies.</p>
+
+<h2>What are the biggest vibe coding security risks?</h2>
+
+<p>These are the failure modes that recur in apps built with Cursor, Bolt, Lovable, v0 and Replit. None are exotic — they're the ordinary mistakes of a developer in a hurry, which is exactly what an AI assistant is.</p>
+
+<table>
+  <thead>
+    <tr><th>Risk</th><th>What it looks like in AI-generated code</th><th>Fast check</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Exposed secrets</td><td>A service key, OpenAI key or SMTP password sitting in a frontend file or a <code>VITE_</code>/<code>NEXT_PUBLIC_</code> variable</td><td>Open devtools → Sources, search the bundle for <code>key</code>, <code>secret</code>, <code>sk-</code></td></tr>
+    <tr><td>Open database</td><td>Supabase or Firebase wired up with row-level security off or a blanket "allow all" policy</td><td>Query another user's row with your own session token</td></tr>
+    <tr><td>Broken access control</td><td>Login works, but <code>/api/invoice/123</code> returns invoice 123 to anyone signed in</td><td>Change an ID in the URL or request body to one you don't own</td></tr>
+    <tr><td>Client-only validation</td><td>Required fields and length limits enforced in the form, not in the handler</td><td>Replay the API call directly with bad data</td></tr>
+    <tr><td>Dev config in production</td><td>CORS set to <code>*</code>, stack traces rendered to the browser, debug flags on</td><td>Trigger an error on the live site and read the response</td></tr>
+    <tr><td>No rate limiting</td><td>Signup, password reset and any endpoint that calls a paid API, all uncapped</td><td>Fire the same request 100 times in a loop</td></tr>
+  </tbody>
+</table>
+
+<p>Treat broken access control as your default assumption rather than a possibility. It sits at the top of the OWASP Top 10, and it's the category AI scaffolding is structurally worst at: getting it right requires knowing your data model's ownership rules, which the model infers from a prompt rather than reads from a spec.</p>
+
+<h2>Why does AI-generated code have security holes in the first place?</h2>
+
+<p>Three reasons, and understanding them tells you where to look.</p>
+
+<p><strong>The prompt describes the happy path.</strong> You asked for "a dashboard where users can see their orders." You did not ask "and make sure user A cannot fetch user B's orders by changing a query parameter." The model builds what was described. Security is mostly about the paths nobody described.</p>
+
+<p><strong>Training data is full of tutorials.</strong> Tutorial code is written to be short and runnable, so it skips auth middleware, uses permissive CORS, and hardcodes keys with a <code>// replace this</code> comment. That style is well represented in what these models learned from, and it reproduces faithfully.</p>
+
+<p><strong>Working and safe look identical from the outside.</strong> A broken access control bug produces no error, no console warning and no failed test. The feature works. It just also works for the wrong person. This is the same reason AI-written code needs a different review posture than hand-written code — we go into it in more depth in <a href="/blog/is-vibe-coded-code-safe-to-ship">is vibe-coded code safe to ship</a>.</p>
+
+<h2>How do I find exposed API keys and secrets?</h2>
+
+<p>Anything in your frontend bundle is public. Not "obscure" — public. The build output is served to every visitor, and a minified variable name is not protection.</p>
+
+<ol>
+  <li>Load your deployed site, open devtools, and search the bundled JS for <code>secret</code>, <code>service_role</code>, <code>sk-</code>, <code>password</code>, and your provider's key prefixes.</li>
+  <li>Check every environment variable with a public prefix. In Vite, <code>VITE_*</code> is compiled into the bundle. In Next.js, <code>NEXT_PUBLIC_*</code> is. AI tools reach for those prefixes because they make the error go away.</li>
+  <li>Check your git history, not just your working tree. A key committed once and deleted later is still in the history and still needs rotating.</li>
+</ol>
+
+<p>The fix is always the same shape: move the call that needs the secret to a server route or edge function, and give the browser only your publishable key. If a key was ever in a bundle or a public repo, rotate it — removing it does not un-leak it.</p>
+
+<h2>Is my database actually open to anyone?</h2>
+
+<p>This is the risk with the worst blast radius, because it bypasses your app entirely. Managed backends like Supabase and Firebase are designed to be queried straight from the browser using a publishable key, with row-level security policies as the thing that stops you reading everyone's data. If those policies are off, or set to a permissive "authenticated users can select everything" rule to get past an error during the build, then anyone who signs up can read your whole table.</p>
+
+<p>Test it the way an attacker would: sign up two accounts, then use account A's session to request a record that belongs to account B. Do it against the API directly, not through your UI — your UI will politely only ask for the right rows. If B's data comes back, you have a data breach waiting for someone curious.</p>
+
+<h2>Does my app check authorization, not just login?</h2>
+
+<p>Walk every endpoint and every server action and ask one question: <em>does this verify that the signed-in user owns the thing they're acting on?</em> Not "is there a user" — that's authentication, and the AI almost certainly handled it. Ownership is the gap.</p>
+
+<p>The high-risk spots, in rough order:</p>
+
+<ul>
+  <li>Anything that takes an ID from the client — <code>?id=</code>, a path segment, a body field.</li>
+  <li>Delete and update handlers, which often filter by ID alone instead of ID <em>and</em> owner.</li>
+  <li>Admin routes protected by hiding the nav link rather than by a role check on the server.</li>
+  <li>File downloads served from a public bucket with an unguessable-looking path.</li>
+  <li>Webhook receivers that act on a payload without verifying its signature.</li>
+</ul>
+
+<p>Fix these by making ownership part of the query, not a separate <code>if</code> statement — <code>where id = ? and owner_id = ?</code> fails safe in a way an early-return check does not.</p>
+
+<h2>What about validation, rate limits and error messages?</h2>
+
+<p>Validation written only in the form is decoration — the request can be replayed with any payload at all. Every constraint that matters (required fields, lengths, allowed enum values, numeric ranges, file types and sizes) has to be re-checked in the handler. Schema validation on the server closes most of that gap in one pass.</p>
+
+<p>Rate limits matter for two reasons: brute force against login and password reset, and cost — an uncapped endpoint that calls a paid model API is a bill with no ceiling.</p>
+
+<p>Finally, turn off verbose errors. Scaffolded apps ship with development error handling, which renders stack traces, file paths, SQL and sometimes environment values straight into the browser. That's a free map of your backend.</p>
+
+<h2>Can I trust the packages my AI assistant installed?</h2>
+
+<p>Mostly, but verify two things. AI assistants sometimes suggest package names that don't exist or are abandoned, because the name pattern looked plausible in training data — and attackers have started registering those plausible-but-nonexistent names on purpose. Pinned versions in generated code can also be well behind current, which means known vulnerabilities. Run your package manager's audit command, confirm every dependency in your manifest is one you can find and recognise on the registry, and remove anything installed during a debugging detour and never used.</p>
+
+<h2>How do I keep checking after launch?</h2>
+
+<p>A pre-launch pass catches the holes you have today. The problem is that every AI-assisted change after launch can open a new one, and you are shipping faster than you can re-audit by hand. That's the structural gap: code velocity went up, verification didn't.</p>
+
+<p>Two things close it without adding process you'll abandon. First, make broken behaviour easy to report with full context, so the evidence arrives with the bug instead of after three rounds of "what were you doing?" — that's what <a href="/snap">Snap</a> does. Second, have something exercise your app as different users on a schedule, which is how ownership bugs surface: <a href="/sims">Sims</a> runs AI personas through real flows, including the paths nobody wrote a test for. For the wider picture of where automated checks fit around AI-written code, start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>, and use the <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> for the functional side of a pre-launch pass.</p>
+
+<h2>The short version</h2>
+
+<p>Assume your AI-built app authenticates correctly and authorizes nothing. Assume anything in the bundle is public. Assume your database policies are more permissive than you remember. Then test those three assumptions with two accounts and a terminal, before a stranger does it for you.</p>
+
+<p><a href="/onboarding"><strong>Try Klavity free</strong></a> — catch the bugs in your AI-generated code before your users do.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Search your deployed bundle for secrets and rotate anything you find</li><li>Test row-level security with two accounts against the API directly</li><li>Make ownership part of every query, not a separate if-statement</li><li>Re-validate every input server-side and cap your paid-API endpoints</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is the most common security risk in vibe-coded apps?</summary><p>Broken access control — an endpoint that verifies you're signed in but not that you own the record you're requesting. AI tools reliably scaffold login, because that's an explicit feature you asked for. Per-record ownership checks depend on your data model's rules, which the model infers rather than reads, so they're routinely missing. Test it by changing an ID in a request to one belonging to another account.</p></details><details><summary>Are API keys in my frontend code actually exposed?</summary><p>Yes. Anything compiled into your frontend bundle is served to every visitor and readable in devtools; minification is not protection. Variables with public prefixes like VITE_ or NEXT_PUBLIC_ are compiled in by design. Move any call needing a privileged key to a server route, and rotate any key that was ever in a bundle or a public repo — deleting it does not un-leak it.</p></details><details><summary>How do I check if my Supabase or Firebase database is open?</summary><p>Create two accounts, then use the first account's session token to request a record owned by the second — directly against the API, not through your UI. If it returns data, your row-level security policies are missing or too permissive. This is common in AI-generated apps because disabling or loosening a policy is the fastest way to clear an error during the build.</p></details><details><summary>Do I need a security audit before launching an AI-built app?</summary><p>A formal audit is proportionate to what you handle — payments, health data or other people's customer records raise the bar. For most apps, a focused self-check first catches the highest-impact issues: secrets in the bundle, database access policies, per-record authorization, server-side validation, production error verbosity, and rate limits on anything expensive.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
