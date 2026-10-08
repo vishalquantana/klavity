@@ -7874,6 +7874,33 @@
       padding: 1px 8px
     }
 
+    /* KD-203: per-lane "sort by Ticket ID" toggle in the swimlane header */
+    .kb-head .kb-sort {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--paper-faint);
+      opacity: .6;
+      cursor: pointer
+    }
+
+    .kb-head .kb-sort:hover,
+    .kb-head .kb-sort:focus-visible {
+      opacity: 1;
+      background: var(--ink-3)
+    }
+
+    .kb-head .kb-sort.on {
+      opacity: 1;
+      color: var(--indigo)
+    }
+
     .kb-dot {
       width: 8px;
       height: 8px;
@@ -23693,6 +23720,7 @@
       const vis = src.filter(t => (typeof kbMatchesFilter === "function" ? kbMatchesFilter(t) : true) && tktMatchesSelectFilters(t))
       const groups = {}; KANBAN_COLS.forEach(c => { groups[c.key] = [] })
       vis.forEach(t => { const k = kanbanKeyForStatus(t.status); if (groups[k]) groups[k].push(t) })
+      KANBAN_COLS.forEach(c => { groups[c.key] = kbOrderColumn(groups[c.key], c.key) })   // KD-203: same per-lane order as the board
       const ids = []; KANBAN_COLS.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
       return ids
     }
@@ -25436,6 +25464,46 @@
         else if (n > 0 && empty) empty.remove()
       })
     }
+    // KD-203: per-lane sort for the Tickets board. Default = the server's order (newest activity first, which keeps a
+    // re-reported ticket on top); a lane can be flipped to Ticket ID ascending. Remembered per user + project. The board
+    // render, shift-click range select and the full-page prev/next all order lanes through kbOrderColumn, so the order
+    // on screen is the order you select and navigate in. (The board holds at most the latest 200 tickets.)
+    const _kbSortDir = {}            // lane key → "asc"  (absent = the server's order)
+    let _kbSortLoadedKey             // storage key _kbSortDir was last loaded for
+    function kbSortKey() {
+      const u = swrUid(), p = state && state.active && state.active.id
+      return (u && p) ? "klav:kbsort:" + u + ":" + p : null
+    }
+    function kbSortLoad() {
+      const key = kbSortKey()
+      if (key === _kbSortLoadedKey) return
+      _kbSortLoadedKey = key
+      Object.keys(_kbSortDir).forEach(k => { delete _kbSortDir[k] })
+      if (!key) return
+      try {
+        const saved = JSON.parse(localStorage.getItem(key) || "null")
+        if (saved && typeof saved === "object") KANBAN_COLS.forEach(c => { if (saved[c.key] === "asc") _kbSortDir[c.key] = "asc" })
+      } catch (e) { }
+    }
+    function kbSortToggle(laneKey) {
+      kbSortLoad()
+      if (_kbSortDir[laneKey] === "asc") delete _kbSortDir[laneKey]; else _kbSortDir[laneKey] = "asc"
+      const key = kbSortKey()
+      if (key) { try { localStorage.setItem(key, JSON.stringify(_kbSortDir)) } catch (e) { } }
+      return _kbSortDir[laneKey] === "asc" ? "asc" : "default"
+    }
+    function kbOrderColumn(items, laneKey) {
+      kbSortLoad()
+      if (_kbSortDir[laneKey] !== "asc") return items
+      // Stable: tickets with no seqNum go last in their original order; equal ids keep the server's order.
+      return items.map((t, i) => ({ t, i, n: t.seqNum == null ? NaN : Number(t.seqNum) })).sort((a, b) => {
+        const an = Number.isFinite(a.n), bn = Number.isFinite(b.n)
+        if (an && bn) return (a.n - b.n) || (a.i - b.i)
+        if (an !== bn) return an ? -1 : 1
+        return a.i - b.i
+      }).map(o => o.t)
+    }
+    const KB_SORT_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/><path d="M11 12h4"/><path d="M11 16h7"/><path d="M11 20h10"/></svg>'
     // KD-165: Jira-style drag-to-resize for the ticket board's columns. Unlike #707's wireT3Resize (2 fixed
     // gutters sharing ONE grid, each setting a named CSS var on that shared parent), every kanban column is
     // independent — each drags its OWN width, set directly on that .kb-col's --kb-w and persisted to
@@ -25538,6 +25606,7 @@
       tickets.forEach(t => {
         groups[kanbanKeyForStatus(t.status)].push(t)
       })
+      KANBAN_COLS.forEach(c => { groups[c.key] = kbOrderColumn(groups[c.key], c.key) })   // KD-203: per-lane sort (before orderedIds so range-select follows the screen)
 
       // JTBD 2.14: board multi-select. Drop stale selections for tickets no longer on the board,
       // build a column-major ordered id list (for shift-click range selection), and keep a helper
@@ -25564,7 +25633,18 @@
         colEl.appendChild(resizeHandle)
         const head = document.createElement("div")
         head.className = "kb-head"
+        // KD-203: per-lane sort toggle (default = server order; pressed = Ticket ID ascending). Only this lane changes.
+        const _sortAsc = _kbSortDir[col.key] === "asc"
+        const _sortTip = _sortAsc ? "Sorted by Ticket ID, ascending — click to restore the default order" : "Default order — click to sort by Ticket ID, ascending"
         head.innerHTML = `<span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
+          + `<button type="button" class="kb-sort${_sortAsc ? " on" : ""}" aria-pressed="${_sortAsc}" aria-label="Sort ${esc(col.label)} by Ticket ID: ${_sortAsc ? "ascending" : "default order"}" title="${_sortTip}">${KB_SORT_SVG}</button>`
+        head.querySelector(".kb-sort").addEventListener("click", ev => {
+          ev.stopPropagation()
+          kbSortToggle(col.key)
+          renderTicketsKanban(boardTickets)
+          const again = board.querySelector('.kb-col[data-key="' + col.key + '"] .kb-sort')   // the board is rebuilt: keep keyboard focus on this lane's button
+          if (again) again.focus()
+        })
         colEl.appendChild(head)
 
         const list = document.createElement("div")
