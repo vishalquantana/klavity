@@ -20,9 +20,11 @@ const file = (name: string, type: string, size: number, lastModified = 1) => ({ 
 const SRC = [
   extractFn(HTML, "function _attachFmtBytes("),
   line(/^\s*const NEW_TKT_MAX_FILES = .*$/m), line(/^\s*const NEW_TKT_IMG_MAX = .*$/m), line(/^\s*const NEW_TKT_VIDEO_MAX = .*$/m), line(/^\s*const NEW_TKT_TOTAL_MAX = .*$/m),
+
   line(/^\s*const NEW_TKT_DOC_MAX = .*$/m), line(/^\s*const NEW_TKT_DOC_EXT = .*$/m),
   HTML.slice(HTML.indexOf("const NEW_TKT_DOC_MIME = ["), HTML.indexOf("// Pure: is this a PDF / Word / Excel file?")),
   extractFn(HTML, "function newTktIsDoc("),
+
   extractFn(HTML, "function newTktFilterFiles("),
   extractFn(HTML, "async function uploadNewTicketAttachments("),
 ].join("\n")
