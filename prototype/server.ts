@@ -6851,12 +6851,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     {
       const shotMatch = path.match(/^\/api\/screenshots\/([^/]+)$/)
       if (req.method === "GET" && shotMatch) {
+        // KD-195: per-stage wall-clock, emitted as a Server-Timing header (durations only — no ids/emails) so a
+        // slow screenshot open can be attributed to a stage from the browser's Network panel / Resource Timing.
+        const stageMs: Record<string, number> = {}
+        let stageT = performance.now()
+        const markStage = (name: string) => { const n = performance.now(); stageMs[name] = n - stageT; stageT = n }
+        const timing = () => ({ "server-timing": Object.entries(stageMs).map(([k, v]) => `${k};dur=${v.toFixed(1)}`).join(", ") })
         const meS = (await sessionEmail(req)) || (await bearerEmail(req))
-        if (!meS) return json({ error: "Sign in to continue." }, 401)
+        markStage("session")
+        if (!meS) return json({ error: "Sign in to continue." }, 401, timing())
         const shot = await screenshotById(shotMatch[1])
-        if (!shot) return json({ error: "Not found." }, 404)
+        markStage("shotrow")
+        if (!shot) return json({ error: "Not found." }, 404, timing())
         // Membership check: the screenshot's project must be one the caller can access.
-        if (!shot.projectId || !(await projectAccess(meS, shot.projectId))) return json({ error: "No access to this screenshot." }, 403)
+        const shotAccess = shot.projectId ? await projectAccess(meS, shot.projectId) : null
+        markStage("access")
+        if (!shotAccess) return json({ error: "No access to this screenshot." }, 403, timing())
         // ?thumb=1 → serve the lightweight thumbnail variant when one was stored (dashboard list previews).
         // Falls back to the full image when this shot has no thumb (older rows, Sim/AutoSim captures), so
         // the caller can always request the thumb and still get a valid image. Thumbs are stored PRIVATE
@@ -6874,20 +6884,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const { stream, contentType, size } = await getObjectStream(streamKey)
             if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: shot.bytes ?? size ?? 0, meta: { via: "canvas-proxy" } })
             const ct = shot.contentType || contentType || "image/png"
-            return new Response(stream, { headers: { "content-type": ct, "cache-control": "private, max-age=300" } })
+            markStage("s3open")
+            return new Response(stream, { headers: { "content-type": ct, "cache-control": "private, max-age=300", ...timing() } })
           } catch (e: any) { return json(oops(e, "proxyshot"), 500) }
         }
         try {
           if (!wantThumb && shot.acl === "public-read") {
             const pub = `${(process.env.S3_ENDPOINT || "").replace(/\/+$/, "")}/${shot.bucket}/${shot.s3Key}`
-            return json({ id: shot.id, url: pub, acl: shot.acl })
+            return json({ id: shot.id, url: pub, acl: shot.acl }, 200, timing())
           }
           const signedKey = wantThumb ? shot.thumbKey! : shot.s3Key
           const signed = presignGet(signedKey, SCREENSHOTS.presignTtlSec)
+          markStage("presign")
           // KLAVITYKLA-486: a presigned GET means the client will fetch these bytes from S3 (billed
           // egress). Thumbs are tiny; the full image's stored size is the best estimate we have.
           if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: Number(shot.bytes) || 0, meta: { via: "presign" } })
-          return json({ id: shot.id, url: signed, acl: shot.acl, thumb: wantThumb, expiresInSec: SCREENSHOTS.presignTtlSec })
+          return json({ id: shot.id, url: signed, acl: shot.acl, thumb: wantThumb, expiresInSec: SCREENSHOTS.presignTtlSec }, 200, timing())
         } catch (e: any) { return json(oops(e, "signurl"), 500) }
       }
     }
