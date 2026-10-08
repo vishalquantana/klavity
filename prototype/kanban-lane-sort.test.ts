@@ -116,6 +116,25 @@ test("without a signed-in uid / active project nothing is persisted (no shared '
   expect(noProj.kbSortKey()).toBeNull()
 })
 
+test("the arrow points down in the default (newest-first) order and up when sorted ascending", () => {
+  const svg = new Function(extractFn(HTML, "function kbSortSvg(") + "\nreturn kbSortSvg")() as (asc: boolean) => string
+  const down = svg(false), up = svg(true)
+  expect(down).not.toBe(up)
+  expect(down).toContain('d="m3 16 4 4 4-4"')   // arrow head pointing down
+  expect(up).toContain('d="m3 8 4-4 4 4"')      // arrow head pointing up
+  expect(down).not.toContain('d="m3 8 4-4 4 4"')
+  expect(up).not.toContain('d="m3 16 4 4 4-4"')
+  for (const s of [down, up]) expect(s).toContain('aria-hidden="true"')   // decorative: the button's aria-label carries the meaning
+})
+
+test("wiring (source pin): the header icon comes from the lane's state, and the tooltip names the direction", () => {
+  const render = extractFn(HTML, "function renderTicketsKanban(")
+  expect(render).toContain("kbSortSvg(_sortAsc)")
+  expect(render).not.toContain("KB_SORT_SVG")
+  expect(render).toMatch(/newest first/i)
+  expect(render).toMatch(/ascending/i)
+})
+
 test("wiring (source pin): board render, range select and prev/next all order lanes through kbOrderColumn", () => {
   const render = extractFn(HTML, "function renderTicketsKanban(")
   expect(render).toMatch(/KANBAN_COLS\.forEach\(c => \{ groups\[c\.key\] = kbOrderColumn\(groups\[c\.key\], c\.key\) \}\)/)

@@ -25503,7 +25503,12 @@
         return a.i - b.i
       }).map(o => o.t)
     }
-    const KB_SORT_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/><path d="M11 12h4"/><path d="M11 16h7"/><path d="M11 20h10"/></svg>'
+    // The arrow follows the lane's direction: down = the default newest-first order, up = Ticket ID ascending.
+    function kbSortSvg(asc) {
+      const head = asc ? '<path d="m3 8 4-4 4 4"/><path d="M7 4v16"/><path d="M11 12h4"/><path d="M11 16h7"/><path d="M11 20h10"/>'
+        : '<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 4h10"/><path d="M11 8h7"/><path d="M11 12h4"/>'
+      return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + head + '</svg>'
+    }
     // KD-165: Jira-style drag-to-resize for the ticket board's columns. Unlike #707's wireT3Resize (2 fixed
     // gutters sharing ONE grid, each setting a named CSS var on that shared parent), every kanban column is
     // independent — each drags its OWN width, set directly on that .kb-col's --kb-w and persisted to
@@ -25635,9 +25640,9 @@
         head.className = "kb-head"
         // KD-203: per-lane sort toggle (default = server order; pressed = Ticket ID ascending). Only this lane changes.
         const _sortAsc = _kbSortDir[col.key] === "asc"
-        const _sortTip = _sortAsc ? "Sorted by Ticket ID, ascending — click to restore the default order" : "Default order — click to sort by Ticket ID, ascending"
+        const _sortTip = _sortAsc ? "Ticket ID ascending — click to go back to newest first" : "Newest first (default) — click to sort by Ticket ID, ascending"
         head.innerHTML = `<span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
-          + `<button type="button" class="kb-sort${_sortAsc ? " on" : ""}" aria-pressed="${_sortAsc}" aria-label="Sort ${esc(col.label)} by Ticket ID: ${_sortAsc ? "ascending" : "default order"}" title="${_sortTip}">${KB_SORT_SVG}</button>`
+          + `<button type="button" class="kb-sort${_sortAsc ? " on" : ""}" aria-pressed="${_sortAsc}" aria-label="Sort ${esc(col.label)} by Ticket ID: ${_sortAsc ? "ascending" : "newest first"}" title="${_sortTip}">${kbSortSvg(_sortAsc)}</button>`
         head.querySelector(".kb-sort").addEventListener("click", ev => {
           ev.stopPropagation()
           kbSortToggle(col.key)
