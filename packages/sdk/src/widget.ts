@@ -1487,7 +1487,13 @@ async function mount() {
       // dataURL and picked element the composer hands in via ctx. Gated on the SAME per-project reportClarity
       // toggle the server reuses for enhance. Longer timeout — it's a vision call, slower than the cheap tip.
       // Best-effort: any failure resolves null so the composer silently no-ops (leaves the reporter's text).
-      onEnhance: reportClarity ? (async (text: string, ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null }) => {
+      onEnhance: reportClarity ? (async (text: string, ctx?: {
+        images?: number
+        shot?: string
+        annotations?: any
+        annotationTexts?: string[]
+        picked?: { selector: string; text: string } | null
+      }) => {
         try {
           const res = await fetchWithTimeout(cfg.backendUrl + "/api/report/enhance", {
             method: "POST",
@@ -1497,6 +1503,8 @@ async function mount() {
               text,
               pageUrl: location.href,
               shot: ctx?.shot || "",
+              annotations: ctx?.annotations || null,
+              annotationTexts: ctx?.annotationTexts || [],
               picked: ctx?.picked || null,
               images: ctx?.images ?? 0,
               client: captureClientInfo(),

@@ -1,5 +1,5 @@
 import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
-import { Annotator } from './annotator'
+import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from './voice-input'
@@ -369,7 +369,13 @@ export interface ModalCallbacks {
   // Widget-only — the extension omits it (no button), preserving parity with onClarityTip/onPickElement.
   onEnhance?: (
     text: string,
-    ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null },
+    ctx?: {
+      images?: number
+      shot?: string
+      annotations?: any
+      annotationTexts?: string[]
+      picked?: { selector: string; text: string } | null
+    },
   ) => Promise<EnhanceDraftLike | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
@@ -2876,6 +2882,26 @@ export function buildModal(
     let originalText: string | null = null
     // The primary screenshot for grounding: the active hero shot, else the first captured shot.
     const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
+    const getActiveAnnotatedShotSync = (): string | null => {
+      const base = primaryShot()
+      if (!base) return ''
+      const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+      const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+      if (!ann || !Array.isArray(ann.shapes) || !ann.shapes.length) return base
+
+      // If the hero stage currently has the canvas for this index, use it directly (already rendered):
+      const stage = shadowRoot.getElementById('klavity-hero-stage')
+      const heroCanvas = stage?.querySelector('canvas') as HTMLCanvasElement | null
+      if (heroCanvas && activeIndex === targetIdx && heroCanvas.width > 1 && heroCanvas.height > 1) {
+        try {
+          const url = heroCanvas.toDataURL('image/png')
+          if (url && url.length > 64) return url
+        } catch { /* fallback to offscreen renderer */ }
+      }
+
+      return null
+    }
+
     const runEnhance = async () => {
       if (busy) return
       const text = desc.value.trim()
@@ -2885,7 +2911,21 @@ export function buildModal(
       if (spinEl) spinEl.hidden = false
       try {
         const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
-        const draft = await onEnhance(text, { images: screenshots.length, shot: primaryShot(), picked })
+        const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+        const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+        const annotationTexts = extractAnnotationTexts(ann?.shapes)
+        const base = primaryShot()
+        let shot = getActiveAnnotatedShotSync()
+        if (shot === null) {
+          shot = await renderAnnotatedImage(base, ann.shapes, ann.w, ann.h)
+        }
+        const draft = await onEnhance(text, {
+          images: screenshots.length,
+          shot,
+          annotations: ann,
+          annotationTexts,
+          picked,
+        })
         if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
         if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
         desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place

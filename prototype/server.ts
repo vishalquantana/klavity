@@ -138,8 +138,7 @@ import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels, getSuggestedLabelsState } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription } from "./lib/label-suggest"
-import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
-import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
+import { generateEnhancedDraft, renderDraftToText, formatAnnotationsForPrompt } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
 import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
 import { extractKeyframes } from "./lib/keyframes"
@@ -4414,10 +4413,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       // Assemble VISION input. `shot` is a dataURL from the composer's screenshots[]. URL + picked element
-      // are UNTRUSTED data → coerced + clipped.
+      // + annotations are UNTRUSTED data → coerced + clipped.
       const shot = String(body?.shot || "")
       const pageUrl = String(body?.pageUrl || "").slice(0, 300)
       const picked = (body?.picked && typeof body.picked === "object") ? body.picked : null
+      const annotations = (body?.annotations && typeof body.annotations === "object") ? body.annotations : null
+      const annotationTexts = Array.isArray(body?.annotationTexts)
+        ? body.annotationTexts.map((t: any) => String(t || "").trim()).filter(Boolean)
+        : []
+
+      // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
+      const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
+      const hasAnnotations = annotationTexts.length > 0 || (annotations && (Array.isArray(annotations.shapes) ? annotations.shapes.length > 0 : Array.isArray(annotations[0]?.shapes) ? annotations[0].shapes.length > 0 : false))
+      const hasEvidence = shotOk || !!picked || !!hasAnnotations
+
+      // If neither text nor any evidence (screenshot, annotations, picked DOM element) is provided, nothing to enhance.
+      if (!text && !hasEvidence) return wjson({ draft: null })
+
       // KLA-586: the picked element's selector + text are reporter/page-controlled DOM (an attacker
       // page can set element text to injection strings), exactly like the reporter note and page URL
       // above — so fence them with the SAME wrapUntrusted delimiters instead of appending raw text.
@@ -4426,8 +4438,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             `selector: ${String(picked.selector || "").slice(0, 300)}; label: ${String(picked.text || "").slice(0, 120)}`,
           )
         : ""
-      // Only attach the image when it's a well-formed dataURL AND under the size cap (cost + safety).
-      const shotOk = /^data:image\/(png|jpe?g|webp);base64,/.test(shot) && shot.length <= ENHANCE_MAX_SHOT_BYTES
+
+      const annotationBlock = formatAnnotationsForPrompt(annotations, annotationTexts)
+      const annotationsLine = annotationBlock ? "\n\n" + wrapUntrusted(annotationBlock) : ""
 
       // KLAVITY CREDITS (Phase 1, SOFT): resolve the workspace wallet + reserve one "enhance" credit.
       // Best-effort — a resolution/reserve miss must NEVER block Enhance, and in soft mode an
@@ -4442,10 +4455,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
       try {
         const draft = await generateEnhancedDraft(text, {
+          hasEvidence,
           llm: async (oneLiner, systemPrompt) => {
             const userParts: any[] = [{
               type: "text",
-              text: "REPORTER NOTE:\n" + wrapUntrusted(oneLiner) +
+              text: "REPORTER ISSUE DESCRIPTION / CONTEXT (PRIMARY):\n" + wrapUntrusted(oneLiner || "(No typed description provided)") +
+                    annotationsLine +
                     "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)") +
                     pickedLine,
             }]
