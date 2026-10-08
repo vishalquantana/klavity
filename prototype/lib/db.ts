@@ -77,6 +77,10 @@ export async function initDb() {
   await tuneFileDb(db, url)
   await applySchema(db)
   await migrateV2(db)
+  // submission_keys.attempt_token was added after the table first shipped in an earlier build; CREATE TABLE IF NOT EXISTS cannot add a column
+  // to a table that already exists, so a database that ran that build is upgraded here (idempotent; fresh databases already have it).
+  if (!(await columnExists(db, "submission_keys", "attempt_token")))
+    await db.execute("ALTER TABLE submission_keys ADD COLUMN attempt_token TEXT").catch((e) => console.warn("submission_keys.attempt_token ALTER skipped:", e?.message || e))
   // additive (idempotent): accounts.domain — added after the P2 migration, so existing prod
   // accounts need it ALTERed in; fresh DBs already have it from the accounts CREATE above.
   if (!(await columnExists(db, "accounts", "domain"))) {
@@ -765,6 +769,26 @@ export async function applySchema(c: Client) {
        created_at INTEGER NOT NULL
      )`,
     `CREATE INDEX IF NOT EXISTS feedback_replay_idx ON feedback_replays(project_id, feedback_id)`,
+    // ── Idempotent report submissions (lib/submissions.ts). One row per (project, client-chosen submission key): a retry of a report the
+    // server already handled returns the same ticket instead of creating another. state 'pending' = claimed, request in flight (or
+    // crashed → taken over once stale); 'done' = ticket exists (feedback_id; deduped=1 when the report was merged into an older ticket).
+    // evidence_json = per-slot upload state so a retry can re-upload ONLY what failed. Additive + unused by older code (safe to roll back).
+    `CREATE TABLE IF NOT EXISTS submission_keys (
+       project_id TEXT NOT NULL,
+       submission_key TEXT NOT NULL,
+       state TEXT NOT NULL DEFAULT 'pending',
+       owner TEXT,
+       actor_email TEXT,
+       feedback_id TEXT,
+       deduped INTEGER NOT NULL DEFAULT 0,
+       evidence_json TEXT,
+       attempt_token TEXT,
+       created_at INTEGER NOT NULL,
+       claimed_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL,
+       PRIMARY KEY (project_id, submission_key)
+     )`,
+    `CREATE INDEX IF NOT EXISTS submission_keys_created_idx ON submission_keys(created_at)`,
     // ── Expectations spine (discover→enforce): unifies Snap/Sim/AutoSim findings into one issue identity. ──
     `CREATE TABLE IF NOT EXISTS expectations (
        id TEXT PRIMARY KEY,
@@ -2292,6 +2316,8 @@ export type ProjectRow = {
   planOverride: string | null
   // KLAVITYKLA-441: ordered auto-labeling rules, applied at ingest (first match wins). [] when unset.
   labelRules: LabelRule[]
+  /** projects.modal_config_json parsed (screenshot settings etc.) — {} when unset/garbled. Lets a hot path reuse the row it already holds. */
+  modalConfig: Record<string, unknown>
   // Shared-ticket viewer onboarding: per-project share behavior + optional allowlist (JSON emails).
   shareMode: string
   shareAllowlist: string[] | null
@@ -2348,6 +2374,7 @@ function rowToProject(x: any): ProjectRow {
     snapRouting: normalizeSnapRouting(x.snap_routing),
     planOverride: x.plan_override != null ? String(x.plan_override) : null,
     labelRules: sanitizeLabelRules(safeJsonParse(x.label_rules_json)),
+    modalConfig: (() => { const m = safeJsonParse(x.modal_config_json); return m && typeof m === "object" && !Array.isArray(m) ? m : {} })(),
     shareMode: normalizeShareMode(x.share_mode),
     shareAllowlist: (() => { try { const a = JSON.parse(String(x.share_allowlist ?? "null")); return Array.isArray(a) ? a.map((e: any) => String(e)) : null } catch { return null } })(),
   }
@@ -3027,7 +3054,14 @@ export async function updateAccountBillingState(
 // ── widget-config helpers (leadgen integration task-1) ──
 const DEFAULT_WIDGET_CTA = "https://klavity.in/onboarding"
 
-export async function getWidgetConfig(projectId: string): Promise<{ mode: string; ctaUrl: string; reportGate: string; autoCaptureErrors: boolean } | null> {
+export type WidgetConfig = { mode: string; ctaUrl: string; reportGate: string; autoCaptureErrors: boolean }
+/** The widget config of an already-loaded project row (no extra query). getWidgetConfig = projectById + this. */
+export function widgetConfigFromProject(p: ProjectRow): WidgetConfig {
+  const mode = ["support", "leadgen", "off"].includes(p.widgetMode) ? p.widgetMode : "support"
+  const reportGate = ["anonymous", "email", "login"].includes(p.widgetReportGate) ? p.widgetReportGate : "anonymous"
+  return { mode, ctaUrl: p.widgetCtaUrl || DEFAULT_WIDGET_CTA, reportGate, autoCaptureErrors: !!p.widgetAutoCaptureErrors }
+}
+export async function getWidgetConfig(projectId: string): Promise<WidgetConfig | null> {
   const p = await projectById(projectId)
   if (!p) return null
   const mode = ["support", "leadgen", "off"].includes(p.widgetMode) ? p.widgetMode : "support"
@@ -3254,6 +3288,31 @@ export async function projectAccess(email: string, projectId: string): Promise<'
   }
   if (acctRole === "member") return null // account member with no explicit project row sees nothing
   return null
+}
+
+// Same decision as projectAccess() — keep in lockstep — in ONE round trip instead of three: the project row, the caller's account role and
+// the caller's project role come back from a single SELECT (scalar sub-selects on the same indexed keys projectAccess reads one by one),
+// and the row is returned so a hot path (POST /api/feedback) can reuse it for the dedupe flag / screenshot settings instead of re-reading it.
+export async function projectAccessWithRow(email: string, projectId: string): Promise<{ proj: ProjectRow | null; access: 'admin' | 'member' | null }> {
+  const r = await db!.execute({
+    sql: `SELECT p.*,
+                 (SELECT account_role FROM account_members WHERE account_id = p.account_id AND email = ?) AS _acct_role,
+                 (SELECT project_role FROM project_members WHERE project_id = p.id AND email = ?) AS _proj_role
+          FROM projects p WHERE p.id = ?`,
+    args: [email, email, projectId],
+  })
+  if (!r.rows.length) return { proj: null, access: null }
+  const row = r.rows[0] as any
+  const proj = rowToProject(row)
+  const acctRole = row._acct_role == null ? null : String(row._acct_role)
+  if (acctRole === "owner" || acctRole === "admin") return { proj, access: "admin" }
+  if (row._proj_role != null) {
+    const role = String(row._proj_role)
+    if (role === "admin") return { proj, access: "admin" }
+    if (role === "viewer") return { proj, access: null }   // a 'viewer' row (shared-ticket onboarding) is NOT member access
+    return { proj, access: "member" }
+  }
+  return { proj, access: null }
 }
 
 // Same authorization as projectAccess(), but for a caller that ALREADY holds the project row from the same
@@ -3645,12 +3704,14 @@ export type ScreenshotInsert = {
   id?: string; projectId?: string | null; s3Key: string; bucket: string; contentType: string
   acl?: string; bytes?: number | null; ownerEmail?: string | null; expiresAt?: number | null
   thumbKey?: string | null
+  /** Idempotent submissions use a deterministic id: re-inserting the same shot on a retry must be a no-op, not a primary-key error. */
+  ignoreConflict?: boolean
 }
 export async function insertScreenshot(s: ScreenshotInsert): Promise<string> {
   // Caller may pre-supply the id (so it can mint the permanent /img signed link before insert).
   const id = s.id ?? "shot_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO screenshots (id,project_id,s3_key,bucket,content_type,acl,bytes,owner_email,expires_at,created_at,thumb_key)
+    sql: `INSERT ${s.ignoreConflict ? "OR IGNORE " : ""}INTO screenshots (id,project_id,s3_key,bucket,content_type,acl,bytes,owner_email,expires_at,created_at,thumb_key)
           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     args: [id, s.projectId ?? null, s.s3Key, s.bucket, s.contentType, s.acl ?? "private",
            s.bytes ?? null, s.ownerEmail ?? null, s.expiresAt ?? null, Date.now(), s.thumbKey ?? null],
@@ -3725,18 +3786,10 @@ export function initialFeedbackStatus(priority: string | null | undefined): "new
   return (priority === "urgent" || priority === "high") ? "open" : "new"
 }
 
-export async function insertFeedback(f: FeedbackInsert): Promise<string> {
-  const id = "fb_" + crypto.randomUUID()
-  const now = Date.now()
-  // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
-  // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
-  await db!.execute({
-    sql: `INSERT INTO feedback (id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority,
-          screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date,
-          plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,report_env,report_org,report_server,title,attachments_json,recordings_json,reporter_json,client_info_json,created_at,status)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
+/** Column list of the feedback INSERT (one definition shared by the plain and the idempotent-submission variants). */
+const FEEDBACK_INSERT_COLS = "id,project_id,sim_id,actor_email,url_host,url_path,source_referrer,observation,sentiment,priority, screenshot_id,suggested_bug_json,cited_trait_ids_json,source_quote,source_transcript_id,source_date, plane_issue_key,plane_issue_url,issue_key,recurrence_count,recurrence_dates_json,last_seen_at,client_context_json,annotations_json,source,signature,report_type,report_ip,report_url,report_geo_json,report_env,report_org,report_server,title,attachments_json,recordings_json,reporter_json,client_info_json,created_at,status"
+function feedbackInsertArgs(f: FeedbackInsert, id: string, now: number, status: string): any[] {
+  return [id, f.projectId, f.simId ?? null, f.actorEmail ?? null, f.urlHost ?? null, f.urlPath ?? null, f.sourceReferrer ?? null,
            f.observation ?? null, f.sentiment ?? null, f.priority ?? null, f.screenshotId ?? null,
            f.suggestedBug != null ? JSON.stringify(f.suggestedBug) : null,
            f.citedTraitIds != null ? JSON.stringify(f.citedTraitIds) : null,
@@ -3752,13 +3805,79 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
            (f.recordings && f.recordings.length) ? JSON.stringify(f.recordings) : null,
            (f.reporter && Object.keys(f.reporter).length) ? JSON.stringify(f.reporter) : null,
            (f.clientInfo && Object.keys(f.clientInfo).length) ? JSON.stringify(f.clientInfo) : null,
-           now, status],
-  })
-  // KLA-200 + #728: assign per-project sequential number (feedback.seq_num, also the pretty
-  // permalink <n>) atomically via the projects.ticket_seq counter — collision-safe under concurrency.
-  await allocTicketSeq(f.projectId, id, now)
+           now, status]
+}
+const qmarks = (n: number) => Array(n).fill("?").join(",")
+
+/**
+ * Insert a report and give it its per-project number. The counter bump (projects.ticket_seq) and the INSERT — which reads the bumped
+ * value as its seq_num — are ONE db.batch (a single transaction, one round trip) instead of INSERT → UPDATE…RETURNING → UPDATE (three
+ * sequential round trips). Numbering stays atomic: the batch holds the write lock from its first statement, so two concurrent inserts
+ * cannot read the same counter, and the unique (project_id, seq_num) index remains the backstop. With NO project row (some unit tests
+ * insert for a bare project id) the bump matches nothing, and the MAX(seq_num)+1 fallback in allocTicketSeq numbers the row as before.
+ * If the batch itself fails (e.g. an old schema without ticket_seq) the legacy insert + allocTicketSeq path runs; it reuses the SAME id,
+ * so a "batch actually committed" outcome shows up as a primary-key conflict and is treated as success — never a duplicate row.
+ */
+export async function insertFeedback(f: FeedbackInsert): Promise<string> {
+  const id = "fb_" + crypto.randomUUID()
+  const now = Date.now()
+  // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
+  // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
+  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const args = feedbackInsertArgs(f, id, now, status)
+  try {
+    const rs = await db!.batch([
+      { sql: "UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=?", args: [f.projectId] },
+      { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},seq_num) VALUES (${qmarks(args.length)},(SELECT ticket_seq FROM projects WHERE id=?))`, args: [...args, f.projectId] },
+    ], "write")
+    if (Number(rs[0]?.rowsAffected || 0) === 0) await allocTicketSeq(f.projectId, id, now)
+  } catch (e: any) {
+    try {
+      await db!.execute({ sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS}) VALUES (${qmarks(args.length)})`, args })
+      await allocTicketSeq(f.projectId, id, now)
+    } catch (e2: any) {
+      if (!/UNIQUE constraint failed: feedback\.id|PRIMARY KEY/i.test(String(e2?.message || e2))) throw e2
+      // the batch above had in fact committed (ambiguous failure) — the row exists with its number
+    }
+  }
   invalidateDashboardCache(f.projectId) // #722 (P2.2): new report changes counts/insights
   return id
+}
+
+/**
+ * insertFeedback for an idempotent submission: the key is marked DONE in the SAME transaction as the ticket and its number, and the
+ * ticket is created ONLY IF this attempt still owns the claim (the INSERT and the counter bump are guarded by "the key now points at
+ * this feedback id"). So (a) a crash can never leave a ticket without its key or a key without its ticket, and (b) an attempt whose
+ * claim was taken over cannot create a second ticket — it gets { lost: true } and must answer from the key's recorded outcome instead.
+ */
+export async function insertFeedbackForSubmission(
+  f: FeedbackInsert,
+  sub: { projectId: string; key: string; owner: string; evidenceJson: string | null },
+): Promise<{ id: string } | { lost: true }> {
+  const id = "fb_" + crypto.randomUUID()
+  const now = Date.now()
+  // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
+  // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
+  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const args = feedbackInsertArgs(f, id, now, status)
+  const guard = "EXISTS (SELECT 1 FROM submission_keys WHERE project_id=? AND submission_key=? AND feedback_id=? AND state='done')"
+  const rs = await db!.batch([
+    { sql: "UPDATE submission_keys SET state='done', feedback_id=?, deduped=0, evidence_json=?, updated_at=? WHERE project_id=? AND submission_key=? AND owner=? AND state='pending'",
+      args: [id, sub.evidenceJson, now, sub.projectId, sub.key, sub.owner] },
+    { sql: `UPDATE projects SET ticket_seq = ticket_seq + 1 WHERE id=? AND ${guard}`, args: [f.projectId, sub.projectId, sub.key, id] },
+    { sql: `INSERT INTO feedback (${FEEDBACK_INSERT_COLS},seq_num) SELECT ${qmarks(args.length)},(SELECT ticket_seq FROM projects WHERE id=?) WHERE ${guard}`,
+      args: [...args, f.projectId, sub.projectId, sub.key, id] },
+  ], "write")
+  if (Number(rs[0]?.rowsAffected || 0) !== 1 || Number(rs[2]?.rowsAffected || 0) !== 1) return { lost: true }
+  if (Number(rs[1]?.rowsAffected || 0) === 0) await allocTicketSeq(f.projectId, id, now)   // no projects row → MAX+1 fallback
+  invalidateDashboardCache(f.projectId)
+  return { id }
+}
+
+/** True when the project has at least one report other than `exceptId` — the cheap "is this the very first report?" check (was COUNT(*)). */
+export async function projectHasOtherFeedback(projectId: string, exceptId: string): Promise<boolean> {
+  const r = await db!.execute({ sql: "SELECT 1 AS x FROM feedback WHERE project_id=? AND id<>? LIMIT 1", args: [projectId, exceptId] })
+  return r.rows.length > 0
 }
 
 // KLAVITYKLA-440: stamp the async geo/company enrichment onto a report row after insert. The IP is
@@ -4298,6 +4417,78 @@ export async function bumpFeedbackRecurrence(id: string, atMs: number, opts?: { 
   if (Number(upd.rowsAffected ?? 0) < 1) return false
   if (row.project_id) invalidateDashboardCache(String(row.project_id)) // #722 (P2.2): recurrence/promotion changes recurring + counts
   return true
+}
+
+/**
+ * The ticket a repeat report should land on: the matched head, or — when that head was itself merged away — its live root (the same
+ * redirect bumpFeedbackRecurrence always applied). null when the head no longer exists.
+ */
+export async function resolveMergeTarget(projectId: string, id: string): Promise<string | null> {
+  const r = await db!.execute({ sql: "SELECT merged_into FROM feedback WHERE project_id=? AND id=? LIMIT 1", args: [projectId, id] })
+  if (!r.rows.length) return null
+  const mi = (r.rows[0] as any).merged_into
+  if (mi == null || String(mi).trim() === "") return id
+  const live = await resolveLiveRoot(projectId, id)
+  if (live === id) return id
+  const ex = await db!.execute({ sql: "SELECT 1 AS x FROM feedback WHERE project_id=? AND id=? LIMIT 1", args: [projectId, live] })
+  return ex.rows.length ? live : null
+}
+
+/**
+ * Merge a repeat report into an existing ticket for an idempotent submission, ATOMICALLY: the submission key is marked done, the
+ * recurrence counter is bumped and the occurrence receipt is written in ONE transaction (one round trip). Each follow-up statement is
+ * guarded by "the key now points at this ticket", so they land only when this attempt still owns the claim AND the head still exists —
+ * a crash can no longer leave a counted recurrence whose key was never recorded (which a retry would then count a second time).
+ * The bump is RELATIVE (recurrence_count + 1, a JSON append) instead of read-modify-write, and applies the same new→open promotion
+ * rule as bumpFeedbackRecurrence (allowPromote, count ≥ 3, status 'new', head not Sim/bot/demo intake). A failing occurrence insert
+ * (best-effort in the old code) must not fail the merge: the batch is retried without it.
+ */
+export async function mergeReportIntoTicketForSubmission(a: {
+  targetId: string; projectId: string; atMs: number; allowPromote: boolean
+  occurrence: { observation: string | null; screenshotId: string | null; sourceQuote: string | null; reporterEmail: string | null } | null
+  sub: { projectId: string; key: string; owner: string; evidenceJson: string | null }
+}): Promise<{ status: "merged"; id: string } | { status: "lost" } | { status: "head_gone" }> {
+  const target = await resolveMergeTarget(a.projectId, a.targetId)
+  if (!target) return { status: "head_gone" }
+  // The guard ties every follow-up statement to THIS call's own completion of the key (a fresh attempt_token written by the first
+  // statement). "The key points at this ticket" alone would stay true after the first merge, so a re-run for the same key would count again.
+  const token = crypto.randomUUID()
+  const guard = "EXISTS (SELECT 1 FROM submission_keys WHERE project_id=? AND submission_key=? AND feedback_id=? AND state='done' AND attempt_token=?)"
+  const guardArgs = [a.sub.projectId, a.sub.key, target, token]
+  const nonHuman = Array.from(NON_HUMAN_FEEDBACK_SOURCES)
+  const key = {
+    sql: "UPDATE submission_keys SET state='done', feedback_id=?, deduped=1, evidence_json=?, attempt_token=?, updated_at=? WHERE project_id=? AND submission_key=? AND owner=? AND state='pending' AND EXISTS (SELECT 1 FROM feedback WHERE id=? AND project_id=?)",
+    args: [target, a.sub.evidenceJson, token, a.atMs, a.sub.projectId, a.sub.key, a.sub.owner, target, a.projectId],
+  }
+  const bump = {
+    sql: `UPDATE feedback SET
+            recurrence_count = COALESCE(recurrence_count, 1) + 1,
+            recurrence_dates_json = json_insert(CASE WHEN json_valid(recurrence_dates_json) AND json_type(recurrence_dates_json) = 'array' THEN recurrence_dates_json ELSE '[]' END, '$[#]', ?),
+            last_seen_at = ?,
+            status = CASE WHEN ? = 1 AND COALESCE(recurrence_count, 1) + 1 >= 3 AND status = 'new'
+                           AND COALESCE(TRIM(sim_id), '') = '' AND LOWER(TRIM(COALESCE(source, ''))) NOT IN (${nonHuman.map(() => "?").join(",")})
+                      THEN 'open' ELSE status END
+          WHERE id = ? AND project_id = ? AND ${guard}`,
+    args: [a.atMs, a.atMs, a.allowPromote ? 1 : 0, ...nonHuman, target, a.projectId, ...guardArgs],
+  }
+  const occ = a.occurrence ? {
+    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at)
+          SELECT ?,?,?,?,?,?,?,?,? WHERE ${guard}`,
+    args: ["occ_" + crypto.randomUUID(), target, a.projectId, a.atMs, a.occurrence.observation, a.occurrence.screenshotId, a.occurrence.sourceQuote, a.occurrence.reporterEmail, Date.now(), ...guardArgs],
+  } : null
+  let rs
+  try { rs = await db!.batch(occ ? [key, bump, occ] : [key, bump], "write") }
+  catch (e: any) {
+    if (!occ) throw e
+    console.warn("[occurrence] persist skipped:", e?.message || e)
+    rs = await db!.batch([key, bump], "write")      // the receipt is best-effort; the merge itself is not
+  }
+  if (Number(rs[0]?.rowsAffected || 0) === 1 && Number(rs[1]?.rowsAffected || 0) === 1) { invalidateDashboardCache(a.projectId); return { status: "merged", id: target } }
+  // Nothing was written (the transaction guards made every statement a no-op). Why? Still our pending claim → the head vanished
+  // (dedup race, handled by the caller exactly like before); otherwise the claim is no longer ours.
+  const k = await db!.execute({ sql: "SELECT state, owner FROM submission_keys WHERE project_id=? AND submission_key=?", args: [a.sub.projectId, a.sub.key] })
+  const row = k.rows[0] as any
+  return row && String(row.state) === "pending" && String(row.owner) === a.sub.owner ? { status: "head_gone" } : { status: "lost" }
 }
 
 // ── A.8 occurrence receipts ──
@@ -7066,6 +7257,31 @@ export async function appendFeedbackAttachments(
     })
     if (Number(u.rowsAffected || 0) > 0) return true
     // someone else changed the list between our read and write → loop and merge onto the new value
+  }
+  return false
+}
+
+// Idempotent-submission repair: append recordings (descriptors keyed by their stable `id`) to a ticket's recordings_json. Same
+// compare-and-swap discipline as appendFeedbackAttachments; a recording whose id is already present is skipped, so a repeated repair
+// never double-adds.
+export async function appendFeedbackRecordings(feedbackId: string, projectId: string, newRecs: Array<Record<string, any>>): Promise<boolean> {
+  if (!Array.isArray(newRecs) || !newRecs.length) return false
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, Math.random() * Math.min(attempt, 10) * 3))
+    const r = await db!.execute({ sql: "SELECT recordings_json FROM feedback WHERE id=? AND project_id=?", args: [feedbackId, projectId] })
+    const row = r.rows[0] as any
+    if (!row) return false
+    const raw: string | null = row.recordings_json == null ? null : String(row.recordings_json)
+    let recs: any[] = []
+    if (raw != null) { try { const p = JSON.parse(raw); if (Array.isArray(p)) recs = p } catch { recs = [] } }
+    const have = new Set(recs.map((x: any) => (x && x.id) ? String(x.id) : "").filter(Boolean))
+    const fresh = newRecs.filter((x: any) => !(x && x.id && have.has(String(x.id))))
+    if (!fresh.length) return true
+    const u = await db!.execute({
+      sql: "UPDATE feedback SET recordings_json=? WHERE id=? AND project_id=? AND recordings_json IS ?",
+      args: [JSON.stringify([...recs, ...fresh]), feedbackId, projectId, raw],
+    })
+    if (Number(u.rowsAffected || 0) > 0) return true
   }
   return false
 }

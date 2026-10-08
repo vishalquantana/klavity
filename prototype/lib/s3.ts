@@ -37,6 +37,13 @@ function getClient(): S3Client {
   return client
 }
 
+/**
+ * Optional DETERMINISTIC object key (idempotent submissions). A retried / taken-over submission re-uploads each file under the SAME
+ * key (`<ts>-<keyId>.<ext>`) so it overwrites its own earlier object instead of leaving an orphan behind. `keyId` must be an
+ * unguessable per-(project, submission key, slot) id and `ts` a stable timestamp (the claim's creation time).
+ */
+export type DeterministicKey = { keyId: string; ts: number }
+
 export type UploadedScreenshot = { url: string; key: string; bucket: string; contentType: string; acl: string }
 
 // Upload one screenshot and return its storage metadata (key/bucket so callers can record a durable
@@ -49,9 +56,10 @@ export async function uploadScreenshotMeta(
   bytes: ArrayBuffer | Uint8Array,
   contentType: string,
   acl: 'public-read' | 'private' = 'private',
+  det?: DeterministicKey,
 ): Promise<UploadedScreenshot> {
   const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png'
-  const key = s3Key(FOLDER, Date.now(), crypto.randomUUID(), ext)
+  const key = s3Key(FOLDER, det ? det.ts : Date.now(), det ? det.keyId : crypto.randomUUID(), ext)
   if (!s3Configured()) {
     const localPath = join(LOCAL_PUB_DIR, key)
     ensureLocalDir(localPath)
@@ -70,10 +78,11 @@ export async function uploadAttachment(
   bytes: ArrayBuffer | Uint8Array,
   filename: string,
   contentType: string,
+  det?: DeterministicKey,
 ): Promise<UploadedAttachment> {
   const extMatch = /\.([A-Za-z0-9]{1,8})$/.exec(filename)
   const ext = extMatch ? extMatch[1].toLowerCase() : 'bin'
-  const key = s3Key(`${FOLDER}/attachments`, Date.now(), crypto.randomUUID(), ext)
+  const key = s3Key(`${FOLDER}/attachments`, det ? det.ts : Date.now(), det ? det.keyId : crypto.randomUUID(), ext)
   if (!s3Configured()) {
     const localPath = join(LOCAL_PUB_DIR, key)
     ensureLocalDir(localPath)
@@ -265,6 +274,9 @@ export async function getObjectStream(key: string): Promise<{ stream: ReadableSt
   if (!s3Configured()) {
     const localPath = join(LOCAL_PUB_DIR, key)
     const f = Bun.file(localPath)
+    if (!(await f.exists())) {
+      throw new Error(`File not found: ${key}`)
+    }
     let contentType = "application/octet-stream"
     let size: number | null = null
     const st = await f.stat()

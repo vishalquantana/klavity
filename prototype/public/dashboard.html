@@ -11918,6 +11918,19 @@
     }
 
     /* KD-100: attachments on the New ticket dialog — drop zone + preview grid */
+    /* New ticket → Project: pill trigger + centred, rounded list (design: Downloads/image (15).png) */
+    .ntp { position: relative }
+    .ntp-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; background: var(--ink); border: 1px solid var(--line); border-radius: 999px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 11px 36px; cursor: pointer; outline: none }
+    .ntp-btn:hover { border-color: var(--indigo) }
+    .ntp-btn:focus-visible, .ntp-btn[aria-expanded="true"] { border-color: var(--indigo) }
+    .ntp-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100% }
+    .ntp-chev { flex: none; transition: transform .15s ease }
+    .ntp-btn[aria-expanded="true"] .ntp-chev { transform: rotate(180deg) }
+    .ntp-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; background: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; max-height: 240px; overflow-y: auto }
+    .ntp-list.hide { display: none }
+    .ntp-item { display: block; width: 100%; box-sizing: border-box; text-align: center; background: transparent; border: 0; border-radius: 10px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 9px 12px; cursor: pointer }
+    .ntp-item:hover, .ntp-item:focus-visible { background: var(--ink-2); color: var(--paper); outline: none }
+    .ntp-item[aria-selected="true"] { color: var(--paper); font-weight: 700 }
     .newtkt-drop {
       display: flex;
       align-items: center;
@@ -11961,6 +11974,19 @@
       height: 84px;
       object-fit: cover;
       background: #000
+    }
+
+    .newtkt-file .nf-doc {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      height: 84px;
+      color: var(--paper-dim);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em
     }
 
     .newtkt-file .nf-meta {
@@ -21197,6 +21223,59 @@
         })
       })
     }
+    // ── Image optimisation before upload ───────────────────────────────────────────────────────────────────────────────
+    // Pictures picked / dropped / pasted for a ticket (New ticket dialog + a ticket's "Add attachment") are re-encoded in the
+    // browser BEFORE they are sent, so a multi-MB screenshot or phone photo no longer travels at full size: anything wider
+    // than IMG_OPT_MAX_WIDTH is scaled down (height follows, aspect ratio kept) and re-encoded as JPEG (PNG only when the
+    // picture really has transparency). Best-effort: on any failure — or when the result is not actually smaller — the
+    // ORIGINAL file is returned unchanged. GIF (animation), SVG (vector), HEIC/AVIF/unknown types and videos are never touched.
+    const IMG_OPT_MIN_BYTES = 200 * 1024           // a PNG/WebP/BMP below this is not worth decoding
+    const IMG_OPT_JPEG_BYTES = 1.5 * 1024 * 1024   // a JPEG is only re-encoded when it is big (or wide); JPEG→JPEG gains little
+    const IMG_OPT_MAX_WIDTH = 2000
+    const IMG_OPT_QUALITY = 0.82
+    // Pure: should an image of this type/size/dimensions be re-encoded, and into what? hasAlpha = real transparency present.
+    function imgOptPlan(type, size, w, h, hasAlpha) {
+      const t = String(type || "").toLowerCase()
+      if (!/^image\/(png|jpeg|jpg|webp|bmp)$/.test(t)) return { action: "keep" }
+      if (!(w > 0) || !(h > 0)) return { action: "keep" }
+      const isJpeg = t === "image/jpeg" || t === "image/jpg", wide = w > IMG_OPT_MAX_WIDTH
+      if (!wide && size < (isJpeg ? IMG_OPT_JPEG_BYTES : IMG_OPT_MIN_BYTES)) return { action: "keep" }
+      const tw = wide ? IMG_OPT_MAX_WIDTH : w
+      return { action: "reencode", w: tw, h: Math.max(1, Math.round(h * tw / w)), type: (hasAlpha && !isJpeg) ? "image/png" : "image/jpeg" }
+    }
+    // True when optimising could do anything for this file (cheap, no decode) — used to show "Optimising images…" only when needed.
+    function imgOptCandidate(file) {
+      if (!file || typeof file.size !== "number") return false
+      const t = String(file.type || "").toLowerCase()
+      if (!/^image\/(png|jpeg|jpg|webp|bmp)$/.test(t)) return false
+      return file.size >= ((t === "image/jpeg" || t === "image/jpg") ? IMG_OPT_JPEG_BYTES : IMG_OPT_MIN_BYTES)
+    }
+    async function compressImageFile(file) {
+      try {
+        if (!imgOptCandidate(file) || typeof createImageBitmap !== "function") return file
+        const bmp = await createImageBitmap(file)
+        const bw = bmp.width, bh = bmp.height
+        let hasAlpha = false
+        if (!/jpe?g/i.test(file.type)) {
+          // transparency check on a tiny copy — a transparent PNG must stay PNG (JPEG would paint it black/white)
+          const sc = document.createElement("canvas"); sc.width = 64; sc.height = 64
+          const sx = sc.getContext("2d"); sx.drawImage(bmp, 0, 0, 64, 64)
+          const px = sx.getImageData(0, 0, 64, 64).data
+          for (let i = 3; i < px.length; i += 4) { if (px[i] < 250) { hasAlpha = true; break } }
+        }
+        const plan = imgOptPlan(file.type, file.size, bw, bh, hasAlpha)
+        if (plan.action !== "reencode") { if (bmp.close) bmp.close(); return file }
+        const cv = document.createElement("canvas"); cv.width = plan.w; cv.height = plan.h
+        const cx = cv.getContext("2d")
+        if (plan.type === "image/jpeg") { cx.fillStyle = "#fff"; cx.fillRect(0, 0, plan.w, plan.h) }   // opaque matte (JPEG has no alpha)
+        cx.drawImage(bmp, 0, 0, plan.w, plan.h)
+        if (bmp.close) bmp.close()
+        const blob = await new Promise(function (res) { cv.toBlob(res, plan.type, IMG_OPT_QUALITY) })
+        if (!blob || blob.size >= file.size) return file
+        const name = plan.type === "image/jpeg" ? String(file.name || "image").replace(/\.[^./\\]+$/, "") + ".jpg" : file.name
+        return new File([blob], name, { type: plan.type, lastModified: file.lastModified })
+      } catch (e) { return file }
+    }
     function _attachFmtBytes(n) {
       n = Number(n) || 0
       if (n < 1024) return n + " B"
@@ -21245,7 +21324,7 @@
       if (ct.indexOf("video/") === 0) return "video"
       const m = /\.([a-z0-9]{1,5})$/i.exec(String((a && a.filename) || ""))
       const ext = m ? m[1].toLowerCase() : ""
-      if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"].indexOf(ext) >= 0) return "image"
+      if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg"].indexOf(ext) >= 0) return "image"
       if (["mp4", "webm", "mov", "m4v", "ogv"].indexOf(ext) >= 0) return "video"
       return ""
     }
@@ -21746,15 +21825,22 @@
         //   msgEl.style.color = "var(--rose)"; msgEl.textContent = d.error || "Upload failed."
         // }
         if (!files.length) return
-        var cur = (_attachCtx.get(id) || {}).t || t
-        var plan = attachPlanUpload(files, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
-        var notes = []
-        if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
-        plan.rejected.forEach(function (x) { notes.push(x) })
-        if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
-        if (!notes.length) attachSetMsg(id, "", false)
-        if (!plan.accept.length) return
-        attachStartUpload(id, plan.accept, _attachHooks)
+        var proceed = function (picked) {
+          var cur = (_attachCtx.get(id) || {}).t || t
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var notes = []
+          if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
+          plan.rejected.forEach(function (x) { notes.push(x) })
+          if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
+          if (!notes.length) attachSetMsg(id, "", false)
+          if (!plan.accept.length) return
+          attachStartUpload(id, plan.accept, _attachHooks)
+        }
+        // Big pictures are shrunk first (so the size limits and the upload both see the optimised file); small files and
+        // non-images go straight through with no delay.
+        if (!files.some(imgOptCandidate)) { proceed(files); return }
+        attachSetMsg(id, "Optimising images…", false)
+        Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
       })
     }
     // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
@@ -21829,7 +21915,7 @@
           } else if (it.kind === "replay") {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
             el.setAttribute("title", "Session replay")
-            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) { } })
+            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) {} })
           } else {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("VIDEO", true))
             el.setAttribute("title", "Recording")
@@ -21958,10 +22044,6 @@
         : ""
 
       // In single-ticket view the header shows: title, severity, sentiment, simName, url·date.
-      // Two-column layout when screenshot exists: shot in col-1, everything else in .tkt-right-body col-2.
-      const _firstImgAtt = !t.screenshotId && Array.isArray(t.attachments) ? t.attachments.find(a => attachKind(a) === "image" && a.url) : null
-      const _hasShot = !!t.screenshotId || !!_firstImgAtt
-      const _isTwoCol = isSingle && _hasShot
       // #538: a multi-line description must never be suppressed just because its FIRST line happens
       // to match the ticket title — only hide when the entire (single-line) observation IS the title.
       const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
@@ -21979,13 +22061,8 @@
       const _hasDupAck = (t.recurrenceCount || t.recurrence || 1) >= 2
       const _hasContextItems = _showObs || _showBug || !!t.sourceQuote
         || (_showSevChip || _showSentiment || _showSimChip) || _hasDupAck || !!t.isRegression
-      const _hasContext = _hasContextItems || (!_isTwoCol && _hasShot)
+      const _hasContext = _hasContextItems
 
-      const _shotHtml = t.screenshotId
-        ? `<div class="tkt-shot" data-shot="${esc(t.screenshotId)}"><div class="muted" style="font-size:12px">Loading screenshot…</div></div>`
-        : (_firstImgAtt
-          ? `<div class="tkt-shot" data-shot-url="${esc(_firstImgAtt.url)}" data-shot-name="${esc(_firstImgAtt.filename || "Screenshot")}"><div class="muted" style="font-size:12px">Loading screenshot…</div></div>`
-          : "")
       const _contextHtml = _hasContext ? `
       <div class="tkt-context">
         ${dupAckHtml(t)}
@@ -21996,8 +22073,7 @@
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
         ${_showMetaLine ? `<div class="tkt-meta-line muted">${(t.urlHost || t.urlPath) ? esc((t.urlHost || "") + (t.urlPath || "")) : ""}${((t.urlHost || t.urlPath) && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}</div>` : ""}
         ${t.sourceReferrer ? `<div class="tkt-meta-line muted">Referred from: ${esc(t.sourceReferrer)}</div>` : ""}
-        ${!_isTwoCol ? _shotHtml : ""}
-      </div>` : (!_isTwoCol ? _shotHtml : "")
+      </div>` : ""
       // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
       // KLAVITYKLA-513: a null/missing priority must resolve to the ONE canonical default 'medium'
       // (matching the triage row select), so the <select> marks 'medium' selected instead of falling
@@ -22055,7 +22131,6 @@
       </details>
       <div class="tkt-actions">
         <div class="tkt-badges">${badgesHtml}</div>
-        ${t.hasReplay ? `<button class="btn btn-ghost btn-sm replay-btn" type="button">${kicon('play')} Session replay</button>` : ""}
         <span class="tkt-act-grp"><button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">${kicon('sparkles')} Copy to AI</button>${infoTip("Copies the bug + context, formatted to paste into an AI coding assistant.")}</span>
         <span class="tkt-save-grp"><button class="btn btn-ghost btn-sm save-meta-btn">Save</button>${infoTip("Appears only when a property changed. Saves the assignee & internal notes.")}</span>
         ${curStatus === "done" ? `<span class="tkt-act-grp"><button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>${infoTip("Turns this fix into an enforceable guard so the bug can't silently come back.")}</span>` : ""}
@@ -22087,9 +22162,7 @@
         detailEl.innerHTML = `<div class="t3-cols">${_mid}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_right}</div>`
       } else {
         const _attachHtml = buildAttachmentsHtml(t)
-        detailEl.innerHTML = _isTwoCol
-          ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}</div>`
-          : `${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}`
+        detailEl.innerHTML = `${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}`
       }
       wireAttachments(detailEl, t, ticketId)
       wireRecordingSeek(detailEl)
@@ -23983,8 +24056,6 @@
       // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
       // PANEL keeps the compact image-left grid (single-has-shot). Board-expand is unaffected (isSingle=false).
       const _hasAnyShot = !!t.screenshotId || (Array.isArray(t.attachments) && t.attachments.some(a => attachKind(a) === "image" && a.url))
-      if (t.screenshotId && panel) detailEl.classList.add("single-has-shot")   // panel: image-left grid
-      else if (_hasAnyShot && panel) detailEl.classList.add("single-has-shot")
       if (!panel) {
         const card = document.createElement("div"); card.className = "tkt3-card"
         card.appendChild(head)
@@ -24148,19 +24219,34 @@
     const NEW_TKT_IMG_MAX = 8 * 1024 * 1024           // SCREENSHOT_MAX_BYTES default
     const NEW_TKT_VIDEO_MAX = 100 * 1024 * 1024       // ATTACH_VIDEO_MAX_BYTES default
     const NEW_TKT_TOTAL_MAX = 120 * 1024 * 1024       // ATTACH_TOTAL_MAX_BYTES default
+    // Documents (PDF, Word, Excel) ride the same endpoint; the server caps every non-video file at SCREENSHOT_MAX_BYTES.
+    const NEW_TKT_DOC_MAX = NEW_TKT_IMG_MAX
+    const NEW_TKT_DOC_EXT = ["pdf", "doc", "docx", "xls", "xlsx"]
+    const NEW_TKT_DOC_MIME = ["application/pdf", "application/msword", "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+    // Pure: is this a PDF / Word / Excel file? MIME first, extension as the fallback (browsers often send an empty or generic type).
+    function newTktIsDoc(f) {
+      const t = String((f && f.type) || "").toLowerCase()
+      if (NEW_TKT_DOC_MIME.indexOf(t) >= 0) return true
+      const m = /\.([a-z0-9]{1,5})$/i.exec(String((f && f.name) || ""))
+      return !!m && NEW_TKT_DOC_EXT.indexOf(m[1].toLowerCase()) >= 0
+    }
     let _newTktFiles = []
+    // Bumped whenever the held files are cleared (dialog closed / ticket created), so an image optimisation still running for
+    // a dialog the user already closed can't resurrect files into the next one.
+    let _newTktGen = 0
     const _newTktUrls = new Map()                     // File → object URL for its preview (revoked on remove/close)
     // Pure: merge `incoming` into `current`, enforcing type (image/video only), de-dupe, count and size limits.
     function newTktFilterFiles(current, incoming) {
       const files = current.slice(), rejected = []
       let total = files.reduce((n, f) => n + f.size, 0)
       for (const f of incoming) {
-        const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || "")
-        if (!isImg && !isVid) { rejected.push(f.name + ": only images and videos can be attached"); continue }
+        const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || ""), isDoc = !isImg && !isVid && newTktIsDoc(f)
+        if (!isImg && !isVid && !isDoc) { rejected.push(f.name + ": only images, videos, PDF, Word and Excel files can be attached"); continue }
         if (!f.size) { rejected.push(f.name + ": file is empty"); continue }
         if (files.some(a => a.name === f.name && a.size === f.size && a.lastModified === f.lastModified)) continue   // already added
         if (files.length >= NEW_TKT_MAX_FILES) { rejected.push(f.name + ": you can attach up to " + NEW_TKT_MAX_FILES + " files"); continue }
-        const cap = isVid ? NEW_TKT_VIDEO_MAX : NEW_TKT_IMG_MAX
+        const cap = isVid ? NEW_TKT_VIDEO_MAX : isDoc ? NEW_TKT_DOC_MAX : NEW_TKT_IMG_MAX
         if (f.size > cap) { rejected.push(f.name + ": larger than " + _attachFmtBytes(cap)); continue }
         if (total + f.size > NEW_TKT_TOTAL_MAX) { rejected.push(f.name + ": total would exceed " + _attachFmtBytes(NEW_TKT_TOTAL_MAX)); continue }
         files.push(f); total += f.size
@@ -24168,6 +24254,7 @@
       return { files, rejected }
     }
     function clearNewTktFiles() {
+      _newTktGen++
       _newTktUrls.forEach(u => { try { URL.revokeObjectURL(u) } catch (e) { } })
       _newTktUrls.clear()
       _newTktFiles = []
@@ -24189,10 +24276,17 @@
         let url = _newTktUrls.get(f)
         if (!url) { url = URL.createObjectURL(f); _newTktUrls.set(f, url) }
         const item = document.createElement("div"); item.className = "newtkt-file"
-        const isVid = /^video\//i.test(f.type || "")
-        const media = document.createElement(isVid ? "video" : "img")
-        if (isVid) { media.muted = true; media.preload = "metadata"; media.setAttribute("playsinline", "") } else { media.alt = f.name }
-        media.src = url
+        const isVid = /^video\//i.test(f.type || ""), isDoc = !isVid && !/^image\//i.test(f.type || "") && newTktIsDoc(f)
+        let media
+        if (isDoc) {
+          const ext = (/\.([a-z0-9]{1,5})$/i.exec(f.name) || [])[1] || "file"
+          media = document.createElement("div"); media.className = "nf-doc"
+          media.innerHTML = kicon('file-text', { size: 24 }) + "<span></span>"; media.lastChild.textContent = ext.toUpperCase()
+        } else {
+          media = document.createElement(isVid ? "video" : "img")
+          if (isVid) { media.muted = true; media.preload = "metadata"; media.setAttribute("playsinline", "") } else { media.alt = f.name }
+          media.src = url
+        }
         const meta = document.createElement("div"); meta.className = "nf-meta"; meta.textContent = f.name + " · " + _attachFmtBytes(f.size); meta.title = f.name
         const rm = document.createElement("button"); rm.type = "button"; rm.className = "nf-rm"; rm.textContent = "\u00d7"
         rm.setAttribute("aria-label", "Remove " + f.name); rm.title = "Remove"
@@ -24200,14 +24294,23 @@
         item.appendChild(media)
         if (isVid) { const pl = document.createElement("span"); pl.className = "newtkt-play"; pl.innerHTML = kicon('play', { size: 16 }); item.appendChild(pl) }
         item.appendChild(meta); item.appendChild(rm)
-        item.addEventListener("click", () => openMediaPreview({ url, name: f.name, kind: isVid ? "video" : "image" }))   // enlarge / play
+        item.addEventListener("click", () => { if (isDoc) window.open(url, "_blank", "noopener"); else openMediaPreview({ url, name: f.name, kind: isVid ? "video" : "image" }) })   // enlarge / play (a document opens in a new tab)
         grid.appendChild(item)
       })
     }
-    function newTktAddFiles(list) {
-      const r = newTktFilterFiles(_newTktFiles, Array.prototype.slice.call(list || []))
+    async function newTktAddFiles(list) {
+      const incoming = Array.prototype.slice.call(list || [])   // copy NOW — the input's live FileList is emptied right after this call
+      const gen = _newTktGen
+      const m = document.getElementById("newTktFilesMsg")
+      let prepared = incoming
+      if (incoming.some(imgOptCandidate)) {
+        if (m) m.textContent = "Optimising images…"
+        try { prepared = await Promise.all(incoming.map(compressImageFile)) } catch (e) { prepared = incoming }
+        if (gen !== _newTktGen) return
+      }
+      const r = newTktFilterFiles(_newTktFiles, prepared)
       _newTktFiles = r.files
-      const m = document.getElementById("newTktFilesMsg"); if (m) m.textContent = r.rejected.join(" · ")
+      if (m) m.textContent = r.rejected.join(" · ")
       renderNewTktFiles()
     }
     // Upload the held files to the just-created ticket. Resolves { ok } / { ok:false, error } — never throws.
@@ -24231,12 +24334,12 @@
       const rest = [...new Set((members || []).map(m => m && m.email).filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(e => e && e !== mine))].sort()
       return mine ? [mine, ...rest] : rest
     }
-    function populateNewTktAssignees() {
+    function populateNewTktAssignees(members) {
       const sel = document.getElementById("newTktAssigneeSel"), inp = document.getElementById("newTktAssigneeInp")
       if (!sel || !inp) return
       const me = (state && state.email) || ""
       sel.innerHTML = ""
-      newTktAssigneeEmails(state && state.members, me).forEach(e => {
+      newTktAssigneeEmails(members || (state && state.members), me).forEach(e => {
         const o = document.createElement("option"); o.value = e; o.textContent = e === String(me).trim().toLowerCase() ? e + " (you)" : e
         sel.appendChild(o)
       })
@@ -24249,6 +24352,74 @@
       const sel = document.getElementById("newTktAssigneeSel"), inp = document.getElementById("newTktAssigneeInp")
       if (!sel || !inp) return
       inp.value = sel.value || ""
+    }
+    // Project dropdown (mandatory, right under Title): every project the user can see, the active one preselected.
+    // Changing it reloads the Assignee list from THAT project's members (GET /api/projects/:id/members).
+    let _newTktProjSeq = 0
+    function populateNewTktProjects() {
+      const sel = document.getElementById("newTktProjectSel"); if (!sel) return
+      const projects = (state && state.projects) || []
+      const activeId = state && state.active ? state.active.id : ""
+      sel.innerHTML = ""
+      projects.forEach(p => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.name || p.id; sel.appendChild(o) })
+      if (activeId && projects.some(p => p.id === activeId)) sel.value = activeId
+      else if (projects.length === 0 && activeId) { const o = document.createElement("option"); o.value = activeId; o.textContent = (state.active.name || activeId); sel.appendChild(o); sel.value = activeId }
+      renderNewTktProjectUi()
+    }
+    // Custom dropdown UI mirrors the hidden <select> (the single source of truth submitNewTicket / onNewTktProjectChange read).
+    function renderNewTktProjectUi() {
+      const sel = document.getElementById("newTktProjectSel"), nameEl = document.getElementById("newTktProjectName"), list = document.getElementById("newTktProjectList")
+      if (!sel || !nameEl || !list) return
+      const cur = sel.options[sel.selectedIndex]
+      nameEl.textContent = cur && sel.value ? cur.textContent : "Select project"
+      list.innerHTML = ""
+      Array.prototype.forEach.call(sel.options, o => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "ntp-item"; b.setAttribute("role", "option")
+        b.setAttribute("data-id", o.value); b.setAttribute("aria-selected", o.value === sel.value ? "true" : "false"); b.textContent = o.textContent
+        list.appendChild(b)
+      })
+    }
+    function setNewTktProjectOpen(open) {
+      const btn = document.getElementById("newTktProjectBtn"), list = document.getElementById("newTktProjectList"); if (!btn || !list) return
+      list.classList.toggle("hide", !open); btn.setAttribute("aria-expanded", open ? "true" : "false")
+      if (open) { const c = list.querySelector('[aria-selected="true"]') || list.querySelector(".ntp-item"); if (c) { try { c.focus() } catch (e) { } } }
+    }
+    function wireNewTktProject() {
+      const btn = document.getElementById("newTktProjectBtn"), list = document.getElementById("newTktProjectList"), sel = document.getElementById("newTktProjectSel")
+      if (!btn || !list || !sel || btn._wired) return
+      btn._wired = true
+      const isOpen = () => !list.classList.contains("hide")
+      btn.addEventListener("click", e => { e.stopPropagation(); setNewTktProjectOpen(!isOpen()) })
+      list.addEventListener("click", e => {
+        const it = e.target.closest && e.target.closest(".ntp-item"); if (!it) return
+        e.stopPropagation(); sel.value = it.getAttribute("data-id"); renderNewTktProjectUi(); setNewTktProjectOpen(false)
+        try { btn.focus() } catch (err) { }
+        sel.dispatchEvent(new Event("change"))
+      })
+      document.addEventListener("click", e => { if (isOpen() && !list.contains(e.target) && e.target !== btn) setNewTktProjectOpen(false) })
+      document.addEventListener("keydown", e => {
+        if (!isOpen()) return
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setNewTktProjectOpen(false); try { btn.focus() } catch (err) { } return }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          const items = Array.prototype.slice.call(list.querySelectorAll(".ntp-item")); if (!items.length) return
+          e.preventDefault(); const i = items.indexOf(document.activeElement)
+          items[e.key === "ArrowDown" ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1)].focus()
+        }
+      }, true)
+    }
+    async function onNewTktProjectChange() {
+      const sel = document.getElementById("newTktProjectSel"); if (!sel) return
+      const perr = document.getElementById("newTktProjectErr"); if (perr) perr.textContent = ""
+      const id = sel.value, seq = ++_newTktProjSeq
+      if (state && state.active && id === state.active.id) { populateNewTktAssignees(); return }
+      let members = null
+      try {
+        const r = await fetch("/api/projects/" + encodeURIComponent(id) + "/members")
+        const d = r.ok ? await r.json().catch(() => null) : null
+        members = d && Array.isArray(d.members) ? d.members : null
+      } catch (e) { }
+      if (seq !== _newTktProjSeq) return   // a newer project pick won the race
+      populateNewTktAssignees(members || [])
     }
     // The Reporter field always shows — and is always re-forced to — the signed-in user's email. This is a UX guard against
     // DevTools edits (removing readonly, typing, changing the value attribute); it is NOT the security boundary: the server
@@ -24368,13 +24539,16 @@
       // #541: prefill the current user's email as the default assignee (assignee is now required) so it's a
       // one-click create for the common "assign to me" case; the user can still change it.
       if (assignee) assignee.value = (state && state.email) || ""
+      populateNewTktProjects()   // project dropdown, the selected project preselected
+      setNewTktProjectOpen(false)
       populateNewTktAssignees()   // KD-100: dropdown of all project users, current user selected
+      const perr0 = document.getElementById("newTktProjectErr"); if (perr0) perr0.textContent = ""
       if (err) err.textContent = ""
       const aerr = document.getElementById("newTktAssigneeErr")
       if (aerr) aerr.textContent = ""
       if (msg) msg.textContent = ""
       clearNewTktFiles()   // KD-100: start every dialog with no held attachments
-      setNewTktExpanded(false)
+      setNewTktExpanded(true)   // opens in the larger (expanded) layout by default; the button still toggles it
       const another_ = document.getElementById("newTktAnother"); if (another_) another_.checked = false
       lockNewTktReporter()   // the logged-in user is the reporter (read-only, re-forced if tampered with)
       bg.classList.add("show")
@@ -24418,8 +24592,10 @@
       // Create-ticket button is still clickable; `state.active` then throws "Cannot read properties of
       // null (reading 'active')" (prod NPE at submitNewTicket). Fall back to the "No project selected."
       // message instead of an uncaught TypeError.
-      const projId = state && state.active && state.active.id
-      if (!projId) { if (msg) msg.textContent = "No project selected."; return }
+      const projSel = document.getElementById("newTktProjectSel"), perr = document.getElementById("newTktProjectErr")
+      const projId = (projSel && projSel.value) || (state && state.active && state.active.id)
+      if (!projId) { if (perr) perr.textContent = "Please select a project."; { const pb = document.getElementById("newTktProjectBtn"); if (pb) { try { pb.focus() } catch (e) { } } } return }
+      if (perr) perr.textContent = ""
       newTktSubmitting = true   // #542
       // #532/#534: pause the liveness poll while the create is in flight so a background refresh can't race it.
       window.__klavMutating++
@@ -26411,6 +26587,12 @@
     // so the box repaints (clean image + the new overlay) via the normal read pipeline.
     function _reloadTktShot(detailEl, ann) {
       if (!detailEl) return
+      const fid = detailEl.getAttribute && detailEl.getAttribute("data-id")
+      if (fid) {
+        const tkt = (state.tickets || []).find(x => String(x.id) === String(fid))
+        if (tkt) tkt.annotations = ann
+        if (typeof attachRerender === "function") attachRerender(fid)
+      }
       const box = detailEl.querySelector(".tkt-shot")
       if (!box) return
       box.removeAttribute("data-loaded"); box.classList.remove("tkt-shotwrap", "zoomed"); box.innerHTML = ""
@@ -30234,7 +30416,7 @@
     <div class="modal" id="newTktModal" style="max-width:min(680px,96vw)">
       <div class="mhead">
         <h3 id="newTktTitle">New ticket</h3>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
           <button class="btn btn-ghost btn-sm" id="newTktExpand" type="button" aria-pressed="false"
             title="Make this dialog larger">Expand</button>
           <button class="mclose" id="newTktClose" aria-label="Close">&times;</button>
@@ -30246,9 +30428,21 @@
         <input id="newTktTitleInp" maxlength="500" placeholder="e.g. Checkout fails on iOS Safari"
           style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box" />
       </label>
+      <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+        <span id="newTktProjectLbl">Project <span style="color:var(--rose)">*</span></span>
+        <div class="ntp" id="newTktProjectBox">
+          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden tabindex="-1"></select>
+          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="newTktProjectLbl newTktProjectName">
+            <span id="newTktProjectName">Select project</span>
+            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="ntp-list hide" id="newTktProjectList" role="listbox" aria-labelledby="newTktProjectLbl"></div>
+        </div>
+        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0" role="alert"></span>
+      </div>
       <label
         style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
-        Description <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
+        <span>Description <span style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span></span>
         <textarea id="newTktBodyInp" rows="4" maxlength="5000"
           placeholder="Steps to reproduce, expected vs actual behaviour…"
           style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box;resize:vertical"></textarea>
@@ -30285,10 +30479,10 @@
             id="newTktFilesCount" style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
         </div>
         <div class="newtkt-drop" id="newTktDrop">
-          <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach images or videos</button>
+          <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach files</button>
           <span>or drop them here</span>
         </div>
-        <input type="file" id="newTktFileInp" accept="image/*,video/*" multiple hidden>
+        <input type="file" id="newTktFileInp" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
         <div class="newtkt-files" id="newTktFilesGrid"></div>
         <div id="newTktFilesMsg" style="font-size:12px;color:var(--rose);margin-top:6px"></div>
       </div>
@@ -32525,7 +32719,7 @@
         // KD-100: attachments (picker + drop zone) and the Expand toggle.
         const attachBtn = document.getElementById("newTktAttachBtn"), fileInp = document.getElementById("newTktFileInp"), drop = document.getElementById("newTktDrop")
         if (attachBtn && fileInp) {
-          attachBtn.innerHTML = kicon('paperclip', { size: 13 }) + " Attach images or videos"
+          attachBtn.innerHTML = kicon('paperclip', { size: 13 }) + " Attach files"
           attachBtn.addEventListener("click", function () { fileInp.click() })
           fileInp.addEventListener("change", function () { newTktAddFiles(fileInp.files); fileInp.value = "" })
         }
@@ -32552,6 +32746,9 @@
         })
         const assigneeSel = document.getElementById("newTktAssigneeSel")
         if (assigneeSel) assigneeSel.addEventListener("change", syncNewTktAssignee)
+        const projectSel = document.getElementById("newTktProjectSel")
+        if (projectSel) projectSel.addEventListener("change", onNewTktProjectChange)
+        wireNewTktProject()
         const expandBtn = document.getElementById("newTktExpand")
         if (expandBtn) expandBtn.addEventListener("click", function () { setNewTktExpanded(expandBtn.getAttribute("aria-pressed") !== "true") })
         const titleInp = document.getElementById("newTktTitleInp")

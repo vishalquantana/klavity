@@ -13,8 +13,6 @@ vi.mock("./widget-lib", async () => {
   const actual = await vi.importActual<typeof import("./widget-lib")>("./widget-lib")
   return { ...actual, parseScriptConfig: vi.fn(() => ({ projectId: "", backendUrl: "" })) }
 })
-// session-replay lazy-loads rrweb over the network on import; keep it inert under jsdom.
-vi.mock("./session-replay", () => ({ createSessionReplay: () => ({ snapshot: () => [], hasRecording: () => false, start: () => {}, stop: () => {} }) }))
 
 import { createUploadPill } from "./widget"
 
@@ -204,5 +202,78 @@ describe("upload pill states", () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(document.querySelector('[data-klavity-ui="upload-pill"]')).toBeNull()
     vi.useRealTimers()
+  })
+  // Safe retries: the pill tells the user what is happening instead of a bare "didn't finish".
+  it("retrying: shows the attempt count and the reason, with the spinner", () => {
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const p = createUploadPill({ label: "screenshot" })
+    p.retrying(2, 3, "No connection to Klavity — check your network.")
+    const el = pillEl()
+    expect(el.querySelector(".spin")).not.toBeNull()
+    expect(el.textContent).toContain("Retrying… (2/3)")
+    expect(el.textContent).toContain("No connection to Klavity")
+    p.dismiss(); document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+  })
+
+  it("failure: shows the SPECIFIC reason (falls back to the old generic hint) and Retry re-runs the attempt once", () => {
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const retry = vi.fn()
+    const p = createUploadPill({ label: "screenshot" })
+    p.failure(retry, "The files are too large to upload. Remove some and try again.")
+    expect(pillEl().textContent).toContain("Upload didn't finish")
+    expect(pillEl().textContent).toContain("The files are too large to upload")
+    ;(pillEl().querySelector("a") as HTMLElement).click()
+    expect(retry).toHaveBeenCalledTimes(1)
+    p.dismiss(); document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const q = createUploadPill({ label: "screenshot" }); q.failure(() => {})
+    expect(pillEl().textContent).toContain("check your connection")
+    q.dismiss(); document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+  })
+
+  it("partial: the ticket was created but files are missing — a warning (not a failure) with the count, and Retry re-sends only those", () => {
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const retryMissing = vi.fn()
+    const p = createUploadPill({ label: "screenshot + 3 files" })
+    p.partial(2, retryMissing)
+    const el = pillEl()
+    expect(el.classList.contains("err")).toBe(true)
+    expect(el.textContent).toContain("Report sent")
+    expect(el.textContent).toContain("2 files missing")
+    ;(el.querySelector("a") as HTMLElement).click()
+    expect(retryMissing).toHaveBeenCalledTimes(1)
+    p.partial(1, () => {})
+    expect(pillEl().textContent).toContain("1 file missing")        // singular
+    p.dismiss(); document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+  })
+  // The server is still processing THIS report (an earlier attempt owns it): an accurate 'waiting' state, not a failure and not a new attempt.
+  it("waiting: says the server is still processing, when it will look again and how long it has waited — spinner on, no failure styling", () => {
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const p = createUploadPill({ label: "screenshot + 2 files" })
+    p.waiting(3000, 12000)
+    const el = pillEl()
+    expect(el.classList.contains("err")).toBe(false)
+    expect(el.querySelector(".spin")).not.toBeNull()
+    expect(el.textContent).toContain("Finishing your report")
+    expect(el.textContent).toContain("still processing")
+    expect(el.textContent).toContain("checking again in 3s")
+    expect(el.textContent).toContain("waited 12s")
+    p.dismiss(); document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+  })
+  it("failure with a custom button label ('Retry anyway') shows a LONG explanation in full (wrapped, with a tooltip) and Retry still fires once", () => {
+    document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
+    const retry = vi.fn()
+    const p = createUploadPill({ label: "screenshot" })
+    const msg = "We couldn't confirm your report was received — it may already have been created. Check Klavity before retrying: this server can't prevent a duplicate."
+    p.failure(retry, msg, "Retry anyway")
+    const el = pillEl()
+    expect(el.textContent).toContain("may already have been created")
+    expect((el.querySelector("a") as HTMLElement).textContent).toBe("Retry anyway")
+    const sub = el.querySelector(".sub") as HTMLElement
+    expect(sub.style.whiteSpace).toBe("normal"); expect(sub.title).toBe(msg)
+    ;(el.querySelector("a") as HTMLElement).click()
+    expect(retry).toHaveBeenCalledTimes(1)
+    p.uploading()                                                    // after the user retries the wrapped text goes back to normal
+    expect((pillEl().querySelector(".sub") as HTMLElement).style.whiteSpace).toBe("")
+    p.dismiss(); document.querySelectorAll('[data-klavity-ui="upload-pill"]').forEach(n => n.remove())
   })
 })
