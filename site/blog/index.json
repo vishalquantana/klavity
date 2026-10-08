@@ -803,5 +803,12 @@
     "excerpt": "The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast.",
     "category": "Guides",
     "date": "2026-10-07"
+  },
+  {
+    "slug": "ai-bug-detection",
+    "title": "AI Bug Detection: What It Catches Before Clients Do",
+    "excerpt": "AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches.",
+    "category": "Guides",
+    "date": "2026-10-08"
   }
 ]

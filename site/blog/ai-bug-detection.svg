@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Three layers of AI bug detection: code diff, running app, production signals">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- layer 1: code diff -->
+  <rect x="48" y="86" width="196" height="196" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-width="1.3"/>
+  <rect x="68" y="106" width="60" height="7" rx="3.5" fill="#6366f1" opacity="0.8"/>
+  <rect x="68" y="134" width="120" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="152" width="92" height="6" rx="3" fill="#4ade80" opacity="0.65"/>
+  <rect x="68" y="170" width="134" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="188" width="104" height="6" rx="3" fill="#f87171" opacity="0.8"/>
+  <circle cx="212" cy="191" r="9" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <line x1="212" y1="186" x2="212" y2="192" stroke="#f87171" stroke-width="1.8"/>
+  <circle cx="212" cy="196" r="1.3" fill="#f87171"/>
+  <rect x="68" y="206" width="76" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+
+  <!-- layer 2: running app window -->
+  <rect x="302" y="86" width="196" height="196" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-width="1.3"/>
+  <line x1="302" y1="116" x2="498" y2="116" stroke="#6366f1" stroke-width="1.1" opacity="0.6"/>
+  <circle cx="318" cy="101" r="3.4" fill="#f87171" opacity="0.85"/>
+  <circle cx="330" cy="101" r="3.4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="342" cy="101" r="3.4" fill="#4ade80" opacity="0.6"/>
+  <rect x="322" y="138" width="156" height="34" rx="7" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="322" y="186" width="156" height="34" rx="7" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="322" y="234" width="84" height="26" rx="6" fill="#6366f1" opacity="0.85"/>
+  <path d="M430 240 l10 10 l-10 10" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <path d="M452 240 l-10 10 l10 10" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- layer 3: production signals -->
+  <rect x="556" y="86" width="196" height="196" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-width="1.3"/>
+  <polyline points="578,246 608,222 638,236 668,178 698,200 728,142" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="668" cy="178" r="5.5" fill="#f87171"/>
+  <circle cx="728" cy="142" r="5.5" fill="#f87171"/>
+  <line x1="578" y1="262" x2="728" y2="262" stroke="#f5f0e8" stroke-width="1" opacity="0.18"/>
+  <rect x="578" y="110" width="110" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="578" y="126" width="66" height="6" rx="3" fill="#f87171" opacity="0.6"/>
+
+  <!-- flow arrows -->
+  <path d="M254 184 L292 184" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M284 178 L292 184 L284 190" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M508 184 L546 184" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M538 178 L546 184 L538 190" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- verdict bar -->
+  <rect x="48" y="326" width="704" height="52" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="86" cy="352" r="13" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M80 352 l4.5 5 l8-10" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="116" y="341" width="188" height="7" rx="3.5" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="116" y="356" width="124" height="7" rx="3.5" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="640" y="340" width="76" height="24" rx="6" fill="#6366f1"/>
+</svg>

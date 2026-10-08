@@ -1,0 +1,198 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Bug Detection: What It Catches Before Clients Do · Klavity</title>
+<meta name="description" content="AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches.">
+<link rel="canonical" href="https://klavity.in/blog/ai-bug-detection">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Bug Detection: What It Catches Before Clients Do"><meta property="og:description" content="AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches.">
+<meta property="og:url" content="https://klavity.in/blog/ai-bug-detection"><meta property="og:image" content="https://klavity.in/blog/ai-bug-detection.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Bug Detection: What It Catches Before Clients Do"><meta name="twitter:description" content="AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches."><meta name="twitter:image" content="https://klavity.in/blog/ai-bug-detection.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Bug Detection: What It Catches Before Clients Do","description":"AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches.","datePublished":"2026-10-08","dateModified":"2026-10-08","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-bug-detection.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-bug-detection","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Bug Detection: What It Catches Before Clients Do","item":"https://klavity.in/blog/ai-bug-detection"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-bug-detection"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI bug detection?","acceptedAnswer":{"@type":"Answer","text":"AI bug detection is the use of AI models to find defects in an app by reading its code, driving its interface, and interpreting signals like console errors and failed requests — rather than waiting for a human tester or a client to notice something is broken."}},{"@type":"Question","name":"What bugs does AI bug detection catch best?","acceptedAnswer":{"@type":"Answer","text":"Defects with an observable failure: broken links and assets, forms that fail silently after a 500, responsive and layout breakage, state and sequence bugs such as double-submit or back-button-after-checkout, missing access-control checks on new routes, and accessibility violations with hard rules."}},{"@type":"Question","name":"What can AI bug detection not find?","acceptedAnswer":{"@type":"Answer","text":"Business rules that exist only in a client's head, questions of taste or copy quality, flows behind walls it cannot pass such as OTP or payment sandboxes, and concurrency problems that need real traffic to surface."}},{"@type":"Question","name":"Does AI bug detection replace manual QA?","acceptedAnswer":{"@type":"Answer","text":"No. It removes the repetitive part — re-walking the same flows every release, which is what gets skipped under deadline. Humans still own intent, business rules and judgement calls."}},{"@type":"Question","name":"How do you avoid noisy AI findings?","acceptedAnswer":{"@type":"Answer","text":"Filter in order: does it reproduce on a second run, is there machine evidence such as a console error or non-2xx response, is it on a flow you listed as important, and is it already known. Only findings that pass all four should become tickets."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-08</div>
+    <h1>AI Bug Detection: What It Catches Before Clients Do</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Three layers of AI bug detection: code diff, running app, production signals">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- layer 1: code diff -->
+  <rect x="48" y="86" width="196" height="196" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-width="1.3"/>
+  <rect x="68" y="106" width="60" height="7" rx="3.5" fill="#6366f1" opacity="0.8"/>
+  <rect x="68" y="134" width="120" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="152" width="92" height="6" rx="3" fill="#4ade80" opacity="0.65"/>
+  <rect x="68" y="170" width="134" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="188" width="104" height="6" rx="3" fill="#f87171" opacity="0.8"/>
+  <circle cx="212" cy="191" r="9" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <line x1="212" y1="186" x2="212" y2="192" stroke="#f87171" stroke-width="1.8"/>
+  <circle cx="212" cy="196" r="1.3" fill="#f87171"/>
+  <rect x="68" y="206" width="76" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+
+  <!-- layer 2: running app window -->
+  <rect x="302" y="86" width="196" height="196" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-width="1.3"/>
+  <line x1="302" y1="116" x2="498" y2="116" stroke="#6366f1" stroke-width="1.1" opacity="0.6"/>
+  <circle cx="318" cy="101" r="3.4" fill="#f87171" opacity="0.85"/>
+  <circle cx="330" cy="101" r="3.4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="342" cy="101" r="3.4" fill="#4ade80" opacity="0.6"/>
+  <rect x="322" y="138" width="156" height="34" rx="7" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="322" y="186" width="156" height="34" rx="7" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="322" y="234" width="84" height="26" rx="6" fill="#6366f1" opacity="0.85"/>
+  <path d="M430 240 l10 10 l-10 10" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <path d="M452 240 l-10 10 l10 10" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- layer 3: production signals -->
+  <rect x="556" y="86" width="196" height="196" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-width="1.3"/>
+  <polyline points="578,246 608,222 638,236 668,178 698,200 728,142" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="668" cy="178" r="5.5" fill="#f87171"/>
+  <circle cx="728" cy="142" r="5.5" fill="#f87171"/>
+  <line x1="578" y1="262" x2="728" y2="262" stroke="#f5f0e8" stroke-width="1" opacity="0.18"/>
+  <rect x="578" y="110" width="110" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="578" y="126" width="66" height="6" rx="3" fill="#f87171" opacity="0.6"/>
+
+  <!-- flow arrows -->
+  <path d="M254 184 L292 184" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M284 178 L292 184 L284 190" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M508 184 L546 184" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M538 178 L546 184 L538 190" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- verdict bar -->
+  <rect x="48" y="326" width="704" height="52" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="86" cy="352" r="13" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M80 352 l4.5 5 l8-10" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="116" y="341" width="188" height="7" rx="3.5" fill="#f5f0e8" opacity="0.26"/>
+  <rect x="116" y="356" width="124" height="7" rx="3.5" fill="#f5f0e8" opacity="0.14"/>
+  <rect x="640" y="340" width="76" height="24" rx="6" fill="#6366f1"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI bug detection works in three layers: static review of a diff, autonomous exploration of the running app, and interpretation of production signals. It reliably catches broken plumbing, silent failures, responsive breakage, state bugs and access-control slips; it cannot judge business rules or taste. A finding only counts as a bug when it carries a reproduction and machine evidence.</div>
+    <div class="prose"><p><strong>AI bug detection</strong> is the use of AI models to find defects in a web app by reading its code, driving its interface, and interpreting what it sees — instead of waiting for a human to notice something is broken. In practice it covers three distinct jobs: static review of a diff before it merges, autonomous exploration of a running app before release, and interpretation of real-world signals like console errors and failed network requests after release. It is strongest on the broad, repetitive classes of bug: a dead link, a form that silently fails, a layout that collapses at 390px, an error path nobody wired up. It is weakest at judging intent — whether the feature is the right one, or whether a deliberate design choice is actually a defect.</p>
+
+<h2>What is AI bug detection, exactly?</h2>
+<p>The term covers three layers that get conflated in marketing copy but behave very differently in a real workflow.</p>
+<ul>
+<li><strong>Pre-merge (code layer).</strong> A model reads the diff and flags likely defects: an unawaited promise, a missing null guard, a query inside a loop, an auth check that was dropped from a new route. It sees intent and structure but never sees the app run.</li>
+<li><strong>Pre-release (behaviour layer).</strong> An agent drives the running app — clicks, types, submits, scrolls — and reports what broke. It sees real rendered behaviour, including the bugs that only exist in the gap between two correct-looking components.</li>
+<li><strong>Post-release (signal layer).</strong> Models cluster and interpret what production is already emitting: JS exceptions, 4xx/5xx responses, repeated rage clicks, abandoned flows. It sees reality but only after a user hit it.</li>
+</ul>
+<p>Most teams start at the signal layer because it is the easiest to install, and then wonder why clients still find bugs first. The signal layer by definition only fires after someone is affected. If the goal is "the client never reports it to us," the work happens in the first two layers. Our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> walks through how the layers stack.</p>
+
+<h2>What kinds of bugs does AI bug detection actually catch?</h2>
+<p>Being specific here matters more than any capability claim. The classes that AI detection reliably finds are the ones with an observable, checkable failure:</p>
+<ul>
+<li><strong>Broken plumbing.</strong> Links and assets returning 404, images that never load, forms posting to a route that no longer exists, redirects that loop.</li>
+<li><strong>Silent failures.</strong> A submit button that fires a request, gets a 500, and shows the user nothing. This is a recurring failure mode in AI-assisted code, because the happy path was described in the prompt and the error branch was not.</li>
+<li><strong>Responsive and visual breakage.</strong> Overlapping text, clipped CTAs, horizontal scroll on mobile, a modal taller than the viewport with no scroll.</li>
+<li><strong>State and sequence bugs.</strong> Back-button after checkout, double-submit creating two records, a stale cart after logout, a flow that works once and fails on the second attempt.</li>
+<li><strong>Access-control slips.</strong> A new endpoint or page that renders without the session check its siblings have — a pattern model-generated routes produce often, because the generator copies the shape of a handler without its guard.</li>
+<li><strong>Accessibility defects with hard rules.</strong> Missing labels, unlabelled icon buttons, contrast below threshold, focus traps.</li>
+</ul>
+<p>Two things make a finding useful rather than interesting: a reproduction path, and evidence. A model that says "the checkout may fail" produced a hypothesis. A model that returns the exact click sequence, the request that returned 500, the console error and a screenshot produced a bug report a developer can act on. If you are picking tools, grade them on that output, not on the number of findings.</p>
+
+<h2>What does AI bug detection miss?</h2>
+<p>Worth saying plainly, because overselling it is how teams get burned:</p>
+<ul>
+<li><strong>Intent and business rules.</strong> Nothing in the code says the discount should cap at 20%. If the rule only lives in a client's head, no detector finds its violation.</li>
+<li><strong>Taste.</strong> An ugly-but-functional layout, confusing copy, a flow with one step too many. Personas can report friction, but the call is yours.</li>
+<li><strong>Anything behind a wall it cannot pass.</strong> OTP-gated flows, third-party payment sandboxes, data states that only exist for one real customer.</li>
+<li><strong>Load, concurrency and timing at scale.</strong> Race conditions that need real traffic to surface.</li>
+</ul>
+<p>So AI detection does not remove human QA. It removes the part of human QA that is re-walking the same twelve flows on every release — which is exactly the part that gets skipped under deadline, and exactly the part where client-visible bugs escape.</p>
+
+<h2>How does AI bug detection compare to the QA you already run?</h2>
+<table>
+<tr><th>Approach</th><th>Catches</th><th>Misses</th><th>Cost per release</th></tr>
+<tr><td>Manual click-through</td><td>Anything a careful human notices, including taste and intent</td><td>Whatever got skipped when the deadline moved</td><td>Hours of a person, every time</td></tr>
+<tr><td>Scripted E2E suite</td><td>Exactly the regressions you already wrote tests for</td><td>Every bug outside the script; breaks when selectors change</td><td>Cheap to run, expensive to maintain</td></tr>
+<tr><td>Error monitoring</td><td>Crashes real users already hit</td><td>Silent failures, visual breakage, anything pre-launch</td><td>Low, but the detection happens after impact</td></tr>
+<tr><td>AI bug detection</td><td>Broad unscripted coverage: plumbing, silent failures, responsive and state bugs</td><td>Business rules, taste, gated flows</td><td>Low per run; needs triage discipline</td></tr>
+</table>
+<p>These are complements, not substitutes. The practical stack for an agency is: a scripted suite for the few flows that must never break, AI detection for breadth on everything else, monitoring as the backstop, and humans on intent.</p>
+
+<h2>How do you add AI bug detection to an agency workflow?</h2>
+<ol>
+<li><strong>Write down the flows that matter.</strong> Five to ten per site, in plain language: sign up, log in, add to cart, pay, contact form, admin edit. This list is the input to every layer and takes twenty minutes.</li>
+<li><strong>Run the cheap deterministic checks first.</strong> HTTP status on every link, console errors, failed requests, missing alt text, contrast. They are unambiguous, they never hallucinate, and they clear a surprising amount of ground before a model forms an opinion.</li>
+<li><strong>Then run model-driven exploration on a staging URL.</strong> Let agents walk the flows as different user types — the hurried mobile user, the one with a long name and an apostrophe, the one who clicks back mid-checkout. <a href="/sims">Klavity Sims</a> does this as persona runs.</li>
+<li><strong>Gate on reproduction, not on opinion.</strong> Promote a finding to a ticket only when it carries steps, a screenshot or recording, the console output and the failing request. Everything else stays a hypothesis in a report.</li>
+<li><strong>Convert each confirmed bug into a standing test.</strong> Once it has a reproduction, it can be replayed forever. <a href="/autosim">AutoSim</a> keeps those replays alive when the DOM shifts, which is where hand-written suites usually rot.</li>
+<li><strong>Keep a human channel open.</strong> When a client or teammate does spot something, make reporting it a right-click instead of an email thread — <a href="/snap">Snap</a> captures the DOM, console and network state with the screenshot so you are not asking "what browser were you on?"</li>
+</ol>
+
+<h2>Where does AI bug detection fit for vibe-coded apps?</h2>
+<p>If the app came out of Cursor, Lovable, Bolt, v0 or Replit, the defect profile is predictable, and AI detection maps onto it well. Generated code tends to be strong on the path the prompt described and thin everywhere else: error branches, empty states, loading states, the second attempt at an action, and permission checks on routes added later. Those are all behaviour-layer bugs, which means driving the app finds them and reading the diff often does not.</p>
+<p>The trap is skipping step 1 above. Without a written list of flows, an agent explores whatever it finds and reports things you do not care about, you stop reading the reports, and you are back to the client finding bugs. See <a href="/blog/how-to-qa-a-vibe-coded-app">how to QA a vibe-coded app</a> for the longer version, and <a href="/blog/how-ai-reproduces-bugs-automatically">how AI reproduces bugs automatically</a> for what a usable reproduction looks like.</p>
+
+<h2>How do you tell a real finding from noise?</h2>
+<p>Four filters, in order. <strong>Does it reproduce?</strong> Run the steps twice; a finding that fires once is a flake until proven otherwise. <strong>Is there machine evidence?</strong> A console error, a non-2xx response, a failed assertion — something that is not the model's opinion. <strong>Is it on a flow you listed?</strong> A bug in an admin screen the client never opens is real but not urgent. <strong>Is it already known?</strong> Deduplicate before notifying anyone; the fastest way to kill trust in automated QA is three tickets for one bug.</p>
+<p>Findings that pass all four go to the developer with their evidence attached. Findings that pass two or three go in a weekly report. Findings that pass one get dropped. That ratio — not the raw finding count — is what makes AI bug detection worth running every release.</p>
+
+<h2>Try it on your next release</h2>
+<p>Point Klavity at a staging URL, give it your flow list, and see what comes back before the client does. Personas explore, confirmed bugs become self-healing tests, and anything a human spots is a right-click away from a developer-ready ticket. <a href="/onboarding">Scan your next client site free</a>.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Write down the 5–10 flows that matter before running any detection.</li><li>Run deterministic checks (status codes, console errors, contrast) before model-judged ones.</li><li>Promote a finding to a ticket only when it has steps, evidence and a reproduction.</li><li>Turn every confirmed bug into a standing self-healing test.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI bug detection?</summary><p>AI bug detection is the use of AI models to find defects in an app by reading its code, driving its interface, and interpreting signals like console errors and failed requests — rather than waiting for a human tester or a client to notice something is broken.</p></details><details><summary>What bugs does AI bug detection catch best?</summary><p>Defects with an observable failure: broken links and assets, forms that fail silently after a 500, responsive and layout breakage, state and sequence bugs such as double-submit or back-button-after-checkout, missing access-control checks on new routes, and accessibility violations with hard rules.</p></details><details><summary>What can AI bug detection not find?</summary><p>Business rules that exist only in a client's head, questions of taste or copy quality, flows behind walls it cannot pass such as OTP or payment sandboxes, and concurrency problems that need real traffic to surface.</p></details><details><summary>Does AI bug detection replace manual QA?</summary><p>No. It removes the repetitive part — re-walking the same flows every release, which is what gets skipped under deadline. Humans still own intent, business rules and judgement calls.</p></details><details><summary>How do you avoid noisy AI findings?</summary><p>Filter in order: does it reproduce on a second run, is there machine evidence such as a console error or non-2xx response, is it on a flow you listed as important, and is it already known. Only findings that pass all four should become tickets.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
