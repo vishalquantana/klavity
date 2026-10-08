@@ -21245,7 +21245,7 @@
       if (ct.indexOf("video/") === 0) return "video"
       const m = /\.([a-z0-9]{1,5})$/i.exec(String((a && a.filename) || ""))
       const ext = m ? m[1].toLowerCase() : ""
-      if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"].indexOf(ext) >= 0) return "image"
+      if (["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg"].indexOf(ext) >= 0) return "image"
       if (["mp4", "webm", "mov", "m4v", "ogv"].indexOf(ext) >= 0) return "video"
       return ""
     }
@@ -21829,7 +21829,7 @@
           } else if (it.kind === "replay") {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
             el.setAttribute("title", "Session replay")
-            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) { } })
+            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) {} })
           } else {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("VIDEO", true))
             el.setAttribute("title", "Recording")
@@ -22055,7 +22055,6 @@
       </details>
       <div class="tkt-actions">
         <div class="tkt-badges">${badgesHtml}</div>
-        ${t.hasReplay ? `<button class="btn btn-ghost btn-sm replay-btn" type="button">${kicon('play')} Session replay</button>` : ""}
         <span class="tkt-act-grp"><button class="btn btn-ghost btn-sm copy-claude-btn" type="button" title="Copy a detailed prompt to paste into Claude / ChatGPT / any AI coding agent">${kicon('sparkles')} Copy to AI</button>${infoTip("Copies the bug + context, formatted to paste into an AI coding assistant.")}</span>
         <span class="tkt-save-grp"><button class="btn btn-ghost btn-sm save-meta-btn">Save</button>${infoTip("Appears only when a property changed. Saves the assignee & internal notes.")}</span>
         ${curStatus === "done" ? `<span class="tkt-act-grp"><button class="btn btn-ghost btn-sm guard-fix-btn" type="button" title="Turn this fix into an enforceable guard that catches regressions">${kicon('shield')} Guard this fix</button>${infoTip("Turns this fix into an enforceable guard so the bug can't silently come back.")}</span>` : ""}
