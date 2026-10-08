@@ -57,6 +57,9 @@ import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
+import { phaseTimer } from "./lib/phase-timer"
+import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
+import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
@@ -5416,6 +5419,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // ── feedback intake (extension backend mode) ──
     if (req.method === "POST" && path === "/api/feedback") {
       try {
+        // Step 4 (widget-submit latency): per-phase timer → Server-Timing header + a log line (see the end of this handler).
+        const pt = phaseTimer()
+        // The same Bearer / session lookup was repeated three times below (anon check, bearer email, actor). Each is a DB
+        // read when a credential is present, so resolve each at most once per request.
+        let _bearerOnce: Promise<string | null> | undefined, _sessionOnce: Promise<string | null> | undefined
+        const bearerOnce = () => (_bearerOnce ||= bearerEmail(req))
+        const sessionOnce = () => (_sessionOnce ||= sessionEmail(req))
         // Anonymous browser path: browser requests always carry an Origin header. The embeddable
         // report widget runs cross-origin on customers' own sites, so an end-user must be able to
         // file a ticket WITHOUT a Klavity account. We no longer block foreign origins outright —
@@ -5425,7 +5435,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // reqOrigin/baseOrigin are computed ONCE so the gate AND the persist branch below can reuse them.
         const reqOrigin = req.headers.get("origin") || ""
         const baseOrigin = (() => { try { return new URL(BASE).origin } catch { return "" } })()
-        const anonActor = !(await bearerEmail(req)) && !(await sessionEmail(req))
+        const anonActor = !(await bearerOnce()) && !(await sessionOnce())
+        pt.mark("auth")
 
         // SECURITY (KLA-559): the anon abuse limiter must NOT be skippable by omitting the Origin header.
         // Previously BOTH anon limiters lived inside the `anonActor && reqOrigin` block, so a non-browser
@@ -5441,6 +5452,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         const form = await req.formData()
+        pt.mark("parse")
 
         // Mobile SDK path: a non-browser caller (no Origin) may authorize an anonymous submit with a
         // per-project publishable key (pk_…) instead of the Origin/Turnstile gate. The project is derived
@@ -5513,8 +5525,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // the replay buffer. Detect attached evidence cheaply BEFORE the 400: at least one screenshot File
         // or a non-empty replay buffer suffices. A report with NEITHER description NOR evidence still 400s.
         const hasScreenshotEvidence = form.getAll("screenshots").some((f) => f instanceof File && f.size > 0)
-        const replayRawEarly = String(form.get("replay_events") || "")
-        const hasReplayEvidence = replayRawEarly.length > 2 && replayRawEarly !== "[]" && replayRawEarly !== "null"
+        const hasReplayEvidence = replayEvidencePresent(form)   // plain `replay_events` JSON OR the gzip part `replay_events_gz`
         const hasEvidence = hasScreenshotEvidence || hasReplayEvidence
         if (!description && !hasEvidence) return wjson({ error: "Add a description or attach a screenshot." }, 400)
         if (description.length > 5000) return wjson({ error: "Description too long." }, 400)
@@ -5522,6 +5533,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Anonymous browser report → enforce the project's report gate (project-scoped, rate-limited).
         // anonWidgetAllowed unlocks the cross-origin anonymous persist branch further below.
         let anonWidgetAllowed = false
+        // The project row fetched for the cross-origin gate is reused below instead of fetching the same row again.
+        let gateProjCached: Awaited<ReturnType<typeof projectById>> | null = null
         if (anonActor && reqOrigin) {
           // The per-IP limit already ran up-front (Origin-independent, above). `ip` is retained here for
           // the Turnstile verification below, which binds the challenge to the caller's address.
@@ -5532,13 +5545,19 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // after submit. A logged-in dashboard user isn't anonymous, so the gate never applies to them.
           if (reqOrigin !== baseOrigin) {
             const reqProjectId = String(form.get("project_id") || "")
-            const gateProj = reqProjectId ? await projectById(reqProjectId) : null
+            // projectById and getWidgetConfig do not depend on each other → run them together (one round trip, not two).
+            // A failure in either still surfaces as before (the outer catch → 500); an unknown project still 404s first.
+            const [gateProj, gateWidgetCfg] = await Promise.all([
+              reqProjectId ? projectById(reqProjectId) : Promise.resolve(null),
+              reqProjectId ? getWidgetConfig(reqProjectId) : Promise.resolve(null),
+            ])
             if (!gateProj) return wjson({ error: "Unknown project." }, 404)
+            gateProjCached = gateProj
             if (!rlAllow(`fbanon:proj:${reqProjectId}`, FEEDBACK_ANON_PER_PROJECT, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
             // Default gate is now 'anonymous' (JTBD 1.7): identity is no longer demanded before value is
             // delivered on the highest-volume path. Projects that explicitly chose 'email'/'login' keep
             // their setting. An unrecognized/missing value resolves to 'anonymous'.
-            const gate = (await getWidgetConfig(reqProjectId))?.reportGate || "anonymous"
+            const gate = gateWidgetCfg?.reportGate || "anonymous"
             if (gate === "login") return wjson({ error: "Sign in to Klavity to report on this project." }, 401)
             if (gate === "email" && !validReporterEmail) return wjson({ error: "A valid email is required to submit." }, 400)
             // Turnstile replaces the email gate's accidental spam-shield role on the anonymous path.
@@ -5652,12 +5671,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // (a JSON array string). Parse defensively here; an oversize/garbage field must NEVER fail the
         // bug submission. The per-event-buffer byte cap below is a coarse pre-parse guard; the durable
         // size cap (oldest-first trim) lives in saveFeedbackReplay.
-        const REPLAY_RAW_CAP = 6 * 1024 * 1024 // 6MB of raw JSON before gzip — reject anything larger outright
-        let replayEvents: unknown[] | null = null
-        const replayRaw = String(form.get("replay_events") || "")
-        if (replayRaw && replayRaw.length <= REPLAY_RAW_CAP) {
-          try { const parsed = JSON.parse(replayRaw); if (Array.isArray(parsed) && parsed.length) replayEvents = parsed } catch { /* ignore bad replay */ }
-        }
+        // Accepts the gzip part (`replay_events_gz`, what current clients send) or the plain JSON field (older clients); the
+        // inflated size is bounded by REPLAY_RAW_CAP (6MB) so a decompression bomb is ignored, never a failure.
+        const replayEvents: unknown[] | null = await readReplayEvents(form)
 
         // KLAVITYKLA-288: the legacy inline Plane push is GONE. Every external filing now flows
         // through the connector system (auto-copy on triage-accept / explicit export), which is the
@@ -5670,7 +5686,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         //   • the double-file guard that used to skip the inline push when an auto-copy Plane
         //     connector existed is deleted with the path it guarded.
         // A tracker connection remains OPTIONAL: Klavity owns the feedback, Plane is a downstream sink.
-        const email = await bearerEmail(req)
+        const email = await bearerOnce()
+        pt.mark("gates")
 
         // Upload screenshots to object storage. Caps/MIME/ACL come from the central screenshot config
         // (lib/screenshot-config.ts) instead of scattered literals.
@@ -5688,43 +5705,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let droppedScreenshots = 0, droppedAttachments = 0, droppedRecordings = 0
         let evidenceDropReason: string | null = null
         const noteEvidenceDrop = (msg: string) => { if (!evidenceDropReason) evidenceDropReason = msg }
+        // Step 1 (widget-submit latency): the screenshot / thumbnail / attachment / recording uploads are independent of each
+        // other, but used to run one after another (each a remote object-store round trip). They now run with BOUNDED
+        // concurrency (one shared limiter, KLAV_UPLOAD_CONCURRENCY, default 4) and the results are consumed in INPUT order,
+        // so the stored descriptors stay aligned with the files the reporter attached and the "first failure reason" /
+        // dropped counts are identical to the serial version. Every 400 (type / size / total caps) is decided BEFORE the
+        // first byte is uploaded, so a rejected submit no longer leaves already-stored orphan objects behind.
+        const uploadLimit = createLimiter(uploadConcurrency())
         for (let fi = 0; fi < files.length; fi++) {
           const f = files[fi]
           if (f.type && !f.type.startsWith(SCREENSHOTS.allowedTypePrefix)) return wjson({ error: `Screenshot ${f.name} is not an image.` }, 400)
           if (f.size > SCREENSHOTS.maxBytes) return wjson({ error: `Screenshot ${f.name} exceeds ${mbLabel(SCREENSHOTS.maxBytes)}.` }, 400)
-          const buf = await f.arrayBuffer()
-          // Upload PRIVATE (no public bucket exposure). The dashboard reads via the membership-checked
-          // /api/screenshots/:id endpoint; the external tracker ticket embeds the PERMANENT signed link
-          // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
-          // forever without making the object world-readable. Mint the id now so we can sign the link.
-          const sid = "shot_" + crypto.randomUUID()
-          // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole
-          // report — especially the new screenshot-only path where the reporter typed nothing. Persist the
-          // report anyway (this shot is simply dropped) rather than losing the whole submission.
-          let meta: UploadedScreenshot
-          try { meta = await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl) }
-          catch (upErr: any) { console.error("screenshot upload failed (non-fatal):", upErr?.message || upErr); droppedScreenshots++; noteEvidenceDrop(upErr?.message || String(upErr)); continue }
-          // Best-effort thumbnail upload for this shot. Only accept a small image (guards against a client
-          // sending a full-size blob under the thumb field). A thumb failure never affects the full shot —
-          // the row is stored with thumb_key null and the dashboard falls back to the full image.
-          let thumbKey: string | null = null
-          const tf = thumbFiles[fi]
-          if (tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000) {
-            try {
-              const tbuf = await tf.arrayBuffer()
-              const tmeta = await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl)
-              thumbKey = tmeta.key
-            } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr) }
-          }
-          imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
-          uploaded.push({ ...meta, bytes: buf.byteLength, id: sid, thumbKey })
         }
 
-        // PX4 #425: non-image file attachments (PDF, .log, .har, .txt, ...) from the composer's "Attach file"
-        // affordance. Uploaded PRIVATE via uploadAttachment (real extension preserved), then persisted as
-        // descriptors on the feedback row (attachments_json) so feedbackToTicketPayload can fetch the bytes and
-        // attach them natively to the external issue. Capped by count + per-file + total size; an image sent
-        // here is ignored (images travel on the screenshots path). A single upload failure is non-fatal.
+        // PX4 #425: non-image file attachments (PDF, .log, .har, ...) from the composer's "Attach file" affordance.
+        // Uploaded PRIVATE via uploadAttachment (real extension preserved), then persisted as descriptors on the feedback
+        // row (attachments_json) so feedbackToTicketPayload can fetch the bytes and attach them natively to the external
+        // issue. Capped by count + per-file + total size; an image sent here is ignored (images travel on the screenshots
+        // path). A single upload failure is non-fatal.
         const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
         // KLAVITYKLA-480: video/* uploads carry transcript_status ("pending" at ingest) so an async STT pass
         // (fired after the insert below) can transcribe spoken notes inside them and store the transcript
@@ -5736,6 +5734,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
         const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
         let attachTotalBytes = 0
+        const attachPlan: Array<{ af: File; uploadType: string }> = []
         for (const af of attachFiles) {
           if (af.size <= 0) continue
           if (af.type && af.type.startsWith(SCREENSHOTS.allowedTypePrefix)) continue // images go through the screenshots path
@@ -5750,19 +5749,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (af.size > perFileCap) return wjson({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
           attachTotalBytes += af.size
           if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return wjson({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
-          try {
-            const abuf = new Uint8Array(await af.arrayBuffer())
-            // Persist a concrete video/* content-type when we classified by extension (empty MIME) so the
-            // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
-            const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
-            const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
-            const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
-              { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
-            // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
-            // until the async transcription pass resolves it. Keyed by up.key downstream.
-            if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-            attachmentDescs.push(desc)
-          } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr); droppedAttachments++; noteEvidenceDrop(aErr?.message || String(aErr)) }
+          // Persist a concrete video/* content-type when we classified by extension (empty MIME) so the
+          // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
+          attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream") })
         }
 
         // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
@@ -5777,26 +5766,95 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let recMeta: Array<{ id?: string; durationMs?: number; width?: number; height?: number; screenOnly?: boolean }> = []
         try { const rm = JSON.parse(String(form.get("recording_meta") || "[]")); if (Array.isArray(rm)) recMeta = rm } catch { /* tolerate a missing/garbled meta blob */ }
         const recordingDescs: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean; transcript_status?: string }> = []
+        const recPlan: Array<{ rf: File; ri: number }> = []
         for (let ri = 0; ri < recFiles.length; ri++) {
           const rf = recFiles[ri]
           if (rf.size <= 0) continue
           if (rf.type && !/^video\/(webm|mp4)/.test(rf.type)) continue // only recorded video containers
           if (rf.size > RECORDING_MAX_BYTES) return wjson({ error: `Recording ${rf.name} exceeds ${mbLabel(RECORDING_MAX_BYTES)}.` }, 400)
-          const m = recMeta[ri] || {}
-          try {
-            const rbuf = new Uint8Array(await rf.arrayBuffer())
-            const up = await uploadAttachment(rbuf, rf.name || `recording-${ri}.webm`, rf.type || "video/webm")
-            recordingDescs.push({
-              id: String(m.id || ("rec_" + crypto.randomUUID())),
-              key: up.key, contentType: up.contentType, bytes: rf.size,
-              durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
-              screenOnly: m.screenOnly === true,
-              // KLAVITYKLA-438 (Phase 2): the row starts "pending" — an async STT pass (fired after the
-              // insert below) flips it to done/failed and stores the transcript in-place by id.
-              transcript_status: "pending",
-            })
-          } catch (rErr: any) { console.error("recording upload failed (non-fatal):", rErr?.message || rErr); droppedRecordings++; noteEvidenceDrop(rErr?.message || String(rErr)) }
+          recPlan.push({ rf, ri })
         }
+
+        // Start EVERY upload now (the limiter bounds how many actually run at once) and wait for all of them.
+        type ShotUp = { ok: true; meta: UploadedScreenshot; bytes: number } | { ok: false; err: any }
+        const shotUps: Promise<ShotUp>[] = files.map((f) => uploadLimit(async (): Promise<ShotUp> => {
+          // Upload PRIVATE (no public bucket exposure). The dashboard reads via the membership-checked
+          // /api/screenshots/:id endpoint; the external tracker ticket embeds the PERMANENT signed link
+          // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
+          // forever without making the object world-readable.
+          try {
+            const buf = await f.arrayBuffer()
+            return { ok: true, meta: await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl), bytes: buf.byteLength }
+          } catch (err) { return { ok: false, err } }
+        }))
+        // Best-effort thumbnail upload per shot. Only accept a small image (guards against a client sending a full-size
+        // blob under the thumb field). A thumb failure never affects the full shot — the row is stored with thumb_key
+        // null and the dashboard falls back to the full image.
+        const thumbUps: Promise<string | null>[] = files.map((f, fi) => {
+          const tf = thumbFiles[fi]
+          if (!(tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000)) return Promise.resolve(null)
+          return uploadLimit(async () => {
+            try {
+              const tbuf = await tf.arrayBuffer()
+              return (await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl)).key
+            } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr); return null }
+          })
+        })
+        type AttUp = { ok: true; up: Awaited<ReturnType<typeof uploadAttachment>> } | { ok: false; err: any }
+        const attUps: Promise<AttUp>[] = attachPlan.map(({ af, uploadType }) => uploadLimit(async (): Promise<AttUp> => {
+          try { return { ok: true, up: await uploadAttachment(new Uint8Array(await af.arrayBuffer()), af.name || "attachment", uploadType) } }
+          catch (err) { return { ok: false, err } }
+        }))
+        const recUps: Promise<AttUp>[] = recPlan.map(({ rf, ri }) => uploadLimit(async (): Promise<AttUp> => {
+          try { return { ok: true, up: await uploadAttachment(new Uint8Array(await rf.arrayBuffer()), rf.name || `recording-${ri}.webm`, rf.type || "video/webm") } }
+          catch (err) { return { ok: false, err } }
+        }))
+        const [shotRes, thumbRes, attRes, recRes] = await Promise.all([Promise.all(shotUps), Promise.all(thumbUps), Promise.all(attUps), Promise.all(recUps)])
+
+        // Consume in INPUT order: screenshots, then attachments, then recordings — exactly the order (and so the same
+        // first-failure reason / counts / descriptor order) the serial version produced.
+        for (let fi = 0; fi < files.length; fi++) {
+          const r = shotRes[fi]
+          if (!r.ok) {
+            // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole report —
+            // especially the screenshot-only path where the reporter typed nothing. Persist the report anyway (this
+            // shot is simply dropped). Its thumbnail (uploaded concurrently) would be an orphan → delete it.
+            console.error("screenshot upload failed (non-fatal):", r.err?.message || r.err); droppedScreenshots++; noteEvidenceDrop(r.err?.message || String(r.err))
+            if (thumbRes[fi]) void deleteObject(thumbRes[fi]!).catch(() => {})
+            continue
+          }
+          // Mint the id now so we can sign the permanent link.
+          const sid = "shot_" + crypto.randomUUID()
+          imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
+          uploaded.push({ ...r.meta, bytes: r.bytes, id: sid, thumbKey: thumbRes[fi] })
+        }
+        for (let k = 0; k < attachPlan.length; k++) {
+          const r = attRes[k]
+          if (!r.ok) { console.error("attachment upload failed (non-fatal):", r.err?.message || r.err); droppedAttachments++; noteEvidenceDrop(r.err?.message || String(r.err)); continue }
+          const af = attachPlan[k].af, up = r.up
+          const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
+            { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
+          // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
+          // until the async transcription pass resolves it. Keyed by up.key downstream.
+          if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
+          attachmentDescs.push(desc)
+        }
+        for (let k = 0; k < recPlan.length; k++) {
+          const r = recRes[k]
+          if (!r.ok) { console.error("recording upload failed (non-fatal):", r.err?.message || r.err); droppedRecordings++; noteEvidenceDrop(r.err?.message || String(r.err)); continue }
+          const { rf, ri } = recPlan[k], up = r.up
+          const m = recMeta[ri] || {}
+          recordingDescs.push({
+            id: String(m.id || ("rec_" + crypto.randomUUID())),
+            key: up.key, contentType: up.contentType, bytes: rf.size,
+            durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
+            screenOnly: m.screenOnly === true,
+            // KLAVITYKLA-438 (Phase 2): the row starts "pending" — an async STT pass (fired after the
+            // insert below) flips it to done/failed and stores the transcript in-place by id.
+            transcript_status: "pending",
+          })
+        }
+        pt.mark("uploads")
 
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
         // Runs whether or not a tracker is connected, so the dashboard always gets a row.
@@ -5820,7 +5878,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
             // (?project= if accessible, else the caller's first project).
-            const actor = email || (await sessionEmail(req))
+            const actor = email || (await sessionOnce())
             const reqProject = String(form.get("project_id") || "") || url.searchParams.get("project")
             // firstParty: the request carries our own Origin (verified browser, same base). Only
             // such requests may use the anonymous projectById path — no-Origin and foreign-Origin
@@ -5831,7 +5889,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // either first-party (our own site) OR a cross-origin browser report that already passed
             // the project's report gate above (anonWidgetAllowed). no-Origin (curl/script) anonymous
             // calls still never reach projectById — the deferred surface stays closed.
-            if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = await projectById(reqProject)
+            if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = (gateProjCached && gateProjCached.id === reqProject) ? gateProjCached : await projectById(reqProject)
             // TENANT ISOLATION: a publishable-key submit's project is ALWAYS the key's resolved project —
             // never the (attacker-controlled) project_id form field. Overrides any resolution above.
             if (pkProjectId) resolved = await projectById(pkProjectId)
@@ -5880,6 +5938,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 klavityFailsafeToOrigin = true
               }
             }
+            pt.mark("resolve")
             if (resolved) {
               const projectId = resolved.id
               submitProjectId = projectId // #745: carry to the success-exit for the pretty issue_url
@@ -5924,27 +5983,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // Per-project screenshot config = central server defaults merged with this project's
               // settings (modal_config_json.screenshots). A project may disable storage entirely — drop
               // the just-uploaded objects and persist no ledger rows. Retention TTL (if set) stamps expires_at.
-              const scfg = resolveScreenshotConfig(await getProjectModalConfig(projectId).catch(() => ({})))
+              // The modal-config read and the persona-ownership read are independent → one round trip. (rawSimId is a pure
+              // form read; listPersonas only runs when a sim_id was actually sent.)
+              const rawSimId = String(form.get("sim_id") || "") || null
+              const [modalCfgRow, personasForSim] = await Promise.all([
+                getProjectModalConfig(projectId).catch(() => ({})),
+                rawSimId ? listPersonas(projectId) : Promise.resolve(null),
+              ])
+              const scfg = resolveScreenshotConfig(modalCfgRow)
               if (!scfg.enabled) {
                 for (const u of uploaded) { await deleteObject(u.key).catch(() => {}); if (u.thumbKey) await deleteObject(u.thumbKey).catch(() => {}) }
                 uploaded.length = 0; imageUrls.length = 0
               }
               const shotExpiresAt = scfg.retentionDays > 0 ? Date.now() + scfg.retentionDays * 86400000 : null
-              for (const u of uploaded) {
-                await insertScreenshot({
-                  id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
-                  contentType: u.contentType, acl: u.acl,
-                  bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
-                  thumbKey: u.thumbKey,
-                })
-              }
+              // One ledger row per shot, each with its own pre-minted id → independent inserts, run with bounded concurrency.
+              await mapBounded(uploaded, 4, (u) => insertScreenshot({
+                id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
+                contentType: u.contentType, acl: u.acl,
+                bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
+                thumbKey: u.thumbKey,
+              }))
               if (uploaded[0]) screenshotId = uploaded[0].id
+              pt.mark("screenshots_db")
 
               // A01/IDOR: the sim_id is attacker-supplied. Before any trait/citation lookup, verify it
               // belongs to THIS project; if not, treat the persona as ephemeral (simId=null) so no
               // cross-tenant trait read happens. The report still persists with no citation (no 500).
-              const rawSimId = String(form.get("sim_id") || "") || null
-              const simId = rawSimId && (await listPersonas(projectId)).some((p) => p.id === rawSimId) ? rawSimId : null
+              const simId = rawSimId && personasForSim && personasForSim.some((p) => p.id === rawSimId) ? rawSimId : null
               // PX4 #472 — AUTOFILE GATE must key off the RAW source, NOT persona-existence. The `simId`
               // above is COERCED to null when `rawSimId` doesn't match a registered persona (A01/IDOR
               // guard, correct for attribution). But the autofile gate below used `!simId`, so a Sim/bot
@@ -6014,7 +6079,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               let citedRaw: any = null
               const ctRaw = String(form.get("cited_trait_ids") || "")
               if (ctRaw) { try { citedRaw = JSON.parse(ctRaw) } catch { citedRaw = ctRaw.split(",").map((s) => s.trim()).filter(Boolean) } }
+              pt.mark("prep")
               citation = await resolveCitations(simId, citedRaw, projectId)
+              pt.mark("citations")
 
               let dedupedInto: string | null = null
               // A screenshot-only report carries NO user text — `observation` is the deterministic
@@ -6161,6 +6228,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   void trackMilestone(db, { milestone: "first_report", projectId, props: { source: fbSource } })
                 }
               }
+              pt.mark("dedupe_insert")
               // KLAVITYKLA-453: evidence-loss visibility. If any screenshot/attachment/recording BYTES
               // failed to reach object storage above (S3 misconfigured or a write error), the report was
               // still persisted — but WITHOUT that evidence. On a broken prod that is silent evidence loss
@@ -6199,26 +6267,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   })
                 })().catch(() => {})
               }
+              // Post-insert writes that do not depend on each other (reporter contact, expectations ingest, activity row,
+              // replay buffer) run together instead of one after another. Each keeps its own failure handling: the contact
+              // and replay writes stay non-fatal (logged), while ingest / activity failures still reject → 500 as before.
+              const postWrites: Promise<unknown>[] = []
               // Reporter email (from the widget's "log in or email" gate): persist as the contact so
               // it shows in the dashboard and drives notify-on-fix. Fires on new + deduped rows.
               if (feedbackId && validReporterEmail) {
-                try { await setFeedbackContactEmail(feedbackId, projectId, reporterEmail) }
-                catch (e: any) { console.warn("reporter email save (non-fatal):", e?.message || e) }
+                const fbIdForContact = feedbackId
+                postWrites.push((async () => { try { await setFeedbackContactEmail(fbIdForContact, projectId, reporterEmail) }
+                  catch (e: any) { console.warn("reporter email save (non-fatal):", e?.message || e) } })())
                 // QPQ-31: and register them as a project CONTACT so the team can see/@mention/assign the
                 // person who filed this. Idempotent, and deliberately NOT a project_members row.
                 if (wantsContact) {
-                  try {
-                    await upsertProjectContact(projectId, reporterEmail, {
-                      name: (reporter && typeof reporter.name === "string") ? reporter.name : null,
-                      source: "report",
-                      feedbackId,
-                    })
-                  } catch (e: any) { console.warn("contact upsert (non-fatal):", e?.message || e) }
+                  postWrites.push((async () => {
+                    try {
+                      await upsertProjectContact(projectId, reporterEmail, {
+                        name: (reporter && typeof reporter.name === "string") ? reporter.name : null,
+                        source: "report",
+                        feedbackId: fbIdForContact,
+                      })
+                    } catch (e: any) { console.warn("contact upsert (non-fatal):", e?.message || e) }
+                  })())
                 }
               }
               // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
               if (suggestedBug && feedbackId && db) {
-                await ingestSnapOrSim(db, {
+                postWrites.push(ingestSnapOrSim(db, {
                   projectId, feedbackId, isSnap: !simId,
                   title: (suggestedBug?.title ?? observation ?? "").slice(0, 200),
                   dedupKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
@@ -6229,13 +6304,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // the reporter's own words (unverified — no page text to check against).
                   sourceQuote: citation.sourceQuote ?? (simId ? null : (observation || null)),
                   sourceQuoteVerified: citation.sourceQuote ? citation.sourceQuoteVerified : (simId ? null : false),
-                })
+                }))
               }
               if (!dedupedInto) {
-                await insertActivity({
+                postWrites.push(insertActivity({
                   projectId, type: "feedback_filed", actorEmail: actor, simId,
                   urlHost, urlPath, feedbackId, screenshotId,
-                })
+                }))
               }
 
               // ── G1 session replay attach: store the rolling rrweb buffer keyed to this feedback row.
@@ -6243,9 +6318,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // failure must never fail or slow the submission. Fires for both new and deduped rows so a
               // recurring bug's freshest replay is available.
               if (replayEvents && feedbackId) {
-                try { await saveFeedbackReplay(projectId, feedbackId, replayEvents) }
-                catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
+                const fbIdForReplay = feedbackId
+                postWrites.push((async () => {
+                  try { await saveFeedbackReplay(projectId, fbIdForReplay, replayEvents) }
+                  catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
+                })())
               }
+              await Promise.all(postWrites)
+              pt.mark("post_writes")
 
               // Note: auto-copy is TRIAGE-GATED for Sim/AutoSim reports — it fires when a report is
               // accepted (status→open), NOT on raw submit. See the PATCH /api/feedback/:id handler.
@@ -6430,23 +6510,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // so an anonymous widget reporter following it after login-resume hits 403. For an anon reporter
         // pass no projectId so prettyDeepLinkUrl returns the unguessable /t/<fb_id> teaser link (which
         // honors the share/teaser redaction policy) — never the enumerable member-only pretty permalink.
-        const issueUrl = (feedbackId && dashBase)
-          ? await prettyDeepLinkUrl(feedbackId, submitterIsMember ? submitProjectId : null, { origin: dashBase })
-          : ""
-        // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
-        // hits the share link gets a warm cache (never a synchronous render on the crawler request).
-        // Best-effort + deduped + no-op when S3 is unconfigured.
-        // KLA-739 (C1): pre-render ONLY when the ticket is anon-shareable (loadOgCardData(anon) returns
-        // null for share_mode='off' / non-anon-shared), and store the ANON-redacted card that /og serves —
-        // so we never pre-render a private ticket's card to a public-ish cache.
-        if (feedbackId) {
-          try {
-            const _og = await loadOgCardData(feedbackId, { anon: true })
-            // C1-a: pre-render under the SAME tier-folded key /og looks up, so the warm object matches.
-            if (_og) enqueueOgRender(feedbackId, _og.keyVersion, async () => _og.data)
-          } catch { /* best-effort prerender */ }
+        pt.mark("dispatch")
+        // The share link and the OG-card data do not depend on each other → fetch together. A share-link failure still
+        // rejects (→ 500, as before); the OG prerender stays best-effort.
+        const [issueUrl, _og] = await Promise.all([
+          (feedbackId && dashBase)
+            ? prettyDeepLinkUrl(feedbackId, submitterIsMember ? submitProjectId : null, { origin: dashBase })
+            : Promise.resolve(""),
+          // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
+          // hits the share link gets a warm cache (never a synchronous render on the crawler request).
+          // Best-effort + deduped + no-op when S3 is unconfigured.
+          // KLA-739 (C1): pre-render ONLY when the ticket is anon-shareable (loadOgCardData(anon) returns
+          // null for share_mode='off' / non-anon-shared), and store the ANON-redacted card that /og serves —
+          // so we never pre-render a private ticket's card to a public-ish cache.
+          feedbackId ? loadOgCardData(feedbackId, { anon: true }).catch(() => null) : Promise.resolve(null),
+        ])
+        // C1-a: pre-render under the SAME tier-folded key /og looks up, so the warm object matches.
+        if (feedbackId && _og) { try { enqueueOgRender(feedbackId, _og.keyVersion, async () => _og.data) } catch { /* best-effort prerender */ } }
+        pt.mark("tail")
+        // Step 4: surface the per-phase split (DevTools → Network → Timing, and one log line when slow or when asked).
+        if (process.env.KLAV_FEEDBACK_TIMING === "1" || pt.total() > 3000) {
+          console.log(`[feedback-timing] ${pt.summary()} shots=${uploaded.length} atts=${attachmentDescs.length} recs=${recordingDescs.length}`)
         }
-        return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
+        return json(
+          { id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) },
+          200,
+          { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing" },
+        )
       } catch (e: any) {
         return json(oops(e, "feedback"), 500)
       }
