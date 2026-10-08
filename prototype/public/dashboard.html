@@ -18659,7 +18659,16 @@
       el.addEventListener("click", (ev) => {
         // Clicking the body (but never a control/thumbnail) opens the single-report cockpit.
         if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) return
+        if (ev.ctrlKey || ev.metaKey) {
+          window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
+          return
+        }
         openReportCockpit(id, t)
+      })
+      el.addEventListener("auxclick", (ev) => {
+        if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) {
+          window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
+        }
       })
     }
     // #739: a report IS a feedback row, so it renders in the exact single-ticket cockpit. openSingleTicket
@@ -23599,7 +23608,18 @@
         if (rowCopyIcon) rowCopyIcon.addEventListener("click", ev => { ev.stopPropagation(); copyTicketToAI(ticketId, rowCopyIcon, detailEl) })
 
         // Clicking a recent ticket opens it in the single-ticket view (Tickets section).
-        rowEl.addEventListener("click", () => openSingleTicket(ticketId))
+        rowEl.addEventListener("click", (ev) => {
+          if (ev.ctrlKey || ev.metaKey) {
+            window.open(prettyTicketUrl(t), "_blank", "noopener")
+            return
+          }
+          openSingleTicket(ticketId)
+        })
+        rowEl.addEventListener("auxclick", (ev) => {
+          if (ev.button === 1) {
+            window.open(prettyTicketUrl(t), "_blank", "noopener")
+          }
+        })
 
         wrap.appendChild(rowEl)
       })
@@ -23738,6 +23758,12 @@
     // #745: the Jira-clean PRETTY permalink PATH `/<slug>/<KEY>-<n>` for a ticket, or null when the
     // workspace slug / project key / seq isn't present (un-backfilled) — caller falls back to /t/<id>.
     function prettyTicketPathFor(t) {
+      if (!t) return null
+      const slug = t.slug || (state && state.active && (state.active.slug || state.active.workspaceSlug))
+      const ticketKey = t.ticketKey || (state && state.active && (state.active.ticketKey || state.active.key))
+      if (slug && ticketKey && (t.seqNum != null)) {
+        return "/" + encodeURIComponent(String(slug)) + "/" + encodeURIComponent(String(ticketKey)) + "-" + t.seqNum
+      }
       if (t && t.slug && t.ticketKey && (t.seqNum != null)) {
         return "/" + encodeURIComponent(String(t.slug)) + "/" + encodeURIComponent(String(t.ticketKey)) + "-" + t.seqNum
       }
@@ -25318,7 +25344,18 @@
           '</div>'
         row.appendChild(rowInner)
 
-        row.addEventListener("click", () => openSingleTicket(t.id))
+        row.addEventListener("click", (ev) => {
+          if (ev.ctrlKey || ev.metaKey) {
+            window.open(prettyTicketUrl(t), "_blank", "noopener")
+            return
+          }
+          openSingleTicket(t.id)
+        })
+        row.addEventListener("auxclick", (ev) => {
+          if (ev.button === 1) {
+            window.open(prettyTicketUrl(t), "_blank", "noopener")
+          }
+        })
         // Inject ticket into state.tickets if not already there (so detail view works)
         if (state.tickets && !state.tickets.find(x => x.id === t.id)) state.tickets.push(t)
         return row
@@ -25758,7 +25795,16 @@
               syncKbSelectionUi()
               return
             }
+            if (ev.ctrlKey || ev.metaKey) {
+              window.open(prettyTicketUrl(t), "_blank", "noopener")
+              return
+            }
             openSingleTicket(ticketId)
+          })
+          cardEl.addEventListener("auxclick", (ev) => {
+            if (ev.button === 1) {
+              window.open(prettyTicketUrl(t), "_blank", "noopener")
+            }
           })
           list.appendChild(cardEl)
         })
@@ -29072,7 +29118,22 @@
             : '<button type="button" class="btn btn-indigo btn-sm pb-close">Mark working &amp; close</button>') +
           "</div>"
         var openBtn = row.querySelector(".pb-open")
-        if (openBtn) openBtn.addEventListener("click", function (e) { e.stopPropagation(); if (typeof openSingleTicket === "function") openSingleTicket(b.id) })
+        if (openBtn) {
+          openBtn.addEventListener("click", function (e) {
+            e.stopPropagation()
+            if (e.ctrlKey || e.metaKey) {
+              window.open(prettyTicketUrl(b), "_blank", "noopener")
+              return
+            }
+            if (typeof openSingleTicket === "function") openSingleTicket(b.id)
+          })
+          openBtn.addEventListener("auxclick", function (e) {
+            if (e.button === 1) {
+              e.stopPropagation()
+              window.open(prettyTicketUrl(b), "_blank", "noopener")
+            }
+          })
+        }
         var closeBtn = row.querySelector(".pb-close")
         if (closeBtn) closeBtn.addEventListener("click", function (e) { e.stopPropagation(); qaClosePageBug(b.id, row) })
         listEl.appendChild(row)

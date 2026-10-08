@@ -5,6 +5,7 @@
 import { test, expect } from "bun:test"
 
 const HTML = await Bun.file(import.meta.dir + "/public/dashboard.html").text()
+const norm = (s: string) => s.replace(/\s+/g, " ")
 
 test("dedicated page is a 2-column layout (main + properties, no separate evidence column)", () => {
   expect(HTML).toContain('class="t3-col t3-mid"')
@@ -16,7 +17,7 @@ test("the editorial title (single-head) is relocated INTO the middle column on t
   expect(HTML).toContain('const _midCol = detailEl.querySelector(".t3-mid")')
   expect(HTML).toContain("_midCol.insertBefore(head, _midCol.firstChild)")
   // and it is styled as a 26px editorial headline scoped to the page middle column
-  expect(HTML).toContain("#ticketSingle.tkt-page .t3-mid .single-title{font-size:26px")
+  expect(norm(HTML)).toContain(norm("#ticketSingle.tkt-page .t3-mid .single-title { font-size: 26px"))
 })
 
 test("occurrence receipts relocate into the main column below attachments, merge into the RIGHT column", () => {
@@ -29,7 +30,7 @@ test("occurrence receipts relocate into the main column below attachments, merge
   expect(HTML).toContain("if (_occEl && _occMount) _occMount.appendChild(_occEl)")
   expect(HTML).toContain("if (_mrgEl) _rightCol.appendChild(_mrgEl)")
   // the merge lands in a dashed container in the right column
-  expect(HTML).toContain("#ticketSingle.tkt-page .t3-right .tkt-merge-wrap{border:1px dashed var(--line)")
+  expect(norm(HTML)).toContain(norm("#ticketSingle.tkt-page .t3-right .tkt-merge-wrap { border: 1px dashed var(--line)"))
 })
 
 test("attachments thumbnail click opens preview in rich lightbox modal with tools", () => {
@@ -45,5 +46,5 @@ test("cockpit uses ONLY the app's own tokens — no external Google Fonts CDN / 
   expect(HTML).not.toContain("fonts.gstatic.com")
   expect(HTML).not.toContain("images.unsplash.com")
   expect(HTML).not.toContain("commondatastorage.googleapis.com")
-  expect(HTML).toContain("#ticketSingle.tkt-page .t3-mid .single-meta{font-family:var(--mono)")
+  expect(norm(HTML)).toContain(norm("#ticketSingle.tkt-page .t3-mid .single-meta { font-family: var(--mono)"))
 })
