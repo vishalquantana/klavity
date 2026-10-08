@@ -23222,8 +23222,7 @@
         const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null
         const to = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) { } }, 9000) : null
         const clearTo = () => { if (to) clearTimeout(to) }
-        fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/timeline", ctrl ? { signal: ctrl.signal } : undefined)
-          .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        tktRead("timeline", ticketId, "/api/feedback/" + encodeURIComponent(ticketId) + "/timeline", ctrl ? { signal: ctrl.signal } : undefined)
           .then(d => { clearTo(); paintTimeline((d.items || []).slice()) })
           .catch(() => {
             clearTo()
@@ -23340,8 +23339,7 @@
       // merge INTO a single-occurrence ticket — this occurrence timeline still self-hides for singletons.
 
       function load() {
-        fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/memory")
-          .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        tktRead("memory", ticketId, "/api/feedback/" + encodeURIComponent(ticketId) + "/memory")
           .then(d => {
             const mem = d && d.memory
             const occ = (mem && Array.isArray(mem.occurrences) ? mem.occurrences : [])
@@ -23623,8 +23621,28 @@
         }
       })
     }
+    // Opening a ticket renders its detail twice on purpose (openSingleTicket: instantly from the list row, then again
+    // once the full /api/feedback/:id lands). Every read-only call the detail makes used to fire in BOTH renders, so one
+    // open fetched the screenshot thumb/full URLs, the activity timeline and the occurrence memory twice. tktRead()
+    // remembers the latest read per ticket+kind and the re-render (tktRenderReusing) reuses it instead of asking the
+    // server again. Anything outside that window — a timeline reload after a comment, a split/merge refresh, another
+    // ticket — fetches normally, and a failed read is never reused.
+    const _tktReads = new Map()   // "<ticketId>|<kind>" → Promise<json> of the latest read
+    let _tktReuse = false
+    function tktReadsReset() { _tktReads.clear(); _tktReuse = false }
+    function tktRenderReusing(fn) { _tktReuse = true; try { return fn() } finally { _tktReuse = false } }
+    function tktRead(kind, ticketId, url, init, reuse = _tktReuse) {   // `reuse`: callers that continue after an await capture the flag up front
+      const key = String(ticketId) + "|" + kind
+      if (reuse && _tktReads.has(key)) return _tktReads.get(key)
+      const p = fetch(url, init).then(r => r.ok ? r.json() : Promise.reject(r.status))
+      if (_tktReads.size > 60) _tktReads.delete(_tktReads.keys().next().value)   // board-expand callers never reset: stay bounded
+      _tktReads.set(key, p)
+      p.catch(() => { if (_tktReads.get(key) === p) _tktReads.delete(key) })
+      return p
+    }
     async function openSingleTicket(id, mode) {
       if (mode === "panel" || mode === "full") _tktSingleMode = mode
+      tktReadsReset()   // a fresh open never inherits reads from a previous ticket
       // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
       // capture on the FIRST open (not on prev/next re-entry or the cache→fresh re-render for same id).
       try {
@@ -23647,7 +23665,7 @@
         else state.tickets.push(fresh)
         // Only re-render if this ticket is still the one being viewed.
         const single = $("ticketSingle")
-        if (single && !single.classList.contains("hide")) _renderSingleTicket(id)
+        if (single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
       } catch (e) { }
     }
     // KLA-563: the human ticket key shown in the breadcrumb / dedicated-page header. Prefers the sequence
@@ -25722,13 +25740,15 @@
         // KLAVITYKLA-518: request the lightweight ?thumb=1 variant FIRST for an instant preview (mirrors
         // the list view), then lazily upgrade to the full-resolution image. Previously this fetched the
         // presigned URL and then the FULL image before anything showed — two serial round-trips on open.
-        const r = await fetch("/api/screenshots/" + encodeURIComponent(id) + "?thumb=1")
-        const d = await r.json().catch(() => ({}))
+        const reuse = _tktReuse   // read before any await: this is the re-render only while its window is open
+        const thumbP = tktRead("shot-thumb", id, "/api/screenshots/" + encodeURIComponent(id) + "?thumb=1", undefined, reuse)
+        const fullP = tktRead("shot-full", id, "/api/screenshots/" + encodeURIComponent(id), undefined, reuse)   // URL lookup only; the image bytes still load after the thumb
+        const d = await thumbP.catch(() => ({}))
         if (!d.url) { box.innerHTML = '<div class="muted" style="font-size:12px">Screenshot couldn’t be loaded.</div>'; return }
         const img = paint(d.url)
         // Lazily upgrade to the full image (sharper; also what click / "Full size" should open).
-        fetch("/api/screenshots/" + encodeURIComponent(id))
-          .then(fr => fr.json().catch(() => ({})))
+        fullP
+          .catch(() => ({}))
           .then(fd => {
             if (!fd || !fd.url || fd.url === d.url) return
             // #531: swap the SAME <img> to full-res behind the existing overlay — the SVG uses a
