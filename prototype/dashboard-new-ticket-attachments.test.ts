@@ -20,6 +20,9 @@ const file = (name: string, type: string, size: number, lastModified = 1) => ({ 
 const SRC = [
   extractFn(HTML, "function _attachFmtBytes("),
   line(/^\s*const NEW_TKT_MAX_FILES = .*$/m), line(/^\s*const NEW_TKT_IMG_MAX = .*$/m), line(/^\s*const NEW_TKT_VIDEO_MAX = .*$/m), line(/^\s*const NEW_TKT_TOTAL_MAX = .*$/m),
+  line(/^\s*const NEW_TKT_DOC_MAX = .*$/m), line(/^\s*const NEW_TKT_DOC_EXT = .*$/m),
+  HTML.slice(HTML.indexOf("const NEW_TKT_DOC_MIME = ["), HTML.indexOf("// Pure: is this a PDF / Word / Excel file?")),
+  extractFn(HTML, "function newTktIsDoc("),
   extractFn(HTML, "function newTktFilterFiles("),
   extractFn(HTML, "async function uploadNewTicketAttachments("),
 ].join("\n")
@@ -29,12 +32,60 @@ const mk = (fetchImpl: any = async () => null) =>
     uploadNewTicketAttachments: (id: string, files: any[]) => Promise<{ ok: boolean; error?: string }>
   }
 
-test("images and videos are accepted; other types are rejected with a reason", () => {
+test("images, videos and PDF/Word/Excel documents are accepted; other types are rejected with a reason", () => {
   const { newTktFilterFiles } = mk()
-  const r = newTktFilterFiles([], [file("a.png", "image/png", MB), file("b.mp4", "video/mp4", 5 * MB), file("c.pdf", "application/pdf", MB), file("d.txt", "", MB)])
-  expect(r.files.map(f => f.name)).toEqual(["a.png", "b.mp4"])
+  const r = newTktFilterFiles([], [file("a.png", "image/png", MB), file("b.mp4", "video/mp4", 5 * MB), file("c.pdf", "application/pdf", MB), file("d.txt", "", MB), file("e.exe", "application/x-msdownload", MB)])
+  expect(r.files.map(f => f.name)).toEqual(["a.png", "b.mp4", "c.pdf"])
   expect(r.rejected.length).toBe(2)
-  expect(r.rejected[0]).toContain("c.pdf")
+  expect(r.rejected[0]).toContain("d.txt")
+  expect(r.rejected[0]).toContain("PDF, Word and Excel")
+  expect(r.rejected[1]).toContain("e.exe")
+})
+
+test("Excel, Word and PDF files are accepted by MIME type", () => {
+  const { newTktFilterFiles } = mk()
+  const r = newTktFilterFiles([], [
+    file("a.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", MB), file("b.xls", "application/vnd.ms-excel", MB),
+    file("c.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", MB), file("d.doc", "application/msword", MB), file("e.pdf", "application/pdf", MB),
+  ])
+  expect(r.files.map(f => f.name)).toEqual(["a.xlsx", "b.xls", "c.docx", "d.doc", "e.pdf"])
+  expect(r.rejected).toEqual([])
+})
+
+test("documents are recognised by extension when the browser sends an empty or generic type (common on Windows)", () => {
+  const { newTktFilterFiles } = mk()
+  const r = newTktFilterFiles([], [file("Q3.XLSX", "", MB), file("spec.docx", "application/octet-stream", MB), file("scan.PDF", "", MB), file("old.xls", "", MB, 2), file("notes.doc", "", MB, 3)])
+  expect(r.files.map(f => f.name)).toEqual(["Q3.XLSX", "spec.docx", "scan.PDF", "old.xls", "notes.doc"])
+  expect(r.rejected).toEqual([])
+})
+
+test("look-alikes are NOT documents: no extension, unlisted extensions, a pdf-ish name with another extension", () => {
+  const { newTktFilterFiles } = mk()
+  const r = newTktFilterFiles([], [file("pdf", "", MB), file("report.pdf.exe", "", MB, 2), file("data.csv", "text/csv", MB, 3), file("slides.pptx", "", MB, 4), file("a.zip", "application/zip", MB, 5)])
+  expect(r.files).toEqual([])
+  expect(r.rejected.length).toBe(5)
+})
+
+test("documents share the 5-file cap, the 8MB per-file cap and the total cap with everything else", () => {
+  const { newTktFilterFiles } = mk()
+  expect(newTktFilterFiles([], [file("ok.pdf", "application/pdf", 8 * MB)]).files.length).toBe(1)
+  expect(newTktFilterFiles([], [file("big.pdf", "application/pdf", 8 * MB + 1)]).rejected[0]).toContain("larger than 8.0 MB")
+  const held = Array.from({ length: 4 }, (_, i) => file("p" + i + ".png", "image/png", MB, i))
+  const r = newTktFilterFiles(held, [file("a.docx", "", MB, 10), file("b.xlsx", "", MB, 11)])
+  expect(r.files.length).toBe(5); expect(r.rejected).toEqual(["b.xlsx: you can attach up to 5 files"])
+  // the same document picked twice is held once
+  const d = file("a.pdf", "application/pdf", MB, 7)
+  expect(newTktFilterFiles(newTktFilterFiles([], [d]).files, [d]).files.length).toBe(1)
+})
+
+test("markup: the picker and the drop zone offer documents (accept list + label), no longer 'images or videos' only", () => {
+  const inp = HTML.match(/<input type="file" id="newTktFileInp"[^>]*>/)![0]
+  for (const x of ["image/*", "video/*", ".pdf", ".doc", ".docx", ".xls", ".xlsx"]) expect(inp).toContain(x)
+  expect(HTML).toContain('id="newTktAttachBtn" type="button">Attach files</button>')
+  expect(HTML).not.toContain("Attach images or videos")
+  // a held document gets an icon tile and opens in a new tab (the image/video viewer cannot show it)
+  expect(HTML).toContain('media.className = "nf-doc"')
+  expect(HTML).toContain('window.open(url, "_blank", "noopener")')
 })
 
 test("at most 5 files in total — the extras are rejected, not silently dropped", () => {
@@ -97,8 +148,8 @@ test("upload failures resolve { ok:false, error } and never throw (server error 
 })
 
 // ── wiring pins ────────────────────────────────────────────────────────────────────────────────────────────────────
-test("markup: picker accepts image/video only and is multiple; drop zone, preview grid, reporter line and Expand exist", () => {
-  expect(HTML).toMatch(/<input type="file" id="newTktFileInp" accept="image\/\*,video\/\*" multiple hidden>/)
+test("markup: picker accepts images, videos and PDF/Word/Excel and is multiple; drop zone, preview grid, reporter line and Expand exist", () => {
+  expect(HTML).toMatch(/<input type="file" id="newTktFileInp" accept="image\/\*,video\/\*,\.pdf,\.doc,\.docx,\.xls,\.xlsx,[^"]*" multiple hidden>/)
   for (const id of ["newTktDrop", "newTktFilesGrid", "newTktFilesMsg", "newTktFilesCount", "newTktAttachBtn", "newTktExpand", "newTktReporterInp", "newTktModal"])
     expect(HTML).toContain(`id="${id}"`)
   // the dialog is no longer pinned to the old fixed 540px

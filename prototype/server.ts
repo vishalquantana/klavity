@@ -60,6 +60,12 @@ import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getOb
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
+import {
+  claimSubmission, refreshClaim, releaseClaim, finishDedupedSubmission, saveEvidenceState, evidenceStateStatement, pruneSubmissionKeys, PROCESS_OWNER,
+  parseSubmissionKey, parseRepairSlots, parseSlotMap, slotFor, deterministicId, missingSlots, type EvidenceState,
+} from "./lib/submissions"
+import { insertFeedbackForSubmission, projectAccessWithRow, widgetConfigFromProject, appendFeedbackRecordings, projectHasOtherFeedback, mergeReportIntoTicketForSubmission, resolveMergeTarget } from "./lib/db"
+import type { DeterministicKey } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
@@ -1207,16 +1213,21 @@ async function resolveCitations(simId: string | null, citedTraitIds: any, projec
 async function findDuplicateFeedback(args: {
   projectId: string; urlPath: string | null; issueType?: string | null
   citedTraitIds?: string[]; title: string; observation: string; issueKey?: string | null
+  /** The project's dedupe switch when the caller already holds the project row (saves a query); undefined → look it up. */
+  dedupEnabled?: boolean
 }): Promise<string | null> {
   // KLA dedup-smart: a project can turn repeat-report merging OFF entirely — then every submission is its
   // own ticket (no "Reported N×"). Fail-open to ON if the lookup errors so we never lose the dedup default.
-  if (!(await getProjectDedupEnabled(args.projectId).catch(() => true))) return null
+  const dedupOn = args.dedupEnabled ?? (await getProjectDedupEnabled(args.projectId).catch(() => true))
+  if (!dedupOn) return null
   const issueKey = args.issueKey ?? issueKeyFor({
     projectId: args.projectId, urlPath: args.urlPath ?? "/",
     issueType: args.issueType ?? null, citedTraitIds: args.citedTraitIds ?? [],
   })
-  const exact = await findFeedbackByIssueKey(args.projectId, issueKey)
-  const recent = exact ? [] : await listRecentFeedbackForDedup(args.projectId, 50)
+  // The exact-key lookup and the recent-reports list are independent reads → ONE round trip (the list is simply ignored when the exact
+  // key matched — the decision below is identical to the old "exact first, list only when there was no exact match").
+  const [exact, recentAll] = await Promise.all([findFeedbackByIssueKey(args.projectId, issueKey), listRecentFeedbackForDedup(args.projectId, 50)])
+  const recent = exact ? [] : recentAll
   // KLA dedup-smart: a BROAD key (no cited traits — e.g. a human widget report keyed by project|page|type)
   // must NOT merge unconditionally, or two unrelated bugs on the same page collapse into one ("Testing" →
   // a real bug). Require a low similarity floor for the exact match on such keys. Sim/AutoSim reports cite
@@ -5418,6 +5429,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
     // ── feedback intake (extension backend mode) ──
     if (req.method === "POST" && path === "/api/feedback") {
+      // Idempotent-submission bookkeeping hoisted so the failure exits can clean up: objects this request uploaded, whether a ticket
+      // resulted, and the claim we own. When a request ends WITHOUT a ticket we free the claim (an immediate retry must not wait for the
+      // stale window) and delete what we uploaded (a retry re-uploads under the same deterministic keys anyway).
+      const createdObjectKeys: string[] = []
+      let ticketCreated = false
+      const evidence: EvidenceState = {}   // per-slot upload state of THIS submission (ok / failed / pending)
+      let subOwn: { projectId: string; key: string } | null = null
+      const abandonSubmission = async () => {
+        try { if (subOwn) await releaseClaim(subOwn.projectId, subOwn.key) } catch { /* the stale window frees it anyway */ }
+        for (const k of createdObjectKeys.splice(0)) void deleteObject(k).catch(() => {})
+      }
       try {
         // Step 4 (widget-submit latency): per-phase timer → Server-Timing header + a log line (see the end of this handler).
         const pt = phaseTimer()
@@ -5453,6 +5475,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
         const form = await req.formData()
         pt.mark("parse")
+        // Idempotency (see lib/submissions.ts): ONE client-chosen key per report, reused on every retry. `slot_map` / `repair_slots` let
+        // a retry re-upload only the evidence parts that failed. All optional — an older client simply gets today's behaviour.
+        const subKeyParsed = parseSubmissionKey(form.get("submission_key") ?? req.headers.get("idempotency-key"))
+        if (subKeyParsed === "invalid") return wjson({ error: "Invalid submission key." }, 400)
+        const submissionKey: string | null = subKeyParsed
+        const repairSlots = parseRepairSlots(form.get("repair_slots"))
+        const slotMap = parseSlotMap(form.get("slot_map"))
 
         // Mobile SDK path: a non-browser caller (no Origin) may authorize an anonymous submit with a
         // per-project publishable key (pk_…) instead of the Origin/Turnstile gate. The project is derived
@@ -5545,12 +5574,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // after submit. A logged-in dashboard user isn't anonymous, so the gate never applies to them.
           if (reqOrigin !== baseOrigin) {
             const reqProjectId = String(form.get("project_id") || "")
-            // projectById and getWidgetConfig do not depend on each other → run them together (one round trip, not two).
-            // A failure in either still surfaces as before (the outer catch → 500); an unknown project still 404s first.
-            const [gateProj, gateWidgetCfg] = await Promise.all([
-              reqProjectId ? projectById(reqProjectId) : Promise.resolve(null),
-              reqProjectId ? getWidgetConfig(reqProjectId) : Promise.resolve(null),
-            ])
+            // ONE project read: the widget config (report gate) is derived from the row itself — getWidgetConfig used to re-read the
+            // same row. A failure still surfaces as before (the outer catch → 500); an unknown project still 404s first.
+            const gateProj = reqProjectId ? await projectById(reqProjectId) : null
+            const gateWidgetCfg = gateProj ? widgetConfigFromProject(gateProj) : null
             if (!gateProj) return wjson({ error: "Unknown project." }, 404)
             gateProjCached = gateProj
             if (!rlAllow(`fbanon:proj:${reqProjectId}`, FEEDBACK_ANON_PER_PROJECT, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
@@ -5734,8 +5761,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
         const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
         let attachTotalBytes = 0
-        const attachPlan: Array<{ af: File; uploadType: string }> = []
-        for (const af of attachFiles) {
+        const attachPlan: Array<{ af: File; uploadType: string; slot: string }> = []
+        for (let ai = 0; ai < attachFiles.length; ai++) {
+          const af = attachFiles[ai]
           if (af.size <= 0) continue
           if (af.type && af.type.startsWith(SCREENSHOTS.allowedTypePrefix)) continue // images go through the screenshots path
           // KLA-560 item 6: classify a video by content-type FIRST, then fall back to the filename extension
@@ -5751,7 +5779,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return wjson({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
           // Persist a concrete video/* content-type when we classified by extension (empty MIME) so the
           // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
-          attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream") })
+          attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream"), slot: slotFor(slotMap, "files", ai) })
         }
 
         // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
@@ -5766,95 +5794,120 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let recMeta: Array<{ id?: string; durationMs?: number; width?: number; height?: number; screenOnly?: boolean }> = []
         try { const rm = JSON.parse(String(form.get("recording_meta") || "[]")); if (Array.isArray(rm)) recMeta = rm } catch { /* tolerate a missing/garbled meta blob */ }
         const recordingDescs: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean; transcript_status?: string }> = []
-        const recPlan: Array<{ rf: File; ri: number }> = []
+        const recPlan: Array<{ rf: File; ri: number; slot: string }> = []
         for (let ri = 0; ri < recFiles.length; ri++) {
           const rf = recFiles[ri]
           if (rf.size <= 0) continue
           if (rf.type && !/^video\/(webm|mp4)/.test(rf.type)) continue // only recorded video containers
           if (rf.size > RECORDING_MAX_BYTES) return wjson({ error: `Recording ${rf.name} exceeds ${mbLabel(RECORDING_MAX_BYTES)}.` }, 400)
-          recPlan.push({ rf, ri })
+          recPlan.push({ rf, ri, slot: slotFor(slotMap, "recording", ri) })
         }
 
-        // Start EVERY upload now (the limiter bounds how many actually run at once) and wait for all of them.
-        type ShotUp = { ok: true; meta: UploadedScreenshot; bytes: number } | { ok: false; err: any }
-        const shotUps: Promise<ShotUp>[] = files.map((f) => uploadLimit(async (): Promise<ShotUp> => {
-          // Upload PRIVATE (no public bucket exposure). The dashboard reads via the membership-checked
-          // /api/screenshots/:id endpoint; the external tracker ticket embeds the PERMANENT signed link
-          // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
-          // forever without making the object world-readable.
-          try {
-            const buf = await f.arrayBuffer()
-            return { ok: true, meta: await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl), bytes: buf.byteLength }
-          } catch (err) { return { ok: false, err } }
-        }))
-        // Best-effort thumbnail upload per shot. Only accept a small image (guards against a client sending a full-size
-        // blob under the thumb field). A thumb failure never affects the full shot — the row is stored with thumb_key
-        // null and the dashboard falls back to the full image.
-        const thumbUps: Promise<string | null>[] = files.map((f, fi) => {
-          const tf = thumbFiles[fi]
-          if (!(tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000)) return Promise.resolve(null)
-          return uploadLimit(async () => {
-            try {
-              const tbuf = await tf.arrayBuffer()
-              return (await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl)).key
-            } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr); return null }
+        // Uploads run AFTER the idempotency claim (a replayed / in-progress / conflicting submission never uploads anything, and a retry
+        // after a crash overwrites its own objects). `only` limits a REPAIR to the slots that previously failed; `det` makes every object
+        // key (and screenshot id) deterministic per (project, submission key, slot) so a retry overwrites instead of orphaning.
+        // Start EVERY upload at once (the limiter bounds how many actually run) and wait; results are consumed in INPUT order.
+        let shotsEnabled = true   // false when the project disabled screenshot storage (set once its settings are known)
+        const runUploads = async (only: Set<string> | null, det: { ts: number; projectId: string; key: string } | null): Promise<EvidenceState> => {
+          const ev: EvidenceState = {}
+          const want = (slot: string) => !only || only.has(slot)
+          const dk = (slot: string): DeterministicKey | undefined => det ? { keyId: deterministicId(det.projectId, det.key, slot), ts: det.ts } : undefined
+          const shotSlots = files.map((_, fi) => slotFor(slotMap, "screenshots", fi))
+          type ShotUp = { ok: true; meta: UploadedScreenshot; bytes: number } | { ok: false; err: any }
+          const shotUps: Array<Promise<ShotUp> | null> = files.map((f, fi) => {
+            const slot = shotSlots[fi]
+            if (!want(slot)) return null
+            if (!shotsEnabled) { ev[slot] = "ok"; return null }   // storage disabled for this project: nothing to upload, nothing to repair
+            return uploadLimit(async (): Promise<ShotUp> => {
+              // Upload PRIVATE (no public bucket exposure). The dashboard reads via the membership-checked
+              // /api/screenshots/:id endpoint; the external tracker ticket embeds the PERMANENT signed link
+              // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
+              // forever without making the object world-readable.
+              try {
+                const buf = await f.arrayBuffer()
+                return { ok: true, meta: await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl, dk(slot)), bytes: buf.byteLength }
+              } catch (err) { return { ok: false, err } }
+            })
           })
-        })
-        type AttUp = { ok: true; up: Awaited<ReturnType<typeof uploadAttachment>> } | { ok: false; err: any }
-        const attUps: Promise<AttUp>[] = attachPlan.map(({ af, uploadType }) => uploadLimit(async (): Promise<AttUp> => {
-          try { return { ok: true, up: await uploadAttachment(new Uint8Array(await af.arrayBuffer()), af.name || "attachment", uploadType) } }
-          catch (err) { return { ok: false, err } }
-        }))
-        const recUps: Promise<AttUp>[] = recPlan.map(({ rf, ri }) => uploadLimit(async (): Promise<AttUp> => {
-          try { return { ok: true, up: await uploadAttachment(new Uint8Array(await rf.arrayBuffer()), rf.name || `recording-${ri}.webm`, rf.type || "video/webm") } }
-          catch (err) { return { ok: false, err } }
-        }))
-        const [shotRes, thumbRes, attRes, recRes] = await Promise.all([Promise.all(shotUps), Promise.all(thumbUps), Promise.all(attUps), Promise.all(recUps)])
+          // Best-effort thumbnail upload per shot. Only accept a small image (guards against a client sending a full-size
+          // blob under the thumb field). A thumb failure never affects the full shot — the row is stored with thumb_key
+          // null and the dashboard falls back to the full image.
+          const thumbUps: Promise<string | null>[] = files.map((f, fi) => {
+            const slot = shotSlots[fi]
+            const tf = thumbFiles[fi]
+            if (!want(slot) || !shotsEnabled) return Promise.resolve(null)
+            if (!(tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000)) return Promise.resolve(null)
+            return uploadLimit(async () => {
+              try {
+                const tbuf = await tf.arrayBuffer()
+                return (await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl, dk(slot + ":thumb"))).key
+              } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr); return null }
+            })
+          })
+          type AttUp = { ok: true; up: Awaited<ReturnType<typeof uploadAttachment>> } | { ok: false; err: any }
+          const attUps: Array<Promise<AttUp> | null> = attachPlan.map(({ af, uploadType, slot }) => !want(slot) ? null : uploadLimit(async (): Promise<AttUp> => {
+            try { return { ok: true, up: await uploadAttachment(new Uint8Array(await af.arrayBuffer()), af.name || "attachment", uploadType, dk(slot)) } }
+            catch (err) { return { ok: false, err } }
+          }))
+          const recUps: Array<Promise<AttUp> | null> = recPlan.map(({ rf, ri, slot }) => !want(slot) ? null : uploadLimit(async (): Promise<AttUp> => {
+            try { return { ok: true, up: await uploadAttachment(new Uint8Array(await rf.arrayBuffer()), rf.name || `recording-${ri}.webm`, rf.type || "video/webm", dk(slot)) } }
+            catch (err) { return { ok: false, err } }
+          }))
+          const [shotRes, thumbRes, attRes, recRes] = await Promise.all([Promise.all(shotUps), Promise.all(thumbUps), Promise.all(attUps), Promise.all(recUps)])
 
-        // Consume in INPUT order: screenshots, then attachments, then recordings — exactly the order (and so the same
-        // first-failure reason / counts / descriptor order) the serial version produced.
-        for (let fi = 0; fi < files.length; fi++) {
-          const r = shotRes[fi]
-          if (!r.ok) {
-            // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole report —
-            // especially the screenshot-only path where the reporter typed nothing. Persist the report anyway (this
-            // shot is simply dropped). Its thumbnail (uploaded concurrently) would be an orphan → delete it.
-            console.error("screenshot upload failed (non-fatal):", r.err?.message || r.err); droppedScreenshots++; noteEvidenceDrop(r.err?.message || String(r.err))
-            if (thumbRes[fi]) void deleteObject(thumbRes[fi]!).catch(() => {})
-            continue
+          // Consume in INPUT order: screenshots, then attachments, then recordings — the same order (so the same first-failure reason /
+          // counts / descriptor order) the serial version produced.
+          for (let fi = 0; fi < files.length; fi++) {
+            const r = shotRes[fi], slot = shotSlots[fi]
+            if (!r) continue
+            if (!r.ok) {
+              // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole report —
+              // especially the screenshot-only path where the reporter typed nothing. Persist the report anyway (this
+              // shot is simply dropped — and now REPORTED to the client as a missing slot it can retry). Its thumbnail
+              // (uploaded concurrently) would be an orphan → delete it.
+              console.error("screenshot upload failed (non-fatal):", r.err?.message || r.err); droppedScreenshots++; noteEvidenceDrop(r.err?.message || String(r.err))
+              ev[slot] = "failed"
+              if (thumbRes[fi]) void deleteObject(thumbRes[fi]!).catch(() => {})
+              continue
+            }
+            // Mint the id now so we can sign the permanent link (deterministic under an idempotent submission → a retry re-uses it).
+            const sid = "shot_" + (det ? deterministicId(det.projectId, det.key, slot) : crypto.randomUUID())
+            imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
+            uploaded.push({ ...r.meta, bytes: r.bytes, id: sid, thumbKey: thumbRes[fi] })
+            createdObjectKeys.push(r.meta.key); if (thumbRes[fi]) createdObjectKeys.push(thumbRes[fi]!)
+            ev[slot] = "ok"
           }
-          // Mint the id now so we can sign the permanent link.
-          const sid = "shot_" + crypto.randomUUID()
-          imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
-          uploaded.push({ ...r.meta, bytes: r.bytes, id: sid, thumbKey: thumbRes[fi] })
+          for (let k = 0; k < attachPlan.length; k++) {
+            const r = attRes[k], slot = attachPlan[k].slot
+            if (!r) continue
+            if (!r.ok) { console.error("attachment upload failed (non-fatal):", r.err?.message || r.err); droppedAttachments++; noteEvidenceDrop(r.err?.message || String(r.err)); ev[slot] = "failed"; continue }
+            const af = attachPlan[k].af, up = r.up
+            const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
+              { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
+            // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
+            // until the async transcription pass resolves it. Keyed by up.key downstream.
+            if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
+            attachmentDescs.push(desc); createdObjectKeys.push(up.key); ev[slot] = "ok"
+          }
+          for (let k = 0; k < recPlan.length; k++) {
+            const r = recRes[k], slot = recPlan[k].slot
+            if (!r) continue
+            if (!r.ok) { console.error("recording upload failed (non-fatal):", r.err?.message || r.err); droppedRecordings++; noteEvidenceDrop(r.err?.message || String(r.err)); ev[slot] = "failed"; continue }
+            const { rf, ri } = recPlan[k], up = r.up
+            const m = recMeta[ri] || {}
+            recordingDescs.push({
+              id: String(m.id || ("rec_" + (det ? deterministicId(det.projectId, det.key, slot) : crypto.randomUUID()))),
+              key: up.key, contentType: up.contentType, bytes: rf.size,
+              durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
+              screenOnly: m.screenOnly === true,
+              // KLAVITYKLA-438 (Phase 2): the row starts "pending" — an async STT pass (fired after the
+              // insert below) flips it to done/failed and stores the transcript in-place by id.
+              transcript_status: "pending",
+            })
+            createdObjectKeys.push(up.key); ev[slot] = "ok"
+          }
+          return ev
         }
-        for (let k = 0; k < attachPlan.length; k++) {
-          const r = attRes[k]
-          if (!r.ok) { console.error("attachment upload failed (non-fatal):", r.err?.message || r.err); droppedAttachments++; noteEvidenceDrop(r.err?.message || String(r.err)); continue }
-          const af = attachPlan[k].af, up = r.up
-          const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
-            { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
-          // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
-          // until the async transcription pass resolves it. Keyed by up.key downstream.
-          if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-          attachmentDescs.push(desc)
-        }
-        for (let k = 0; k < recPlan.length; k++) {
-          const r = recRes[k]
-          if (!r.ok) { console.error("recording upload failed (non-fatal):", r.err?.message || r.err); droppedRecordings++; noteEvidenceDrop(r.err?.message || String(r.err)); continue }
-          const { rf, ri } = recPlan[k], up = r.up
-          const m = recMeta[ri] || {}
-          recordingDescs.push({
-            id: String(m.id || ("rec_" + crypto.randomUUID())),
-            key: up.key, contentType: up.contentType, bytes: rf.size,
-            durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
-            screenOnly: m.screenOnly === true,
-            // KLAVITYKLA-438 (Phase 2): the row starts "pending" — an async STT pass (fired after the
-            // insert below) flips it to done/failed and stores the transcript in-place by id.
-            transcript_status: "pending",
-          })
-        }
-        pt.mark("uploads")
 
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
         // Runs whether or not a tracker is connected, so the dashboard always gets a row.
@@ -5884,7 +5937,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // such requests may use the anonymous projectById path — no-Origin and foreign-Origin
             // anonymous requests must NOT reach projectById (deferred surface stays closed).
             const firstParty = reqOrigin !== "" && reqOrigin === baseOrigin
-            let resolved = actor ? await resolveProject(actor, reqProject) : null
+            // Authenticated callers: the project row and the caller's project_members row are read TOGETHER (projectAccessWithRow — the same
+            // access decision as projectAccess, one round trip fewer) and the row is kept so the dedupe flag and screenshot settings below
+            // reuse it instead of re-reading it. A project-BOUND bearer token keeps the original resolveProject path (its F5 binding rules).
+            let projRow: ProjectRow | null = null
+            let resolved: any = null
+            if (actor) {
+              if (reqProject && !reqCtx.getStore()?.boundProject) {
+                const pa = await projectAccessWithRow(actor, reqProject)
+                projRow = pa.proj
+                resolved = pa.access ? { id: reqProject, access: pa.access } : null
+              } else resolved = await resolveProject(actor, reqProject)
+            }
             // Anonymous widget intake: no actor, but a known project_id. Allowed when the request is
             // either first-party (our own site) OR a cross-origin browser report that already passed
             // the project's report gate above (anonWidgetAllowed). no-Origin (curl/script) anonymous
@@ -5953,15 +6017,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (submitterIsMember && klavityRerouted) {
                 submitterIsMember = !!(await projectAccess(actor as string, projectId).catch(() => null))
               }
-              // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
-              // attachments + recordings), now that the project is resolved. Fire-and-forget.
-              {
-                const storedBytes =
-                  uploaded.reduce((s, u) => s + (Number(u.bytes) || 0), 0) +
-                  attachTotalBytes +
-                  recordingDescs.reduce((s, r) => s + (Number(r.bytes) || 0), 0)
-                if (storedBytes > 0) void recordS3Storage({ projectId, bytes: storedBytes, meta: { source: "report_ingest" } })
-              }
               // Path-only URL: strip query + fragment (privacy by structure).
               let urlHost: string | null = null, urlPath: string | null = null
               if (pageUrl) { try { const u = new URL(pageUrl); urlHost = u.host; urlPath = u.pathname } catch { urlPath = pageUrl.split(/[?#]/)[0] || null } }
@@ -5977,34 +6032,104 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const reportOrg = (reporter?.org ? String(reporter.org) : null) || autoLabels.org
               const reportServer = (reporter?.server ? String(reporter.server) : null) || autoLabels.server
 
-              // Persist a ledger row for EVERY uploaded screenshot using its pre-minted id, so each
-              // permanent /img link resolves (the dashboard still references screenshotId = the first).
+              // The id of the first shot (the ticket's screenshot) — known once the uploads have finished (below).
               let screenshotId: string | null = null
-              // Per-project screenshot config = central server defaults merged with this project's
-              // settings (modal_config_json.screenshots). A project may disable storage entirely — drop
-              // the just-uploaded objects and persist no ledger rows. Retention TTL (if set) stamps expires_at.
-              // The modal-config read and the persona-ownership read are independent → one round trip. (rawSimId is a pure
-              // form read; listPersonas only runs when a sim_id was actually sent.)
               const rawSimId = String(form.get("sim_id") || "") || null
-              const [modalCfgRow, personasForSim] = await Promise.all([
-                getProjectModalConfig(projectId).catch(() => ({})),
+              // ONE project read per submit: the row projectAccessWithRow / the gate / the Klavity-intake lookup already loaded carries the
+              // dedupe flag and the screenshot settings, so they are not re-read (they used to be 2–3 more identical SELECTs). Only when no
+              // row was loaded yet (first-project fallback) is it fetched — in the SAME round trip as the claim and the persona check.
+              const rowInHand: ProjectRow | null = (projRow && projRow.id === projectId) ? projRow : ((resolved as any)?.labelRules ? (resolved as ProjectRow) : null)
+              const claimP = (submissionKey && db)
+                ? claimSubmission({ projectId, key: submissionKey, actor: actor ?? null }).catch((e: any) => { console.warn("[submission-key] claim failed — answering with a retryable error:", e?.message || e); return { kind: "error" as const } })
+                : Promise.resolve(null)
+              const [claim, projRowFinal, personasForSim] = await Promise.all([
+                claimP,
+                rowInHand ? Promise.resolve(rowInHand) : projectById(projectId).catch(() => null),
                 rawSimId ? listPersonas(projectId) : Promise.resolve(null),
               ])
-              const scfg = resolveScreenshotConfig(modalCfgRow)
-              if (!scfg.enabled) {
-                for (const u of uploaded) { await deleteObject(u.key).catch(() => {}); if (u.thumbKey) await deleteObject(u.thumbKey).catch(() => {}) }
-                uploaded.length = 0; imageUrls.length = 0
-              }
+              pt.mark("claim")
+              // Per-project screenshot config = central server defaults merged with this project's settings (modal_config_json.screenshots).
+              // A project may disable storage entirely — then no screenshot is uploaded or recorded at all. Retention TTL (if set) stamps expires_at.
+              const scfg = resolveScreenshotConfig(projRowFinal ? projRowFinal.modalConfig : await getProjectModalConfig(projectId).catch(() => ({})))
+              shotsEnabled = scfg.enabled
+              const dedupEnabled: boolean | undefined = projRowFinal ? projRowFinal.dedupEnabled : undefined
               const shotExpiresAt = scfg.retentionDays > 0 ? Date.now() + scfg.retentionDays * 86400000 : null
-              // One ledger row per shot, each with its own pre-minted id → independent inserts, run with bounded concurrency.
-              await mapBounded(uploaded, 4, (u) => insertScreenshot({
-                id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
-                contentType: u.contentType, acl: u.acl,
-                bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
-                thumbKey: u.thumbKey,
-              }))
-              if (uploaded[0]) screenshotId = uploaded[0].id
-              pt.mark("screenshots_db")
+              const dashBaseForReplay = baseOrigin || reqOrigin
+
+              // ── idempotent submission: what happened to an earlier attempt with this key? ─────────────────────────────────────────
+              // Every gate (rate limit, report gate / Turnstile, project access) has ALREADY run for THIS request by now, and the key is
+              // scoped to (this project, this principal) — so a repeat is answered only to the caller who could create it, and the share
+              // link is built for THIS caller (a non-member still gets the teaser link, never the member-only permalink).
+              const finishWith = (body: Record<string, unknown>, status = 200, extra: Record<string, string> = {}) =>
+                json(body, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing", ...extra })
+              // Transcript + enrichment pass for videos / recordings that were attached to an existing ticket after the fact (a repair, or a
+              // repeat report merged into one) — the original submit flow only starts it for rows it inserted itself.
+              const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
+                const vids = atts.filter((a) => /^video\//i.test(a.contentType || ""))
+                if (!vids.length && !recs.length) return
+                void (async () => {
+                  const jobs: Promise<any>[] = []
+                  if (recs.length) jobs.push(transcribeFeedbackRecordings({ feedbackId: fid, projectId, recordings: recs.map((r) => ({ id: r.id, key: r.key, contentType: r.contentType })) }))
+                  if (vids.length) jobs.push(transcribeFeedbackAttachments({ feedbackId: fid, projectId, attachments: vids.map((a) => ({ key: a.key, filename: a.filename, contentType: a.contentType })) }))
+                  await Promise.allSettled(jobs)
+                  await enrichReportFromTranscript({ feedbackId: fid, projectId }).catch(() => {})
+                })().catch(() => {})
+              }
+              // Re-upload ONLY the slots that failed before, and attach them to the EXISTING ticket (never creates a ticket).
+              const applyRepair = async (c: { feedbackId: string; createdAt: number }, want: Set<string>, state: EvidenceState): Promise<EvidenceState> => {
+                const out: EvidenceState = { ...state }
+                const res = await runUploads(want, { ts: c.createdAt, projectId, key: submissionKey! })
+                if (scfg.enabled && uploaded.length) {
+                  await mapBounded(uploaded, 4, (u) => insertScreenshot({ id: u.id, projectId, s3Key: u.key, bucket: u.bucket, contentType: u.contentType, acl: u.acl, bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt, thumbKey: u.thumbKey, ignoreConflict: true }))
+                  await db!.execute({ sql: "UPDATE feedback SET screenshot_id=? WHERE id=? AND project_id=? AND screenshot_id IS NULL", args: [uploaded[0].id, c.feedbackId, projectId] })
+                }
+                if (attachmentDescs.length) await appendFeedbackAttachments(c.feedbackId, projectId, attachmentDescs)
+                if (recordingDescs.length) await appendFeedbackRecordings(c.feedbackId, projectId, recordingDescs)
+                for (const [sl, st] of Object.entries(res)) out[sl] = st
+                if (want.has("replay")) {
+                  if (replayEvents) { try { const sr = await saveFeedbackReplay(projectId, c.feedbackId, replayEvents as any); out.replay = sr.saved ? "ok" : "failed" } catch { out.replay = "failed" } }
+                  else out.replay = "failed"
+                }
+                await saveEvidenceState(projectId, submissionKey!, out)
+                await updateFeedbackEvidenceDropped(c.feedbackId, missingSlots(out).length).catch(() => {})
+                kickTranscripts(c.feedbackId, attachmentDescs, recordingDescs)   // repaired videos still need their transcript pass
+                return out
+              }
+              const answerReplay = async (c: { feedbackId: string; deduped: boolean; evidence: EvidenceState; createdAt: number }): Promise<Response> => {
+                let state: EvidenceState = { ...c.evidence }
+                const want = (repairSlots || []).filter((sl) => state[sl] && state[sl] !== "ok")
+                if (want.length) {
+                  try { state = await applyRepair(c, new Set(want), state) } catch (e: any) { console.warn("[submission-repair] failed (non-fatal):", e?.message || e) }
+                }
+                const link = dashBaseForReplay ? await prettyDeepLinkUrl(c.feedbackId, submitterIsMember ? projectId : null, { origin: dashBaseForReplay }) : ""
+                const missing = missingSlots(state)
+                pt.mark("replay")
+                return finishWith({ id: c.feedbackId, saved: true, replayed: true, ...(c.deduped ? { known: true, deduped: true } : {}), ...(link ? { issue_url: link } : {}), ...(missing.length ? { partial: true, missing } : {}) }, 200, { "Idempotent-Replay": "true" })
+              }
+              const answerFromKey = async (): Promise<Response> => {
+                const c = await claimSubmission({ projectId, key: submissionKey!, actor: actor ?? null })
+                if (c.kind === "replay") return answerReplay(c)
+                if (c.kind === "in_progress") return finishWith({ error: "Your report is still being processed. Retrying shortly…", retryable: true, in_progress: true, retry_after: c.retryAfterSec, stale_in_sec: c.staleInSec }, 409, { "Retry-After": String(c.retryAfterSec) })
+                // 'claimed' here means the earlier attempt vanished entirely — surface a retryable failure rather than guessing.
+                return finishWith({ error: "We couldn't save your report. Please try again.", saved: false, retryable: true }, 503)
+              }
+              let subClaim: { createdAt: number } | null = null
+              if (claim) {
+                // The key could not be recorded (database hiccup). Creating the ticket anyway would defeat the idempotency the client relies
+                // on for its retries (a retry could then make a SECOND ticket) — so nothing is created and the client is told to retry.
+                if (claim.kind === "error") return finishWith({ error: "We couldn't register your report just now. Please try again.", retryable: true, saved: false }, 503, { "Retry-After": "3" })
+                if (claim.kind === "in_progress") return finishWith({ error: "Your report is still being processed. Retrying shortly…", retryable: true, in_progress: true, retry_after: claim.retryAfterSec, stale_in_sec: claim.staleInSec }, 409, { "Retry-After": String(claim.retryAfterSec) })
+                if (claim.kind === "conflict") return finishWith({ error: "This submission key was already used by another request.", retryable: false }, 409)
+                if (claim.kind === "replay") return await answerReplay(claim)
+                subClaim = { createdAt: claim.createdAt }
+                subOwn = { projectId, key: submissionKey! }
+                if (Math.random() < 0.01) void pruneSubmissionKeys().catch(() => {})   // occasional housekeeping, never awaited
+              }
+              // Start the uploads NOW: they overlap the citation / duplicate lookups below (independent DB reads), and are awaited just
+              // before their ledger rows are written. (Errors are per-item inside runUploads; the catch only guards an unforeseen throw.)
+              const uploadsP = runUploads(null, subClaim && submissionKey ? { ts: subClaim.createdAt, projectId, key: submissionKey } : null)
+              uploadsP.catch(() => {})
+              const claimStartedAt = Date.now()
 
               // A01/IDOR: the sim_id is attacker-supplied. Before any trait/citation lookup, verify it
               // belongs to THIS project; if not, treat the persona as ephemeral (simId=null) so no
@@ -6097,15 +6222,43 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 : humanReportIssueKeyFor({ projectId, urlPath: urlPath ?? "/", text: observation })
               if (suggestedBug) {
                 dedupedInto = await findDuplicateFeedback({
-                  projectId, urlPath, issueType: citation.issueType,
+                  projectId, urlPath, dedupEnabled, issueType: citation.issueType,
                   citedTraitIds: citation.citedTraitIds,
                   title: String(suggestedBug?.title || ""), observation,
                 })
               } else if (!draftedTitle) {
                 dedupedInto = await findDuplicateFeedback({
-                  projectId, urlPath, title: observation.slice(0, 120), observation,
+                  projectId, urlPath, dedupEnabled, title: observation.slice(0, 120), observation,
                   issueKey: newIssueKey,
                 })
+              }
+              // The uploads ran concurrently with the citation / duplicate lookups above; wait for them, then record the screenshot ledger rows.
+              {
+                Object.assign(evidence, await uploadsP)
+                pt.mark("uploads")
+                // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots + attachments + recordings). Fire-and-forget.
+                const storedBytes =
+                  uploaded.reduce((s, u) => s + (Number(u.bytes) || 0), 0) +
+                  attachTotalBytes +
+                  recordingDescs.reduce((s, r) => s + (Number(r.bytes) || 0), 0)
+                if (storedBytes > 0) void recordS3Storage({ projectId, bytes: storedBytes, meta: { source: "report_ingest" } })
+                // A claim older than ~25s (slow / large uploads) is refreshed so a concurrent retry does not take it over mid-flight. If it
+                // WAS taken over, this attempt must not create anything: it answers from the key's recorded outcome instead.
+                if (subClaim && submissionKey && Date.now() - claimStartedAt > 25_000) {
+                  const stillOurs = await refreshClaim(projectId, submissionKey).catch(() => true)
+                  if (!stillOurs) { subOwn = null; createdObjectKeys.length = 0; return await answerFromKey() }
+                }
+                // Persist a ledger row for EVERY uploaded screenshot using its pre-minted id, so each permanent /img link resolves (the
+                // dashboard still references screenshotId = the first). One row per shot, each with its own id → independent inserts,
+                // run with bounded concurrency. Under an idempotent submission the id is deterministic, so a retry's insert is a no-op.
+                await mapBounded(uploaded, 4, (u) => insertScreenshot({
+                  id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
+                  contentType: u.contentType, acl: u.acl,
+                  bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
+                  thumbKey: u.thumbKey, ignoreConflict: !!subClaim,
+                }))
+                if (uploaded[0]) screenshotId = uploaded[0].id
+                pt.mark("screenshots_db")
               }
               if (dedupedInto) {
                 const seenAt = Date.now()
@@ -6127,28 +6280,61 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // leave feedbackId null (knownDuplicate false) so the success-exit guard fails closed and
                 // the client retries into a fresh insert. Skip the best-effort occurrence/recurrence work
                 // below too — its target row no longer exists.
-                const bumped = await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
-                if (!bumped) {
+                // Where the repeat lands: the matched head, or its live root when that head was itself merged away.
+                let mergedOk = false
+                let mergeTargetId: string = dedupedInto
+                // Files / recordings that came with a repeat report are KEPT: they are attached (once) to the ticket it merges into. Until
+                // that has happened their slots stay 'pending' in the key's record, so a crash in between is repairable — the client's
+                // repair re-sends exactly those, and the repair path appends them to this same ticket.
+                const mergeEvidence: EvidenceState = { ...evidence }
+                for (const p of attachPlan) if (mergeEvidence[p.slot] === "ok") mergeEvidence[p.slot] = "pending"
+                for (const p of recPlan) if (mergeEvidence[p.slot] === "ok") mergeEvidence[p.slot] = "pending"
+                // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its screenshot, and its date instead of
+                // discarding them on the counter-bump. Powers the per-ticket occurrence timeline ("you said X on Y, then Y2, then Y3").
+                const occurrenceReceipt = { observation: observation || null, screenshotId: screenshotId || null, sourceQuote: citation.sourceQuote || null, reporterEmail: validReporterEmail ? reporterEmail : null }
+                if (subClaim && submissionKey) {
+                  // ONE transaction: key done + recurrence bump + occurrence receipt, all guarded by "this attempt still owns the claim and
+                  // the head still exists". A crash can no longer leave a counted recurrence with an unrecorded key (a retry would count it twice).
+                  const m = await mergeReportIntoTicketForSubmission({
+                    targetId: dedupedInto, projectId, atMs: seenAt, allowPromote: allowRecurrencePromote, occurrence: occurrenceReceipt,
+                    sub: { projectId, key: submissionKey, owner: PROCESS_OWNER, evidenceJson: JSON.stringify(mergeEvidence) },
+                  })
+                  if (m.status === "lost") { subOwn = null; createdObjectKeys.length = 0; return await answerFromKey() }   // claim taken over → answer from the recorded outcome
+                  if (m.status === "merged") { mergedOk = true; mergeTargetId = m.id; Object.assign(evidence, mergeEvidence) }
+                } else {
+                  const bumped = await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
+                  if (bumped) {
+                    mergedOk = true
+                    Object.assign(evidence, mergeEvidence)
+                    try { await insertFeedbackOccurrence({ feedbackId: dedupedInto, projectId, seenAt, ...occurrenceReceipt }) }
+                    catch (e: any) { console.warn("[occurrence] persist skipped:", e?.message || e) }
+                    if (attachmentDescs.length || recordingDescs.length) mergeTargetId = (await resolveMergeTarget(projectId, dedupedInto).catch(() => null)) ?? dedupedInto
+                  }
+                }
+                if (!mergedOk) {
                   console.warn(`[dedup-race] recurrence head ${dedupedInto} vanished before bump — failing closed (nothing persisted)`)
                 } else {
-                feedbackId = dedupedInto
+                feedbackId = (subClaim && submissionKey) ? mergeTargetId : dedupedInto
                 knownDuplicate = true
-                // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its
-                // screenshot, and its date instead of discarding them on the counter-bump. Powers the
-                // per-ticket occurrence timeline ("you said X on Y, then Y2, then Y3"). Best-effort —
-                // an occurrence-persist failure must never fail or slow the submission.
-                try {
-                  await insertFeedbackOccurrence({
-                    feedbackId: dedupedInto, projectId, seenAt,
-                    observation: observation || null,
-                    screenshotId: screenshotId || null,
-                    sourceQuote: citation.sourceQuote || null,
-                    reporterEmail: validReporterEmail ? reporterEmail : null,
-                  })
-                } catch (e: any) { console.warn("[occurrence] persist skipped:", e?.message || e) }
+                ticketCreated = true   // the report resolved to an existing ticket
+                if (attachmentDescs.length || recordingDescs.length) {
+                  let attached = false
+                  try {
+                    if (attachmentDescs.length) await appendFeedbackAttachments(mergeTargetId, projectId, attachmentDescs)   // CAS + de-dupes by object key → idempotent
+                    if (recordingDescs.length) await appendFeedbackRecordings(mergeTargetId, projectId, recordingDescs)
+                    attached = true
+                  } catch (e: any) { console.warn("[merge-attach] failed (the client can repair it):", e?.message || e) }
+                  if (attached) {
+                    for (const p of attachPlan) if (evidence[p.slot] === "pending") evidence[p.slot] = "ok"
+                    for (const p of recPlan) if (evidence[p.slot] === "pending") evidence[p.slot] = "ok"
+                    if (subClaim && submissionKey) { try { await saveEvidenceState(projectId, submissionKey, evidence) } catch { /* 'pending' already marks them repairable */ } }
+                    kickTranscripts(mergeTargetId, attachmentDescs, recordingDescs)
+                  }
+                }
+                createdObjectKeys.length = 0   // referenced by the ticket (or by the key's repairable record) from here on — never cleaned up
                 // Build recurrence memory so callers know this is a recurring issue and who originally
                 // filed it (the "cited virtual customer" — a Sim persona or a previous human reporter).
-                try { recurrenceMem = await buildRecurrenceMemory(db!, dedupedInto, projectId) }
+                try { recurrenceMem = await buildRecurrenceMemory(db!, feedbackId as string, projectId) }
                 catch (e: any) { console.warn("[recurrence-memory] build skipped:", e?.message || e) }
                 // B.6 unified regression alarm — MEMORY detector: this repeat deduped back onto a
                 // cluster that was already resolved (resurfaced after a fix). Publish into the shared
@@ -6157,7 +6343,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   void publishRegressionEvent({
                     projectId, issueKey: recurrenceMem.issueKey, source: "memory",
                     title: recurrenceMem.occurrences?.[0]?.title || observation || "recurring issue",
-                    feedbackId: dedupedInto, expectationId: recurrenceMem.expectationId,
+                    feedbackId: feedbackId as string, expectationId: recurrenceMem.expectationId,
                     firstFixedAt: recurrenceMem.resolvedAt, at: seenAt,
                     baseUrl: process.env.KLAV_BASE_URL || "",
                     evidence: { occurrences: recurrenceMem.count, firstSeenAt: recurrenceMem.firstSeenAt },
@@ -6165,14 +6351,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 }
                 }
               } else {
-                // PostHog activation: first_bug_filed / first_widget_report — check BEFORE insert.
-                let priorFeedbackCount = 1 // safe default: assume not-first if query fails
-                if (db) {
-                  try {
-                    const r = await db.execute({ sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=?", args: [projectId] })
-                    priorFeedbackCount = Number((r.rows[0] as any)?.n ?? 1)
-                  } catch { /* non-fatal */ }
-                }
+                // PostHog activation (first_bug_filed / first_widget_report) is decided AFTER the insert and off the response path
+                // (it used to cost a COUNT(*) round trip before every insert).
                 // KD-162: a screenshot-only report's `observation` (used above for the deterministic
                 // issueKey / dedup identity) stays the minimal fallbackDraftTitle string — untouched, so
                 // issueKey/dedup behavior is unaffected. What actually gets STORED/shown as the ticket's
@@ -6180,7 +6360,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // never sees a bare/noisy fallback as their issue description. A 4th line (an AI caption
                 // of the screenshot) is appended asynchronously below, after this row is inserted.
                 if (draftedTitle) storedObservation = fallbackDraftDescription({ reportType, pageUrl, createdAt: Date.now(), reportEnv })
-                feedbackId = await insertFeedback({
+                const fbInsert = ({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
                   observation: storedObservation, sentiment, priority, screenshotId, suggestedBug,
                   citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
@@ -6214,18 +6394,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // PX4 #439/#428: reporter identity + captured browser/app info (null when absent).
                   reporter, clientInfo,
                 })
-                if (priorFeedbackCount === 0 && feedbackId) {
-                  const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
-                  // first_bug_filed: very first report for this project (any source)
-                  void capturePosthog(actor ?? "anonymous", "first_bug_filed", { project_id: projectId, source: fbSource })
-                  // first_widget_report: first report arriving via widget token (cross-origin anonymous submit)
-                  if (anonWidgetAllowed) {
-                    void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
-                  }
-                  // KLA-547 taxonomy: the SAME first-report fact mirrored as funnel_events `first_report`
-                  // (queryable store — PostHog alone can't power the scorecard/funnel SQL). Ids only:
-                  // the reporter's email is deliberately NOT attached (anonymous widget reporters).
-                  void trackMilestone(db, { milestone: "first_report", projectId, props: { source: fbSource } })
+                // The replay save happens after the insert; until it lands the slot is 'pending' (recorded with the key), so a crash in
+                // between leaves a repairable record instead of a silent loss.
+                if (replayEvents) evidence.replay = "pending"
+                if (subClaim && submissionKey) {
+                  const ins = await insertFeedbackForSubmission(fbInsert, { projectId, key: submissionKey, owner: PROCESS_OWNER, evidenceJson: JSON.stringify(evidence) })
+                  if ("lost" in ins) { subOwn = null; createdObjectKeys.length = 0; return await answerFromKey() }   // our claim was taken over: no ticket from this attempt
+                  feedbackId = ins.id
+                } else {
+                  feedbackId = await insertFeedback(fbInsert)
+                }
+                ticketCreated = true
+                createdObjectKeys.length = 0   // referenced by the ticket from here on — never cleaned up
+                if (feedbackId) {
+                  const newId = feedbackId
+                  void (async () => {
+                    if (await projectHasOtherFeedback(projectId, newId)) return
+                    const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
+                    // first_bug_filed: very first report for this project (any source)
+                    void capturePosthog(actor ?? "anonymous", "first_bug_filed", { project_id: projectId, source: fbSource })
+                    // first_widget_report: first report arriving via widget token (cross-origin anonymous submit)
+                    if (anonWidgetAllowed) void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
+                    // KLA-547 taxonomy: the SAME first-report fact mirrored as funnel_events `first_report` (queryable store — PostHog alone can't
+                    // power the scorecard/funnel SQL). Ids only: the reporter's email is deliberately NOT attached (anonymous widget reporters).
+                    void trackMilestone(db, { milestone: "first_report", projectId, props: { source: fbSource } })
+                  })().catch(() => {})
                 }
               }
               pt.mark("dedupe_insert")
@@ -6320,8 +6513,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (replayEvents && feedbackId) {
                 const fbIdForReplay = feedbackId
                 postWrites.push((async () => {
-                  try { await saveFeedbackReplay(projectId, fbIdForReplay, replayEvents) }
-                  catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
+                  // The 'replay: ok' record is committed in the SAME batch as the replay row (no extra round trip). If the save throws,
+                  // the slot stays 'pending' (written at insert) and is then marked 'failed' so a retry re-sends it.
+                  let threw = false, stored = false
+                  const okState: EvidenceState = { ...evidence, replay: "ok" }
+                  try {
+                    const sr = await saveFeedbackReplay(projectId, fbIdForReplay, replayEvents as any, undefined, undefined,
+                      (subClaim && submissionKey) ? evidenceStateStatement(projectId, submissionKey, okState) : undefined)
+                    stored = !!sr.saved
+                  } catch (re: any) { threw = true; console.warn("feedback replay save (non-fatal):", re?.message || re) }
+                  evidence.replay = threw ? "failed" : "ok"      // saved:false without a throw = an empty buffer: nothing to repair
+                  if (subClaim && submissionKey && (threw || !stored)) { try { await saveEvidenceState(projectId, submissionKey, evidence) } catch { /* 'pending' already marks it repairable */ } }
                 })())
               }
               await Promise.all(postWrites)
@@ -6467,6 +6669,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // best-effort step throwing is genuinely non-fatal → fall through to the normal 200 exit.
             if (!feedbackId) {
               console.error("feedback persistence FAILED (no row written) — failing closed:", persistErr?.message || persistErr)
+              await abandonSubmission()   // free our claim (an immediate retry must not wait) and drop what this attempt uploaded
               return wjson({ error: "We couldn't save your report. Please try again.", saved: false }, 500)
             }
             console.error("feedback persistence (post-insert side-effect, non-fatal):", persistErr?.message || persistErr)
@@ -6487,6 +6690,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // truthy feedbackId and is unaffected — it falls straight through to the success return below.
         if (!feedbackId) {
           console.error("feedback not persisted (no row written, no exception) — failing closed at success exit")
+          await abandonSubmission()
           return wjson({ error: "We couldn't save your report. Please try again.", saved: false }, 500)
         }
 
@@ -6532,12 +6736,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (process.env.KLAV_FEEDBACK_TIMING === "1" || pt.total() > 3000) {
           console.log(`[feedback-timing] ${pt.summary()} shots=${uploaded.length} atts=${attachmentDescs.length} recs=${recordingDescs.length}`)
         }
+        const missingFinal = missingSlots(evidence)   // evidence the client can retry: { partial: true, missing: ["file:1", …] }
         return json(
-          { id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) },
+          { id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}), ...(missingFinal.length ? { partial: true, missing: missingFinal } : {}) },
           200,
           { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing" },
         )
       } catch (e: any) {
+        if (!ticketCreated) await abandonSubmission()   // no ticket resulted: free the claim + remove this attempt's uploads
         return json(oops(e, "feedback"), 500)
       }
     }
@@ -7884,7 +8090,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // segmented control so the destination reads naturally (e.g. "PX4 Project"). submitTargetToggle
         // (DEFAULT on) tells the widget whether to render the "Where should this go? · Your team / Klavity"
         // control — the founder wants it on every widget for now; a project opts out via its modal config.
-        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity, projectName: proj.name }, 200, WIDGET_CORS)
+        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity, projectName: proj.name,
+          // Capability advertisement: this server records `submission_key` (lib/submissions.ts), so a re-sent report returns the existing
+          // ticket. The widget enables AUTOMATIC retries only when it sees this; an older server omits it and the widget stays single-attempt.
+          capabilities: { submissionKeys: 1 } }, 200, WIDGET_CORS)
       }
     }
 

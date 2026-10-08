@@ -11976,6 +11976,19 @@
       background: #000
     }
 
+    .newtkt-file .nf-doc {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      height: 84px;
+      color: var(--paper-dim);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em
+    }
+
     .newtkt-file .nf-meta {
       padding: 5px 8px;
       font-size: 11px;
@@ -24221,6 +24234,18 @@
     const NEW_TKT_IMG_MAX = 8 * 1024 * 1024           // SCREENSHOT_MAX_BYTES default
     const NEW_TKT_VIDEO_MAX = 100 * 1024 * 1024       // ATTACH_VIDEO_MAX_BYTES default
     const NEW_TKT_TOTAL_MAX = 120 * 1024 * 1024       // ATTACH_TOTAL_MAX_BYTES default
+    // Documents (PDF, Word, Excel) ride the same endpoint; the server caps every non-video file at SCREENSHOT_MAX_BYTES.
+    const NEW_TKT_DOC_MAX = NEW_TKT_IMG_MAX
+    const NEW_TKT_DOC_EXT = ["pdf", "doc", "docx", "xls", "xlsx"]
+    const NEW_TKT_DOC_MIME = ["application/pdf", "application/msword", "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+    // Pure: is this a PDF / Word / Excel file? MIME first, extension as the fallback (browsers often send an empty or generic type).
+    function newTktIsDoc(f) {
+      const t = String((f && f.type) || "").toLowerCase()
+      if (NEW_TKT_DOC_MIME.indexOf(t) >= 0) return true
+      const m = /\.([a-z0-9]{1,5})$/i.exec(String((f && f.name) || ""))
+      return !!m && NEW_TKT_DOC_EXT.indexOf(m[1].toLowerCase()) >= 0
+    }
     let _newTktFiles = []
     // Bumped whenever the held files are cleared (dialog closed / ticket created), so an image optimisation still running for
     // a dialog the user already closed can't resurrect files into the next one.
@@ -24231,12 +24256,12 @@
       const files = current.slice(), rejected = []
       let total = files.reduce((n, f) => n + f.size, 0)
       for (const f of incoming) {
-        const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || "")
-        if (!isImg && !isVid) { rejected.push(f.name + ": only images and videos can be attached"); continue }
+        const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || ""), isDoc = !isImg && !isVid && newTktIsDoc(f)
+        if (!isImg && !isVid && !isDoc) { rejected.push(f.name + ": only images, videos, PDF, Word and Excel files can be attached"); continue }
         if (!f.size) { rejected.push(f.name + ": file is empty"); continue }
         if (files.some(a => a.name === f.name && a.size === f.size && a.lastModified === f.lastModified)) continue   // already added
         if (files.length >= NEW_TKT_MAX_FILES) { rejected.push(f.name + ": you can attach up to " + NEW_TKT_MAX_FILES + " files"); continue }
-        const cap = isVid ? NEW_TKT_VIDEO_MAX : NEW_TKT_IMG_MAX
+        const cap = isVid ? NEW_TKT_VIDEO_MAX : isDoc ? NEW_TKT_DOC_MAX : NEW_TKT_IMG_MAX
         if (f.size > cap) { rejected.push(f.name + ": larger than " + _attachFmtBytes(cap)); continue }
         if (total + f.size > NEW_TKT_TOTAL_MAX) { rejected.push(f.name + ": total would exceed " + _attachFmtBytes(NEW_TKT_TOTAL_MAX)); continue }
         files.push(f); total += f.size
@@ -24266,10 +24291,17 @@
         let url = _newTktUrls.get(f)
         if (!url) { url = URL.createObjectURL(f); _newTktUrls.set(f, url) }
         const item = document.createElement("div"); item.className = "newtkt-file"
-        const isVid = /^video\//i.test(f.type || "")
-        const media = document.createElement(isVid ? "video" : "img")
-        if (isVid) { media.muted = true; media.preload = "metadata"; media.setAttribute("playsinline", "") } else { media.alt = f.name }
-        media.src = url
+        const isVid = /^video\//i.test(f.type || ""), isDoc = !isVid && !/^image\//i.test(f.type || "") && newTktIsDoc(f)
+        let media
+        if (isDoc) {
+          const ext = (/\.([a-z0-9]{1,5})$/i.exec(f.name) || [])[1] || "file"
+          media = document.createElement("div"); media.className = "nf-doc"
+          media.innerHTML = kicon('file-text', { size: 24 }) + "<span></span>"; media.lastChild.textContent = ext.toUpperCase()
+        } else {
+          media = document.createElement(isVid ? "video" : "img")
+          if (isVid) { media.muted = true; media.preload = "metadata"; media.setAttribute("playsinline", "") } else { media.alt = f.name }
+          media.src = url
+        }
         const meta = document.createElement("div"); meta.className = "nf-meta"; meta.textContent = f.name + " · " + _attachFmtBytes(f.size); meta.title = f.name
         const rm = document.createElement("button"); rm.type = "button"; rm.className = "nf-rm"; rm.textContent = "\u00d7"
         rm.setAttribute("aria-label", "Remove " + f.name); rm.title = "Remove"
@@ -24277,7 +24309,7 @@
         item.appendChild(media)
         if (isVid) { const pl = document.createElement("span"); pl.className = "newtkt-play"; pl.innerHTML = kicon('play', { size: 16 }); item.appendChild(pl) }
         item.appendChild(meta); item.appendChild(rm)
-        item.addEventListener("click", () => openMediaPreview({ url, name: f.name, kind: isVid ? "video" : "image" }))   // enlarge / play
+        item.addEventListener("click", () => { if (isDoc) window.open(url, "_blank", "noopener"); else openMediaPreview({ url, name: f.name, kind: isVid ? "video" : "image" }) })   // enlarge / play (a document opens in a new tab)
         grid.appendChild(item)
       })
     }
@@ -30456,10 +30488,10 @@
             id="newTktFilesCount" style="font-weight:400;color:var(--paper-faint);font-size:11px">(optional)</span>
         </div>
         <div class="newtkt-drop" id="newTktDrop">
-          <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach images or videos</button>
+          <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach files</button>
           <span>or drop them here</span>
         </div>
-        <input type="file" id="newTktFileInp" accept="image/*,video/*" multiple hidden>
+        <input type="file" id="newTktFileInp" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
         <div class="newtkt-files" id="newTktFilesGrid"></div>
         <div id="newTktFilesMsg" style="font-size:12px;color:var(--rose);margin-top:6px"></div>
       </div>
@@ -32696,7 +32728,7 @@
         // KD-100: attachments (picker + drop zone) and the Expand toggle.
         const attachBtn = document.getElementById("newTktAttachBtn"), fileInp = document.getElementById("newTktFileInp"), drop = document.getElementById("newTktDrop")
         if (attachBtn && fileInp) {
-          attachBtn.innerHTML = kicon('paperclip', { size: 13 }) + " Attach images or videos"
+          attachBtn.innerHTML = kicon('paperclip', { size: 13 }) + " Attach files"
           attachBtn.addEventListener("click", function () { fileInp.click() })
           fileInp.addEventListener("change", function () { newTktAddFiles(fileInp.files); fileInp.value = "" })
         }
