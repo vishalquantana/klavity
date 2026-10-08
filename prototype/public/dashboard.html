@@ -17380,8 +17380,20 @@
 
     let state = null
 
+    // KD-229: when the server serves the dashboard AT a ticket permalink (/<slug>/<KEY>-<n> or /t/<id>) —
+    // i.e. a reload of the in-dashboard full ticket page — it stamps the ticket + its project into a meta
+    // tag. null on every other load.
+    function bootTicket() {
+      try {
+        const m = document.querySelector('meta[name="klav-boot-ticket"]')
+        const id = m && m.getAttribute("data-id"), pid = m && m.getAttribute("data-project")
+        return (id && pid) ? { id: id, projectId: pid } : null
+      } catch (e) { return null }
+    }
     function activeProjectParam() {
-      try { return new URLSearchParams(location.search).get("project") } catch (e) { return null }
+      // KD-229: a ticket permalink carries no ?project=, so the booted ticket's project stands in for it —
+      // the dashboard loads THAT project and never rewrites the clean ticket URL with a ?project= param.
+      try { return new URLSearchParams(location.search).get("project") || ((bootTicket() || {}).projectId) || null } catch (e) { return null }
     }
 
     // ── Stale-while-revalidate cache (localStorage) ───────────────────────────────
@@ -18119,6 +18131,14 @@
         if (!ticketId) {
           const _hm = (location.hash || "").match(/^#?tickets\/(.+)$/)
           if (_hm) ticketId = decodeURIComponent(_hm[1])
+        }
+        // KD-229: reload of the in-dashboard full ticket page — the server served the dashboard at the ticket's
+        // own permalink. Re-open it full-page, and point Close/Back at this project's board (there's no board
+        // URL to remember: the page was never on the board in this load).
+        const _boot = (!ticketId && typeof bootTicket === "function") ? bootTicket() : null
+        if (_boot) {
+          ticketId = _boot.id
+          if (_tktBoardReturnUrl == null) _tktBoardReturnUrl = "/dashboard?project=" + encodeURIComponent(_boot.projectId) + "#tickets"
         }
         if (!ticketId) return
         // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
@@ -29314,6 +29334,8 @@
         // the Tickets view WITHOUT mounting the board (set __klavTktPageOpen so renderTicketsView no-ops), then
         // maybeOpenDeepLinkTicket() (run after data loads) renders the dedicated page in full mode, once.
         var deepTkt = init.match(/^tickets\/(.+)$/);
+        // KD-229: served at a ticket permalink (reload of the full ticket page) → same no-board Tickets boot.
+        if (!deepTriage && !deepTkt && document.querySelector('meta[name="klav-boot-ticket"]')) deepTkt = true;
         if (deepTriage) { window._pendingTriageFocus = decodeURIComponent(deepTriage[1]); setView('triage'); }
         else if (deepTkt) { window.__klavTktPageOpen = true; setView('tickets'); }
         else { setView(VIEWS.indexOf(init) >= 0 ? init : 'overview'); }
