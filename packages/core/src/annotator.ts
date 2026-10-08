@@ -379,3 +379,66 @@ export class Annotator {
     return png
   }
 }
+
+/** Extract all typed text strings from an array of shapes. */
+export function extractAnnotationTexts(shapes?: Shape[] | null): string[] {
+  if (!Array.isArray(shapes)) return []
+  const texts: string[] = []
+  for (const s of shapes) {
+    if (s && s.type === 'text' && typeof s.text === 'string' && s.text.trim()) {
+      texts.push(s.text.trim())
+    }
+  }
+  return texts
+}
+
+/** Render drawn shapes onto a screenshot dataURL using an offscreen canvas.
+ *  Returns the flattened annotated image dataURL (PNG/JPEG), or baseDataUrl if no shapes or in non-browser envs. */
+export async function renderAnnotatedImage(
+  baseDataUrl: string,
+  shapes?: Shape[] | null,
+  width?: number,
+  height?: number,
+): Promise<string> {
+  if (!baseDataUrl || !baseDataUrl.startsWith('data:image/')) return baseDataUrl || ''
+  if (!Array.isArray(shapes) || shapes.length === 0) return baseDataUrl
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return baseDataUrl
+
+  return new Promise<string>((resolve) => {
+    try {
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || width || 1
+          const h = img.naturalHeight || height || 1
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { resolve(baseDataUrl); return }
+
+          const annotator = new Annotator(canvas, baseDataUrl)
+          shapes.forEach((s) => annotator.shapes.push({ ...s }))
+          ctx.drawImage(img, 0, 0)
+          annotator.redraw()
+
+          annotator.save().then((res) => {
+            resolve(res || baseDataUrl)
+          }).catch(() => {
+            try {
+              resolve(canvas.toDataURL('image/png') || baseDataUrl)
+            } catch {
+              resolve(baseDataUrl)
+            }
+          })
+        } catch {
+          resolve(baseDataUrl)
+        }
+      }
+      img.onerror = () => resolve(baseDataUrl)
+      img.src = baseDataUrl
+    } catch {
+      resolve(baseDataUrl)
+    }
+  })
+}
