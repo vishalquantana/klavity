@@ -274,6 +274,9 @@ export async function getObjectStream(key: string): Promise<{ stream: ReadableSt
   if (!s3Configured()) {
     const localPath = join(LOCAL_PUB_DIR, key)
     const f = Bun.file(localPath)
+    if (!(await f.exists())) {
+      throw new Error(`File not found: ${key}`)
+    }
     let contentType = "application/octet-stream"
     let size: number | null = null
     const st = await f.stat()

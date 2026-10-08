@@ -22044,10 +22044,6 @@
         : ""
 
       // In single-ticket view the header shows: title, severity, sentiment, simName, url·date.
-      // Two-column layout when screenshot exists: shot in col-1, everything else in .tkt-right-body col-2.
-      const _firstImgAtt = !t.screenshotId && Array.isArray(t.attachments) ? t.attachments.find(a => attachKind(a) === "image" && a.url) : null
-      const _hasShot = !!t.screenshotId || !!_firstImgAtt
-      const _isTwoCol = isSingle && _hasShot
       // #538: a multi-line description must never be suppressed just because its FIRST line happens
       // to match the ticket title — only hide when the entire (single-line) observation IS the title.
       const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
@@ -22065,13 +22061,8 @@
       const _hasDupAck = (t.recurrenceCount || t.recurrence || 1) >= 2
       const _hasContextItems = _showObs || _showBug || !!t.sourceQuote
         || (_showSevChip || _showSentiment || _showSimChip) || _hasDupAck || !!t.isRegression
-      const _hasContext = _hasContextItems || (!_isTwoCol && _hasShot)
+      const _hasContext = _hasContextItems
 
-      const _shotHtml = t.screenshotId
-        ? `<div class="tkt-shot" data-shot="${esc(t.screenshotId)}"><div class="muted" style="font-size:12px">Loading screenshot…</div></div>`
-        : (_firstImgAtt
-          ? `<div class="tkt-shot" data-shot-url="${esc(_firstImgAtt.url)}" data-shot-name="${esc(_firstImgAtt.filename || "Screenshot")}"><div class="muted" style="font-size:12px">Loading screenshot…</div></div>`
-          : "")
       const _contextHtml = _hasContext ? `
       <div class="tkt-context">
         ${dupAckHtml(t)}
@@ -22082,8 +22073,7 @@
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
         ${_showMetaLine ? `<div class="tkt-meta-line muted">${(t.urlHost || t.urlPath) ? esc((t.urlHost || "") + (t.urlPath || "")) : ""}${((t.urlHost || t.urlPath) && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}</div>` : ""}
         ${t.sourceReferrer ? `<div class="tkt-meta-line muted">Referred from: ${esc(t.sourceReferrer)}</div>` : ""}
-        ${!_isTwoCol ? _shotHtml : ""}
-      </div>` : (!_isTwoCol ? _shotHtml : "")
+      </div>` : ""
       // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
       // KLAVITYKLA-513: a null/missing priority must resolve to the ONE canonical default 'medium'
       // (matching the triage row select), so the <select> marks 'medium' selected instead of falling
@@ -22173,9 +22163,7 @@
         detailEl.innerHTML = `<div class="t3-cols">${_mid}<div class="t3-gutter" data-g="1" aria-hidden="true"></div>${_right}</div>`
       } else {
         const _attachHtml = buildAttachmentsHtml(t)
-        detailEl.innerHTML = _isTwoCol
-          ? `${_shotHtml}<div class="tkt-right-body">${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}</div>`
-          : `${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}`
+        detailEl.innerHTML = `${_contextHtml}${_recHtml}${_attachHtml}${_bodyHtml}`
       }
       wireAttachments(detailEl, t, ticketId)
       wireRecordingSeek(detailEl)
@@ -24069,8 +24057,6 @@
       // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
       // PANEL keeps the compact image-left grid (single-has-shot). Board-expand is unaffected (isSingle=false).
       const _hasAnyShot = !!t.screenshotId || (Array.isArray(t.attachments) && t.attachments.some(a => attachKind(a) === "image" && a.url))
-      if (t.screenshotId && panel) detailEl.classList.add("single-has-shot")   // panel: image-left grid
-      else if (_hasAnyShot && panel) detailEl.classList.add("single-has-shot")
       if (!panel) {
         const card = document.createElement("div"); card.className = "tkt3-card"
         card.appendChild(head)
@@ -26602,6 +26588,12 @@
     // so the box repaints (clean image + the new overlay) via the normal read pipeline.
     function _reloadTktShot(detailEl, ann) {
       if (!detailEl) return
+      const fid = detailEl.getAttribute && detailEl.getAttribute("data-id")
+      if (fid) {
+        const tkt = (state.tickets || []).find(x => String(x.id) === String(fid))
+        if (tkt) tkt.annotations = ann
+        if (typeof attachRerender === "function") attachRerender(fid)
+      }
       const box = detailEl.querySelector(".tkt-shot")
       if (!box) return
       box.removeAttribute("data-loaded"); box.classList.remove("tkt-shotwrap", "zoomed"); box.innerHTML = ""
