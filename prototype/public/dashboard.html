@@ -32515,7 +32515,7 @@
       wireAvatarMenu()   // top-nav account menu (email + Log out)
       const newTktBg = document.getElementById("newTktBg")
       if (newTktBg) {
-        newTktBg.addEventListener("click", function (e) { if (e.target === this) closeNewTicketModal() })
+        // KD-194: Keep New ticket popup open when clicking outside boundary; only close on Cancel or X.
         const closeBtn = document.getElementById("newTktClose")
         if (closeBtn) closeBtn.addEventListener("click", closeNewTicketModal)
         const cancelBtn = document.getElementById("newTktCancel")
