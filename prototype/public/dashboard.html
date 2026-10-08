@@ -24050,7 +24050,13 @@
         if (titleEl) titleEl.addEventListener("click", ev => { if (ev.target.closest(".tkt-seq")) return; ev.stopPropagation(); enterTitleEdit() })
       }
       renderHead()
-      const detailEl = buildTktDetail(t, admin, () => { renderHead(); renderTicketsKanban() }, true)
+      // KD-230: the dedicated-page header's status pill (beside the #key) is built once above, outside
+      // renderHead — repaint it in place so a Properties-rail status change shows up immediately.
+      const repaintPageStatusPill = () => {
+        const pill = single.querySelector(".tkt-page-head .tkt-pill")
+        if (pill) pill.outerHTML = statusPillHtml(t.status)
+      }
+      const detailEl = buildTktDetail(t, admin, () => { renderHead(); repaintPageStatusPill(); renderTicketsKanban() }, true)
       detailEl.classList.add("show")
       // #707: the dedicated PAGE renders the 3-col grid INSIDE detailEl and wraps the title + grid in a
       // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
