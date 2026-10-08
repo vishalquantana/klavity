@@ -49,3 +49,18 @@ test("server /api/t/:ref resolves screenshotUrl from image attachments when scre
   expect(SERVER_TS).toContain("const imgAtt = fbRow.attachments.find")
   expect(SERVER_TS).toContain("presignGet(String(imgAtt.key), 3600)")
 })
+
+test("image attachments in buildEvidenceStrip receive IMG badge without REPLAY or play button", () => {
+  const fn = extractFn(HTML, "function buildEvidenceStrip(")
+  expect(fn).toContain('el.appendChild(_evBadge("IMG", false))')
+  expect(fn).toContain('it.kind === "replay"')
+  expect(fn).toContain('el.appendChild(_evBadge("REPLAY", true))')
+})
+
+test("image attachments in buildAttachmentsHtml do not render play overlay", () => {
+  const fn = extractFn(HTML, "function buildAttachmentsHtml(")
+  expect(fn).toContain('kind === "image"')
+  expect(fn).toContain('<img src="')
+  expect(fn).toContain('<span class="tkt-attach-play">')
+})
+
