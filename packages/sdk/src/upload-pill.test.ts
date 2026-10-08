@@ -13,8 +13,6 @@ vi.mock("./widget-lib", async () => {
   const actual = await vi.importActual<typeof import("./widget-lib")>("./widget-lib")
   return { ...actual, parseScriptConfig: vi.fn(() => ({ projectId: "", backendUrl: "" })) }
 })
-// session-replay lazy-loads rrweb over the network on import; keep it inert under jsdom.
-vi.mock("./session-replay", () => ({ createSessionReplay: () => ({ snapshot: () => [], hasRecording: () => false, start: () => {}, stop: () => {} }) }))
 
 import { createUploadPill } from "./widget"
 

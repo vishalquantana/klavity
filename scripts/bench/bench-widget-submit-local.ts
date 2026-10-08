@@ -3,12 +3,12 @@
 //   • every object-store PUT is delayed (default 300 ms),
 // and every database call is counted, so "fewer sequential round trips" is shown as a number, not just a time.
 //
-//   bun scripts/bench/bench-widget-submit-local.ts <serverDir> [dbMs=275] [putMs=300] [runs=7] [--key]
+//   bun scripts/bench/bench-widget-submit-local.ts <serverDir> [dbMs=275] [putMs=300] [runs=7] [--key] [--replay]
 //     <serverDir> = the prototype/ directory of the build to measure (e.g. a git worktree of the "before" commit, with node_modules linked).
 //     --key       = send a submission_key like the new widget does (leave it off for a build that predates idempotency).
+//     --replay    = ALSO send the ~690 KB replay the widget used to attach (the widget sends none any more: leave it off to measure today's request).
 //
-// The SAME request is sent to every build: a ~1.1 MB screenshot + thumbnail, a 200 KB PDF and a ~690 KB replay (plain JSON — the
-// browser-side gzip is a separate, client-only saving), as an authenticated member. The first (warm-up) run is discarded.
+// The SAME request is sent to every build: a ~1.1 MB screenshot + thumbnail and a 200 KB PDF (plus, with --replay, a ~690 KB replay in plain JSON), as an authenticated member. The first (warm-up) run is discarded.
 import * as net from "node:net"
 import { pathToFileURL } from "node:url"
 import { tmpdir } from "node:os"
@@ -16,8 +16,8 @@ import { join, resolve } from "node:path"
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs"
 
 const [serverDirArg, dbArg, putArg, runsArg, ...flags] = process.argv.slice(2)
-if (!serverDirArg) { console.error("usage: bun scripts/bench/bench-widget-submit-local.ts <serverDir> [dbMs] [putMs] [runs] [--key]"); process.exit(2) }
-const SERVER_DIR = resolve(serverDirArg), DB_MS = Number(dbArg ?? 275), PUT_MS = Number(putArg ?? 300), RUNS = Number(runsArg ?? 7), WITH_KEY = flags.includes("--key")
+if (!serverDirArg) { console.error("usage: bun scripts/bench/bench-widget-submit-local.ts <serverDir> [dbMs] [putMs] [runs] [--key] [--replay]"); process.exit(2) }
+const SERVER_DIR = resolve(serverDirArg), DB_MS = Number(dbArg ?? 275), PUT_MS = Number(putArg ?? 300), RUNS = Number(runsArg ?? 7), WITH_KEY = flags.includes("--key"), WITH_REPLAY = flags.includes("--replay")
 const PRELOAD = resolve(import.meta.dir, "libsql-latency.preload.ts")
 // the client is resolved from the build under test (this script lives outside prototype/, which owns node_modules)
 const { createClient } = await import(pathToFileURL(Bun.resolveSync("@libsql/client", SERVER_DIR)).href)
@@ -68,7 +68,7 @@ try {
   const one = async (i: number) => {
     const fd = new FormData()
     fd.set("type", "bug"); fd.set("description", "bench " + i + " " + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)); fd.set("project_id", PROJ); fd.set("page_url", "https://example.com/p")
-    fd.set("context", JSON.stringify({ pageUrl: "https://example.com/p", userAgent: "bench", consoleErrors: [], networkFailures: [] })); fd.set("replay_events", replay)
+    fd.set("context", JSON.stringify({ pageUrl: "https://example.com/p", userAgent: "bench", consoleErrors: [], networkFailures: [] })); if (WITH_REPLAY) fd.set("replay_events", replay)
     if (WITH_KEY) fd.set("submission_key", crypto.randomUUID())
     fd.append("screenshots", new File([shot], "s.png", { type: "image/png" })); fd.append("screenshot_thumbs", new File([thumb], "t.jpg", { type: "image/jpeg" })); fd.append("files", new File([pdf], "doc.pdf", { type: "application/pdf" }))
     const logBefore = readFileSync(DB_LOG, "utf8").split("\n").length, putsBefore = puts
@@ -83,6 +83,6 @@ try {
   await one(-1)
   const res = []; for (let i = 0; i < RUNS; i++) res.push(await one(i))
   const ms = res.map((r) => r.ms).sort((a, b) => a - b), calls = res.map((r) => r.dbCalls).sort((a, b) => a - b)
-  console.log(JSON.stringify({ serverDir: SERVER_DIR.split(/[\\/]/).slice(-2).join("/"), withKey: WITH_KEY, dbLatencyMs: DB_MS, putLatencyMs: PUT_MS, runs: RUNS, statuses: [...new Set(res.map((r) => r.status))], min: ms[0], median: ms[Math.floor(ms.length / 2)], max: ms[ms.length - 1], all: ms, dbCallsMedian: calls[Math.floor(calls.length / 2)], putsPerRequest: res[0].puts, lastServerTiming: res[res.length - 1].serverTiming }))
+  console.log(JSON.stringify({ serverDir: SERVER_DIR.split(/[\\/]/).slice(-2).join("/"), withKey: WITH_KEY, withReplay: WITH_REPLAY, dbLatencyMs: DB_MS, putLatencyMs: PUT_MS, runs: RUNS, statuses: [...new Set(res.map((r) => r.status))], min: ms[0], median: ms[Math.floor(ms.length / 2)], max: ms[ms.length - 1], all: ms, dbCallsMedian: calls[Math.floor(calls.length / 2)], putsPerRequest: res[0].puts, lastServerTiming: res[res.length - 1].serverTiming }))
   proc2.kill()
 } finally { try { proc.kill() } catch {} s3.stop(true); raw.close(); for (const s of ["", "-wal", "-shm"]) { try { unlinkSync(DB_FILE + s) } catch {} } try { unlinkSync(DB_LOG) } catch {} }

@@ -208,13 +208,13 @@ const SLOT_FIELDS: Array<{ field: string; kind: "shot" | "file" | "rec"; mapKey:
 /**
  * Build the body of a REPAIR request: the same submission key and the same small text fields, plus ONLY the parts for `missing` slots
  * (and `slot_map` so the server files each part under its ORIGINAL slot). Parts are taken from the already-prepared `fd`, so nothing is
- * recompressed or re-read. `replay` re-sends the replay buffer (gzip or plain, whichever the original used).
+ * recompressed or re-read.
  */
 export function buildRepairForm(fd: FormData, missing: string[]): FormData {
   const want = new Set(missing)
   const out = new FormData()
-  const fileFields = new Set(["screenshots", "screenshot_thumbs", "files", "recording", "replay_events_gz"])
-  for (const [k, v] of fd.entries()) { if (!fileFields.has(k) && k !== "replay_events" && typeof v === "string" && k !== "cf_turnstile_token") out.append(k, v) }
+  const fileFields = new Set(["screenshots", "screenshot_thumbs", "files", "recording"])
+  for (const [k, v] of fd.entries()) { if (!fileFields.has(k) && typeof v === "string" && k !== "cf_turnstile_token") out.append(k, v) }
   const slotMap: Record<string, string[]> = {}
   const thumbs = fd.getAll("screenshot_thumbs")
   for (const { field, kind, mapKey } of SLOT_FIELDS) {
@@ -226,11 +226,6 @@ export function buildRepairForm(fd: FormData, missing: string[]): FormData {
       ;(slotMap[mapKey] ||= []).push(slot)
       if (kind === "shot" && thumbs[i] && typeof thumbs[i] !== "string") out.append("screenshot_thumbs", thumbs[i] as Blob, (thumbs[i] as File).name || "thumb.jpg")
     })
-  }
-  if (want.has("replay")) {
-    const gz = fd.get("replay_events_gz"), plain = fd.get("replay_events")
-    if (gz && typeof gz !== "string") out.append("replay_events_gz", gz as Blob, "replay.json.gz")
-    else if (typeof plain === "string") out.append("replay_events", plain)
   }
   out.set("repair_slots", JSON.stringify(missing))
   if (Object.keys(slotMap).length) out.set("slot_map", JSON.stringify(slotMap))

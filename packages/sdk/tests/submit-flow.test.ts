@@ -156,6 +156,7 @@ describe("sendForm (XHR) — progress, errors, and the stall watchdog", () => {
 
 // ── prepared submission: one body + one key for every attempt ─────────────────────────────────────────────────────────────────
 const payload = { type: "bug", description: "checkout broken", pageUrl: "https://c.example/cart", screenshots: [] as string[] }
+// A caller (or an older embed) may still hand the widget a replay buffer: the widget must not put it on the wire.
 const bigReplay = Array.from({ length: 400 }, (_, i) => ({ type: 3, timestamp: i, data: { source: 1, x: i, text: "lorem ipsum dolor sit amet " + i } }))
 describe("prepareSubmission / sendPrepared", () => {
   beforeEach(() => { vi.restoreAllMocks() })
@@ -182,9 +183,14 @@ describe("prepareSubmission / sendPrepared", () => {
     const a = await prepareSubmission(c, payload), b = await prepareSubmission(c, payload), e = await prepareSubmission(c, { ...payload, submissionKey: "caller-chosen-key-123456" })
     expect(a.key).not.toBe(b.key); expect(e.key).toBe("caller-chosen-key-123456")
   })
-  it("the replay is gzipped ONCE during preparation (retries re-send the compressed part, they do not re-compress)", async () => {
-    const prep = await prepareSubmission({ backendUrl: "https://k.test", projectId: "p1", firstParty: true, token: "" }, { ...payload, replayEvents: bigReplay })
-    expect(prep.fd.get("replay_events")).toBeNull(); expect(prep.fd.get("replay_events_gz")).toBeInstanceOf(Blob)
+  it("a widget ticket carries NO session replay data, even if a replay buffer is handed in (QA: replay removed from the widget)", async () => {
+    const bodies: FormData[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_u: string, init: any) => { bodies.push(init.body); return new Response(JSON.stringify({ id: "fb_nr", saved: true }), { status: 200 }) }))
+    const c = { backendUrl: "https://k.test", projectId: "p1", firstParty: true, token: "" }
+    const prep = await prepareSubmission(c, { ...payload, replayEvents: bigReplay } as any)
+    await sendPrepared(prep, c)
+    const keys = [...bodies[0].keys()]
+    expect(keys.filter((k) => /replay/i.test(k))).toEqual([]); expect(prep.fd.get("replay_events")).toBeNull(); expect(prep.fd.get("replay_events_gz")).toBeNull()
   })
   it("non-retryable server errors reach the caller with the server's reason, after exactly ONE request", async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ error: "Screenshot x.png exceeds 8 MB." }), { status: 400 }))
@@ -240,7 +246,6 @@ describe("buildRepairForm — re-send ONLY what the server says is missing", () 
     f.append("screenshot_thumbs", blob("t0.jpg", "image/jpeg")); f.append("screenshot_thumbs", blob("t1.jpg", "image/jpeg"))
     f.append("files", blob("f0.pdf")); f.append("files", blob("f1.pdf")); f.append("files", blob("f2.pdf"))
     f.append("recording", blob("r0.webm", "video/webm"))
-    f.set("replay_events_gz", blob("replay.json.gz", "application/gzip"))
     return f
   }
   it("includes just the missing slots, files them under their ORIGINAL slot ids, keeps the same key, drops the old Turnstile token", () => {
@@ -252,12 +257,11 @@ describe("buildRepairForm — re-send ONLY what the server says is missing", () 
     expect(JSON.parse(r.get("slot_map") as string)).toEqual({ files: ["file:1"], screenshots: ["shot:1"], recording: ["rec:0"] })
     expect(JSON.parse(r.get("repair_slots") as string)).toEqual(["file:1", "shot:1", "rec:0"])
     expect(r.get("submission_key")).toBe("key-aaaaaaaaaaaaaaaa"); expect(r.get("description")).toBe("d"); expect(r.get("project_id")).toBe("p1")
-    expect(r.get("cf_turnstile_token")).toBeNull(); expect(r.get("replay_events_gz")).toBeNull()
+    expect(r.get("cf_turnstile_token")).toBeNull()
   })
-  it("the replay slot re-sends the replay (gzip when that is what was prepared, plain otherwise)", () => {
-    expect((buildRepairForm(original(), ["replay"]).get("replay_events_gz") as File).name).toBe("replay.json.gz")
-    const plain = new FormData(); plain.set("description", "d"); plain.set("replay_events", "[1,2,3]")
-    expect(buildRepairForm(plain, ["replay"]).get("replay_events")).toBe("[1,2,3]")
+  it("a repair request never carries replay data (the widget no longer sends a replay slot)", () => {
+    const r = buildRepairForm(original(), ["replay", "file:0"])
+    expect([...r.keys()].filter((k) => /replay_events/.test(k))).toEqual([])
   })
   it("slots that do not exist are ignored (no empty parts), and an empty request carries no files", () => {
     const r = buildRepairForm(original(), ["file:9", "rec:5"])

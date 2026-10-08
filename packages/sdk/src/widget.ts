@@ -10,7 +10,6 @@ import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
-import { gzipReplayField } from "../../core/src/integrations/backend"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { computeSelector, describeElement } from "./element-selector"
@@ -19,7 +18,6 @@ import { icon } from "@klavity/core/icons"
 // KLA-726: keep in sync with the extension card menu — shared source of truth in @klavity/core/context-menu.
 import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
-import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
 import {
@@ -733,18 +731,8 @@ async function mount() {
   // Announce widget presence so the extension can yield (Task 3 handshake).
   document.dispatchEvent(new CustomEvent("klavity:widget-ready"))
 
-  // ── G1 session replay: rolling ~60s rrweb buffer, masked by default, attached on submit.
-  // rrweb (~260 KB) is lazy-loaded from the backend AFTER mount so it's not in the widget IIFE.
-  // Disable per-page with data-replay="off". Best-effort: any failure degrades to no-replay.
-  const replayEnabled = (currentScript()?.dataset?.replay || "on") !== "off"
-  const replay: SessionReplay = createSessionReplay({
-    backendUrl: cfg.backendUrl,
-    enabled: replayEnabled,
-  })
-  // JTBD 1.8: the composer shows an attached-proof chip. It's 'attached' when the buffer already holds a
-  // scrubbable recording (rrweb loaded + a full snapshot captured) and 'unavailable' when replay is off
-  // or the recorder script never loaded. rrweb loads async, so the chip is re-evaluated after open.
-  const replayChipState = (): 'attached' | 'unavailable' => (replayEnabled && replay.hasRecording()) ? 'attached' : 'unavailable'
+  // Session replay is NOT recorded by the widget (QA request): no rrweb download, no rolling buffer, nothing replay-related
+  // in the ticket request. Screenshots, file attachments and user-triggered "Record me" videos are unaffected.
 
   const firstParty = isFirstParty(location.origin, cfg.backendUrl)
 
@@ -1613,7 +1601,7 @@ async function mount() {
           context: consoleContext(p.attachConsole === true),
           // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
           reporter: _reporter, clientInfo: captureClientInfo(),
-          replayEvents: replay.snapshot(), annotations: p.annotations,
+          annotations: p.annotations,
           // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
           // project rejects the submit with 400. On the default anonymous gate this is undefined.
           reporterEmail: p.reporterEmail, turnstileToken,
@@ -1737,8 +1725,6 @@ async function mount() {
         }
         evMinimizing = false
       },
-      // JTBD 1.8: attached-proof chip — tell the reporter whether a session replay will ride along.
-      replayState: replayChipState(),
       // NON-BLOCKING default: close the modal + backdrop immediately on Submit and let the widget's
       // bottom-right pill drive the upload. Turned OFF only for an interactive success screen (leadgen
       // lead form / CTA), which must stay in the modal so the user can engage before it dismisses.
@@ -1748,18 +1734,6 @@ async function mount() {
       success: useInteractiveSuccess ? { copy: successCfg, onLead: postLead } : undefined,
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
-    // JTBD 1.8: rrweb lazy-loads (a few hundred ms), so the buffer may only become playable AFTER the
-    // composer opens. Poll briefly and flip the chip to 'attached' once a scrubbable recording exists.
-    if (replayEnabled) {
-      let tries = 0
-      const chipTimer = setInterval(() => {
-        // Stop once this composer closed (a new one, or none, is tracked) or the recording is ready.
-        if (composer !== ctrl || replay.hasRecording() || ++tries > 20) {
-          clearInterval(chipTimer)
-          if (composer === ctrl) ctrl.setReplayState(replayChipState())
-        }
-      }, 250)
-    }
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     if (ev) {
       // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
@@ -2646,7 +2620,7 @@ export type PreparedSubmission = { fd: FormData; key: string; sent: boolean }
 
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity' },
 ): Promise<PreparedSubmission> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
@@ -2679,13 +2653,11 @@ export async function prepareSubmission(
     // PX4 #439/#428: reporter identity + captured browser/app info as their own /api/feedback fields.
     reporter: payload.reporter,
     clientInfo: payload.clientInfo,
-    replayEvents: payload.replayEvents,
     // KLAVITYKLA-217: forward the full per-image annotation map so markup on every screenshot reaches
     // the server as annotations_json (buildFeedbackForm serializes it). Previously omitted here, which
     // silently dropped the overlay from the widget submit path.
     annotations: payload.annotations,
   })
-  await gzipReplayField(fd) // latency: send the (large) rolling replay buffer gzipped (plain field kept as the fallback)
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
   if (payload.reporterEmail) fd.set("reporter_email", payload.reporterEmail)

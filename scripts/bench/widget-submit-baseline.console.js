@@ -4,7 +4,7 @@
 // The whole run takes about 1–2 minutes and CREATES TEST TICKETS (listed in __bench.tickets — it never deletes anything).
 //
 // WHAT IT MEASURES (the same fixed inputs every time, so before/after runs are comparable):
-//   A. BASELINE — N submits (default 3) of: synthetic 3840x2100 capture → JPEG ≤2000px + 320px thumb, a 200KB PDF, a ~690KB replay.
+//   A. BASELINE — N submits (default 3) of: synthetic 3840x2100 capture → JPEG ≤2000px + 320px thumb, a 200KB PDF, a ~690KB replay ONLY when window.__BENCH_WITH_REPLAY = true (the widget sends none any more; default off).
 //        per run: browser prep | wire KB | upload (upload start → upload done) | server wait (upload done → response headers) | total,
 //        plus the server's own Server-Timing phases when the build sends them.
 //   B. MERGED REPORT — the same text filed twice: the 2nd report (with a PDF) must merge into the 1st ticket, be flagged deduped, attach
@@ -14,13 +14,14 @@
 //        build that predates them.)
 //
 // SETTINGS (set before running):  window.__BENCH_PROJECT_ID (default: Klavity Dogfood on dev)   window.__BENCH_RUNS (default 3)
-//                                 window.__BENCH_GZIP_REPLAY = true  (send the replay gzipped, like the new widget; default false = same bytes as the old baseline)
+//                                 window.__BENCH_WITH_REPLAY = true  (re-create the OLD request that carried a ~690KB replay; default false = what the widget sends now)
+//                                 window.__BENCH_GZIP_REPLAY = true  (with __BENCH_WITH_REPLAY: send that replay gzipped, like the previous build)
 //                                 window.__BENCH_WITH_KEY = false    (omit submission_key, e.g. to measure a build without idempotency)
 (() => {
   const DOGFOOD_DEV = "proj_d5b1302c-a336-49ce-a38d-933da10b860d"
   const PID = window.__BENCH_PROJECT_ID || DOGFOOD_DEV, RUNS = Number(window.__BENCH_RUNS || 3)
-  const WITH_KEY = window.__BENCH_WITH_KEY !== false, GZ = window.__BENCH_GZIP_REPLAY === true
-  const B = (window.__bench = { status: "running", startedAt: new Date().toISOString(), origin: location.origin, project: PID, withKey: WITH_KEY, gzipReplay: GZ, baseline: [], merge: null, lostResponse: null, tickets: [], errors: [], summary: null })
+  const WITH_KEY = window.__BENCH_WITH_KEY !== false, REPLAY = window.__BENCH_WITH_REPLAY === true, GZ = window.__BENCH_GZIP_REPLAY === true
+  const B = (window.__bench = { status: "running", startedAt: new Date().toISOString(), origin: location.origin, project: PID, withKey: WITH_KEY, withReplay: REPLAY, gzipReplay: GZ, baseline: [], merge: null, lostResponse: null, tickets: [], errors: [], summary: null })
   const ms = () => performance.now(), sleep = (t) => new Promise((r) => setTimeout(r, t)), med = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null }
   const rnd = () => Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   const note = (t) => B.tickets.push(t)
@@ -58,8 +59,10 @@
         const fd = new FormData(); fd.set("type", "bug"); fd.set("description", "[perf baseline - safe to delete] run " + run + " " + rnd()); fd.set("page_url", location.href); fd.set("project_id", PID)
         fd.set("context", JSON.stringify({ pageUrl: location.href, userAgent: navigator.userAgent, consoleErrors: [], networkFailures: [] }))
         if (WITH_KEY) fd.set("submission_key", crypto.randomUUID())
-        const replayJson = JSON.stringify(EVENTS)
-        if (GZ && typeof CompressionStream === "function") fd.set("replay_events_gz", await new Response(new Blob([replayJson]).stream().pipeThrough(new CompressionStream("gzip"))).blob(), "replay.json.gz"); else fd.set("replay_events", replayJson)
+        if (REPLAY) {   // legacy comparison only: the widget no longer records or sends a replay
+          const replayJson = JSON.stringify(EVENTS)
+          if (GZ && typeof CompressionStream === "function") fd.set("replay_events_gz", await new Response(new Blob([replayJson]).stream().pipeThrough(new CompressionStream("gzip"))).blob(), "replay.json.gz"); else fd.set("replay_events", replayJson)
+        }
         const t3 = ms()
         fd.append("screenshots", d2b(shot), "screenshot.png"); fd.append("screenshot_thumbs", d2b(thumb), "thumb.jpg"); fd.append("files", new File([PDF], "perf-doc.pdf", { type: "application/pdf" })); const t4 = ms()
         const wire = (await new Response(fd).blob()).size
@@ -95,7 +98,7 @@
         B.lostResponse = { skipped: "the deployed /widget.js predates prepareSubmission/sendPrepared (deploy the new build first)" }
       } else {
         const tok = rnd(), ltext = "[perf bench lost response - safe to delete] " + tok, cfg = { backendUrl: location.origin, projectId: PID, firstParty: true, token: "" }
-        const prep = await W.prepareSubmission(cfg, { type: "bug", description: ltext, pageUrl: location.href, screenshots: [CAPTURE.length ? await toJpeg(CAPTURE, 1200, 0.8) : ""], replayEvents: EVENTS.slice(0, 600) })
+        const prep = await W.prepareSubmission(cfg, { type: "bug", description: ltext, pageUrl: location.href, screenshots: [CAPTURE.length ? await toJpeg(CAPTURE, 1200, 0.8) : ""] })
         const orig = XMLHttpRequest.prototype.send; let sends = 0; const keys = [], infos = []
         XMLHttpRequest.prototype.send = function (body) { sends++; try { keys.push(body.get("submission_key")) } catch { /* not our form */ }
           if (sends === 1) { const me = this; me.onload = function () { me.onerror && me.onerror() } }   // the reply arrives but the browser treats it as a dropped connection
