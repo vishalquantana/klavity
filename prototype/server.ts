@@ -4116,7 +4116,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // deploy propagates to embedded widgets immediately instead of sitting stale for up to 5 minutes.
       // Bun.file sets Last-Modified/ETag, so unchanged loads return a cheap 304 rather than re-downloading.
       // Previously `public, max-age=300` cached it for 5 min with no revalidation → "widget didn't refresh".
-      return new Response(Bun.file("../packages/sdk/dist/klavity-widget.iife.js"), {
+      return new Response(Bun.file(REPO_ROOT + "/packages/sdk/dist/klavity-widget.iife.js"), {
         headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
       })
     }
