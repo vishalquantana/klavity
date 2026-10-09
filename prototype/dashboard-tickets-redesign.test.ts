@@ -25,8 +25,9 @@ test("quick-filter chip row renders the five chips + advanced-filter toggle", ()
   expect(HTML).toContain('id="tktQuickChips"')
   ;["all", "mine", "unassigned", "high", "auto"].forEach(q => expect(HTML).toContain(`data-q="${q}"`))
   expect(HTML).toContain('id="tktMoreFilters"')
-  // The five always-visible dropdowns are now collapsed by default.
-  expect(HTML).toContain('class="tkt-fb hide" id="tktFilterBar"')
+  // KD-209: the five filter dropdowns are expanded by default; the toggle only collapses them.
+  expect(HTML).toContain('class="tkt-fb" id="tktFilterBar"')
+  expect(HTML).toContain('class="tkt-morefilters on" id="tktMoreFilters" type="button" aria-expanded="true"')
 })
 
 test("chips map onto the EXISTING _tktFilters predicate fields (no rebuilt filtering)", () => {
