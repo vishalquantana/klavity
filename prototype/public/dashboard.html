@@ -22419,9 +22419,39 @@
           if (swatch) swatch.className = swatch.classList.contains("prop-dot") ? "prop-dot ds-" + v : "prop-sq dp-" + v
           menu.querySelectorAll(".kdd-item").forEach(i => i.setAttribute("aria-checked", String(i.getAttribute("data-val") === v)))
         })
-        document.addEventListener("click", () => closeAll(null))
-        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(null) })
       })
+      // KD-206: outside-click / Escape close. Listen in the CAPTURE phase: detailEl stops click
+      // propagation (so the row behind doesn't collapse), which meant a bubble-phase document listener
+      // never heard clicks elsewhere in the panel and the menu stayed open. One pair per detailEl (not
+      // per dropdown), dropped once the panel leaves the DOM so re-renders don't pile up listeners.
+      if (detailEl.querySelector(".kdd")) {
+        const closeKdd = (keep) => detailEl.querySelectorAll(".kdd").forEach(k => {
+          if (k === keep) return
+          const m = k.querySelector(".kdd-menu"), b = k.querySelector(".kdd-btn")
+          if (m && !m.classList.contains("hide")) { m.classList.add("hide"); if (b) b.setAttribute("aria-expanded", "false") }
+        })
+        // Built before it's attached, so only unbind once it HAS been in the DOM and then left it.
+        let _wasConnected = false
+        const gone = () => {
+          if (detailEl.isConnected) { _wasConnected = true; return false }
+          if (_wasConnected) unbind()
+          return true
+        }
+        const onDocClick = (ev) => {
+          if (gone()) return
+          closeKdd(ev.target instanceof Element ? ev.target.closest(".kdd") : null)
+        }
+        const onDocKey = (ev) => {
+          if (gone()) return
+          if (ev.key === "Escape") closeKdd(null)
+        }
+        const unbind = () => {
+          document.removeEventListener("click", onDocClick, true)
+          document.removeEventListener("keydown", onDocKey)
+        }
+        document.addEventListener("click", onDocClick, true)
+        document.addEventListener("keydown", onDocKey)
+      }
 
       const statusSelEl = detailEl.querySelector(".tkt-status-sel")
       if (statusSelEl) {
