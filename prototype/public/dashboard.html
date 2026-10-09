@@ -15845,18 +15845,18 @@
             </div>
           </div>
           <!-- KLA-562: quick-filter chips (primary control) — map onto the existing _tktFilters predicates.
-           The five dropdowns below move behind the "Filters" toggle (no longer always-visible). -->
+           The five dropdowns below are visible by default (KD-209); the "Filters" toggle collapses them. -->
           <div class="tkt-chips" id="tktQuickChips">
             <button class="tkt-chip on" data-q="all" type="button">All</button>
             <button class="tkt-chip" data-q="mine" type="button">My items</button>
             <button class="tkt-chip" data-q="unassigned" type="button">Unassigned</button>
             <button class="tkt-chip" data-q="high" type="button">High priority</button>
             <button class="tkt-chip" data-q="auto" type="button">Auto-filed</button>
-            <button class="tkt-morefilters" id="tktMoreFilters" type="button" aria-expanded="false"
+            <button class="tkt-morefilters on" id="tktMoreFilters" type="button" aria-expanded="true"
               title="Status / label / more filters">&#9776; Filters</button>
           </div>
-          <!-- KLA-169: Shared filter bar (reused by board + list views) — KLA-562: collapsed by default -->
-          <div class="tkt-fb hide" id="tktFilterBar">
+          <!-- KLA-169: Shared filter bar (reused by board + list views) — KD-209: expanded by default -->
+          <div class="tkt-fb" id="tktFilterBar">
             <span class="tkt-fb-label">Filter</span>
             <select id="fbStatus" title="Filter by status">
               <option value="">All statuses</option>
