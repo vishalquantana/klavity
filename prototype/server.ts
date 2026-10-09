@@ -14754,7 +14754,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             reportType: "bug",
           })
           // Manual tickets start as "open" regardless of priority (override initial "new" status).
-          await updateFeedbackMeta(proj.id, id, { status: "open" })
+          // KD-228: insertFeedback does not persist the assignee column (same as the /api/v1/tickets route), so
+          // set it here too — otherwise the ticket opens Unassigned even though the assignee was emailed.
+          await updateFeedbackMeta(proj.id, id, { status: "open", assignee: assignee || null })
           // A manually-created ticket IS the triage-accept (a human wrote it), but it never passes
           // through the PATCH route that fires the auto-copy hook — so fire it here, or a manual
           // ticket silently never reaches Jira/Plane/GitHub/Linear.
