@@ -11,7 +11,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -55,8 +55,17 @@ import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib
 import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
-import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
+import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
+import { phaseTimer } from "./lib/phase-timer"
+import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
+import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
+import {
+  claimSubmission, refreshClaim, releaseClaim, finishDedupedSubmission, saveEvidenceState, evidenceStateStatement, pruneSubmissionKeys, PROCESS_OWNER,
+  parseSubmissionKey, parseRepairSlots, parseSlotMap, slotFor, deterministicId, missingSlots, type EvidenceState,
+} from "./lib/submissions"
+import { insertFeedbackForSubmission, projectAccessWithRow, widgetConfigFromProject, appendFeedbackRecordings, projectHasOtherFeedback, mergeReportIntoTicketForSubmission, resolveMergeTarget } from "./lib/db"
+import type { DeterministicKey } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
 import { runRetentionSweep } from "./lib/retention"
@@ -64,7 +73,7 @@ import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-
 import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
-import { encryptSecret, decryptSecret } from "./lib/crypto"
+import { encryptSecret, decryptSecret, userCacheUid } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
@@ -98,6 +107,8 @@ import { validateModalConfigInput, resolveModalConfig } from "../packages/core/s
 import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-clarity"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
+import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
@@ -134,7 +145,7 @@ import { enrichExpectation } from "./lib/expectations-enrich"
 import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/sims-oracle"
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
-import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
+import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels, getSuggestedLabelsState } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
@@ -1202,16 +1213,21 @@ async function resolveCitations(simId: string | null, citedTraitIds: any, projec
 async function findDuplicateFeedback(args: {
   projectId: string; urlPath: string | null; issueType?: string | null
   citedTraitIds?: string[]; title: string; observation: string; issueKey?: string | null
+  /** The project's dedupe switch when the caller already holds the project row (saves a query); undefined → look it up. */
+  dedupEnabled?: boolean
 }): Promise<string | null> {
   // KLA dedup-smart: a project can turn repeat-report merging OFF entirely — then every submission is its
   // own ticket (no "Reported N×"). Fail-open to ON if the lookup errors so we never lose the dedup default.
-  if (!(await getProjectDedupEnabled(args.projectId).catch(() => true))) return null
+  const dedupOn = args.dedupEnabled ?? (await getProjectDedupEnabled(args.projectId).catch(() => true))
+  if (!dedupOn) return null
   const issueKey = args.issueKey ?? issueKeyFor({
     projectId: args.projectId, urlPath: args.urlPath ?? "/",
     issueType: args.issueType ?? null, citedTraitIds: args.citedTraitIds ?? [],
   })
-  const exact = await findFeedbackByIssueKey(args.projectId, issueKey)
-  const recent = exact ? [] : await listRecentFeedbackForDedup(args.projectId, 50)
+  // The exact-key lookup and the recent-reports list are independent reads → ONE round trip (the list is simply ignored when the exact
+  // key matched — the decision below is identical to the old "exact first, list only when there was no exact match").
+  const [exact, recentAll] = await Promise.all([findFeedbackByIssueKey(args.projectId, issueKey), listRecentFeedbackForDedup(args.projectId, 50)])
+  const recent = exact ? [] : recentAll
   // KLA dedup-smart: a BROAD key (no cited traits — e.g. a human widget report keyed by project|page|type)
   // must NOT merge unconditionally, or two unrelated bugs on the same page collapse into one ("Testing" →
   // a real bug). Require a low similarity floor for the exact match on such keys. Sim/AutoSim reports cite
@@ -1340,6 +1356,26 @@ function withWidgetCors(req: Request, res: Response): Response {
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 }
+// Step 5: like json() but with MULTIPLE Set-Cookie headers (a plain headers object can carry only one).
+function jsonWithCookies(body: unknown, status: number, cookies: string[]) {
+  const h = new Headers({ "content-type": "application/json" })
+  for (const c of cookies) h.append("Set-Cookie", c)
+  return new Response(JSON.stringify(body), { status, headers: h })
+}
+// Step 5: the cookies that establish an authenticated browser session — THE one place every session-creation
+// path goes through so they can't drift. klav_session (HttpOnly) is the only credential; klav_uid is the
+// non-secret, JS-readable per-user cache-namespace marker (userCacheUid) set alongside it. Keep klav_session
+// FIRST: lib/dogfood-receiving parses the combined set-cookie header for it.
+function sessionCookies(sid: string, email: string): string[] {
+  const out = [cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE)]
+  const uid = userCacheUid(email)
+  if (uid) out.push(uidCookie(uid, SESSION_DAYS * 86400, SECURE))
+  return out
+}
+// Step 5: cookies cleared whenever the authenticated session is cleared (logout / self-erasure).
+function sessionClearCookies(): string[] {
+  return [clearCookie("klav_session", SECURE), clearProjectCookie(SECURE), clearUidCookie(SECURE)]
+}
 // KLA-551: server.ts-local JSON parse (db.ts's safeJsonParse is module-private, not exported). Used by
 // the connector mappings endpoints; returns null on empty/invalid so callers can `|| {}` a safe default.
 function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
@@ -1390,8 +1426,11 @@ let DASHBOARD_HTML: string | null = null
 // inputs that vary within a release; carries a content-hash ETag so the browser can revalidate with
 // a cheap 304 instead of re-downloading the whole shell every navigation.
 let _dashRendered: { key: string; body: string; etag: string } | null = null
-async function dashboardPage(req?: Request): Promise<Response> {
-  if (DASHBOARD_HTML === null) {
+// KD-229: `bootTicket` serves the dashboard AT a ticket permalink (/<slug>/<KEY>-<n> or /t/<id>) so a
+// reload of the in-dashboard full ticket page keeps the dashboard shell instead of the standalone
+// ticket.html. The ticket/project ids ride in a <meta> the client reads on boot.
+async function dashboardPage(req?: Request, me?: string | null, bootTicket?: { id: string; projectId: string }): Promise<Response> {
+  if (DASHBOARD_HTML === null || process.env.NODE_ENV !== "production") {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
     const raw = await Bun.file(PUB + "/dashboard.html").text()
@@ -1405,7 +1444,7 @@ async function dashboardPage(req?: Request): Promise<Response> {
   const hasFounding = DASHBOARD_HTML.includes("__FOUNDING_STATE__")
   const spots = hasFounding ? await getFoundingSpots(countFoundingAccounts) : null
   const key = replay + "|" + (spots ? `${spots.known}:${spots.taken}:${spots.remaining}:${spots.soldOut}` : "-")
-  if (!_dashRendered || _dashRendered.key !== key) {
+  if (!_dashRendered || _dashRendered.key !== key || process.env.NODE_ENV !== "production") {
     let body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", replay)
     // KLAVITYKLA-366: the in-app Founding ribbon must respect the same sold-out state as the website
     // — the app may never keep promoting an offer we have publicly closed.
@@ -1421,10 +1460,26 @@ async function dashboardPage(req?: Request): Promise<Response> {
   // 304 instead of re-downloading ~930KB every navigation. Compression is delegated to Caddy on-box
   // (deploy/Caddyfile: `encode zstd gzip`) — do NOT app-gzip here or it would double-encode.
   const cacheHeaders = { "cache-control": "private, max-age=0, must-revalidate", "etag": etag, "vary": "Cookie" }
-  if (req && req.headers.get("if-none-match") === etag) {
-    return new Response(null, { status: 304, headers: cacheHeaders })
+  // Step 5 (defense in depth): (re)assert klav_uid for the user this response authenticated, so the page's JS
+  // always sees the right per-user cache namespace — also on the 304. A per-response header only: the shared
+  // body and ETag stay identical for every user, so the in-process render cache and 304 path are unaffected.
+  const uid = me ? userCacheUid(me) : ""
+  const withUid = (init: Record<string, string>) => {
+    const h = new Headers(init)
+    if (uid) h.append("Set-Cookie", uidCookie(uid, SESSION_DAYS * 86400, SECURE))
+    return h
   }
-  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8", ...cacheHeaders } })
+  if (bootTicket) {
+    // Per-ticket body → never the shared ETag/304 (that validator belongs to the plain shell).
+    const meta = `<meta name="klav-boot-ticket" data-id="${escapeHtml(bootTicket.id)}" data-project="${escapeHtml(bootTicket.projectId)}">`
+    return new Response(body.replace("<head>", "<head>\n  " + meta), {
+      headers: withUid({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "vary": "Cookie", "x-robots-tag": "noindex, nofollow" }),
+    })
+  }
+  if (req && req.headers.get("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers: withUid(cacheHeaders) })
+  }
+  return new Response(body, { headers: withUid({ "content-type": "text/html; charset=utf-8", ...cacheHeaders }) })
 }
 // Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var and
 // __CAL_BOOKING_URL__ from CAL_BOOKING_URL (KLAVITYKLA-331 — founder booking CTA).
@@ -1839,18 +1894,27 @@ async function bearerEmail(req: Request): Promise<string | null> {
 
 // Resolve the project a request targets: explicit ?project=:id if accessible, else the caller's
 // first accessible project. Returns null if the caller has no accessible project. Gated by projectAccess.
-async function resolveProject(email: string, requested?: string | null): Promise<{ id: string; access: 'admin' | 'member' } | null> {
+//
+// `knownProjects` (optional, /api/dashboard only): project rows the caller already loaded this request via
+// listAccessibleProjects. When the target is among them, projectAccessForRow() is used — identical
+// accountRole/project_members authorization, minus projectAccess's redundant projectById. A target NOT in
+// the list falls through to the unchanged projectAccess(). Every other caller omits it → unchanged.
+async function resolveProject(email: string, requested?: string | null, knownProjects?: ProjectRow[]): Promise<{ id: string; access: 'admin' | 'member' } | null> {
+  const accessFor = (id: string) => {
+    const known = knownProjects?.find(p => p.id === id)
+    return known ? projectAccessForRow(email, known) : projectAccess(email, id)
+  }
   // F5: a project-bound Bearer token may ONLY act on its bound project. Reject a mismatched explicit
   // request, and force the bound project when none was requested — so a leaked widget token can't reach
   // the owner's other projects via ?project= or the first-project fallback.
   const bound = reqCtx.getStore()?.boundProject
   if (bound) {
     if (requested && requested !== bound) return null
-    const a = await projectAccess(email, bound)
+    const a = await accessFor(bound)
     return a ? { id: bound, access: a } : null
   }
   if (requested) {
-    const a = await projectAccess(email, requested)
+    const a = await accessFor(requested)
     if (a) return { id: requested, access: a }
     return null
   }
@@ -3970,6 +4034,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path.startsWith("/fonts/") && /^[a-z0-9-]+\.woff2$/.test(path.slice(7))) {
       return new Response(Bun.file(SITE + "/fonts/" + path.slice(7)), { headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" } })
     }
+    // ── local storage fallback (when S3 is not configured in local dev) ──
+    if (req.method === "GET" && path.startsWith("/uploads/")) {
+      const rel = decodeURIComponent(path.slice(9))
+      if (!rel.includes("..")) {
+        const f = Bun.file(PUB + "/uploads/" + rel)
+        if (await f.exists()) return new Response(f)
+      }
+    }
     // ── permanent signed screenshot link (for external tracker tickets, never expires, revocable) ──
     // /img/<screenshotId>.<hmac> — HMAC-gated (KLAV_SECRET), streams the PRIVATE S3 object. Token is
     // unforgeable; revoked by deleting the screenshots row (→ 404). Keeps the bucket private while the
@@ -4068,7 +4140,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // deploy propagates to embedded widgets immediately instead of sitting stale for up to 5 minutes.
       // Bun.file sets Last-Modified/ETag, so unchanged loads return a cheap 304 rather than re-downloading.
       // Previously `public, max-age=300` cached it for 5 min with no revalidation → "widget didn't refresh".
-      return new Response(Bun.file("../packages/sdk/dist/klavity-widget.iife.js"), {
+      return new Response(Bun.file(REPO_ROOT + "/packages/sdk/dist/klavity-widget.iife.js"), {
         headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
       })
     }
@@ -4864,13 +4936,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // (GA4 + PostHog) exactly once for genuinely-new accounts — a returning login carries false.
         // KLA-840: expose `internal` so the client conversion handlers can tag GA4/PostHog internal
         // Quantana signups (traffic_type:'internal' / is_internal person prop) for funnel exclusion.
-        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew, internal: isInternalEmail(e) }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+        return jsonWithCookies({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew, internal: isInternalEmail(e) }, 200, sessionCookies(sid, e))
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
       const sid = parseCookies(req.headers.get("cookie"))["klav_session"]
       if (sid && db) await deleteSession(sid).catch(() => {})
-      return json({ ok: true }, 200, { "Set-Cookie": clearCookie("klav_session", SECURE) })
+      // Step 5: clear the session AND the browser identity/project cookies (klav_uid, klav_proj) together.
+      return jsonWithCookies({ ok: true }, 200, sessionClearCookies())
     }
 
     // ── Enterprise SSO — OIDC (KLAVITYKLA-9) ──────────────────────────────────
@@ -5263,7 +5336,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = token()
       await createSession(sid, claims.email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const headers = new Headers({ Location: "/dashboard" })
-      headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
+      for (const c of sessionCookies(sid, claims.email)) headers.append("Set-Cookie", c)
       headers.append("Set-Cookie", clearSsoStateCookie)
       return new Response(null, { status: 302, headers })
     }
@@ -5319,7 +5392,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = token()
       await createSession(sid, identity.email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const headers = new Headers({ Location: "/dashboard" })
-      headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
+      for (const c of sessionCookies(sid, identity.email)) headers.append("Set-Cookie", c)
       headers.append("Set-Cookie", clearSsoStateCookie)
       return new Response(null, { status: 302, headers })
     }
@@ -5360,13 +5433,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         logAudit({ action: "gdpr_erasure", actorEmail: meD, targetEmail: victim, ip: clientIp(req, server), meta: { s3Keys: s3Keys.length } })
         // If the caller erased themselves, clear their session cookie too.
         const clearSelf = victim === meD
-        return json({ ok: true, erased: victim, screenshots: s3Keys.length }, 200, clearSelf ? { "Set-Cookie": clearCookie("klav_session", SECURE) } : undefined)
+        return jsonWithCookies({ ok: true, erased: victim, screenshots: s3Keys.length }, 200, clearSelf ? sessionClearCookies() : [])
       } catch (err: any) { return json(oops(err, "delete"), 500) }
     }
 
     // ── feedback intake (extension backend mode) ──
     if (req.method === "POST" && path === "/api/feedback") {
+      // Idempotent-submission bookkeeping hoisted so the failure exits can clean up: objects this request uploaded, whether a ticket
+      // resulted, and the claim we own. When a request ends WITHOUT a ticket we free the claim (an immediate retry must not wait for the
+      // stale window) and delete what we uploaded (a retry re-uploads under the same deterministic keys anyway).
+      const createdObjectKeys: string[] = []
+      let ticketCreated = false
+      const evidence: EvidenceState = {}   // per-slot upload state of THIS submission (ok / failed / pending)
+      let subOwn: { projectId: string; key: string } | null = null
+      const abandonSubmission = async () => {
+        try { if (subOwn) await releaseClaim(subOwn.projectId, subOwn.key) } catch { /* the stale window frees it anyway */ }
+        for (const k of createdObjectKeys.splice(0)) void deleteObject(k).catch(() => {})
+      }
       try {
+        // Step 4 (widget-submit latency): per-phase timer → Server-Timing header + a log line (see the end of this handler).
+        const pt = phaseTimer()
+        // The same Bearer / session lookup was repeated three times below (anon check, bearer email, actor). Each is a DB
+        // read when a credential is present, so resolve each at most once per request.
+        let _bearerOnce: Promise<string | null> | undefined, _sessionOnce: Promise<string | null> | undefined
+        const bearerOnce = () => (_bearerOnce ||= bearerEmail(req))
+        const sessionOnce = () => (_sessionOnce ||= sessionEmail(req))
         // Anonymous browser path: browser requests always carry an Origin header. The embeddable
         // report widget runs cross-origin on customers' own sites, so an end-user must be able to
         // file a ticket WITHOUT a Klavity account. We no longer block foreign origins outright —
@@ -5376,7 +5467,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // reqOrigin/baseOrigin are computed ONCE so the gate AND the persist branch below can reuse them.
         const reqOrigin = req.headers.get("origin") || ""
         const baseOrigin = (() => { try { return new URL(BASE).origin } catch { return "" } })()
-        const anonActor = !(await bearerEmail(req)) && !(await sessionEmail(req))
+        const anonActor = !(await bearerOnce()) && !(await sessionOnce())
+        pt.mark("auth")
 
         // SECURITY (KLA-559): the anon abuse limiter must NOT be skippable by omitting the Origin header.
         // Previously BOTH anon limiters lived inside the `anonActor && reqOrigin` block, so a non-browser
@@ -5392,6 +5484,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
 
         const form = await req.formData()
+        pt.mark("parse")
+        // Idempotency (see lib/submissions.ts): ONE client-chosen key per report, reused on every retry. `slot_map` / `repair_slots` let
+        // a retry re-upload only the evidence parts that failed. All optional — an older client simply gets today's behaviour.
+        const subKeyParsed = parseSubmissionKey(form.get("submission_key") ?? req.headers.get("idempotency-key"))
+        if (subKeyParsed === "invalid") return wjson({ error: "Invalid submission key." }, 400)
+        const submissionKey: string | null = subKeyParsed
+        const repairSlots = parseRepairSlots(form.get("repair_slots"))
+        const slotMap = parseSlotMap(form.get("slot_map"))
 
         // Mobile SDK path: a non-browser caller (no Origin) may authorize an anonymous submit with a
         // per-project publishable key (pk_…) instead of the Origin/Turnstile gate. The project is derived
@@ -5441,6 +5541,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { const u = new URL(raw); return u.origin + u.pathname } catch { return raw.split(/[?#]/)[0] || null }
         })()
         const reporterEmail = String(form.get("reporter_email") || "").trim()
+        // QPQ-31: the reporter picked "Add <email> as a contact" under the composer's Email field. Intent
+        // only — the server still decides what it grants, and a contact grants NO access to the project.
+        // Creation is tied to an actual report rather than a standalone anonymous endpoint, so it inherits
+        // the submit path's rate limits and can't be used to bulk-mint rows.
+        const wantsContact = String(form.get("create_contact") || "") === "1"
         const validReporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reporterEmail) && reporterEmail.length <= 200
         // Report type from the composer's issue-type selector (packages/core submit payload `type`/`kind`).
         // PX4 #411: the enhanced composer can file Task/Query in addition to Bug/Feature; those map to the
@@ -5459,8 +5564,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // the replay buffer. Detect attached evidence cheaply BEFORE the 400: at least one screenshot File
         // or a non-empty replay buffer suffices. A report with NEITHER description NOR evidence still 400s.
         const hasScreenshotEvidence = form.getAll("screenshots").some((f) => f instanceof File && f.size > 0)
-        const replayRawEarly = String(form.get("replay_events") || "")
-        const hasReplayEvidence = replayRawEarly.length > 2 && replayRawEarly !== "[]" && replayRawEarly !== "null"
+        const hasReplayEvidence = replayEvidencePresent(form)   // plain `replay_events` JSON OR the gzip part `replay_events_gz`
         const hasEvidence = hasScreenshotEvidence || hasReplayEvidence
         if (!description && !hasEvidence) return wjson({ error: "Add a description or attach a screenshot." }, 400)
         if (description.length > 5000) return wjson({ error: "Description too long." }, 400)
@@ -5468,6 +5572,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Anonymous browser report → enforce the project's report gate (project-scoped, rate-limited).
         // anonWidgetAllowed unlocks the cross-origin anonymous persist branch further below.
         let anonWidgetAllowed = false
+        // The project row fetched for the cross-origin gate is reused below instead of fetching the same row again.
+        let gateProjCached: Awaited<ReturnType<typeof projectById>> | null = null
         if (anonActor && reqOrigin) {
           // The per-IP limit already ran up-front (Origin-independent, above). `ip` is retained here for
           // the Turnstile verification below, which binds the challenge to the caller's address.
@@ -5478,13 +5584,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // after submit. A logged-in dashboard user isn't anonymous, so the gate never applies to them.
           if (reqOrigin !== baseOrigin) {
             const reqProjectId = String(form.get("project_id") || "")
+            // ONE project read: the widget config (report gate) is derived from the row itself — getWidgetConfig used to re-read the
+            // same row. A failure still surfaces as before (the outer catch → 500); an unknown project still 404s first.
             const gateProj = reqProjectId ? await projectById(reqProjectId) : null
+            const gateWidgetCfg = gateProj ? widgetConfigFromProject(gateProj) : null
             if (!gateProj) return wjson({ error: "Unknown project." }, 404)
+            gateProjCached = gateProj
             if (!rlAllow(`fbanon:proj:${reqProjectId}`, FEEDBACK_ANON_PER_PROJECT, FEEDBACK_ANON_WINDOW)) return wjson({ error: "rate limited" }, 429)
             // Default gate is now 'anonymous' (JTBD 1.7): identity is no longer demanded before value is
             // delivered on the highest-volume path. Projects that explicitly chose 'email'/'login' keep
             // their setting. An unrecognized/missing value resolves to 'anonymous'.
-            const gate = (await getWidgetConfig(reqProjectId))?.reportGate || "anonymous"
+            const gate = gateWidgetCfg?.reportGate || "anonymous"
             if (gate === "login") return wjson({ error: "Sign in to Klavity to report on this project." }, 401)
             if (gate === "email" && !validReporterEmail) return wjson({ error: "A valid email is required to submit." }, 400)
             // Turnstile replaces the email gate's accidental spam-shield role on the anonymous path.
@@ -5598,12 +5708,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // (a JSON array string). Parse defensively here; an oversize/garbage field must NEVER fail the
         // bug submission. The per-event-buffer byte cap below is a coarse pre-parse guard; the durable
         // size cap (oldest-first trim) lives in saveFeedbackReplay.
-        const REPLAY_RAW_CAP = 6 * 1024 * 1024 // 6MB of raw JSON before gzip — reject anything larger outright
-        let replayEvents: unknown[] | null = null
-        const replayRaw = String(form.get("replay_events") || "")
-        if (replayRaw && replayRaw.length <= REPLAY_RAW_CAP) {
-          try { const parsed = JSON.parse(replayRaw); if (Array.isArray(parsed) && parsed.length) replayEvents = parsed } catch { /* ignore bad replay */ }
-        }
+        // Accepts the gzip part (`replay_events_gz`, what current clients send) or the plain JSON field (older clients); the
+        // inflated size is bounded by REPLAY_RAW_CAP (6MB) so a decompression bomb is ignored, never a failure.
+        const replayEvents: unknown[] | null = await readReplayEvents(form)
 
         // KLAVITYKLA-288: the legacy inline Plane push is GONE. Every external filing now flows
         // through the connector system (auto-copy on triage-accept / explicit export), which is the
@@ -5616,7 +5723,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         //   • the double-file guard that used to skip the inline push when an auto-copy Plane
         //     connector existed is deleted with the path it guarded.
         // A tracker connection remains OPTIONAL: Klavity owns the feedback, Plane is a downstream sink.
-        const email = await bearerEmail(req)
+        const email = await bearerOnce()
+        pt.mark("gates")
 
         // Upload screenshots to object storage. Caps/MIME/ACL come from the central screenshot config
         // (lib/screenshot-config.ts) instead of scattered literals.
@@ -5634,43 +5742,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let droppedScreenshots = 0, droppedAttachments = 0, droppedRecordings = 0
         let evidenceDropReason: string | null = null
         const noteEvidenceDrop = (msg: string) => { if (!evidenceDropReason) evidenceDropReason = msg }
+        // Step 1 (widget-submit latency): the screenshot / thumbnail / attachment / recording uploads are independent of each
+        // other, but used to run one after another (each a remote object-store round trip). They now run with BOUNDED
+        // concurrency (one shared limiter, KLAV_UPLOAD_CONCURRENCY, default 4) and the results are consumed in INPUT order,
+        // so the stored descriptors stay aligned with the files the reporter attached and the "first failure reason" /
+        // dropped counts are identical to the serial version. Every 400 (type / size / total caps) is decided BEFORE the
+        // first byte is uploaded, so a rejected submit no longer leaves already-stored orphan objects behind.
+        const uploadLimit = createLimiter(uploadConcurrency())
         for (let fi = 0; fi < files.length; fi++) {
           const f = files[fi]
           if (f.type && !f.type.startsWith(SCREENSHOTS.allowedTypePrefix)) return wjson({ error: `Screenshot ${f.name} is not an image.` }, 400)
           if (f.size > SCREENSHOTS.maxBytes) return wjson({ error: `Screenshot ${f.name} exceeds ${mbLabel(SCREENSHOTS.maxBytes)}.` }, 400)
-          const buf = await f.arrayBuffer()
-          // Upload PRIVATE (no public bucket exposure). The dashboard reads via the membership-checked
-          // /api/screenshots/:id endpoint; the external tracker ticket embeds the PERMANENT signed link
-          // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
-          // forever without making the object world-readable. Mint the id now so we can sign the link.
-          const sid = "shot_" + crypto.randomUUID()
-          // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole
-          // report — especially the new screenshot-only path where the reporter typed nothing. Persist the
-          // report anyway (this shot is simply dropped) rather than losing the whole submission.
-          let meta: UploadedScreenshot
-          try { meta = await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl) }
-          catch (upErr: any) { console.error("screenshot upload failed (non-fatal):", upErr?.message || upErr); droppedScreenshots++; noteEvidenceDrop(upErr?.message || String(upErr)); continue }
-          // Best-effort thumbnail upload for this shot. Only accept a small image (guards against a client
-          // sending a full-size blob under the thumb field). A thumb failure never affects the full shot —
-          // the row is stored with thumb_key null and the dashboard falls back to the full image.
-          let thumbKey: string | null = null
-          const tf = thumbFiles[fi]
-          if (tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000) {
-            try {
-              const tbuf = await tf.arrayBuffer()
-              const tmeta = await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl)
-              thumbKey = tmeta.key
-            } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr) }
-          }
-          imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
-          uploaded.push({ ...meta, bytes: buf.byteLength, id: sid, thumbKey })
         }
 
-        // PX4 #425: non-image file attachments (PDF, .log, .har, .txt, ...) from the composer's "Attach file"
-        // affordance. Uploaded PRIVATE via uploadAttachment (real extension preserved), then persisted as
-        // descriptors on the feedback row (attachments_json) so feedbackToTicketPayload can fetch the bytes and
-        // attach them natively to the external issue. Capped by count + per-file + total size; an image sent
-        // here is ignored (images travel on the screenshots path). A single upload failure is non-fatal.
+        // PX4 #425: non-image file attachments (PDF, .log, .har, ...) from the composer's "Attach file" affordance.
+        // Uploaded PRIVATE via uploadAttachment (real extension preserved), then persisted as descriptors on the feedback
+        // row (attachments_json) so feedbackToTicketPayload can fetch the bytes and attach them natively to the external
+        // issue. Capped by count + per-file + total size; an image sent here is ignored (images travel on the screenshots
+        // path). A single upload failure is non-fatal.
         const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
         // KLAVITYKLA-480: video/* uploads carry transcript_status ("pending" at ingest) so an async STT pass
         // (fired after the insert below) can transcribe spoken notes inside them and store the transcript
@@ -5682,7 +5771,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
         const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
         let attachTotalBytes = 0
-        for (const af of attachFiles) {
+        const attachPlan: Array<{ af: File; uploadType: string; slot: string }> = []
+        for (let ai = 0; ai < attachFiles.length; ai++) {
+          const af = attachFiles[ai]
           if (af.size <= 0) continue
           if (af.type && af.type.startsWith(SCREENSHOTS.allowedTypePrefix)) continue // images go through the screenshots path
           // KLA-560 item 6: classify a video by content-type FIRST, then fall back to the filename extension
@@ -5696,19 +5787,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (af.size > perFileCap) return wjson({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
           attachTotalBytes += af.size
           if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return wjson({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
-          try {
-            const abuf = new Uint8Array(await af.arrayBuffer())
-            // Persist a concrete video/* content-type when we classified by extension (empty MIME) so the
-            // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
-            const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
-            const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
-            const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
-              { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
-            // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
-            // until the async transcription pass resolves it. Keyed by up.key downstream.
-            if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-            attachmentDescs.push(desc)
-          } catch (aErr: any) { console.error("attachment upload failed (non-fatal):", aErr?.message || aErr); droppedAttachments++; noteEvidenceDrop(aErr?.message || String(aErr)) }
+          // Persist a concrete video/* content-type when we classified by extension (empty MIME) so the
+          // stored descriptor + transcript_status pipeline downstream see it as a video, not octet-stream.
+          attachPlan.push({ af, uploadType: (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream"), slot: slotFor(slotMap, "files", ai) })
         }
 
         // KLAVITYKLA-438 "Record me" (Phase 1): screen+camera+mic video recordings. Uploaded PRIVATE via the
@@ -5723,17 +5804,109 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let recMeta: Array<{ id?: string; durationMs?: number; width?: number; height?: number; screenOnly?: boolean }> = []
         try { const rm = JSON.parse(String(form.get("recording_meta") || "[]")); if (Array.isArray(rm)) recMeta = rm } catch { /* tolerate a missing/garbled meta blob */ }
         const recordingDescs: Array<{ id: string; key: string; contentType: string; bytes: number; durationMs: number; w: number; h: number; screenOnly: boolean; transcript_status?: string }> = []
+        const recPlan: Array<{ rf: File; ri: number; slot: string }> = []
         for (let ri = 0; ri < recFiles.length; ri++) {
           const rf = recFiles[ri]
           if (rf.size <= 0) continue
           if (rf.type && !/^video\/(webm|mp4)/.test(rf.type)) continue // only recorded video containers
           if (rf.size > RECORDING_MAX_BYTES) return wjson({ error: `Recording ${rf.name} exceeds ${mbLabel(RECORDING_MAX_BYTES)}.` }, 400)
-          const m = recMeta[ri] || {}
-          try {
-            const rbuf = new Uint8Array(await rf.arrayBuffer())
-            const up = await uploadAttachment(rbuf, rf.name || `recording-${ri}.webm`, rf.type || "video/webm")
+          recPlan.push({ rf, ri, slot: slotFor(slotMap, "recording", ri) })
+        }
+
+        // Uploads run AFTER the idempotency claim (a replayed / in-progress / conflicting submission never uploads anything, and a retry
+        // after a crash overwrites its own objects). `only` limits a REPAIR to the slots that previously failed; `det` makes every object
+        // key (and screenshot id) deterministic per (project, submission key, slot) so a retry overwrites instead of orphaning.
+        // Start EVERY upload at once (the limiter bounds how many actually run) and wait; results are consumed in INPUT order.
+        let shotsEnabled = true   // false when the project disabled screenshot storage (set once its settings are known)
+        const runUploads = async (only: Set<string> | null, det: { ts: number; projectId: string; key: string } | null): Promise<EvidenceState> => {
+          const ev: EvidenceState = {}
+          const want = (slot: string) => !only || only.has(slot)
+          const dk = (slot: string): DeterministicKey | undefined => det ? { keyId: deterministicId(det.projectId, det.key, slot), ts: det.ts } : undefined
+          const shotSlots = files.map((_, fi) => slotFor(slotMap, "screenshots", fi))
+          type ShotUp = { ok: true; meta: UploadedScreenshot; bytes: number } | { ok: false; err: any }
+          const shotUps: Array<Promise<ShotUp> | null> = files.map((f, fi) => {
+            const slot = shotSlots[fi]
+            if (!want(slot)) return null
+            if (!shotsEnabled) { ev[slot] = "ok"; return null }   // storage disabled for this project: nothing to upload, nothing to repair
+            return uploadLimit(async (): Promise<ShotUp> => {
+              // Upload PRIVATE (no public bucket exposure). The dashboard reads via the membership-checked
+              // /api/screenshots/:id endpoint; the external tracker ticket embeds the PERMANENT signed link
+              // /img/<id>.<hmac> (never expires, revocable, served from our domain) so the <img> renders
+              // forever without making the object world-readable.
+              try {
+                const buf = await f.arrayBuffer()
+                return { ok: true, meta: await uploadScreenshotMeta(buf, f.type || "image/png", SCREENSHOTS.defaultAcl, dk(slot)), bytes: buf.byteLength }
+              } catch (err) { return { ok: false, err } }
+            })
+          })
+          // Best-effort thumbnail upload per shot. Only accept a small image (guards against a client sending a full-size
+          // blob under the thumb field). A thumb failure never affects the full shot — the row is stored with thumb_key
+          // null and the dashboard falls back to the full image.
+          const thumbUps: Promise<string | null>[] = files.map((f, fi) => {
+            const slot = shotSlots[fi]
+            const tf = thumbFiles[fi]
+            if (!want(slot) || !shotsEnabled) return Promise.resolve(null)
+            if (!(tf && (!tf.type || tf.type.startsWith(SCREENSHOTS.allowedTypePrefix)) && tf.size > 0 && tf.size <= f.size && tf.size <= 1_000_000)) return Promise.resolve(null)
+            return uploadLimit(async () => {
+              try {
+                const tbuf = await tf.arrayBuffer()
+                return (await uploadScreenshotMeta(tbuf, tf.type || "image/jpeg", SCREENSHOTS.defaultAcl, dk(slot + ":thumb"))).key
+              } catch (tErr: any) { console.error("thumbnail upload failed (non-fatal):", tErr?.message || tErr); return null }
+            })
+          })
+          type AttUp = { ok: true; up: Awaited<ReturnType<typeof uploadAttachment>> } | { ok: false; err: any }
+          const attUps: Array<Promise<AttUp> | null> = attachPlan.map(({ af, uploadType, slot }) => !want(slot) ? null : uploadLimit(async (): Promise<AttUp> => {
+            try { return { ok: true, up: await uploadAttachment(new Uint8Array(await af.arrayBuffer()), af.name || "attachment", uploadType, dk(slot)) } }
+            catch (err) { return { ok: false, err } }
+          }))
+          const recUps: Array<Promise<AttUp> | null> = recPlan.map(({ rf, ri, slot }) => !want(slot) ? null : uploadLimit(async (): Promise<AttUp> => {
+            try { return { ok: true, up: await uploadAttachment(new Uint8Array(await rf.arrayBuffer()), rf.name || `recording-${ri}.webm`, rf.type || "video/webm", dk(slot)) } }
+            catch (err) { return { ok: false, err } }
+          }))
+          const [shotRes, thumbRes, attRes, recRes] = await Promise.all([Promise.all(shotUps), Promise.all(thumbUps), Promise.all(attUps), Promise.all(recUps)])
+
+          // Consume in INPUT order: screenshots, then attachments, then recordings — the same order (so the same first-failure reason /
+          // counts / descriptor order) the serial version produced.
+          for (let fi = 0; fi < files.length; fi++) {
+            const r = shotRes[fi], slot = shotSlots[fi]
+            if (!r) continue
+            if (!r.ok) {
+              // JTBD 1.10: a single screenshot upload failure (S3 outage / misconfig) must not 500 the whole report —
+              // especially the screenshot-only path where the reporter typed nothing. Persist the report anyway (this
+              // shot is simply dropped — and now REPORTED to the client as a missing slot it can retry). Its thumbnail
+              // (uploaded concurrently) would be an orphan → delete it.
+              console.error("screenshot upload failed (non-fatal):", r.err?.message || r.err); droppedScreenshots++; noteEvidenceDrop(r.err?.message || String(r.err))
+              ev[slot] = "failed"
+              if (thumbRes[fi]) void deleteObject(thumbRes[fi]!).catch(() => {})
+              continue
+            }
+            // Mint the id now so we can sign the permanent link (deterministic under an idempotent submission → a retry re-uses it).
+            const sid = "shot_" + (det ? deterministicId(det.projectId, det.key, slot) : crypto.randomUUID())
+            imageUrls.push(`${BASE}/img/${signImageToken(sid)}`)
+            uploaded.push({ ...r.meta, bytes: r.bytes, id: sid, thumbKey: thumbRes[fi] })
+            createdObjectKeys.push(r.meta.key); if (thumbRes[fi]) createdObjectKeys.push(thumbRes[fi]!)
+            ev[slot] = "ok"
+          }
+          for (let k = 0; k < attachPlan.length; k++) {
+            const r = attRes[k], slot = attachPlan[k].slot
+            if (!r) continue
+            if (!r.ok) { console.error("attachment upload failed (non-fatal):", r.err?.message || r.err); droppedAttachments++; noteEvidenceDrop(r.err?.message || String(r.err)); ev[slot] = "failed"; continue }
+            const af = attachPlan[k].af, up = r.up
+            const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
+              { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
+            // KLAVITYKLA-480: seed video uploads "pending" so the UI shows a spinner (not "unavailable")
+            // until the async transcription pass resolves it. Keyed by up.key downstream.
+            if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
+            attachmentDescs.push(desc); createdObjectKeys.push(up.key); ev[slot] = "ok"
+          }
+          for (let k = 0; k < recPlan.length; k++) {
+            const r = recRes[k], slot = recPlan[k].slot
+            if (!r) continue
+            if (!r.ok) { console.error("recording upload failed (non-fatal):", r.err?.message || r.err); droppedRecordings++; noteEvidenceDrop(r.err?.message || String(r.err)); ev[slot] = "failed"; continue }
+            const { rf, ri } = recPlan[k], up = r.up
+            const m = recMeta[ri] || {}
             recordingDescs.push({
-              id: String(m.id || ("rec_" + crypto.randomUUID())),
+              id: String(m.id || ("rec_" + (det ? deterministicId(det.projectId, det.key, slot) : crypto.randomUUID()))),
               key: up.key, contentType: up.contentType, bytes: rf.size,
               durationMs: Number(m.durationMs) || 0, w: Number(m.width) || 0, h: Number(m.height) || 0,
               screenOnly: m.screenOnly === true,
@@ -5741,7 +5914,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // insert below) flips it to done/failed and stores the transcript in-place by id.
               transcript_status: "pending",
             })
-          } catch (rErr: any) { console.error("recording upload failed (non-fatal):", rErr?.message || rErr); droppedRecordings++; noteEvidenceDrop(rErr?.message || String(rErr)) }
+            createdObjectKeys.push(up.key); ev[slot] = "ok"
+          }
+          return ev
         }
 
         // ── persist to our durable ledger (P0) FIRST, always — best-effort, never fails the submission.
@@ -5766,18 +5941,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try {
             // Actor: Bearer (extension) or cookie session (studio). Resolve to a real project
             // (?project= if accessible, else the caller's first project).
-            const actor = email || (await sessionEmail(req))
+            const actor = email || (await sessionOnce())
             const reqProject = String(form.get("project_id") || "") || url.searchParams.get("project")
             // firstParty: the request carries our own Origin (verified browser, same base). Only
             // such requests may use the anonymous projectById path — no-Origin and foreign-Origin
             // anonymous requests must NOT reach projectById (deferred surface stays closed).
             const firstParty = reqOrigin !== "" && reqOrigin === baseOrigin
-            let resolved = actor ? await resolveProject(actor, reqProject) : null
+            // Authenticated callers: the project row and the caller's project_members row are read TOGETHER (projectAccessWithRow — the same
+            // access decision as projectAccess, one round trip fewer) and the row is kept so the dedupe flag and screenshot settings below
+            // reuse it instead of re-reading it. A project-BOUND bearer token keeps the original resolveProject path (its F5 binding rules).
+            let projRow: ProjectRow | null = null
+            let resolved: any = null
+            if (actor) {
+              if (reqProject && !reqCtx.getStore()?.boundProject) {
+                const pa = await projectAccessWithRow(actor, reqProject)
+                projRow = pa.proj
+                resolved = pa.access ? { id: reqProject, access: pa.access } : null
+              } else resolved = await resolveProject(actor, reqProject)
+            }
             // Anonymous widget intake: no actor, but a known project_id. Allowed when the request is
             // either first-party (our own site) OR a cross-origin browser report that already passed
             // the project's report gate above (anonWidgetAllowed). no-Origin (curl/script) anonymous
             // calls still never reach projectById — the deferred surface stays closed.
-            if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = await projectById(reqProject)
+            if (!resolved && !actor && reqProject && (firstParty || anonWidgetAllowed)) resolved = (gateProjCached && gateProjCached.id === reqProject) ? gateProjCached : await projectById(reqProject)
             // TENANT ISOLATION: a publishable-key submit's project is ALWAYS the key's resolved project —
             // never the (attacker-controlled) project_id form field. Overrides any resolution above.
             if (pkProjectId) resolved = await projectById(pkProjectId)
@@ -5826,6 +6012,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 klavityFailsafeToOrigin = true
               }
             }
+            pt.mark("resolve")
             if (resolved) {
               const projectId = resolved.id
               submitProjectId = projectId // #745: carry to the success-exit for the pretty issue_url
@@ -5839,15 +6026,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // /t/<fb_id> teaser (fail-closed) rather than hand out a link they can't open.
               if (submitterIsMember && klavityRerouted) {
                 submitterIsMember = !!(await projectAccess(actor as string, projectId).catch(() => null))
-              }
-              // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots +
-              // attachments + recordings), now that the project is resolved. Fire-and-forget.
-              {
-                const storedBytes =
-                  uploaded.reduce((s, u) => s + (Number(u.bytes) || 0), 0) +
-                  attachTotalBytes +
-                  recordingDescs.reduce((s, r) => s + (Number(r.bytes) || 0), 0)
-                if (storedBytes > 0) void recordS3Storage({ projectId, bytes: storedBytes, meta: { source: "report_ingest" } })
               }
               // Path-only URL: strip query + fragment (privacy by structure).
               let urlHost: string | null = null, urlPath: string | null = null
@@ -5864,33 +6042,109 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               const reportOrg = (reporter?.org ? String(reporter.org) : null) || autoLabels.org
               const reportServer = (reporter?.server ? String(reporter.server) : null) || autoLabels.server
 
-              // Persist a ledger row for EVERY uploaded screenshot using its pre-minted id, so each
-              // permanent /img link resolves (the dashboard still references screenshotId = the first).
+              // The id of the first shot (the ticket's screenshot) — known once the uploads have finished (below).
               let screenshotId: string | null = null
-              // Per-project screenshot config = central server defaults merged with this project's
-              // settings (modal_config_json.screenshots). A project may disable storage entirely — drop
-              // the just-uploaded objects and persist no ledger rows. Retention TTL (if set) stamps expires_at.
-              const scfg = resolveScreenshotConfig(await getProjectModalConfig(projectId).catch(() => ({})))
-              if (!scfg.enabled) {
-                for (const u of uploaded) { await deleteObject(u.key).catch(() => {}); if (u.thumbKey) await deleteObject(u.thumbKey).catch(() => {}) }
-                uploaded.length = 0; imageUrls.length = 0
-              }
+              const rawSimId = String(form.get("sim_id") || "") || null
+              // ONE project read per submit: the row projectAccessWithRow / the gate / the Klavity-intake lookup already loaded carries the
+              // dedupe flag and the screenshot settings, so they are not re-read (they used to be 2–3 more identical SELECTs). Only when no
+              // row was loaded yet (first-project fallback) is it fetched — in the SAME round trip as the claim and the persona check.
+              const rowInHand: ProjectRow | null = (projRow && projRow.id === projectId) ? projRow : ((resolved as any)?.labelRules ? (resolved as ProjectRow) : null)
+              const claimP = (submissionKey && db)
+                ? claimSubmission({ projectId, key: submissionKey, actor: actor ?? null }).catch((e: any) => { console.warn("[submission-key] claim failed — answering with a retryable error:", e?.message || e); return { kind: "error" as const } })
+                : Promise.resolve(null)
+              const [claim, projRowFinal, personasForSim] = await Promise.all([
+                claimP,
+                rowInHand ? Promise.resolve(rowInHand) : projectById(projectId).catch(() => null),
+                rawSimId ? listPersonas(projectId) : Promise.resolve(null),
+              ])
+              pt.mark("claim")
+              // Per-project screenshot config = central server defaults merged with this project's settings (modal_config_json.screenshots).
+              // A project may disable storage entirely — then no screenshot is uploaded or recorded at all. Retention TTL (if set) stamps expires_at.
+              const scfg = resolveScreenshotConfig(projRowFinal ? projRowFinal.modalConfig : await getProjectModalConfig(projectId).catch(() => ({})))
+              shotsEnabled = scfg.enabled
+              const dedupEnabled: boolean | undefined = projRowFinal ? projRowFinal.dedupEnabled : undefined
               const shotExpiresAt = scfg.retentionDays > 0 ? Date.now() + scfg.retentionDays * 86400000 : null
-              for (const u of uploaded) {
-                await insertScreenshot({
-                  id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
-                  contentType: u.contentType, acl: u.acl,
-                  bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
-                  thumbKey: u.thumbKey,
-                })
+              const dashBaseForReplay = baseOrigin || reqOrigin
+
+              // ── idempotent submission: what happened to an earlier attempt with this key? ─────────────────────────────────────────
+              // Every gate (rate limit, report gate / Turnstile, project access) has ALREADY run for THIS request by now, and the key is
+              // scoped to (this project, this principal) — so a repeat is answered only to the caller who could create it, and the share
+              // link is built for THIS caller (a non-member still gets the teaser link, never the member-only permalink).
+              const finishWith = (body: Record<string, unknown>, status = 200, extra: Record<string, string> = {}) =>
+                json(body, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing", ...extra })
+              // Transcript + enrichment pass for videos / recordings that were attached to an existing ticket after the fact (a repair, or a
+              // repeat report merged into one) — the original submit flow only starts it for rows it inserted itself.
+              const kickTranscripts = (fid: string, atts: Array<{ key: string; filename: string; contentType: string }>, recs: Array<{ id: string; key: string; contentType: string }>) => {
+                const vids = atts.filter((a) => /^video\//i.test(a.contentType || ""))
+                if (!vids.length && !recs.length) return
+                void (async () => {
+                  const jobs: Promise<any>[] = []
+                  if (recs.length) jobs.push(transcribeFeedbackRecordings({ feedbackId: fid, projectId, recordings: recs.map((r) => ({ id: r.id, key: r.key, contentType: r.contentType })) }))
+                  if (vids.length) jobs.push(transcribeFeedbackAttachments({ feedbackId: fid, projectId, attachments: vids.map((a) => ({ key: a.key, filename: a.filename, contentType: a.contentType })) }))
+                  await Promise.allSettled(jobs)
+                  await enrichReportFromTranscript({ feedbackId: fid, projectId }).catch(() => {})
+                })().catch(() => {})
               }
-              if (uploaded[0]) screenshotId = uploaded[0].id
+              // Re-upload ONLY the slots that failed before, and attach them to the EXISTING ticket (never creates a ticket).
+              const applyRepair = async (c: { feedbackId: string; createdAt: number }, want: Set<string>, state: EvidenceState): Promise<EvidenceState> => {
+                const out: EvidenceState = { ...state }
+                const res = await runUploads(want, { ts: c.createdAt, projectId, key: submissionKey! })
+                if (scfg.enabled && uploaded.length) {
+                  await mapBounded(uploaded, 4, (u) => insertScreenshot({ id: u.id, projectId, s3Key: u.key, bucket: u.bucket, contentType: u.contentType, acl: u.acl, bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt, thumbKey: u.thumbKey, ignoreConflict: true }))
+                  await db!.execute({ sql: "UPDATE feedback SET screenshot_id=? WHERE id=? AND project_id=? AND screenshot_id IS NULL", args: [uploaded[0].id, c.feedbackId, projectId] })
+                }
+                if (attachmentDescs.length) await appendFeedbackAttachments(c.feedbackId, projectId, attachmentDescs)
+                if (recordingDescs.length) await appendFeedbackRecordings(c.feedbackId, projectId, recordingDescs)
+                for (const [sl, st] of Object.entries(res)) out[sl] = st
+                if (want.has("replay")) {
+                  if (replayEvents) { try { const sr = await saveFeedbackReplay(projectId, c.feedbackId, replayEvents as any); out.replay = sr.saved ? "ok" : "failed" } catch { out.replay = "failed" } }
+                  else out.replay = "failed"
+                }
+                await saveEvidenceState(projectId, submissionKey!, out)
+                await updateFeedbackEvidenceDropped(c.feedbackId, missingSlots(out).length).catch(() => {})
+                kickTranscripts(c.feedbackId, attachmentDescs, recordingDescs)   // repaired videos still need their transcript pass
+                return out
+              }
+              const answerReplay = async (c: { feedbackId: string; deduped: boolean; evidence: EvidenceState; createdAt: number }): Promise<Response> => {
+                let state: EvidenceState = { ...c.evidence }
+                const want = (repairSlots || []).filter((sl) => state[sl] && state[sl] !== "ok")
+                if (want.length) {
+                  try { state = await applyRepair(c, new Set(want), state) } catch (e: any) { console.warn("[submission-repair] failed (non-fatal):", e?.message || e) }
+                }
+                const link = dashBaseForReplay ? await prettyDeepLinkUrl(c.feedbackId, submitterIsMember ? projectId : null, { origin: dashBaseForReplay }) : ""
+                const missing = missingSlots(state)
+                pt.mark("replay")
+                return finishWith({ id: c.feedbackId, saved: true, replayed: true, ...(c.deduped ? { known: true, deduped: true } : {}), ...(link ? { issue_url: link } : {}), ...(missing.length ? { partial: true, missing } : {}) }, 200, { "Idempotent-Replay": "true" })
+              }
+              const answerFromKey = async (): Promise<Response> => {
+                const c = await claimSubmission({ projectId, key: submissionKey!, actor: actor ?? null })
+                if (c.kind === "replay") return answerReplay(c)
+                if (c.kind === "in_progress") return finishWith({ error: "Your report is still being processed. Retrying shortly…", retryable: true, in_progress: true, retry_after: c.retryAfterSec, stale_in_sec: c.staleInSec }, 409, { "Retry-After": String(c.retryAfterSec) })
+                // 'claimed' here means the earlier attempt vanished entirely — surface a retryable failure rather than guessing.
+                return finishWith({ error: "We couldn't save your report. Please try again.", saved: false, retryable: true }, 503)
+              }
+              let subClaim: { createdAt: number } | null = null
+              if (claim) {
+                // The key could not be recorded (database hiccup). Creating the ticket anyway would defeat the idempotency the client relies
+                // on for its retries (a retry could then make a SECOND ticket) — so nothing is created and the client is told to retry.
+                if (claim.kind === "error") return finishWith({ error: "We couldn't register your report just now. Please try again.", retryable: true, saved: false }, 503, { "Retry-After": "3" })
+                if (claim.kind === "in_progress") return finishWith({ error: "Your report is still being processed. Retrying shortly…", retryable: true, in_progress: true, retry_after: claim.retryAfterSec, stale_in_sec: claim.staleInSec }, 409, { "Retry-After": String(claim.retryAfterSec) })
+                if (claim.kind === "conflict") return finishWith({ error: "This submission key was already used by another request.", retryable: false }, 409)
+                if (claim.kind === "replay") return await answerReplay(claim)
+                subClaim = { createdAt: claim.createdAt }
+                subOwn = { projectId, key: submissionKey! }
+                if (Math.random() < 0.01) void pruneSubmissionKeys().catch(() => {})   // occasional housekeeping, never awaited
+              }
+              // Start the uploads NOW: they overlap the citation / duplicate lookups below (independent DB reads), and are awaited just
+              // before their ledger rows are written. (Errors are per-item inside runUploads; the catch only guards an unforeseen throw.)
+              const uploadsP = runUploads(null, subClaim && submissionKey ? { ts: subClaim.createdAt, projectId, key: submissionKey } : null)
+              uploadsP.catch(() => {})
+              const claimStartedAt = Date.now()
 
               // A01/IDOR: the sim_id is attacker-supplied. Before any trait/citation lookup, verify it
               // belongs to THIS project; if not, treat the persona as ephemeral (simId=null) so no
               // cross-tenant trait read happens. The report still persists with no citation (no 500).
-              const rawSimId = String(form.get("sim_id") || "") || null
-              const simId = rawSimId && (await listPersonas(projectId)).some((p) => p.id === rawSimId) ? rawSimId : null
+              const simId = rawSimId && personasForSim && personasForSim.some((p) => p.id === rawSimId) ? rawSimId : null
               // PX4 #472 — AUTOFILE GATE must key off the RAW source, NOT persona-existence. The `simId`
               // above is COERCED to null when `rawSimId` doesn't match a registered persona (A01/IDOR
               // guard, correct for attribution). But the autofile gate below used `!simId`, so a Sim/bot
@@ -5960,7 +6214,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               let citedRaw: any = null
               const ctRaw = String(form.get("cited_trait_ids") || "")
               if (ctRaw) { try { citedRaw = JSON.parse(ctRaw) } catch { citedRaw = ctRaw.split(",").map((s) => s.trim()).filter(Boolean) } }
+              pt.mark("prep")
               citation = await resolveCitations(simId, citedRaw, projectId)
+              pt.mark("citations")
 
               let dedupedInto: string | null = null
               // A screenshot-only report carries NO user text — `observation` is the deterministic
@@ -5976,15 +6232,43 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 : humanReportIssueKeyFor({ projectId, urlPath: urlPath ?? "/", text: observation })
               if (suggestedBug) {
                 dedupedInto = await findDuplicateFeedback({
-                  projectId, urlPath, issueType: citation.issueType,
+                  projectId, urlPath, dedupEnabled, issueType: citation.issueType,
                   citedTraitIds: citation.citedTraitIds,
                   title: String(suggestedBug?.title || ""), observation,
                 })
               } else if (!draftedTitle) {
                 dedupedInto = await findDuplicateFeedback({
-                  projectId, urlPath, title: observation.slice(0, 120), observation,
+                  projectId, urlPath, dedupEnabled, title: observation.slice(0, 120), observation,
                   issueKey: newIssueKey,
                 })
+              }
+              // The uploads ran concurrently with the citation / duplicate lookups above; wait for them, then record the screenshot ledger rows.
+              {
+                Object.assign(evidence, await uploadsP)
+                pt.mark("uploads")
+                // KLAVITYKLA-486: log S3 storage COGS for everything we just uploaded (screenshots + attachments + recordings). Fire-and-forget.
+                const storedBytes =
+                  uploaded.reduce((s, u) => s + (Number(u.bytes) || 0), 0) +
+                  attachTotalBytes +
+                  recordingDescs.reduce((s, r) => s + (Number(r.bytes) || 0), 0)
+                if (storedBytes > 0) void recordS3Storage({ projectId, bytes: storedBytes, meta: { source: "report_ingest" } })
+                // A claim older than ~25s (slow / large uploads) is refreshed so a concurrent retry does not take it over mid-flight. If it
+                // WAS taken over, this attempt must not create anything: it answers from the key's recorded outcome instead.
+                if (subClaim && submissionKey && Date.now() - claimStartedAt > 25_000) {
+                  const stillOurs = await refreshClaim(projectId, submissionKey).catch(() => true)
+                  if (!stillOurs) { subOwn = null; createdObjectKeys.length = 0; return await answerFromKey() }
+                }
+                // Persist a ledger row for EVERY uploaded screenshot using its pre-minted id, so each permanent /img link resolves (the
+                // dashboard still references screenshotId = the first). One row per shot, each with its own id → independent inserts,
+                // run with bounded concurrency. Under an idempotent submission the id is deterministic, so a retry's insert is a no-op.
+                await mapBounded(uploaded, 4, (u) => insertScreenshot({
+                  id: u.id, projectId, s3Key: u.key, bucket: u.bucket,
+                  contentType: u.contentType, acl: u.acl,
+                  bytes: u.bytes, ownerEmail: actor, expiresAt: shotExpiresAt,
+                  thumbKey: u.thumbKey, ignoreConflict: !!subClaim,
+                }))
+                if (uploaded[0]) screenshotId = uploaded[0].id
+                pt.mark("screenshots_db")
               }
               if (dedupedInto) {
                 const seenAt = Date.now()
@@ -6006,28 +6290,61 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // leave feedbackId null (knownDuplicate false) so the success-exit guard fails closed and
                 // the client retries into a fresh insert. Skip the best-effort occurrence/recurrence work
                 // below too — its target row no longer exists.
-                const bumped = await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
-                if (!bumped) {
+                // Where the repeat lands: the matched head, or its live root when that head was itself merged away.
+                let mergedOk = false
+                let mergeTargetId: string = dedupedInto
+                // Files / recordings that came with a repeat report are KEPT: they are attached (once) to the ticket it merges into. Until
+                // that has happened their slots stay 'pending' in the key's record, so a crash in between is repairable — the client's
+                // repair re-sends exactly those, and the repair path appends them to this same ticket.
+                const mergeEvidence: EvidenceState = { ...evidence }
+                for (const p of attachPlan) if (mergeEvidence[p.slot] === "ok") mergeEvidence[p.slot] = "pending"
+                for (const p of recPlan) if (mergeEvidence[p.slot] === "ok") mergeEvidence[p.slot] = "pending"
+                // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its screenshot, and its date instead of
+                // discarding them on the counter-bump. Powers the per-ticket occurrence timeline ("you said X on Y, then Y2, then Y3").
+                const occurrenceReceipt = { observation: observation || null, screenshotId: screenshotId || null, sourceQuote: citation.sourceQuote || null, reporterEmail: validReporterEmail ? reporterEmail : null }
+                if (subClaim && submissionKey) {
+                  // ONE transaction: key done + recurrence bump + occurrence receipt, all guarded by "this attempt still owns the claim and
+                  // the head still exists". A crash can no longer leave a counted recurrence with an unrecorded key (a retry would count it twice).
+                  const m = await mergeReportIntoTicketForSubmission({
+                    targetId: dedupedInto, projectId, atMs: seenAt, allowPromote: allowRecurrencePromote, occurrence: occurrenceReceipt,
+                    sub: { projectId, key: submissionKey, owner: PROCESS_OWNER, evidenceJson: JSON.stringify(mergeEvidence) },
+                  })
+                  if (m.status === "lost") { subOwn = null; createdObjectKeys.length = 0; return await answerFromKey() }   // claim taken over → answer from the recorded outcome
+                  if (m.status === "merged") { mergedOk = true; mergeTargetId = m.id; Object.assign(evidence, mergeEvidence) }
+                } else {
+                  const bumped = await bumpFeedbackRecurrence(dedupedInto, seenAt, { allowPromote: allowRecurrencePromote })
+                  if (bumped) {
+                    mergedOk = true
+                    Object.assign(evidence, mergeEvidence)
+                    try { await insertFeedbackOccurrence({ feedbackId: dedupedInto, projectId, seenAt, ...occurrenceReceipt }) }
+                    catch (e: any) { console.warn("[occurrence] persist skipped:", e?.message || e) }
+                    if (attachmentDescs.length || recordingDescs.length) mergeTargetId = (await resolveMergeTarget(projectId, dedupedInto).catch(() => null)) ?? dedupedInto
+                  }
+                }
+                if (!mergedOk) {
                   console.warn(`[dedup-race] recurrence head ${dedupedInto} vanished before bump — failing closed (nothing persisted)`)
                 } else {
-                feedbackId = dedupedInto
+                feedbackId = (subClaim && submissionKey) ? mergeTargetId : dedupedInto
                 knownDuplicate = true
-                // A.8 occurrence receipts: keep THIS repeat-report's own verbatim description, its
-                // screenshot, and its date instead of discarding them on the counter-bump. Powers the
-                // per-ticket occurrence timeline ("you said X on Y, then Y2, then Y3"). Best-effort —
-                // an occurrence-persist failure must never fail or slow the submission.
-                try {
-                  await insertFeedbackOccurrence({
-                    feedbackId: dedupedInto, projectId, seenAt,
-                    observation: observation || null,
-                    screenshotId: screenshotId || null,
-                    sourceQuote: citation.sourceQuote || null,
-                    reporterEmail: validReporterEmail ? reporterEmail : null,
-                  })
-                } catch (e: any) { console.warn("[occurrence] persist skipped:", e?.message || e) }
+                ticketCreated = true   // the report resolved to an existing ticket
+                if (attachmentDescs.length || recordingDescs.length) {
+                  let attached = false
+                  try {
+                    if (attachmentDescs.length) await appendFeedbackAttachments(mergeTargetId, projectId, attachmentDescs)   // CAS + de-dupes by object key → idempotent
+                    if (recordingDescs.length) await appendFeedbackRecordings(mergeTargetId, projectId, recordingDescs)
+                    attached = true
+                  } catch (e: any) { console.warn("[merge-attach] failed (the client can repair it):", e?.message || e) }
+                  if (attached) {
+                    for (const p of attachPlan) if (evidence[p.slot] === "pending") evidence[p.slot] = "ok"
+                    for (const p of recPlan) if (evidence[p.slot] === "pending") evidence[p.slot] = "ok"
+                    if (subClaim && submissionKey) { try { await saveEvidenceState(projectId, submissionKey, evidence) } catch { /* 'pending' already marks them repairable */ } }
+                    kickTranscripts(mergeTargetId, attachmentDescs, recordingDescs)
+                  }
+                }
+                createdObjectKeys.length = 0   // referenced by the ticket (or by the key's repairable record) from here on — never cleaned up
                 // Build recurrence memory so callers know this is a recurring issue and who originally
                 // filed it (the "cited virtual customer" — a Sim persona or a previous human reporter).
-                try { recurrenceMem = await buildRecurrenceMemory(db!, dedupedInto, projectId) }
+                try { recurrenceMem = await buildRecurrenceMemory(db!, feedbackId as string, projectId) }
                 catch (e: any) { console.warn("[recurrence-memory] build skipped:", e?.message || e) }
                 // B.6 unified regression alarm — MEMORY detector: this repeat deduped back onto a
                 // cluster that was already resolved (resurfaced after a fix). Publish into the shared
@@ -6036,7 +6353,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   void publishRegressionEvent({
                     projectId, issueKey: recurrenceMem.issueKey, source: "memory",
                     title: recurrenceMem.occurrences?.[0]?.title || observation || "recurring issue",
-                    feedbackId: dedupedInto, expectationId: recurrenceMem.expectationId,
+                    feedbackId: feedbackId as string, expectationId: recurrenceMem.expectationId,
                     firstFixedAt: recurrenceMem.resolvedAt, at: seenAt,
                     baseUrl: process.env.KLAV_BASE_URL || "",
                     evidence: { occurrences: recurrenceMem.count, firstSeenAt: recurrenceMem.firstSeenAt },
@@ -6044,14 +6361,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 }
                 }
               } else {
-                // PostHog activation: first_bug_filed / first_widget_report — check BEFORE insert.
-                let priorFeedbackCount = 1 // safe default: assume not-first if query fails
-                if (db) {
-                  try {
-                    const r = await db.execute({ sql: "SELECT COUNT(*) AS n FROM feedback WHERE project_id=?", args: [projectId] })
-                    priorFeedbackCount = Number((r.rows[0] as any)?.n ?? 1)
-                  } catch { /* non-fatal */ }
-                }
+                // PostHog activation (first_bug_filed / first_widget_report) is decided AFTER the insert and off the response path
+                // (it used to cost a COUNT(*) round trip before every insert).
                 // KD-162: a screenshot-only report's `observation` (used above for the deterministic
                 // issueKey / dedup identity) stays the minimal fallbackDraftTitle string — untouched, so
                 // issueKey/dedup behavior is unaffected. What actually gets STORED/shown as the ticket's
@@ -6059,7 +6370,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // never sees a bare/noisy fallback as their issue description. A 4th line (an AI caption
                 // of the screenshot) is appended asynchronously below, after this row is inserted.
                 if (draftedTitle) storedObservation = fallbackDraftDescription({ reportType, pageUrl, createdAt: Date.now(), reportEnv })
-                feedbackId = await insertFeedback({
+                const fbInsert = ({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
                   observation: storedObservation, sentiment, priority, screenshotId, suggestedBug,
                   citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
@@ -6093,20 +6404,34 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // PX4 #439/#428: reporter identity + captured browser/app info (null when absent).
                   reporter, clientInfo,
                 })
-                if (priorFeedbackCount === 0 && feedbackId) {
-                  const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
-                  // first_bug_filed: very first report for this project (any source)
-                  void capturePosthog(actor ?? "anonymous", "first_bug_filed", { project_id: projectId, source: fbSource })
-                  // first_widget_report: first report arriving via widget token (cross-origin anonymous submit)
-                  if (anonWidgetAllowed) {
-                    void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
-                  }
-                  // KLA-547 taxonomy: the SAME first-report fact mirrored as funnel_events `first_report`
-                  // (queryable store — PostHog alone can't power the scorecard/funnel SQL). Ids only:
-                  // the reporter's email is deliberately NOT attached (anonymous widget reporters).
-                  void trackMilestone(db, { milestone: "first_report", projectId, props: { source: fbSource } })
+                // The replay save happens after the insert; until it lands the slot is 'pending' (recorded with the key), so a crash in
+                // between leaves a repairable record instead of a silent loss.
+                if (replayEvents) evidence.replay = "pending"
+                if (subClaim && submissionKey) {
+                  const ins = await insertFeedbackForSubmission(fbInsert, { projectId, key: submissionKey, owner: PROCESS_OWNER, evidenceJson: JSON.stringify(evidence) })
+                  if ("lost" in ins) { subOwn = null; createdObjectKeys.length = 0; return await answerFromKey() }   // our claim was taken over: no ticket from this attempt
+                  feedbackId = ins.id
+                } else {
+                  feedbackId = await insertFeedback(fbInsert)
+                }
+                ticketCreated = true
+                createdObjectKeys.length = 0   // referenced by the ticket from here on — never cleaned up
+                if (feedbackId) {
+                  const newId = feedbackId
+                  void (async () => {
+                    if (await projectHasOtherFeedback(projectId, newId)) return
+                    const fbSource = anonWidgetAllowed ? "widget" : (simId ? "sim" : "extension")
+                    // first_bug_filed: very first report for this project (any source)
+                    void capturePosthog(actor ?? "anonymous", "first_bug_filed", { project_id: projectId, source: fbSource })
+                    // first_widget_report: first report arriving via widget token (cross-origin anonymous submit)
+                    if (anonWidgetAllowed) void capturePosthog("anonymous", "first_widget_report", { project_id: projectId })
+                    // KLA-547 taxonomy: the SAME first-report fact mirrored as funnel_events `first_report` (queryable store — PostHog alone can't
+                    // power the scorecard/funnel SQL). Ids only: the reporter's email is deliberately NOT attached (anonymous widget reporters).
+                    void trackMilestone(db, { milestone: "first_report", projectId, props: { source: fbSource } })
+                  })().catch(() => {})
                 }
               }
+              pt.mark("dedupe_insert")
               // KLAVITYKLA-453: evidence-loss visibility. If any screenshot/attachment/recording BYTES
               // failed to reach object storage above (S3 misconfigured or a write error), the report was
               // still persisted — but WITHOUT that evidence. On a broken prod that is silent evidence loss
@@ -6145,15 +6470,33 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   })
                 })().catch(() => {})
               }
+              // Post-insert writes that do not depend on each other (reporter contact, expectations ingest, activity row,
+              // replay buffer) run together instead of one after another. Each keeps its own failure handling: the contact
+              // and replay writes stay non-fatal (logged), while ingest / activity failures still reject → 500 as before.
+              const postWrites: Promise<unknown>[] = []
               // Reporter email (from the widget's "log in or email" gate): persist as the contact so
               // it shows in the dashboard and drives notify-on-fix. Fires on new + deduped rows.
               if (feedbackId && validReporterEmail) {
-                try { await setFeedbackContactEmail(feedbackId, projectId, reporterEmail) }
-                catch (e: any) { console.warn("reporter email save (non-fatal):", e?.message || e) }
+                const fbIdForContact = feedbackId
+                postWrites.push((async () => { try { await setFeedbackContactEmail(fbIdForContact, projectId, reporterEmail) }
+                  catch (e: any) { console.warn("reporter email save (non-fatal):", e?.message || e) } })())
+                // QPQ-31: and register them as a project CONTACT so the team can see/@mention/assign the
+                // person who filed this. Idempotent, and deliberately NOT a project_members row.
+                if (wantsContact) {
+                  postWrites.push((async () => {
+                    try {
+                      await upsertProjectContact(projectId, reporterEmail, {
+                        name: (reporter && typeof reporter.name === "string") ? reporter.name : null,
+                        source: "report",
+                        feedbackId: fbIdForContact,
+                      })
+                    } catch (e: any) { console.warn("contact upsert (non-fatal):", e?.message || e) }
+                  })())
+                }
               }
               // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
               if (suggestedBug && feedbackId && db) {
-                await ingestSnapOrSim(db, {
+                postWrites.push(ingestSnapOrSim(db, {
                   projectId, feedbackId, isSnap: !simId,
                   title: (suggestedBug?.title ?? observation ?? "").slice(0, 200),
                   dedupKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
@@ -6164,13 +6507,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                   // the reporter's own words (unverified — no page text to check against).
                   sourceQuote: citation.sourceQuote ?? (simId ? null : (observation || null)),
                   sourceQuoteVerified: citation.sourceQuote ? citation.sourceQuoteVerified : (simId ? null : false),
-                })
+                }))
               }
               if (!dedupedInto) {
-                await insertActivity({
+                postWrites.push(insertActivity({
                   projectId, type: "feedback_filed", actorEmail: actor, simId,
                   urlHost, urlPath, feedbackId, screenshotId,
-                })
+                }))
               }
 
               // ── G1 session replay attach: store the rolling rrweb buffer keyed to this feedback row.
@@ -6178,9 +6521,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // failure must never fail or slow the submission. Fires for both new and deduped rows so a
               // recurring bug's freshest replay is available.
               if (replayEvents && feedbackId) {
-                try { await saveFeedbackReplay(projectId, feedbackId, replayEvents) }
-                catch (re: any) { console.warn("feedback replay save (non-fatal):", re?.message || re) }
+                const fbIdForReplay = feedbackId
+                postWrites.push((async () => {
+                  // The 'replay: ok' record is committed in the SAME batch as the replay row (no extra round trip). If the save throws,
+                  // the slot stays 'pending' (written at insert) and is then marked 'failed' so a retry re-sends it.
+                  let threw = false, stored = false
+                  const okState: EvidenceState = { ...evidence, replay: "ok" }
+                  try {
+                    const sr = await saveFeedbackReplay(projectId, fbIdForReplay, replayEvents as any, undefined, undefined,
+                      (subClaim && submissionKey) ? evidenceStateStatement(projectId, submissionKey, okState) : undefined)
+                    stored = !!sr.saved
+                  } catch (re: any) { threw = true; console.warn("feedback replay save (non-fatal):", re?.message || re) }
+                  evidence.replay = threw ? "failed" : "ok"      // saved:false without a throw = an empty buffer: nothing to repair
+                  if (subClaim && submissionKey && (threw || !stored)) { try { await saveEvidenceState(projectId, submissionKey, evidence) } catch { /* 'pending' already marks it repairable */ } }
+                })())
               }
+              await Promise.all(postWrites)
+              pt.mark("post_writes")
 
               // Note: auto-copy is TRIAGE-GATED for Sim/AutoSim reports — it fires when a report is
               // accepted (status→open), NOT on raw submit. See the PATCH /api/feedback/:id handler.
@@ -6322,6 +6679,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // best-effort step throwing is genuinely non-fatal → fall through to the normal 200 exit.
             if (!feedbackId) {
               console.error("feedback persistence FAILED (no row written) — failing closed:", persistErr?.message || persistErr)
+              await abandonSubmission()   // free our claim (an immediate retry must not wait) and drop what this attempt uploaded
               return wjson({ error: "We couldn't save your report. Please try again.", saved: false }, 500)
             }
             console.error("feedback persistence (post-insert side-effect, non-fatal):", persistErr?.message || persistErr)
@@ -6342,6 +6700,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // truthy feedbackId and is unaffected — it falls straight through to the success return below.
         if (!feedbackId) {
           console.error("feedback not persisted (no row written, no exception) — failing closed at success exit")
+          await abandonSubmission()
           return wjson({ error: "We couldn't save your report. Please try again.", saved: false }, 500)
         }
 
@@ -6365,24 +6724,36 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // so an anonymous widget reporter following it after login-resume hits 403. For an anon reporter
         // pass no projectId so prettyDeepLinkUrl returns the unguessable /t/<fb_id> teaser link (which
         // honors the share/teaser redaction policy) — never the enumerable member-only pretty permalink.
-        const issueUrl = (feedbackId && dashBase)
-          ? await prettyDeepLinkUrl(feedbackId, submitterIsMember ? submitProjectId : null, { origin: dashBase })
-          : ""
-        // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
-        // hits the share link gets a warm cache (never a synchronous render on the crawler request).
-        // Best-effort + deduped + no-op when S3 is unconfigured.
-        // KLA-739 (C1): pre-render ONLY when the ticket is anon-shareable (loadOgCardData(anon) returns
-        // null for share_mode='off' / non-anon-shared), and store the ANON-redacted card that /og serves —
-        // so we never pre-render a private ticket's card to a public-ish cache.
-        if (feedbackId) {
-          try {
-            const _og = await loadOgCardData(feedbackId, { anon: true })
-            // C1-a: pre-render under the SAME tier-folded key /og looks up, so the warm object matches.
-            if (_og) enqueueOgRender(feedbackId, _og.keyVersion, async () => _og.data)
-          } catch { /* best-effort prerender */ }
+        pt.mark("dispatch")
+        // The share link and the OG-card data do not depend on each other → fetch together. A share-link failure still
+        // rejects (→ 500, as before); the OG prerender stays best-effort.
+        const [issueUrl, _og] = await Promise.all([
+          (feedbackId && dashBase)
+            ? prettyDeepLinkUrl(feedbackId, submitterIsMember ? submitProjectId : null, { origin: dashBase })
+            : Promise.resolve(""),
+          // KLA-738: pre-render the OG social card in the BACKGROUND on write, so the FIRST crawler that
+          // hits the share link gets a warm cache (never a synchronous render on the crawler request).
+          // Best-effort + deduped + no-op when S3 is unconfigured.
+          // KLA-739 (C1): pre-render ONLY when the ticket is anon-shareable (loadOgCardData(anon) returns
+          // null for share_mode='off' / non-anon-shared), and store the ANON-redacted card that /og serves —
+          // so we never pre-render a private ticket's card to a public-ish cache.
+          feedbackId ? loadOgCardData(feedbackId, { anon: true }).catch(() => null) : Promise.resolve(null),
+        ])
+        // C1-a: pre-render under the SAME tier-folded key /og looks up, so the warm object matches.
+        if (feedbackId && _og) { try { enqueueOgRender(feedbackId, _og.keyVersion, async () => _og.data) } catch { /* best-effort prerender */ } }
+        pt.mark("tail")
+        // Step 4: surface the per-phase split (DevTools → Network → Timing, and one log line when slow or when asked).
+        if (process.env.KLAV_FEEDBACK_TIMING === "1" || pt.total() > 3000) {
+          console.log(`[feedback-timing] ${pt.summary()} shots=${uploaded.length} atts=${attachmentDescs.length} recs=${recordingDescs.length}`)
         }
-        return wjson({ id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}) })
+        const missingFinal = missingSlots(evidence)   // evidence the client can retry: { partial: true, missing: ["file:1", …] }
+        return json(
+          { id: feedbackId ?? "", saved: true, ...(knownDuplicate ? { known: true, deduped: true } : {}), ...(issueUrl ? { issue_url: issueUrl } : {}), ...(recurrenceMem ? { recurrence: recurrenceMem } : {}), ...(missingFinal.length ? { partial: true, missing: missingFinal } : {}) },
+          200,
+          { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing" },
+        )
       } catch (e: any) {
+        if (!ticketCreated) await abandonSubmission()   // no ticket resulted: free the claim + remove this attempt's uploads
         return json(oops(e, "feedback"), 500)
       }
     }
@@ -6786,12 +7157,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     {
       const shotMatch = path.match(/^\/api\/screenshots\/([^/]+)$/)
       if (req.method === "GET" && shotMatch) {
+        // KD-195: per-stage wall-clock, emitted as a Server-Timing header (durations only — no ids/emails) so a
+        // slow screenshot open can be attributed to a stage from the browser's Network panel / Resource Timing.
+        const stageMs: Record<string, number> = {}
+        let stageT = performance.now()
+        const markStage = (name: string) => { const n = performance.now(); stageMs[name] = n - stageT; stageT = n }
+        const timing = () => ({ "server-timing": Object.entries(stageMs).map(([k, v]) => `${k};dur=${v.toFixed(1)}`).join(", ") })
         const meS = (await sessionEmail(req)) || (await bearerEmail(req))
-        if (!meS) return json({ error: "Sign in to continue." }, 401)
+        markStage("session")
+        if (!meS) return json({ error: "Sign in to continue." }, 401, timing())
         const shot = await screenshotById(shotMatch[1])
-        if (!shot) return json({ error: "Not found." }, 404)
+        markStage("shotrow")
+        if (!shot) return json({ error: "Not found." }, 404, timing())
         // Membership check: the screenshot's project must be one the caller can access.
-        if (!shot.projectId || !(await projectAccess(meS, shot.projectId))) return json({ error: "No access to this screenshot." }, 403)
+        const shotAccess = shot.projectId ? await projectAccess(meS, shot.projectId) : null
+        markStage("access")
+        if (!shotAccess) return json({ error: "No access to this screenshot." }, 403, timing())
         // ?thumb=1 → serve the lightweight thumbnail variant when one was stored (dashboard list previews).
         // Falls back to the full image when this shot has no thumb (older rows, Sim/AutoSim captures), so
         // the caller can always request the thumb and still get a valid image. Thumbs are stored PRIVATE
@@ -6809,20 +7190,22 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             const { stream, contentType, size } = await getObjectStream(streamKey)
             if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: shot.bytes ?? size ?? 0, meta: { via: "canvas-proxy" } })
             const ct = shot.contentType || contentType || "image/png"
-            return new Response(stream, { headers: { "content-type": ct, "cache-control": "private, max-age=300" } })
+            markStage("s3open")
+            return new Response(stream, { headers: { "content-type": ct, "cache-control": "private, max-age=300", ...timing() } })
           } catch (e: any) { return json(oops(e, "proxyshot"), 500) }
         }
         try {
           if (!wantThumb && shot.acl === "public-read") {
             const pub = `${(process.env.S3_ENDPOINT || "").replace(/\/+$/, "")}/${shot.bucket}/${shot.s3Key}`
-            return json({ id: shot.id, url: pub, acl: shot.acl })
+            return json({ id: shot.id, url: pub, acl: shot.acl }, 200, timing())
           }
           const signedKey = wantThumb ? shot.thumbKey! : shot.s3Key
           const signed = presignGet(signedKey, SCREENSHOTS.presignTtlSec)
+          markStage("presign")
           // KLAVITYKLA-486: a presigned GET means the client will fetch these bytes from S3 (billed
           // egress). Thumbs are tiny; the full image's stored size is the best estimate we have.
           if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: Number(shot.bytes) || 0, meta: { via: "presign" } })
-          return json({ id: shot.id, url: signed, acl: shot.acl, thumb: wantThumb, expiresInSec: SCREENSHOTS.presignTtlSec })
+          return json({ id: shot.id, url: signed, acl: shot.acl, thumb: wantThumb, expiresInSec: SCREENSHOTS.presignTtlSec }, 200, timing())
         } catch (e: any) { return json(oops(e, "signurl"), 500) }
       }
     }
@@ -7717,7 +8100,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // segmented control so the destination reads naturally (e.g. "PX4 Project"). submitTargetToggle
         // (DEFAULT on) tells the widget whether to render the "Where should this go? · Your team / Klavity"
         // control — the founder wants it on every widget for now; a project opts out via its modal config.
-        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity, projectName: proj.name }, 200, WIDGET_CORS)
+        return json({ modalConfig: resolveModalConfig(await getProjectModalConfig(m[1])), widget: (await getWidgetConfig(m[1])) || { mode: "support", ctaUrl: "https://klavity.in/onboarding", reportGate: "anonymous", autoCaptureErrors: false }, turnstileSiteKey: turnstileSiteKey(), reportClarity: proj.reportClarity, projectName: proj.name,
+          // Capability advertisement: this server records `submission_key` (lib/submissions.ts), so a re-sent report returns the existing
+          // ticket. The widget enables AUTOMATIC retries only when it sees this; an older server omits it and the widget stays single-attempt.
+          capabilities: { submissionKeys: 1 } }, 200, WIDGET_CORS)
       }
     }
 
@@ -8275,7 +8661,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
     if (req.method === "GET" && path === "/dashboard") {
-      if (me) return await dashboardPage(req)
+      if (me) return await dashboardPage(req, me)
       // A member's own address-bar deep link (?ticket=<id>) must work for a colleague: send an
       // unauthenticated visitor to the adaptive /t/:ref so they get the teaser, not a login wall.
       const _tkt = url.searchParams.get("ticket")
@@ -8284,7 +8670,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
-    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage(req) : loginGate(path, url.search)
+    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage(req, me) : loginGate(path, url.search)
     if (req.method === "GET" && path === "/trails") {
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
@@ -8585,6 +8971,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
       // Member/admin full → the fast standalone member page (KLA-491, unchanged).
+      // KD-229: a member gets the dashboard shell at this URL (ticket opens in its full-page view), so a
+      // reload of the in-dashboard ticket page stays in the dashboard. Non-members keep the teaser.
+      if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: resolved.id, projectId: resolved.projectId })
       const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
@@ -8623,20 +9012,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
       if (!res) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
-      const serveTicket = async () => {
-        const pagePath = PUB + "/ticket.html"
-        if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
-        let _tHtml = await Bun.file(pagePath).text()
-        _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
-        try {
-          // C1-a: anon tier + tier-folded keyVersion in the external og:image URL (crawler-fetched).
-          const og = await loadOgCardData(res.id, { anon: true })
-          if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.keyVersion, url.origin), title: `${og.title} · Klavity`, description: og.description })
-        } catch { /* best-effort */ }
-        return new Response(_tHtml, {
-          headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
-        })
-      }
       if (res.kind === "pretty") {
         // STRICT member-only gate — enumerable key path. No teaser, ever.
         const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
@@ -8651,7 +9026,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (res.redirectTo) {
           return new Response(null, { status: 301, headers: { location: res.redirectTo + url.search, "x-robots-tag": "noindex, nofollow" } })
         }
-        return await serveTicket()
+        // KD-229: member → dashboard shell with the ticket open full-page (was the standalone ticket.html).
+        return await dashboardPage(req, me, { id: res.id, projectId: res.projectId })
       }
       // Opaque fb_ handle (unguessable, tenant-bound): normal share/teaser policy, same as /t/:ref.
       const access = await ticketViewAccess(res.id, me)
@@ -8659,6 +9035,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
       }
       const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
+      if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: res.id, projectId: res.projectId })
       const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
@@ -8700,11 +9077,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // teaser | pending — redacted. No description, no screenshot, no comment bodies.
         return json({ access, ticket: teaser }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
       }
-      // full — description, screenshot (HMAC-gated /img/ token), page context, comments.
+      // full — description, screenshot (HMAC-gated /img/ token or presigned attachment), page context, comments.
+      let shotUrl: string | null = null
+      if (fbRow.screenshotId) {
+        shotUrl = `${BASE}/img/${signImageToken(fbRow.screenshotId)}`
+      } else if (Array.isArray(fbRow.attachments)) {
+        const imgAtt = fbRow.attachments.find((a: any) => a && (/\.(png|jpe?g|webp|gif|svg)$/i.test(a.filename || "") || /^image\//i.test(a.contentType || "")))
+        if (imgAtt && imgAtt.key) {
+          try { shotUrl = presignGet(String(imgAtt.key), 3600) } catch { shotUrl = null }
+        }
+      }
       const ticket = {
         ...teaser,
         description: fbRow.observation,
-        screenshotUrl: fbRow.screenshotId ? `${BASE}/img/${signImageToken(fbRow.screenshotId)}` : null,
+        screenshotUrl: shotUrl,
         pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
         urlHost: fbRow.urlHost ?? null,
         comments: comments.map((c: any) => ({ author: c.author, body: c.body, createdAt: c.createdAt })),
@@ -8771,7 +9157,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = token()
       await createSession(sid, email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const access = status === "active" ? "full" : "pending"
-      return json({ ok: true, access }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+      return jsonWithCookies({ ok: true, access }, 200, sessionCookies(sid, email))
     }
 
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
@@ -11132,7 +11518,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               title: r.title || r.observation || null, // prefer the explicit Title, else the observation
               status: r.status,
               severity: r.priority || r.severity || null, // effective priority wins, else stored severity
-              reporterEmail: r.actorEmail || r.contactEmail || null,
+              // QPQ-31: the address the REPORTER typed into the composer's Email field wins; the signed-in
+              // filer is only the fallback when they typed nothing. (Was actorEmail-first, which showed a
+              // staff member's login on reports they filed on a customer's behalf, and disagreed with the
+              // submit-time alert email, which has always shown the typed address.)
+              reporterEmail: r.contactEmail || r.actorEmail || null,
               createdAt: r.createdAt,
               screenshotUrl,
               pageUrl,
@@ -11267,7 +11657,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const allProjects = await listAccessibleProjects(me)
           if (!allProjects.length) {
             // No project yet — return an empty-but-valid shape so the UI renders skeleton/empty states.
-            return json({ email: me, projects: [], active: null, members: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
+            return json({ email: me, projects: [], active: null, members: [], contacts: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
           }
           // KLAVITYKLA-299: when no ?project= param is present, fall back to the klav_proj cookie
           // (set on a previous successful load) so the user's selection persists across reloads.
@@ -11277,26 +11667,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             ? decodeURIComponent(parseCookies(req.headers.get("cookie"))["klav_proj"] || "") || null
             : null
           const requested = paramProject || cookieProject
-          const resolved = await resolveProject(me, requested)
+          // Round-trip perf: the project row is already in `allProjects` (listAccessibleProjects mirrors
+          // projectAccess), so pass it to resolveProject (skips only projectAccess's own projectById; the
+          // accountRole/project_members checks still run) and reuse it below instead of a second projectById.
+          const resolved = await resolveProject(me, requested, allProjects)
           if (!resolved) return json({ error: "No access to this project." }, 403)
           const projectId = resolved.id
           const access = resolved.access
           const role = access === "admin" ? "admin" : "user" // legacy vocab for the dashboard UI
           const isAdmin = access === "admin"
-
-          // projects / active — REAL projects from the projects table.
-          const activeProj = await projectById(projectId)
-          const projectName = activeProj?.name || "Default Project"
-          const projects = allProjects.map(p => ({ id: p.id, name: p.name }))
-          // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
-          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null, planOverride: activeProj?.planOverride ?? null, entitlement: projectEntitlement(activeProj?.planOverride) }
-
-          // members — project roster (project_members), mapped to legacy admin|user for the UI.
-          const members = (await membersOfProject(projectId)).map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
           const wid = projectId // reads below are all project-scoped on the project id
 
-          // Reads run in parallel (each is an indexed query).
-          const [personas, feedbackTickets, activityRows, simObservations] = await Promise.all([
+          // Everything below depends only on the resolved project id (+ isAdmin/me), so it runs as ONE
+          // parallel wave (each is an indexed query). Only replay/exports need the ticket ids and follow.
+          const knownProj = allProjects.find(p => p.id === projectId)
+          const [activeProj, rawMembers, personas, feedbackTicketsRes, activityRows, simObservations, aliasInfo, widgetPing, counts, insights] = await Promise.all([
+            // projects / active — REAL projects from the projects table (fallback read if not in the list).
+            knownProj ? Promise.resolve(knownProj) : projectById(projectId),
+            // members — project roster (project_members), mapped to legacy admin|user for the UI.
+            membersOfProject(projectId),
             listPersonas(wid),
             // All recent feedback (not just withTicketOnly) — Klavity Cloud is the primary ticket system.
             // KLA-779: this array becomes `state.tickets` on the client — the source the overview "Recent
@@ -11304,7 +11693,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // read from. A 12-row cap starved the "My items"/assignee filter to a handful even when 20+ were
             // assigned. Raise to a bounded 50 (matches the list view's page size, well under the board's 200)
             // so quick-filters over state.tickets can surface 20+ without an unbounded per-poll payload.
-            listFeedback(projectId, { limit: 50 }),
+            // Returns the status/assignee/notes/recurrence meta from the same rows (no second SELECT by id).
+            listFeedbackWithMeta(projectId, { limit: 50 }),
             // Non-admins see only their own activity (own-rows-only); admins see all.
             listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
             // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.
@@ -11313,7 +11703,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // pure payload waste. 36 keeps a few Sims' recent history for the badge while cutting the
             // observations payload ~64%. hasSimReaction (>0) and the `saying` feed are unaffected.
             listFeedback(projectId, { simOnly: true, limit: 36 }),
+            // #745: workspace slug + project key are constant for this project-scoped board — resolve
+            // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
+            // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
+            projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null })),
+            // Widget heartbeat — drives the Snap-aware first-run checklist ("Install the report
+            // widget" ticks the moment /widget.js phones home from the founder's site).
+            latestWidgetPing(projectId),
+            dashboardCounts(projectId),
+            computeDashboardInsights(projectId),
           ])
+          const feedbackTickets = feedbackTicketsRes.rows
+          const projectName = activeProj?.name || "Default Project"
+          const projects = allProjects.map(p => ({ id: p.id, name: p.name }))
+          // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
+          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null, planOverride: activeProj?.planOverride ?? null, entitlement: projectEntitlement(activeProj?.planOverride) }
+          const members = rawMembers.map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
+          // QPQ-31: project CONTACTS ride alongside members so the board can show, @mention and assign a
+          // reporter who typed a new address in the composer. These carry NO access - they are not members
+          // and are kept in a separate array so nothing mistakes one for a teammate.
+          const contacts = (await listProjectContacts(projectId)).map(c => ({ email: c.email, name: c.name, source: c.source, createdAt: c.createdAt }))
 
           // Index personas for name/role/accent lookups by sim_id.
           const personaById = new Map(personas.map(p => [p.id, p]))
@@ -11380,40 +11789,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Enriched with status/assignee (management state) and exports (connector push history).
           const ticketIds = feedbackTickets.map(f => f.id)
           // G1: which tickets carry a session replay → show the "▶ Session replay" affordance only there.
-          const ticketsWithReplay = ticketIds.length ? await feedbackIdsWithReplay(projectId, ticketIds) : new Set<string>()
-          const [ticketExportsMap, ticketMetaRows] = await Promise.all([
+          // Replay + exports both need only the ticket ids, so they run together as the second (final) wave.
+          // status/assignee/notes/recurrence meta (the KLA-2 recurrenceCount/firstSeen/lastSeen/isRegression
+          // inputs) already arrived with the rows via listFeedbackWithMeta — no second SELECT by id.
+          const ticketMetaRows = feedbackTicketsRes.meta
+          const [ticketsWithReplay, ticketExportsMap] = await Promise.all([
+            ticketIds.length ? feedbackIdsWithReplay(projectId, ticketIds) : Promise.resolve(new Set<string>()),
             ticketIds.length ? exportsForFeedbackIds(ticketIds) : Promise.resolve({} as Record<string, any[]>),
-            // Fetch mutable state + recurrence-memory columns in one batch.
-            // recurrence_dates_json / last_seen_at / resolved_at / created_at power the four
-            // KLA-2 dashboard fields: recurrenceCount, firstSeen, lastSeen, isRegression.
-            db && ticketIds.length
-              ? db.execute({
-                  sql: `SELECT id, status, assignee, notes, recurrence_count,
-                               recurrence_dates_json, last_seen_at, resolved_at, created_at
-                        FROM feedback WHERE id IN (${ticketIds.map(() => "?").join(",")})`,
-                  args: ticketIds,
-                }).then(r => {
-                  const m: Record<string, { status: string; assignee: string | null; notes: string | null; recurrence: number; recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number }> = {}
-                  for (const x of r.rows) {
-                    m[String((x as any).id)] = {
-                      status: (x as any).status ? String((x as any).status) : "open",
-                      assignee: (x as any).assignee != null ? String((x as any).assignee) : null,
-                      notes: (x as any).notes != null ? String((x as any).notes) : null,
-                      recurrence: Number((x as any).recurrence_count ?? 1),
-                      recurrenceDatesJson: (x as any).recurrence_dates_json != null ? String((x as any).recurrence_dates_json) : null,
-                      lastSeenAt: (x as any).last_seen_at != null ? Number((x as any).last_seen_at) : null,
-                      resolvedAt: (x as any).resolved_at != null ? Number((x as any).resolved_at) : null,
-                      createdAt: Number((x as any).created_at),
-                    }
-                  }
-                  return m
-                })
-              : Promise.resolve({} as Record<string, { status: string; assignee: string | null; notes: string | null; recurrence: number; recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number }>),
           ])
-          // #745: workspace slug + project key are constant for this project-scoped board — resolve
-          // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
-          // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
-          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
           const tickets = feedbackTickets.map(f => {
             const p = f.simId ? personaById.get(f.simId) : null
             const meta = ticketMetaRows[f.id] ?? { status: "open", assignee: null, notes: null, recurrence: 1, recurrenceDatesJson: null, lastSeenAt: null, resolvedAt: null, createdAt: f.createdAt }
@@ -11448,6 +11831,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               sentiment: f.sentiment, screenshotId: f.screenshotId,
               sourceQuote: f.sourceQuote, sourceDate: f.sourceDate,
               notes: meta.notes, hasReplay: ticketsWithReplay.has(f.id),
+              // QPQ-31: who filed it — the signed-in actor, else the email typed into the composer's
+              // Email field. Same projection the /t/:ref page and the inbox already use, and member-gated
+              // by the surrounding /api/dashboard access check.
+              reporterEmail: f.contactEmail || f.actorEmail || null,
               recurrence: meta.recurrence, annotations: f.annotations,
               // KLA-2 regression-memory fields — consumed by dashboard UI via recurBadgeHtml/regrBannerHtml
               recurrenceCount: meta.recurrence,
@@ -11466,13 +11853,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           })
 
-          const [counts, insights, widgetPing] = await Promise.all([
-            dashboardCounts(projectId),
-            computeDashboardInsights(projectId),
-            // Widget heartbeat — drives the Snap-aware first-run checklist ("Install the report
-            // widget" ticks the moment /widget.js phones home from the founder's site).
-            latestWidgetPing(projectId),
-          ])
           const widgetStatus = widgetPing ? { host: widgetPing.host, lastSeen: widgetPing.lastSeen } : null
           // KLAVITYKLA-299: stamp the resolved project in a cookie so the server can restore
           // the user's selection on the next bare /api/dashboard call (no ?project= param).
@@ -11482,7 +11862,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const hasTranscriptSim = personas.some(p => p.simSource === "transcript")
           const hasSimReaction = simObservations.length > 0
           return json(
-            { email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
+            { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
             200,
             { "Set-Cookie": projectCookie(projectId, SECURE) },
           )
@@ -12346,33 +12726,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!fbAccess) return json({ error: "Only project members can add attachments." }, 403)
           const form = await req.formData().catch(() => null)
           if (!form) return json({ error: "Expected multipart/form-data." }, 400)
-          const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
+          const allAttachFiles = form.getAll("files").filter((f): f is File => f instanceof File)
+          const attachFiles = allAttachFiles.slice(0, 5)
+          // KD-193: files beyond the 5-file cap used to be dropped silently — now they are reported back so the UI can say so.
+          const ignoredFiles = allAttachFiles.slice(5).map((f) => f.name)
           if (!attachFiles.length) return json({ error: "No files provided." }, 400)
-          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
-          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
-          let attachTotalBytes = 0
-          const newAtts: Array<Record<string, any>> = []
+          // KD-193: the same file (name + size) already on this ticket — or repeated within this request — is NOT uploaded again.
+          // A user who saw no feedback and picked the file twice used to get two identical attachments.
+          const attKey = (name: unknown, size: unknown) => String(name ?? "").trim().toLowerCase() + "|" + Number(size ?? 0)
+          const seenAtt = new Set<string>((Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []).map((a: any) => attKey(a?.filename, a?.size)))
+          const duplicateFiles: string[] = []
+          const uploadFiles: File[] = []
           for (const af of attachFiles) {
             if (af.size <= 0) continue
-            const typeIsGeneric = !af.type || af.type === "application/octet-stream"
-            const videoMime = videoMimeFromName(af.name || "")
-            const isVideo = isVideoAttachment(af.type, af.name)
-            const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
+            const k = attKey(af.name, af.size)
+            if (seenAtt.has(k)) { duplicateFiles.push(af.name); continue }
+            seenAtt.add(k); uploadFiles.push(af)
+          }
+          if (!uploadFiles.length) return json({ ok: true, attachments: [], duplicates: duplicateFiles, ignored: ignoredFiles }, 200)
+          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
+          // validate every file's size BEFORE uploading anything (so a rejected request never leaves orphan objects behind)
+          let attachTotalBytes = 0
+          for (const af of uploadFiles) {
+            const perFileCap = isVideoAttachment(af.type, af.name) ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
             if (af.size > perFileCap) return json({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
             attachTotalBytes += af.size
             if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return json({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
+          }
+          // KD-193: upload to storage in PARALLEL (it was one file after another) — order of the stored list is preserved.
+          const uploadedAtts = await Promise.all(uploadFiles.map(async (af) => {
             try {
+              const typeIsGeneric = !af.type || af.type === "application/octet-stream"
+              const videoMime = videoMimeFromName(af.name || "")
               const abuf = new Uint8Array(await af.arrayBuffer())
               const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
               const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
               const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
                 { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
               if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-              newAtts.push(desc)
+              return desc
             } catch (aErr: any) {
               console.error("attachment upload failed (non-fatal):", aErr?.message || aErr)
+              return null
             }
-          }
+          }))
+          const newAtts: Array<Record<string, any>> = uploadedAtts.filter((d): d is NonNullable<typeof d> => !!d)
           if (!newAtts.length) return json({ error: "No attachments could be uploaded." }, 500)
           await appendFeedbackAttachments(fid, fbRow.projectId, newAtts)
           void insertActivity({
@@ -12385,7 +12784,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Presign each new attachment the same way the GET response does (#425/KLAVITYKLA-480), so the
           // dashboard can render/download it immediately without a second round-trip.
           const signedNewAtts = newAtts.map((a) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
-          return json({ ok: true, attachments: signedNewAtts }, 201)
+          return json({ ok: true, attachments: signedNewAtts, duplicates: duplicateFiles, ignored: ignoredFiles }, 201)
+        }
+
+        // KD-193: DELETE /api/feedback/:id/attachments?key=<storage key> — remove one attachment from a ticket (members only, like add).
+        // The list entry is removed atomically (compare-and-swap); the stored object is deleted afterwards (best effort) unless another
+        // ticket still references it (merged tickets share attachment keys).
+        if (req.method === "DELETE" && isAttachments) {
+          if (!fbAccess) return json({ error: "Only project members can remove attachments." }, 403)
+          const attKeyParam = String(url.searchParams.get("key") || "")
+          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          const rm = await removeFeedbackAttachment(fid, fbRow.projectId, attKeyParam)
+          if (!rm.ok) return json({ error: "Attachment not found." }, 404)
+          void (async () => {
+            try { if (!(await attachmentKeyReferencedElsewhere(attKeyParam, fid))) await deleteObject(attKeyParam) }
+            catch (e: any) { console.warn("attachment object cleanup skipped:", e?.message || e) }
+          })()
+          void insertActivity({
+            projectId: fbRow.projectId,
+            type: "ticket_attachment_removed",
+            actorEmail: me,
+            feedbackId: fid,
+            meta: { filename: String(rm.removed?.filename || "") },
+          }).catch((e: any) => console.warn("ticket attachment removal activity skipped:", e?.message || e))
+          return json({ ok: true, removed: attKeyParam })
         }
 
         // #738: POST /api/feedback/:id/annotations — persist a re-annotated evidence screenshot's markup.
@@ -12486,7 +12908,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // KLAVITYKLA-491: reporter + a single resolved page URL, mirroring the /api/dashboard ticket
             // projection so the standalone /t/:ref page renders reporter + page context without a second
             // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
-            reporterEmail: fbRow.actorEmail || fbRow.contactEmail || null,
+            reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
             pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
             ref: String(fbRow.id).split("-")[0],
             sourceReferrer: fbRow.sourceReferrer,
@@ -12543,7 +12965,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // PATCH /api/feedback/:id — any project member may edit status/assignee/notes/priority
         if (req.method === "PATCH" && !feedbackSubroute) {
           const body = await req.json().catch(() => ({}))
-          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+          const VALID_STATUS = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
           if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
             return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
           }
@@ -12906,17 +13328,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // GET /api/feedback/:id/suggest-labels — KLA-175: return AI-suggested labels (ghost chips).
         // Returns cached suggestions; if none exist yet, triggers generation synchronously.
         if (req.method === "GET" && isSuggestLabels) {
-          let suggestions = await getSuggestedLabels(fid, fbRow.projectId)
-          if (!suggestions.length) {
+          // The suggestions and the ticket's attached labels are independent reads → one parallel wave.
+          // `computed` distinguishes "never generated" (column NULL) from "generated, no label fits" ([]):
+          // only the former calls the model, so an empty result is served from the DB instead of paying for
+          // an AI call on every request.
+          const [sugState, attachedRows] = await Promise.all([
+            getSuggestedLabelsState(fid, fbRow.projectId),
+            labelsForFeedback(fid),
+          ])
+          let suggestions = sugState.labels
+          if (!sugState.computed) {
             // #543 completeness: feed the ticket's REAL title (manual tickets keep it in its own column)
             // plus the body into label suggestion, so a manual ticket's subject line drives label choice.
             const text = `${effectiveTicketTitle(fbRow)}\n${fbRow.observation || ""}`.slice(0, 2000)
             await suggestLabelsForFeedback({ feedbackId: fid, projectId: fbRow.projectId, text })
               .catch((e: any) => console.warn("[suggest-labels] on-demand (non-fatal):", e?.message || e))
-            suggestions = await getSuggestedLabels(fid, fbRow.projectId)
+            suggestions = (await getSuggestedLabelsState(fid, fbRow.projectId)).labels
           }
           // Filter out already-attached labels so ghost chips never duplicate real chips
-          const attached = new Set((await labelsForFeedback(fid)).map(l => l.id))
+          const attached = new Set(attachedRows.map(l => l.id))
           return json({ suggestions: suggestions.filter(l => !attached.has(l.id)) })
         }
 
@@ -13013,7 +13443,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -14324,7 +14754,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             reportType: "bug",
           })
           // Manual tickets start as "open" regardless of priority (override initial "new" status).
-          await updateFeedbackMeta(proj.id, id, { status: "open" })
+          // KD-228: insertFeedback does not persist the assignee column (same as the /api/v1/tickets route), so
+          // set it here too — otherwise the ticket opens Unassigned even though the assignee was emailed.
+          await updateFeedbackMeta(proj.id, id, { status: "open", assignee: assignee || null })
           // A manually-created ticket IS the triage-accept (a human wrote it), but it never passes
           // through the PATCH route that fires the auto-copy hook — so fire it here, or a manual
           // ticket silently never reaches Jira/Plane/GitHub/Linear.
@@ -14363,7 +14795,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
           if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
-          const VALID_STATUS = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]
+          const VALID_STATUS = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
           const VALID_PRI = ["urgent", "high", "medium", "low"]
 
           const hasStatus = body.status !== undefined
@@ -14575,6 +15007,48 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
         if (req.method === "GET" && sub === "/members") {
           return json({ members: await membersOfProject(pid) })
+        }
+        // QPQ-31: people lookup behind the composer's "on behalf of" typeahead — project members plus
+        // project contacts, filtered by a typed prefix. SESSION-GATED by the surrounding projMatch access
+        // check, and that gate is the point: the composer also runs anonymously on a customer's own site,
+        // where handing back a directory of names and addresses would let any visitor enumerate the team.
+        // An anonymous caller never reaches here, so its typeahead simply offers Create and nothing else.
+        if (req.method === "GET" && sub === "/people") {
+          const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
+          // "The team for this project" is wider than project_members: an account owner/admin can open
+          // every project in the account, so they belong in the list even without a per-project row.
+          // Without this the picker was empty on a project whose only roster entry is the owner.
+          const projRow = await projectById(pid)
+          const [mem, acct, con] = await Promise.all([
+            membersOfProject(pid),
+            projRow ? accountMembersRaw(projRow.accountId) : Promise.resolve([] as Array<{ email: string; role: string }>),
+            listProjectContacts(pid),
+          ])
+          const seen = new Set<string>()
+          const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
+          for (const m of mem) {
+            const e = String(m.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: null, kind: "member" })
+          }
+          for (const a of acct) {
+            const e = String(a.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: null, kind: "member" })
+          }
+          for (const c of con) {
+            const e = String(c.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: c.name, kind: "contact" })
+          }
+          // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
+          // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
+          // a normal-sized team.
+          const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 200)
+          return json({ people: hits })
         }
         if (req.method === "POST" && sub === "/invite") {
           // Any project member (admin or plain member) can invite — was admin-only. A non-admin

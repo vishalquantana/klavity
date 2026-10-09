@@ -130,12 +130,12 @@ test("anon teaser payload is redacted the same way", async () => {
   expect(bodyText).not.toContain(SHOT)
 })
 
-test("GET /t/:ref serves the standalone member page for a member (KLA-491 preserved)", async () => {
+test("GET /t/:ref serves the dashboard with the ticket booted for a member (KD-229)", async () => {
   const r = await get(`/t/${FID}`, OWNER_SID)
   expect(r.status).toBe(200)
   const html = await r.text()
-  expect(html).toContain("standalone single-ticket page") // the existing member page marker
-  expect(html).toContain(`"${FID}"`)
+  expect(html).not.toContain("standalone single-ticket page")
+  expect(html).toContain(`<meta name="klav-boot-ticket" data-id="${FID}"`)
 })
 
 test("GET /t/:ref serves the teaser page for a signed-in non-member (default teaser mode)", async () => {

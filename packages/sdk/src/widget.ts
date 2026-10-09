@@ -10,6 +10,7 @@ import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
+import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { computeSelector, describeElement } from "./element-selector"
 import { getTurnstileToken } from "./load-turnstile"
@@ -17,7 +18,6 @@ import { icon } from "@klavity/core/icons"
 // KLA-726: keep in sync with the extension card menu — shared source of truth in @klavity/core/context-menu.
 import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
-import { createSessionReplay, type SessionReplay } from "./session-replay"
 import { recordMe, recordingSupported } from "./recorder"
 import { on, emit } from "./events"
 import {
@@ -731,18 +731,8 @@ async function mount() {
   // Announce widget presence so the extension can yield (Task 3 handshake).
   document.dispatchEvent(new CustomEvent("klavity:widget-ready"))
 
-  // ── G1 session replay: rolling ~60s rrweb buffer, masked by default, attached on submit.
-  // rrweb (~260 KB) is lazy-loaded from the backend AFTER mount so it's not in the widget IIFE.
-  // Disable per-page with data-replay="off". Best-effort: any failure degrades to no-replay.
-  const replayEnabled = (currentScript()?.dataset?.replay || "on") !== "off"
-  const replay: SessionReplay = createSessionReplay({
-    backendUrl: cfg.backendUrl,
-    enabled: replayEnabled,
-  })
-  // JTBD 1.8: the composer shows an attached-proof chip. It's 'attached' when the buffer already holds a
-  // scrubbable recording (rrweb loaded + a full snapshot captured) and 'unavailable' when replay is off
-  // or the recorder script never loaded. rrweb loads async, so the chip is re-evaluated after open.
-  const replayChipState = (): 'attached' | 'unavailable' => (replayEnabled && replay.hasRecording()) ? 'attached' : 'unavailable'
+  // Session replay is NOT recorded by the widget (QA request): no rrweb download, no rolling buffer, nothing replay-related
+  // in the ticket request. Screenshots, file attachments and user-triggered "Record me" videos are unaffected.
 
   const firstParty = isFirstParty(location.origin, cfg.backendUrl)
 
@@ -756,6 +746,9 @@ async function mount() {
   // Public Turnstile site key (from the config fetch). When set, the composer renders a Turnstile
   // challenge on the anonymous submit path so dropping the email gate doesn't open a spam hole.
   let turnstileSiteKey = ""
+  // Does this server record submission keys (so a re-sent report returns the same ticket)? Learned from the config fetch below. Automatic
+  // retries are enabled ONLY when it says yes; an older server (or a failed config fetch) leaves this false → one attempt, manual Retry.
+  let serverIdempotent = false
   // Launcher display settings (from modalConfig).
   // Default is the softer icon-only launcher: a muted-indigo lightbulb, no text label. It reads as
   // "share feedback / an idea" rather than the louder "Report a bug" pill. Admins can still switch to
@@ -818,6 +811,7 @@ async function mount() {
       }
       if (j.widget) widget = { mode: j.widget.mode || "support", ctaUrl: j.widget.ctaUrl || widget.ctaUrl, reportGate: j.widget.reportGate || "anonymous" }
       if (typeof j.turnstileSiteKey === "string") turnstileSiteKey = j.turnstileSiteKey
+      serverIdempotent = serverSupportsIdempotency(j)
       // Pull launcher display overrides out of modalConfig
       if (modalConfig.launcherMode && ['hidden', 'icon', 'full', 'custom'].includes(modalConfig.launcherMode)) {
         launcherMode = modalConfig.launcherMode
@@ -1429,6 +1423,21 @@ async function mount() {
       // whether this project already tracks a matching known/recurring issue; on a hit the composer shows
       // an inline "Already reported — status: X" note (the user can still submit or dismiss). Best-effort:
       // any failure resolves null so the composer is never blocked by the lookup.
+      // QPQ-31: resolve people for the Email field's typeahead. Credentials are sent so a signed-in
+      // reporter (our own dashboard, or a logged-in embedder) gets the project's members + contacts;
+      // the endpoint is session-gated, so an anonymous visitor on a customer's site simply gets nothing
+      // back and their dropdown offers Create only — the team's addresses never leave the server.
+      onLookupPeople: async (q: string) => {
+        try {
+          const res = await fetchWithTimeout(
+            cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/people?q=" + encodeURIComponent(q),
+            { credentials: "include" },
+          )
+          if (!res.ok) return []
+          const j = await res.json().catch(() => null) as any
+          return Array.isArray(j?.people) ? j.people : []
+        } catch { return [] }
+      },
       onCheckKnown: async (description: string) => {
         try {
           const res = await fetchWithTimeout(cfg.backendUrl + "/api/widget/known-check", {
@@ -1592,10 +1601,12 @@ async function mount() {
           context: consoleContext(p.attachConsole === true),
           // PX4 #439/#428: attach the resolved reporter identity + freshly-captured browser/app info.
           reporter: _reporter, clientInfo: captureClientInfo(),
-          replayEvents: replay.snapshot(), annotations: p.annotations,
+          annotations: p.annotations,
           // Forward the gate's required email → server reporter_email. Without this, an "email"-gated
           // project rejects the submit with 400. On the default anonymous gate this is undefined.
           reporterEmail: p.reporterEmail, turnstileToken,
+          // QPQ-31: carry the reporter's "add me as a contact" choice through to the submit form.
+          createContact: p.createContact,
           // KLA submit-target: carry the reporter's destination choice ('project' default | 'klavity'). The
           // SERVER resolves the real Klavity intake project from KLAVITY_INTAKE_PROJECT_ID — the client only
           // ever sends this flag (never a target project id), so a report can't be routed to an arbitrary project.
@@ -1620,11 +1631,33 @@ async function mount() {
           // #651: hand the pill the report's OWN first captured screenshot (raw data URL, pre-compression) so
           // the "Report sent" success toast shows it as a thumbnail; falls back to the 'K' mark when absent.
           const pill = createUploadPill({ totalBytesHint: estimatePayloadBytes(uploadPayload), label: describePayloadParts(uploadPayload), thumbnail: uploadPayload.screenshots?.[0] })
-          const attempt = () => {
+          // ONE prepared submission (compressed screenshots, thumbnails, multipart body, idempotency key) is built lazily on the first
+          // attempt and then SHARED by every automatic retry and the manual Retry button — nothing is re-compressed or re-read, and the
+          // server recognises the repeat by its key, so a retry can never create a second ticket.
+          let preparedP: Promise<PreparedSubmission> | null = null
+          let filed = false
+          const freshTurnstile = needsTurnstile ? () => getTurnstileToken(turnstileSiteKey) : undefined
+          const attempt = (repair?: string[]) => {
             pill.uploading()
-            submitFeedback(uploadCfg, uploadPayload, (pct, loaded, total) => pill.progress(pct, loaded, total))
-              .then(async (result) => { await afterFiled(result); pill.success(result.issueKey, result.issueUrl) })
-              .catch(() => { pill.failure(attempt) }) // Retry re-runs attempt() with the retained payload
+            ;(preparedP ||= prepareSubmission(uploadCfg, uploadPayload).catch((e) => { preparedP = null; throw e }))
+              .then((prepared) => sendPrepared(prepared, uploadCfg, {
+                onProgress: (pct, loaded, total) => pill.progress(pct, loaded, total),
+                onRetry: (i) => i.pending ? pill.waiting(i.delayMs, i.waitedMs ?? 0) : pill.retrying(i.attempt, i.maxAttempts, i.error.userMessage),
+                freshTurnstile, repairSlots: repair,
+                autoRetry: serverIdempotent,   // never re-send automatically to a server that has not confirmed it recognises the key
+              }))
+              .then(async (o) => {
+                if (!filed) { filed = true; await afterFiled({ issueKey: o.id, issueUrl: o.issueUrl }) }   // the ticket exists now (even if some files are missing)
+                // Ticket created but some evidence failed to upload on the server: say so, and let Retry re-send ONLY those parts.
+                if (o.missing.length) pill.partial(o.missing.length, () => attempt(o.missing))
+                else pill.success(o.id, o.issueUrl)
+              })
+              .catch((e) => {
+                // Retry re-sends the SAME prepared body + key. Against a server that did not confirm idempotency support, a lost answer may
+                // mean the ticket already exists — say so, and name the button honestly ("Retry anyway").
+                const copy = retryFailureCopy(e instanceof SubmitError ? e : null, serverIdempotent)
+                pill.failure(() => attempt(repair), copy.message, copy.retryLabel)
+              })
           }
           attempt()
           // The modal fire-and-forgets this promise; the returned value is unused in pill mode.
@@ -1692,8 +1725,6 @@ async function mount() {
         }
         evMinimizing = false
       },
-      // JTBD 1.8: attached-proof chip — tell the reporter whether a session replay will ride along.
-      replayState: replayChipState(),
       // NON-BLOCKING default: close the modal + backdrop immediately on Submit and let the widget's
       // bottom-right pill drive the upload. Turned OFF only for an interactive success screen (leadgen
       // lead form / CTA), which must stay in the modal so the user can engage before it dismisses.
@@ -1703,18 +1734,6 @@ async function mount() {
       success: useInteractiveSuccess ? { copy: successCfg, onLead: postLead } : undefined,
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
-    // JTBD 1.8: rrweb lazy-loads (a few hundred ms), so the buffer may only become playable AFTER the
-    // composer opens. Poll briefly and flip the chip to 'attached' once a scrubbable recording exists.
-    if (replayEnabled) {
-      let tries = 0
-      const chipTimer = setInterval(() => {
-        // Stop once this composer closed (a new one, or none, is tracked) or the recording is ready.
-        if (composer !== ctrl || replay.hasRecording() || ++tries > 20) {
-          clearInterval(chipTimer)
-          if (composer === ctrl) ctrl.setReplayState(replayChipState())
-        }
-      }, 250)
-    }
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
     if (ev) {
       // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
@@ -2365,7 +2384,13 @@ export interface UploadPill {
   uploading: () => void
   progress: (pct: number, loaded?: number, total?: number) => void
   success: (issueKey: string, issueUrl: string) => void
-  failure: (onRetry: () => void) => void
+  failure: (onRetry: () => void, message?: string, retryLabel?: string) => void
+  /** Automatic retry in progress: "Retrying… (2/3)" + why. */
+  retrying: (attempt: number, maxAttempts: number, reason: string) => void
+  /** The server is still processing THIS report (an earlier attempt owns it): checking again shortly — not a failure, not a new attempt. */
+  waiting: (nextCheckMs: number, waitedMs: number) => void
+  /** The ticket exists but `missing` files didn't reach storage; Retry re-sends only those. */
+  partial: (missing: number, onRetry: () => void) => void
   dismiss: () => void
 }
 
@@ -2455,6 +2480,7 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     pill.classList.remove("ok", "err")
     if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
     armed = false
+    sub.style.whiteSpace = ""; sub.title = ""   // undo the wrapped, long failure explanation
     setSpinner()
     title.textContent = "Uploading your report…"
     sub.textContent = totalBytes ? `${label} · 0 / ${fmtMB(totalBytes)} MB` : label
@@ -2521,21 +2547,51 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
     arm()
   }
 
-  const failure = (onRetry: () => void) => {
+  const retrying = (attempt: number, maxAttempts: number, reason: string) => {
+    uploading()
+    title.textContent = `Retrying… (${attempt}/${maxAttempts})`
+    sub.textContent = reason
+  }
+
+  const waiting = (nextCheckMs: number, waitedMs: number) => {
+    uploading()
+    prog.style.display = "none"
+    title.textContent = "Finishing your report…"
+    sub.textContent = `The server is still processing it · checking again in ${Math.max(1, Math.round(nextCheckMs / 1000))}s (waited ${Math.round(waitedMs / 1000)}s)`
+  }
+
+  // The ticket was created, but some evidence didn't reach storage: warn (not "failed") and offer to re-send just the missing parts.
+  const partial = (missing: number, onRetry: () => void) => {
+    pill.classList.remove("ok"); pill.classList.add("err")
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
+    armed = false
+    setIcon("triangle-alert")
+    title.textContent = "Report sent — some files didn't upload"
+    sub.textContent = ""
+    const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
+    a.addEventListener("click", (e) => { e.preventDefault(); if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } armed = false; onRetry() })
+    sub.append(document.createTextNode(`${missing} file${missing === 1 ? "" : "s"} missing · `), a)
+    prog.style.display = "none"
+    dismissTimer = setTimeout(remove, PILL_FAIL_AUTODISMISS_MS)   // same long window as a failure so it never lingers forever
+  }
+
+  const failure = (onRetry: () => void, message?: string, retryLabel?: string) => {
     pill.classList.remove("ok"); pill.classList.add("err")
     if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null }
     armed = false
     setIcon("x-circle")
     title.textContent = "Upload didn't finish"
     sub.textContent = ""
-    const a = document.createElement("a"); a.href = "#"; a.textContent = "Retry"
+    const a = document.createElement("a"); a.href = "#"; a.textContent = retryLabel || "Retry"
     a.addEventListener("click", (e) => {
       e.preventDefault()
       if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null } // #475: clear the fail-timer on retry
       armed = false
       onRetry()
     })
-    sub.append(document.createTextNode("check your connection · "), a)
+    sub.append(document.createTextNode((message || "check your connection") + " · "), a)
+    // A long, important explanation (e.g. "it may already have been created") must be READABLE, not cut off by the one-line ellipsis.
+    if ((message || "").length > 70) { sub.style.whiteSpace = "normal"; sub.title = message || "" }
     prog.style.display = "none"
     // #475: failed pills used to persist forever and stack up. Auto-dismiss after a long window (30s, well past
     // the 4s success window so the user can read the error / retry); the × dismisses instantly, retry clears it.
@@ -2552,19 +2608,20 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
   }
 
   uploading()
-  return { uploading, progress, success, failure, dismiss: remove }
+  return { uploading, progress, success, failure, retrying, waiting, partial, dismiss: remove }
 }
 
-export async function submitFeedback(
+/**
+ * A report ready to send: the compressed screenshots, thumbnails and multipart body are built ONCE and the report gets ONE idempotency
+ * key. Every attempt (automatic retry, manual Retry, repair of missing files) re-sends this same body with this same key, so a retry
+ * can never create a second ticket and never repeats the CPU work (decode / re-encode / base64 → Blob) of preparing it.
+ */
+export type PreparedSubmission = { fd: FormData; key: string; sent: boolean }
+
+export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; replayEvents?: unknown[]; annotations?: any; reporterEmail?: string; turnstileToken?: string; feedbackTarget?: 'project' | 'klavity' },
-  // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10%
-  // for server-side processing. When provided, the upload uses XMLHttpRequest instead of fetch so
-  // the browser exposes real upload progress events. `loaded`/`total` are the real on-the-wire bytes
-  // (multipart total, incl. boundary overhead) when the browser reports them — the pill uses these for
-  // its "9.8 / 16 MB" readout. Omitting onProgress (e.g. extension path) keeps plain-fetch unchanged.
-  onProgress?: (pct: number, loaded?: number, total?: number) => void,
-): Promise<{ issueKey: string; issueUrl: string }> {
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity' },
+): Promise<PreparedSubmission> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
   const screenshots = await Promise.all(payload.screenshots.map((s) => compressScreenshot(s)))
@@ -2596,7 +2653,6 @@ export async function submitFeedback(
     // PX4 #439/#428: reporter identity + captured browser/app info as their own /api/feedback fields.
     reporter: payload.reporter,
     clientInfo: payload.clientInfo,
-    replayEvents: payload.replayEvents,
     // KLAVITYKLA-217: forward the full per-image annotation map so markup on every screenshot reaches
     // the server as annotations_json (buildFeedbackForm serializes it). Previously omitted here, which
     // silently dropped the overlay from the widget submit path.
@@ -2605,6 +2661,9 @@ export async function submitFeedback(
   // Reporter identity for the "email" gate: an end-user with no Klavity account types an email so the
   // server accepts the anonymous cross-origin report and can notify them on fix.
   if (payload.reporterEmail) fd.set("reporter_email", payload.reporterEmail)
+  // QPQ-31: the reporter chose "Add <email> as a contact" under the Email field. Only ever sent with a
+  // reporter_email — a flag on its own has nothing to register.
+  if (payload.reporterEmail && payload.createContact) fd.set("create_contact", "1")
   // JTBD 1.7: Turnstile token for the anonymous submit path — the server verifies it (when
   // TURNSTILE_SECRET_KEY is set) to replace the email gate's spam-shield role. Omitted when Turnstile
   // isn't configured for the project, in which case the server's rate limits remain the only bound.
@@ -2614,44 +2673,52 @@ export async function submitFeedback(
   // be abused to route a report into an arbitrary project (no IDOR).
   if (payload.feedbackTarget === "klavity") fd.set("feedback_target", "klavity")
 
-  // XHR path — used when the caller wants real upload-progress events (widget submit flow).
-  // fetch() gives no upload progress; XHR's upload.onprogress fires as bytes hit the wire.
-  if (onProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      // Report 0–90 % during the upload phase; the remaining 10 % covers server processing latency
-      // so the bar never falsely reads 100 % before the response is actually received.
-      xhr.upload.onprogress = (ev) => {
-        if (ev.lengthComputable) onProgress(Math.min(90, Math.round((ev.loaded / ev.total) * 90)), ev.loaded, ev.total)
-      }
-      xhr.onload = () => {
-        if (xhr.status < 200 || xhr.status >= 300) { reject(new Error("submit failed: " + xhr.status)); return }
-        try {
-          const j = JSON.parse(xhr.responseText)
-          // #651: issue_url is now returned for every widget submit (incl. anonymous/cross-origin) —
-          // the deep link's /dashboard route is auth-gated, so opening it still requires login (no leak).
-          resolve({ issueKey: String(j.jira_key || j.id || ""), issueUrl: String(j.issue_url || "") })
-        } catch { reject(new Error("submit failed: invalid response")) }
-      }
-      xhr.onerror = () => reject(new Error("submit failed: network error"))
-      xhr.open("POST", cfg.backendUrl + "/api/feedback")
-      if (cfg.firstParty) xhr.withCredentials = true
-      else if (cfg.token) xhr.setRequestHeader("authorization", "Bearer " + cfg.token)
-      // else: anonymous cross-origin report — no auth header (server uses project gate + CORS).
-      xhr.send(fd)
-    })
-  }
-
-  // Plain fetch path (no progress callback): extension submit, or callers that manage their own UI.
-  const init: RequestInit = { method: "POST", body: fd }
-  if (cfg.firstParty) init.credentials = "include"
-  else if (cfg.token) init.headers = { authorization: "Bearer " + cfg.token }
-  const r = await fetch(cfg.backendUrl + "/api/feedback", init)
-  if (!r.ok) throw new Error("submit failed: " + r.status)
-  const j = await r.json()
-  // Same contract as the XHR path above: issue_url is returned for widget submits (auth-gated link).
-  return { issueKey: String(j.jira_key || j.id || ""), issueUrl: String(j.issue_url || "") }
+  // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
+  const key = payload.submissionKey || newSubmissionKey()
+  fd.set("submission_key", key)
+  return { fd, key, sent: false }
 }
+
+/**
+ * Send a prepared report with automatic retries. Network drops, stalls, timeouts, 5xx / 429 and an "already being processed" 409 are
+ * retried (3 attempts, backoff + jitter) with the SAME key, so a response that was lost after the server created the ticket just comes
+ * back as that ticket. `repairSlots` re-sends only the evidence that previously failed. Turnstile tokens are single-use: every attempt
+ * after the first gets a FRESH one (set() overwrites, so old tokens never pile up; a failed refresh deletes the stale one).
+ */
+export async function sendPrepared(
+  p: PreparedSubmission,
+  cfg: { backendUrl: string; firstParty: boolean; token: string },
+  o: { onProgress?: (pct: number, loaded?: number, total?: number) => void; onRetry?: (i: RetryInfo) => void; freshTurnstile?: () => Promise<string | null>; repairSlots?: string[]; sleep?: (ms: number) => Promise<void>;
+      /** Automatic retries ON (default) only when the server has confirmed idempotency support; false → exactly one attempt. */ autoRetry?: boolean } = {},
+): Promise<SubmitOutcome> {
+  const body = o.repairSlots && o.repairSlots.length ? buildRepairForm(p.fd, o.repairSlots) : p.fd
+  const result = await withRetries(async () => {
+    // A repair body is built without any token, and every attempt after the first full send needs a new one (a used token only fails).
+    if ((p.sent || body !== p.fd) && o.freshTurnstile) refreshTurnstileField(body, await o.freshTurnstile().catch(() => null))
+    p.sent = true
+    return sendForm(cfg, body, { onProgress: o.onProgress })
+  }, { onRetry: o.onRetry, sleep: o.sleep, maxAttempts: o.autoRetry === false ? 1 : RETRY.maxAttempts })
+  return outcomeFromResult(result)
+}
+
+/**
+ * Single-attempt submit (interactive-success path, extension-style callers, tests): prepare + send once, no automatic retry. The
+ * report still carries its idempotency key. With `onProgress` it uses XMLHttpRequest (real upload events + a stall watchdog); without,
+ * plain fetch.
+ */
+export async function submitFeedback(
+  cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
+  payload: Parameters<typeof prepareSubmission>[1],
+  // Optional progress callback: called with 0–90 during the upload phase, leaving the final 10% for server-side processing. `loaded`/`total`
+  // are the real on-the-wire bytes (multipart total, incl. boundary overhead) when the browser reports them.
+  onProgress?: (pct: number, loaded?: number, total?: number) => void,
+): Promise<{ issueKey: string; issueUrl: string }> {
+  const prepared = await prepareSubmission(cfg, payload)
+  prepared.sent = true
+  const o = outcomeFromResult(await sendForm(cfg, prepared.fd, { onProgress }))
+  return { issueKey: o.id, issueUrl: o.issueUrl }
+}
+
 
 if (typeof window !== "undefined") {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => mount())

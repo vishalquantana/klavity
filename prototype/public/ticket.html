@@ -291,7 +291,18 @@ function render() {
   if (t.sourceQuote) { var q = $("quote"); q.textContent = "“" + t.sourceQuote + "”"; q.classList.remove("hide"); }
 
   // Screenshot: thumbnail-first, then upgrade to the full image.
-  if (t.screenshotId) loadScreenshot(t.screenshotId);
+  var imgAtt = (Array.isArray(t.attachments) ? t.attachments : []).find(function(a) {
+    return a && a.url && (/\.(png|jpe?g|webp|gif|svg)$/i.test(a.filename || "") || /^image\//i.test(a.contentType || ""));
+  });
+  if (t.screenshotId) {
+    loadScreenshot(t.screenshotId);
+  } else if (imgAtt && imgAtt.url) {
+    var img = $("shotImg");
+    $("shotWrap").classList.remove("hide");
+    img.src = imgAtt.url;
+    img.classList.add("ready");
+    img.addEventListener("click", function () { if (img.src) window.open(img.src, "_blank", "noopener"); });
+  }
 
   $("skel").classList.add("hide");
   $("content").classList.remove("hide");

@@ -115,6 +115,21 @@ test("POST /api/projects/:id/tickets creates a manual ticket and returns 201", a
   expect(d.ticketId.startsWith("fb_")).toBe(true)
 })
 
+test("KD-100: the reporter is ALWAYS the signed-in user — a forged reporter in the create body is ignored", async () => {
+  const FAKE = "ceo@evil.test"
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "Forged reporter attempt", priority: "low", assignee: MEMBER,
+    reporter: FAKE, reporterEmail: FAKE, reporter_email: FAKE, actorEmail: FAKE, actor_email: FAKE, contactEmail: FAKE, contact_email: FAKE, createdBy: FAKE,
+  }, MEM_SID)
+  expect(r.status).toBe(201)
+  const { ticketId } = await r.json()
+  const row: any = (await raw.execute({ sql: "SELECT * FROM feedback WHERE id=?", args: [ticketId] })).rows[0]
+  expect(row.actor_email).toBe(MEMBER)                                   // the session user, not the body's value
+  expect(JSON.stringify(row)).not.toContain("evil.test")                 // no forged address landed in ANY column
+  const g = await req("GET", `/api/feedback/${ticketId}`, undefined, MEM_SID)
+  expect(JSON.stringify(await g.json())).not.toContain("evil.test")      // and none is surfaced on read
+})
+
 test("created ticket appears in GET /api/projects/:id/tickets with source=manual", async () => {
   await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Listing ticket for source check", priority: "medium", assignee: "dev@team.local" })
   const r = await req("GET", `/api/projects/${PROJ}/tickets?source=manual`)
@@ -295,6 +310,21 @@ test("#541 manual create with a valid assignee succeeds (201)", async () => {
   expect(r.status).toBe(201)
   const d = await r.json()
   expect(d.ok).toBe(true)
+})
+
+// KD-228: the assignee picked in the New ticket dialog must be stored on the ticket, so the ticket detail
+// page shows it (it used to open as Unassigned while the assignee was still emailed).
+test("KD-228 manual create stores the chosen assignee on the ticket", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "Assignee sticks",
+    priority: "medium",
+    assignee: MEMBER,
+  })
+  expect(r.status).toBe(201)
+  const { ticketId } = await r.json()
+  const row = (await raw.execute({ sql: "SELECT assignee, status FROM feedback WHERE id=?", args: [ticketId] })).rows[0] as any
+  expect(row.assignee).toBe(MEMBER)
+  expect(row.status).toBe("open")
 })
 
 // #543 completeness (Codex review): a MANUAL ticket keeps its subject in the `title` column and its body

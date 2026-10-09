@@ -1,4 +1,6 @@
 import { S3Client } from 'bun'
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 
 const ENDPOINT = process.env.S3_ENDPOINT || ''
 const REGION = process.env.S3_REGION || 'us-east-1'
@@ -6,6 +8,12 @@ const BUCKET = process.env.S3_BUCKET || ''
 const FOLDER = (process.env.S3_FOLDER || 'uploads').replace(/\/+$/, '')
 const ACCESS = process.env.AWS_ACCESS_KEY_ID || ''
 const SECRET = process.env.AWS_SECRET_ACCESS_KEY || ''
+
+const LOCAL_PUB_DIR = join(import.meta.dir, '..', 'public')
+function ensureLocalDir(filepath: string) {
+  const dir = dirname(filepath)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+}
 
 // True only when the S3 credentials/bucket are fully configured. Callers use this to SKIP optional,
 // best-effort capture work (e.g. AutoSim run recording) when there is nowhere to persist it — so no
@@ -29,6 +37,13 @@ function getClient(): S3Client {
   return client
 }
 
+/**
+ * Optional DETERMINISTIC object key (idempotent submissions). A retried / taken-over submission re-uploads each file under the SAME
+ * key (`<ts>-<keyId>.<ext>`) so it overwrites its own earlier object instead of leaving an orphan behind. `keyId` must be an
+ * unguessable per-(project, submission key, slot) id and `ts` a stable timestamp (the claim's creation time).
+ */
+export type DeterministicKey = { keyId: string; ts: number }
+
 export type UploadedScreenshot = { url: string; key: string; bucket: string; contentType: string; acl: string }
 
 // Upload one screenshot and return its storage metadata (key/bucket so callers can record a durable
@@ -41,11 +56,16 @@ export async function uploadScreenshotMeta(
   bytes: ArrayBuffer | Uint8Array,
   contentType: string,
   acl: 'public-read' | 'private' = 'private',
+  det?: DeterministicKey,
 ): Promise<UploadedScreenshot> {
   const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png'
-  const key = s3Key(FOLDER, Date.now(), crypto.randomUUID(), ext)
-  // TODO SSE: Bun's S3Client.write has no server-side-encryption option (no x-amz-server-side-encryption
-  // passthrough); enable bucket default encryption (SSE-S3/aws:kms) in the provider console instead.
+  const key = s3Key(FOLDER, det ? det.ts : Date.now(), det ? det.keyId : crypto.randomUUID(), ext)
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    ensureLocalDir(localPath)
+    await Bun.write(localPath, bytes)
+    return { url: `/${key}`, key, bucket: 'local', contentType, acl }
+  }
   await getClient().write(key, bytes, { acl, type: contentType })
   return { url: `${ENDPOINT.replace(/\/+$/, '')}/${BUCKET}/${key}`, key, bucket: BUCKET, contentType, acl }
 }
@@ -58,10 +78,17 @@ export async function uploadAttachment(
   bytes: ArrayBuffer | Uint8Array,
   filename: string,
   contentType: string,
+  det?: DeterministicKey,
 ): Promise<UploadedAttachment> {
   const extMatch = /\.([A-Za-z0-9]{1,8})$/.exec(filename)
   const ext = extMatch ? extMatch[1].toLowerCase() : 'bin'
-  const key = s3Key(`${FOLDER}/attachments`, Date.now(), crypto.randomUUID(), ext)
+  const key = s3Key(`${FOLDER}/attachments`, det ? det.ts : Date.now(), det ? det.keyId : crypto.randomUUID(), ext)
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    ensureLocalDir(localPath)
+    await Bun.write(localPath, bytes)
+    return { key, bucket: 'local', filename, contentType: contentType || 'application/octet-stream' }
+  }
   await getClient().write(key, bytes, { acl: 'private', type: contentType || 'application/octet-stream' })
   return { key, bucket: BUCKET, filename, contentType: contentType || 'application/octet-stream' }
 }
@@ -77,6 +104,12 @@ export async function uploadRecordingObject(
 ): Promise<{ key: string; bucket: string; contentType: string }> {
   const safeExt = /^[a-z0-9]{1,8}$/i.test(ext) ? ext.toLowerCase() : 'bin'
   const key = s3Key(`${FOLDER}/recordings`, Date.now(), crypto.randomUUID(), safeExt)
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    ensureLocalDir(localPath)
+    await Bun.write(localPath, bytes)
+    return { key, bucket: 'local', contentType: contentType || 'application/octet-stream' }
+  }
   await getClient().write(key, bytes, { acl: 'private', type: contentType || 'application/octet-stream' })
   return { key, bucket: BUCKET, contentType: contentType || 'application/octet-stream' }
 }
@@ -87,6 +120,12 @@ export async function uploadRecordingObject(
 // streams it back with Content-Encoding: gzip. `bytes` are the ALREADY-gzipped payload.
 export async function uploadReplayObject(bytes: ArrayBuffer | Uint8Array): Promise<{ key: string; bucket: string }> {
   const key = s3Key(`${FOLDER}/replays`, Date.now(), crypto.randomUUID(), 'json.gz')
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    ensureLocalDir(localPath)
+    await Bun.write(localPath, bytes)
+    return { key, bucket: 'local' }
+  }
   await getClient().write(key, bytes, { acl: 'private', type: 'application/gzip' })
   return { key, bucket: BUCKET }
 }
@@ -104,6 +143,12 @@ export async function uploadObject(
   contentType: string,
   acl: 'public-read' | 'private' = 'private',
 ): Promise<{ key: string; bucket: string; contentType: string }> {
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    ensureLocalDir(localPath)
+    await Bun.write(localPath, bytes)
+    return { key, bucket: 'local', contentType }
+  }
   await getClient().write(key, bytes, { acl, type: contentType })
   return { key, bucket: BUCKET, contentType }
 }
@@ -111,11 +156,20 @@ export async function uploadObject(
 // Delete one object by key. Used by the data-retention sweep (C1) and GDPR erasure (C2) to remove the
 // underlying S3 bytes when a screenshots ledger row is deleted. Best-effort: callers should catch/log.
 export async function deleteObject(key: string): Promise<void> {
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    if (existsSync(localPath)) try { unlinkSync(localPath) } catch {}
+    return
+  }
   await getClient().delete(key)
 }
 
 // True iff an object exists at `key` (a cheap metadata HEAD via stat; never fetches the body).
 export async function objectExists(key: string): Promise<boolean> {
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    return existsSync(localPath)
+  }
   try { await getClient().file(key).stat(); return true } catch { return false }
 }
 
@@ -196,6 +250,12 @@ export async function purgeLegacyOgObjects(): Promise<{ purged: number; failed: 
 // natively attach the image). Throws if S3 isn't configured / not found. NOTE: this BUFFERS the whole
 // object — do not use it for high-fanout HTTP serving; use getObjectStream instead (KLA-519).
 export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    const f = Bun.file(localPath)
+    const buf = await f.arrayBuffer()
+    return { bytes: new Uint8Array(buf), contentType: f.type || "image/png" }
+  }
   const f = getClient().file(key)
   const buf = await f.arrayBuffer()
   return { bytes: new Uint8Array(buf), contentType: f.type || "image/png" }
@@ -211,6 +271,18 @@ export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; 
 // known-length body Bun serves chunked transfer-encoding (no content-length) — fine for <img> embeds.
 // Throws if S3 isn't configured; a missing object throws from stat() and the caller maps to 404.
 export async function getObjectStream(key: string): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string; size: number | null }> {
+  if (!s3Configured()) {
+    const localPath = join(LOCAL_PUB_DIR, key)
+    const f = Bun.file(localPath)
+    if (!(await f.exists())) {
+      throw new Error(`File not found: ${key}`)
+    }
+    let contentType = "application/octet-stream"
+    let size: number | null = null
+    const st = await f.stat()
+    if (st && Number.isFinite(st.size) && st.size >= 0) size = st.size
+    return { stream: f.stream() as unknown as ReadableStream<Uint8Array>, contentType: f.type || contentType, size }
+  }
   const f = getClient().file(key)
   let contentType = "application/octet-stream"
   let size: number | null = null
@@ -228,5 +300,8 @@ export async function uploadScreenshot(bytes: ArrayBuffer | Uint8Array, contentT
 // Presigned, time-limited GET URL for a PRIVATE object (Sim/live-review screenshots, §5d). The caller
 // is responsible for membership-checking before handing this out. expiresInSec defaults to 10 minutes.
 export function presignGet(key: string, expiresInSec = 600): string {
+  if (!s3Configured()) {
+    return key.startsWith('/') ? key : '/' + key
+  }
   return getClient().presign(key, { method: 'GET', expiresIn: expiresInSec })
 }

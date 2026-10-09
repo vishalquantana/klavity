@@ -261,7 +261,7 @@ export const MCP_TOOLS: McpTool[] = [
     description: "Update a ticket: status (new|open|in_progress|done|dismissed), priority, assignee, notes, description.",
     inputSchema: { type: "object", required: ["project_id", "ticket_id"], properties: {
       project_id: { type: "string" }, ticket_id: { type: "string" },
-      status: { type: "string", enum: ["new", "open", "in_progress", "done", "dismissed"] },
+      status: { type: "string", enum: ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"] },
       priority: { type: "string", enum: ["urgent", "high", "medium", "low"] },
       assignee: { type: "string" }, notes: { type: "string" }, description: { type: "string" } } },
     async handler(args, ctx) {

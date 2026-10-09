@@ -139,21 +139,19 @@ test("#707: the dedicated page wraps title+detail in a contained paper card (not
   expect(fn).toContain('if (t.screenshotId && panel) detailEl.classList.add("single-has-shot")')
 })
 
-test("#707: buildTktDetail renders a 3-col grid (screenshot | description+activity | properties) on the full page only", () => {
+test("buildTktDetail renders a 2-col grid (details+attachments | properties) on the full page only", () => {
   const fn = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
   // gated to the full page (isSingle & NOT the slide-over panel) so the panel/board-expand are unchanged.
   expect(fn).toContain('const _pageThreeCol = isSingle && (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")')
   expect(fn).toContain('<div class="t3-cols">')
-  expect(fn).toContain('class="t3-col t3-left"')
   expect(fn).toContain('class="t3-col t3-mid"')
   expect(fn).toContain('class="t3-col t3-right"')
   expect(fn).toContain('class="t3-gutter" data-g="1"')
-  expect(fn).toContain('class="t3-gutter" data-g="2"')
-  // the activity/comments mount point in the middle column
+  // the occurrence and activity/comments mount points in the main column
+  expect(fn).toContain('class="t3-occ-mount"')
   expect(fn).toContain('class="t3-activity-mount"')
-  // Enhance + Attach tools under the description
+  // Enhance + Attach tools
   expect(fn).toContain("t3-enh-btn")
-  expect(fn).toContain("t3-attach-btn")
   expect(fn).toContain("if (_pageThreeCol) wireT3Resize(detailEl)")
 })
 
@@ -207,11 +205,8 @@ test("#725a: the ticket page is uncapped width and widens the outer .wrap when o
 
 // ── #726: the cockpit media column defaults to 480px (LEFT ~480 | MIDDLE 1fr | RIGHT ~280 per the
 //    approved Studio Cockpit mockup — supersedes #725b's 460/270 default; still user-resizable). ───────
-test("#726: the 3-col cockpit grid defaults col1 (evidence) 480px and col3 280px", () => {
-  // KLA-responsive: cols now SHRINK (minmax max = the persisted width) so a wide col1 / narrow content
-  // area can't overflow; col3 keeps a 200px floor so PROPERTIES never crushes. Defaults stay 480/280.
-  expect(HTML).toContain("grid-template-columns:minmax(0,var(--t3c1,480px)) 8px minmax(0,1fr) 8px minmax(200px,var(--t3c3,280px))")
-  expect(HTML).not.toContain("var(--t3c1,300px)")
+test("the 2-col ticket grid defaults main 1fr and right 300px", () => {
+  expect(HTML).toContain("grid-template-columns:minmax(0,1fr) 8px minmax(240px,var(--t3c2,300px))")
 })
 
 // ── KLA-responsive: the cockpit collapses on the CARD's width (container query), not just viewport, so
