@@ -810,5 +810,12 @@
     "excerpt": "AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches.",
     "category": "Guides",
     "date": "2026-10-08"
+  },
+  {
+    "slug": "jam-dev-alternative",
+    "title": "The Best Jam.dev Alternative for Agencies & Vibe Coders",
+    "excerpt": "Jam.dev is a Chromium extension, so every reporter must install it. The best Jam.dev alternative drops the extension entirely.",
+    "category": "Compare",
+    "date": "2026-10-09"
   }
 ]

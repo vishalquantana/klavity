@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Jam.dev alternative: extension install barrier versus an embedded right-click bug reporter">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="110" cy="370" r="120" fill="#f5f0e8" opacity="0.04"/>
+
+  <rect x="56" y="96" width="290" height="190" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="96" width="290" height="190" rx="12" fill="none" stroke="#f5f0e8" stroke-opacity="0.18"/>
+  <line x1="56" y1="126" x2="346" y2="126" stroke="#f5f0e8" stroke-opacity="0.18"/>
+  <circle cx="74" cy="111" r="4" fill="#f87171" opacity="0.7"/>
+  <circle cx="88" cy="111" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="300" y="104" width="30" height="15" rx="4" fill="#6366f1" opacity="0.55"/>
+  <path d="M308 111h14M315 104v15" stroke="#1e1b2e" stroke-width="2" opacity="0.8"/>
+
+  <rect x="140" y="160" width="122" height="78" rx="8" fill="#1e1b2e" stroke="#f87171" stroke-opacity="0.6"/>
+  <rect x="158" y="192" width="86" height="34" rx="5" fill="#f87171" opacity="0.18"/>
+  <path d="M175 192v-11a26 26 0 0152 0v11" fill="none" stroke="#f87171" stroke-width="4" opacity="0.8"/>
+  <circle cx="201" cy="209" r="5" fill="#f87171"/>
+  <line x1="92" y1="262" x2="200" y2="262" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="6"/>
+  <line x1="92" y1="146" x2="188" y2="146" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="6"/>
+
+  <path d="M372 191h56" stroke="#6366f1" stroke-width="3"/>
+  <path d="M422 184l10 7-10 7z" fill="#6366f1"/>
+
+  <rect x="454" y="96" width="290" height="190" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="454" y="96" width="290" height="190" rx="12" fill="none" stroke="#6366f1" stroke-opacity="0.45"/>
+  <line x1="454" y1="126" x2="744" y2="126" stroke="#f5f0e8" stroke-opacity="0.18"/>
+  <circle cx="472" cy="111" r="4" fill="#4ade80" opacity="0.8"/>
+  <line x1="490" y1="146" x2="586" y2="146" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="6"/>
+  <rect x="490" y="166" width="104" height="26" rx="5" fill="#f87171" opacity="0.28" stroke="#f87171" stroke-opacity="0.75"/>
+  <path d="M596 190l16 14-6 2 5 10-5 3-5-10-5 4z" fill="#f5f0e8" opacity="0.85"/>
+  <rect x="610" y="196" width="112" height="72" rx="8" fill="#1e1b2e" stroke="#6366f1" stroke-opacity="0.8"/>
+  <rect x="622" y="210" width="78" height="7" rx="3" fill="#6366f1" opacity="0.8"/>
+  <rect x="622" y="226" width="60" height="6" rx="3" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="622" y="240" width="88" height="6" rx="3" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="707" cy="256" r="9" fill="#4ade80" opacity="0.9"/>
+  <path d="M702 256l4 4 7-8" stroke="#1e1b2e" stroke-width="2.4" fill="none"/>
+
+  <path d="M400 310v26" stroke="#6366f1" stroke-width="3"/>
+  <path d="M393 330l7 10 7-10z" fill="#6366f1"/>
+  <rect x="276" y="344" width="248" height="46" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-opacity="0.7"/>
+  <rect x="296" y="360" width="10" height="14" rx="2" fill="#4ade80"/>
+  <rect x="316" y="360" width="10" height="14" rx="2" fill="#4ade80"/>
+  <rect x="336" y="360" width="10" height="14" rx="2" fill="#4ade80"/>
+  <line x1="360" y1="363" x2="470" y2="363" stroke="#f5f0e8" stroke-opacity="0.35" stroke-width="5"/>
+  <line x1="360" y1="375" x2="432" y2="375" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="5"/>
+</svg>
