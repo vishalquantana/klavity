@@ -1426,7 +1426,10 @@ let DASHBOARD_HTML: string | null = null
 // inputs that vary within a release; carries a content-hash ETag so the browser can revalidate with
 // a cheap 304 instead of re-downloading the whole shell every navigation.
 let _dashRendered: { key: string; body: string; etag: string } | null = null
-async function dashboardPage(req?: Request, me?: string | null): Promise<Response> {
+// KD-229: `bootTicket` serves the dashboard AT a ticket permalink (/<slug>/<KEY>-<n> or /t/<id>) so a
+// reload of the in-dashboard full ticket page keeps the dashboard shell instead of the standalone
+// ticket.html. The ticket/project ids ride in a <meta> the client reads on boot.
+async function dashboardPage(req?: Request, me?: string | null, bootTicket?: { id: string; projectId: string }): Promise<Response> {
   if (DASHBOARD_HTML === null || process.env.NODE_ENV !== "production") {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
@@ -1465,6 +1468,13 @@ async function dashboardPage(req?: Request, me?: string | null): Promise<Respons
     const h = new Headers(init)
     if (uid) h.append("Set-Cookie", uidCookie(uid, SESSION_DAYS * 86400, SECURE))
     return h
+  }
+  if (bootTicket) {
+    // Per-ticket body → never the shared ETag/304 (that validator belongs to the plain shell).
+    const meta = `<meta name="klav-boot-ticket" data-id="${escapeHtml(bootTicket.id)}" data-project="${escapeHtml(bootTicket.projectId)}">`
+    return new Response(body.replace("<head>", "<head>\n  " + meta), {
+      headers: withUid({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "vary": "Cookie", "x-robots-tag": "noindex, nofollow" }),
+    })
   }
   if (req && req.headers.get("if-none-match") === etag) {
     return new Response(null, { status: 304, headers: withUid(cacheHeaders) })
@@ -8961,6 +8971,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       const memberAcc = me ? await projectAccess(me, resolved.projectId).catch(() => null) : null
       // Member/admin full → the fast standalone member page (KLA-491, unchanged).
+      // KD-229: a member gets the dashboard shell at this URL (ticket opens in its full-page view), so a
+      // reload of the in-dashboard ticket page stays in the dashboard. Non-members keep the teaser.
+      if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: resolved.id, projectId: resolved.projectId })
       const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
@@ -8999,20 +9012,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       if (!rlAllow("ticket:page:" + clientIp(req, server), 120, 60_000)) return new Response("Rate limited", { status: 429 })
       const res = await resolveWorkspaceTicket(prettyTicketMatch[1], prettyTicketMatch[2]).catch(() => null)
       if (!res) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } })
-      const serveTicket = async () => {
-        const pagePath = PUB + "/ticket.html"
-        if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
-        let _tHtml = await Bun.file(pagePath).text()
-        _tHtml = _tHtml.replaceAll("__TICKET_ID__", res.id).replaceAll("__PROJECT_ID__", res.projectId)
-        try {
-          // C1-a: anon tier + tier-folded keyVersion in the external og:image URL (crawler-fetched).
-          const og = await loadOgCardData(res.id, { anon: true })
-          if (og) _tHtml = injectOgMeta(_tHtml, { imageUrl: ogImageUrl(res.id, og.keyVersion, url.origin), title: `${og.title} · Klavity`, description: og.description })
-        } catch { /* best-effort */ }
-        return new Response(_tHtml, {
-          headers: { "content-type": "text/html; charset=utf-8", "x-robots-tag": "noindex, nofollow", "cache-control": "no-store" },
-        })
-      }
       if (res.kind === "pretty") {
         // STRICT member-only gate — enumerable key path. No teaser, ever.
         const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
@@ -9027,7 +9026,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (res.redirectTo) {
           return new Response(null, { status: 301, headers: { location: res.redirectTo + url.search, "x-robots-tag": "noindex, nofollow" } })
         }
-        return await serveTicket()
+        // KD-229: member → dashboard shell with the ticket open full-page (was the standalone ticket.html).
+        return await dashboardPage(req, me, { id: res.id, projectId: res.projectId })
       }
       // Opaque fb_ handle (unguessable, tenant-bound): normal share/teaser policy, same as /t/:ref.
       const access = await ticketViewAccess(res.id, me)
@@ -9035,6 +9035,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return me ? new Response("Not found", { status: 404 }) : loginGate(path, url.search)
       }
       const memberAcc = me ? await projectAccess(me, res.projectId).catch(() => null) : null
+      if (access === "full" && memberAcc) return await dashboardPage(req, me, { id: res.id, projectId: res.projectId })
       const pagePath = (access === "full" && memberAcc) ? (PUB + "/ticket.html") : (PUB + "/ticket-teaser.html")
       if (!(await Bun.file(pagePath).exists())) return new Response("Not found", { status: 404 })
       let _tHtml = await Bun.file(pagePath).text()
