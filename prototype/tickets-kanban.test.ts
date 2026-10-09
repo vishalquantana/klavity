@@ -235,3 +235,24 @@ test("#705: inline description editor auto-grows with the same typography (no fi
   expect(html).toContain('ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)')
   expect(html).toContain('if (ev.key === "Escape")')
 })
+
+test("KD-224: every board card shows its priority right beside the source chip", () => {
+  const src = html.replace(/\r\n/g, "\n")   // CRLF checkouts (Windows) must find the same function end
+  const start = src.indexOf("function kbCardMetaHtml(t)")
+  const fnSrc = src.slice(start, src.indexOf("\n    }\n", start) + 6)
+  const kbCardMetaHtml = new Function("esc", "srcChipHtml", "recurBadgeHtml", `${fnSrc}; return kbCardMetaHtml`)(
+    (s: unknown) => String(s),
+    () => '<span class="src-chip src-human">Widget</span>',
+    () => "",
+  )
+  // A set priority renders as its chip, immediately after the source chip.
+  const high = kbCardMetaHtml({ priority: "high", labels: [] })
+  expect(high).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-high"')
+  expect(high).toContain(">high</span>")
+  // An unset priority still shows a chip, so no card is left without one.
+  const none = kbCardMetaHtml({ priority: null, labels: [] })
+  expect(none).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-none"')
+  expect(none).toContain(">No priority</span>")
+  // Urgent has its own colour.
+  expect(src).toContain(".chip.sev-urgent {")
+})
