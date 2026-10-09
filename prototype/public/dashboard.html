@@ -11775,6 +11775,11 @@
       display: block
     }
 
+    .chip.sev-urgent {
+      background: #4a0f12;
+      color: #ff8a80
+    }
+
     .chip.sev-high {
       background: #3a1416;
       color: #ffb4ac
@@ -25682,13 +25687,16 @@
     // #704: shared builder for a kanban card's meta row (status/priority/source/assignee/recur/labels).
     // Used by renderCard AND the optimistic bulk-action DOM update so both stay in lockstep.
     function kbCardMetaHtml(t) {
-      const sevChip = t.priority ? `<span class="chip sev-${esc(t.priority)}">${esc(t.priority)}</span>` : ""
+      // KD-224: every card shows its priority, right beside the source chip; an unset priority reads "No priority".
+      const sevChip = t.priority
+        ? `<span class="chip sev-${esc(t.priority)}" title="Priority: ${esc(t.priority)}">${esc(t.priority)}</span>`
+        : `<span class="chip sev-none" title="Priority: not set">No priority</span>`
       // KLA-775: the per-card STATUS chip is dropped from the board card face — the kanban column the card
       // sits in already communicates its status, so the chip was redundant clutter. (Other views build
       // their own status label; this only affects the board card meta row.)
       const assignee = t.assignee ? `<span class="muted" style="font-size:11px">→ ${esc(t.assignee)}</span>` : ""
       const lblHtml = (t.labels || []).map(l => `<span class="lbl-chip" style="background:${esc(l.color)}22;color:${esc(l.color)};border-color:${esc(l.color)}44">${esc(l.name)}</span>`).join("")
-      return `${sevChip}${srcChipHtml(t)}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">' + lblHtml + '</span>' : ""}`
+      return `${srcChipHtml(t)}${sevChip}${assignee}${recurBadgeHtml(t)}${lblHtml ? '<span class="lbl-chips" style="margin-left:auto">' + lblHtml + '</span>' : ""}`
     }
     // #704: after moving cards between columns, recompute each column's count badge + restore the "—"
     // empty placeholder (or drop it) — cheaply, without a full board rebuild.
