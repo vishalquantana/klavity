@@ -341,6 +341,19 @@ export async function applySchema(c: Client) {
        project_role TEXT NOT NULL,           -- 'admin' | 'member'
        invited_by TEXT, created_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
     `CREATE INDEX IF NOT EXISTS proj_mem_email_idx ON project_members (email)`,
+    // ── QPQ-31 project CONTACTS: people known to a project WITHOUT any access to it. A reporter who
+    // types a new address in the Snap composer lands here, so the team can see who filed a ticket and
+    // @mention/assign them — but a contact row grants NOTHING. Dashboard access still requires a
+    // project_members (or account_members) row, which is deliberately NOT created here: the composer is
+    // anonymous and cross-origin, so letting it mint members would let any visitor to the customer's
+    // site read that project's ticket board. `source` records how we learned about them.
+    `CREATE TABLE IF NOT EXISTS project_contacts (
+       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, email TEXT NOT NULL,
+       name TEXT,
+       source TEXT NOT NULL DEFAULT 'report',  -- 'report' | 'manual'
+       first_feedback_id TEXT,
+       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(project_id, email))`,
+    `CREATE INDEX IF NOT EXISTS proj_contact_project_idx ON project_contacts (project_id)`,
     // ── Shared-ticket viewers (per-ticket, free & unlimited). A grant unlocks the full ticket +
     // commenting for `email`. status 'active' = unblurred now; 'pending_approval' = waiting for an
     // admin (share_mode='approval', Phase 2). UNIQUE(feedback_id,email) makes a grant idempotent.
@@ -3137,6 +3150,50 @@ export async function setProjectTrailsAutofile(projectId: string, enabled: boole
   await db!.execute({ sql: "UPDATE projects SET trails_autofile_enabled=?, updated_at=? WHERE id=?", args: [enabled ? 1 : 0, Date.now(), projectId] })
 }
 
+// ── QPQ-31 project contacts ──────────────────────────────────────────────────────────────────────
+// A contact is someone a project knows about but who has NO access to it (see the project_contacts
+// schema note). Used so the team can see, @mention and assign the person who filed a report.
+export type ProjectContact = { projectId: string; email: string; name: string | null; source: string; firstFeedbackId: string | null; createdAt: number }
+
+function contactRow(x: any): ProjectContact {
+  return {
+    projectId: String(x.project_id), email: String(x.email),
+    name: x.name != null ? String(x.name) : null,
+    source: String(x.source || "report"),
+    firstFeedbackId: x.first_feedback_id != null ? String(x.first_feedback_id) : null,
+    createdAt: Number(x.created_at),
+  }
+}
+
+// Idempotent: a repeat report from the same address updates the name (when we learn one) and the
+// timestamp instead of erroring, so the composer never has to ask "does this person exist?" — which
+// would hand an anonymous caller an email-enumeration oracle.
+export async function upsertProjectContact(
+  projectId: string, email: string, opts: { name?: string | null; source?: string; feedbackId?: string | null } = {},
+): Promise<boolean> {
+  const e = String(email || "").trim().toLowerCase()
+  if (!e || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) || e.length > 200) return false
+  const now = Date.now()
+  const name = opts.name ? String(opts.name).slice(0, 200) : null
+  await db!.execute({
+    sql: `INSERT INTO project_contacts (id, project_id, email, name, source, first_feedback_id, created_at, updated_at)
+          VALUES (?,?,?,?,?,?,?,?)
+          ON CONFLICT(project_id, email) DO UPDATE SET
+            name = COALESCE(excluded.name, project_contacts.name),
+            updated_at = excluded.updated_at`,
+    args: ["pc_" + projectId + "_" + e, projectId, e, name, opts.source || "report", opts.feedbackId ?? null, now, now],
+  })
+  return true
+}
+
+export async function listProjectContacts(projectId: string, limit = 200): Promise<ProjectContact[]> {
+  const r = await db!.execute({
+    sql: "SELECT * FROM project_contacts WHERE project_id=? ORDER BY updated_at DESC LIMIT ?",
+    args: [projectId, Math.max(1, Math.min(1000, limit))],
+  })
+  return r.rows.map(contactRow)
+}
+
 export async function setFeedbackContactEmail(feedbackId: string, projectId: string, email: string): Promise<boolean> {
   // KLA-780 round-3 (Muse C3-6, checklist L): redirect a contact-email write on a MERGED (hidden) row to
   // the live survivor so the reporter email attaches to the ticket that's actually shown.
@@ -3196,6 +3253,23 @@ export async function projectAccess(email: string, projectId: string): Promise<'
     return "member"
   }
   if (acctRole === "member") return null // account member with no explicit project row sees nothing
+  return null
+}
+
+// Same authorization as projectAccess(), but for a caller that ALREADY holds the project row from the same
+// request (e.g. /api/dashboard, which got it from listAccessibleProjects). Skips only projectAccess's own
+// projectById round-trip; the accountRole + project_members checks below are identical to projectAccess().
+// Keep in lockstep with projectAccess().
+export async function projectAccessForRow(email: string, proj: ProjectRow): Promise<'admin' | 'member' | null> {
+  const acctRole = await accountRole(proj.accountId, email)
+  if (acctRole === "owner" || acctRole === "admin") return "admin"
+  const r = await db!.execute({ sql: "SELECT project_role FROM project_members WHERE project_id=? AND email=?", args: [proj.id, email] })
+  if (r.rows.length) {
+    const role = String((r.rows[0] as any).project_role)
+    if (role === "admin") return "admin"
+    if (role === "viewer") return null
+    return "member"
+  }
   return null
 }
 
@@ -3900,6 +3974,10 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
 
 export type FeedbackRow = {
   id: string; projectId: string; simId: string | null; actorEmail: string | null
+  // QPQ-31: the address the reporter typed into the composer's Email field (feedback.contact_email,
+  // written by setFeedbackContactEmail). actorEmail is the signed-in filer; an anonymous widget report
+  // has none, so the dashboard's Reporter falls back to this.
+  contactEmail: string | null
   urlHost: string | null; urlPath: string | null; sourceReferrer: string | null; observation: string | null
   title: string | null
   sentiment: string | null; priority: string | null; screenshotId: string | null
@@ -3917,6 +3995,7 @@ function rowToFeedback(x: any): FeedbackRow {
     id: String(x.id), projectId: String(x.project_id),
     simId: x.sim_id != null ? String(x.sim_id) : null,
     actorEmail: x.actor_email != null ? String(x.actor_email) : null,
+    contactEmail: x.contact_email != null ? String(x.contact_email) : null,
     urlHost: x.url_host != null ? String(x.url_host) : null,
     urlPath: x.url_path != null ? String(x.url_path) : null,
     sourceReferrer: x.source_referrer != null ? String(x.source_referrer) : null,
@@ -3965,6 +4044,36 @@ export async function listFeedback(projectId: string, opts: { withTicketOnly?: b
   }
   const r = await db!.execute({ sql, args: [projectId, limit] })
   return r.rows.map(rowToFeedback)
+}
+
+// Mutable-state + recurrence-memory columns of a feedback row that rowToFeedback() drops. Used by
+// /api/dashboard so it need not re-SELECT the same rows by id.
+export type FeedbackMeta = {
+  status: string; assignee: string | null; notes: string | null; recurrence: number
+  recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number
+}
+// Opt-in variant of listFeedback (identical SQL/rows/order): additionally returns, per row id, the meta
+// columns already present on the SELECT * result. FeedbackRow itself is deliberately unchanged.
+export async function listFeedbackWithMeta(projectId: string, opts: { limit?: number; simOnly?: boolean } = {}): Promise<{ rows: FeedbackRow[]; meta: Record<string, FeedbackMeta> }> {
+  const limit = opts.limit ?? 20
+  const sql = opts.simOnly
+    ? "SELECT * FROM feedback WHERE project_id=? AND sim_id IS NOT NULL AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
+    : "SELECT * FROM feedback WHERE project_id=? AND merged_into IS NULL ORDER BY created_at DESC LIMIT ?"
+  const r = await db!.execute({ sql, args: [projectId, limit] })
+  const meta: Record<string, FeedbackMeta> = {}
+  for (const x of r.rows as any[]) {
+    meta[String(x.id)] = {
+      status: x.status ? String(x.status) : "open",
+      assignee: x.assignee != null ? String(x.assignee) : null,
+      notes: x.notes != null ? String(x.notes) : null,
+      recurrence: Number(x.recurrence_count ?? 1),
+      recurrenceDatesJson: x.recurrence_dates_json != null ? String(x.recurrence_dates_json) : null,
+      lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
+      resolvedAt: x.resolved_at != null ? Number(x.resolved_at) : null,
+      createdAt: Number(x.created_at),
+    }
+  }
+  return { rows: r.rows.map(rowToFeedback), meta }
 }
 
 // ── Sim Profile: a Sim's own feedback, annotated with its TRIAGE OUTCOME ──
@@ -6931,22 +7040,68 @@ export async function appendFeedbackAttachments(
   newAttachments: Array<Record<string, any>>,
 ): Promise<boolean> {
   if (!Array.isArray(newAttachments) || !newAttachments.length) return false
-  const r = await db!.execute({
-    sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
-    args: [feedbackId, projectId],
-  })
-  const row = r.rows[0] as any
-  if (!row) return false
-  let atts: any[] = []
-  if (row.attachments_json != null) {
-    try { const parsed = JSON.parse(String(row.attachments_json)); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] }
+  // KD-193: this used to read the list, push, and write the WHOLE list back — two overlapping uploads (or an upload racing the
+  // video-enrich keyframes) could each read the same list and the later write silently dropped the other's attachments.
+  // Now a compare-and-swap: the write only lands if the column still holds exactly what we read; otherwise re-read and retry.
+  // Attachments already present (same storage `key`) are skipped, so a retried/duplicated call never double-adds.
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, Math.random() * Math.min(attempt, 10) * 3))   // jittered backoff so contenders spread out
+    const r = await db!.execute({
+      sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?",
+      args: [feedbackId, projectId],
+    })
+    const row = r.rows[0] as any
+    if (!row) return false
+    const raw: string | null = row.attachments_json == null ? null : String(row.attachments_json)
+    let atts: any[] = []
+    if (raw != null) {
+      try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] }
+    }
+    const have = new Set(atts.map((a: any) => (a && a.key) ? String(a.key) : "").filter(Boolean))
+    const fresh = newAttachments.filter((a: any) => !(a && a.key && have.has(String(a.key))))
+    if (!fresh.length) return true
+    const u = await db!.execute({
+      sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=? AND attachments_json IS ?",
+      args: [JSON.stringify([...atts, ...fresh]), feedbackId, projectId, raw],
+    })
+    if (Number(u.rowsAffected || 0) > 0) return true
+    // someone else changed the list between our read and write → loop and merge onto the new value
   }
-  atts.push(...newAttachments)
-  await db!.execute({
-    sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=?",
-    args: [JSON.stringify(atts), feedbackId, projectId],
+  return false
+}
+
+// KD-193: remove ONE attachment (by its storage key) from a ticket. Same compare-and-swap discipline as the append above, so a
+// removal racing an upload / another removal never resurrects or drops the wrong entries. Returns the removed entry (the caller
+// deletes the stored object) or { ok:false } when the ticket or the attachment isn't there.
+export async function removeFeedbackAttachment(feedbackId: string, projectId: string, key: string): Promise<{ ok: boolean; removed?: Record<string, any> }> {
+  if (!key) return { ok: false }
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, Math.random() * Math.min(attempt, 10) * 3))
+    const r = await db!.execute({ sql: "SELECT attachments_json FROM feedback WHERE id=? AND project_id=?", args: [feedbackId, projectId] })
+    const row = r.rows[0] as any
+    if (!row) return { ok: false }
+    const raw: string | null = row.attachments_json == null ? null : String(row.attachments_json)
+    let atts: any[] = []
+    if (raw != null) { try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) atts = parsed } catch { atts = [] } }
+    const hit = atts.find((a: any) => a && String(a.key) === key)
+    if (!hit) return { ok: false }
+    const u = await db!.execute({
+      sql: "UPDATE feedback SET attachments_json=? WHERE id=? AND project_id=? AND attachments_json IS ?",
+      args: [JSON.stringify(atts.filter((a: any) => a !== hit)), feedbackId, projectId, raw],
+    })
+    if (Number(u.rowsAffected || 0) > 0) return { ok: true, removed: hit }
+  }
+  return { ok: false }
+}
+// Does any OTHER ticket still reference this stored object? Merging tickets copies attachment entries by key, so two rows can
+// point at one object — deleting it would break the other. Underscore / percent in the key only widen the LIKE, so at worst we
+// keep an orphan object and never delete a shared one.
+export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedbackId: string): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND attachments_json LIKE ? LIMIT 1",
+    args: [exceptFeedbackId, "%\"key\":" + JSON.stringify(key) + "%"],
   })
-  return true
+  return r.rows.length > 0
 }
 
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given
@@ -8263,6 +8418,10 @@ export async function listTicketsPaginated(
       priority: (x.priority ?? x.severity) != null ? String(x.priority ?? x.severity) : null,
       status: x.status != null ? String(x.status) : "open",
       assignee: x.assignee != null ? String(x.assignee) : null,
+      // QPQ-31: the detail popup's Reporter row also opens from the board/list, not just from
+      // /api/dashboard, so this projection needs the same field. The SELECT is `f.*`, so both
+      // columns are already in hand.
+      reporterEmail: (x.contact_email ?? x.actor_email) != null ? String(x.contact_email ?? x.actor_email) : null,
       notes: x.notes != null ? String(x.notes) : null,
       urlPath: x.url_path != null ? String(x.url_path) : null,
       urlHost: x.url_host != null ? String(x.url_host) : null,
@@ -8699,6 +8858,26 @@ export async function getSuggestedLabels(feedbackId: string, projectId: string):
   const all = await listLabels(projectId)
   const idSet = new Set(ids)
   return all.filter(l => idSet.has(l.id))
+}
+
+// Same suggestions as getSuggestedLabels, but ALSO reports whether they were ever COMPUTED. The column is NULL
+// until suggestLabelsForFeedback() has stored a result; a stored "[]" means "computed — no label fits". The
+// suggest-labels endpoint uses this so an empty result is not re-generated (an AI call) on every request.
+// An unparsable value is treated as not computed so it self-heals on the next generation.
+export async function getSuggestedLabelsState(feedbackId: string, projectId: string): Promise<{ computed: boolean; labels: LabelRow[] }> {
+  const r = await db!.execute({
+    sql: "SELECT suggested_label_ids_json FROM feedback WHERE id=? AND project_id=?",
+    args: [feedbackId, projectId],
+  })
+  const row = r.rows[0] as any
+  if (!row || row.suggested_label_ids_json == null) return { computed: false, labels: [] }
+  let ids: unknown
+  try { ids = JSON.parse(String(row.suggested_label_ids_json)) } catch { return { computed: false, labels: [] } }
+  if (!Array.isArray(ids)) return { computed: false, labels: [] }
+  if (!ids.length) return { computed: true, labels: [] }
+  const all = await listLabels(projectId)
+  const idSet = new Set(ids)
+  return { computed: true, labels: all.filter(l => idSet.has(l.id)) }
 }
 
 // ── KLA-255: needsConfirm queue — pending_sim_matches CRUD ──────────────────

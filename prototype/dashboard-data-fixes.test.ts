@@ -75,7 +75,10 @@ test("KLA-777: priority-change handler patches _tktBoardTickets (not just state.
 test("KLA-779: /api/dashboard ticket feed is raised from 12 so assignee filters see 20+", () => {
   // The overview feed → state.tickets. It used to be limit:12 which starved "My items".
   expect(SERVER).not.toContain("listFeedback(projectId, { limit: 12 })")
-  expect(SERVER).toContain("listFeedback(projectId, { limit: 50 })")
+  expect(SERVER).not.toContain("listFeedbackWithMeta(projectId, { limit: 12 })")
+  // The dashboard now reads the 50 rows via listFeedbackWithMeta (same rows + meta, no second SELECT);
+  // the cap itself is unchanged.
+  expect(SERVER).toContain("listFeedbackWithMeta(projectId, { limit: 50 })")
 })
 
 // ── KLA-779 (structural): a cold board must load the FULL 200-row set before "My items"/assignee

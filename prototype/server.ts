@@ -11,7 +11,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -55,7 +55,7 @@ import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib
 import { notifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
-import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie } from "./lib/auth"
+import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
 import { signImageToken, verifyImageToken } from "./lib/imgsign"
 import { ticketViewAccess, grantTicketViewer } from "./lib/ticket-viewers"
@@ -64,7 +64,7 @@ import { SCREENSHOTS, resolveScreenshotConfig, mbLabel } from "./lib/screenshot-
 import { videoMimeFromName, isVideoAttachment } from "./lib/attachment-video"
 import { buildIssueHtml, escapeHtml, sanitizeClientContext, clientContextLines, sanitizeReporter, sanitizeClientInfo, reporterLines, clientInfoLines, buildLogAttachmentText, LOG_ATTACHMENT_FILENAME, redactSensitiveUrlsInText } from "./lib/feedback"
 import { evaluateLabelRules, hostConventionEnv } from "./lib/label-rules"
-import { encryptSecret, decryptSecret } from "./lib/crypto"
+import { encryptSecret, decryptSecret, userCacheUid } from "./lib/crypto"
 import { createTestAccount, listTestAccounts, getTestAccountById, getTestAccountByName, deleteTestAccount, getTestAccountRefs, rotateTestAccountSecret } from "./lib/test-accounts"
 import { assertSafeUrl } from "./lib/url-guard"
 import { genCode, isValidSlug, stampUtm, isBotRequest, hashIp } from "./lib/shortlinks"
@@ -98,6 +98,8 @@ import { validateModalConfigInput, resolveModalConfig } from "../packages/core/s
 import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-clarity"
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
+import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
+import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
 // resolveProject can constrain it to that project (F5) — without threading state through every route.
@@ -134,7 +136,7 @@ import { enrichExpectation } from "./lib/expectations-enrich"
 import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/sims-oracle"
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
-import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels } from "./lib/db"
+import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels, getSuggestedLabelsState } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
@@ -1340,6 +1342,26 @@ function withWidgetCors(req: Request, res: Response): Response {
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 }
+// Step 5: like json() but with MULTIPLE Set-Cookie headers (a plain headers object can carry only one).
+function jsonWithCookies(body: unknown, status: number, cookies: string[]) {
+  const h = new Headers({ "content-type": "application/json" })
+  for (const c of cookies) h.append("Set-Cookie", c)
+  return new Response(JSON.stringify(body), { status, headers: h })
+}
+// Step 5: the cookies that establish an authenticated browser session — THE one place every session-creation
+// path goes through so they can't drift. klav_session (HttpOnly) is the only credential; klav_uid is the
+// non-secret, JS-readable per-user cache-namespace marker (userCacheUid) set alongside it. Keep klav_session
+// FIRST: lib/dogfood-receiving parses the combined set-cookie header for it.
+function sessionCookies(sid: string, email: string): string[] {
+  const out = [cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE)]
+  const uid = userCacheUid(email)
+  if (uid) out.push(uidCookie(uid, SESSION_DAYS * 86400, SECURE))
+  return out
+}
+// Step 5: cookies cleared whenever the authenticated session is cleared (logout / self-erasure).
+function sessionClearCookies(): string[] {
+  return [clearCookie("klav_session", SECURE), clearProjectCookie(SECURE), clearUidCookie(SECURE)]
+}
 // KLA-551: server.ts-local JSON parse (db.ts's safeJsonParse is module-private, not exported). Used by
 // the connector mappings endpoints; returns null on empty/invalid so callers can `|| {}` a safe default.
 function safeJsonParse(s: any): any { try { return s ? JSON.parse(String(s)) : null } catch { return null } }
@@ -1390,8 +1412,8 @@ let DASHBOARD_HTML: string | null = null
 // inputs that vary within a release; carries a content-hash ETag so the browser can revalidate with
 // a cheap 304 instead of re-downloading the whole shell every navigation.
 let _dashRendered: { key: string; body: string; etag: string } | null = null
-async function dashboardPage(req?: Request): Promise<Response> {
-  if (DASHBOARD_HTML === null) {
+async function dashboardPage(req?: Request, me?: string | null): Promise<Response> {
+  if (DASHBOARD_HTML === null || process.env.NODE_ENV !== "production") {
     let version = ""
     try { version = String((await Bun.file(import.meta.dir + "/../package.json").json())?.version || "") } catch { /* fall back to empty */ }
     const raw = await Bun.file(PUB + "/dashboard.html").text()
@@ -1405,7 +1427,7 @@ async function dashboardPage(req?: Request): Promise<Response> {
   const hasFounding = DASHBOARD_HTML.includes("__FOUNDING_STATE__")
   const spots = hasFounding ? await getFoundingSpots(countFoundingAccounts) : null
   const key = replay + "|" + (spots ? `${spots.known}:${spots.taken}:${spots.remaining}:${spots.soldOut}` : "-")
-  if (!_dashRendered || _dashRendered.key !== key) {
+  if (!_dashRendered || _dashRendered.key !== key || process.env.NODE_ENV !== "production") {
     let body = DASHBOARD_HTML.replaceAll("__POSTHOG_REPLAY__", replay)
     // KLAVITYKLA-366: the in-app Founding ribbon must respect the same sold-out state as the website
     // — the app may never keep promoting an offer we have publicly closed.
@@ -1421,10 +1443,19 @@ async function dashboardPage(req?: Request): Promise<Response> {
   // 304 instead of re-downloading ~930KB every navigation. Compression is delegated to Caddy on-box
   // (deploy/Caddyfile: `encode zstd gzip`) — do NOT app-gzip here or it would double-encode.
   const cacheHeaders = { "cache-control": "private, max-age=0, must-revalidate", "etag": etag, "vary": "Cookie" }
-  if (req && req.headers.get("if-none-match") === etag) {
-    return new Response(null, { status: 304, headers: cacheHeaders })
+  // Step 5 (defense in depth): (re)assert klav_uid for the user this response authenticated, so the page's JS
+  // always sees the right per-user cache namespace — also on the 304. A per-response header only: the shared
+  // body and ETag stay identical for every user, so the in-process render cache and 304 path are unaffected.
+  const uid = me ? userCacheUid(me) : ""
+  const withUid = (init: Record<string, string>) => {
+    const h = new Headers(init)
+    if (uid) h.append("Set-Cookie", uidCookie(uid, SESSION_DAYS * 86400, SECURE))
+    return h
   }
-  return new Response(body, { headers: { "content-type": "text/html; charset=utf-8", ...cacheHeaders } })
+  if (req && req.headers.get("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers: withUid(cacheHeaders) })
+  }
+  return new Response(body, { headers: withUid({ "content-type": "text/html; charset=utf-8", ...cacheHeaders }) })
 }
 // Serve HTML pages with __POSTHOG_KEY__ substituted from KLAV_POSTHOG_KEY env var and
 // __CAL_BOOKING_URL__ from CAL_BOOKING_URL (KLAVITYKLA-331 — founder booking CTA).
@@ -1839,18 +1870,27 @@ async function bearerEmail(req: Request): Promise<string | null> {
 
 // Resolve the project a request targets: explicit ?project=:id if accessible, else the caller's
 // first accessible project. Returns null if the caller has no accessible project. Gated by projectAccess.
-async function resolveProject(email: string, requested?: string | null): Promise<{ id: string; access: 'admin' | 'member' } | null> {
+//
+// `knownProjects` (optional, /api/dashboard only): project rows the caller already loaded this request via
+// listAccessibleProjects. When the target is among them, projectAccessForRow() is used — identical
+// accountRole/project_members authorization, minus projectAccess's redundant projectById. A target NOT in
+// the list falls through to the unchanged projectAccess(). Every other caller omits it → unchanged.
+async function resolveProject(email: string, requested?: string | null, knownProjects?: ProjectRow[]): Promise<{ id: string; access: 'admin' | 'member' } | null> {
+  const accessFor = (id: string) => {
+    const known = knownProjects?.find(p => p.id === id)
+    return known ? projectAccessForRow(email, known) : projectAccess(email, id)
+  }
   // F5: a project-bound Bearer token may ONLY act on its bound project. Reject a mismatched explicit
   // request, and force the bound project when none was requested — so a leaked widget token can't reach
   // the owner's other projects via ?project= or the first-project fallback.
   const bound = reqCtx.getStore()?.boundProject
   if (bound) {
     if (requested && requested !== bound) return null
-    const a = await projectAccess(email, bound)
+    const a = await accessFor(bound)
     return a ? { id: bound, access: a } : null
   }
   if (requested) {
-    const a = await projectAccess(email, requested)
+    const a = await accessFor(requested)
     if (a) return { id: requested, access: a }
     return null
   }
@@ -3970,6 +4010,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (req.method === "GET" && path.startsWith("/fonts/") && /^[a-z0-9-]+\.woff2$/.test(path.slice(7))) {
       return new Response(Bun.file(SITE + "/fonts/" + path.slice(7)), { headers: { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" } })
     }
+    // ── local storage fallback (when S3 is not configured in local dev) ──
+    if (req.method === "GET" && path.startsWith("/uploads/")) {
+      const rel = decodeURIComponent(path.slice(9))
+      if (!rel.includes("..")) {
+        const f = Bun.file(PUB + "/uploads/" + rel)
+        if (await f.exists()) return new Response(f)
+      }
+    }
     // ── permanent signed screenshot link (for external tracker tickets, never expires, revocable) ──
     // /img/<screenshotId>.<hmac> — HMAC-gated (KLAV_SECRET), streams the PRIVATE S3 object. Token is
     // unforgeable; revoked by deleting the screenshots row (→ 404). Keeps the bucket private while the
@@ -4864,13 +4912,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // (GA4 + PostHog) exactly once for genuinely-new accounts — a returning login carries false.
         // KLA-840: expose `internal` so the client conversion handlers can tag GA4/PostHog internal
         // Quantana signups (traffic_type:'internal' / is_internal person prop) for funnel exclusion.
-        return json({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew, internal: isInternalEmail(e) }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+        return jsonWithCookies({ ok: true, redirect: dest, token: sid, projectId: defaultProjectId, isNewAccount: wasNew, internal: isInternalEmail(e) }, 200, sessionCookies(sid, e))
       } catch (err: any) { return json(oops(err, "auth"), 500) }
     }
     if (req.method === "POST" && path === "/api/auth/logout") {
       const sid = parseCookies(req.headers.get("cookie"))["klav_session"]
       if (sid && db) await deleteSession(sid).catch(() => {})
-      return json({ ok: true }, 200, { "Set-Cookie": clearCookie("klav_session", SECURE) })
+      // Step 5: clear the session AND the browser identity/project cookies (klav_uid, klav_proj) together.
+      return jsonWithCookies({ ok: true }, 200, sessionClearCookies())
     }
 
     // ── Enterprise SSO — OIDC (KLAVITYKLA-9) ──────────────────────────────────
@@ -5263,7 +5312,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = token()
       await createSession(sid, claims.email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const headers = new Headers({ Location: "/dashboard" })
-      headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
+      for (const c of sessionCookies(sid, claims.email)) headers.append("Set-Cookie", c)
       headers.append("Set-Cookie", clearSsoStateCookie)
       return new Response(null, { status: 302, headers })
     }
@@ -5319,7 +5368,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = token()
       await createSession(sid, identity.email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const headers = new Headers({ Location: "/dashboard" })
-      headers.append("Set-Cookie", cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE))
+      for (const c of sessionCookies(sid, identity.email)) headers.append("Set-Cookie", c)
       headers.append("Set-Cookie", clearSsoStateCookie)
       return new Response(null, { status: 302, headers })
     }
@@ -5360,7 +5409,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         logAudit({ action: "gdpr_erasure", actorEmail: meD, targetEmail: victim, ip: clientIp(req, server), meta: { s3Keys: s3Keys.length } })
         // If the caller erased themselves, clear their session cookie too.
         const clearSelf = victim === meD
-        return json({ ok: true, erased: victim, screenshots: s3Keys.length }, 200, clearSelf ? { "Set-Cookie": clearCookie("klav_session", SECURE) } : undefined)
+        return jsonWithCookies({ ok: true, erased: victim, screenshots: s3Keys.length }, 200, clearSelf ? sessionClearCookies() : [])
       } catch (err: any) { return json(oops(err, "delete"), 500) }
     }
 
@@ -5441,6 +5490,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           try { const u = new URL(raw); return u.origin + u.pathname } catch { return raw.split(/[?#]/)[0] || null }
         })()
         const reporterEmail = String(form.get("reporter_email") || "").trim()
+        // QPQ-31: the reporter picked "Add <email> as a contact" under the composer's Email field. Intent
+        // only — the server still decides what it grants, and a contact grants NO access to the project.
+        // Creation is tied to an actual report rather than a standalone anonymous endpoint, so it inherits
+        // the submit path's rate limits and can't be used to bulk-mint rows.
+        const wantsContact = String(form.get("create_contact") || "") === "1"
         const validReporterEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reporterEmail) && reporterEmail.length <= 200
         // Report type from the composer's issue-type selector (packages/core submit payload `type`/`kind`).
         // PX4 #411: the enhanced composer can file Task/Query in addition to Bug/Feature; those map to the
@@ -6150,6 +6204,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               if (feedbackId && validReporterEmail) {
                 try { await setFeedbackContactEmail(feedbackId, projectId, reporterEmail) }
                 catch (e: any) { console.warn("reporter email save (non-fatal):", e?.message || e) }
+                // QPQ-31: and register them as a project CONTACT so the team can see/@mention/assign the
+                // person who filed this. Idempotent, and deliberately NOT a project_members row.
+                if (wantsContact) {
+                  try {
+                    await upsertProjectContact(projectId, reporterEmail, {
+                      name: (reporter && typeof reporter.name === "string") ? reporter.name : null,
+                      source: "report",
+                      feedbackId,
+                    })
+                  } catch (e: any) { console.warn("contact upsert (non-fatal):", e?.message || e) }
+                }
               }
               // ── expectations spine ingest: best-effort, fires on both deduped and new branches ──
               if (suggestedBug && feedbackId && db) {
@@ -8275,7 +8340,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const needLogin = () => (req.method === "GET" ? loginGate(path, url.search) : json({ error: "Sign in to continue." }, 401))
 
     if (req.method === "GET" && path === "/dashboard") {
-      if (me) return await dashboardPage(req)
+      if (me) return await dashboardPage(req, me)
       // A member's own address-bar deep link (?ticket=<id>) must work for a colleague: send an
       // unauthenticated visitor to the adaptive /t/:ref so they get the teaser, not a login wall.
       const _tkt = url.searchParams.get("ticket")
@@ -8284,7 +8349,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
     // KLAVITYKLA-187: dedicated Sim-creation page. Serves the dashboard app; the client opens
     // the Add-a-Sim surface when the path is /sim/new. `?mode=describe|site|call` preselects a tab.
-    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage(req) : loginGate(path, url.search)
+    if (req.method === "GET" && (path === "/sim/new" || path === "/sim/new/")) return me ? await dashboardPage(req, me) : loginGate(path, url.search)
     if (req.method === "GET" && path === "/trails") {
       const qs = url.search || ""
       return new Response(null, { status: 301, headers: { Location: "/autosims" + qs } })
@@ -8700,11 +8765,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // teaser | pending — redacted. No description, no screenshot, no comment bodies.
         return json({ access, ticket: teaser }, 200, { "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" })
       }
-      // full — description, screenshot (HMAC-gated /img/ token), page context, comments.
+      // full — description, screenshot (HMAC-gated /img/ token or presigned attachment), page context, comments.
+      let shotUrl: string | null = null
+      if (fbRow.screenshotId) {
+        shotUrl = `${BASE}/img/${signImageToken(fbRow.screenshotId)}`
+      } else if (Array.isArray(fbRow.attachments)) {
+        const imgAtt = fbRow.attachments.find((a: any) => a && (/\.(png|jpe?g|webp|gif|svg)$/i.test(a.filename || "") || /^image\//i.test(a.contentType || "")))
+        if (imgAtt && imgAtt.key) {
+          try { shotUrl = presignGet(String(imgAtt.key), 3600) } catch { shotUrl = null }
+        }
+      }
       const ticket = {
         ...teaser,
         description: fbRow.observation,
-        screenshotUrl: fbRow.screenshotId ? `${BASE}/img/${signImageToken(fbRow.screenshotId)}` : null,
+        screenshotUrl: shotUrl,
         pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
         urlHost: fbRow.urlHost ?? null,
         comments: comments.map((c: any) => ({ author: c.author, body: c.body, createdAt: c.createdAt })),
@@ -8771,7 +8845,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const sid = token()
       await createSession(sid, email, Date.now() + SESSION_DAYS * 86400 * 1000)
       const access = status === "active" ? "full" : "pending"
-      return json({ ok: true, access }, 200, { "Set-Cookie": cookie("klav_session", sid, SESSION_DAYS * 86400, SECURE) })
+      return jsonWithCookies({ ok: true, access }, 200, sessionCookies(sid, email))
     }
 
     // GET /shared/project/:token       — serve the read-only project status HTML (no auth)
@@ -11132,7 +11206,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               title: r.title || r.observation || null, // prefer the explicit Title, else the observation
               status: r.status,
               severity: r.priority || r.severity || null, // effective priority wins, else stored severity
-              reporterEmail: r.actorEmail || r.contactEmail || null,
+              // QPQ-31: the address the REPORTER typed into the composer's Email field wins; the signed-in
+              // filer is only the fallback when they typed nothing. (Was actorEmail-first, which showed a
+              // staff member's login on reports they filed on a customer's behalf, and disagreed with the
+              // submit-time alert email, which has always shown the typed address.)
+              reporterEmail: r.contactEmail || r.actorEmail || null,
               createdAt: r.createdAt,
               screenshotUrl,
               pageUrl,
@@ -11267,7 +11345,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const allProjects = await listAccessibleProjects(me)
           if (!allProjects.length) {
             // No project yet — return an empty-but-valid shape so the UI renders skeleton/empty states.
-            return json({ email: me, projects: [], active: null, members: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
+            return json({ email: me, projects: [], active: null, members: [], contacts: [], sims: [], saying: [], tickets: [], activity: [], counts: { feedback: 0, tickets: 0, activity: 0 } })
           }
           // KLAVITYKLA-299: when no ?project= param is present, fall back to the klav_proj cookie
           // (set on a previous successful load) so the user's selection persists across reloads.
@@ -11277,26 +11355,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             ? decodeURIComponent(parseCookies(req.headers.get("cookie"))["klav_proj"] || "") || null
             : null
           const requested = paramProject || cookieProject
-          const resolved = await resolveProject(me, requested)
+          // Round-trip perf: the project row is already in `allProjects` (listAccessibleProjects mirrors
+          // projectAccess), so pass it to resolveProject (skips only projectAccess's own projectById; the
+          // accountRole/project_members checks still run) and reuse it below instead of a second projectById.
+          const resolved = await resolveProject(me, requested, allProjects)
           if (!resolved) return json({ error: "No access to this project." }, 403)
           const projectId = resolved.id
           const access = resolved.access
           const role = access === "admin" ? "admin" : "user" // legacy vocab for the dashboard UI
           const isAdmin = access === "admin"
-
-          // projects / active — REAL projects from the projects table.
-          const activeProj = await projectById(projectId)
-          const projectName = activeProj?.name || "Default Project"
-          const projects = allProjects.map(p => ({ id: p.id, name: p.name }))
-          // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
-          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null, planOverride: activeProj?.planOverride ?? null, entitlement: projectEntitlement(activeProj?.planOverride) }
-
-          // members — project roster (project_members), mapped to legacy admin|user for the UI.
-          const members = (await membersOfProject(projectId)).map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
           const wid = projectId // reads below are all project-scoped on the project id
 
-          // Reads run in parallel (each is an indexed query).
-          const [personas, feedbackTickets, activityRows, simObservations] = await Promise.all([
+          // Everything below depends only on the resolved project id (+ isAdmin/me), so it runs as ONE
+          // parallel wave (each is an indexed query). Only replay/exports need the ticket ids and follow.
+          const knownProj = allProjects.find(p => p.id === projectId)
+          const [activeProj, rawMembers, personas, feedbackTicketsRes, activityRows, simObservations, aliasInfo, widgetPing, counts, insights] = await Promise.all([
+            // projects / active — REAL projects from the projects table (fallback read if not in the list).
+            knownProj ? Promise.resolve(knownProj) : projectById(projectId),
+            // members — project roster (project_members), mapped to legacy admin|user for the UI.
+            membersOfProject(projectId),
             listPersonas(wid),
             // All recent feedback (not just withTicketOnly) — Klavity Cloud is the primary ticket system.
             // KLA-779: this array becomes `state.tickets` on the client — the source the overview "Recent
@@ -11304,7 +11381,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // read from. A 12-row cap starved the "My items"/assignee filter to a handful even when 20+ were
             // assigned. Raise to a bounded 50 (matches the list view's page size, well under the board's 200)
             // so quick-filters over state.tickets can surface 20+ without an unbounded per-poll payload.
-            listFeedback(projectId, { limit: 50 }),
+            // Returns the status/assignee/notes/recurrence meta from the same rows (no second SELECT by id).
+            listFeedbackWithMeta(projectId, { limit: 50 }),
             // Non-admins see only their own activity (own-rows-only); admins see all.
             listActivity(projectId, { actorEmail: isAdmin ? null : me, limit: 25 }),
             // Only Sim-generated observations (sim_id IS NOT NULL) — bugs never bleed into the Sims feeds.
@@ -11313,7 +11391,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // pure payload waste. 36 keeps a few Sims' recent history for the badge while cutting the
             // observations payload ~64%. hasSimReaction (>0) and the `saying` feed are unaffected.
             listFeedback(projectId, { simOnly: true, limit: 36 }),
+            // #745: workspace slug + project key are constant for this project-scoped board — resolve
+            // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
+            // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
+            projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null })),
+            // Widget heartbeat — drives the Snap-aware first-run checklist ("Install the report
+            // widget" ticks the moment /widget.js phones home from the founder's site).
+            latestWidgetPing(projectId),
+            dashboardCounts(projectId),
+            computeDashboardInsights(projectId),
           ])
+          const feedbackTickets = feedbackTicketsRes.rows
+          const projectName = activeProj?.name || "Default Project"
+          const projects = allProjects.map(p => ({ id: p.id, name: p.name }))
+          // siteUrl: exposed so the Add-a-Sim "Run a review now" panel (JTBD 6.10) can prefill the URL.
+          const activeOut = { id: projectId, name: projectName, role, siteUrl: activeProj?.siteUrl || null, planOverride: activeProj?.planOverride ?? null, entitlement: projectEntitlement(activeProj?.planOverride) }
+          const members = rawMembers.map(m => ({ email: m.email, role: m.role === "admin" ? "admin" : "user", createdAt: m.createdAt }))
+          // QPQ-31: project CONTACTS ride alongside members so the board can show, @mention and assign a
+          // reporter who typed a new address in the composer. These carry NO access - they are not members
+          // and are kept in a separate array so nothing mistakes one for a teammate.
+          const contacts = (await listProjectContacts(projectId)).map(c => ({ email: c.email, name: c.name, source: c.source, createdAt: c.createdAt }))
 
           // Index personas for name/role/accent lookups by sim_id.
           const personaById = new Map(personas.map(p => [p.id, p]))
@@ -11380,40 +11477,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Enriched with status/assignee (management state) and exports (connector push history).
           const ticketIds = feedbackTickets.map(f => f.id)
           // G1: which tickets carry a session replay → show the "▶ Session replay" affordance only there.
-          const ticketsWithReplay = ticketIds.length ? await feedbackIdsWithReplay(projectId, ticketIds) : new Set<string>()
-          const [ticketExportsMap, ticketMetaRows] = await Promise.all([
+          // Replay + exports both need only the ticket ids, so they run together as the second (final) wave.
+          // status/assignee/notes/recurrence meta (the KLA-2 recurrenceCount/firstSeen/lastSeen/isRegression
+          // inputs) already arrived with the rows via listFeedbackWithMeta — no second SELECT by id.
+          const ticketMetaRows = feedbackTicketsRes.meta
+          const [ticketsWithReplay, ticketExportsMap] = await Promise.all([
+            ticketIds.length ? feedbackIdsWithReplay(projectId, ticketIds) : Promise.resolve(new Set<string>()),
             ticketIds.length ? exportsForFeedbackIds(ticketIds) : Promise.resolve({} as Record<string, any[]>),
-            // Fetch mutable state + recurrence-memory columns in one batch.
-            // recurrence_dates_json / last_seen_at / resolved_at / created_at power the four
-            // KLA-2 dashboard fields: recurrenceCount, firstSeen, lastSeen, isRegression.
-            db && ticketIds.length
-              ? db.execute({
-                  sql: `SELECT id, status, assignee, notes, recurrence_count,
-                               recurrence_dates_json, last_seen_at, resolved_at, created_at
-                        FROM feedback WHERE id IN (${ticketIds.map(() => "?").join(",")})`,
-                  args: ticketIds,
-                }).then(r => {
-                  const m: Record<string, { status: string; assignee: string | null; notes: string | null; recurrence: number; recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number }> = {}
-                  for (const x of r.rows) {
-                    m[String((x as any).id)] = {
-                      status: (x as any).status ? String((x as any).status) : "open",
-                      assignee: (x as any).assignee != null ? String((x as any).assignee) : null,
-                      notes: (x as any).notes != null ? String((x as any).notes) : null,
-                      recurrence: Number((x as any).recurrence_count ?? 1),
-                      recurrenceDatesJson: (x as any).recurrence_dates_json != null ? String((x as any).recurrence_dates_json) : null,
-                      lastSeenAt: (x as any).last_seen_at != null ? Number((x as any).last_seen_at) : null,
-                      resolvedAt: (x as any).resolved_at != null ? Number((x as any).resolved_at) : null,
-                      createdAt: Number((x as any).created_at),
-                    }
-                  }
-                  return m
-                })
-              : Promise.resolve({} as Record<string, { status: string; assignee: string | null; notes: string | null; recurrence: number; recurrenceDatesJson: string | null; lastSeenAt: number | null; resolvedAt: number | null; createdAt: number }>),
           ])
-          // #745: workspace slug + project key are constant for this project-scoped board — resolve
-          // once and stamp every ticket so the client can build the pretty /<slug>/<KEY>-<n> permalink
-          // (falls back to /t/<fb_id> when un-backfilled). Additive + member-gated by this route.
-          const aliasInfo = await projectAliasInfo(projectId).catch(() => ({ slug: null, ticketKey: null, projectName: null }))
           const tickets = feedbackTickets.map(f => {
             const p = f.simId ? personaById.get(f.simId) : null
             const meta = ticketMetaRows[f.id] ?? { status: "open", assignee: null, notes: null, recurrence: 1, recurrenceDatesJson: null, lastSeenAt: null, resolvedAt: null, createdAt: f.createdAt }
@@ -11448,6 +11519,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               sentiment: f.sentiment, screenshotId: f.screenshotId,
               sourceQuote: f.sourceQuote, sourceDate: f.sourceDate,
               notes: meta.notes, hasReplay: ticketsWithReplay.has(f.id),
+              // QPQ-31: who filed it — the signed-in actor, else the email typed into the composer's
+              // Email field. Same projection the /t/:ref page and the inbox already use, and member-gated
+              // by the surrounding /api/dashboard access check.
+              reporterEmail: f.contactEmail || f.actorEmail || null,
               recurrence: meta.recurrence, annotations: f.annotations,
               // KLA-2 regression-memory fields — consumed by dashboard UI via recurBadgeHtml/regrBannerHtml
               recurrenceCount: meta.recurrence,
@@ -11466,13 +11541,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
           })
 
-          const [counts, insights, widgetPing] = await Promise.all([
-            dashboardCounts(projectId),
-            computeDashboardInsights(projectId),
-            // Widget heartbeat — drives the Snap-aware first-run checklist ("Install the report
-            // widget" ticks the moment /widget.js phones home from the founder's site).
-            latestWidgetPing(projectId),
-          ])
           const widgetStatus = widgetPing ? { host: widgetPing.host, lastSeen: widgetPing.lastSeen } : null
           // KLAVITYKLA-299: stamp the resolved project in a cookie so the server can restore
           // the user's selection on the next bare /api/dashboard call (no ?project= param).
@@ -11482,7 +11550,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const hasTranscriptSim = personas.some(p => p.simSource === "transcript")
           const hasSimReaction = simObservations.length > 0
           return json(
-            { email: me, projects, active: activeOut, members, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
+            { email: me, projects, active: activeOut, members, contacts, sims, saying, simFeedback, tickets, activity, counts, insights, widgetStatus, hasTranscriptSim, hasSimReaction },
             200,
             { "Set-Cookie": projectCookie(projectId, SECURE) },
           )
@@ -12346,33 +12414,52 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!fbAccess) return json({ error: "Only project members can add attachments." }, 403)
           const form = await req.formData().catch(() => null)
           if (!form) return json({ error: "Expected multipart/form-data." }, 400)
-          const attachFiles = form.getAll("files").filter((f): f is File => f instanceof File).slice(0, 5)
+          const allAttachFiles = form.getAll("files").filter((f): f is File => f instanceof File)
+          const attachFiles = allAttachFiles.slice(0, 5)
+          // KD-193: files beyond the 5-file cap used to be dropped silently — now they are reported back so the UI can say so.
+          const ignoredFiles = allAttachFiles.slice(5).map((f) => f.name)
           if (!attachFiles.length) return json({ error: "No files provided." }, 400)
-          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
-          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
-          let attachTotalBytes = 0
-          const newAtts: Array<Record<string, any>> = []
+          // KD-193: the same file (name + size) already on this ticket — or repeated within this request — is NOT uploaded again.
+          // A user who saw no feedback and picked the file twice used to get two identical attachments.
+          const attKey = (name: unknown, size: unknown) => String(name ?? "").trim().toLowerCase() + "|" + Number(size ?? 0)
+          const seenAtt = new Set<string>((Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []).map((a: any) => attKey(a?.filename, a?.size)))
+          const duplicateFiles: string[] = []
+          const uploadFiles: File[] = []
           for (const af of attachFiles) {
             if (af.size <= 0) continue
-            const typeIsGeneric = !af.type || af.type === "application/octet-stream"
-            const videoMime = videoMimeFromName(af.name || "")
-            const isVideo = isVideoAttachment(af.type, af.name)
-            const perFileCap = isVideo ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
+            const k = attKey(af.name, af.size)
+            if (seenAtt.has(k)) { duplicateFiles.push(af.name); continue }
+            seenAtt.add(k); uploadFiles.push(af)
+          }
+          if (!uploadFiles.length) return json({ ok: true, attachments: [], duplicates: duplicateFiles, ignored: ignoredFiles }, 200)
+          const ATTACH_VIDEO_MAX_BYTES = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+          const ATTACH_TOTAL_MAX_BYTES = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
+          // validate every file's size BEFORE uploading anything (so a rejected request never leaves orphan objects behind)
+          let attachTotalBytes = 0
+          for (const af of uploadFiles) {
+            const perFileCap = isVideoAttachment(af.type, af.name) ? ATTACH_VIDEO_MAX_BYTES : SCREENSHOTS.maxBytes
             if (af.size > perFileCap) return json({ error: `File ${af.name} exceeds ${mbLabel(perFileCap)}.` }, 400)
             attachTotalBytes += af.size
             if (attachTotalBytes > ATTACH_TOTAL_MAX_BYTES) return json({ error: `Attachments exceed the ${mbLabel(ATTACH_TOTAL_MAX_BYTES)} total limit.` }, 400)
+          }
+          // KD-193: upload to storage in PARALLEL (it was one file after another) — order of the stored list is preserved.
+          const uploadedAtts = await Promise.all(uploadFiles.map(async (af) => {
             try {
+              const typeIsGeneric = !af.type || af.type === "application/octet-stream"
+              const videoMime = videoMimeFromName(af.name || "")
               const abuf = new Uint8Array(await af.arrayBuffer())
               const uploadType = (typeIsGeneric && videoMime) ? videoMime : (af.type || "application/octet-stream")
               const up = await uploadAttachment(abuf, af.name || "attachment", uploadType)
               const desc: { key: string; filename: string; contentType: string; size: number; transcript_status?: string } =
                 { key: up.key, filename: up.filename, contentType: up.contentType, size: af.size }
               if (/^video\//i.test(up.contentType || "")) desc.transcript_status = "pending"
-              newAtts.push(desc)
+              return desc
             } catch (aErr: any) {
               console.error("attachment upload failed (non-fatal):", aErr?.message || aErr)
+              return null
             }
-          }
+          }))
+          const newAtts: Array<Record<string, any>> = uploadedAtts.filter((d): d is NonNullable<typeof d> => !!d)
           if (!newAtts.length) return json({ error: "No attachments could be uploaded." }, 500)
           await appendFeedbackAttachments(fid, fbRow.projectId, newAtts)
           void insertActivity({
@@ -12385,7 +12472,30 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Presign each new attachment the same way the GET response does (#425/KLAVITYKLA-480), so the
           // dashboard can render/download it immediately without a second round-trip.
           const signedNewAtts = newAtts.map((a) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
-          return json({ ok: true, attachments: signedNewAtts }, 201)
+          return json({ ok: true, attachments: signedNewAtts, duplicates: duplicateFiles, ignored: ignoredFiles }, 201)
+        }
+
+        // KD-193: DELETE /api/feedback/:id/attachments?key=<storage key> — remove one attachment from a ticket (members only, like add).
+        // The list entry is removed atomically (compare-and-swap); the stored object is deleted afterwards (best effort) unless another
+        // ticket still references it (merged tickets share attachment keys).
+        if (req.method === "DELETE" && isAttachments) {
+          if (!fbAccess) return json({ error: "Only project members can remove attachments." }, 403)
+          const attKeyParam = String(url.searchParams.get("key") || "")
+          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          const rm = await removeFeedbackAttachment(fid, fbRow.projectId, attKeyParam)
+          if (!rm.ok) return json({ error: "Attachment not found." }, 404)
+          void (async () => {
+            try { if (!(await attachmentKeyReferencedElsewhere(attKeyParam, fid))) await deleteObject(attKeyParam) }
+            catch (e: any) { console.warn("attachment object cleanup skipped:", e?.message || e) }
+          })()
+          void insertActivity({
+            projectId: fbRow.projectId,
+            type: "ticket_attachment_removed",
+            actorEmail: me,
+            feedbackId: fid,
+            meta: { filename: String(rm.removed?.filename || "") },
+          }).catch((e: any) => console.warn("ticket attachment removal activity skipped:", e?.message || e))
+          return json({ ok: true, removed: attKeyParam })
         }
 
         // #738: POST /api/feedback/:id/annotations — persist a re-annotated evidence screenshot's markup.
@@ -12486,7 +12596,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // KLAVITYKLA-491: reporter + a single resolved page URL, mirroring the /api/dashboard ticket
             // projection so the standalone /t/:ref page renders reporter + page context without a second
             // fetch. Member-gated (fbRow already access-checked above) — never surfaced to non-members.
-            reporterEmail: fbRow.actorEmail || fbRow.contactEmail || null,
+            reporterEmail: fbRow.contactEmail || fbRow.actorEmail || null,
             pageUrl: fbRow.reportUrl || (fbRow.urlHost ? `https://${fbRow.urlHost}${fbRow.urlPath || ""}` : (fbRow.urlPath || null)),
             ref: String(fbRow.id).split("-")[0],
             sourceReferrer: fbRow.sourceReferrer,
@@ -12906,17 +13016,25 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // GET /api/feedback/:id/suggest-labels — KLA-175: return AI-suggested labels (ghost chips).
         // Returns cached suggestions; if none exist yet, triggers generation synchronously.
         if (req.method === "GET" && isSuggestLabels) {
-          let suggestions = await getSuggestedLabels(fid, fbRow.projectId)
-          if (!suggestions.length) {
+          // The suggestions and the ticket's attached labels are independent reads → one parallel wave.
+          // `computed` distinguishes "never generated" (column NULL) from "generated, no label fits" ([]):
+          // only the former calls the model, so an empty result is served from the DB instead of paying for
+          // an AI call on every request.
+          const [sugState, attachedRows] = await Promise.all([
+            getSuggestedLabelsState(fid, fbRow.projectId),
+            labelsForFeedback(fid),
+          ])
+          let suggestions = sugState.labels
+          if (!sugState.computed) {
             // #543 completeness: feed the ticket's REAL title (manual tickets keep it in its own column)
             // plus the body into label suggestion, so a manual ticket's subject line drives label choice.
             const text = `${effectiveTicketTitle(fbRow)}\n${fbRow.observation || ""}`.slice(0, 2000)
             await suggestLabelsForFeedback({ feedbackId: fid, projectId: fbRow.projectId, text })
               .catch((e: any) => console.warn("[suggest-labels] on-demand (non-fatal):", e?.message || e))
-            suggestions = await getSuggestedLabels(fid, fbRow.projectId)
+            suggestions = (await getSuggestedLabelsState(fid, fbRow.projectId)).labels
           }
           // Filter out already-attached labels so ghost chips never duplicate real chips
-          const attached = new Set((await labelsForFeedback(fid)).map(l => l.id))
+          const attached = new Set(attachedRows.map(l => l.id))
           return json({ suggestions: suggestions.filter(l => !attached.has(l.id)) })
         }
 
@@ -13013,7 +13131,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
       }
       // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+      const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
       if (projMatch) {
         const pid = projMatch[1]
         const sub = projMatch[2] || ""
@@ -14575,6 +14693,48 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
         if (req.method === "GET" && sub === "/members") {
           return json({ members: await membersOfProject(pid) })
+        }
+        // QPQ-31: people lookup behind the composer's "on behalf of" typeahead — project members plus
+        // project contacts, filtered by a typed prefix. SESSION-GATED by the surrounding projMatch access
+        // check, and that gate is the point: the composer also runs anonymously on a customer's own site,
+        // where handing back a directory of names and addresses would let any visitor enumerate the team.
+        // An anonymous caller never reaches here, so its typeahead simply offers Create and nothing else.
+        if (req.method === "GET" && sub === "/people") {
+          const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
+          // "The team for this project" is wider than project_members: an account owner/admin can open
+          // every project in the account, so they belong in the list even without a per-project row.
+          // Without this the picker was empty on a project whose only roster entry is the owner.
+          const projRow = await projectById(pid)
+          const [mem, acct, con] = await Promise.all([
+            membersOfProject(pid),
+            projRow ? accountMembersRaw(projRow.accountId) : Promise.resolve([] as Array<{ email: string; role: string }>),
+            listProjectContacts(pid),
+          ])
+          const seen = new Set<string>()
+          const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
+          for (const m of mem) {
+            const e = String(m.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: null, kind: "member" })
+          }
+          for (const a of acct) {
+            const e = String(a.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: null, kind: "member" })
+          }
+          for (const c of con) {
+            const e = String(c.email).toLowerCase()
+            if (seen.has(e)) continue
+            seen.add(e)
+            people.push({ email: e, name: c.name, kind: "contact" })
+          }
+          // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
+          // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
+          // a normal-sized team.
+          const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 200)
+          return json({ people: hits })
         }
         if (req.method === "POST" && sub === "/invite") {
           // Any project member (admin or plain member) can invite — was admin-only. A non-admin

@@ -115,6 +115,21 @@ test("POST /api/projects/:id/tickets creates a manual ticket and returns 201", a
   expect(d.ticketId.startsWith("fb_")).toBe(true)
 })
 
+test("KD-100: the reporter is ALWAYS the signed-in user — a forged reporter in the create body is ignored", async () => {
+  const FAKE = "ceo@evil.test"
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "Forged reporter attempt", priority: "low", assignee: MEMBER,
+    reporter: FAKE, reporterEmail: FAKE, reporter_email: FAKE, actorEmail: FAKE, actor_email: FAKE, contactEmail: FAKE, contact_email: FAKE, createdBy: FAKE,
+  }, MEM_SID)
+  expect(r.status).toBe(201)
+  const { ticketId } = await r.json()
+  const row: any = (await raw.execute({ sql: "SELECT * FROM feedback WHERE id=?", args: [ticketId] })).rows[0]
+  expect(row.actor_email).toBe(MEMBER)                                   // the session user, not the body's value
+  expect(JSON.stringify(row)).not.toContain("evil.test")                 // no forged address landed in ANY column
+  const g = await req("GET", `/api/feedback/${ticketId}`, undefined, MEM_SID)
+  expect(JSON.stringify(await g.json())).not.toContain("evil.test")      // and none is surfaced on read
+})
+
 test("created ticket appears in GET /api/projects/:id/tickets with source=manual", async () => {
   await req("POST", `/api/projects/${PROJ}/tickets`, { title: "Listing ticket for source check", priority: "medium", assignee: "dev@team.local" })
   const r = await req("GET", `/api/projects/${PROJ}/tickets?source=manual`)
