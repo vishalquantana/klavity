@@ -1,0 +1,215 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bolt.new Testing: How to QA an App Bolt Built for You · Klavity</title>
+<meta name="description" content="Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it.">
+<link rel="canonical" href="https://klavity.in/blog/bolt-new-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Bolt.new Testing: How to QA an App Bolt Built for You"><meta property="og:description" content="Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it.">
+<meta property="og:url" content="https://klavity.in/blog/bolt-new-testing"><meta property="og:image" content="https://klavity.in/blog/bolt-new-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Bolt.new Testing: How to QA an App Bolt Built for You"><meta name="twitter:description" content="Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it."><meta name="twitter:image" content="https://klavity.in/blog/bolt-new-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Bolt.new Testing: How to QA an App Bolt Built for You","description":"Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it.","datePublished":"2026-10-10","dateModified":"2026-10-10","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/bolt-new-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/bolt-new-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Bolt.new Testing: How to QA an App Bolt Built for You","item":"https://klavity.in/blog/bolt-new-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/bolt-new-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does Bolt.new test the code it generates?","acceptedAnswer":{"@type":"Answer","text":"Bolt checks that the project builds and renders in its in-browser preview, and will fix errors it detects there. It does not verify that your flows work for a new user, that database permissions isolate accounts, or that the last prompt didn't break an unrelated screen. Those are checks you run on the deployed build."}},{"@type":"Question","name":"Why does my Bolt app work in the preview but break after deploying?","acceptedAnswer":{"@type":"Answer","text":"Usually environment differences: server-side environment variables and API keys that aren't set on the host, auth redirect URLs still pointing at localhost, or email confirmation links built from the wrong domain. Test the deployed URL, not the preview, and sign up with an address you've never used."}},{"@type":"Question","name":"What is the most common bug in Bolt-generated apps?","acceptedAnswer":{"@type":"Answer","text":"Missing data isolation between users. Generated code often filters by user id in the client while the database itself allows broader access, so it looks correct when you are the only account. Create two accounts and try to read the first one's data from the second."}},{"@type":"Question","name":"Do I need Playwright tests for a Bolt.new app?","acceptedAnswer":{"@type":"Answer","text":"Not on day one. Add automated end-to-end tests when someone other than you depends on the app, or the first time you re-break something you had already fixed. Before that, a short manual checklist run after every prompt is more valuable than a test suite you don't maintain."}},{"@type":"Question","name":"How do I stop new prompts from breaking working features?","acceptedAnswer":{"@type":"Answer","text":"Re-check the same core flows after every prompt instead of only the screen you asked Bolt to change. Prompts touch shared components and layout files, so breakage usually lands somewhere you weren't looking. Recording those flows as self-healing tests removes the need to remember."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-10-10</div>
+    <h1>Bolt.new Testing: How to QA an App Bolt Built for You</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Bolt.new preview passes while the deployed build fails on fresh account, permissions and auth redirect checks">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- left: bolt preview window -->
+  <rect x="48" y="96" width="246" height="176" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="48" y1="126" x2="294" y2="126" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="66" cy="111" r="4" fill="#6366f1" opacity="0.8"/>
+  <circle cx="80" cy="111" r="4" fill="#f5f0e8" opacity="0.2"/>
+  <circle cx="94" cy="111" r="4" fill="#f5f0e8" opacity="0.2"/>
+  <!-- lightning bolt = bolt.new -->
+  <path d="M152 148 L132 196 L160 196 L146 236 L186 182 L160 182 L176 148 Z" fill="#6366f1"/>
+  <rect x="76" y="248" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="172" y="248" width="52" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <circle cx="268" cy="250" r="12" fill="#4ade80" opacity="0.18"/>
+  <polyline points="262,250 267,255 275,245" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- flow arrow: preview -> deployed -->
+  <line x1="306" y1="184" x2="368" y2="184" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 6"/>
+  <path d="M366 176 L382 184 L366 192 Z" fill="#6366f1"/>
+
+  <!-- right: deployed build checks -->
+  <rect x="396" y="60" width="356" height="300" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-width="1.5" stroke-opacity="0.55"/>
+  <rect x="424" y="92" width="150" height="9" rx="4.5" fill="#6366f1" opacity="0.7"/>
+
+  <!-- check row 1: fresh account - fail -->
+  <rect x="424" y="124" width="300" height="42" rx="8" fill="#f87171" opacity="0.1"/>
+  <circle cx="450" cy="145" r="11" fill="#f87171" opacity="0.2"/>
+  <line x1="445" y1="140" x2="455" y2="150" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="455" y1="140" x2="445" y2="150" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="136" width="168" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="150" width="104" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <!-- check row 2: permissions - fail -->
+  <rect x="424" y="178" width="300" height="42" rx="8" fill="#f87171" opacity="0.1"/>
+  <circle cx="450" cy="199" r="11" fill="#f87171" opacity="0.2"/>
+  <line x1="445" y1="194" x2="455" y2="204" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="455" y1="194" x2="445" y2="204" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="190" width="196" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="204" width="86" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <!-- check row 3: core flow - pass -->
+  <rect x="424" y="232" width="300" height="42" rx="8" fill="#4ade80" opacity="0.1"/>
+  <circle cx="450" cy="253" r="11" fill="#4ade80" opacity="0.2"/>
+  <polyline points="444,253 449,258 457,247" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="244" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="258" width="120" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <!-- check row 4: second account / url id swap - pass -->
+  <rect x="424" y="286" width="300" height="42" rx="8" fill="#4ade80" opacity="0.1"/>
+  <circle cx="450" cy="307" r="11" fill="#4ade80" opacity="0.2"/>
+  <polyline points="444,307 449,312 457,301" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="298" width="178" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="312" width="68" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <line x1="48" y1="344" x2="294" y2="344" stroke="#6366f1" stroke-width="1" opacity="0.25"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Bolt.new testing is verifying the generated app outside Bolt's preview — on a deployed URL, with a fresh account and a second user. The preview answers 'does it render', never 'does it work for someone who isn't you', which is where permissions, empty states and auth redirects fail. Run a fixed short checklist after every prompt rather than a thorough one once.</div>
+    <div class="prose"><p><strong>Bolt.new testing</strong> means verifying that the app Bolt generated actually works outside of Bolt's own preview window &mdash; in a real browser, with real data, on a real deployed URL. Because Bolt writes a complete full-stack project in one pass from a prompt, the code compiles and the preview renders long before anyone has checked whether sign-up, payments, permissions, or mobile layout behave correctly. Bolt.new testing is the step that closes that gap: a short, repeatable pass over the flows that matter, run on the deployed build rather than the editor.</p>
+
+<h2>What is Bolt.new testing, exactly?</h2>
+<p>Bolt.new is StackBlitz's prompt-to-app builder. It runs your project inside a WebContainer &mdash; a Node environment running in your browser tab &mdash; and can wire up a database (commonly Supabase) and deploy out to a host such as Netlify. That architecture is what makes Bolt feel instant, and it is also what makes testing a separate job.</p>
+<p>So Bolt.new testing is not one tool. It is three distinct checks that people usually collapse into one:</p>
+<ul>
+<li><strong>Does it render?</strong> The Bolt preview answers this, and it is the only question the preview reliably answers.</li>
+<li><strong>Does it work?</strong> Can a stranger complete the flow the app exists for &mdash; sign up, create the thing, pay, log back in and still see their data?</li>
+<li><strong>Does it keep working?</strong> After the next prompt rewrites three files you never read, is the flow from last week still intact?</li>
+</ul>
+<p>Most bug reports from users of prompt-built apps land in the second and third buckets. The first one passed.</p>
+
+<h2>Why doesn't the Bolt preview count as testing?</h2>
+<p>The preview is an honest answer to a narrow question. It shows the app as rendered for you, signed in as you, on your screen size, with whatever rows you happened to create while building. Four things it structurally cannot show you:</p>
+<ul>
+<li><strong>The first-run state.</strong> You have seed data. A new user has an empty table, and empty-state handling is one of the most common gaps in generated UI code.</li>
+<li><strong>Someone else's permissions.</strong> If the generated schema has no row-level security policies, every signed-in user can often read every row. The preview, where you are the only user, looks perfect.</li>
+<li><strong>The real environment.</strong> Server-side environment variables, API keys, redirect URLs and OAuth callbacks that work in the in-browser container frequently differ from the deployed host. Auth redirects are a classic one: localhost is allow-listed, the production domain is not.</li>
+<li><strong>Other browsers and real devices.</strong> The preview is one engine, one viewport, one set of fonts.</li>
+</ul>
+<p>This is the same failure pattern we documented for other prompt-to-app tools in <a href="/blog/lovable-app-testing">testing a Lovable app</a>: the builder's preview is a compile check wearing the costume of a QA pass.</p>
+
+<h2>What breaks most often in Bolt-generated apps?</h2>
+<p>Three categories account for the bulk of it, and each needs a different check.</p>
+<h3>1. Data access and permissions</h3>
+<p>AI-generated schemas tend to be permissive by default. If you asked for "a dashboard where users see their projects" and never mentioned security policies, the generated query may fetch by user id in the client while the database itself allows anything. Test it by creating two accounts and trying to read account A's data from account B &mdash; via the UI, and by editing the id in the URL.</p>
+<h3>2. Auth and session edges</h3>
+<p>Sign-up works. The paths around it often don't: email confirmation links pointing at the wrong domain, password reset, logging out then back in, an expired session mid-form, a second browser tab. Each of these is a distinct path through the code, and a single prompt rarely produces all of them correctly.</p>
+<h3>3. Silent regressions from the next prompt</h3>
+<p>This is the one specific to AI builders. Asking Bolt to "make the pricing page nicer" can touch shared components, a layout file, or a utility that checkout depends on. Nothing announces it. You review the diff for the page you asked about, and the break lands two screens away. That dynamic is the subject of <a href="/blog/vibe-coding-qa-checklist">our vibe coding QA checklist</a>, and it is the reason a checklist beats ad-hoc clicking: you need the <em>same</em> flows re-checked, not whichever ones you remember.</p>
+
+<h2>Bolt preview vs. testing on the deployed build</h2>
+<table>
+<tr><th>Check</th><th>Bolt preview</th><th>Deployed build</th></tr>
+<tr><td>Code compiles, page renders</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Empty / first-run state</td><td>Rarely &mdash; you have seed data</td><td>Yes, with a fresh account</td></tr>
+<tr><td>Row-level security between users</td><td>No &mdash; single user</td><td>Yes, with two accounts</td></tr>
+<tr><td>Production env vars &amp; API keys</td><td>No</td><td>Yes</td></tr>
+<tr><td>Auth redirects &amp; email links</td><td>Usually wrong domain</td><td>Yes</td></tr>
+<tr><td>Cross-browser &amp; mobile layout</td><td>One engine, one viewport</td><td>Yes</td></tr>
+<tr><td>Regressions after the next prompt</td><td>No history to compare</td><td>Yes, if the flow is recorded</td></tr>
+</table>
+<p>The practical rule: <strong>never accept a Bolt change on the strength of the preview alone.</strong> Deploy it, then test the deployed URL.</p>
+
+<h2>What does a minimum Bolt.new testing checklist look like?</h2>
+<p>Ten minutes, in this order, on the deployed build. Run it after any prompt that touched more than copy.</p>
+<ol>
+<li><strong>Fresh account, incognito window.</strong> Sign up with an address you have never used. Does the confirmation email arrive, and does its link land on your real domain?</li>
+<li><strong>The empty state.</strong> Before creating anything, look at every main screen. Blank panels, infinite spinners and <em>undefined</em> in a heading all show up here.</li>
+<li><strong>The core flow, end to end.</strong> The one thing the app is for. Complete it fully, including whatever confirmation or receipt it promises.</li>
+<li><strong>Log out, log back in.</strong> Is the thing you just created still there, and still yours?</li>
+<li><strong>Second account.</strong> From account B, try to reach account A's data &mdash; through the UI and by swapping the id in a URL.</li>
+<li><strong>Refresh mid-flow and hit Back.</strong> Generated apps often hold state only in memory; a refresh exposes it.</li>
+<li><strong>Open the browser console.</strong> Red errors on a page that looks fine are the clearest early warning you get for free.</li>
+<li><strong>One real phone.</strong> Not a resized desktop window &mdash; an actual device, where fixed headers, modals and keyboards behave differently.</li>
+</ol>
+<p>That list is deliberately short. A checklist you run every time beats a thorough one you run once.</p>
+
+<h2>How do you test a Bolt app without writing test code?</h2>
+<p>Most people building in Bolt are not going to hand-write Playwright specs, and they shouldn't have to in week one. The sequence that works is to add layers in the order of what fails first:</p>
+<ol>
+<li><strong>Make reports reproducible.</strong> The first thing to fix is not the bugs, it's the bug reports. When a client or a friend says "the button didn't work", you need the URL, the console errors, the network calls and the browser &mdash; not a screenshot in a text message. <a href="/snap">Klavity Snap</a> captures that from a right-click, so a non-technical tester can file something a developer (or Bolt itself) can act on.</li>
+<li><strong>Get a stranger's pass.</strong> You cannot un-know how your own app works, which is why your clicking will always miss the obvious. <a href="/sims">Sims</a> runs AI personas through your deployed app the way different real users would &mdash; the impatient one, the one who refreshes mid-checkout, the one who tries the URL directly &mdash; and reports what broke.</li>
+<li><strong>Lock the flows that matter.</strong> Once a flow works, it should stay working through the next twenty prompts. <a href="/autosim">AutoSim</a> turns those passes into end-to-end tests that repair their own selectors when the AI rewrites your markup, which is what usually breaks conventional generated tests on a Bolt project.</li>
+</ol>
+<p>The underlying principle is covered in depth in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>: when code generation gets faster, verification &mdash; not writing &mdash; becomes the bottleneck.</p>
+
+<h2>When should a Bolt app get automated tests?</h2>
+<p>Two triggers, not a date. First, when anyone other than you depends on the app: a paying user, a client, a demo you cannot reschedule. Second, when you break something you had already fixed. The second time a regression reaches a user is the signal that manual re-checking has stopped scaling, and that is the moment to record your core flows rather than re-click them.</p>
+<p>Before either trigger, the checklist above is genuinely enough. After them, skipping automation just moves the testing onto your users, which is the most expensive place to do it.</p>
+
+<h2>Try it on your Bolt app</h2>
+<p>Deploy your Bolt project, then run the checklist on the live URL &mdash; fresh account first. If you want the reproducible reports, the persona pass and the self-healing tests without building a QA process from scratch, Klavity does all three on a deployed URL.</p>
+<p><strong><a href="/onboarding">Try Klavity free &mdash; scan your Bolt app in minutes</a></strong></p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test the deployed URL, never the Bolt preview alone</li><li>Sign up fresh in incognito to see the real first-run state</li><li>Use two accounts to check data isolation and URL id swapping</li><li>Re-run the same short checklist after every prompt</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Does Bolt.new test the code it generates?</summary><p>Bolt checks that the project builds and renders in its in-browser preview, and will fix errors it detects there. It does not verify that your flows work for a new user, that database permissions isolate accounts, or that the last prompt didn't break an unrelated screen. Those are checks you run on the deployed build.</p></details><details><summary>Why does my Bolt app work in the preview but break after deploying?</summary><p>Usually environment differences: server-side environment variables and API keys that aren't set on the host, auth redirect URLs still pointing at localhost, or email confirmation links built from the wrong domain. Test the deployed URL, not the preview, and sign up with an address you've never used.</p></details><details><summary>What is the most common bug in Bolt-generated apps?</summary><p>Missing data isolation between users. Generated code often filters by user id in the client while the database itself allows broader access, so it looks correct when you are the only account. Create two accounts and try to read the first one's data from the second.</p></details><details><summary>Do I need Playwright tests for a Bolt.new app?</summary><p>Not on day one. Add automated end-to-end tests when someone other than you depends on the app, or the first time you re-break something you had already fixed. Before that, a short manual checklist run after every prompt is more valuable than a test suite you don't maintain.</p></details><details><summary>How do I stop new prompts from breaking working features?</summary><p>Re-check the same core flows after every prompt instead of only the screen you asked Bolt to change. Prompts touch shared components and layout files, so breakage usually lands somewhere you weren't looking. Recording those flows as self-healing tests removes the need to remember.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

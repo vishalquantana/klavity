@@ -817,5 +817,12 @@
     "excerpt": "Jam.dev is a Chromium extension, so every reporter must install it. The best Jam.dev alternative drops the extension entirely.",
     "category": "Compare",
     "date": "2026-10-09"
+  },
+  {
+    "slug": "bolt-new-testing",
+    "title": "Bolt.new Testing: How to QA an App Bolt Built for You",
+    "excerpt": "Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it.",
+    "category": "Learn",
+    "date": "2026-10-10"
   }
 ]

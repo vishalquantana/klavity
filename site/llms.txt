@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [Bolt.new Testing: How to QA an App Bolt Built for You](https://klavity.in/blog/bolt-new-testing) — Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it.
 - [The Best Jam.dev Alternative for Agencies & Vibe Coders](https://klavity.in/blog/jam-dev-alternative) — Jam.dev is a Chromium extension, so every reporter must install it. The best Jam.dev alternative drops the extension entirely.
 - [AI Bug Detection: What It Catches Before Clients Do](https://klavity.in/blog/ai-bug-detection) — AI bug detection finds defects by reading your diff, driving your running app, and reading production signals. Here is what each layer catches.
 - [Vibe Coding Security Risks: What to Check Before You Ship](https://klavity.in/blog/vibe-coding-security-risks) — The top vibe coding security risks are exposed API keys, open database policies and missing authorization checks. Here's how to find all three fast.

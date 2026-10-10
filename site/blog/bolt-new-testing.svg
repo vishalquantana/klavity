@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Bolt.new preview passes while the deployed build fails on fresh account, permissions and auth redirect checks">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <!-- left: bolt preview window -->
+  <rect x="48" y="96" width="246" height="176" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="48" y1="126" x2="294" y2="126" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="66" cy="111" r="4" fill="#6366f1" opacity="0.8"/>
+  <circle cx="80" cy="111" r="4" fill="#f5f0e8" opacity="0.2"/>
+  <circle cx="94" cy="111" r="4" fill="#f5f0e8" opacity="0.2"/>
+  <!-- lightning bolt = bolt.new -->
+  <path d="M152 148 L132 196 L160 196 L146 236 L186 182 L160 182 L176 148 Z" fill="#6366f1"/>
+  <rect x="76" y="248" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="172" y="248" width="52" height="8" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <circle cx="268" cy="250" r="12" fill="#4ade80" opacity="0.18"/>
+  <polyline points="262,250 267,255 275,245" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <!-- flow arrow: preview -> deployed -->
+  <line x1="306" y1="184" x2="368" y2="184" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 6"/>
+  <path d="M366 176 L382 184 L366 192 Z" fill="#6366f1"/>
+
+  <!-- right: deployed build checks -->
+  <rect x="396" y="60" width="356" height="300" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-width="1.5" stroke-opacity="0.55"/>
+  <rect x="424" y="92" width="150" height="9" rx="4.5" fill="#6366f1" opacity="0.7"/>
+
+  <!-- check row 1: fresh account - fail -->
+  <rect x="424" y="124" width="300" height="42" rx="8" fill="#f87171" opacity="0.1"/>
+  <circle cx="450" cy="145" r="11" fill="#f87171" opacity="0.2"/>
+  <line x1="445" y1="140" x2="455" y2="150" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="455" y1="140" x2="445" y2="150" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="136" width="168" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="150" width="104" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <!-- check row 2: permissions - fail -->
+  <rect x="424" y="178" width="300" height="42" rx="8" fill="#f87171" opacity="0.1"/>
+  <circle cx="450" cy="199" r="11" fill="#f87171" opacity="0.2"/>
+  <line x1="445" y1="194" x2="455" y2="204" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="455" y1="194" x2="445" y2="204" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="190" width="196" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="204" width="86" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <!-- check row 3: core flow - pass -->
+  <rect x="424" y="232" width="300" height="42" rx="8" fill="#4ade80" opacity="0.1"/>
+  <circle cx="450" cy="253" r="11" fill="#4ade80" opacity="0.2"/>
+  <polyline points="444,253 449,258 457,247" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="244" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="258" width="120" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <!-- check row 4: second account / url id swap - pass -->
+  <rect x="424" y="286" width="300" height="42" rx="8" fill="#4ade80" opacity="0.1"/>
+  <circle cx="450" cy="307" r="11" fill="#4ade80" opacity="0.2"/>
+  <polyline points="444,307 449,312 457,301" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="474" y="298" width="178" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="474" y="312" width="68" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <line x1="48" y1="344" x2="294" y2="344" stroke="#6366f1" stroke-width="1" opacity="0.25"/>
+</svg>
