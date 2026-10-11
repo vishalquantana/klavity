@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="An AI QA agent loop: goal, explore, act, assert, report, repair">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="665" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="370" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="58" width="300" height="304" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-opacity="0.35"/>
+  <line x1="56" y1="92" x2="356" y2="92" stroke="#6366f1" stroke-opacity="0.35"/>
+  <circle cx="78" cy="75" r="5" fill="#f87171"/>
+  <circle cx="95" cy="75" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="112" cy="75" r="5" fill="#f5f0e8" opacity="0.3"/>
+
+  <rect x="84" y="120" width="160" height="14" rx="7" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="84" y="148" width="244" height="9" rx="4.5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="84" y="166" width="206" height="9" rx="4.5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="84" y="200" width="104" height="30" rx="8" fill="#6366f1"/>
+  <rect x="204" y="200" width="104" height="30" rx="8" fill="#f5f0e8" opacity="0.1" stroke="#f5f0e8" stroke-opacity="0.2"/>
+
+  <rect x="84" y="258" width="244" height="76" rx="9" fill="#f87171" opacity="0.1" stroke="#f87171" stroke-opacity="0.5"/>
+  <circle cx="112" cy="282" r="10" fill="#f87171" opacity="0.85"/>
+  <path d="M107 282h10M112 277v10" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="134" y="276" width="170" height="8" rx="4" fill="#f87171" opacity="0.55"/>
+  <rect x="98" y="302" width="206" height="7" rx="3.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="98" y="316" width="148" height="7" rx="3.5" fill="#f5f0e8" opacity="0.16"/>
+
+  <path d="M372 210h58" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M422 202l10 8-10 8" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="610" cy="210" r="118" fill="none" stroke="#6366f1" stroke-opacity="0.3" stroke-width="2" stroke-dasharray="7 9"/>
+  <circle cx="610" cy="210" r="44" fill="#6366f1" opacity="0.14" stroke="#6366f1" stroke-opacity="0.6"/>
+  <path d="M592 210l12 13 24-28" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="610" cy="92" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="610" cy="92" r="6" fill="#6366f1"/>
+  <circle cx="712" cy="151" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="712" cy="151" r="6" fill="#6366f1"/>
+  <circle cx="712" cy="269" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="712" cy="269" r="6" fill="#4ade80"/>
+  <circle cx="610" cy="328" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="610" cy="328" r="6" fill="#f87171"/>
+  <circle cx="508" cy="269" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="508" cy="269" r="6" fill="#6366f1"/>
+  <circle cx="508" cy="151" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="508" cy="151" r="6" fill="#6366f1"/>
+
+  <path d="M684 100l18 10-19 9" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M700 320l-19 9 2-20" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M520 100l-19 9 2 20" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

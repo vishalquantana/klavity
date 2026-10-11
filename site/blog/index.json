@@ -824,5 +824,12 @@
     "excerpt": "Bolt.new testing means verifying the generated app on a deployed URL, not in Bolt's preview. Here's the 10-minute checklist that catches it.",
     "category": "Learn",
     "date": "2026-10-10"
+  },
+  {
+    "slug": "ai-qa-agent",
+    "title": "What Is an AI QA Agent? How Web Agencies Actually Use One",
+    "excerpt": "An AI QA agent explores your app, decides what to test, files reproducible bugs, and repairs its own tests when the UI changes.",
+    "category": "Guides",
+    "date": "2026-10-11"
   }
 ]

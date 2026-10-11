@@ -1,0 +1,210 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is an AI QA Agent? How Web Agencies Actually Use One · Klavity</title>
+<meta name="description" content="An AI QA agent explores your app, decides what to test, files reproducible bugs, and repairs its own tests when the UI changes.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-agent">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is an AI QA Agent? How Web Agencies Actually Use One"><meta property="og:description" content="An AI QA agent explores your app, decides what to test, files reproducible bugs, and repairs its own tests when the UI changes.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-agent"><meta property="og:image" content="https://klavity.in/blog/ai-qa-agent.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is an AI QA Agent? How Web Agencies Actually Use One"><meta name="twitter:description" content="An AI QA agent explores your app, decides what to test, files reproducible bugs, and repairs its own tests when the UI changes."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-agent.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is an AI QA Agent? How Web Agencies Actually Use One","description":"An AI QA agent explores your app, decides what to test, files reproducible bugs, and repairs its own tests when the UI changes.","datePublished":"2026-10-11","dateModified":"2026-10-11","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-agent.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-agent","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is an AI QA Agent? How Web Agencies Actually Use One","item":"https://klavity.in/blog/ai-qa-agent"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-agent"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is an AI QA agent?","acceptedAnswer":{"@type":"Answer","text":"An AI QA agent is software that tests an application by deriving its own steps from a stated goal rather than replaying a script. It explores the live DOM and accessibility tree, performs actions in a real browser, judges the outcome, attaches reproduction evidence, and re-locates elements on later runs when the UI has changed."}},{"@type":"Question","name":"Is an AI QA agent the same as test automation?","acceptedAnswer":{"@type":"Answer","text":"No. Scripted automation replays steps a human wrote, so it is highly repeatable but blind to paths nobody scripted and brittle when selectors change. An AI QA agent chooses its own path, which makes it strong at discovery and at surviving refactors, but less repeatable run to run. Most teams use both: the agent for discovery, deterministic tests for the release gate."}},{"@type":"Question","name":"Can an AI QA agent replace manual QA?","acceptedAnswer":{"@type":"Answer","text":"Not entirely. Agents do not know undocumented business rules unless you state them, they cannot judge visual or copy quality, and they will not check permission boundaries unprompted. Anything irreversible — payments, deletion, email to real addresses — should stay behind a deterministic test and human sign-off."}},{"@type":"Question","name":"What should I look for when choosing an AI QA agent?","acceptedAnswer":{"@type":"Answer","text":"Check that failures arrive reproducible (steps, screenshot, console, network, environment), that you can pin a run to a fixed path for CI, that self-repair is visible rather than silent, that false positives are deduped and confidence-signalled, that you can export and own the generated tests, and that it can reach a real environment with auth and seed data."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-11</div>
+    <h1>What Is an AI QA Agent? How Web Agencies Actually Use One</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="An AI QA agent loop: goal, explore, act, assert, report, repair">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="665" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="120" cy="370" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="58" width="300" height="304" rx="14" fill="#f5f0e8" opacity="0.04" stroke="#6366f1" stroke-opacity="0.35"/>
+  <line x1="56" y1="92" x2="356" y2="92" stroke="#6366f1" stroke-opacity="0.35"/>
+  <circle cx="78" cy="75" r="5" fill="#f87171"/>
+  <circle cx="95" cy="75" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="112" cy="75" r="5" fill="#f5f0e8" opacity="0.3"/>
+
+  <rect x="84" y="120" width="160" height="14" rx="7" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="84" y="148" width="244" height="9" rx="4.5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="84" y="166" width="206" height="9" rx="4.5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="84" y="200" width="104" height="30" rx="8" fill="#6366f1"/>
+  <rect x="204" y="200" width="104" height="30" rx="8" fill="#f5f0e8" opacity="0.1" stroke="#f5f0e8" stroke-opacity="0.2"/>
+
+  <rect x="84" y="258" width="244" height="76" rx="9" fill="#f87171" opacity="0.1" stroke="#f87171" stroke-opacity="0.5"/>
+  <circle cx="112" cy="282" r="10" fill="#f87171" opacity="0.85"/>
+  <path d="M107 282h10M112 277v10" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+  <rect x="134" y="276" width="170" height="8" rx="4" fill="#f87171" opacity="0.55"/>
+  <rect x="98" y="302" width="206" height="7" rx="3.5" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="98" y="316" width="148" height="7" rx="3.5" fill="#f5f0e8" opacity="0.16"/>
+
+  <path d="M372 210h58" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M422 202l10 8-10 8" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="610" cy="210" r="118" fill="none" stroke="#6366f1" stroke-opacity="0.3" stroke-width="2" stroke-dasharray="7 9"/>
+  <circle cx="610" cy="210" r="44" fill="#6366f1" opacity="0.14" stroke="#6366f1" stroke-opacity="0.6"/>
+  <path d="M592 210l12 13 24-28" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="610" cy="92" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="610" cy="92" r="6" fill="#6366f1"/>
+  <circle cx="712" cy="151" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="712" cy="151" r="6" fill="#6366f1"/>
+  <circle cx="712" cy="269" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="712" cy="269" r="6" fill="#4ade80"/>
+  <circle cx="610" cy="328" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="610" cy="328" r="6" fill="#f87171"/>
+  <circle cx="508" cy="269" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="508" cy="269" r="6" fill="#6366f1"/>
+  <circle cx="508" cy="151" r="17" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <circle cx="508" cy="151" r="6" fill="#6366f1"/>
+
+  <path d="M684 100l18 10-19 9" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M700 320l-19 9 2-20" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M520 100l-19 9 2 20" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>An AI QA agent derives test steps from a goal instead of replaying a script, then captures evidence and re-locates elements when the UI changes. It is dependable for exploration, evidence capture, and test maintenance — and a poor choice as your only release gate, because a self-chosen path does not prove the same thing twice. The working pattern is: the agent finds, the human decides, a deterministic test remembers.</div>
+    <div class="prose"><p><strong>An AI QA agent is software that tests an application the way a QA engineer would: it explores the product, decides what is worth checking, performs the steps, judges the result, files evidence, and repairs its own tests when the UI changes.</strong> The difference from ordinary test automation is where the decisions come from — a script replays steps a human wrote, while an AI QA agent derives steps from a goal such as "sign up, then reach the dashboard." In practice, today's agents are dependable at exploration, evidence capture, and test maintenance. They still need a human to confirm what counts as a bug and to own the critical-path suite.</p>
+
+<h2>What does an AI QA agent actually do, step by step?</h2>
+<p>Strip away the branding and every AI QA agent runs the same loop. Knowing the loop is the fastest way to tell a real agent from a test runner with an AI label on the box:</p>
+<ol>
+  <li><strong>Goal.</strong> It receives an objective in plain language ("check that a logged-out visitor can book a demo"), not a list of selectors.</li>
+  <li><strong>Explore.</strong> It reads the live DOM and the accessibility tree to find the elements that can move it toward the goal, rather than relying on a map you maintained by hand.</li>
+  <li><strong>Act.</strong> It clicks, types, scrolls, and navigates — usually through a real browser driver, so the run happens in the same engine your users have.</li>
+  <li><strong>Assert.</strong> It decides whether the outcome matched the goal. This is the hard part: a good agent asserts against observable facts (a URL changed, a row appeared, a request returned 200) and flags ambiguity instead of guessing.</li>
+  <li><strong>Report.</strong> It captures the artifacts a developer needs to reproduce the failure: steps taken, screenshot or video, console errors, failing network calls, browser and viewport.</li>
+  <li><strong>Repair.</strong> On the next run, when a button has been renamed or moved, it re-locates the element by role and intent instead of failing on a dead CSS selector.</li>
+</ol>
+<p>Steps 2 and 6 are what make it an agent. Steps 3 to 5 are what every test framework has always done.</p>
+
+<h2>How is an AI QA agent different from test automation and manual QA?</h2>
+<p>These are not competitors so much as three different trade-offs between coverage, determinism, and cost. Most teams that get good results use all three for different jobs:</p>
+<table>
+  <tr><th>Dimension</th><th>Scripted automation (Playwright, Cypress)</th><th>AI QA agent</th><th>Manual QA</th></tr>
+  <tr><td>Who decides the steps</td><td>A human, once, in code</td><td>The agent, from a stated goal</td><td>A human, every run</td></tr>
+  <tr><td>When the UI changes</td><td>Test breaks until someone fixes the selector</td><td>Re-locates the element and continues</td><td>Adapts instantly</td></tr>
+  <tr><td>Paths nobody wrote a test for</td><td>Not covered</td><td>Covered — this is its main advantage</td><td>Covered, but only as far as time allows</td></tr>
+  <tr><td>Repeatability</td><td>High — same steps every run</td><td>Lower — the path can vary between runs</td><td>Low</td></tr>
+  <tr><td>Marginal cost per run</td><td>Near zero (CI minutes)</td><td>Per-run model and browser cost</td><td>Human hours</td></tr>
+  <tr><td>Best used for</td><td>Locking in behaviour you must never break</td><td>Finding the unknown, and keeping suites alive</td><td>Judgement, design, and anything money touches</td></tr>
+</table>
+<p>The important row is repeatability. An agent that picks its own path is excellent at discovery and a poor choice as your only release gate, because a run that passes does not prove the same thing twice. That is why the sensible pattern is: let the agent find the bug, then freeze the reproduction as a deterministic test. We walk through that handoff in detail in <a href="/blog/ai-qa-workflow">the AI QA workflow guide</a>.</p>
+
+<h2>What can an AI QA agent do well today, and what can it not?</h2>
+<p>Being specific here matters more than enthusiasm, because the failure mode of adopting an agent is trusting it with the one job it is worst at.</p>
+<h3>Reliable today</h3>
+<ul>
+  <li><strong>Breadth.</strong> Walking dozens of flows, states, and viewports in the time a person covers two or three.</li>
+  <li><strong>Evidence.</strong> Producing reports with steps, console output, and network detail attached — which is most of what makes a bug reproducible.</li>
+  <li><strong>Maintenance.</strong> Keeping an existing suite green through cosmetic refactors instead of filing selector failures.</li>
+  <li><strong>Triage.</strong> Grouping duplicate reports and separating a broken endpoint from the twelve UI symptoms it caused.</li>
+  <li><strong>First drafts.</strong> Turning a flow it just exercised into a starting test file a developer edits.</li>
+</ul>
+<h3>Not reliable today</h3>
+<ul>
+  <li><strong>Business rules it was never told.</strong> An agent cannot know that your pricing tier caps seats at five. Undocumented rules have to be stated, or they will not be checked.</li>
+  <li><strong>Taste.</strong> Visual awkwardness, confusing copy, and a layout that is technically fine but feels wrong stay human calls.</li>
+  <li><strong>Depth on auth and permissions.</strong> It will confirm a login works. It will not, unprompted, confirm that user A cannot read user B's invoice. Write those as explicit goals.</li>
+  <li><strong>Being the whole gate.</strong> Anything irreversible — payments, deletion, sending email to real addresses — needs a deterministic test and a human sign-off behind it.</li>
+</ul>
+
+<h2>Where does an AI QA agent fit into an agency or solo build?</h2>
+<p>Three slots, and they map to different moments of risk:</p>
+<ul>
+  <li><strong>Before the client ever sees it.</strong> Run persona-driven exploration across the site to catch the broken paths your own click-through never takes. This is what <a href="/sims">Sims</a> is for — a confused first-time visitor finds different bugs than the person who built the page.</li>
+  <li><strong>When a human does find something.</strong> The bug still needs capturing properly, and an agent is only as useful as the report that reaches the developer. <a href="/snap">Snap</a> turns a right-click into a ticket carrying the console, network, and environment state.</li>
+  <li><strong>After the fix ships.</strong> Convert each confirmed bug into a test that stays green without babysitting. <a href="/autosim">AutoSim</a> handles the repair step so the suite survives the next redesign.</li>
+</ul>
+<p>For vibe-coded projects the ordering is the same but the stakes are higher, because AI-generated code tends to be fluent and plausible at exactly the places it is wrong — error states, empty states, and permissions. If that is your situation, start with <a href="/blog/what-is-autonomous-qa">what autonomous QA means in practice</a> before wiring anything up.</p>
+
+<h2>What should you check when evaluating an AI QA agent?</h2>
+<p>Six questions that separate a usable tool from a demo:</p>
+<ol>
+  <li><strong>Does a failure arrive reproducible?</strong> Steps, screenshot, console, network, environment. If you have to ask follow-up questions, the agent has moved work rather than removed it.</li>
+  <li><strong>Can you pin a run?</strong> You need a mode where the agent follows a fixed path, so the same check means the same thing in CI.</li>
+  <li><strong>Is the repair visible?</strong> When it re-locates an element, you should see what changed. Silent self-healing can quietly start testing the wrong button.</li>
+  <li><strong>How does it handle false positives?</strong> An agent that reports ten things, three of which are real, costs more than it saves. Look for confidence signalling and dedupe.</li>
+  <li><strong>Do you own the tests?</strong> Prefer agents that emit standard test code you can export and run yourself.</li>
+  <li><strong>Can it reach a real environment?</strong> Auth, seed data, and staging access decide whether it tests your product or your login screen.</li>
+</ol>
+
+<h2>How do you start with an AI QA agent this week?</h2>
+<ol>
+  <li>Write down your three money paths — the flows that, if broken, cost you a client. Usually signup, checkout, and contact or booking.</li>
+  <li>Point an agent at one of them in a staging environment with real-shaped seed data.</li>
+  <li>Read every report it produces for the first few runs. You are calibrating its judgement, not grading it.</li>
+  <li>Freeze each confirmed bug as a deterministic test before you fix it, so the fix is provable.</li>
+  <li>Only then widen the goals. Breadth is worth nothing until you trust the signal.</li>
+</ol>
+<p>The pattern across all of it: the agent finds, the human decides, the deterministic test remembers. For the full picture of how these pieces sit together, read <a href="/blog/ai-qa-complete-guide">the complete guide to AI QA</a>.</p>
+
+<h2>Try it on your own project</h2>
+<p>Klavity runs persona-driven exploration, right-click bug capture, and self-healing regression tests on the same project, so a bug an agent finds becomes a test that keeps it from coming back. <a href="/onboarding"><strong>Scan your next client site free</strong></a> — no credit card, and you will know within a run whether the signal is worth your attention.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Judge an agent by its loop: explore and repair are what make it an agent.</li><li>Use the agent for discovery, a deterministic test for the release gate.</li><li>State business rules and permission boundaries explicitly or they go unchecked.</li><li>Freeze every confirmed bug as a test before you fix it.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is an AI QA agent?</summary><p>An AI QA agent is software that tests an application by deriving its own steps from a stated goal rather than replaying a script. It explores the live DOM and accessibility tree, performs actions in a real browser, judges the outcome, attaches reproduction evidence, and re-locates elements on later runs when the UI has changed.</p></details><details><summary>Is an AI QA agent the same as test automation?</summary><p>No. Scripted automation replays steps a human wrote, so it is highly repeatable but blind to paths nobody scripted and brittle when selectors change. An AI QA agent chooses its own path, which makes it strong at discovery and at surviving refactors, but less repeatable run to run. Most teams use both: the agent for discovery, deterministic tests for the release gate.</p></details><details><summary>Can an AI QA agent replace manual QA?</summary><p>Not entirely. Agents do not know undocumented business rules unless you state them, they cannot judge visual or copy quality, and they will not check permission boundaries unprompted. Anything irreversible — payments, deletion, email to real addresses — should stay behind a deterministic test and human sign-off.</p></details><details><summary>What should I look for when choosing an AI QA agent?</summary><p>Check that failures arrive reproducible (steps, screenshot, console, network, environment), that you can pin a run to a fixed path for CI, that self-repair is visible rather than silent, that false positives are deduped and confidence-signalled, that you can export and own the generated tests, and that it can reach a real environment with auth and seed data.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
