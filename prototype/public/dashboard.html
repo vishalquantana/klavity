@@ -15265,7 +15265,7 @@
             <path d="M6 13H2" />
             <path d="m8 2 1.88 1.88" />
             <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount" title="Open tickets (excludes new, done and dismissed)"></span></button>
+          </svg></span>Tickets <span class="ct" id="navTicketCount" title="To Do, Open and In Progress tickets"></span></button>
       <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
             width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -18365,9 +18365,11 @@
       // thumbnail reload of the survivors), then PATCH in the background. Keep the removed items so we can
       // restore them on a failed PATCH or an Undo.
       const removed = tgRemoveLocal(ids)
+      openCountOnStatusChange("new", "dismissed", removed.length || ids.length)   // KD-265
       // Undo re-adds the item(s) locally (one renderTriageView) + a background PATCH back to status='new'.
       tgUndoToast(removed.length || ids.length, async () => {
         tgRestoreLocal(removed)
+        openCountOnStatusChange("dismissed", "new", removed.length || ids.length)   // KD-265
         const r = await tgBulkPatch(ids, { status: "new" })
         if (!r.ok) tgFlash("Couldn't undo — retry.")
       })
@@ -18377,6 +18379,7 @@
       if (!res.ok) {
         // #537: no more silent no-op — restore the row(s) and tell the reviewer to retry.
         tgRestoreLocal(removed)
+        openCountOnStatusChange("dismissed", "new", removed.length || ids.length)   // KD-265
         tgFlash("Couldn't dismiss — retry.")
       }
       return res
@@ -19180,13 +19183,13 @@
     // #658: always-visible sidebar counts. Cheap state→textContent writes so the sidebar nav (via the
     // mirror() MutationObserver) stays live even on a poll that skipped the card whose renderer normally
     // sets them. Mirrors the exact formulas in renderStats/renderMembers/renderTickets/renderActivity.
-    // KD-265: keep the sidebar's open-ticket badge live when a ticket's status changes in the UI. "Open" = anything not new (to do),
-    // dismissed, done or closed. Moving a ticket across that line nudges the count by n and repaints the badge; the next poll
-    // replaces it with the server's number, so a missed call only costs a few seconds of lag. Call it again with from/to swapped to undo.
+    // KD-265: keep the sidebar's ticket badge live when a ticket's status changes in the UI. The badge counts To Do (new), Open and
+    // In Progress. Moving a ticket into or out of that set nudges the count by n and repaints the badge; the next poll replaces it with
+    // the server's number, so a missed call only costs a few seconds of lag. Call it again with from/to swapped to undo.
     function openCountOnStatusChange(from, to, n) {
       if (!state || !state.counts || typeof state.counts.openTickets !== "number") return
-      const notOpen = ["new", "dismissed", "done", "closed"]
-      const was = notOpen.indexOf(from == null ? "open" : from) < 0, now = notOpen.indexOf(to == null ? "open" : to) < 0
+      const counted = ["new", "open", "in_progress"]
+      const was = counted.indexOf(from == null ? "open" : from) >= 0, now = counted.indexOf(to == null ? "open" : to) >= 0
       if (was === now) return
       state.counts.openTickets = Math.max(0, state.counts.openTickets + (now ? 1 : -1) * (n == null ? 1 : n))
       syncSidebarCounts()
@@ -19201,12 +19204,12 @@
       const mc = $("memCount"); if (mc) mc.textContent = members.length ? members.length : ""
       const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
       const tkc = $("ticketCount"); if (tkc) tkc.textContent = tickets.length ? tickets.length : ""
-      // KD-265: the sidebar badge is the server's count of OPEN tickets for the whole project. It used to mirror the Recent-tickets
-      // card above, which only sees the newest 50 tickets (so it read e.g. 21 while the board held 185).
+      // KD-265: the sidebar badge is the server's count of To Do + Open + In Progress tickets for the whole project. It used to mirror the
+      // Recent-tickets card above, which only sees the newest 50 tickets (so it read e.g. 21 while the board held 185).
       const nav = $("navTicketCount")
       if (nav) {
         const c = state.counts && state.counts.openTickets
-        const n = typeof c === "number" ? c : (state.tickets || []).filter(t => ["new", "dismissed", "done", "closed"].indexOf(t.status) < 0).length
+        const n = typeof c === "number" ? c : (state.tickets || []).filter(t => ["new", "open", "in_progress"].indexOf(t.status) >= 0).length
         nav.textContent = n ? String(n) : ""
       }
       const acts = state.activity || []

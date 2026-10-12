@@ -5099,9 +5099,9 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
-    // KD-265: the sidebar "Tickets" badge = tickets still being worked on. Excludes untriaged ('new'), finished ('done'/'closed')
-    // and 'dismissed' tickets and merged-away rows.
-    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status NOT IN ('new','dismissed','done','closed')"),
+    // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
+    // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress')"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null

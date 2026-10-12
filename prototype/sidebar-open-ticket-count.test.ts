@@ -1,4 +1,4 @@
-// KD-265: the sidebar "Tickets" badge is the number of OPEN tickets in the whole project (server-side count). It used to mirror
+// KD-265: the sidebar "Tickets" badge is the number of To Do + Open + In Progress tickets in the whole project (server-side count). It used to mirror
 // the "Recent tickets" card, which only sees the newest 50 tickets, so it disagreed with the board (e.g. 21 vs 185).
 import { test, expect, beforeAll } from "bun:test"
 import { tmpdir } from "node:os"
@@ -14,14 +14,14 @@ async function ticket(pid: string, status: string, mergedInto: string | null = n
   return id
 }
 
-test("openTickets counts every ticket still being worked on — not new, dismissed, done, closed or merged-away", async () => {
+test("openTickets counts To Do (new), Open and In Progress — nothing further along, nothing dismissed, nothing merged away", async () => {
   const pid = "proj_open_" + Math.random().toString(36).slice(2)
-  for (const s of ["open", "open", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review"]) await ticket(pid, s)
-  for (const s of ["new", "new", "dismissed", "done", "closed"]) await ticket(pid, s)
-  const root = await ticket(pid, "open")
-  await ticket(pid, "open", root)                          // folded into another ticket — never counted
+  for (const s of ["new", "new", "open", "open", "in_progress"]) await ticket(pid, s)                        // 5 counted
+  for (const s of ["blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed", "closed"]) await ticket(pid, s)
+  const root = await ticket(pid, "open")                                                                    // +1 counted
+  await ticket(pid, "open", root)                                                                           // folded into another ticket — never counted
   const c = await dashboardCounts(pid)
-  expect(c.openTickets).toBe(7 + 1)
+  expect(c.openTickets).toBe(6)
 })
 test("it counts the whole project, not just the newest 50", async () => {
   const pid = "proj_many_" + Math.random().toString(36).slice(2)
@@ -30,10 +30,12 @@ test("it counts the whole project, not just the newest 50", async () => {
 })
 test("a status change shows up in the count straight away (cache is invalidated)", async () => {
   const pid = "proj_move_" + Math.random().toString(36).slice(2)
-  const a = await ticket(pid, "open"); await ticket(pid, "open")
+  const a = await ticket(pid, "in_progress"); await ticket(pid, "open")
   expect((await dashboardCounts(pid)).openTickets).toBe(2)
-  await updateFeedbackMeta(pid, a, { status: "done" })
+  await updateFeedbackMeta(pid, a, { status: "ready_for_deployment" })
   expect((await dashboardCounts(pid)).openTickets).toBe(1)
+  await updateFeedbackMeta(pid, a, { status: "new" })
+  expect((await dashboardCounts(pid)).openTickets).toBe(2)
   invalidateDashboardCache(pid)
 })
 
@@ -57,26 +59,28 @@ function makeCounter(openTickets: number | null) {
   const fn = new Function("state", "syncSidebarCounts", extractFn(HTML, "function openCountOnStatusChange(") + "; return openCountOnStatusChange")(state, () => painted.push(state.counts.openTickets)) as (f: any, t: any, n?: number) => void
   return { state, painted, change: fn }
 }
-test("moving a ticket between to-do, open, in progress, done and dismissed nudges the open count and repaints the badge", () => {
+test("the badge counts To Do, Open and In Progress: it moves only when a ticket crosses into or out of that set", () => {
   const c = makeCounter(10)
-  c.change("new", "open");          expect(c.state.counts.openTickets).toBe(11)     // to do -> open: +1
-  c.change("open", "in_progress");  expect(c.state.counts.openTickets).toBe(11)     // both open work: unchanged
-  c.change("in_progress", "done");  expect(c.state.counts.openTickets).toBe(10)     // finished: -1
-  c.change("done", "open");         expect(c.state.counts.openTickets).toBe(11)     // re-opened: +1
-  c.change("open", "dismissed");    expect(c.state.counts.openTickets).toBe(10)
-  c.change("open", "new");          expect(c.state.counts.openTickets).toBe(9)      // back to to-do: -1
-  expect(c.painted).toEqual([11, 10, 11, 10, 9])                                    // repainted only when it moved
+  c.change("new", "open");                   expect(c.state.counts.openTickets).toBe(10)   // to do -> open: both counted, unchanged
+  c.change("open", "in_progress");           expect(c.state.counts.openTickets).toBe(10)   // unchanged
+  c.change("in_progress", "ready_for_deployment"); expect(c.state.counts.openTickets).toBe(9)   // moved on: -1
+  c.change("ready_for_deployment", "blocked");     expect(c.state.counts.openTickets).toBe(9)   // neither counted
+  c.change("blocked", "in_progress");        expect(c.state.counts.openTickets).toBe(10)   // back to work: +1
+  c.change("in_progress", "done");           expect(c.state.counts.openTickets).toBe(9)
+  c.change("done", "new");                   expect(c.state.counts.openTickets).toBe(10)
+  c.change("new", "dismissed");              expect(c.state.counts.openTickets).toBe(9)
+  expect(c.painted).toEqual([9, 10, 9, 10, 9])                                             // repainted only when it moved
 })
 test("it handles bulk moves (n), undo (swap from/to), unknown status as open, and never goes below zero", () => {
   const c = makeCounter(2)
-  c.change("new", "open", 3);  expect(c.state.counts.openTickets).toBe(5)
-  c.change("open", "new", 3);  expect(c.state.counts.openTickets).toBe(2)
+  c.change("done", "open", 3); expect(c.state.counts.openTickets).toBe(5)
+  c.change("open", "done", 3); expect(c.state.counts.openTickets).toBe(2)           // undo: swap from / to
   c.change(null, "done");      expect(c.state.counts.openTickets).toBe(1)           // a status-less ticket counts as open
   c.change("open", "done", 5); expect(c.state.counts.openTickets).toBe(0)           // clamped
 })
 test("it does nothing until the server count has loaded", () => {
   const c = makeCounter(null)
-  c.change("new", "open")
+  c.change("done", "open")
   expect(c.painted).toEqual([])
 })
 test("every UI path that changes a status calls it: details dropdown, drag, bulk (+undo), re-open, triage accept", () => {
