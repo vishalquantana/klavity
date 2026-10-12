@@ -1300,6 +1300,11 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/ping":
     case "/api/widget/lead":
     case "/api/widget/sims":
+    case "/api/widget/known-check":
+    case "/api/report/clarity":
+    case "/api/report/enhance":
+    case "/api/voice/transcribe":
+    case "/api/voice/stream":
     // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
     case "/api/upgrade-request":
     case "/api/feedback":
@@ -1315,7 +1320,7 @@ function isWidgetCorsPath(path: string): boolean {
       return true
   }
   if (path.startsWith("/api/personas/")) return true
-  return /^\/api\/projects\/[^/]+\/config$/.test(path)
+  return /^\/api\/projects\/[^/]+(\/config|\/people)$/.test(path)
 }
 // KLAVITYKLA-318: legacy domain. Kept alive for /api/* (with CORS) so unmigrated extensions/widgets
 // keep working; site paths still 301 to klavity.in for SEO. Retirement gate: legacy /api hits ~0
