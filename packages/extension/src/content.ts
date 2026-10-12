@@ -335,7 +335,17 @@ function buildComposerAssist(assist: AssistScope, clarityOn: boolean): Partial<M
       try {
         const res = await assistFetch(backendUrl + '/api/report/enhance', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ projectId, text, pageUrl: location.href, shot: ctx?.shot || '', picked: ctx?.picked || null, images: ctx?.images ?? 0, client: captureExtClientInfo() }),
+          body: JSON.stringify({
+            projectId,
+            text,
+            pageUrl: location.href,
+            shot: ctx?.shot || '',
+            annotations: ctx?.annotations || null,
+            annotationTexts: ctx?.annotationTexts || [],
+            picked: ctx?.picked || null,
+            images: ctx?.images ?? 0,
+            client: captureExtClientInfo(),
+          }),
         }, 30_000) // vision call — longer timeout than the cheap tip
         if (!res.ok) return null
         const data = await res.json().catch(() => null)
