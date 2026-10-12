@@ -61,6 +61,41 @@ function derivePageTitle(pageUrl: string | null | undefined): string {
 // already carries, so it's available immediately at intake with no extra latency. A 4th line (a short AI
 // caption of the actual screenshot) is appended separately, asynchronously, after intake — see
 // server.ts's captionScreenshotForFeedback — since a vision call is too slow to block the submit response.
+// KD-162: a multi-screenshot widget session sends its whole description as the "Pages captured:" trail (a numbered list of page
+// paths + full URLs, ids included) when the reporter typed nothing. That is NOT a description, so the intake treats a trail-only
+// description as empty (the clean fallback below runs instead) and re-appends the trail underneath as technical detail. Text the
+// reporter actually typed (with or without a trail after it) is left exactly as sent.
+export function splitPagesTrail(raw: string): { text: string; trail: string } {
+  const s = String(raw || "")
+  const head = "Pages captured:\n"
+  let at = s.startsWith(head) ? 0 : s.indexOf("\n\n" + head)
+  if (at > 0) at += 2
+  if (at < 0) return { text: s.trim(), trail: "" }
+  const trail = s.slice(at).trim()
+  const rows = trail.split("\n").slice(1).filter(Boolean)
+  const numbered = (l: string) => l.length > 2 && l.charCodeAt(0) >= 48 && l.charCodeAt(0) <= 57 && l.indexOf(". ") > 0
+  if (!rows.length || !rows.every(numbered)) return { text: s.trim(), trail: "" }   // not our trail — leave it alone
+  return { text: s.slice(0, at).trim(), trail }
+}
+// Readable "Chrome 130 on Windows (desktop)" from the report's captured client info; "" when nothing usable.
+function browserLine(ci: any): string {
+  if (!ci || typeof ci !== "object") return ""
+  const cap = (v: any, n: number) => String(v).trim().slice(0, n)
+  const browser = ci.browser ? cap(ci.browser, 60) + (ci.browserVersion ? " " + cap(ci.browserVersion, 40) : "") : ""
+  const os = ci.os ? cap(ci.os, 60) : ""
+  const dev = ci.deviceType ? " (" + cap(ci.deviceType, 20) + ")" : ""
+  if (!browser && !os) return ""
+  return (browser && os ? browser + " on " + os : browser || os) + dev
+}
+// An opaque id in a path (uuid / long hex / long digit string, or an id-prefixed token like proj_6c60…) reads as noise in a
+// description; show ":id" instead. The full URL stays on the report's own page/url fields.
+function maskPathIds(path: string): string {
+  return path.split("/").map((seg) => {
+    const opaque = /^[0-9a-f-]{8,}$/i.test(seg) && /\d/.test(seg)
+    const prefixed = /^[a-z]{2,6}_[0-9a-z-]{8,}$/i.test(seg) && /\d/.test(seg)
+    return opaque || prefixed ? ":id" : seg
+  }).join("/")
+}
 export function fallbackDraftDescription(opts: {
   reportType?: "bug" | "feature"
   pageUrl?: string | null
@@ -69,6 +104,8 @@ export function fallbackDraftDescription(opts: {
   // resolution intake already does for the export "Environment: X" label line (server.ts:2214). Null on
   // a normal production/web host — no recognized env convention, so no line is added for it.
   reportEnv?: string | null
+  // The report's captured client info (browser, version, OS, device) — adds a "Browser :" line.
+  clientInfo?: any
 }): string {
   let path = ""
   if (opts.pageUrl) {
@@ -81,9 +118,12 @@ export function fallbackDraftDescription(opts: {
   const pageTitle = opts.reportType === "feature"
     ? fallbackDraftTitle({ reportType: opts.reportType, pageUrl: opts.pageUrl })
     : (derivePageTitle(opts.pageUrl) || fallbackDraftTitle({ reportType: opts.reportType, pageUrl: opts.pageUrl }))
-  const lines = [pageTitle]
-  if (path) lines.push(`Application path : ${path}`)
+  // KD-162: the fallback title spells out the raw path ("Screenshot report on /a/8472…") — show ids as :id there too.
+  const lines = [path ? pageTitle.split(path).join(maskPathIds(path)) : pageTitle]
+  if (path) lines.push(`Application path : ${maskPathIds(path)}`)
   if (opts.reportEnv) lines.push(`Environment : ${opts.reportEnv}`)
+  const browser = browserLine(opts.clientInfo)
+  if (browser) lines.push(`Browser : ${browser}`)
   lines.push(`Captured: ${formatCapturedAt(opts.createdAt)}`)
   return lines.join("\n").slice(0, 1000)
 }
