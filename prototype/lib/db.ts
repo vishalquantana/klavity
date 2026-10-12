@@ -5087,7 +5087,7 @@ function dashCachePrune(m: Map<string, any>): void { if (m.size > 500) m.clear()
 //   NOT NULL); activity → evt_proj_idx(project_id,…). Resilient by design: a single slow/failing
 //   count resolves to `null` (rendered as "—" client-side) instead of rejecting and taking the
 //   whole /api/dashboard payload down with it — a decorative number must never break the page.
-export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null }> {
+export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null; openTickets: number | null }> {
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashCountsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
@@ -5099,16 +5099,19 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
+    // KD-265: the sidebar "Tickets" badge = tickets still being worked on. Excludes untriaged ('new'), finished ('done'/'closed')
+    // and 'dismissed' tickets and merged-away rows.
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status NOT IN ('new','dismissed','done','closed')"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
-  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
+  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]), openTickets: num(settled[3]) }
   // Only cache a fully-successful read; a partial/failed count (any null) is left uncached so it
   // retries next poll rather than pinning a "—" for the whole TTL. AND only if we can prove no
   // invalidation touched this project since we started (Finding 3/2): its effective last-invalidation
   // sequence must be no newer than our start snapshot. An evicted/missing project defaults to the floor,
   // which is >= any pre-prune snapshot, so such reads decline to cache — never pinning stale data.
-  if (result.feedback !== null && result.tickets !== null && result.activity !== null
+  if (result.feedback !== null && result.tickets !== null && result.activity !== null && result.openTickets !== null
       && dashGenOf(projectId) <= seqAtStart) {
     dashCachePrune(dashCountsCache)
     dashCountsCache.set(projectId, { at: Date.now(), value: result })

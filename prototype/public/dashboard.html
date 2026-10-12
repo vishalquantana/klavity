@@ -15265,7 +15265,7 @@
             <path d="M6 13H2" />
             <path d="m8 2 1.88 1.88" />
             <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount"></span></button>
+          </svg></span>Tickets <span class="ct" id="navTicketCount" title="Open tickets (excludes new, done and dismissed)"></span></button>
       <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
             width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -19188,6 +19188,14 @@
       const mc = $("memCount"); if (mc) mc.textContent = members.length ? members.length : ""
       const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
       const tkc = $("ticketCount"); if (tkc) tkc.textContent = tickets.length ? tickets.length : ""
+      // KD-265: the sidebar badge is the server's count of OPEN tickets for the whole project. It used to mirror the Recent-tickets
+      // card above, which only sees the newest 50 tickets (so it read e.g. 21 while the board held 185).
+      const nav = $("navTicketCount")
+      if (nav) {
+        const c = state.counts && state.counts.openTickets
+        const n = typeof c === "number" ? c : (state.tickets || []).filter(t => ["new", "dismissed", "done", "closed"].indexOf(t.status) < 0).length
+        nav.textContent = n ? String(n) : ""
+      }
       const acts = state.activity || []
       const ac = $("actCount"); if (ac) ac.textContent = acts.length ? acts.length : ""
     }
@@ -29585,7 +29593,7 @@
           function cp() { var t = (s.textContent || '').trim().replace(/[()]/g, ''); d.textContent = (t && t !== '0') ? t : ''; }
           cp(); new MutationObserver(cp).observe(s, { childList: true, characterData: true, subtree: true });
         }
-        mirror('ticketCount', 'navTicketCount');
+        // KD-265: navTicketCount is set from the server's open-ticket count in syncSidebarCounts() — no longer mirrored from ticketCount.
         mirror('memCount', 'navTeamCount');
         mirror('triageCount', 'navTriageCount');
         // #633: the sidebar is static single-source markup and normalizeSidebar() already dedupes by data-go
