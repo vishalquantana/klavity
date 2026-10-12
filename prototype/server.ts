@@ -108,6 +108,7 @@ import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-c
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
+import { detachFeedbackScreenshot, screenshotReferencedElsewhere, screenshotById as screenshotRowById, deleteScreenshotRow } from "./lib/db"   // KD-214
 import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
@@ -12792,8 +12793,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // ticket still references it (merged tickets share attachment keys).
         if (req.method === "DELETE" && isAttachments) {
           if (!fbAccess) return json({ error: "Only project members can remove attachments." }, 403)
+          // KD-214: ?screenshot=<id> removes the ticket's own report screenshot. It is not in attachments_json (no storage key), so it is
+          // detached from the ticket first; the stored image is deleted afterwards only when no other ticket/occurrence still uses it.
+          const shotParam = String(url.searchParams.get("screenshot") || "")
+          if (shotParam) {
+            if (!(await detachFeedbackScreenshot(fid, fbRow.projectId, shotParam))) return json({ error: "Screenshot not found." }, 404)
+            void (async () => {
+              try {
+                if (await screenshotReferencedElsewhere(shotParam, fid)) return
+                const shot = await screenshotRowById(shotParam)
+                if (!shot) return
+                await deleteObject(shot.s3Key)
+                await deleteScreenshotRow(shotParam)
+              } catch (e: any) { console.warn("screenshot object cleanup skipped:", e?.message || e) }
+            })()
+            void insertActivity({
+              projectId: fbRow.projectId,
+              type: "ticket_attachment_removed",
+              actorEmail: me,
+              feedbackId: fid,
+              meta: { filename: "Screenshot" },
+            }).catch((e: any) => console.warn("ticket screenshot removal activity skipped:", e?.message || e))
+            return json({ ok: true, removed: shotParam, screenshot: true })
+          }
           const attKeyParam = String(url.searchParams.get("key") || "")
-          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          if (!attKeyParam) return json({ error: "key or screenshot is required." }, 400)
           const rm = await removeFeedbackAttachment(fid, fbRow.projectId, attKeyParam)
           if (!rm.ok) return json({ error: "Attachment not found." }, 404)
           void (async () => {

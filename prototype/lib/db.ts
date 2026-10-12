@@ -7320,6 +7320,33 @@ export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedba
   return r.rows.length > 0
 }
 
+// KD-214: detach a ticket's own report screenshot (feedback.screenshot_id). Compare-and-swap on the screenshot id, so a stale
+// page can never clear a different screenshot. The screenshot's annotation markup belongs to it and goes too. The stored object
+// and the screenshots row are NOT touched here — the caller purges them only if nothing else references the image.
+export async function detachFeedbackScreenshot(feedbackId: string, projectId: string, screenshotId: string): Promise<boolean> {
+  if (!screenshotId) return false
+  const u = await db!.execute({
+    sql: "UPDATE feedback SET screenshot_id=NULL, annotations_json=NULL WHERE id=? AND project_id=? AND screenshot_id=?",
+    args: [feedbackId, projectId, screenshotId],
+  })
+  return Number(u.rowsAffected || 0) > 0
+}
+// KD-214: does anything OTHER than this ticket still use the screenshot? Merging copies the screenshot id onto the surviving
+// ticket / occurrence rows and attachment entries, so two tickets can point at one stored image. Any hit means "keep the file".
+export async function screenshotReferencedElsewhere(screenshotId: string, exceptFeedbackId: string): Promise<boolean> {
+  const checks: Array<{ sql: string; args: any[] }> = [
+    { sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND (screenshot_id=? OR attachments_json LIKE ?) LIMIT 1", args: [exceptFeedbackId, screenshotId, "%\"screenshotId\":" + JSON.stringify(screenshotId) + "%"] },
+    { sql: "SELECT 1 AS x FROM feedback_occurrences WHERE feedback_id<>? AND screenshot_id=? LIMIT 1", args: [exceptFeedbackId, screenshotId] },
+    { sql: "SELECT 1 AS x FROM sim_runs WHERE screenshot_id=? LIMIT 1", args: [screenshotId] },
+    { sql: "SELECT 1 AS x FROM activity_events WHERE screenshot_id=? AND (feedback_id IS NULL OR feedback_id<>?) LIMIT 1", args: [screenshotId, exceptFeedbackId] },
+  ]
+  for (const c of checks) {
+    const r = await db!.execute(c)
+    if (r.rows.length > 0) return true
+  }
+  return false
+}
+
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given
 // URL, project-scoped. Matches on the SAME url_host + url_path a report stores at ingest (#440
 // captures these via `new URL(pageUrl)` → { host, pathname }, query/fragment already stripped). The

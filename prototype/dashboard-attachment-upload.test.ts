@@ -26,6 +26,7 @@ const SRC = [
   extractFn(HTML, "function _attachMutating("), extractFn(HTML, "function attachPlanUpload("), extractFn(HTML, "function attachStartUpload("),
   extractFn(HTML, "function attachDismiss("), extractFn(HTML, "function attachRetry("), extractFn(HTML, "function _attachTileHtml("),
   extractFn(HTML, "function buildAttachmentsHtml("), extractFn(HTML, "function _attachApplyServerList("),
+  "const shotProxyUrl = (id) => '/api/screenshots/' + id",   // KD-214: buildAttachmentsHtml builds the report screenshot's url through this
   "let state = { tickets: [] }; let _tktBoardTickets = []",
   "return { attachPlanUpload, attachStartUpload, attachRetry, attachDismiss, attachInFlight, attachUploadsFor, buildAttachmentsHtml, _attachApplyServerList, _attachCtx, _attachUploads,"
   + " attachRemoveState, attachAskRemove, attachCancelRemove, attachConfirmRemove, attachCancelUpload, _attachRemoveFromLists,"
@@ -410,4 +411,44 @@ test("wiring: × / Remove / Cancel are handled by the delegated click handler (s
 test("the activity timeline labels attachment added / removed", () => {
   expect(HTML).toContain("ticket_attachment_removed: (m) => \"Removed an attachment\"")
   expect(HTML).toContain("ticket_attachment_added: (m) =>")
+})
+
+// ── KD-214: the report's own screenshot (no storage key) can be removed too ──────────────────────────────────────────
+const withShot = () => ({ id: "fb_1", screenshotId: "shot_1", annotations: { w: 1, h: 1, shapes: [] }, attachments: [
+  { key: "uploads/attachments/a.png", filename: "a.png", contentType: "image/png", url: "https://s3/a.png", size: 10 },
+] })
+test("the report screenshot tile has a remove (×) keyed shot:<id>", () => {
+  const { api } = make()
+  const t = withShot()
+  let html = api.buildAttachmentsHtml(t)
+  expect(html).toContain('data-attach-remove="shot:shot_1"')
+  expect(html).toContain('aria-label="Remove Screenshot"')
+  expect((html.match(/data-attach-remove="/g) || []).length).toBe(2)                // the screenshot + the uploaded a.png
+  api.attachAskRemove("fb_1", "shot:shot_1")
+  html = api.buildAttachmentsHtml(t)
+  expect(html).toContain("Remove the original screenshot?")
+  expect(html).toContain('data-attach-remove-yes="shot:shot_1"')
+  expect(html).not.toContain('data-attach-remove="shot:shot_1"')
+})
+test("confirming the screenshot removal sends DELETE …/attachments?screenshot=<id> and clears screenshotId + annotations from the cached tickets", async () => {
+  const { api } = make()
+  const calls: any = { change: 0, removed: [], removeFail: [] }, log: any[] = []
+  const t: any = withShot(), board: any = withShot(), other: any = { id: "fb_2", screenshotId: "shot_1" }
+  api.setLists({ tickets: [t] }, [board, other])
+  api.buildAttachmentsHtml(t)
+  api._attachCtx.set("fb_1", { t, detailEl: null })
+  api.attachAskRemove("fb_1", "shot:shot_1")
+  await api.attachConfirmRemove("fb_1", "shot:shot_1", { ...removeHooks(calls), onRemoved: (id: string, key: string) => { calls.removed.push([id, key]); api._attachRemoveFromLists(id, key) } }, respondWith(200, { ok: true }, log))
+  expect(log[0][0]).toBe("/api/feedback/fb_1/attachments?screenshot=shot_1")
+  expect(log[0][1]).toEqual({ method: "DELETE" })
+  expect(calls.removed).toEqual([["fb_1", "shot:shot_1"]])
+  expect(t.screenshotId).toBeNull(); expect(t.annotations).toBeNull()
+  expect(board.screenshotId).toBeNull()
+  expect(other.screenshotId).toBe("shot_1")                                          // a different ticket is never touched
+  expect(t.attachments.length).toBe(1)                                               // uploaded attachments are unaffected
+  expect(api.buildAttachmentsHtml(t)).not.toContain("shot:shot_1")
+})
+test("the × on any attachment removes it straight away — no confirmation step in the click handler", () => {
+  expect(HTML).toContain('attachConfirmRemove(id, rm.getAttribute("data-attach-remove"), _attachHooks)')
+  expect(HTML).not.toContain('attachAskRemove(id, rm.getAttribute("data-attach-remove"))')
 })
