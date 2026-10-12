@@ -12259,6 +12259,39 @@
       background: var(--rose)
     }
 
+    .tkt-attach-dl-btn {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, .65);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      padding: 0;
+      z-index: 2;
+      transition: background var(--mi-dur) var(--mi-ease)
+    }
+
+    .tkt-attach-dl-btn:hover {
+      background: var(--indigo, #6366f1)
+    }
+
+    .tkt-attach-dl-ico {
+      display: inline-flex;
+      align-items: center;
+      margin-left: auto;
+      color: var(--paper-faint)
+    }
+
+    .tkt-attach-item:hover .tkt-attach-dl-ico {
+      color: var(--paper)
+    }
+
     .tkt-attach-tile .tkt-attach-confirm,
     .tkt-attach-tile .tkt-attach-rm-state {
       position: absolute;
@@ -21362,6 +21395,46 @@
       if (["mp4", "webm", "mov", "m4v", "ogv"].indexOf(ext) >= 0) return "video"
       return ""
     }
+    const _ATTACH_DL_SVG = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+    function triggerAttachmentDownload(url, filename, key, ticketId, screenshotId) {
+      const safeName = filename || "attachment"
+      let dlUrl = ""
+      if (screenshotId) {
+        dlUrl = "/api/screenshots/" + encodeURIComponent(String(screenshotId)) + "?download=1"
+      } else if (ticketId && key) {
+        dlUrl = "/api/feedback/" + encodeURIComponent(String(ticketId)) + "/attachments?key=" + encodeURIComponent(String(key)) + "&download=1"
+      } else if (url) {
+        dlUrl = url
+      }
+      if (!dlUrl) return
+      fetch(dlUrl, { credentials: "include" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status)
+          return r.blob()
+        })
+        .then(function (blob) {
+          const blobUrl = URL.createObjectURL(blob)
+          const a = document.createElement("a")
+          a.href = blobUrl
+          a.download = safeName
+          document.body.appendChild(a)
+          a.click()
+          setTimeout(function () {
+            a.remove()
+            URL.revokeObjectURL(blobUrl)
+          }, 2000)
+        })
+        .catch(function () {
+          const a = document.createElement("a")
+          a.href = dlUrl
+          a.download = safeName
+          a.target = "_blank"
+          a.rel = "noopener"
+          document.body.appendChild(a)
+          a.click()
+          setTimeout(function () { a.remove() }, 1000)
+        })
+    }
     // Shared click-to-enlarge viewer for images and videos (ticket-detail attachments + the New ticket dialog's held files).
     // o = { url, name, kind: "image"|"video", openUrl?, annotations?, ticketId?, items?, index? }. Esc / backdrop click / the top-right × dismiss it; a playing video is paused on close.
     let _mediaPvEl = null
@@ -21467,6 +21540,16 @@
         })
         tools.appendChild(annBtn)
       }
+
+      const dlBtn = document.createElement("button")
+      dlBtn.type = "button"; dlBtn.className = "media-pv-btn"
+      dlBtn.innerHTML = `${_ATTACH_DL_SVG} Download`
+      dlBtn.setAttribute("aria-label", "Download " + o.name)
+      dlBtn.title = "Download " + o.name
+      dlBtn.addEventListener("click", () => {
+        triggerAttachmentDownload(o.openUrl || o.url, o.name, o.key, o.ticketId, o.screenshotId)
+      })
+      tools.appendChild(dlBtn)
 
       if (o.openUrl) { const a = document.createElement("a"); a.href = o.openUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open original"; tools.appendChild(a) }
       bar.appendChild(tools)
@@ -21750,7 +21833,7 @@
       var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
       var uploading = pending.some(function (u) { return u.status === "uploading" })
       var pendingHtml = pending.map(_attachTileHtml).join("")
-      var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+      var _dlSvg = _ATTACH_DL_SVG
       var thumbs = ""
       var items = atts.map(function (a, i) {
         var name = esc(String(a.filename || ("attachment-" + (i + 1))))
@@ -21761,13 +21844,15 @@
             + (kind === "image"
               ? '<img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy">'
               : '<video src="' + esc(String(a.url)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
-            + '<span class="tkt-attach-cap">' + name + '</span></button>' + _attachRemoveUi(t, a) + '</div>'
+            + '<span class="tkt-attach-cap">' + name + '</span></button>'
+            + '<button type="button" class="tkt-attach-dl-btn" data-tile-dl="' + i + '" aria-label="Download ' + name + '" title="Download ' + name + '">' + _dlSvg + '</button>'
+            + _attachRemoveUi(t, a) + '</div>'
           return ""
         }
         var row = a.url
-          ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener">'
+          ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener" download="' + name + '" data-idx="' + i + '">'
           + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span>'
-          + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + _dlSvg + '</a>'
+          + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + '<span class="tkt-attach-dl-ico" title="Download">' + _dlSvg + '</span></a>'
           : '<span class="tkt-attach-item tkt-attach-unavailable">' + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span><span>unavailable</span></span>'
         return '<div class="tkt-attach-row">' + row + _attachRemoveUi(t, a) + '</div>'
       }).join("")
@@ -21814,7 +21899,9 @@
                 kind: k,
                 openUrl: a.url,
                 annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null),
-                ticketId: ticketId
+                ticketId: ticketId,
+                key: a.key,
+                screenshotId: a.screenshotId
               })
             }
           })
@@ -21823,7 +21910,31 @@
           if (!a || !a.url) return
           var foundIdx = prevItems.findIndex(function (it) { return it.url === a.url })
           if (foundIdx < 0) foundIdx = 0
-          openMediaPreview({ url: a.url, items: prevItems, index: foundIdx, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url, annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null), ticketId: ticketId })
+          openMediaPreview({ url: a.url, items: prevItems, index: foundIdx, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url, annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null), ticketId: ticketId, key: a.key, screenshotId: a.screenshotId })
+        })
+      })
+      wrap.querySelectorAll("[data-tile-dl]").forEach(function (btn) {
+        btn.addEventListener("click", function (ev) {
+          ev.preventDefault(); ev.stopPropagation()
+          var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+          if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
+            atts.unshift({ filename: "Screenshot", contentType: "image/png", url: shotProxyUrl(String(t.screenshotId)), screenshotId: t.screenshotId, isPrimaryScreenshot: true })
+          }
+          var idx = Number(btn.getAttribute("data-tile-dl"))
+          var a = atts[idx]
+          if (a && a.url) triggerAttachmentDownload(a.url, a.filename || ("attachment-" + (idx + 1)), a.key, ticketId, a.screenshotId)
+        })
+      })
+      wrap.querySelectorAll(".tkt-attach-item[data-idx]").forEach(function (el) {
+        el.addEventListener("click", function (ev) {
+          ev.preventDefault(); ev.stopPropagation()
+          var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+          if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
+            atts.unshift({ filename: "Screenshot", contentType: "image/png", url: shotProxyUrl(String(t.screenshotId)), screenshotId: t.screenshotId, isPrimaryScreenshot: true })
+          }
+          var idx = Number(el.getAttribute("data-idx"))
+          var a = atts[idx]
+          if (a && a.url) triggerAttachmentDownload(a.url, a.filename || ("attachment-" + (idx + 1)), a.key, ticketId, a.screenshotId)
         })
       })
       // Retry / Remove on a failed upload tile (delegated: the tiles are re-rendered as uploads progress)
