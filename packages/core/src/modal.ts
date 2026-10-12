@@ -360,6 +360,8 @@ export interface ModalCallbacks {
   // full current text (not a diff) so the host can just persist-overwrite. Best-effort, fire-and-forget —
   // never blocks typing or Submit. Absent → composer identical to today (no persistence, full back-compat).
   onDescriptionChange?: (text: string) => void
+  // Persist the typed title (if the title field is shown) into the active draft session.
+  onTitleChange?: (text: string) => void
   // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
   // AI" button appears under the description; clicking it hands the reporter's current text + the primary
   // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
@@ -2640,7 +2642,7 @@ export function buildModal(
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
-  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0 || desc.value.trim().length > 0 || ((modal.querySelector('#klavity-title') as HTMLInputElement | null)?.value.trim().length ?? 0) > 0
   // KLA-773: closing with unsaved evidence (screenshot / recording / replay / files) used to discard it
   // silently — X, backdrop click and Esc all called close() unconditionally. Guard those three paths with a
   // lightweight in-modal confirm (never a blocking window.confirm() — that would freeze the host page). The
@@ -2706,10 +2708,40 @@ export function buildModal(
   if (callbacks.onDescriptionChange) {
     const onDescriptionChange = callbacks.onDescriptionChange
     let descPersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushDesc = () => {
+      if (descPersistTimer) { clearTimeout(descPersistTimer); descPersistTimer = null }
+      try { onDescriptionChange(desc.value) } catch { /* best-effort */ }
+    }
     desc.addEventListener('input', () => {
       if (descPersistTimer) clearTimeout(descPersistTimer)
-      descPersistTimer = setTimeout(() => { try { onDescriptionChange(desc.value) } catch { /* best-effort */ } }, 600)
+      descPersistTimer = setTimeout(flushDesc, 600)
     })
+    desc.addEventListener('blur', flushDesc)
+    desc.addEventListener('change', flushDesc)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushDesc)
+      window.addEventListener('pagehide', flushDesc)
+    }
+  }
+
+  const titleInp = modal.querySelector('#klavity-title') as HTMLInputElement | null
+  if (titleInp && callbacks.onTitleChange) {
+    const onTitleChange = callbacks.onTitleChange
+    let titlePersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushTitle = () => {
+      if (titlePersistTimer) { clearTimeout(titlePersistTimer); titlePersistTimer = null }
+      try { onTitleChange(titleInp.value) } catch { /* best-effort */ }
+    }
+    titleInp.addEventListener('input', () => {
+      if (titlePersistTimer) clearTimeout(titlePersistTimer)
+      titlePersistTimer = setTimeout(flushTitle, 600)
+    })
+    titleInp.addEventListener('blur', flushTitle)
+    titleInp.addEventListener('change', flushTitle)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushTitle)
+      window.addEventListener('pagehide', flushTitle)
+    }
   }
   // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
   // Shown for any well-formed address (see the markup note on why we never ask the server whether it
