@@ -13,11 +13,11 @@ function extractFn(src: string, sig: string): string {
   throw new Error("unbalanced")
 }
 
-test("buildTktDetail checks both screenshotId and attachments for screenshot display", () => {
-  const fn = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
-  expect(fn).toContain("const _firstImgAtt = !t.screenshotId && Array.isArray(t.attachments)")
-  expect(fn).toContain("const _hasShot = !!t.screenshotId || !!_firstImgAtt")
-  expect(fn).toContain('data-shot-url="${esc(_firstImgAtt.url)}"')
+test("buildAttachmentsHtml checks both screenshotId and attachments for screenshot display", () => {
+  const fn = extractFn(HTML, "function buildAttachmentsHtml(")
+  expect(fn).toContain("if (t.screenshotId && !atts.some")
+  expect(fn).toContain('filename: "Screenshot"')
+  expect(fn).toContain('screenshotId: t.screenshotId')
 })
 
 test("buildEvidenceStrip includes attached image evidence alongside or in place of primary screenshot", () => {
