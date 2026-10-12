@@ -2,7 +2,7 @@ import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shap
 import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
-import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from './voice-input'
+import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
@@ -3256,9 +3256,20 @@ export function buildModal(
 
     // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
     const wire = (engine: DictationEngine) => {
+      let lastInterim = ''
       engine.onTranscript = (text) => {
-        const existing = desc.value
-        desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+        lastInterim = ''
+        streamBase = joinSpeechSegments(streamBase, text)
+        desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
+      engine.onInterim = (text) => {
+        lastInterim = text || ''
+        const sep = streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : ''
+        desc.value = streamBase + (text ? sep + text : '')
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
@@ -3273,10 +3284,21 @@ export function buildModal(
         setVoiceStatus('err', message, 4000)
       }
       engine.onStop = () => {
+        if (lastInterim) {
+          streamBase = joinSpeechSegments(streamBase, lastInterim)
+          lastInterim = ''
+        }
+        if (streamBase) {
+          streamBase = formatSpeechFinal(streamBase)
+          desc.value = streamBase
+        }
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
         clearInfoStatus()
+        refreshSubmit()
       }
     }
 
@@ -3288,6 +3310,7 @@ export function buildModal(
       // The user may have pressed Stop before the server came back unavailable — don't resurrect it.
       if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
       if (VoiceInput.isSupported()) {
+        streamBase = desc.value
         voice = makeWebSpeech()
         setVoiceStatus('info', 'Reconnecting dictation…')
         void voice.start()
@@ -3315,14 +3338,16 @@ export function buildModal(
       let lastInterim = ''
       s.onTranscript = (text) => {
         lastInterim = ''
-        streamBase = streamBase + sep() + text
+        streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       s.onInterim = (text) => {
         lastInterim = text || ''
         desc.value = streamBase + sep() + text
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
@@ -3331,8 +3356,15 @@ export function buildModal(
       s.onStop = () => {
         // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
         // final already folded into streamBase and lastInterim is ''.
-        if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = '' }
+        if (lastInterim) {
+          streamBase = joinSpeechSegments(streamBase, lastInterim)
+          lastInterim = ''
+        }
+        if (streamBase) {
+          streamBase = formatSpeechFinal(streamBase)
+        }
         desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }

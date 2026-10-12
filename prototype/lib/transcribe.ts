@@ -184,6 +184,7 @@ async function transcribeAudioBytesDeepgram(
   url.searchParams.set("model", DEEPGRAM_MODEL)
   url.searchParams.set("smart_format", "true")
   url.searchParams.set("punctuate", "true")
+  url.searchParams.set("dictation", "true")
   // utterances=true → timestamped segments (parity with the OpenRouter verbose_json segments).
   url.searchParams.set("utterances", "true")
   if (language) url.searchParams.set("language", language)
@@ -208,7 +209,13 @@ async function transcribeAudioBytesDeepgram(
     }
     const data: any = await resp.json()
     const parsed = parseDeepgramResponse(data)
-    if (!parsed) return { status: "failed", reason: "empty-or-unparseable" }
+    if (!parsed) {
+      const alt = data?.results?.channels?.[0]?.alternatives?.[0]
+      if (alt && typeof alt.transcript === "string") {
+        return { status: "done", result: { text: "", segments: null, usage: { seconds: data?.metadata?.duration ?? null, cost: null } } }
+      }
+      return { status: "failed", reason: "empty-or-unparseable" }
+    }
     return { status: "done", result: parsed }
   } catch (e: any) {
     const aborted = e?.name === "AbortError"
