@@ -21634,7 +21634,10 @@
       _attachSetRemoveState(id, key, "removing"); _attachMutating(1)
       hooks.onChange(id)
       const f = fetchFn || function (u, o) { return fetch(u, o) }
-      return f("/api/feedback/" + encodeURIComponent(id) + "/attachments?key=" + encodeURIComponent(String(key)), { method: "DELETE" })
+      // KD-214: the report's own screenshot has no storage key — it is addressed as "shot:<screenshot id>".
+      const isShot = String(key).indexOf("shot:") === 0
+      const q = isShot ? "screenshot=" + encodeURIComponent(String(key).slice(5)) : "key=" + encodeURIComponent(String(key))
+      return f("/api/feedback/" + encodeURIComponent(id) + "/attachments?" + q, { method: "DELETE" })
         .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { return { ok: !!(r.ok && d && d.ok), error: d && d.error, status: r.status } }) })
         .catch(function () { return { ok: false, error: "Network error — check your connection and retry." } })
         .then(function (res) {
@@ -21645,10 +21648,12 @@
         })
     }
     function _attachRemoveUi(t, a) {
-      if (!a || !a.key) return ""                                                    // an entry without a storage key can't be addressed
-      const key = esc(String(a.key)), name = esc(String(a.filename || "attachment")), st = attachRemoveState(t.id, a.key)
+      // KD-214: the report's own screenshot has no storage key; it is addressed as "shot:<screenshot id>".
+      const rk = a && a.key ? String(a.key) : (a && a.isPrimaryScreenshot && a.screenshotId ? "shot:" + String(a.screenshotId) : "")
+      if (!rk) return ""                                                             // an entry we can't address
+      const key = esc(rk), name = esc(String(a.filename || "attachment")), st = attachRemoveState(t.id, rk)
       if (st === "removing") return '<span class="tkt-attach-rm-state" role="status">' + kicon('loader', { size: 14 }) + ' Removing…</span>'
-      if (st === "confirm") return '<span class="tkt-attach-confirm" role="alertdialog" aria-label="Remove ' + name + '?">Remove? '
+      if (st === "confirm") return '<span class="tkt-attach-confirm" role="alertdialog" aria-label="Remove ' + name + '?">' + (rk.indexOf("shot:") === 0 ? "Remove the original screenshot? " : "Remove? ")
         + '<button type="button" class="btn btn-ghost btn-sm" data-attach-remove-yes="' + key + '">Remove</button>'
         + '<button type="button" class="btn btn-ghost btn-sm" data-attach-remove-no="' + key + '">Cancel</button></span>'
       return '<button type="button" class="tkt-attach-rm" data-attach-remove="' + key + '" aria-label="Remove ' + name + '" title="Remove">' + kicon('x', { size: 13 }) + '</button>'
@@ -21656,9 +21661,17 @@
     // ── DOM side (re-render safe: always looks the CURRENT attachments block up through _attachCtx) ──
     function _attachWrapFor(ticketId) {
       const ctx = _attachCtx.get(String(ticketId))
-      if (!ctx || !ctx.detailEl || !ctx.detailEl.isConnected) return null
-      const wrap = ctx.detailEl.querySelector(".tkt-attach-wrap")
-      return wrap ? { ctx: ctx, wrap: wrap } : null
+      if (ctx && ctx.detailEl && ctx.detailEl.isConnected) {
+        const wrap = ctx.detailEl.querySelector(".tkt-attach-wrap")
+        if (wrap) return { ctx: ctx, wrap: wrap }
+      }
+      // KD-214: the remembered detail element can be a stale one (a late repaint into a replaced element) while the block on screen
+      // belongs to another — then × / Remove / Cancel changed state but repainted nothing. Fall back to the block that is on screen.
+      if (ctx && ctx.t && typeof document !== "undefined") {
+        const live = Array.prototype.find.call(document.querySelectorAll(".tkt-attach-wrap"), function (w) { return w.getAttribute("data-ticket") === String(ticketId) })
+        if (live && live.parentElement) return { ctx: { detailEl: live.parentElement, t: ctx.t }, wrap: live }
+      }
+      return null
     }
     function attachRerender(ticketId) {
       const w = _attachWrapFor(ticketId); if (!w) return
@@ -21712,6 +21725,11 @@
       const targets = []
       lists.forEach(function (l) { (Array.isArray(l) ? l : []).forEach(function (x) { if (x && String(x.id) === id) targets.push(x) }) })
       if (ctx && ctx.t && targets.indexOf(ctx.t) < 0) targets.push(ctx.t)
+      if (String(key).indexOf("shot:") === 0) {   // KD-214: the report screenshot — the server also cleared its annotations
+        const sid = String(key).slice(5)
+        targets.forEach(function (x) { if (String(x.screenshotId) === sid) { x.screenshotId = null; x.annotations = null } })
+        return
+      }
       targets.forEach(function (x) { if (Array.isArray(x.attachments)) x.attachments = x.attachments.filter(function (a) { return !(a && String(a.key) === String(key)) }) })
     }
     const _attachHooks = {
@@ -21834,7 +21852,7 @@
         if (r) { ev.stopPropagation(); attachRetry(id, Number(r.getAttribute("data-attach-retry")), _attachHooks) }
         else if (d) { ev.stopPropagation(); attachDismiss(id, Number(d.getAttribute("data-attach-dismiss"))); attachRerender(id) }
         else if (c) { ev.stopPropagation(); attachCancelUpload(id, Number(c.getAttribute("data-attach-cancel"))) }
-        else if (rm) { ev.stopPropagation(); attachConfirmRemove(id, rm.getAttribute("data-attach-remove"), _attachHooks) }
+        else if (rm) { ev.stopPropagation(); attachConfirmRemove(id, rm.getAttribute("data-attach-remove"), _attachHooks) }   // KD-214: × removes straight away (no confirmation popup)
         else if (no) { ev.stopPropagation(); attachCancelRemove(id, no.getAttribute("data-attach-remove-no")); attachRerender(id) }
         else if (yes) { ev.stopPropagation(); attachConfirmRemove(id, yes.getAttribute("data-attach-remove-yes"), _attachHooks) }
       })
