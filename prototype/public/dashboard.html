@@ -18184,16 +18184,19 @@
           if (!pid) return
           _deepLinkTicketConsumed = true      // commit NOW: a concurrent poll won't fire a second fetch, and a slow
           // fetch resolving after the user navigated away won't re-enter here
+          // KD-181: the boot already hid the board chrome for the ticket page — if the ticket can't be
+          // loaded, fall back to the board instead of leaving an empty page.
+          const _bootFail = () => { if (!window.__klavDeepLinkNavAway && window.__klavTktPageOpen && typeof closeSingleTicket === "function") closeSingleTicket() }
           fetch("/api/feedback/" + encodeURIComponent(ticketId), { credentials: "include" })
             .then(r => r.ok ? r.json() : null).then(d => {
-              if (!d || !d.report) return
+              if (!d || !d.report) { _bootFail(); return }
               // If the user has clicked away to another view while we fetched, do NOT yank them back.
               if (window.__klavDeepLinkNavAway) return
               const report = d.report
               if (!state.tickets) state.tickets = []
               if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
               openSingleTicket(ticketId, "full")   // KLA-562: shared deep link → full-page route
-            }).catch(() => { })
+            }).catch(_bootFail)
         }
       } catch (e) { }
     }
@@ -29503,7 +29506,9 @@
           // P1 deep-link loop fix: strip the ?ticket= deep-link param whenever the user leaves the tickets
           // view. openSingleTicket() keeps re-writing ?ticket= into the URL, so without this a later reload
           // (or the ~25s liveness poll on a fresh load) would drag the user back into that ticket.
-          try {
+          // KD-181: skipped on a ticket-page reload boot — the address bar already holds the ticket URL, and
+          // rewriting it to "#tickets" flashed a board URL until the ticket rendered and restored it.
+          if (!window.__klavTktBootKeepUrl) try {
             var _u = new URL(location.href);
             if (v !== 'tickets') _u.searchParams.delete('ticket');
             history.replaceState(null, '', v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v));
@@ -29624,7 +29629,13 @@
         // KD-229: served at a ticket permalink (reload of the full ticket page) → same no-board Tickets boot.
         if (!deepTriage && !deepTkt && document.querySelector('meta[name="klav-boot-ticket"]')) deepTkt = true;
         if (deepTriage) { window._pendingTriageFocus = decodeURIComponent(deepTriage[1]); setView('triage'); }
-        else if (deepTkt) { window.__klavTktPageOpen = true; setView('tickets'); }
+        // KD-181: also apply the page-mode body class NOW (not only once the ticket renders) so the board's
+        // heading/toolbar/filter chrome never paints, and keep the ticket URL intact through setView.
+        else if (deepTkt) {
+          window.__klavTktPageOpen = true; document.body.classList.add('tkt-page-open');
+          window.__klavTktBootKeepUrl = true;
+          try { setView('tickets'); } finally { window.__klavTktBootKeepUrl = false; }
+        }
         else { setView(VIEWS.indexOf(init) >= 0 ? init : 'overview'); }
       })();
   </script>
