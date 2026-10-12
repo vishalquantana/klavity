@@ -147,7 +147,7 @@ import { simSourceRef, buildExpectationOracle, type SimIdentity } from "./lib/si
 import { getTrailStepById } from "./lib/trails"
 import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels, getSuggestedLabelsState } from "./lib/db"
-import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription } from "./lib/label-suggest"
+import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription, splitPagesTrail } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
 import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
@@ -5509,7 +5509,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
 
-        const description = String(form.get("description") || "").trim()
+        // KD-162: a description that is ONLY the widget's "Pages captured" trail (multi-screenshot session, nothing typed) is not a
+        // description — treat it as empty so the clean fallback runs, and re-append the trail underneath as technical detail.
+        const _descSplit = splitPagesTrail(String(form.get("description") || "").trim())
+        const description = _descSplit.text === "" ? "" : String(form.get("description") || "").trim()
+        const pagesTrailOnly = _descSplit.text === "" ? _descSplit.trail : ""
         const pageUrl = String(form.get("page_url") || "")
         // KLAVITYKLA-256: quarantine the bare /app Studio DEMO funnel. That funnel reviews a MOCK
         // "Acme Finance" dashboard and files against the sentinel host studio.klavity.local. Such saves
@@ -6370,7 +6374,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 // description is a richer version composed here (page + capture time), so the reporter
                 // never sees a bare/noisy fallback as their issue description. A 4th line (an AI caption
                 // of the screenshot) is appended asynchronously below, after this row is inserted.
-                if (draftedTitle) storedObservation = fallbackDraftDescription({ reportType, pageUrl, createdAt: Date.now(), reportEnv })
+                if (draftedTitle) storedObservation = fallbackDraftDescription({ reportType, pageUrl, createdAt: Date.now(), reportEnv, clientInfo })
+                  + (pagesTrailOnly ? "\n\n" + pagesTrailOnly : "")   // KD-162: the page trail rides along as technical detail
                 const fbInsert = ({
                   projectId, simId, actorEmail: actor, urlHost, urlPath, sourceReferrer: sourceReferrer || null,
                   observation: storedObservation, sentiment, priority, screenshotId, suggestedBug,
