@@ -231,3 +231,63 @@ test("remove: the action is recorded on the ticket's activity timeline", async (
   }
   expect(found).toBe(true)
 })
+
+// ── KD-214: DELETE /api/feedback/:id/attachments?screenshot= — remove the ticket's own report screenshot ──────────────────
+const delShot = (id: string, shotId: string | null, sid: string | null = SID) =>
+  fetch(`${BASE}/api/feedback/${id}/attachments${shotId == null ? "" : "?screenshot=" + encodeURIComponent(shotId)}`, { method: "DELETE", headers: sid ? { Cookie: `klav_session=${sid}` } : {} })
+async function newShot(tag: string) {
+  const sid = `shot_kd214_${tag}_${RUN}`, key = `uploads/screenshots/kd214-${tag}-${RUN}.png`
+  await exec("INSERT INTO screenshots (id, project_id, s3_key, bucket, content_type, created_at) VALUES (?,?,?,?,?,?)", [sid, PROJ, key, "b", "image/png", NOW])
+  return { sid, key }
+}
+const shotOf = async (id: string) => (await exec("SELECT screenshot_id, annotations_json FROM feedback WHERE id=?", [id])).rows[0] as any
+const shotRowExists = async (sid: string) => (await exec("SELECT 1 FROM screenshots WHERE id=?", [sid])).rows.length > 0
+
+test("screenshot remove: detached from the ticket (annotations cleared), unshared object + screenshots row are deleted, activity recorded", async () => {
+  const id = await newTicket(), { sid, key } = await newShot("solo")
+  await exec("UPDATE feedback SET screenshot_id=?, annotations_json=? WHERE id=?", [sid, JSON.stringify({ w: 1, h: 1, shapes: [] }), id])
+  deletedPaths.length = 0
+  const r = await delShot(id, sid)
+  expect(r.status).toBe(200)
+  expect(await r.json()).toEqual({ ok: true, removed: sid, screenshot: true })
+  const row = await shotOf(id)
+  expect(row.screenshot_id).toBeNull(); expect(row.annotations_json).toBeNull()
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(key)))).toBe(true)
+  for (let i = 0; i < 40 && await shotRowExists(sid); i++) await Bun.sleep(50)
+  expect(await shotRowExists(sid)).toBe(false)
+  let found = false
+  for (let i = 0; i < 40 && !found; i++) {
+    const rows = (await exec("SELECT meta_json FROM activity_events WHERE feedback_id=? AND type='ticket_attachment_removed'", [id])).rows as any[]
+    found = rows.length > 0 && String(rows[0].meta_json).includes("Screenshot")
+    if (!found) await Bun.sleep(50)
+  }
+  expect(found).toBe(true)
+})
+test("screenshot remove: a screenshot another ticket (merged) or an occurrence still uses is detached but NOT deleted", async () => {
+  const a = await newTicket(), b = await newTicket(), c = await newTicket(), d = await newTicket()
+  const shared = await newShot("shared"), viaOcc = await newShot("occ")
+  await exec("UPDATE feedback SET screenshot_id=? WHERE id IN (?,?)", [shared.sid, a, b])
+  await exec("UPDATE feedback SET screenshot_id=? WHERE id=?", [viaOcc.sid, c])
+  await exec("INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, screenshot_id, created_at) VALUES (?,?,?,?,?,?)", [`occ_kd214_${RUN}`, d, PROJ, NOW, viaOcc.sid, NOW])
+  deletedPaths.length = 0
+  expect((await delShot(a, shared.sid)).status).toBe(200)
+  expect((await delShot(c, viaOcc.sid)).status).toBe(200)
+  await Bun.sleep(300)
+  expect((await shotOf(a)).screenshot_id).toBeNull()
+  expect((await shotOf(b)).screenshot_id).toBe(shared.sid)                                   // the other ticket keeps it
+  expect(deletedPaths.some(p => p.endsWith(shared.key) || p.endsWith(viaOcc.key))).toBe(false)
+  expect(await shotRowExists(shared.sid)).toBe(true); expect(await shotRowExists(viaOcc.sid)).toBe(true)
+})
+test("screenshot remove: wrong id → 404 (ticket keeps its screenshot), removing twice → second is 404, no session → 401, non-member → 403/404", async () => {
+  const id = await newTicket(), { sid, key } = await newShot("guard")
+  await exec("UPDATE feedback SET screenshot_id=? WHERE id=?", [sid, id])
+  deletedPaths.length = 0
+  expect((await delShot(id, "shot_nope")).status).toBe(404)
+  expect((await delShot(id, sid, null)).status).toBe(401)
+  expect([403, 404]).toContain((await delShot(id, sid, SID_X)).status)
+  expect((await shotOf(id)).screenshot_id).toBe(sid)
+  await Bun.sleep(150)
+  expect(deletedPaths.some(p => p.endsWith(key))).toBe(false)                                 // nothing was purged by the rejected calls
+  expect((await delShot(id, sid)).status).toBe(200)
+  expect((await delShot(id, sid)).status).toBe(404)
+})

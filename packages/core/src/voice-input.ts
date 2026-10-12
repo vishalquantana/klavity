@@ -509,7 +509,13 @@ export class StreamingDictation {
         // first post-stop final would race an in-flight segment final ahead of the true flush final.
         const t = (msg.text || '').trim(); if (t) this.onTranscript(t)
       }
-      else if (msg.type === 'error') { /* server relay error → let onclose handle recovery/fallback */ }
+      else if (msg.type === 'error') {
+        if (msg.fallback) {
+          this._teardown(false)
+          this.onUnavailable()
+          return
+        }
+      }
       // 'ready' / 'timeout' need no client action beyond the healthy-connection bookkeeping above.
     }
     ws.onerror = () => { /* onclose always follows — funnel recovery there (mirrors VoiceInput) */ }

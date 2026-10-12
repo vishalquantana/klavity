@@ -12259,6 +12259,39 @@
       background: var(--rose)
     }
 
+    .tkt-attach-dl-btn {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, .65);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      padding: 0;
+      z-index: 2;
+      transition: background var(--mi-dur) var(--mi-ease)
+    }
+
+    .tkt-attach-dl-btn:hover {
+      background: var(--indigo, #6366f1)
+    }
+
+    .tkt-attach-dl-ico {
+      display: inline-flex;
+      align-items: center;
+      margin-left: auto;
+      color: var(--paper-faint)
+    }
+
+    .tkt-attach-item:hover .tkt-attach-dl-ico {
+      color: var(--paper)
+    }
+
     .tkt-attach-tile .tkt-attach-confirm,
     .tkt-attach-tile .tkt-attach-rm-state {
       position: absolute;
@@ -15265,7 +15298,7 @@
             <path d="M6 13H2" />
             <path d="m8 2 1.88 1.88" />
             <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount"></span></button>
+          </svg></span>Tickets <span class="ct" id="navTicketCount" title="To Do, Open and In Progress tickets"></span></button>
       <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
             width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -18340,6 +18373,7 @@
       // #649: OPTIMISTIC — the accepted rows move to Tickets, so remove them from New reports IMMEDIATELY
       // (no refreshAll, no thumbnail reload). Fire the PATCH in the background and restore only on failure.
       const removed = tgRemoveLocal(ids)
+      openCountOnStatusChange("new", "open", removed.length || ids.length)   // KD-265: accepted tickets join the open count
       // KLAVITYKLA-512: confirm the move + offer a deep link into the ticket in the Tickets view.
       const one = ids.length === 1 ? String(ids[0]) : null
       const link = one
@@ -18352,6 +18386,7 @@
       if (!res.ok) {
         // #537: surface the failure instead of swallowing {ok:false} (project-switch race / offline blip).
         tgRestoreLocal(removed)
+        openCountOnStatusChange("open", "new", removed.length || ids.length)   // KD-265
         tgFlash("Couldn't accept — retry.")
       }
       return res
@@ -18363,9 +18398,11 @@
       // thumbnail reload of the survivors), then PATCH in the background. Keep the removed items so we can
       // restore them on a failed PATCH or an Undo.
       const removed = tgRemoveLocal(ids)
+      openCountOnStatusChange("new", "dismissed", removed.length || ids.length)   // KD-265
       // Undo re-adds the item(s) locally (one renderTriageView) + a background PATCH back to status='new'.
       tgUndoToast(removed.length || ids.length, async () => {
         tgRestoreLocal(removed)
+        openCountOnStatusChange("dismissed", "new", removed.length || ids.length)   // KD-265
         const r = await tgBulkPatch(ids, { status: "new" })
         if (!r.ok) tgFlash("Couldn't undo — retry.")
       })
@@ -18375,6 +18412,7 @@
       if (!res.ok) {
         // #537: no more silent no-op — restore the row(s) and tell the reviewer to retry.
         tgRestoreLocal(removed)
+        openCountOnStatusChange("dismissed", "new", removed.length || ids.length)   // KD-265
         tgFlash("Couldn't dismiss — retry.")
       }
       return res
@@ -19039,7 +19077,7 @@
         const d = r ? await r.json().catch(() => ({})) : {}
         if (!r || !r.ok || d.ok === false) throw new Error(d.error || "Couldn't re-open.")
           // Keep any cached ticket in sync so the drawer/board reflect the re-open immediately.
-          ; (state.tickets || []).forEach(t => { if (String(t.id) === String(fid)) t.status = "open" })
+          ; (state.tickets || []).forEach(t => { if (String(t.id) === String(fid)) { openCountOnStatusChange(t.status, "open"); t.status = "open" } })   // KD-265
         riToast(kicon('rotate-cw', { size: 15 }) + " Re-opened — back in the active queue.")
         _recurringLoaded = false
         if (typeof renderRecurringIssues === "function") await renderRecurringIssues()
@@ -19178,6 +19216,17 @@
     // #658: always-visible sidebar counts. Cheap state→textContent writes so the sidebar nav (via the
     // mirror() MutationObserver) stays live even on a poll that skipped the card whose renderer normally
     // sets them. Mirrors the exact formulas in renderStats/renderMembers/renderTickets/renderActivity.
+    // KD-265: keep the sidebar's ticket badge live when a ticket's status changes in the UI. The badge counts To Do (new), Open and
+    // In Progress. Moving a ticket into or out of that set nudges the count by n and repaints the badge; the next poll replaces it with
+    // the server's number, so a missed call only costs a few seconds of lag. Call it again with from/to swapped to undo.
+    function openCountOnStatusChange(from, to, n) {
+      if (!state || !state.counts || typeof state.counts.openTickets !== "number") return
+      const counted = ["new", "open", "in_progress"]
+      const was = counted.indexOf(from == null ? "open" : from) >= 0, now = counted.indexOf(to == null ? "open" : to) >= 0
+      if (was === now) return
+      state.counts.openTickets = Math.max(0, state.counts.openTickets + (now ? 1 : -1) * (n == null ? 1 : n))
+      syncSidebarCounts()
+    }
     function syncSidebarCounts() {
       if (!state) return
       const ins = (state && state.insights) || {}
@@ -19188,6 +19237,14 @@
       const mc = $("memCount"); if (mc) mc.textContent = members.length ? members.length : ""
       const tickets = (state.tickets || []).filter(t => t.status !== "new" && t.status !== "dismissed")
       const tkc = $("ticketCount"); if (tkc) tkc.textContent = tickets.length ? tickets.length : ""
+      // KD-265: the sidebar badge is the server's count of To Do + Open + In Progress tickets for the whole project. It used to mirror the
+      // Recent-tickets card above, which only sees the newest 50 tickets (so it read e.g. 21 while the board held 185).
+      const nav = $("navTicketCount")
+      if (nav) {
+        const c = state.counts && state.counts.openTickets
+        const n = typeof c === "number" ? c : (state.tickets || []).filter(t => ["new", "open", "in_progress"].indexOf(t.status) >= 0).length
+        nav.textContent = n ? String(n) : ""
+      }
       const acts = state.activity || []
       const ac = $("actCount"); if (ac) ac.textContent = acts.length ? acts.length : ""
     }
@@ -21362,6 +21419,46 @@
       if (["mp4", "webm", "mov", "m4v", "ogv"].indexOf(ext) >= 0) return "video"
       return ""
     }
+    const _ATTACH_DL_SVG = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+    function triggerAttachmentDownload(url, filename, key, ticketId, screenshotId) {
+      const safeName = filename || "attachment"
+      let dlUrl = ""
+      if (screenshotId) {
+        dlUrl = "/api/screenshots/" + encodeURIComponent(String(screenshotId)) + "?download=1"
+      } else if (ticketId && key) {
+        dlUrl = "/api/feedback/" + encodeURIComponent(String(ticketId)) + "/attachments?key=" + encodeURIComponent(String(key)) + "&download=1"
+      } else if (url) {
+        dlUrl = url
+      }
+      if (!dlUrl) return
+      fetch(dlUrl, { credentials: "include" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status)
+          return r.blob()
+        })
+        .then(function (blob) {
+          const blobUrl = URL.createObjectURL(blob)
+          const a = document.createElement("a")
+          a.href = blobUrl
+          a.download = safeName
+          document.body.appendChild(a)
+          a.click()
+          setTimeout(function () {
+            a.remove()
+            URL.revokeObjectURL(blobUrl)
+          }, 2000)
+        })
+        .catch(function () {
+          const a = document.createElement("a")
+          a.href = dlUrl
+          a.download = safeName
+          a.target = "_blank"
+          a.rel = "noopener"
+          document.body.appendChild(a)
+          a.click()
+          setTimeout(function () { a.remove() }, 1000)
+        })
+    }
     // Shared click-to-enlarge viewer for images and videos (ticket-detail attachments + the New ticket dialog's held files).
     // o = { url, name, kind: "image"|"video", openUrl?, annotations?, ticketId?, items?, index? }. Esc / backdrop click / the top-right × dismiss it; a playing video is paused on close.
     let _mediaPvEl = null
@@ -21467,6 +21564,16 @@
         })
         tools.appendChild(annBtn)
       }
+
+      const dlBtn = document.createElement("button")
+      dlBtn.type = "button"; dlBtn.className = "media-pv-btn"
+      dlBtn.innerHTML = `${_ATTACH_DL_SVG} Download`
+      dlBtn.setAttribute("aria-label", "Download " + o.name)
+      dlBtn.title = "Download " + o.name
+      dlBtn.addEventListener("click", () => {
+        triggerAttachmentDownload(o.openUrl || o.url, o.name, o.key, o.ticketId, o.screenshotId)
+      })
+      tools.appendChild(dlBtn)
 
       if (o.openUrl) { const a = document.createElement("a"); a.href = o.openUrl; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open original"; tools.appendChild(a) }
       bar.appendChild(tools)
@@ -21634,7 +21741,10 @@
       _attachSetRemoveState(id, key, "removing"); _attachMutating(1)
       hooks.onChange(id)
       const f = fetchFn || function (u, o) { return fetch(u, o) }
-      return f("/api/feedback/" + encodeURIComponent(id) + "/attachments?key=" + encodeURIComponent(String(key)), { method: "DELETE" })
+      // KD-214: the report's own screenshot has no storage key — it is addressed as "shot:<screenshot id>".
+      const isShot = String(key).indexOf("shot:") === 0
+      const q = isShot ? "screenshot=" + encodeURIComponent(String(key).slice(5)) : "key=" + encodeURIComponent(String(key))
+      return f("/api/feedback/" + encodeURIComponent(id) + "/attachments?" + q, { method: "DELETE" })
         .then(function (r) { return r.json().catch(function () { return {} }).then(function (d) { return { ok: !!(r.ok && d && d.ok), error: d && d.error, status: r.status } }) })
         .catch(function () { return { ok: false, error: "Network error — check your connection and retry." } })
         .then(function (res) {
@@ -21645,10 +21755,12 @@
         })
     }
     function _attachRemoveUi(t, a) {
-      if (!a || !a.key) return ""                                                    // an entry without a storage key can't be addressed
-      const key = esc(String(a.key)), name = esc(String(a.filename || "attachment")), st = attachRemoveState(t.id, a.key)
+      // KD-214: the report's own screenshot has no storage key; it is addressed as "shot:<screenshot id>".
+      const rk = a && a.key ? String(a.key) : (a && a.isPrimaryScreenshot && a.screenshotId ? "shot:" + String(a.screenshotId) : "")
+      if (!rk) return ""                                                             // an entry we can't address
+      const key = esc(rk), name = esc(String(a.filename || "attachment")), st = attachRemoveState(t.id, rk)
       if (st === "removing") return '<span class="tkt-attach-rm-state" role="status">' + kicon('loader', { size: 14 }) + ' Removing…</span>'
-      if (st === "confirm") return '<span class="tkt-attach-confirm" role="alertdialog" aria-label="Remove ' + name + '?">Remove? '
+      if (st === "confirm") return '<span class="tkt-attach-confirm" role="alertdialog" aria-label="Remove ' + name + '?">' + (rk.indexOf("shot:") === 0 ? "Remove the original screenshot? " : "Remove? ")
         + '<button type="button" class="btn btn-ghost btn-sm" data-attach-remove-yes="' + key + '">Remove</button>'
         + '<button type="button" class="btn btn-ghost btn-sm" data-attach-remove-no="' + key + '">Cancel</button></span>'
       return '<button type="button" class="tkt-attach-rm" data-attach-remove="' + key + '" aria-label="Remove ' + name + '" title="Remove">' + kicon('x', { size: 13 }) + '</button>'
@@ -21656,9 +21768,17 @@
     // ── DOM side (re-render safe: always looks the CURRENT attachments block up through _attachCtx) ──
     function _attachWrapFor(ticketId) {
       const ctx = _attachCtx.get(String(ticketId))
-      if (!ctx || !ctx.detailEl || !ctx.detailEl.isConnected) return null
-      const wrap = ctx.detailEl.querySelector(".tkt-attach-wrap")
-      return wrap ? { ctx: ctx, wrap: wrap } : null
+      if (ctx && ctx.detailEl && ctx.detailEl.isConnected) {
+        const wrap = ctx.detailEl.querySelector(".tkt-attach-wrap")
+        if (wrap) return { ctx: ctx, wrap: wrap }
+      }
+      // KD-214: the remembered detail element can be a stale one (a late repaint into a replaced element) while the block on screen
+      // belongs to another — then × / Remove / Cancel changed state but repainted nothing. Fall back to the block that is on screen.
+      if (ctx && ctx.t && typeof document !== "undefined") {
+        const live = Array.prototype.find.call(document.querySelectorAll(".tkt-attach-wrap"), function (w) { return w.getAttribute("data-ticket") === String(ticketId) })
+        if (live && live.parentElement) return { ctx: { detailEl: live.parentElement, t: ctx.t }, wrap: live }
+      }
+      return null
     }
     function attachRerender(ticketId) {
       const w = _attachWrapFor(ticketId); if (!w) return
@@ -21712,6 +21832,11 @@
       const targets = []
       lists.forEach(function (l) { (Array.isArray(l) ? l : []).forEach(function (x) { if (x && String(x.id) === id) targets.push(x) }) })
       if (ctx && ctx.t && targets.indexOf(ctx.t) < 0) targets.push(ctx.t)
+      if (String(key).indexOf("shot:") === 0) {   // KD-214: the report screenshot — the server also cleared its annotations
+        const sid = String(key).slice(5)
+        targets.forEach(function (x) { if (String(x.screenshotId) === sid) { x.screenshotId = null; x.annotations = null } })
+        return
+      }
       targets.forEach(function (x) { if (Array.isArray(x.attachments)) x.attachments = x.attachments.filter(function (a) { return !(a && String(a.key) === String(key)) }) })
     }
     const _attachHooks = {
@@ -21750,7 +21875,7 @@
       var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
       var uploading = pending.some(function (u) { return u.status === "uploading" })
       var pendingHtml = pending.map(_attachTileHtml).join("")
-      var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+      var _dlSvg = _ATTACH_DL_SVG
       var thumbs = ""
       var items = atts.map(function (a, i) {
         var name = esc(String(a.filename || ("attachment-" + (i + 1))))
@@ -21761,13 +21886,15 @@
             + (kind === "image"
               ? '<img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy">'
               : '<video src="' + esc(String(a.url)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
-            + '<span class="tkt-attach-cap">' + name + '</span></button>' + _attachRemoveUi(t, a) + '</div>'
+            + '<span class="tkt-attach-cap">' + name + '</span></button>'
+            + '<button type="button" class="tkt-attach-dl-btn" data-tile-dl="' + i + '" aria-label="Download ' + name + '" title="Download ' + name + '">' + _dlSvg + '</button>'
+            + _attachRemoveUi(t, a) + '</div>'
           return ""
         }
         var row = a.url
-          ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener">'
+          ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener" download="' + name + '" data-idx="' + i + '">'
           + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span>'
-          + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + _dlSvg + '</a>'
+          + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + '<span class="tkt-attach-dl-ico" title="Download">' + _dlSvg + '</span></a>'
           : '<span class="tkt-attach-item tkt-attach-unavailable">' + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span><span>unavailable</span></span>'
         return '<div class="tkt-attach-row">' + row + _attachRemoveUi(t, a) + '</div>'
       }).join("")
@@ -21814,7 +21941,9 @@
                 kind: k,
                 openUrl: a.url,
                 annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null),
-                ticketId: ticketId
+                ticketId: ticketId,
+                key: a.key,
+                screenshotId: a.screenshotId
               })
             }
           })
@@ -21823,7 +21952,31 @@
           if (!a || !a.url) return
           var foundIdx = prevItems.findIndex(function (it) { return it.url === a.url })
           if (foundIdx < 0) foundIdx = 0
-          openMediaPreview({ url: a.url, items: prevItems, index: foundIdx, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url, annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null), ticketId: ticketId })
+          openMediaPreview({ url: a.url, items: prevItems, index: foundIdx, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url, annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null), ticketId: ticketId, key: a.key, screenshotId: a.screenshotId })
+        })
+      })
+      wrap.querySelectorAll("[data-tile-dl]").forEach(function (btn) {
+        btn.addEventListener("click", function (ev) {
+          ev.preventDefault(); ev.stopPropagation()
+          var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+          if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
+            atts.unshift({ filename: "Screenshot", contentType: "image/png", url: shotProxyUrl(String(t.screenshotId)), screenshotId: t.screenshotId, isPrimaryScreenshot: true })
+          }
+          var idx = Number(btn.getAttribute("data-tile-dl"))
+          var a = atts[idx]
+          if (a && a.url) triggerAttachmentDownload(a.url, a.filename || ("attachment-" + (idx + 1)), a.key, ticketId, a.screenshotId)
+        })
+      })
+      wrap.querySelectorAll(".tkt-attach-item[data-idx]").forEach(function (el) {
+        el.addEventListener("click", function (ev) {
+          ev.preventDefault(); ev.stopPropagation()
+          var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+          if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
+            atts.unshift({ filename: "Screenshot", contentType: "image/png", url: shotProxyUrl(String(t.screenshotId)), screenshotId: t.screenshotId, isPrimaryScreenshot: true })
+          }
+          var idx = Number(el.getAttribute("data-idx"))
+          var a = atts[idx]
+          if (a && a.url) triggerAttachmentDownload(a.url, a.filename || ("attachment-" + (idx + 1)), a.key, ticketId, a.screenshotId)
         })
       })
       // Retry / Remove on a failed upload tile (delegated: the tiles are re-rendered as uploads progress)
@@ -21834,12 +21987,25 @@
         if (r) { ev.stopPropagation(); attachRetry(id, Number(r.getAttribute("data-attach-retry")), _attachHooks) }
         else if (d) { ev.stopPropagation(); attachDismiss(id, Number(d.getAttribute("data-attach-dismiss"))); attachRerender(id) }
         else if (c) { ev.stopPropagation(); attachCancelUpload(id, Number(c.getAttribute("data-attach-cancel"))) }
-        else if (rm) { ev.stopPropagation(); attachConfirmRemove(id, rm.getAttribute("data-attach-remove"), _attachHooks) }
+        else if (rm) { ev.stopPropagation(); attachConfirmRemove(id, rm.getAttribute("data-attach-remove"), _attachHooks) }   // KD-214: × removes straight away (no confirmation popup)
         else if (no) { ev.stopPropagation(); attachCancelRemove(id, no.getAttribute("data-attach-remove-no")); attachRerender(id) }
         else if (yes) { ev.stopPropagation(); attachConfirmRemove(id, yes.getAttribute("data-attach-remove-yes"), _attachHooks) }
       })
-      if (!addBtn || !input) return
-      addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+      if (!input) return
+      var uploading = attachInFlight(id)
+      var t3AttachBtn = detailEl.querySelector(".t3-attach-btn")
+      if (t3AttachBtn) {
+        t3AttachBtn.disabled = uploading
+        if (uploading) t3AttachBtn.setAttribute("aria-busy", "true")
+        else t3AttachBtn.removeAttribute("aria-busy")
+        t3AttachBtn.onclick = function (ev) {
+          ev.preventDefault()
+          if (!attachInFlight(id)) input.click()
+        }
+      }
+      if (addBtn) {
+        addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+      }
       input.addEventListener("change", function () {
         var files = Array.prototype.slice.call(input.files || [])
         input.value = ""
@@ -22186,7 +22352,7 @@
         const _hostHref = _mHost ? (/^https?:\/\//.test(_mHost) ? _mHost : "https://" + _mHost) : ""
         const _descTools = `<div class="t3-desctools">
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles', { size: 13 })} Enhance with AI</button>
-        <!-- t3-attach-btn -->
+        <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" title="Attach files">${kicon('paperclip', { size: 13 })} Attach</button>
       </div>`
         // KD-158: existing attachments + "+ Add attachment" — a reusable fragment, same as _recHtml.
         const _attachHtml = buildAttachmentsHtml(t)
@@ -22474,6 +22640,7 @@
             d = r ? await r.json().catch(() => ({})) : {}
           } finally { window.__klavMutating--; statusSelEl.disabled = false; statusSelEl.removeAttribute("aria-busy") }
           if (d.ok) {
+            openCountOnStatusChange(_prevStatus, newStatus)   // KD-265: live sidebar count
             _prevStatus = newStatus
             // #653: repaint the status dot to the new state color.
             const _dot = detailEl.querySelector(".prop-dot")
@@ -25383,10 +25550,14 @@
         card.classList.remove("kb-selected")
         const cb = card.querySelector(".kb-card-cb"); if (cb) cb.checked = false
       })
+      if (field === "status") prior.forEach(p => openCountOnStatusChange(p.value, newVal))   // KD-265: live sidebar count
       kbSyncColumnCounts()                                  // refresh column counts + empty placeholders
       _bulkSelected.clear()
       const bar = kanban.querySelector("#tktBulkBar"); if (bar) bar.classList.remove("show")
-      const revertLocal = () => { prior.forEach(p => setLocal(p.ticketId, p.value)); renderTicketsKanban(_tktBoardTickets) }
+      const revertLocal = () => {
+        if (field === "status") prior.forEach(p => openCountOnStatusChange(newVal, p.value))   // KD-265
+        prior.forEach(p => setLocal(p.ticketId, p.value)); renderTicketsKanban(_tktBoardTickets)
+      }
       return { field, prior, revertLocal }
     }
     // #704: toast for the optimistic bulk path — "N tickets — <label>" + Undo. Undo reverts the board
@@ -25694,6 +25865,8 @@
       const boardBefore = bt ? bt.status : null
       if (t) t.status = col.status
       if (bt) bt.status = col.status
+      const _oldStatus = before != null ? before : boardBefore
+      openCountOnStatusChange(_oldStatus, col.status)       // KD-265: live sidebar count
       renderTicketsKanban(_tktBoardTickets)
       // QA C2.1: pause the liveness / board-rev polls while this optimistic drag PATCH is in flight, so a poll
       // can't refetch the board from a snapshot taken before the status change commits and clobber it.
@@ -25709,6 +25882,7 @@
       } catch (e) {
         if (t) t.status = before
         if (bt) bt.status = boardBefore
+        openCountOnStatusChange(col.status, _oldStatus)     // KD-265: the save failed — put the count back
         renderTicketsKanban(_tktBoardTickets)
       } finally {
         window.__klavMutating = Math.max(0, (window.__klavMutating || 1) - 1)
@@ -29585,7 +29759,7 @@
           function cp() { var t = (s.textContent || '').trim().replace(/[()]/g, ''); d.textContent = (t && t !== '0') ? t : ''; }
           cp(); new MutationObserver(cp).observe(s, { childList: true, characterData: true, subtree: true });
         }
-        mirror('ticketCount', 'navTicketCount');
+        // KD-265: navTicketCount is set from the server's open-ticket count in syncSidebarCounts() — no longer mirrored from ticketCount.
         mirror('memCount', 'navTeamCount');
         mirror('triageCount', 'navTriageCount');
         // #633: the sidebar is static single-source markup and normalizeSidebar() already dedupes by data-go

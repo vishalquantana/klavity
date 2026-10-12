@@ -3219,6 +3219,7 @@ export function buildModal(
       engine.onTranscript = (text) => {
         const existing = desc.value
         desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       // Non-alarming reconnect status while an engine auto-retries a transient drop. When it recovers ('idle')
@@ -3272,8 +3273,19 @@ export function buildModal(
       // KLA-774: track the latest interim so that if Stop's grace window expires WITHOUT a server 'final'
       // (slow/dropped final), we still commit the last spoken words instead of discarding them on onStop.
       let lastInterim = ''
-      s.onTranscript = (text) => { lastInterim = ''; streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
-      s.onInterim = (text) => { lastInterim = text || ''; desc.value = streamBase + sep() + text; refreshSubmit() }
+      s.onTranscript = (text) => {
+        lastInterim = ''
+        streamBase = streamBase + sep() + text
+        desc.value = streamBase
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
+      s.onInterim = (text) => {
+        lastInterim = text || ''
+        desc.value = streamBase + sep() + text
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
       s.onStatus = (type, message) => { if (type === 'idle') clearInfoStatus(); else setVoiceStatus('info', message) }
       s.onError = (_, message) => { if (message) setVoiceStatus('err', message, 4000) }
       s.onStop = () => {
@@ -3281,10 +3293,12 @@ export function buildModal(
         // final already folded into streamBase and lastInterim is ''.
         if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = '' }
         desc.value = streamBase
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }
       s.onUnavailable = () => {
         desc.value = streamBase // clear the interim preview before another engine takes over
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
         const batch = makeBatchServer()
         if (batch) { voice = batch; setVoiceStatus('info', 'Reconnecting dictation…'); void voice.start(); return }

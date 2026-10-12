@@ -108,6 +108,7 @@ import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-c
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
+import { detachFeedbackScreenshot, screenshotReferencedElsewhere, screenshotById as screenshotRowById, deleteScreenshotRow } from "./lib/db"   // KD-214
 import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
@@ -1299,6 +1300,11 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/ping":
     case "/api/widget/lead":
     case "/api/widget/sims":
+    case "/api/widget/known-check":
+    case "/api/report/clarity":
+    case "/api/report/enhance":
+    case "/api/voice/transcribe":
+    case "/api/voice/stream":
     // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
     case "/api/upgrade-request":
     case "/api/feedback":
@@ -1314,7 +1320,7 @@ function isWidgetCorsPath(path: string): boolean {
       return true
   }
   if (path.startsWith("/api/personas/")) return true
-  return /^\/api\/projects\/[^/]+\/config$/.test(path)
+  return /^\/api\/projects\/[^/]+(\/config|\/people)$/.test(path)
 }
 // KLAVITYKLA-318: legacy domain. Kept alive for /api/* (with CORS) so unmigrated extensions/widgets
 // keep working; site paths still 301 to klavity.in for SEO. Retirement gate: legacy /api hits ~0
@@ -7184,14 +7190,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // canvas paints BLANK. ?proxy=1 streams the bytes THROUGH this same-origin endpoint (already
         // session + project-membership gated above, so no cross-tenant leak) so the browser sees a
         // same-origin image the canvas can read. Mirrors the /img permalink stream (no full-object buffer).
-        if (url.searchParams.get("proxy") === "1") {
+        const isDownload = url.searchParams.get("download") === "1"
+        if (url.searchParams.get("proxy") === "1" || isDownload) {
           try {
             const streamKey = wantThumb ? shot.thumbKey! : shot.s3Key
             const { stream, contentType, size } = await getObjectStream(streamKey)
             if (!wantThumb) void recordS3Egress({ projectId: shot.projectId, bytes: shot.bytes ?? size ?? 0, meta: { via: "canvas-proxy" } })
             const ct = shot.contentType || contentType || "image/png"
             markStage("s3open")
-            return new Response(stream, { headers: { "content-type": ct, "cache-control": "private, max-age=300", ...timing() } })
+            const headers: Record<string, string> = { "content-type": ct, "cache-control": "private, max-age=300", ...timing() }
+            if (isDownload) {
+              const fname = `screenshot-${shot.id || "evidence"}.png`
+              headers["content-disposition"] = `attachment; filename="${fname}"; filename*=UTF-8''${encodeURIComponent(fname)}`
+            }
+            return new Response(stream, { headers })
           } catch (e: any) { return json(oops(e, "proxyshot"), 500) }
         }
         try {
@@ -12718,6 +12730,41 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           return json({ comment: updated })
         }
 
+        // GET /api/feedback/:id/attachments?key=<storage key> — download or stream an attachment (members only).
+        // Attaches Content-Disposition: attachment when ?download=1 is provided so the browser downloads the file directly.
+        if (req.method === "GET" && isAttachments) {
+          if (!fbAccess) return json({ error: "Only project members can view attachments." }, 403)
+          const attKeyParam = String(url.searchParams.get("key") || "")
+          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          const atts = Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []
+          const found = atts.find((a: any) => String(a?.key) === attKeyParam || String(a?.filename) === attKeyParam)
+          if (!found) return json({ error: "Attachment not found." }, 404)
+          const filename = String(found.filename || "attachment")
+          const ct = String(found.contentType || "application/octet-stream")
+          const isDownload = url.searchParams.get("download") === "1"
+          const cd = isDownload
+            ? `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+            : `inline; filename="${encodeURIComponent(filename)}"`
+          try {
+            const { stream, contentType } = await getObjectStream(found.key)
+            return new Response(stream, {
+              headers: {
+                "content-type": ct || contentType || "application/octet-stream",
+                "content-disposition": cd,
+                "cache-control": "private, max-age=300",
+              },
+            })
+          } catch (e: any) {
+            try {
+              const presigned = presignGet(found.key, 3600)
+              if (presigned && /^https?:\/\//.test(presigned)) {
+                return Response.redirect(presigned, 302)
+              }
+            } catch { }
+            return json(oops(e, "getattachment"), 500)
+          }
+        }
+
         // KD-158: POST /api/feedback/:id/attachments — add a file to an EXISTING ticket's evidence,
         // after creation. Mirrors the non-image attachment path from ticket intake (#425/
         // KLAVITYKLA-480: same per-file/type/size caps and uploadAttachment() storage) but appends
@@ -12792,8 +12839,31 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // ticket still references it (merged tickets share attachment keys).
         if (req.method === "DELETE" && isAttachments) {
           if (!fbAccess) return json({ error: "Only project members can remove attachments." }, 403)
+          // KD-214: ?screenshot=<id> removes the ticket's own report screenshot. It is not in attachments_json (no storage key), so it is
+          // detached from the ticket first; the stored image is deleted afterwards only when no other ticket/occurrence still uses it.
+          const shotParam = String(url.searchParams.get("screenshot") || "")
+          if (shotParam) {
+            if (!(await detachFeedbackScreenshot(fid, fbRow.projectId, shotParam))) return json({ error: "Screenshot not found." }, 404)
+            void (async () => {
+              try {
+                if (await screenshotReferencedElsewhere(shotParam, fid)) return
+                const shot = await screenshotRowById(shotParam)
+                if (!shot) return
+                await deleteObject(shot.s3Key)
+                await deleteScreenshotRow(shotParam)
+              } catch (e: any) { console.warn("screenshot object cleanup skipped:", e?.message || e) }
+            })()
+            void insertActivity({
+              projectId: fbRow.projectId,
+              type: "ticket_attachment_removed",
+              actorEmail: me,
+              feedbackId: fid,
+              meta: { filename: "Screenshot" },
+            }).catch((e: any) => console.warn("ticket screenshot removal activity skipped:", e?.message || e))
+            return json({ ok: true, removed: shotParam, screenshot: true })
+          }
           const attKeyParam = String(url.searchParams.get("key") || "")
-          if (!attKeyParam) return json({ error: "key is required." }, 400)
+          if (!attKeyParam) return json({ error: "key or screenshot is required." }, 400)
           const rm = await removeFeedbackAttachment(fid, fbRow.projectId, attKeyParam)
           if (!rm.ok) return json({ error: "Attachment not found." }, 404)
           void (async () => {
