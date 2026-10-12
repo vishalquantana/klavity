@@ -10123,6 +10123,87 @@
       border-color: var(--indigo)
     }
 
+    /* KD-217: images / videos on a comment — chips under the composer, thumbnails and clips in the posted comment */
+    .tkt-cmt-body:empty {
+      display: none
+    }
+
+    .tkt-cmt-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 6px 0 2px
+    }
+
+    .tkt-cmt-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 220px;
+      padding: 3px 4px 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--ink-3);
+      font-size: 12px;
+      color: var(--paper)
+    }
+
+    .tkt-cmt-chip .nm {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .tkt-cmt-chip .sz {
+      color: var(--paper-faint);
+      font-size: 11px
+    }
+
+    .tkt-cmt-chip button {
+      border: 0;
+      background: transparent;
+      color: var(--paper-dim);
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 999px
+    }
+
+    .tkt-cmt-chip button:hover {
+      color: var(--rose)
+    }
+
+    .tkt-cmt-atts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px
+    }
+
+    .tkt-cmt-att-img {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0;
+      background: var(--ink-3);
+      cursor: zoom-in;
+      overflow: hidden
+    }
+
+    .tkt-cmt-att-img img {
+      display: block;
+      max-width: 220px;
+      max-height: 150px;
+      object-fit: cover
+    }
+
+    .tkt-cmt-att-vid {
+      max-width: 260px;
+      max-height: 170px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #000
+    }
+
     .tkt-comment-row {
       display: flex;
       align-items: center;
@@ -23293,6 +23374,18 @@
 
     // #707: escape a comment body, then highlight @handle mentions (see the composer's @-mention picker).
     // Escaping FIRST keeps this XSS-safe; the highlight only wraps the already-escaped @token in a span.
+    // KD-217: the images / videos attached to a comment. Images open in the media preview; videos play inline.
+    function commentAttsHtml(atts) {
+      const list = Array.isArray(atts) ? atts.filter(a => a && a.url) : []
+      if (!list.length) return ""
+      return '<div class="tkt-cmt-atts">' + list.map((a, i) => {
+        const name = esc(String(a.filename || "attachment"))
+        if (/^video\//i.test(String(a.contentType || ""))) {
+          return '<video class="tkt-cmt-att-vid" src="' + esc(String(a.url)) + '" controls preload="metadata" playsinline title="' + name + '"></video>'
+        }
+        return '<button type="button" class="tkt-cmt-att-img" data-i="' + i + '" title="' + name + '"><img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy"></button>'
+      }).join("") + '</div>'
+    }
     function renderCommentBody(text) {
       return esc(String(text == null ? "" : text)).replace(/(^|\s)@([\w.\-]+)/g, (_m, pre, h) => pre + '<span class="t3-m">@' + h + "</span>")
     }
@@ -23313,6 +23406,7 @@
         const canManage = ticketId && item.id && (isOwn || isAdmin)
         bodyHtml = `<div class="tkt-tl-author">${author}</div>
       <div class="tkt-tl-text tkt-cmt-body">${renderCommentBody(item.body)}</div>
+      ${commentAttsHtml(item.attachments)}
       <div class="tkt-tl-meta">${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}</div>
       ${canManage ? `<div class="tkt-cmt-actions">
         <button type="button" class="tkt-cmt-edit" title="Edit comment" aria-label="Edit comment">${kicon('pencil', { size: 12 })}</button>
@@ -23342,6 +23436,13 @@
         const delBtn = el.querySelector(".tkt-cmt-del")
         const bodyEl = el.querySelector(".tkt-cmt-body")
         const metaEl = el.querySelector(".tkt-tl-meta")
+        el.querySelectorAll(".tkt-cmt-att-img").forEach(function (b) {   // KD-217
+          b.addEventListener("click", function (ev) {
+            ev.stopPropagation()
+            const a = (item.attachments || []).filter(x => x && x.url)[Number(b.getAttribute("data-i"))]
+            if (a) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: "image", openUrl: a.url })
+          })
+        })
         if (delBtn) {
           delBtn.addEventListener("click", async (ev) => {
             ev.stopPropagation()
@@ -23421,8 +23522,11 @@
       const _composerHtml = `<div class="tkt-comment-form">
       <div class="t3-mention hide" role="listbox" aria-label="Tag a teammate"></div>
       <textarea class="tkt-comment-ta" placeholder="Leave a comment… @ to tag" rows="2"></textarea>
+      <div class="tkt-cmt-chips hide"></div>
       <div class="tkt-comment-row">
         <button class="btn btn-indigo btn-sm tkt-comment-submit">Comment</button>
+        <button type="button" class="btn btn-ghost btn-sm tkt-cmt-attach" title="Attach images or videos (or paste / drop them)">${kicon('paperclip', { size: 13 })} Attach</button>
+        <input type="file" class="tkt-cmt-file" accept="image/*,video/*" multiple hidden>
         <span class="tkt-comment-hint muted" style="font-size:11px">@ to mention · ⌘↵ to send</span>
         <span class="tkt-comment-msg" style="color:var(--paper-faint)"></span>
       </div>
@@ -23607,19 +23711,74 @@
 
       reloadTimeline()
 
+      // KD-217: images / videos on a comment. Picked with the Attach button, pasted into the box, or dropped on the form; kept as
+      // chips until Comment is pressed (then sent as multipart with the text). Same limits as ticket attachments.
+      const attachBtn = wrap.querySelector(".tkt-cmt-attach")
+      const fileInp = wrap.querySelector(".tkt-cmt-file")
+      const chipsEl = wrap.querySelector(".tkt-cmt-chips")
+      let pendingFiles = []
+      function paintChips() {
+        if (!chipsEl) return
+        chipsEl.classList.toggle("hide", !pendingFiles.length)
+        chipsEl.innerHTML = pendingFiles.map((f, i) =>
+          '<span class="tkt-cmt-chip"><span class="nm" title="' + esc(f.name) + '">' + esc(f.name) + '</span><span class="sz">' + esc(_attachFmtBytes(f.size)) + '</span>'
+          + '<button type="button" data-rm="' + i + '" aria-label="Remove ' + esc(f.name) + '">&times;</button></span>').join("")
+      }
+      function cmtMsg(text, bad) { if (msgEl) { msgEl.style.color = bad ? "var(--rose)" : "var(--paper-faint)"; msgEl.textContent = text || "" } }
+      function addPending(list) {
+        const problems = []
+        for (const f of Array.prototype.slice.call(list || [])) {
+          const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || "")
+          if (!isImg && !isVid) { problems.push(f.name + " is not an image or video"); continue }
+          if (pendingFiles.length >= ATTACH_MAX_FILES) { problems.push("at most " + ATTACH_MAX_FILES + " files per comment"); break }
+          if (pendingFiles.some(x => x.name === f.name && x.size === f.size)) continue
+          if (f.size > (isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX)) { problems.push(f.name + " is too large (" + _attachFmtBytes(isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX) + " max)"); continue }
+          if (pendingFiles.reduce((n, x) => n + x.size, 0) + f.size > ATTACH_TOTAL_MAX) { problems.push("total size limit reached"); break }
+          pendingFiles.push(f)
+        }
+        paintChips()
+        cmtMsg(problems.length ? "Not added: " + problems.join("; ") + "." : "", !!problems.length)
+      }
+      if (attachBtn && fileInp) {
+        attachBtn.addEventListener("click", () => fileInp.click())
+        fileInp.addEventListener("change", () => { addPending(fileInp.files); fileInp.value = "" })
+      }
+      if (chipsEl) chipsEl.addEventListener("click", ev => {
+        const b = ev.target && ev.target.closest ? ev.target.closest("[data-rm]") : null
+        if (!b) return
+        pendingFiles.splice(Number(b.getAttribute("data-rm")), 1); paintChips(); cmtMsg("")
+      })
+      if (ta) ta.addEventListener("paste", ev => {
+        const files = ev.clipboardData && ev.clipboardData.files ? Array.prototype.slice.call(ev.clipboardData.files) : []
+        const media = files.filter(f => /^(image|video)\//i.test(f.type || ""))
+        if (media.length) { ev.preventDefault(); addPending(media) }   // pasted text still pastes normally
+      })
+      const cmtForm = wrap.querySelector(".tkt-comment-form")
+      if (cmtForm) {
+        cmtForm.addEventListener("dragover", ev => { if (ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], "Files") >= 0) ev.preventDefault() })
+        cmtForm.addEventListener("drop", ev => { if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) { ev.preventDefault(); addPending(ev.dataTransfer.files) } })
+      }
+
       if (submitBtn && ta) {
         submitBtn.addEventListener("click", async () => {
           const text = ta.value.trim()
-          if (!text) return
+          if (!text && !pendingFiles.length) return
           submitBtn.disabled = true
-          if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Saving…" }
-          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ body: text })
-          }).catch(() => null)
+          if (attachBtn) attachBtn.disabled = true
+          if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = pendingFiles.length ? "Uploading…" : "Saving…" }
+          let reqInit
+          if (pendingFiles.length) {
+            const fd = new FormData(); fd.set("body", text); pendingFiles.forEach(f => fd.append("files", f))
+            reqInit = { method: "POST", body: fd }   // the browser sets the multipart content-type
+          } else {
+            reqInit = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body: text }) }
+          }
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", reqInit).catch(() => null)
           submitBtn.disabled = false
+          if (attachBtn) attachBtn.disabled = false
           if (r && r.status === 201) {
             ta.value = ""
+            pendingFiles = []; paintChips()
             // #533: the 201 body IS the created comment — render it optimistically instead of discarding it
             // and hoping a follow-up /timeline read returns it (that read races the write and can drop it).
             const d = await r.json().catch(() => ({}))
@@ -23627,7 +23786,7 @@
             if (c && (c.id != null || c.body)) {
               localComments.push({
                 kind: "comment", id: c.id, author: c.author || null,
-                body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(),
+                body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(), attachments: c.attachments || [],
               })
               paintTimeline([])   // instant on-screen render from local state (no network wait)
               _activateTab("comments")   // #725d: surface the just-posted comment (no-op off the tabbed page)

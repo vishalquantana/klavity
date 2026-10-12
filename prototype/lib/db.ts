@@ -1239,6 +1239,12 @@ export async function applySchema(c: Client) {
     await c.execute("ALTER TABLE ticket_comments ADD COLUMN edited_at INTEGER")
       .catch((e: any) => console.warn("ticket_comments.edited_at ALTER skipped:", e?.message || e))
   }
+  // KD-217: images / videos attached to a comment — JSON array of { key, filename, contentType, size } (same shape as a ticket's
+  // attachments). NULL = none.
+  if (needCol("ticket_comments", "attachments_json")) {
+    await c.execute("ALTER TABLE ticket_comments ADD COLUMN attachments_json TEXT")
+      .catch((e: any) => console.warn("ticket_comments.attachments_json ALTER skipped:", e?.message || e))
+  }
 
   // ── feedback_replays.s3_key (KLA-757/759 perf): the gzipped rrweb event buffer is uploaded to object
   // storage at ingest and the object key stored here, so GET /api/feedback/:id/replay streams the blob
@@ -3978,8 +3984,18 @@ export async function listActivity(projectId: string, opts: { actorEmail?: strin
   return r.rows.map(rowToActivity)
 }
 
+export type CommentAttachment = { key: string; filename: string; contentType: string; size?: number; url?: string | null }
 export type TicketCommentRow = {
   id: string; feedbackId: string; author: string | null; body: string; createdAt: number; editedAt: number | null
+  // KD-217: images / videos attached to the comment (storage entries; the server adds a presigned url when it returns them).
+  attachments: CommentAttachment[]
+}
+function parseCommentAttachments(raw: any): CommentAttachment[] {
+  if (raw == null || raw === "") return []
+  try {
+    const v = JSON.parse(String(raw))
+    return Array.isArray(v) ? v.filter((a) => a && typeof a === "object" && a.key) : []
+  } catch { return [] }
 }
 function rowToTicketComment(x: any): TicketCommentRow {
   return {
@@ -3989,11 +4005,13 @@ function rowToTicketComment(x: any): TicketCommentRow {
     body: String(x.body),
     createdAt: Number(x.created_at),
     editedAt: x.edited_at != null ? Number(x.edited_at) : null,
+    attachments: parseCommentAttachments(x.attachments_json),
   }
 }
-export async function insertTicketComment(feedbackId: string, author: string | null, body: string): Promise<TicketCommentRow> {
+export async function insertTicketComment(feedbackId: string, author: string | null, body: string, attachments: CommentAttachment[] = []): Promise<TicketCommentRow> {
   const trimmed = String(body || "").trim()
-  if (!trimmed) throw new Error("comment body required")
+  // KD-217: a comment may be attachments only (no text) — but never completely empty.
+  if (!trimmed && !attachments.length) throw new Error("comment body required")
   // KLA-780 round-3 (Muse C3-6, checklist L): a comment on a MERGED (hidden) row would be invisible on
   // the board. Redirect it to the live survivor so the comment lands on the ticket that's actually shown.
   {
@@ -4006,10 +4024,10 @@ export async function insertTicketComment(feedbackId: string, author: string | n
   const id = "tc_" + crypto.randomUUID()
   const createdAt = Date.now()
   await db!.execute({
-    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at) VALUES (?,?,?,?,?)",
-    args: [id, feedbackId, author ?? null, trimmed, createdAt],
+    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at,attachments_json) VALUES (?,?,?,?,?,?)",
+    args: [id, feedbackId, author ?? null, trimmed, createdAt, attachments.length ? JSON.stringify(attachments) : null],
   })
-  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt }
+  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt, editedAt: null, attachments }
 }
 export async function listTicketComments(feedbackId: string): Promise<TicketCommentRow[]> {
   const r = await db!.execute({
@@ -4044,7 +4062,7 @@ export async function deleteTicketComment(commentId: string, feedbackId: string)
 }
 
 export type TicketTimelineItem =
-  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null }
+  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null; attachments: CommentAttachment[] }
   | { id: string; kind: "activity"; type: string; actorEmail: string | null; meta: any; createdAt: number }
   | { id: string; kind: "ticket_export"; type: "connector_export"; actorEmail: string | null; meta: any; createdAt: number }
 
@@ -4062,7 +4080,7 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
   ])
   const items: TicketTimelineItem[] = [
     ...comments.map((c): TicketTimelineItem => ({
-      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt,
+      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt, attachments: c.attachments,
     })),
     ...activity.rows.map((r: any): TicketTimelineItem => ({
       id: String(r.id),
@@ -7316,11 +7334,15 @@ export async function removeFeedbackAttachment(feedbackId: string, projectId: st
 // point at one object — deleting it would break the other. Underscore / percent in the key only widen the LIKE, so at worst we
 // keep an orphan object and never delete a shared one.
 export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedbackId: string): Promise<boolean> {
+  const like = "%\"key\":" + JSON.stringify(key) + "%"
   const r = await db!.execute({
     sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND attachments_json LIKE ? LIMIT 1",
-    args: [exceptFeedbackId, "%\"key\":" + JSON.stringify(key) + "%"],
+    args: [exceptFeedbackId, like],
   })
-  return r.rows.length > 0
+  if (r.rows.length > 0) return true
+  // KD-217: a stored file may also be attached to a comment (a deleted comment's rows are already gone when this runs).
+  const c = await db!.execute({ sql: "SELECT 1 AS x FROM ticket_comments WHERE attachments_json LIKE ? LIMIT 1", args: [like] })
+  return c.rows.length > 0
 }
 
 // KD-214: detach a ticket's own report screenshot (feedback.screenshot_id). Compare-and-swap on the screenshot id, so a stale
