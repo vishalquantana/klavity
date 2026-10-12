@@ -7571,6 +7571,21 @@
       opacity: 1
     }
 
+    /* Empty description: a visible, clickable "Add a description…" prompt, and the pencil stays visible (no hover needed). */
+    .tkt-desc-placeholder {
+      color: var(--paper-faint);
+      font-style: italic;
+      cursor: text
+    }
+
+    .tkt-desc-empty .tkt-obs {
+      cursor: text
+    }
+
+    .tkt-desc-empty .tkt-desc-edit {
+      opacity: 1
+    }
+
     .tkt-desc-edit:hover {
       color: var(--indigo);
       transform: var(--mi-lift)
@@ -21165,19 +21180,28 @@
     }
     // #717: repaint the read-view description with smart-link chips (used on first render + after each save).
     function renderDescObs(obsEl, text) {
-      if (obsEl) obsEl.innerHTML = linkifyDescription(text)
+      if (!obsEl) return
+      obsEl.innerHTML = descObsInner(text)
+      const box = obsEl.closest ? obsEl.closest(".tkt-desc") : null
+      if (box) box.classList.toggle("tkt-desc-empty", !String(text == null ? "" : text).trim())   // KD: keep the empty-state look in sync
+    }
+    // A ticket created without a description has none to show — render a clear "Add a description…" prompt in its place so there is
+    // something to click (the whole block used to be hidden, leaving no way to add one later). Clicking it opens the usual editor.
+    function descObsInner(text) {
+      const raw = String(text == null ? "" : text)
+      return raw.trim() ? linkifyDescription(raw) : '<span class="tkt-desc-placeholder">Add a description…</span>'
     }
     function descriptionBlockHtml(text) {
       const raw = String(text == null ? "" : text)
       const label = "Description"
       // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
       // #717: the read view is auto-linkified (display-only); editing still shows the RAW url text.
-      return `<div class="tkt-desc">
+      return `<div class="tkt-desc${raw.trim() ? "" : " tkt-desc-empty"}">
     <div class="tkt-desc-head">
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs" title="Click to edit">${linkifyDescription(raw)}</div>
+    <div class="tkt-obs" title="Click to edit">${descObsInner(raw)}</div>
   </div>`
     }
     // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -22123,7 +22147,9 @@
       // #538: a multi-line description must never be suppressed just because its FIRST line happens
       // to match the ticket title — only hide when the entire (single-line) observation IS the title.
       const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
-      const _showObs = t.observation && (!isSingle || _obsMultiline || t.observation.trim() !== (t.title || "").trim())
+      // A ticket with NO description still gets the (empty-state) Description block in the single-ticket view, so one can be added later.
+      const _showObs = (t.observation && (!isSingle || _obsMultiline || t.observation.trim() !== (t.title || "").trim()))
+        || (isSingle && !String(t.observation == null ? "" : t.observation).trim())
       const _showSevChip = !isSingle && !!t.priority
       const _showSentiment = !isSingle && !!t.sentiment
       const _showSimChip = !isSingle && !!t.simName
