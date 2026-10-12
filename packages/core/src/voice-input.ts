@@ -1,5 +1,82 @@
+/**
+ * Normalizes speech-to-text output:
+ * 1. Converts spoken punctuation words into standard punctuation symbols.
+ * 2. Cleans up whitespace around punctuation marks.
+ * 3. Capitalizes standalone 'I' and contractions ('I'm', 'I've', 'I'll', 'I'd').
+ * 4. Capitalizes the first character and characters following sentence terminals (. ! ? \n).
+ * 5. On final stop (`isStop: true`), ensures the utterance concludes with terminal punctuation.
+ */
+export function formatSpeechText(raw: string, isFinal = false, isStop = false): string {
+  if (!raw) return ''
+  let s = raw
+
+  // Convert spoken punctuation commands
+  s = s.replace(/\s*\b(?:new paragraph|next paragraph)\b\s*/gi, '\n\n')
+  s = s.replace(/\s*\b(?:new line|next line)\b\s*/gi, '\n')
+  s = s.replace(/\b(?:full stop|period)\b/gi, '.')
+  s = s.replace(/\bquestion mark\b/gi, '?')
+  s = s.replace(/\b(?:exclamation mark|exclamation point)\b/gi, '!')
+  s = s.replace(/\bcomma\b/gi, ',')
+  s = s.replace(/\bsemicolon\b/gi, ';')
+  s = s.replace(/\bcolon\b/gi, ':')
+
+  // Clean whitespace before punctuation
+  s = s.replace(/\s+([,.:;!?])/g, '$1')
+  // Collapse multiple spaces after punctuation into a single space (preserving newlines)
+  s = s.replace(/([,.:;!?])[^\S\r\n]+/g, '$1 ')
+  // Deduplicate repeated punctuation
+  s = s.replace(/([,.:;!?])\1+/g, '$1')
+  // Ensure single space after punctuation when followed by a non-space/non-digit/non-punctuation
+  s = s.replace(/([,.:;!?])([^\s\d\n,.:;!?])/g, '$1 $2')
+
+  // Capitalize standalone 'i' and contractions (I'm, I've, I'll, I'd)
+  s = s.replace(/\b(i)('m|'ve|'ll|'d)?\b/gi, (_m, _p1, p2) => 'I' + (p2 ? p2.toLowerCase() : ''))
+
+  // Capitalize start of text and letters after sentence terminators (. ! ? or newline)
+  s = s.replace(/(^|[.!?\n]\s*)([a-z])/g, (_m, p1, p2) => p1 + p2.toUpperCase())
+
+  if ((isStop || isFinal) && s.trim()) {
+    s = s.trim()
+    if (isStop && !/[.!?:]$/.test(s)) {
+      s += '.'
+    }
+  }
+
+  return s
+}
+
+/**
+ * Join segments during live speech, keeping clean separation and sentence boundaries.
+ */
+export function joinSpeechSegments(base: string, next: string): string {
+  if (!base) return next
+  if (!next) return base
+  const b = base.trimEnd()
+  const n = next.trimStart()
+  if (!b) return n
+  if (!n) return b
+  return b + ' ' + n
+}
+
+/**
+ * Clean up final transcript on voice stop: format, capitalize sentences, ensure terminal punctuation.
+ */
+export function formatSpeechFinal(text: string): string {
+  if (!text) return ''
+  let s = text.trim()
+  if (!s) return ''
+  s = formatSpeechText(s, true, true)
+  s = s.replace(/^\s*([a-z])/, (_m, p1) => p1.toUpperCase())
+  s = s.replace(/([.!?\n]\s*)([a-z])/g, (_m, p1, p2) => p1 + p2.toUpperCase())
+  if (!/[.!?:]$/.test(s)) {
+    s += '.'
+  }
+  return s
+}
+
 export class VoiceInput {
   onTranscript = (text: string) => {}
+  onInterim?: (text: string) => void
   onError = (type: string, message: string) => {}
   onStop = () => {}
   // KLAVITYKLA-495: neutral, non-alarming status while we auto-recover from a transient drop. type is
@@ -65,14 +142,24 @@ export class VoiceInput {
     const rec = new SR()
     this._recognition = rec
     rec.continuous = true
-    rec.interimResults = false
+    rec.interimResults = !!this.onInterim
     rec.lang = (typeof document !== 'undefined' && document.documentElement.lang) || 'en-US'
     // A successful (re)start means the backend is healthy — clear the failure budget + any status row.
     rec.onstart = () => { this._recovered() }
     rec.onresult = (event: any) => {
       this._recovered()
+      let interim = ''
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) this.onTranscript(event.results[i][0].transcript)
+        const item = event.results[i]
+        const text = item[0]?.transcript || ''
+        if (item.isFinal) {
+          if (text) this.onTranscript(text)
+        } else {
+          interim += text
+        }
+      }
+      if (interim && this.onInterim) {
+        this.onInterim(interim)
       }
     }
     rec.onerror = (event: any) => {
@@ -207,7 +294,7 @@ export class LiveDictation {
   // can seamlessly fall back to VoiceInput (Web Speech). The mic/recorder are already torn down.
   onUnavailable = () => {}
 
-  static SEGMENT_MS = 5000
+  static SEGMENT_MS = 2500
   static MAX_SESSION_MS = 180000
 
   private _transcribe: DictationTranscribe
@@ -380,7 +467,7 @@ export class StreamingDictation {
   onUnavailable = () => {}
 
   static MAX_SESSION_MS = 180000
-  static TIMESLICE_MS = 250
+  static TIMESLICE_MS = 150
   // If no server message (ready/interim/final) lands within this window after open, treat as unavailable.
   static CONNECT_TIMEOUT_MS = 4000
   static MAX_RECONNECTS = 3

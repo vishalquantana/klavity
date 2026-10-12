@@ -108,6 +108,23 @@ describe("widget onEnhance wiring (KLA-586)", () => {
     expect(draft).toEqual(DRAFT)
   })
 
+  it("POSTs /api/report/enhance with annotations and annotationTexts when provided", async () => {
+    await mountAndOpen()
+    const annotations = { w: 800, h: 600, shapes: [{ type: "circle", color: "#ef4444", x: 100, y: 100, rx: 50, ry: 50 }, { type: "text", color: "#ef4444", x: 100, y: 200, text: "Clicking button does nothing" }] }
+    const annotationTexts = ["Clicking button does nothing"]
+    const draft = await capturedCallbacks.onEnhance("Submit button broken", {
+      images: 1,
+      shot: "data:image/png;base64,AAA",
+      annotations,
+      annotationTexts,
+    })
+    expect(enhanceCalls.length).toBe(1)
+    const body = enhanceCalls[0].body
+    expect(body.annotations).toEqual(annotations)
+    expect(body.annotationTexts).toEqual(annotationTexts)
+    expect(draft).toEqual(DRAFT)
+  })
+
   it("returns null (silent no-op) when the endpoint errors", async () => {
     await mountAndOpen()
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 500 })))

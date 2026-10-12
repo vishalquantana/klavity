@@ -37,6 +37,10 @@ const ACCT = `acct_enh_${RUN}`
 const PROJ = `proj_enh_${RUN}`
 const PROJ_OFF = `proj_enhoff_${RUN}`
 const PROJ_CAP = `proj_enhcap_${RUN}`
+const PROJ_A = `proj_enha_${RUN}`
+const PROJ_B = `proj_enhb_${RUN}`
+const PROJ_C = `proj_enhc_${RUN}`
+const PROJ_D = `proj_enhd_${RUN}`
 const ADMIN = `enh-admin-${RUN}@test.local`
 // Small per-project daily enhance cap so the cap test can exhaust it in a few calls.
 const ENHANCE_CAP = 3
@@ -103,6 +107,10 @@ async function seed() {
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_OFF, ACCT, "Enhance Off Project", "active", "auto", 200, "named", now, now])
   await exec("UPDATE projects SET report_clarity = 0 WHERE id = ?", [PROJ_OFF])
   await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_CAP, ACCT, "Enhance Cap Project", "active", "auto", 200, "named", now, now])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_A, ACCT, "Enhance A", "active", "auto", 200, "named", now, now])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_B, ACCT, "Enhance B", "active", "auto", 200, "named", now, now])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_C, ACCT, "Enhance C", "active", "auto", 200, "named", now, now])
+  await exec("INSERT INTO projects (id, account_id, name, status, review_mode, review_budget_daily, observability_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [PROJ_D, ACCT, "Enhance D", "active", "auto", 200, "named", now, now])
 }
 
 function postEnhance(body: any, xff?: string) {
@@ -229,4 +237,95 @@ test("a project over its daily enhance cap is rejected (no LLM call); forged XFF
   const body = await over.json()
   expect(body.draft).toBeNull()
   expect(llmCalls).toBe(ENHANCE_CAP)
+})
+
+test("Scenario A: Screenshot + annotations + user text properly packages all inputs into LLM request", async () => {
+  llmCalls = 0
+  lastLlmBody = null
+  const annotations = {
+    w: 1280,
+    h: 720,
+    shapes: [
+      { type: "circle", color: "#ef4444", x: 200, y: 150, rx: 40, ry: 40 },
+      { type: "text", color: "#ef4444", x: 200, y: 220, text: "Clicking this button does nothing" },
+    ],
+  }
+  const r = await postEnhance({
+    projectId: PROJ_A,
+    text: "The Submit button is not responding when clicked",
+    shot: SHOT,
+    annotations,
+    annotationTexts: ["Clicking this button does nothing"],
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.draft).not.toBeNull()
+  expect(llmCalls).toBe(1)
+  expect(lastUserHasImage()).toBe(true)
+
+  const prompt = lastUserText()
+  expect(prompt).toContain("The Submit button is not responding when clicked")
+  expect(prompt).toContain("Clicking this button does nothing")
+  expect(prompt).toContain("1 circled/highlighted area(s)")
+  expect(prompt).toContain("<untrusted_data>")
+})
+
+test("Scenario B: Screenshot + text without annotations", async () => {
+  llmCalls = 0
+  lastLlmBody = null
+  const r = await postEnhance({
+    projectId: PROJ_B,
+    text: "Checkout page payment form crashes",
+    shot: SHOT,
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.draft).not.toBeNull()
+  expect(llmCalls).toBe(1)
+  expect(lastUserHasImage()).toBe(true)
+  const prompt = lastUserText()
+  expect(prompt).toContain("Checkout page payment form crashes")
+  expect(prompt).not.toContain("USER ANNOTATION TEXT")
+})
+
+test("Scenario C: Screenshot + annotations without typed description generates draft based on visual evidence", async () => {
+  llmCalls = 0
+  lastLlmBody = null
+  const annotations = {
+    w: 1280,
+    h: 720,
+    shapes: [
+      { type: "arrow", color: "#ef4444", x1: 50, y1: 50, x2: 150, y2: 150 },
+      { type: "text", color: "#ef4444", x: 150, y: 160, text: "Save button broken" },
+    ],
+  }
+  const r = await postEnhance({
+    projectId: PROJ_C,
+    text: "",
+    shot: SHOT,
+    annotations,
+    annotationTexts: ["Save button broken"],
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.draft).not.toBeNull()
+  expect(llmCalls).toBe(1)
+  expect(lastUserHasImage()).toBe(true)
+  const prompt = lastUserText()
+  expect(prompt).toContain("Save button broken")
+})
+
+test("Scenario D: Screenshot without annotations and with text enhances successfully", async () => {
+  llmCalls = 0
+  lastLlmBody = null
+  const r = await postEnhance({
+    projectId: PROJ_D,
+    text: "Modal close icon is missing",
+    shot: SHOT,
+  })
+  expect(r.status).toBe(200)
+  const body = await r.json()
+  expect(body.draft).not.toBeNull()
+  expect(llmCalls).toBe(1)
+  expect(lastUserHasImage()).toBe(true)
 })
