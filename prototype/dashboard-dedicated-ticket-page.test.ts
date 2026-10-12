@@ -152,6 +152,7 @@ test("buildTktDetail renders a 2-col grid (details+attachments | properties) on 
   expect(fn).toContain('class="t3-activity-mount"')
   // Enhance + Attach tools
   expect(fn).toContain("t3-enh-btn")
+  expect(fn).toContain("t3-attach-btn")
   expect(fn).toContain("if (_pageThreeCol) wireT3Resize(detailEl)")
 })
 
