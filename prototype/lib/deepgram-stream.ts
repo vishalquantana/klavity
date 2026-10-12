@@ -48,6 +48,7 @@ export function buildDeepgramStreamUrl(model = DEEPGRAM_MODEL, endpoint = DEEPGR
   u.searchParams.set("interim_results", "true")
   u.searchParams.set("punctuate", "true")
   u.searchParams.set("smart_format", "true")
+  u.searchParams.set("dictation", "true")
   u.searchParams.set("endpointing", "300")
   return u.toString()
 }
