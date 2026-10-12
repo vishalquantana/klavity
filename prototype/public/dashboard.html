@@ -18340,6 +18340,7 @@
       // #649: OPTIMISTIC — the accepted rows move to Tickets, so remove them from New reports IMMEDIATELY
       // (no refreshAll, no thumbnail reload). Fire the PATCH in the background and restore only on failure.
       const removed = tgRemoveLocal(ids)
+      openCountOnStatusChange("new", "open", removed.length || ids.length)   // KD-265: accepted tickets join the open count
       // KLAVITYKLA-512: confirm the move + offer a deep link into the ticket in the Tickets view.
       const one = ids.length === 1 ? String(ids[0]) : null
       const link = one
@@ -18352,6 +18353,7 @@
       if (!res.ok) {
         // #537: surface the failure instead of swallowing {ok:false} (project-switch race / offline blip).
         tgRestoreLocal(removed)
+        openCountOnStatusChange("open", "new", removed.length || ids.length)   // KD-265
         tgFlash("Couldn't accept — retry.")
       }
       return res
@@ -19039,7 +19041,7 @@
         const d = r ? await r.json().catch(() => ({})) : {}
         if (!r || !r.ok || d.ok === false) throw new Error(d.error || "Couldn't re-open.")
           // Keep any cached ticket in sync so the drawer/board reflect the re-open immediately.
-          ; (state.tickets || []).forEach(t => { if (String(t.id) === String(fid)) t.status = "open" })
+          ; (state.tickets || []).forEach(t => { if (String(t.id) === String(fid)) { openCountOnStatusChange(t.status, "open"); t.status = "open" } })   // KD-265
         riToast(kicon('rotate-cw', { size: 15 }) + " Re-opened — back in the active queue.")
         _recurringLoaded = false
         if (typeof renderRecurringIssues === "function") await renderRecurringIssues()
@@ -19178,6 +19180,17 @@
     // #658: always-visible sidebar counts. Cheap state→textContent writes so the sidebar nav (via the
     // mirror() MutationObserver) stays live even on a poll that skipped the card whose renderer normally
     // sets them. Mirrors the exact formulas in renderStats/renderMembers/renderTickets/renderActivity.
+    // KD-265: keep the sidebar's open-ticket badge live when a ticket's status changes in the UI. "Open" = anything not new (to do),
+    // dismissed, done or closed. Moving a ticket across that line nudges the count by n and repaints the badge; the next poll
+    // replaces it with the server's number, so a missed call only costs a few seconds of lag. Call it again with from/to swapped to undo.
+    function openCountOnStatusChange(from, to, n) {
+      if (!state || !state.counts || typeof state.counts.openTickets !== "number") return
+      const notOpen = ["new", "dismissed", "done", "closed"]
+      const was = notOpen.indexOf(from == null ? "open" : from) < 0, now = notOpen.indexOf(to == null ? "open" : to) < 0
+      if (was === now) return
+      state.counts.openTickets = Math.max(0, state.counts.openTickets + (now ? 1 : -1) * (n == null ? 1 : n))
+      syncSidebarCounts()
+    }
     function syncSidebarCounts() {
       if (!state) return
       const ins = (state && state.insights) || {}
@@ -22482,6 +22495,7 @@
             d = r ? await r.json().catch(() => ({})) : {}
           } finally { window.__klavMutating--; statusSelEl.disabled = false; statusSelEl.removeAttribute("aria-busy") }
           if (d.ok) {
+            openCountOnStatusChange(_prevStatus, newStatus)   // KD-265: live sidebar count
             _prevStatus = newStatus
             // #653: repaint the status dot to the new state color.
             const _dot = detailEl.querySelector(".prop-dot")
@@ -25391,10 +25405,14 @@
         card.classList.remove("kb-selected")
         const cb = card.querySelector(".kb-card-cb"); if (cb) cb.checked = false
       })
+      if (field === "status") prior.forEach(p => openCountOnStatusChange(p.value, newVal))   // KD-265: live sidebar count
       kbSyncColumnCounts()                                  // refresh column counts + empty placeholders
       _bulkSelected.clear()
       const bar = kanban.querySelector("#tktBulkBar"); if (bar) bar.classList.remove("show")
-      const revertLocal = () => { prior.forEach(p => setLocal(p.ticketId, p.value)); renderTicketsKanban(_tktBoardTickets) }
+      const revertLocal = () => {
+        if (field === "status") prior.forEach(p => openCountOnStatusChange(newVal, p.value))   // KD-265
+        prior.forEach(p => setLocal(p.ticketId, p.value)); renderTicketsKanban(_tktBoardTickets)
+      }
       return { field, prior, revertLocal }
     }
     // #704: toast for the optimistic bulk path — "N tickets — <label>" + Undo. Undo reverts the board
@@ -25702,6 +25720,8 @@
       const boardBefore = bt ? bt.status : null
       if (t) t.status = col.status
       if (bt) bt.status = col.status
+      const _oldStatus = before != null ? before : boardBefore
+      openCountOnStatusChange(_oldStatus, col.status)       // KD-265: live sidebar count
       renderTicketsKanban(_tktBoardTickets)
       // QA C2.1: pause the liveness / board-rev polls while this optimistic drag PATCH is in flight, so a poll
       // can't refetch the board from a snapshot taken before the status change commits and clobber it.
@@ -25717,6 +25737,7 @@
       } catch (e) {
         if (t) t.status = before
         if (bt) bt.status = boardBefore
+        openCountOnStatusChange(col.status, _oldStatus)     // KD-265: the save failed — put the count back
         renderTicketsKanban(_tktBoardTickets)
       } finally {
         window.__klavMutating = Math.max(0, (window.__klavMutating || 1) - 1)
