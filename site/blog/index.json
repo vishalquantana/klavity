@@ -831,5 +831,12 @@
     "excerpt": "An AI QA agent explores your app, decides what to test, files reproducible bugs, and repairs its own tests when the UI changes.",
     "category": "Guides",
     "date": "2026-10-11"
+  },
+  {
+    "slug": "how-to-debug-ai-generated-code",
+    "title": "How to Debug AI-Generated Code (A Practical Workflow)",
+    "excerpt": "To debug AI-generated code, start with evidence, not the code: capture a repro, then narrow the bug to one boundary - data in, state, or render.",
+    "category": "Guides",
+    "date": "2026-10-12"
   }
 ]

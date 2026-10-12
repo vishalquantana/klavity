@@ -1,0 +1,207 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Debug AI-Generated Code (A Practical Workflow) · Klavity</title>
+<meta name="description" content="To debug AI-generated code, start with evidence, not the code: capture a repro, then narrow the bug to one boundary - data in, state, or render.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-debug-ai-generated-code">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Debug AI-Generated Code (A Practical Workflow)"><meta property="og:description" content="To debug AI-generated code, start with evidence, not the code: capture a repro, then narrow the bug to one boundary - data in, state, or render.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-debug-ai-generated-code"><meta property="og:image" content="https://klavity.in/blog/how-to-debug-ai-generated-code.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Debug AI-Generated Code (A Practical Workflow)"><meta name="twitter:description" content="To debug AI-generated code, start with evidence, not the code: capture a repro, then narrow the bug to one boundary - data in, state, or render."><meta name="twitter:image" content="https://klavity.in/blog/how-to-debug-ai-generated-code.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Debug AI-Generated Code (A Practical Workflow)","description":"To debug AI-generated code, start with evidence, not the code: capture a repro, then narrow the bug to one boundary - data in, state, or render.","datePublished":"2026-10-12","dateModified":"2026-10-12","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/how-to-debug-ai-generated-code.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-debug-ai-generated-code","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Debug AI-Generated Code (A Practical Workflow)","item":"https://klavity.in/blog/how-to-debug-ai-generated-code"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-debug-ai-generated-code"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do you debug AI-generated code you didn't write?","acceptedAnswer":{"@type":"Answer","text":"Work backwards from the symptom instead of reading the code. Capture a reproduction with the console error and failing network request, narrow the failure to one boundary (data in, state, or render), then open only the file that boundary points to and check what contract it assumes, what state it mutates, and what it does on failure."}},{"@type":"Question","name":"Why is AI-generated code harder to debug?","acceptedAnswer":{"@type":"Answer","text":"Because you have no mental model of it. When you write code yourself, you remember the shortcuts and skipped edge cases, which is what makes a bug easy to locate. AI-generated code reads plausibly everywhere, so every line looks equally reasonable and intuition gives you nothing to go on."}},{"@type":"Question","name":"Should I ask the AI to fix its own bug?","acceptedAnswer":{"@type":"Answer","text":"Yes, but only with evidence. Paste the actual error, stack trace, failing request and reproduction steps, name the file, and ask for the minimal change. Vague prompts like 'still broken' push the model into rewriting working code. If a second attempt is also wrong, read the code yourself rather than prompting again."}},{"@type":"Question","name":"What bugs are most common in AI-generated code?","acceptedAnswer":{"@type":"Answer","text":"Invented API shapes that don't exist in your installed version, happy-path-only flows with no loading or error states, swallowed errors in empty catch blocks, missing authorisation checks on new endpoints, and the same business rule implemented twice in files generated by separate prompts."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-12</div>
+    <h1>How to Debug AI-Generated Code (A Practical Workflow)</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Debugging AI-generated code: capture a reproduction, narrow to a boundary, fix and pin with a test">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="104" x2="800" y2="104" stroke="#f5f0e8" stroke-opacity="0.05"/>
+  <line x1="0" y1="316" x2="800" y2="316" stroke="#f5f0e8" stroke-opacity="0.05"/>
+
+  <rect x="48" y="128" width="190" height="164" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.14"/>
+  <line x1="48" y1="154" x2="238" y2="154" stroke="#f5f0e8" stroke-opacity="0.14"/>
+  <circle cx="64" cy="141" r="4" fill="#f87171"/>
+  <circle cx="78" cy="141" r="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <circle cx="92" cy="141" r="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="66" y="176" width="112" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.18"/>
+  <rect x="66" y="194" width="84" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="66" y="224" width="146" height="40" rx="7" fill="#f87171" fill-opacity="0.16" stroke="#f87171" stroke-opacity="0.65"/>
+  <path d="M132 234 l9 16 h-18 z" fill="#f87171"/>
+  <circle cx="132" cy="256" r="2.6" fill="#f87171"/>
+
+  <polyline points="248,210 300,210" stroke="#6366f1" stroke-width="2.4" fill="none"/>
+  <path d="M300 204 l12 6 -12 6 z" fill="#6366f1"/>
+
+  <rect x="322" y="124" width="166" height="48" rx="8" fill="#6366f1" fill-opacity="0.10" stroke="#6366f1" stroke-opacity="0.45"/>
+  <circle cx="348" cy="148" r="9" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <line x1="354" y1="154" x2="362" y2="162" stroke="#6366f1" stroke-width="2"/>
+  <rect x="376" y="144" width="92" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+
+  <rect x="322" y="186" width="166" height="48" rx="8" fill="#f87171" fill-opacity="0.14" stroke="#f87171" stroke-opacity="0.7"/>
+  <rect x="340" y="206" width="14" height="8" rx="2" fill="#f87171"/>
+  <rect x="376" y="206" width="92" height="8" rx="4" fill="#f87171" fill-opacity="0.45"/>
+
+  <rect x="322" y="248" width="166" height="48" rx="8" fill="#6366f1" fill-opacity="0.10" stroke="#6366f1" stroke-opacity="0.45"/>
+  <rect x="338" y="264" width="20" height="16" rx="3" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <rect x="376" y="268" width="92" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+
+  <polyline points="498,210 550,210" stroke="#4ade80" stroke-width="2.4" fill="none"/>
+  <path d="M550 204 l12 6 -12 6 z" fill="#4ade80"/>
+
+  <rect x="572" y="140" width="180" height="140" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#4ade80" stroke-opacity="0.4"/>
+  <rect x="592" y="166" width="104" height="7" rx="3.5" fill="#4ade80" fill-opacity="0.5"/>
+  <rect x="592" y="184" width="138" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="592" y="202" width="76" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <circle cx="662" cy="248" r="20" fill="#4ade80" fill-opacity="0.14" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="653,248 660,256 673,241" stroke="#4ade80" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Debugging AI-generated code fails when you read it top to bottom, because you have no memory of the decisions behind it. Capture a reproduction first, narrow the failure to one of three boundaries - data in, state, or render - then interrogate the suspect block for its assumed contract, its mutations, and its error path.</div>
+    <div class="prose"><p>To debug AI-generated code, start with evidence instead of the code: reproduce the failure, capture the console error, the failing network request and the exact steps that triggered it, then narrow the bug to one boundary &mdash; data in, state, or render &mdash; before you read a single line. The usual debugging approach fails here because debugging assumes a mental model of the code, and with AI-generated code you have none: you did not make the decisions, so you cannot guess where the wrong one lives. Work backwards from the observable symptom to the boundary that produced it, and facts replace the mental model you never built.</p>
+
+<h2>Why is debugging AI-generated code different from debugging your own?</h2>
+
+<p>When you write a function yourself, a bug report is enough to locate it. You remember the shortcut you took, the edge case you skipped, the <em>TODO</em> you left in the error handler. That memory is the real debugger &mdash; the tooling just confirms what you already suspect.</p>
+
+<p>Code generated by Cursor, Copilot, Lovable, Bolt or v0 gives you none of that. It usually reads well, follows plausible conventions, and compiles. What it lacks is intent you can recall. So the two habits most developers lean on &mdash; "I bet it's in the part I rushed" and "let me just read the diff" &mdash; both stop working. Reading a 300-line AI-written module top to bottom looking for something wrong is the slowest possible search, because every line looks equally reasonable.</p>
+
+<table>
+  <thead>
+    <tr><th>&nbsp;</th><th>Code you wrote</th><th>Code AI wrote</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Starting point</td><td>Your memory of the weak spot</td><td>A reproduction and its evidence</td></tr>
+    <tr><td>Fastest search</td><td>Read the suspicious part</td><td>Bisect by boundary, then read</td></tr>
+    <tr><td>Typical root cause</td><td>A known shortcut or edge case</td><td>An assumed contract that doesn't hold</td></tr>
+    <tr><td>Risk when fixing</td><td>Breaking what you remember depends on it</td><td>Breaking something you didn't know existed</td></tr>
+    <tr><td>What "done" needs</td><td>The fix</td><td>The fix plus a test that pins the behaviour</td></tr>
+  </tbody>
+</table>
+
+<h2>How do you debug AI-generated code step by step?</h2>
+
+<h3>1. Capture the reproduction before you change anything</h3>
+
+<p>The first edit you make destroys evidence. Before touching code, get a repro you can replay: the exact steps, the URL and route state, the browser and viewport, the console output, and the failing network request with its status and response body. If you can only reproduce it sometimes, say so explicitly &mdash; intermittent is itself a clue that points at timing or shared state rather than logic.</p>
+
+<p>This is also the step most vibe-coded projects skip entirely, which is why the same bug gets "fixed" three times. Capturing browser state automatically is exactly what <a href="/snap">Snap</a> exists for: a right-click on the broken element collects the screenshot, console, network calls and environment into one report, so the repro survives the next prompt.</p>
+
+<h3>2. Narrow to a boundary, not to a line</h3>
+
+<p>Modern app bugs almost always live at one of three boundaries. Check them in this order, because each one rules out the next:</p>
+
+<ul>
+  <li><strong>Data in.</strong> Open the network tab. Did the request fire? Did it carry the right params and auth? Did the response actually contain the shape the code expects? A surprising share of AI code bugs end here &mdash; the model guessed a field name or a nesting level.</li>
+  <li><strong>State.</strong> If the data arrived correct, inspect what the app stored. Wrong key, stale cache, a value overwritten by a second render, an optimistic update never reconciled.</li>
+  <li><strong>Render.</strong> If state is correct and the screen is still wrong, the bug is in the component: a bad conditional, a missing loading branch, a key collision in a list.</li>
+</ul>
+
+<p>Two or three checks at the boundaries beat two hundred lines of reading, and they tell you which file to open.</p>
+
+<h3>3. Interrogate the block, don't admire it</h3>
+
+<p>Once you have the suspect function, ask it three questions instead of reading it linearly:</p>
+
+<ol>
+  <li><strong>What contract does it assume?</strong> Which API shape, type, env var or prop does it take on faith? Log or type-check the actual value against the assumption.</li>
+  <li><strong>What state does it mutate?</strong> List everything it writes &mdash; store, cache, database, localStorage, the DOM. Mutations are where side effects hide.</li>
+  <li><strong>What does it do on failure?</strong> Find the <code>catch</code>. An empty catch block, a swallowed promise rejection, or a <code>return null</code> on error turns a loud bug into a silent one, and silent bugs are what reach clients.</li>
+</ol>
+
+<p>These three questions find a large share of the <a href="/blog/ai-generated-code-bugs">bug classes specific to AI-generated code</a>, because they target exactly what a model cannot know: your real data, your real state, and what you want to happen when things go wrong.</p>
+
+<h3>4. Give the AI evidence, not adjectives</h3>
+
+<p>"It doesn't work" or "still broken" sends the model guessing, and it will usually guess a rewrite &mdash; which replaces one unknown block with a different unknown block. Paste the actual error, the stack trace, the failing request and response, and the steps. Then constrain the fix: name the file, say what behaviour must stay the same, and ask for the minimal change rather than a refactor.</p>
+
+<p>Equally important: when a model's second attempt is also wrong, stop prompting and read the code yourself. Repeated failed attempts in one session tend to compound, each one adding defensive code around a misdiagnosis.</p>
+
+<h3>5. Pin the behaviour with a test before you move on</h3>
+
+<p>A bug you fixed in AI-generated code is a bug the next generation can reintroduce, because the next prompt doesn't know why the code looks like that. The fix is only finished when the behaviour is pinned &mdash; a unit test on the function, or an end-to-end test on the user path. <a href="/autosim">AutoSim</a> covers the second case: E2E flows that keep running as the generated UI underneath them changes, so a regression surfaces in CI rather than in a client's inbox. The broader approach is in our guide to <a href="/blog/testing-ai-generated-code">testing AI-generated code</a>.</p>
+
+<h2>What should you check first in AI-generated code?</h2>
+
+<p>When the boundary check is ambiguous, these failure classes are worth checking early because they recur across tools and languages:</p>
+
+<ul>
+  <li><strong>Invented API shapes.</strong> Fields, endpoints or method names that look right but don't exist in the version you installed. Check against the real docs, not the model's memory.</li>
+  <li><strong>Happy-path-only flows.</strong> No empty state, no loading state, no error state. The feature works in the demo and breaks on the first slow network.</li>
+  <li><strong>Swallowed errors.</strong> <code>try/catch</code> blocks that log nothing, so the failure shows up three screens later as blank data.</li>
+  <li><strong>Missing authorisation on new endpoints.</strong> A generated route that validates the request body but never checks who is making the request.</li>
+  <li><strong>Duplicated logic.</strong> The same rule implemented twice in different files because each was generated in a separate prompt; you fix one and the bug persists through the other.</li>
+</ul>
+
+<h2>How do you stop needing to debug the same thing twice?</h2>
+
+<p>Debugging is the expensive end of QA &mdash; you only get there once something has already shipped wrong. The cheaper version is a verification step that runs before release: a checklist on the critical paths, test coverage on anything money or auth touches, and automated runs of the flows real users take. That system is what our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> lays out, and <a href="/sims">Sims</a> is the part that exercises your app as different user personas before a client does it for you.</p>
+
+<p>Ship fast, verify faster. <a href="/onboarding">Try Klavity free</a> and catch the bug in your AI-generated code before your client finds it.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Capture the reproduction before you edit anything</li><li>Narrow to a boundary - data, state, render - not a line</li><li>Ask each block: what contract, what mutations, what on failure</li><li>Pin every fix with a test before the next prompt</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How do you debug AI-generated code you didn't write?</summary><p>Work backwards from the symptom instead of reading the code. Capture a reproduction with the console error and failing network request, narrow the failure to one boundary (data in, state, or render), then open only the file that boundary points to and check what contract it assumes, what state it mutates, and what it does on failure.</p></details><details><summary>Why is AI-generated code harder to debug?</summary><p>Because you have no mental model of it. When you write code yourself, you remember the shortcuts and skipped edge cases, which is what makes a bug easy to locate. AI-generated code reads plausibly everywhere, so every line looks equally reasonable and intuition gives you nothing to go on.</p></details><details><summary>Should I ask the AI to fix its own bug?</summary><p>Yes, but only with evidence. Paste the actual error, stack trace, failing request and reproduction steps, name the file, and ask for the minimal change. Vague prompts like 'still broken' push the model into rewriting working code. If a second attempt is also wrong, read the code yourself rather than prompting again.</p></details><details><summary>What bugs are most common in AI-generated code?</summary><p>Invented API shapes that don't exist in your installed version, happy-path-only flows with no loading or error states, swallowed errors in empty catch blocks, missing authorisation checks on new endpoints, and the same business rule implemented twice in files generated by separate prompts.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
