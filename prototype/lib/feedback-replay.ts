@@ -151,6 +151,8 @@ export interface SaveResult { saved: boolean; nEvents: number; trimmed: boolean;
 export async function saveFeedbackReplay(
   projectId: string, feedbackId: string, events: ReplayEvent[], capBytes = DEFAULT_REPLAY_CAP_BYTES,
   store: ReplayBlobStore = s3ReplayStore,
+  /** An extra write committed ATOMICALLY with the replay row (one round trip) — e.g. recording the replay slot as 'ok' on an idempotent submission. */
+  alsoInBatch?: { sql: string; args: any[] },
 ): Promise<SaveResult> {
   const cap = capReplayEvents(events, capBytes)
   if (!cap.events.length) return { saved: false, nEvents: 0, trimmed: false, bytes: 0 }
@@ -162,12 +164,14 @@ export async function saveFeedbackReplay(
     try { s3key = await store.upload(Buffer.from(cap.encoded, "base64")) }
     catch (e: any) { s3key = null; console.warn("[feedback-replay] S3 upload failed (kept DB blob):", e?.message || e) }
   }
-  await db!.execute({
+  const insert = {
     sql: `INSERT INTO feedback_replays (id, feedback_id, project_id, events_gz, n_events, bytes, trimmed, s3_key, created_at)
           VALUES (?,?,?,?,?,?,?,?,?)`,
     args: ["frep_" + crypto.randomUUID(), feedbackId, projectId, cap.encoded,
            cap.events.length, cap.encoded.length, cap.trimmed ? 1 : 0, s3key, Date.now()],
-  })
+  }
+  if (alsoInBatch) await db!.batch([insert, alsoInBatch], "write")
+  else await db!.execute(insert)
   return { saved: true, nEvents: cap.events.length, trimmed: cap.trimmed, bytes: cap.encoded.length }
 }
 

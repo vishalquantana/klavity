@@ -312,6 +312,21 @@ test("#541 manual create with a valid assignee succeeds (201)", async () => {
   expect(d.ok).toBe(true)
 })
 
+// KD-228: the assignee picked in the New ticket dialog must be stored on the ticket, so the ticket detail
+// page shows it (it used to open as Unassigned while the assignee was still emailed).
+test("KD-228 manual create stores the chosen assignee on the ticket", async () => {
+  const r = await req("POST", `/api/projects/${PROJ}/tickets`, {
+    title: "Assignee sticks",
+    priority: "medium",
+    assignee: MEMBER,
+  })
+  expect(r.status).toBe(201)
+  const { ticketId } = await r.json()
+  const row = (await raw.execute({ sql: "SELECT assignee, status FROM feedback WHERE id=?", args: [ticketId] })).rows[0] as any
+  expect(row.assignee).toBe(MEMBER)
+  expect(row.status).toBe("open")
+})
+
 // #543 completeness (Codex review): a MANUAL ticket keeps its subject in the `title` column and its body
 // in `observation`. Both DEDUP (intake collapse) and KNOWN-ISSUE (pre-submit ack) must match on that real
 // TITLE. To prove the fix and defeat any observation-fallback, the ticket's body is DELIBERATELY unrelated

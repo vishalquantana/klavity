@@ -100,7 +100,7 @@ test("KLA-197: icon copy variant shows a toast", () => {
 // ── KLAVITYKLA-518 · thumb-first ticket screenshot ─────────────────────────────
 test("KLA-518: ticket detail requests ?thumb=1 first, then upgrades to full", () => {
   const i = HTML.indexOf("async function loadTktShot(")
-  const region = HTML.slice(i, i + 2800)
+  const region = HTML.slice(i, i + 3600)   // KD-195: loadTktShot grew (reuse flag + both lookups up front); the window is just a search span
   expect(region).toContain('?thumb=1')
   // lazily upgrades to the full-resolution image afterwards
   expect(region).toContain("Lazily upgrade to the full image")

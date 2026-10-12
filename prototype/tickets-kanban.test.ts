@@ -13,30 +13,37 @@ test("Tickets view defaults to the board and reuses the shared filter bar", () =
 })
 
 test("Tickets kanban splits Closed into separate Done and Dismissed columns (KLA-206)", () => {
-  expect(html).toContain('{ key: "new",')
-  expect(html).toContain('label: "New"')
-  expect(html).toContain('{ key: "open",')
-  expect(html).toContain('label: "Open"')
-  expect(html).toContain('{ key: "in_progress",')
-  expect(html).toContain('label: "In Progress"')
-  // Done and Dismissed are now distinct columns, each mapping a single status,
-  // so a fixed bug and dismissed noise are visually separate and drag can produce either.
-  expect(html).toContain('{ key: "done",')
-  expect(html).toContain('label: "Done"')
-  expect(html).toContain('statuses: ["done"]')
-  expect(html).toContain('{ key: "dismissed",')
-  expect(html).toContain('label: "Dismissed"')
-  expect(html).toContain('statuses: ["dismissed"]')
+  // KD-208: the columns are no longer literal objects — they are derived from STATUS_ORDER, one column
+  // per status, so the board, the dropdown and the filter strings cannot drift apart. The property this
+  // test guards is unchanged: done and dismissed are SEPARATE single-status columns, not one "closed".
+  expect(html).toContain('const KANBAN_COLS = STATUS_ORDER.map(s => ({ key: s, status: s, label: STATUS_LABELS[s], statuses: [s] }))')
+  const order = html.match(/const STATUS_ORDER = \[([^\]]*)\]/)
+  expect(order).not.toBeNull()
+  for (const s of ["open", "new", "in_progress", "done", "dismissed"]) expect(order![1]).toContain(`"${s}"`)
   // The collapsed "closed" column is gone.
   expect(html).not.toContain('{ key: "closed",')
-  expect(html).not.toContain('label: "Closed",         statuses: ["done", "dismissed"]')
   expect(html).toContain('kanbanKeyForStatus(t.status)')
+})
+
+test("KD-208: board order is the delivery flow, and Todo is the display name for `new`", () => {
+  const order = html.match(/const STATUS_ORDER = \[([^\]]*)\]/)![1]
+  const seq = order.split(",").map(x => x.trim().replace(/"/g, ""))
+  expect(seq).toEqual(["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"])
+  // `new` keeps its stored value — only the LABEL changes, so no migration and no API break.
+  expect(html).toContain('new: "TO DO"')
+  for (const s of ["blocked", "ready_for_deployment", "deployed"]) {
+    expect(html).toContain(`.prop-dot.ds-${s} {`)   // ticket view dot
+    expect(html).toContain(`.kb-dot-${s} {`)        // board column dot
+    expect(html).toContain(`.tkt-pill.p-${s} {`)    // status pill
+  }
 })
 
 test("kanbanKeyForStatus routes done and dismissed to distinct keys (KLA-206)", () => {
   // done maps to the "done" column, dismissed to the "dismissed" column — no shared "closed" key.
-  expect(html).toContain('if (status === "done") return "done"')
-  expect(html).toContain('if (status === "dismissed") return "dismissed"')
+  expect(html).toContain('return STATUS_ORDER.includes(status) ? status : "open"')
+  const order = html.match(/const STATUS_ORDER = \[([^\]]*)\]/)![1]
+  expect(order).toContain('"done"')
+  expect(order).toContain('"dismissed"')
   expect(html).not.toContain('return "closed"')
   // #636: board is a horizontal-scroll flex row (columns keep a fixed width instead of squishing),
   // and both status dots are styled.
@@ -52,14 +59,15 @@ test("kanbanKeyForStatus routes done and dismissed to distinct keys (KLA-206)", 
 
 test("KD-165: QA Review is a first-class status alongside the other 5", () => {
   // Board column, between In Progress and Done.
-  expect(html).toContain('{ key: "qa_review",   status: "qa_review",   label: "QA Review",   statuses: ["qa_review"] }')
-  expect(html).toContain('if (status === "qa_review") return "qa_review"')
+  // KD-208: columns and the status→column mapping are derived, so assert membership not literals.
+  const order = html.match(/const STATUS_ORDER = \[([^\]]*)\]/)![1]
+  expect(order).toContain('"qa_review"')
   expect(html).toContain('qa_review: "QA Review"')
-  expect(html).toContain('.kb-dot-qa_review{')
+  expect(html).toContain('.kb-dot-qa_review {')
   // Fetched by default alongside the others — otherwise a QA-Review ticket would never load onto the board.
-  expect(html).toContain('"new,open,in_progress,qa_review,done,dismissed"')
+  expect(html).toContain('const ALL_STATUSES = STATUS_ORDER.join(",")')
   // Reachable from the ticket-detail status control, the board filter, and bulk status-change.
-  expect(html).toContain('const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]')
+  expect(html).toContain('const statuses = STATUS_ORDER.slice()')
   expect(html).toContain('<option value="qa_review">QA Review</option>')
 })
 
@@ -76,8 +84,11 @@ test("KD-165: kanban columns are Jira-style drag-resizable, independently, per c
 })
 
 test("Ticket detail status control exposes the full state machine incl. New + Dismissed (KLA-206)", () => {
-  // Un-dismissing / re-triaging back to New or Open is one click from detail. KD-165: now also QA Review.
-  expect(html).toContain('const statuses = ["new", "open", "in_progress", "qa_review", "done", "dismissed"]')
+  // Un-dismissing / re-triaging back to Todo or Open is one click from detail. KD-208: the control now
+  // lists STATUS_ORDER, so every status including new + dismissed is reachable.
+  expect(html).toContain('const statuses = STATUS_ORDER.slice()')
+  const order = html.match(/const STATUS_ORDER = \[([^\]]*)\]/)![1]
+  for (const s of ["new", "dismissed", "qa_review"]) expect(order).toContain(`"${s}"`)
 })
 
 test("Opening single-ticket detail fetches fresh state from GET /api/feedback/:id (KLA-206)", () => {
@@ -98,7 +109,9 @@ test("Ticket detail priority editor persists via PATCH and is timeline-tracked (
 })
 
 test("Tickets kanban fetch includes all board statuses by default and supports Closed filter", () => {
-  expect(html).toContain('return view === "board" ? "new,open,in_progress,qa_review,done,dismissed" : ""')
+  // KD-208: the literal list became ALL_STATUSES, derived from STATUS_ORDER.
+  expect(html).toContain('return view === "board" ? ALL_STATUSES : ""')
+  expect(html).toContain('const ALL_STATUSES = STATUS_ORDER.join(",")')
   expect(html).toContain('if (_tktFilters.status === "closed") return "done,dismissed"')
   expect(html).toContain('<option value="closed">Closed</option>')
 })
@@ -221,4 +234,25 @@ test("#705: inline description editor auto-grows with the same typography (no fi
   expect(html).toContain('ta.addEventListener("blur", () => { if (!done) commit() })')
   expect(html).toContain('ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)')
   expect(html).toContain('if (ev.key === "Escape")')
+})
+
+test("KD-224: every board card shows its priority right beside the source chip", () => {
+  const src = html.replace(/\r\n/g, "\n")   // CRLF checkouts (Windows) must find the same function end
+  const start = src.indexOf("function kbCardMetaHtml(t)")
+  const fnSrc = src.slice(start, src.indexOf("\n    }\n", start) + 6)
+  const kbCardMetaHtml = new Function("esc", "srcChipHtml", "recurBadgeHtml", `${fnSrc}; return kbCardMetaHtml`)(
+    (s: unknown) => String(s),
+    () => '<span class="src-chip src-human">Widget</span>',
+    () => "",
+  )
+  // A set priority renders as its chip, immediately after the source chip.
+  const high = kbCardMetaHtml({ priority: "high", labels: [] })
+  expect(high).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-high"')
+  expect(high).toContain(">high</span>")
+  // An unset priority still shows a chip, so no card is left without one.
+  const none = kbCardMetaHtml({ priority: null, labels: [] })
+  expect(none).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-none"')
+  expect(none).toContain(">No priority</span>")
+  // Urgent has its own colour.
+  expect(src).toContain(".chip.sev-urgent {")
 })

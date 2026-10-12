@@ -13,11 +13,11 @@ function extractFn(src: string, sig: string): string {
   throw new Error("unbalanced")
 }
 
-test("buildTktDetail checks both screenshotId and attachments for screenshot display", () => {
-  const fn = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
-  expect(fn).toContain("const _firstImgAtt = !t.screenshotId && Array.isArray(t.attachments)")
-  expect(fn).toContain("const _hasShot = !!t.screenshotId || !!_firstImgAtt")
-  expect(fn).toContain('data-shot-url="${esc(_firstImgAtt.url)}"')
+test("buildAttachmentsHtml checks both screenshotId and attachments for screenshot display", () => {
+  const fn = extractFn(HTML, "function buildAttachmentsHtml(")
+  expect(fn).toContain("if (t.screenshotId && !atts.some")
+  expect(fn).toContain('filename: "Screenshot"')
+  expect(fn).toContain('screenshotId: t.screenshotId')
 })
 
 test("buildEvidenceStrip includes attached image evidence alongside or in place of primary screenshot", () => {
@@ -49,3 +49,18 @@ test("server /api/t/:ref resolves screenshotUrl from image attachments when scre
   expect(SERVER_TS).toContain("const imgAtt = fbRow.attachments.find")
   expect(SERVER_TS).toContain("presignGet(String(imgAtt.key), 3600)")
 })
+
+test("image attachments in buildEvidenceStrip receive IMG badge without REPLAY or play button", () => {
+  const fn = extractFn(HTML, "function buildEvidenceStrip(")
+  expect(fn).toContain('el.appendChild(_evBadge("IMG", false))')
+  expect(fn).toContain('it.kind === "replay"')
+  expect(fn).toContain('el.appendChild(_evBadge("REPLAY", true))')
+})
+
+test("image attachments in buildAttachmentsHtml do not render play overlay", () => {
+  const fn = extractFn(HTML, "function buildAttachmentsHtml(")
+  expect(fn).toContain('kind === "image"')
+  expect(fn).toContain('<img src="')
+  expect(fn).toContain('<span class="tkt-attach-play">')
+})
+

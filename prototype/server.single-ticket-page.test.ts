@@ -106,19 +106,17 @@ function get(path: string, sid?: string, redirect: RequestRedirect = "manual") {
   return fetch(`${BASE}${path}`, { method: "GET", headers, redirect })
 }
 
-test("GET /t/:ref serves the standalone page (not the dashboard bundle) for a member", async () => {
+test("GET /t/:ref serves the dashboard with the ticket booted full-page for a member (KD-229)", async () => {
   const r = await get(`/t/${FID}`, SID)
   expect(r.status).toBe(200)
   expect(r.headers.get("content-type") || "").toContain("text/html")
+  expect(r.headers.get("cache-control") || "").toContain("no-store")
   const html = await r.text()
-  // It is the lightweight ticket page, not the full dashboard SPA.
-  expect(html).toContain("standalone single-ticket page")
-  // The resolved full feedback id + project id are injected as JS string literals.
-  expect(html).toContain(`"${FID}"`)
-  expect(html).toContain(`"${PROJ}"`)
-  // No leftover placeholders.
-  expect(html).not.toContain("__TICKET_ID__")
-  expect(html).not.toContain("__PROJECT_ID__")
+  // KD-229: a member gets the dashboard shell at this URL (so a reload of the in-dashboard full ticket
+  // page stays in the dashboard), not the standalone page.
+  expect(html).not.toContain("standalone single-ticket page")
+  // The resolved full feedback id + project id ride in the boot meta the dashboard reads.
+  expect(html).toContain(`<meta name="klav-boot-ticket" data-id="${FID}" data-project="${PROJ}">`)
 })
 
 test("GET /t/:ref also accepts the short quotable ref and resolves the full id", async () => {

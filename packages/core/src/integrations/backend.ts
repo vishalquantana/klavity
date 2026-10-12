@@ -121,6 +121,26 @@ export function buildFeedbackFormData(payload: FeedbackFormPayload): FormData {
   if (hasAnnotations(payload.annotations)) form.set('annotations_json', JSON.stringify(payload.annotations))
   return form
 }
+
+/**
+ * Latency: the rolling session-replay buffer is the largest text part of a report (up to ~6MB of JSON) and was sent
+ * uncompressed. Swap the `replay_events` JSON field for a gzip-compressed file part (`replay_events_gz`) before the
+ * upload — rrweb JSON is highly repetitive and typically shrinks to ~10–20%. Best-effort and backward compatible:
+ * no-op when there is no replay field, when CompressionStream is unavailable (old browsers / non-browser callers), when
+ * compression fails or does not actually make it smaller — the plain `replay_events` field is then left untouched,
+ * which the server still accepts. Async because CompressionStream is stream-based, so callers run it just before sending.
+ */
+export async function gzipReplayField(form: FormData): Promise<void> {
+  try {
+    const raw = form.get('replay_events')
+    if (typeof raw !== 'string' || !raw) return
+    if (typeof CompressionStream !== 'function') return
+    const gz = await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'))).blob()
+    if (!gz.size || gz.size >= raw.length) return // not smaller → keep the plain field
+    form.delete('replay_events')
+    form.set('replay_events_gz', new Blob([gz], { type: 'application/gzip' }), 'replay.json.gz')
+  } catch { /* best-effort: leave the plain replay_events field in place */ }
+}
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function submitReport(config: IntegrationConfig): Promise<SubmitResult> {
@@ -144,6 +164,7 @@ export async function submitReport(config: IntegrationConfig): Promise<SubmitRes
     recordings: config.recordings,
     annotations: config.annotations,
   })
+  await gzipReplayField(form) // latency: send the (large) replay buffer gzipped
   // KLA-729: the required-email gate value → reporter_email (an "email"-gated project 400s without it).
   if (config.reporterEmail) form.set('reporter_email', config.reporterEmail)
 
