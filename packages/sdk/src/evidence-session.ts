@@ -26,6 +26,7 @@ export interface EvidenceShot {
   // annotationsByIndex) so annotations survive minimize + navigation. Serializable (plain objects/arrays,
   // no DOM nodes or functions) → structured-clone / JSON safe for IndexedDB. Absent = nothing drawn.
   annotations?: unknown
+  dataUrl?: string
 }
 
 /** A bug report in progress. `id` is deterministic = `${projectId}|${origin}` (one per project+origin). */
@@ -40,6 +41,7 @@ export interface EvidenceSession {
   reportType: string
   env?: string
   shots: EvidenceShot[]
+  isOpen?: boolean
 }
 
 /** addShot outcome — carries a reason when the size/count cap rejected the shot so the UI can nudge. */
@@ -191,6 +193,7 @@ export async function startOrContinue(projectId: string, origin: string = curren
     desc: '',
     reportType: 'bug',
     shots: [],
+    isOpen: true,
   }
   await putSession(fresh)
   return fresh
@@ -214,10 +217,10 @@ export async function addShot(sessionId: string, shot: EvidenceShot): Promise<Ad
   return { ok: true, session: cur }
 }
 
-/** Patch the report's text fields (title/desc/type/env). Returns the updated session, or null if gone. */
+/** Patch the report's text fields (title/desc/type/env/isOpen). Returns the updated session, or null if gone. */
 export async function updateFields(
   sessionId: string,
-  fields: { title?: string; desc?: string; reportType?: string; env?: string },
+  fields: { title?: string; desc?: string; reportType?: string; env?: string; isOpen?: boolean },
 ): Promise<EvidenceSession | null> {
   const cur = await getById(sessionId)
   if (!cur) return null
@@ -225,6 +228,7 @@ export async function updateFields(
   if (fields.desc !== undefined) cur.desc = fields.desc
   if (fields.reportType !== undefined) cur.reportType = fields.reportType
   if (fields.env !== undefined) cur.env = fields.env
+  if (fields.isOpen !== undefined) cur.isOpen = fields.isOpen
   cur.updatedAt = Date.now()
   await putSession(cur)
   return cur

@@ -5087,7 +5087,7 @@ function dashCachePrune(m: Map<string, any>): void { if (m.size > 500) m.clear()
 //   NOT NULL); activity → evt_proj_idx(project_id,…). Resilient by design: a single slow/failing
 //   count resolves to `null` (rendered as "—" client-side) instead of rejecting and taking the
 //   whole /api/dashboard payload down with it — a decorative number must never break the page.
-export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null }> {
+export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null; openTickets: number | null }> {
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashCountsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
@@ -5099,16 +5099,19 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
+    // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
+    // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress')"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
-  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
+  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]), openTickets: num(settled[3]) }
   // Only cache a fully-successful read; a partial/failed count (any null) is left uncached so it
   // retries next poll rather than pinning a "—" for the whole TTL. AND only if we can prove no
   // invalidation touched this project since we started (Finding 3/2): its effective last-invalidation
   // sequence must be no newer than our start snapshot. An evicted/missing project defaults to the floor,
   // which is >= any pre-prune snapshot, so such reads decline to cache — never pinning stale data.
-  if (result.feedback !== null && result.tickets !== null && result.activity !== null
+  if (result.feedback !== null && result.tickets !== null && result.activity !== null && result.openTickets !== null
       && dashGenOf(projectId) <= seqAtStart) {
     dashCachePrune(dashCountsCache)
     dashCountsCache.set(projectId, { at: Date.now(), value: result })
@@ -7318,6 +7321,33 @@ export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedba
     args: [exceptFeedbackId, "%\"key\":" + JSON.stringify(key) + "%"],
   })
   return r.rows.length > 0
+}
+
+// KD-214: detach a ticket's own report screenshot (feedback.screenshot_id). Compare-and-swap on the screenshot id, so a stale
+// page can never clear a different screenshot. The screenshot's annotation markup belongs to it and goes too. The stored object
+// and the screenshots row are NOT touched here — the caller purges them only if nothing else references the image.
+export async function detachFeedbackScreenshot(feedbackId: string, projectId: string, screenshotId: string): Promise<boolean> {
+  if (!screenshotId) return false
+  const u = await db!.execute({
+    sql: "UPDATE feedback SET screenshot_id=NULL, annotations_json=NULL WHERE id=? AND project_id=? AND screenshot_id=?",
+    args: [feedbackId, projectId, screenshotId],
+  })
+  return Number(u.rowsAffected || 0) > 0
+}
+// KD-214: does anything OTHER than this ticket still use the screenshot? Merging copies the screenshot id onto the surviving
+// ticket / occurrence rows and attachment entries, so two tickets can point at one stored image. Any hit means "keep the file".
+export async function screenshotReferencedElsewhere(screenshotId: string, exceptFeedbackId: string): Promise<boolean> {
+  const checks: Array<{ sql: string; args: any[] }> = [
+    { sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND (screenshot_id=? OR attachments_json LIKE ?) LIMIT 1", args: [exceptFeedbackId, screenshotId, "%\"screenshotId\":" + JSON.stringify(screenshotId) + "%"] },
+    { sql: "SELECT 1 AS x FROM feedback_occurrences WHERE feedback_id<>? AND screenshot_id=? LIMIT 1", args: [exceptFeedbackId, screenshotId] },
+    { sql: "SELECT 1 AS x FROM sim_runs WHERE screenshot_id=? LIMIT 1", args: [screenshotId] },
+    { sql: "SELECT 1 AS x FROM activity_events WHERE screenshot_id=? AND (feedback_id IS NULL OR feedback_id<>?) LIMIT 1", args: [screenshotId, exceptFeedbackId] },
+  ]
+  for (const c of checks) {
+    const r = await db!.execute(c)
+    if (r.rows.length > 0) return true
+  }
+  return false
 }
 
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given

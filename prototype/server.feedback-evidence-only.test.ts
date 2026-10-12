@@ -161,3 +161,42 @@ test("a normal report WITH a description is unaffected (title is the typed text)
   const row = await rawClient.execute({ sql: "SELECT observation FROM feedback WHERE id=?", args: [j.id] })
   expect(String(row.rows[0].observation)).toBe("The submit button does nothing on click")
 })
+
+// KD-162: a multi-screenshot session with nothing typed sends its whole description as the "Pages captured" trail. That is not a
+// description: the clean fallback runs and the trail is kept underneath as technical detail.
+const TRAIL = "Pages captured:\n1. /checkout - https://klavity.in/checkout\n2. /projects/proj_d5b1302c-a336-49ce-a38d-933da10b860d/tickets - https://klavity.in/projects/proj_d5b1302c-a336-49ce-a38d-933da10b860d/tickets"
+test("KD-162: a trail-only description (multi-screenshot, nothing typed) gets the clean fallback with the trail underneath", async () => {
+  const fd = new FormData()
+  fd.set("description", TRAIL)
+  fd.set("page_url", "https://klavity.in/checkout")
+  fd.set("project_id", "p1")
+  fd.set("type", "bug")
+  fd.set("screenshots", new File([PNG_1x1], "a.png", { type: "image/png" }))
+  fd.set("screenshots", new File([PNG_1x1], "b.png", { type: "image/png" }))
+  fd.set("client_info", JSON.stringify({ browser: "Chrome", browserVersion: "130", os: "Windows", deviceType: "desktop" }))
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: BASE } })
+  expect(r.status).toBe(200)
+  const j = await r.json(); expect(j.saved).toBe(true)
+  const row = await rawClient.execute({ sql: "SELECT observation FROM feedback WHERE id=?", args: [j.id] })
+  const obs = String(row.rows[0].observation || "")
+  expect(obs.startsWith("Checkout page")).toBe(true)                       // the headline is the readable fallback, not the URL trail
+  expect(obs).toContain("Application path : /checkout")
+  expect(obs).toContain("Browser : Chrome 130 on Windows (desktop)")
+  expect(obs).toMatch(/Captured: /)
+  expect(obs.indexOf("Pages captured:")).toBeGreaterThan(obs.indexOf("Captured:"))   // the trail rides along underneath
+  expect(obs).toContain("2. /projects/proj_d5b1302c")
+})
+test("KD-162: typed text followed by a trail is stored exactly as sent", async () => {
+  const typed = "Checkout fails after I pick a card" + "\n\n" + TRAIL
+  const fd = new FormData()
+  fd.set("description", typed)
+  fd.set("page_url", "https://klavity.in/checkout")
+  fd.set("project_id", "p1")
+  fd.set("type", "bug")
+  fd.set("screenshots", new File([PNG_1x1], "a.png", { type: "image/png" }))
+  const r = await fetch(`${BASE}/api/feedback`, { method: "POST", body: fd, headers: { origin: BASE } })
+  expect(r.status).toBe(200)
+  const j = await r.json()
+  const row = await rawClient.execute({ sql: "SELECT observation FROM feedback WHERE id=?", args: [j.id] })
+  expect(String(row.rows[0].observation)).toBe(typed)
+})

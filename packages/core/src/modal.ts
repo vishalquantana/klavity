@@ -1,5 +1,5 @@
 import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
-import { Annotator } from './annotator'
+import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
 import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
@@ -360,6 +360,8 @@ export interface ModalCallbacks {
   // full current text (not a diff) so the host can just persist-overwrite. Best-effort, fire-and-forget —
   // never blocks typing or Submit. Absent → composer identical to today (no persistence, full back-compat).
   onDescriptionChange?: (text: string) => void
+  // Persist the typed title (if the title field is shown) into the active draft session.
+  onTitleChange?: (text: string) => void
   // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
   // AI" button appears under the description; clicking it hands the reporter's current text + the primary
   // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
@@ -369,7 +371,13 @@ export interface ModalCallbacks {
   // Widget-only — the extension omits it (no button), preserving parity with onClarityTip/onPickElement.
   onEnhance?: (
     text: string,
-    ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null },
+    ctx?: {
+      images?: number
+      shot?: string
+      annotations?: any
+      annotationTexts?: string[]
+      picked?: { selector: string; text: string } | null
+    },
   ) => Promise<EnhanceDraftLike | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
@@ -2640,7 +2648,7 @@ export function buildModal(
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
-  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0 || desc.value.trim().length > 0 || ((modal.querySelector('#klavity-title') as HTMLInputElement | null)?.value.trim().length ?? 0) > 0
   // KLA-773: closing with unsaved evidence (screenshot / recording / replay / files) used to discard it
   // silently — X, backdrop click and Esc all called close() unconditionally. Guard those three paths with a
   // lightweight in-modal confirm (never a blocking window.confirm() — that would freeze the host page). The
@@ -2706,10 +2714,40 @@ export function buildModal(
   if (callbacks.onDescriptionChange) {
     const onDescriptionChange = callbacks.onDescriptionChange
     let descPersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushDesc = () => {
+      if (descPersistTimer) { clearTimeout(descPersistTimer); descPersistTimer = null }
+      try { onDescriptionChange(desc.value) } catch { /* best-effort */ }
+    }
     desc.addEventListener('input', () => {
       if (descPersistTimer) clearTimeout(descPersistTimer)
-      descPersistTimer = setTimeout(() => { try { onDescriptionChange(desc.value) } catch { /* best-effort */ } }, 600)
+      descPersistTimer = setTimeout(flushDesc, 600)
     })
+    desc.addEventListener('blur', flushDesc)
+    desc.addEventListener('change', flushDesc)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushDesc)
+      window.addEventListener('pagehide', flushDesc)
+    }
+  }
+
+  const titleInp = modal.querySelector('#klavity-title') as HTMLInputElement | null
+  if (titleInp && callbacks.onTitleChange) {
+    const onTitleChange = callbacks.onTitleChange
+    let titlePersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushTitle = () => {
+      if (titlePersistTimer) { clearTimeout(titlePersistTimer); titlePersistTimer = null }
+      try { onTitleChange(titleInp.value) } catch { /* best-effort */ }
+    }
+    titleInp.addEventListener('input', () => {
+      if (titlePersistTimer) clearTimeout(titlePersistTimer)
+      titlePersistTimer = setTimeout(flushTitle, 600)
+    })
+    titleInp.addEventListener('blur', flushTitle)
+    titleInp.addEventListener('change', flushTitle)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushTitle)
+      window.addEventListener('pagehide', flushTitle)
+    }
   }
   // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
   // Shown for any well-formed address (see the markup note on why we never ask the server whether it
@@ -2876,6 +2914,26 @@ export function buildModal(
     let originalText: string | null = null
     // The primary screenshot for grounding: the active hero shot, else the first captured shot.
     const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
+    const getActiveAnnotatedShotSync = (): string | null => {
+      const base = primaryShot()
+      if (!base) return ''
+      const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+      const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+      if (!ann || !Array.isArray(ann.shapes) || !ann.shapes.length) return base
+
+      // If the hero stage currently has the canvas for this index, use it directly (already rendered):
+      const stage = shadowRoot.getElementById('klavity-hero-stage')
+      const heroCanvas = stage?.querySelector('canvas') as HTMLCanvasElement | null
+      if (heroCanvas && activeIndex === targetIdx && heroCanvas.width > 1 && heroCanvas.height > 1) {
+        try {
+          const url = heroCanvas.toDataURL('image/png')
+          if (url && url.length > 64) return url
+        } catch { /* fallback to offscreen renderer */ }
+      }
+
+      return null
+    }
+
     const runEnhance = async () => {
       if (busy) return
       const text = desc.value.trim()
@@ -2885,7 +2943,21 @@ export function buildModal(
       if (spinEl) spinEl.hidden = false
       try {
         const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
-        const draft = await onEnhance(text, { images: screenshots.length, shot: primaryShot(), picked })
+        const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+        const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+        const annotationTexts = extractAnnotationTexts(ann?.shapes)
+        const base = primaryShot()
+        let shot = getActiveAnnotatedShotSync()
+        if (shot === null) {
+          shot = await renderAnnotatedImage(base, ann.shapes, ann.w, ann.h)
+        }
+        const draft = await onEnhance(text, {
+          images: screenshots.length,
+          shot,
+          annotations: ann,
+          annotationTexts,
+          picked,
+        })
         if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
         if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
         desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place
@@ -3190,6 +3262,7 @@ export function buildModal(
         streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
         try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       engine.onInterim = (text) => {
@@ -3197,6 +3270,7 @@ export function buildModal(
         const sep = streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : ''
         desc.value = streamBase + (text ? sep + text : '')
         try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       // Non-alarming reconnect status while an engine auto-retries a transient drop. When it recovers ('idle')
@@ -3219,6 +3293,7 @@ export function buildModal(
           desc.value = streamBase
         }
         try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
@@ -3266,12 +3341,14 @@ export function buildModal(
         streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
         try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       s.onInterim = (text) => {
         lastInterim = text || ''
         desc.value = streamBase + sep() + text
         try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       s.onStatus = (type, message) => { if (type === 'idle') clearInfoStatus(); else setVoiceStatus('info', message) }
@@ -3288,10 +3365,12 @@ export function buildModal(
         }
         desc.value = streamBase
         try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }
       s.onUnavailable = () => {
         desc.value = streamBase // clear the interim preview before another engine takes over
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
         const batch = makeBatchServer()
         if (batch) { voice = batch; setVoiceStatus('info', 'Reconnecting dictation…'); void voice.start(); return }
