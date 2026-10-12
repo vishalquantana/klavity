@@ -21838,8 +21838,21 @@
         else if (no) { ev.stopPropagation(); attachCancelRemove(id, no.getAttribute("data-attach-remove-no")); attachRerender(id) }
         else if (yes) { ev.stopPropagation(); attachConfirmRemove(id, yes.getAttribute("data-attach-remove-yes"), _attachHooks) }
       })
-      if (!addBtn || !input) return
-      addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+      if (!input) return
+      var uploading = attachInFlight(id)
+      var t3AttachBtn = detailEl.querySelector(".t3-attach-btn")
+      if (t3AttachBtn) {
+        t3AttachBtn.disabled = uploading
+        if (uploading) t3AttachBtn.setAttribute("aria-busy", "true")
+        else t3AttachBtn.removeAttribute("aria-busy")
+        t3AttachBtn.onclick = function (ev) {
+          ev.preventDefault()
+          if (!attachInFlight(id)) input.click()
+        }
+      }
+      if (addBtn) {
+        addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+      }
       input.addEventListener("change", function () {
         var files = Array.prototype.slice.call(input.files || [])
         input.value = ""
@@ -22186,7 +22199,7 @@
         const _hostHref = _mHost ? (/^https?:\/\//.test(_mHost) ? _mHost : "https://" + _mHost) : ""
         const _descTools = `<div class="t3-desctools">
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles', { size: 13 })} Enhance with AI</button>
-        <!-- t3-attach-btn -->
+        <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" title="Attach files">${kicon('paperclip', { size: 13 })} Attach</button>
       </div>`
         // KD-158: existing attachments + "+ Add attachment" — a reusable fragment, same as _recHtml.
         const _attachHtml = buildAttachmentsHtml(t)
