@@ -20565,13 +20565,21 @@
         input.removeAttribute("aria-activedescendant")
       }
     }
+    // KD-179: where to land after switching project. Stay on the page (view) the user was on — Tickets, Reports, Recurring… —
+    // instead of falling back to Overview. Only the view name is kept: a ticket id / sub-path belongs to the OLD project.
+    function projSwitchUrl(id, hash) {
+      var views = ["overview", "tickets", "triage", "recurring", "sims", "autosims", "snap", "pagebugs", "guards", "team", "settings"]
+      var url = "/dashboard?project=" + encodeURIComponent(id)
+      var view = String(hash || "").replace(/^#/, "").split("/")[0].split("?")[0]
+      return views.indexOf(view) >= 0 ? url + "#" + view : url
+    }
     function projSwitchChoose(i) {
       const p = projSwitch.matches[i]
       if (!p) return
       const activeId = state && state.active ? state.active.id : null
       if (p.id === activeId) { projSwitchClose(); return }
       // Reuse the existing navigation to switch projects.
-      location.href = "/dashboard?project=" + encodeURIComponent(p.id)
+      location.href = projSwitchUrl(p.id, location.hash)   // KD-179: keep the current page
     }
     function projSwitchKeydown(e) {
       const n = projSwitch.matches.length
