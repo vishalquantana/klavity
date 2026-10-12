@@ -193,8 +193,13 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
 // promise unsettled forever — the evidence-resume loop (blobToDataUrl on a stored shot) then hung. Mirror
 // the KLA-767 "always terminate" rule: race the whole read against a hard timeout, wire onabort, and ignore
 // any late completion after settle (no double-resolve, no leaked timer). ALWAYS resolves or rejects.
-const BLOB_READ_TIMEOUT_MS = 30000
-function blobToDataUrl(blob: Blob): Promise<string> {
+const BLOB_READ_TIMEOUT_MS = 4000
+function blobToDataUrl(blob: Blob, fallbackDataUrl?: string): Promise<string> {
+  if (fallbackDataUrl) return Promise.resolve(fallbackDataUrl)
+  if (!blob || typeof FileReader === "undefined") {
+    if (fallbackDataUrl) return Promise.resolve(fallbackDataUrl)
+    return Promise.reject(new Error("invalid blob"))
+  }
   return new Promise((resolve, reject) => {
     const fr = new FileReader()
     let settled = false
@@ -202,7 +207,8 @@ function blobToDataUrl(blob: Blob): Promise<string> {
       if (settled) return
       settled = true
       try { fr.abort() } catch { /* onabort is a no-op once settled */ }
-      reject(new Error("blob read timed out"))
+      if (fallbackDataUrl) resolve(fallbackDataUrl)
+      else reject(new Error("blob read timed out"))
     }, BLOB_READ_TIMEOUT_MS)
     const settle = (fn: () => void) => {
       if (settled) return
@@ -211,10 +217,21 @@ function blobToDataUrl(blob: Blob): Promise<string> {
       fn()
     }
     fr.onload = () => settle(() => resolve(String(fr.result || "")))
-    fr.onerror = () => settle(() => reject(fr.error || new Error("blob read failed")))
-    fr.onabort = () => settle(() => reject(fr.error || new Error("blob read aborted")))
+    fr.onerror = () => settle(() => {
+      if (fallbackDataUrl) resolve(fallbackDataUrl)
+      else reject(fr.error || new Error("blob read failed"))
+    })
+    fr.onabort = () => settle(() => {
+      if (fallbackDataUrl) resolve(fallbackDataUrl)
+      else reject(fr.error || new Error("blob read aborted"))
+    })
     try { fr.readAsDataURL(blob) }
-    catch (e) { settle(() => reject(e instanceof Error ? e : new Error("blob read failed"))) }
+    catch (e) {
+      settle(() => {
+        if (fallbackDataUrl) resolve(fallbackDataUrl)
+        else reject(e instanceof Error ? e : new Error("blob read failed"))
+      })
+    }
   })
 }
 // Manual data-URL -> Blob (no fetch(), so a strict connect-src CSP can't block it).
@@ -237,11 +254,17 @@ function measureImage(dataUrl: string): Promise<{ w: number; h: number }> {
   return new Promise((resolve) => {
     try {
       const img = new Image()
-      const done = (w: number, h: number) => resolve({ w, h })
+      let settled = false
+      const done = (w: number, h: number) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve({ w, h })
+      }
+      const timer = setTimeout(() => done(img.naturalWidth || 0, img.naturalHeight || 0), 200)
       img.onload = () => done(img.naturalWidth || 0, img.naturalHeight || 0)
       img.onerror = () => done(0, 0)
       img.src = dataUrl
-      setTimeout(() => done(img.naturalWidth || 0, img.naturalHeight || 0), 3000)
     } catch { resolve({ w: 0, h: 0 }) }
   })
 }
@@ -388,6 +411,50 @@ function prefillReportDescription(ctrl: ModalController, description: string): v
   // height calculation here is removed so there is exactly one autosize, not two.
   desc.dispatchEvent(new Event("input", { bubbles: true }))
   try { desc.focus({ preventScroll: true }) } catch { desc.focus() }
+}
+
+function prefillReportTitle(ctrl: ModalController, title: string): void {
+  const inp = ctrl.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
+  if (!inp) return
+  inp.value = title
+  inp.dispatchEvent(new Event("input", { bubbles: true }))
+}
+
+interface DraftState {
+  title?: string
+  desc?: string
+  isOpen?: boolean
+  updatedAt?: number
+}
+function draftStorageKey(projectId: string, origin: string): string {
+  return `klavity_draft_${projectId}_${origin}`
+}
+function saveDraft(projectId: string, origin: string, patch: Partial<DraftState>): void {
+  try {
+    const key = draftStorageKey(projectId, origin)
+    const existing: DraftState = loadDraft(projectId, origin) || {}
+    const updated: DraftState = {
+      ...existing,
+      ...patch,
+      updatedAt: Date.now(),
+    }
+    localStorage.setItem(key, JSON.stringify(updated))
+  } catch { /* best-effort / private mode */ }
+}
+function loadDraft(projectId: string, origin: string): DraftState | null {
+  try {
+    const key = draftStorageKey(projectId, origin)
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object") return parsed
+    return null
+  } catch { return null }
+}
+function clearDraft(projectId: string, origin: string): void {
+  try {
+    localStorage.removeItem(draftStorageKey(projectId, origin))
+  } catch { /* best-effort */ }
 }
 
 // Deferred openReport ref — populated inside mount() so window.Klavity.open() works post-mount.
@@ -928,6 +995,7 @@ async function mount() {
       const shot: EvidenceShot = {
         id: makeShotId(), pageUrl: location.href, pagePath: location.pathname, label: "",
         blob, bytes: blob.size, w: dims.w, h: dims.h, ts: Date.now(),
+        dataUrl,
       }
       const res = await addShot(sessionId, shot)
       evSession = res.session
@@ -945,7 +1013,15 @@ async function mount() {
   // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
   async function persistEvDesc(sessionId: string, text: string): Promise<void> {
     try {
+      saveDraft(cfg.projectId, evOrigin, { desc: text })
       const updated = await updateEvidenceFields(sessionId, { desc: text })
+      if (updated) evSession = updated
+    } catch { /* best-effort: a failed persist must never break typing */ }
+  }
+  async function persistEvTitle(sessionId: string, text: string): Promise<void> {
+    try {
+      saveDraft(cfg.projectId, evOrigin, { title: text })
+      const updated = await updateEvidenceFields(sessionId, { title: text })
       if (updated) evSession = updated
     } catch { /* best-effort: a failed persist must never break typing */ }
   }
@@ -1009,9 +1085,14 @@ async function mount() {
       "@media (prefers-reduced-motion:reduce){.kl-evdock,.kl-evpulse{animation:none}.kl-evbtn{transition:none}}"
     root.appendChild(s)
   }
+  function hasEvSessionContent(session: EvidenceSession | null): boolean {
+    if (!session) return false
+    return session.shots.length > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+  }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
     const m = evSession ? pageCount(evSession) : 0
+    if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
   function updateEvDock() {
@@ -1022,7 +1103,7 @@ async function mount() {
     try { (banner as (t: string) => void)(text) } catch { try { console.warn("[Klavity] " + text) } catch {} }
   }
   function showEvDock() {
-    if (!evSession || evSession.shots.length === 0) return
+    if (!evSession || !hasEvSessionContent(evSession)) return
     ensureEvDockStyle()
     reportDock.style.display = "none" // hide the launcher while the report-in-progress dock is up
     if (!evDockEl) {
@@ -1082,25 +1163,44 @@ async function mount() {
   }
   async function resumeEvidence() {
     // Refresh from storage (another tab/page may have added shots) then open the composer seeded.
-    try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep in-memory copy */ }
+    try {
+      const draft = loadDraft(cfg.projectId, evOrigin)
+      evSession = await getActiveSession(cfg.projectId, evOrigin)
+      if (evSession && draft) {
+        if (draft.desc !== undefined && (!evSession.desc || (draft.updatedAt ?? 0) >= (evSession.updatedAt ?? 0))) {
+          evSession.desc = draft.desc
+        }
+        if (draft.title !== undefined && (!evSession.title || (draft.updatedAt ?? 0) >= (evSession.updatedAt ?? 0))) {
+          evSession.title = draft.title
+        }
+      }
+    } catch { /* keep in-memory copy */ }
     if (!evSession) { hideEvDock(); return }
     if (evDockEl) evDockEl.style.display = "none"
     // KD-166: restore the typed description alongside the recovered screenshot(s) — previously only the
     // shots came back; the text was silently dropped even though it was the thing most recently persisted.
-    openReport("bug", { evidence: { session: evSession }, initialDescription: evSession.desc })
+    openReport("bug", {
+      evidence: { session: evSession },
+      initialDescription: evSession.desc,
+      initialTitle: evSession.title,
+    })
   }
   async function discardEvidence() {
     const s = evSession
     evSession = null
+    clearDraft(cfg.projectId, evOrigin)
     hideEvDock()
     if (s) { try { await clearEvidenceSession(s.id) } catch { /* best-effort */ } }
   }
   // Minimize the open composer to the dock WITHOUT losing evidence (called from the composer's onMinimize).
   function minimizeToDock() {
     evMinimizing = true
-    // KLA-772: capture the open composer's drawn overlays BEFORE close() (which detaches the modal + nulls the
-    // composer ref) and persist them into the session, so the shapes survive the dock + a page navigation.
-    if (evSession) persistComposerAnnotations(evSession.id)
+    if (evSession) {
+      evSession.isOpen = false
+      saveDraft(cfg.projectId, evOrigin, { isOpen: false })
+      void queueEvWrite(() => updateEvidenceFields(evSession!.id, { isOpen: false }))
+      persistComposerAnnotations(evSession.id)
+    }
     void queueEvWrite(async () => {
       try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep copy */ }
       showEvDock()
@@ -1109,20 +1209,27 @@ async function mount() {
   }
   // Start (or continue) an evidence session, then open the composer in session mode. Falls back to a
   // plain single-page report if IndexedDB is unavailable, so nothing breaks where storage is blocked.
-  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture }) {
+  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture }) {
     let session: EvidenceSession | null = null
-    try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
+    try {
+      session = await startOrContinue(cfg.projectId, evOrigin)
+      const draft = loadDraft(cfg.projectId, evOrigin)
+      if (draft && session) {
+        if (draft.desc && !session.desc) session.desc = draft.desc
+        if (draft.title && !session.title) session.title = draft.title
+      }
+    } catch { session = null }
     if (session) evSession = session
     // #637: an EXPLICIT Report re-trigger on an IN-PROGRESS draft must CAPTURE A NEW screenshot and APPEND it
     // at the END of the evidence strip — not silently reopen the same draft with no fresh snap (the standup
     // complaint). A draft is "in progress" when EITHER the composer is already open OR an evidence session
-    // already holds shots. We only do this for a plain Report click (no caller-supplied initialShot — a
+    // already holds shots or text. We only do this for a plain Report click (no caller-supplied initialShot — a
     // right-click region drag brings its own capture and owns its append). The FIRST open (brand-new, empty
     // session, composer closed) still single-captures via autoCaptureOnOpen, so we never double-capture on the
     // initial open — only this re-trigger adds an extra shot.
     const composerHost = composer?.shadowRoot.host as HTMLElement | null
     const composerLive = !!(composer && composerHost?.isConnected)
-    const hasDraft = composerLive || !!(session && session.shots.length > 0)
+    const hasDraft = composerLive || !!(session && hasEvSessionContent(session))
     if (hasDraft && !opts?.initialShot) {
       let fresh: { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean } | null = null
       try { fresh = withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })) } catch { fresh = null }
@@ -1136,11 +1243,24 @@ async function mount() {
         // Composer closed/minimized → reopen seeded with the existing shots, and this fresh capture appended last.
         // KD-166: an explicit caller-supplied initialDescription (e.g. the Sim-observation prefill) always
         // wins; otherwise restore whatever was last persisted to the session.
-        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined, initialDescription: opts?.initialDescription ?? session?.desc })
+        openReport("bug", {
+          ...opts,
+          initialShot: fresh.dataUrl,
+          initialShotQuality: fresh.quality,
+          initialShotSuggestSharp: fresh.suggestSharp,
+          evidence: session ? { session } : undefined,
+          initialDescription: opts?.initialDescription ?? session?.desc,
+          initialTitle: opts?.initialTitle ?? session?.title,
+        })
         return
       }
     }
-    openReport("bug", session ? { ...opts, evidence: { session }, initialDescription: opts?.initialDescription ?? session.desc } : opts)
+    openReport("bug", session ? {
+      ...opts,
+      evidence: { session },
+      initialDescription: opts?.initialDescription ?? session.desc,
+      initialTitle: opts?.initialTitle ?? session.title,
+    } : opts)
   }
 
   // Track deployed Sims so the context menu can show their icons without a fetch.
@@ -1203,7 +1323,13 @@ async function mount() {
   // green active-dot and issue-badge nodes are re-appended afterwards so they survive the repaint.
   function paintLauncher() {
     if (launcherMode === 'hidden') { reportDock.style.display = "none"; return }
-    reportDock.style.display = ""
+    const composerLive = !!(composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected)
+    const dockLive = !!(evDockEl && evDockEl.style.display !== "none")
+    if (evSession || composerLive || dockLive) {
+      reportDock.style.display = "none"
+    } else {
+      reportDock.style.display = ""
+    }
     // Effective mode: full/custom collapse to icon-only on mobile; icon stays icon.
     const collapse = (launcherMode === 'full' || launcherMode === 'custom') && mq.matches
     const effective = collapse ? 'icon' : launcherMode
@@ -1303,10 +1429,15 @@ async function mount() {
     reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
   }
 
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
+    if (ev) {
+      ev.isOpen = true
+      saveDraft(cfg.projectId, evOrigin, { isOpen: true, desc: ev.desc, title: ev.title })
+      void queueEvWrite(() => updateEvidenceFields(ev.id, { isOpen: true }))
+    }
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
@@ -1624,6 +1755,7 @@ async function mount() {
         // multi-page evidence session (KLA-412) now that the report is stored.
         const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
           try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          clearDraft(cfg.projectId, evOrigin)
           if (ev) {
             evMinimizing = false
             try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
@@ -1694,6 +1826,7 @@ async function mount() {
       onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
       // KD-166: same idea, for the typed description (see onDescriptionChange's doc comment in modal.ts).
       onDescriptionChange: ev ? (text: string) => { void queueEvWrite(() => persistEvDesc(ev.id, text)) } : undefined,
+      onTitleChange: ev ? (text: string) => { void queueEvWrite(() => persistEvTitle(ev.id, text)) } : undefined,
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
       // KLA-772: persist a shot's drawn overlay incrementally as the reporter draws/edits/undoes it, so the
@@ -1725,10 +1858,20 @@ async function mount() {
         // KLA-412: a plain X/Esc close (NOT a minimize) keeps any captured evidence — we show the dock so
         // it isn't lost — but reaps an EMPTY session so an unused open never lingers, restoring the launcher.
         if (ev && !evMinimizing) {
+          saveDraft(cfg.projectId, evOrigin, { isOpen: false })
           void queueEvWrite(async () => {
             const latest = await getActiveSession(cfg.projectId, evOrigin)
-            if (latest && latest.shots.length > 0) { evSession = latest; showEvDock() }
-            else { if (latest) await clearEvidenceSession(latest.id); evSession = null; hideEvDock() }
+            if (latest && hasEvSessionContent(latest)) {
+              latest.isOpen = false
+              await updateEvidenceFields(latest.id, { isOpen: false })
+              evSession = latest
+              showEvDock()
+            } else {
+              if (latest) await clearEvidenceSession(latest.id)
+              clearDraft(cfg.projectId, evOrigin)
+              evSession = null
+              hideEvDock()
+            }
           })
         }
         evMinimizing = false
@@ -1743,6 +1886,7 @@ async function mount() {
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
+    if (opts?.initialTitle) prefillReportTitle(ctrl, opts.initialTitle)
     if (ev) {
       // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
       // region-initial shot as a NEW capture — seed it visually AND persist it to the session.
@@ -1751,7 +1895,8 @@ async function mount() {
         for (const shot of ev.shots) {
           try {
             // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
-            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
+            const dataUrl = shot.dataUrl || await blobToDataUrl(shot.blob, shot.dataUrl)
+            ctrl.addScreenshot(dataUrl, undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
           } catch { failedRestores++ /* KLA-763: unreadable/corrupt persisted blob or read timeout */ }
         }
         // KLA-763 (codex round-2): don't SILENTLY drop persisted evidence on resume — a shot whose blob
@@ -2285,12 +2430,45 @@ async function mount() {
   // a second avatar stack and a second review control in the same corner, so it is intentionally gone.
   ;(window as any).KlavityWidget = { mount, identify, setMetadata }
 
-  // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation) by showing the dock
-  // instead of the plain launcher, so the user can keep capturing on THIS page. Best-effort + non-blocking.
+  if (typeof window !== "undefined") {
+    const flushCurrentComposerDraft = () => {
+      if (!composer || !(composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+      const descEl = composer.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
+      const titleEl = composer.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
+      saveDraft(cfg.projectId, evOrigin, {
+        desc: descEl?.value ?? evSession?.desc ?? "",
+        title: titleEl?.value ?? evSession?.title ?? "",
+        isOpen: true,
+      })
+    }
+    window.addEventListener("beforeunload", flushCurrentComposerDraft)
+    window.addEventListener("pagehide", flushCurrentComposerDraft)
+  }
+
+  // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation/reload)
+  // If the composer was open when refreshed, re-opens it; otherwise displays the in-progress dock.
   void (async () => {
     try {
-      const active = await getActiveSession(cfg.projectId, evOrigin)
-      if (active && active.shots.length > 0) { evSession = active; showEvDock() }
+      const draft = loadDraft(cfg.projectId, evOrigin)
+      let active = await getActiveSession(cfg.projectId, evOrigin)
+      if (!active && draft && (draft.desc || draft.title || draft.isOpen)) {
+        active = await startOrContinue(cfg.projectId, evOrigin)
+      }
+      if (active && draft) {
+        if (draft.desc !== undefined && (!active.desc || (draft.updatedAt ?? 0) >= (active.updatedAt ?? 0))) {
+          active.desc = draft.desc
+        }
+        if (draft.title !== undefined && (!active.title || (draft.updatedAt ?? 0) >= (active.updatedAt ?? 0))) {
+          active.title = draft.title
+        }
+        if (draft.isOpen !== undefined) {
+          active.isOpen = draft.isOpen
+        }
+      }
+      if (active && hasEvSessionContent(active)) {
+        evSession = active
+        showEvDock()
+      }
     } catch { /* IndexedDB unavailable — normal launcher stands */ }
   })()
 
