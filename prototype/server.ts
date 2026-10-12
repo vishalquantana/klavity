@@ -52,7 +52,7 @@ import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./li
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
 import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
-import { notifyReporterOnFix } from "./lib/fixed-notification"
+import { notifyReporterOnFix, shouldNotifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
@@ -13173,17 +13173,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         if (activityWrites.length) await Promise.all(activityWrites)
-        if (meta.status !== undefined && meta.status !== fbRow.status) {
-          const proj = fbRow.contactEmail ? await projectById(fbRow.projectId).catch(() => null) : null
-          void notifyReporterOnFix({
-            contactEmail: fbRow.contactEmail,
-            previousStatus: fbRow.status,
-            nextStatus: meta.status,
-            title: effectiveTicketTitle(fbRow),
-            projectName: proj?.name ?? "your project",
-            // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
-            ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
-          })
+        // KD-230: only a real "fixed" transition with a reporter email notifies anyone, and its project +
+        // permalink lookups run in the background — previously every status change awaited the permalink
+        // lookup (an extra DB round-trip) before responding, even when no email could ever be sent.
+        if (meta.status !== undefined && meta.status !== fbRow.status
+          && shouldNotifyReporterOnFix({ contactEmail: fbRow.contactEmail, previousStatus: fbRow.status, nextStatus: meta.status })) {
+          const nextStatus = meta.status
+          void (async () => {
+            const proj = await projectById(fbRow.projectId).catch(() => null)
+            await notifyReporterOnFix({
+              contactEmail: fbRow.contactEmail,
+              previousStatus: fbRow.status,
+              nextStatus,
+              title: effectiveTicketTitle(fbRow),
+              projectName: proj?.name ?? "your project",
+              // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
+              ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
+            })
+          })().catch((e: any) => console.warn("fix notification skipped:", e?.message || e))
         }
         // ── Triage-gated auto-copy (KLA-282) ─────────────────────────────────────────────────────
         // Fire auto-copy when a report is triage-ACCEPTED: status transitions to "open" from either
