@@ -60,6 +60,7 @@ import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getOb
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
+import { patchWebmDuration } from "../packages/sdk/src/webm-duration"
 import {
   claimSubmission, refreshClaim, releaseClaim, finishDedupedSubmission, saveEvidenceState, evidenceStateStatement, pruneSubmissionKeys, PROCESS_OWNER,
   parseSubmissionKey, parseRepairSlots, parseSlotMap, slotFor, deterministicId, missingSlots, type EvidenceState,
@@ -5932,7 +5933,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           catch (err) { return { ok: false, err } }
         }))
         const recUps: Array<Promise<AttUp> | null> = recPlan.map(({ rf, ri, slot }) => !want(slot) ? null : uploadLimit(async (): Promise<AttUp> => {
-          try { return { ok: true, up: await uploadAttachment(new Uint8Array(await rf.arrayBuffer()), rf.name || `recording-${ri}.webm`, rf.type || "video/webm", dk(slot)) } }
+          try {
+            const m = recMeta[ri] || {}
+            let bytes = new Uint8Array(await rf.arrayBuffer())
+            const durMs = Number(m.durationMs) || 0
+            if (durMs > 0 && (rf.type?.includes("webm") || rf.name?.endsWith(".webm"))) {
+              try { bytes = patchWebmDuration(bytes, durMs) } catch { /* best-effort duration patch */ }
+            }
+            return { ok: true, up: await uploadAttachment(bytes, rf.name || `recording-${ri}.webm`, rf.type || "video/webm", dk(slot)) }
+          }
           catch (err) { return { ok: false, err } }
         }))
         const [shotRes, thumbRes, attRes, recRes] = await Promise.all([Promise.all(shotUps), Promise.all(thumbUps), Promise.all(attUps), Promise.all(recUps)])

@@ -12832,31 +12832,42 @@
       align-items: center;
       justify-content: center;
       max-width: 100%;
-      max-height: 78vh;
-      overflow: hidden;
+      max-height: 80vh;
+      overflow-y: auto;
+      overflow-x: auto;
       border-radius: 12px;
       background: #050507;
-      border: 1px solid rgba(255, 255, 255, .1)
+      border: 1px solid rgba(255, 255, 255, .1);
+      scroll-behavior: smooth
+    }
+
+    .media-pv-media-holder:has(.zoomed),
+    .media-pv-media-holder.has-zoomed {
+      align-items: flex-start
     }
 
     .media-pv-imgwrap {
       position: relative;
       display: inline-block;
       max-width: 100%;
-      max-height: 78vh;
       line-height: 0;
-      transition: transform .2s
+      transition: transform .2s;
+      cursor: zoom-in
     }
 
     .media-pv-imgwrap.zoomed {
-      overflow: auto;
-      max-height: 78vh;
-      cursor: zoom-out
+      cursor: zoom-out;
+      width: 100%;
+      text-align: center
     }
 
     .media-pv-imgwrap.zoomed img {
-      transform: scale(1.75);
-      transform-origin: top left
+      max-height: none;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      object-fit: contain;
+      transform: none
     }
 
     .media-pv-imgwrap img,
@@ -21912,6 +21923,11 @@
       if (o.kind !== "video") {
         const imgWrap = document.createElement("div"); imgWrap.className = "media-pv-imgwrap"
         imgWrap.appendChild(media)
+        imgWrap.addEventListener("click", function(e) {
+          if (e.target.closest("button") || e.target.closest("a")) return
+          imgWrap.classList.toggle("zoomed")
+          holder.classList.toggle("has-zoomed", imgWrap.classList.contains("zoomed"))
+        })
         if (o.annotations) {
           const redact = typeof buildRedactionSvg === "function" ? buildRedactionSvg(o.annotations) : null
           if (redact) imgWrap.appendChild(redact)
@@ -21945,7 +21961,10 @@
         zoomBtn.innerHTML = `${kicon('search', { size: 13 })} Zoom`
         zoomBtn.addEventListener("click", () => {
           const wrap = box.querySelector(".media-pv-imgwrap")
-          if (wrap) wrap.classList.toggle("zoomed")
+          if (wrap) {
+            wrap.classList.toggle("zoomed")
+            holder.classList.toggle("has-zoomed", wrap.classList.contains("zoomed"))
+          }
         })
         tools.appendChild(zoomBtn)
       }

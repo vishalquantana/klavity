@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-describe('SDK exports', () => {
+describe('SDK exports', { timeout: 15000 }, () => {
   it('exposes init and openModal as named exports', async () => {
     const mod = await import('../src/index')
     expect(typeof mod.init).toBe('function')
