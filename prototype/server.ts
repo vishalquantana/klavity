@@ -3370,14 +3370,18 @@ function clientIp(req: Request, server?: { requestIP?: (r: Request) => { address
 // for rrweb and images + esm.sh for the index page's html-to-image module import), while still locking
 // frame-ancestors (clickjacking), object-src and base-uri,
 // and blocking third-party script origins. Tighten script-src to nonces in a later, browser-tested pass.
+// Stored files (screenshots, attachments, recordings, comment images / videos) are opened straight from object storage through short-lived
+// signed links, so the page must be allowed to load media from there: https: for real storage, plus the storage origin itself when it is
+// plain http (a local MinIO at http://localhost:9000). Without this, an uploaded image / video is blocked by the browser and will not open.
+const _S3_HTTP_ORIGIN = (() => { try { const u = new URL(String(process.env.S3_ENDPOINT || "")); return u.protocol === "http:" ? " " + u.origin : "" } catch { return "" } })()
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.clarity.ms https://*.clarity.ms",
   // Fonts are self-hosted (site/fonts/) — no third-party font origins needed.
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "img-src 'self' data: blob: https:",
-  "media-src 'self' blob: data:",
+  "img-src 'self' data: blob: https:" + _S3_HTTP_ORIGIN,
+  "media-src 'self' blob: data: https:" + _S3_HTTP_ORIGIN,
   "worker-src 'self' blob:",
   "connect-src 'self' https:",
   "frame-ancestors 'self'",

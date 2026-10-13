@@ -377,3 +377,15 @@ test("the ticket timeline returns comment attachments with signed links", async 
   expect(item.attachments.length).toBe(1)
   expect(String(item.attachments[0].url)).toContain("http")
 })
+
+// ── Stored images / videos must be allowed to load, or an uploaded attachment cannot be opened ──────────────────────────
+test("the page security policy lets stored media load: https: for images and videos, plus the (plain-http) storage origin itself", async () => {
+  const csp = String((await fetch(`${BASE}/login`)).headers.get("content-security-policy") || "")
+  const origin = "http://127.0.0.1:" + s3.port
+  const directive = (name: string) => csp.split(";").map(d => d.trim()).find(d => d.startsWith(name + " ")) || ""
+  expect(directive("img-src")).toContain("https:"); expect(directive("img-src")).toContain(origin)
+  expect(directive("media-src")).toContain("https:"); expect(directive("media-src")).toContain(origin)   // videos from storage were blocked before
+  expect(directive("media-src")).toContain("'self'"); expect(directive("media-src")).toContain("blob:")
+  expect(directive("default-src")).toBe("default-src 'self'")                                              // everything else stays locked down
+  expect(directive("object-src")).toBe("object-src 'none'")
+})
