@@ -58,3 +58,15 @@ test("posting: text-only stays JSON; with files it is multipart (body + files); 
   expect(HTML).toContain('reqInit = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body: text }) }')
   expect(HTML).toContain("attachments: c.attachments || [],")                         // the optimistic local copy keeps them
 })
+
+test("picked files show a preview card (thumbnail for images, first frame for videos) that can be enlarged, with a remove button; preview URLs are released", () => {
+  const paint = HTML.slice(HTML.indexOf("function paintChips()"), HTML.indexOf("function paintChips()") + 1300)
+  expect(paint).toContain('<img class="th" src="')
+  expect(paint).toContain('<video class="th" src="')
+  expect(paint).toContain('class="tkt-cmt-chip tkt-cmt-chip-p"')
+  expect(paint).toContain('data-pv="')
+  expect(paint).toContain('class="rm" data-rm="')
+  expect(HTML).toContain("URL.createObjectURL(f)")
+  expect(HTML).toContain("URL.revokeObjectURL(u)")                                     // freed when the file is removed / posted / cancelled
+  expect(HTML).toContain('openMediaPreview({ url: chipUrl(f), name: f.name, kind: /^video\\//i.test(f.type || "") ? "video" : "image" })')
+})

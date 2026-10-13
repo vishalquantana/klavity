@@ -10173,6 +10173,63 @@
       color: var(--rose)
     }
 
+    /* picked files: a small preview card each (thumbnail, name, size, remove) */
+    .tkt-cmt-chip.tkt-cmt-chip-p {
+      position: relative;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      width: 104px;
+      max-width: 104px;
+      padding: 4px;
+      border-radius: 10px
+    }
+
+    .tkt-cmt-chip-p .pv {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: zoom-in;
+      display: block;
+      line-height: 0
+    }
+
+    .tkt-cmt-chip-p .th {
+      width: 100%;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 6px;
+      display: block;
+      background: #000
+    }
+
+    .tkt-cmt-chip-p .nm {
+      font-size: 11px
+    }
+
+    .tkt-cmt-chip-p .sz {
+      font-size: 10px
+    }
+
+    .tkt-cmt-chip-p button.rm {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 18px;
+      height: 18px;
+      line-height: 16px;
+      padding: 0;
+      text-align: center;
+      color: #fff;
+      background: rgba(0, 0, 0, .6);
+      border-radius: 999px
+    }
+
+    .tkt-cmt-chip-p button.rm:hover {
+      color: #fff;
+      background: var(--rose)
+    }
+
     .tkt-cmt-atts {
       display: flex;
       flex-wrap: wrap;
@@ -23892,12 +23949,28 @@
       const fileInp = wrap.querySelector(".tkt-cmt-file")
       const chipsEl = wrap.querySelector(".tkt-cmt-chips")
       let pendingFiles = []
+      const _chipUrls = new Map()   // File -> blob: URL used for its preview; revoked once the file is removed or posted
+      function chipUrl(f) {
+        let u = _chipUrls.get(f)
+        if (u === undefined) { try { u = URL.createObjectURL(f) } catch (e) { u = "" } _chipUrls.set(f, u) }
+        return u
+      }
+      function pruneChipUrls() {
+        _chipUrls.forEach((u, f) => { if (pendingFiles.indexOf(f) < 0) { try { if (u) URL.revokeObjectURL(u) } catch (e) { } _chipUrls.delete(f) } })
+      }
       function paintChips() {
         if (!chipsEl) return
+        pruneChipUrls()
         chipsEl.classList.toggle("hide", !pendingFiles.length)
-        chipsEl.innerHTML = pendingFiles.map((f, i) =>
-          '<span class="tkt-cmt-chip"><span class="nm" title="' + esc(f.name) + '">' + esc(f.name) + '</span><span class="sz">' + esc(_attachFmtBytes(f.size)) + '</span>'
-          + '<button type="button" data-rm="' + i + '" aria-label="Remove ' + esc(f.name) + '">&times;</button></span>').join("")
+        chipsEl.innerHTML = pendingFiles.map((f, i) => {
+          const u = chipUrl(f), isVid = /^video\//i.test(f.type || "")
+          const th = !u ? "" : isVid
+            ? '<video class="th" src="' + esc(u) + '#t=0.1" muted preload="metadata" playsinline></video>'
+            : '<img class="th" src="' + esc(u) + '" alt="">'
+          return '<span class="tkt-cmt-chip tkt-cmt-chip-p"><button type="button" class="pv" data-pv="' + i + '" title="Preview ' + esc(f.name) + '" aria-label="Preview ' + esc(f.name) + '">' + th + '</button>'
+            + '<span class="nm" title="' + esc(f.name) + '">' + esc(f.name) + '</span><span class="sz">' + esc(_attachFmtBytes(f.size)) + '</span>'
+            + '<button type="button" class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(f.name) + '">&times;</button></span>'
+        }).join("")
       }
       function cmtMsg(text, bad) { if (msgEl) { msgEl.style.color = bad ? "var(--rose)" : "var(--paper-faint)"; msgEl.textContent = text || "" } }
       function addPending(list) {
@@ -23919,6 +23992,12 @@
         fileInp.addEventListener("change", () => { addPending(fileInp.files); fileInp.value = "" })
       }
       if (chipsEl) chipsEl.addEventListener("click", ev => {
+        const pv = ev.target && ev.target.closest ? ev.target.closest("[data-pv]") : null
+        if (pv) {   // enlarge the picked file before posting
+          const f = pendingFiles[Number(pv.getAttribute("data-pv"))]
+          if (f && chipUrl(f)) openMediaPreview({ url: chipUrl(f), name: f.name, kind: /^video\//i.test(f.type || "") ? "video" : "image" })
+          return
+        }
         const b = ev.target && ev.target.closest ? ev.target.closest("[data-rm]") : null
         if (!b) return
         pendingFiles.splice(Number(b.getAttribute("data-rm")), 1); paintChips(); cmtMsg("")
