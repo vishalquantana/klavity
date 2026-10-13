@@ -6965,15 +6965,19 @@
     .prop-dot.ds-blocked {
       background: #dc2626
     }
+
     .prop-dot.ds-ready_for_deployment {
       background: #7c3aed
     }
+
     .prop-dot.ds-deployed {
       background: #0d9488
     }
+
     .prop-dot.ds-qa_review {
       background: #0891b2
     }
+
     .prop-dot.ds-done {
       background: var(--green)
     }
@@ -8012,12 +8016,15 @@
     .kb-dot-blocked {
       background: #dc2626
     }
+
     .kb-dot-ready_for_deployment {
       background: #7c3aed
     }
+
     .kb-dot-deployed {
       background: #0d9488
     }
+
     .kb-dot-done {
       background: var(--green)
     }
@@ -8318,30 +8325,38 @@
       background: rgba(220, 38, 38, .15);
       color: #dc2626
     }
+
     .tkt-pill.p-blocked .pdot {
       background: #dc2626
     }
+
     .tkt-pill.p-ready_for_deployment {
       background: rgba(124, 58, 237, .15);
       color: #7c3aed
     }
+
     .tkt-pill.p-ready_for_deployment .pdot {
       background: #7c3aed
     }
+
     .tkt-pill.p-deployed {
       background: rgba(13, 148, 136, .15);
       color: #0d9488
     }
+
     .tkt-pill.p-deployed .pdot {
       background: #0d9488
     }
+
     .tkt-pill.p-qa_review {
       background: rgba(8, 145, 178, .15);
       color: #0891b2
     }
+
     .tkt-pill.p-qa_review .pdot {
       background: #0891b2
     }
+
     .tkt-pill.p-done {
       background: rgba(15, 157, 107, .15);
       color: var(--green)
@@ -12303,18 +12318,102 @@
 
     /* KD-100: attachments on the New ticket dialog — drop zone + preview grid */
     /* New ticket → Project: pill trigger + centred, rounded list (design: Downloads/image (15).png) */
-    .ntp { position: relative }
-    .ntp-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; background: var(--ink); border: 1px solid var(--line); border-radius: 999px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 11px 36px; cursor: pointer; outline: none }
-    .ntp-btn:hover { border-color: var(--indigo) }
-    .ntp-btn:focus-visible, .ntp-btn[aria-expanded="true"] { border-color: var(--indigo) }
-    .ntp-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100% }
-    .ntp-chev { flex: none; transition: transform .15s ease }
-    .ntp-btn[aria-expanded="true"] .ntp-chev { transform: rotate(180deg) }
-    .ntp-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; background: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; max-height: 240px; overflow-y: auto }
-    .ntp-list.hide { display: none }
-    .ntp-item { display: block; width: 100%; box-sizing: border-box; text-align: center; background: transparent; border: 0; border-radius: 10px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 9px 12px; cursor: pointer }
-    .ntp-item:hover, .ntp-item:focus-visible { background: var(--ink-2); color: var(--paper); outline: none }
-    .ntp-item[aria-selected="true"] { color: var(--paper); font-weight: 700 }
+    .ntp {
+      position: relative
+    }
+
+    .ntp-btn {
+      width: 100%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      position: relative;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--paper-dim);
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 11px 36px;
+      cursor: pointer;
+      outline: none
+    }
+
+    .ntp-btn:hover {
+      border-color: var(--indigo)
+    }
+
+    .ntp-btn:focus-visible,
+    .ntp-btn[aria-expanded="true"] {
+      border-color: var(--indigo)
+    }
+
+    .ntp-btn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%
+    }
+
+    .ntp-chev {
+      flex: none;
+      transition: transform .15s ease
+    }
+
+    .ntp-btn[aria-expanded="true"] .ntp-chev {
+      transform: rotate(180deg)
+    }
+
+    .ntp-list {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 30;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .14);
+      padding: 6px;
+      max-height: 240px;
+      overflow-y: auto
+    }
+
+    .ntp-list.hide {
+      display: none
+    }
+
+    .ntp-item {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      text-align: center;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      color: var(--paper-dim);
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 9px 12px;
+      cursor: pointer
+    }
+
+    .ntp-item:hover,
+    .ntp-item:focus-visible {
+      background: var(--ink-2);
+      color: var(--paper);
+      outline: none
+    }
+
+    .ntp-item[aria-selected="true"] {
+      color: var(--paper);
+      font-weight: 700
+    }
+
     .newtkt-drop {
       display: flex;
       align-items: center;
@@ -14483,37 +14582,163 @@
        state holder (.kdd-native) so the existing save path keeps working; this is only its skin. A
        custom menu is what lets each option carry its status dot / priority swatch, which a native
        option list cannot render. */
-    .kdd { position: relative; display: inline-flex; align-items: center }
-    .kdd-native { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none }
-    .kdd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 9px;
-      border: 1px solid transparent; background: transparent; color: var(--paper);
-      font-family: var(--body); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-      min-width: 124px; text-transform: capitalize;
-      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease }
-    .kdd-btn:hover { background: var(--ink-3) }
-    .kdd-btn:focus-visible { outline: none; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
-    .kdd-btn[aria-expanded="true"] { background: var(--ink-2); border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
-    .kdd-caret { margin-left: auto; color: var(--muted); transition: transform .15s }
-    .kdd-btn[aria-expanded="true"] .kdd-caret { transform: rotate(180deg) }
-    .kdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 180px; padding: 5px;
-      background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px;
-      box-shadow: 0 12px 32px rgba(0,0,0,.28); display: flex; flex-direction: column; gap: 2px }
-    .kdd-menu.hide { display: none }
-    .kdd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0;
-      border-radius: 8px; background: transparent; color: var(--paper); font-family: var(--body);
-      font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-transform: capitalize }
-    .kdd-item:hover, .kdd-item:focus-visible { background: rgba(99,102,241,.12); outline: none }
-    .kdd-item[aria-checked="true"] { font-weight: 700 }
-    .kdd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .kdd {
+      position: relative;
+      display: inline-flex;
+      align-items: center
+    }
+
+    .kdd-native {
+      position: absolute;
+      width: 0;
+      height: 0;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .kdd-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border-radius: 9px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      min-width: 124px;
+      text-transform: capitalize;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease
+    }
+
+    .kdd-btn:hover {
+      background: var(--ink-3)
+    }
+
+    .kdd-btn:focus-visible {
+      outline: none;
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .14)
+    }
+
+    .kdd-btn[aria-expanded="true"] {
+      background: var(--ink-2);
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .14)
+    }
+
+    .kdd-caret {
+      margin-left: auto;
+      color: var(--muted);
+      transition: transform .15s
+    }
+
+    .kdd-btn[aria-expanded="true"] .kdd-caret {
+      transform: rotate(180deg)
+    }
+
+    .kdd-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 40;
+      min-width: 180px;
+      padding: 5px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+      display: flex;
+      flex-direction: column;
+      gap: 2px
+    }
+
+    .kdd-menu.hide {
+      display: none
+    }
+
+    .kdd-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      text-transform: capitalize
+    }
+
+    .kdd-item:hover,
+    .kdd-item:focus-visible {
+      background: rgba(99, 102, 241, .12);
+      outline: none
+    }
+
+    .kdd-item[aria-checked="true"] {
+      font-weight: 700
+    }
+
+    .kdd-txt {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
     /* KD-227: Labels picker in the same skin — label names keep their case, the list scrolls when long,
        and the hidden <select> is only the state holder. */
-    .tkt-lbl-kdd .kdd-btn { min-width: 0; text-transform: none; font-weight: 500; color: var(--paper-dim) }
-    .tkt-lbl-kdd .kdd-btn:hover, .tkt-lbl-kdd .kdd-btn[aria-expanded="true"] { color: var(--paper) }
-    .tkt-lbl-kdd .kdd-menu { max-height: 260px; overflow-y: auto }
-    .tkt-lbl-kdd .kdd-item { text-transform: none }
-    .tkt-lbl-kdd .tkt-lbl-add-item { color: var(--indigo); font-weight: 600 }
-    .tkt-lbl-kdd .tkt-lbl-sel { position: absolute; width: 0; height: 0; padding: 0; border: 0; opacity: 0; pointer-events: none }
-    .tkt-lbl-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0 }
+    .tkt-lbl-kdd .kdd-btn {
+      min-width: 0;
+      text-transform: none;
+      font-weight: 500;
+      color: var(--paper-dim)
+    }
+
+    .tkt-lbl-kdd .kdd-btn:hover,
+    .tkt-lbl-kdd .kdd-btn[aria-expanded="true"] {
+      color: var(--paper)
+    }
+
+    .tkt-lbl-kdd .kdd-menu {
+      max-height: 260px;
+      overflow-y: auto
+    }
+
+    .tkt-lbl-kdd .kdd-item {
+      text-transform: none
+    }
+
+    .tkt-lbl-kdd .tkt-lbl-add-item {
+      color: var(--indigo);
+      font-weight: 600
+    }
+
+    .tkt-lbl-kdd .tkt-lbl-sel {
+      position: absolute;
+      width: 0;
+      height: 0;
+      padding: 0;
+      border: 0;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .tkt-lbl-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0
+    }
 
     .tkt-pri-sel,
     .tkt-status-sel {
@@ -15697,7 +15922,8 @@
             <path d="M6 13H2" />
             <path d="m8 2 1.88 1.88" />
             <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount" title="To Do, Open and In Progress tickets"></span></button>
+          </svg></span>Tickets <span class="ct" id="navTicketCount"
+          title="To Do, Open and In Progress tickets"></span></button>
       <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
             width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -22545,7 +22771,7 @@
           } else if (it.kind === "replay") {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
             el.setAttribute("title", "Session replay")
-            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) {} })
+            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) { } })
           } else {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("VIDEO", true))
             el.setAttribute("title", "Recording")
@@ -22731,7 +22957,7 @@
         <span class="tkt-prop-lb">Priority</span>
         <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
           <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
-          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent","high","medium","low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
           <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
         </span></span>
         <span class="tkt-prop-lb">Assignee</span>
@@ -31509,17 +31735,24 @@
         <input id="newTktTitleInp" maxlength="500" placeholder="e.g. Checkout fails on iOS Safari"
           style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box" />
       </label>
-      <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+      <div
+        style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
         <span id="newTktProjectLbl">Project <span style="color:var(--rose)">*</span></span>
         <div class="ntp" id="newTktProjectBox">
-          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden tabindex="-1"></select>
-          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="newTktProjectLbl newTktProjectName">
+          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden
+            tabindex="-1"></select>
+          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false"
+            aria-labelledby="newTktProjectLbl newTktProjectName">
             <span id="newTktProjectName">Select project</span>
-            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
           </button>
           <div class="ntp-list hide" id="newTktProjectList" role="listbox" aria-labelledby="newTktProjectLbl"></div>
         </div>
-        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0" role="alert"></span>
+        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0"
+          role="alert"></span>
       </div>
       <label
         style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
@@ -31563,7 +31796,9 @@
           <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach files</button>
           <span>or drop them here</span>
         </div>
-        <input type="file" id="newTktFileInp" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+        <input type="file" id="newTktFileInp"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple hidden>
         <div class="newtkt-files" id="newTktFilesGrid"></div>
         <div id="newTktFilesMsg" style="font-size:12px;color:var(--rose);margin-top:6px"></div>
       </div>
