@@ -23621,7 +23621,7 @@
         const canManage = ticketId && item.id && (isOwn || isAdmin)
         bodyHtml = `<div class="tkt-jc-head">${cmtHeadHtml(item)}</div>
       <div class="tkt-tl-text tkt-cmt-body">${renderCommentBody(item.body)}</div>
-      ${commentAttsHtml(item.attachments)}
+      <div class="tkt-cmt-attwrap">${commentAttsHtml(item.attachments)}</div>
       ${canManage ? `<div class="tkt-jc-actions">
         <span class="tkt-jc-normal"><button type="button" class="tkt-jc-edit" aria-label="Edit comment">Edit</button> · <button type="button" class="tkt-jc-del" aria-label="Delete comment">Delete</button></span>
         <span class="tkt-jc-confirm">Delete this comment? <button type="button" class="tkt-jc-del-yes">Delete</button><button type="button" class="tkt-jc-del-no">Cancel</button></span>
@@ -23655,13 +23655,18 @@
         const delBtn = el.querySelector(".tkt-jc-del")
         const bodyEl = el.querySelector(".tkt-cmt-body")
         const metaEl = el.querySelector(".tkt-jc-head")
-        el.querySelectorAll(".tkt-cmt-att-img").forEach(function (b) {   // KD-217
-          b.addEventListener("click", function (ev) {
-            ev.stopPropagation()
-            const a = (item.attachments || []).filter(x => x && x.url)[Number(b.getAttribute("data-i"))]
-            if (a) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: "image", openUrl: a.url })
+        const attWrapEl = el.querySelector(".tkt-cmt-attwrap")
+        const wireAtts = function () {   // KD-217 (re-run after an edit repaints the attachments)
+          if (!attWrapEl) return
+          attWrapEl.querySelectorAll(".tkt-cmt-att-img").forEach(function (b) {
+            b.addEventListener("click", function (ev) {
+              ev.stopPropagation()
+              const a = (item.attachments || []).filter(x => x && x.url)[Number(b.getAttribute("data-i"))]
+              if (a) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: "image", openUrl: a.url })
+            })
           })
-        })
+        }
+        wireAtts()
         if (delBtn) {
           // Inline "Delete this comment? Delete · Cancel" (no browser popup).
           const actionsEl = el.querySelector(".tkt-jc-actions")
@@ -23697,23 +23702,50 @@
             const cancelB = document.createElement("button")
             cancelB.type = "button"; cancelB.className = "btn btn-ghost btn-sm"; cancelB.textContent = "Cancel"
             row.appendChild(saveB); row.appendChild(cancelB)
-            wrap.appendChild(ta); wrap.appendChild(row)
+            // KD-217: the comment's current files, each with a remove button. Removing is only applied when Save is pressed.
+            let removeKeys = []
+            const keepAtts = () => (item.attachments || []).filter(a => a && a.key && removeKeys.indexOf(String(a.key)) < 0)
+            const attsBox = document.createElement("div")
+            attsBox.className = "tkt-cmt-chips tkt-cmt-edit-atts"
+            const paintEditAtts = () => {
+              const list = keepAtts()
+              attsBox.classList.toggle("hide", !list.length)
+              attsBox.innerHTML = list.map(a => {
+                const isVid = /^video\//i.test(String(a.contentType || ""))
+                const th = a.url ? (isVid ? '<video class="th" src="' + esc(String(a.url)) + '#t=0.1" muted preload="metadata" playsinline></video>'
+                  : '<img class="th" src="' + esc(String(a.url)) + '" alt="">') : ""
+                return '<span class="tkt-cmt-chip tkt-cmt-chip-p"><span class="pv">' + th + '</span>'
+                  + '<span class="nm" title="' + esc(String(a.filename || "")) + '">' + esc(String(a.filename || "attachment")) + '</span>'
+                  + '<button type="button" class="rm" data-rmkey="' + esc(String(a.key)) + '" aria-label="Remove ' + esc(String(a.filename || "attachment")) + '" title="Remove">&times;</button></span>'
+              }).join("")
+            }
+            attsBox.addEventListener("click", (e3) => {
+              e3.stopPropagation()
+              const b = e3.target && e3.target.closest ? e3.target.closest("[data-rmkey]") : null
+              if (!b) return
+              removeKeys.push(b.getAttribute("data-rmkey")); paintEditAtts()
+            })
+            paintEditAtts()
+            if (attWrapEl) attWrapEl.style.display = "none"
+            wrap.appendChild(ta); wrap.appendChild(attsBox); wrap.appendChild(row)
             bodyEl.insertAdjacentElement("afterend", wrap)
             try { ta.focus(); const n = ta.value.length; ta.setSelectionRange(n, n) } catch (e) { }
             let done = false
-            const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; wrap.remove() }
+            const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; if (attWrapEl) attWrapEl.style.display = ""; wrap.remove() }
             const commit = async () => {
               if (done) return
               const next = ta.value.trim()
-              if (!next) return
+              if (!next && !keepAtts().length) return   // text may be empty only while an attachment is left
               saveB.disabled = true
               const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
                 method: "PATCH", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ body: next })
+                body: JSON.stringify({ body: next, removeAttachments: removeKeys })
               }).catch(() => null)
               const d = r ? await r.json().catch(() => ({})) : {}
               if (r && r.ok && d.comment) {
                 item.body = d.comment.body; item.editedAt = d.comment.editedAt
+                if (Array.isArray(d.comment.attachments)) item.attachments = d.comment.attachments
+                if (attWrapEl) { attWrapEl.innerHTML = commentAttsHtml(item.attachments); wireAtts() }
                 bodyEl.innerHTML = renderCommentBody(item.body)
                 if (metaEl) metaEl.innerHTML = cmtHeadHtml(item)
                 teardown()

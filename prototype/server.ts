@@ -12828,11 +12828,23 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
 
         const body = await req.json().catch(() => ({}))
         const text = String(body.body ?? body.comment ?? "").trim()
-        if (!text) return json({ error: "Comment body is required." }, 400)
+        // KD-217: an edit may drop attachments (removeAttachments = storage keys, only ones that really belong to this comment).
+        const wantRemove = Array.isArray(body.removeAttachments) ? body.removeAttachments.map((k: any) => String(k)) : []
+        const removedAtts = (existing.attachments || []).filter((a) => wantRemove.includes(String(a.key)))
+        const attsLeft = (existing.attachments || []).length - removedAtts.length
+        if (!text && !attsLeft) return json({ error: "Comment body is required." }, 400)
         if (text.length > 5000) return json({ error: "Comment body must be 5000 characters or fewer." }, 400)
-        const updated = await updateTicketComment(commentIdParam, fid, text)
+        const updated = await updateTicketComment(commentIdParam, fid, text, removedAtts.map((a) => String(a.key)))
         if (!updated) return json({ error: "Comment not found." }, 404)
-        return json({ comment: updated })
+        if (removedAtts.length) {
+          void (async () => {   // delete the dropped files unless a ticket attachment or another comment still points at them
+            for (const a of removedAtts) {
+              try { if (!(await attachmentKeyReferencedElsewhere(String(a.key), fid))) await deleteObject(String(a.key)) }
+              catch (e: any) { console.warn("comment attachment cleanup skipped:", e?.message || e) }
+            }
+          })()
+        }
+        return json({ comment: { ...updated, attachments: signCommentAttachments(updated.attachments) } })
       }
 
       // GET /api/feedback/:id/attachments?key=<storage key> — download or stream an attachment (members only).

@@ -389,3 +389,68 @@ test("the page security policy lets stored media load: https: for images and vid
   expect(directive("default-src")).toBe("default-src 'self'")                                              // everything else stays locked down
   expect(directive("object-src")).toBe("object-src 'none'")
 })
+
+// ── KD-217: editing a comment can drop its attachments ─────────────────────────────────────────────────────────────────
+const cPatch = (id: string, cid: string, payload: any, sid: string | null = SID) =>
+  fetch(`${BASE}/api/feedback/${id}/comments/${cid}`, { method: "PATCH", headers: { "content-type": "application/json", ...(sid ? { Cookie: `klav_session=${sid}` } : {}) }, body: JSON.stringify(payload) })
+async function commentWith(id: string, text: string, files: File[]) {
+  const c: any = ((await (await cForm(id, text, files)).json()) as any).comment
+  return { c, keys: c.attachments.map((a: any) => a.key) as string[] }
+}
+
+test("edit: removing one attachment keeps the text and the other file, and deletes only the dropped file from storage", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "two files", [file("keep.png", 2201), file("drop.png", 2202)])
+  deletedPaths.length = 0
+  const r = await cPatch(id, c.id, { body: "two files (edited)", removeAttachments: [keys[1]] })
+  expect(r.status).toBe(200)
+  const u: any = ((await r.json()) as any).comment
+  expect(u.body).toBe("two files (edited)"); expect(u.editedAt).toBeTruthy()
+  expect(u.attachments.map((a: any) => a.filename)).toEqual(["keep.png"])
+  expect(String(u.attachments[0].url)).toContain("http")
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(keys[1])))).toBe(true)
+  await Bun.sleep(150)
+  expect(deletedPaths.some(p => p.endsWith(keys[0]))).toBe(false)
+  expect((await cList(id))[0].attachments.map((a: any) => a.filename)).toEqual(["keep.png"])       // persisted
+})
+test("edit: dropping every attachment needs some text; with text it works and the comment ends up plain", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "had a file", [file("only.png", 2210)])
+  expect((await cPatch(id, c.id, { body: "", removeAttachments: keys })).status).toBe(400)           // would be completely empty
+  expect((await cList(id))[0].attachments.length).toBe(1)                                          // nothing changed
+  deletedPaths.length = 0
+  const ok = await cPatch(id, c.id, { body: "file removed", removeAttachments: keys })
+  expect(ok.status).toBe(200)
+  expect((((await ok.json()) as any).comment).attachments).toEqual([])
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(keys[0])))).toBe(true)
+})
+test("edit: an attachments-only comment may be saved with empty text as long as a file is left", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "", [file("a.png", 2220), file("b.png", 2221)])
+  const r = await cPatch(id, c.id, { body: "", removeAttachments: [keys[0]] })
+  expect(r.status).toBe(200)
+  const u: any = ((await r.json()) as any).comment
+  expect(u.body).toBe(""); expect(u.attachments.map((a: any) => a.filename)).toEqual(["b.png"])
+  expect((await cPatch(id, c.id, { body: "" })).status).toBe(200)                                   // plain text edit to empty is fine while a file remains
+})
+test("edit: keys that are not on this comment are ignored (nothing else is touched or deleted); a plain text edit leaves the files alone", async () => {
+  const id = await newTicket(), other = await newTicket()
+  const mine = await commentWith(id, "mine", [file("mine.png", 2230)])
+  const theirs = await commentWith(other, "theirs", [file("theirs.png", 2231)])
+  deletedPaths.length = 0
+  const r = await cPatch(id, mine.c.id, { body: "mine v2", removeAttachments: [theirs.keys[0], "uploads/attachments/nope.png"] })
+  expect(r.status).toBe(200)
+  expect((((await r.json()) as any).comment).attachments.length).toBe(1)
+  await Bun.sleep(200)
+  expect(deletedPaths.length).toBe(0)
+  const plain = await cPatch(id, mine.c.id, { body: "mine v3" })
+  expect((((await plain.json()) as any).comment).attachments.map((a: any) => a.filename)).toEqual(["mine.png"])
+  expect((await cList(other))[0].attachments.length).toBe(1)
+})
+test("edit: same permission rules as before — no session 401, a non-member cannot edit", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "guarded", [file("g.png", 2240)])
+  expect((await cPatch(id, c.id, { body: "x", removeAttachments: keys }, null)).status).toBe(401)
+  expect([403, 404]).toContain((await cPatch(id, c.id, { body: "x", removeAttachments: keys }, SID_X)).status)
+  expect((await cList(id))[0].attachments.length).toBe(1)
+})

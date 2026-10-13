@@ -35,7 +35,7 @@ test("file names and links are escaped", () => {
 })
 test("a posted comment shows its attachments under the text and images open in the media preview", () => {
   expect(HTML).toContain("${commentAttsHtml(item.attachments)}")
-  expect(HTML).toContain('el.querySelectorAll(".tkt-cmt-att-img").forEach(')
+  expect(HTML).toContain('attWrapEl.querySelectorAll(".tkt-cmt-att-img").forEach(')
   expect(HTML).toContain('openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: "image", openUrl: a.url })')
   expect(HTML).toContain(".tkt-cmt-body:empty {")                                   // an attachments-only comment has no empty text gap
 })
@@ -69,4 +69,17 @@ test("picked files show a preview card (thumbnail for images, first frame for vi
   expect(HTML).toContain("URL.createObjectURL(f)")
   expect(HTML).toContain("URL.revokeObjectURL(u)")                                     // freed when the file is removed / posted / cancelled
   expect(HTML).toContain('openMediaPreview({ url: chipUrl(f), name: f.name, kind: /^video\\//i.test(f.type || "") ? "video" : "image" })')
+})
+
+test("editing a comment lists its files with a remove button each; removals are applied on Save, and Cancel keeps everything", () => {
+  const i = HTML.indexOf("let removeKeys = []")
+  const edit = HTML.slice(i, i + 3800)
+  expect(edit).toContain("const keepAtts = () =>")
+  expect(edit).toContain('data-rmkey="')
+  expect(edit).toContain("removeKeys.push(b.getAttribute(\"data-rmkey\")); paintEditAtts()")
+  expect(HTML).toContain("body: JSON.stringify({ body: next, removeAttachments: removeKeys })")
+  expect(HTML).toContain("if (!next && !keepAtts().length) return")                    // text may be empty only while a file is left
+  expect(HTML).toContain('if (attWrapEl) attWrapEl.style.display = ""')                // Cancel / Save show the (unchanged / updated) files again
+  expect(HTML).toContain("if (attWrapEl) { attWrapEl.innerHTML = commentAttsHtml(item.attachments); wireAtts() }")   // repainted from the saved result
+  expect(HTML).toContain('<div class="tkt-cmt-attwrap">${commentAttsHtml(item.attachments)}</div>')
 })

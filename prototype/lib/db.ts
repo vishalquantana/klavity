@@ -4039,14 +4039,26 @@ export async function listTicketComments(feedbackId: string): Promise<TicketComm
 
 // KD-158: edit an already-posted comment's body. Scoped by feedbackId so a comment id can't be
 // used to edit a comment on an unrelated ticket. Returns the updated row, or null if not found.
-export async function updateTicketComment(commentId: string, feedbackId: string, body: string): Promise<TicketCommentRow | null> {
+export async function updateTicketComment(commentId: string, feedbackId: string, body: string, removeKeys: string[] = []): Promise<TicketCommentRow | null> {
   const trimmed = String(body || "").trim()
-  if (!trimmed) throw new Error("comment body required")
   const editedAt = Date.now()
-  const r = await db!.execute({
-    sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?",
-    args: [trimmed, editedAt, commentId, feedbackId],
-  })
+  // KD-217: an edit may also drop some of the comment's attachments (removeKeys = their storage keys). The text may then be empty
+  // only while at least one attachment is left — a comment is never completely empty.
+  let attachmentsJson: string | null | undefined
+  if (removeKeys.length) {
+    const cur = await db!.execute({ sql: "SELECT attachments_json FROM ticket_comments WHERE id=? AND feedback_id=? LIMIT 1", args: [commentId, feedbackId] })
+    if (!cur.rows.length) return null
+    const keep = parseCommentAttachments((cur.rows[0] as any).attachments_json).filter((a) => !removeKeys.includes(String(a.key)))
+    if (!trimmed && !keep.length) throw new Error("comment body required")
+    attachmentsJson = keep.length ? JSON.stringify(keep) : null
+  } else if (!trimmed) {
+    const cur = await db!.execute({ sql: "SELECT attachments_json FROM ticket_comments WHERE id=? AND feedback_id=? LIMIT 1", args: [commentId, feedbackId] })
+    if (!cur.rows.length) return null
+    if (!parseCommentAttachments((cur.rows[0] as any).attachments_json).length) throw new Error("comment body required")
+  }
+  const r = attachmentsJson === undefined
+    ? await db!.execute({ sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?", args: [trimmed, editedAt, commentId, feedbackId] })
+    : await db!.execute({ sql: "UPDATE ticket_comments SET body=?, edited_at=?, attachments_json=? WHERE id=? AND feedback_id=?", args: [trimmed, editedAt, attachmentsJson, commentId, feedbackId] })
   if (Number(r.rowsAffected) === 0) return null
   const sel = await db!.execute({ sql: "SELECT * FROM ticket_comments WHERE id=? LIMIT 1", args: [commentId] })
   return sel.rows.length ? rowToTicketComment(sel.rows[0]) : null
