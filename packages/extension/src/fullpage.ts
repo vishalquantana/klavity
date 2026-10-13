@@ -61,23 +61,176 @@ function findKlavityOverlays(): HTMLElement[] {
   })
 }
 
-// Hide the given elements (visibility:hidden) and return a restore fn.
+export interface ScrollStitchStep {
+  scrollY: number
+  sourceY: number
+  sourceHeight: number
+  canvasY: number
+  drawHeight: number
+}
+
+/**
+ * Plans seamless scroll-stitch steps for full-page capture.
+ * When a top fixed/sticky header of height `topHeaderHeight` is present:
+ * - Step 0 captures the full viewport (0..viewportHeight) with the header shown at canvas top.
+ * - Steps 1+ step by `(viewportHeight - topHeaderHeight)`, hiding the header and cropping out
+ *   the top `topHeaderHeight` pixels so the header never repeats across sections and content
+ *   flows continuously without gaps or duplicate header bands.
+ */
+export function planSeamlessScrollStitch(
+  fullHeight: number,
+  viewportHeight: number,
+  topHeaderHeight = 0,
+): ScrollStitchStep[] {
+  if (!(viewportHeight > 0) || !(fullHeight > 0)) {
+    return [{ scrollY: 0, sourceY: 0, sourceHeight: Math.max(1, viewportHeight), canvasY: 0, drawHeight: Math.max(1, fullHeight) }]
+  }
+
+  if (fullHeight <= viewportHeight) {
+    return [{
+      scrollY: 0,
+      sourceY: 0,
+      sourceHeight: fullHeight,
+      canvasY: 0,
+      drawHeight: fullHeight,
+    }]
+  }
+
+  const maxScroll = Math.max(0, fullHeight - viewportHeight)
+  const H = Math.max(0, Math.min(Math.round(topHeaderHeight), Math.floor(viewportHeight * 0.4)))
+  const stride = Math.max(1, viewportHeight - H)
+  const steps: ScrollStitchStep[] = []
+
+  steps.push({
+    scrollY: 0,
+    sourceY: 0,
+    sourceHeight: viewportHeight,
+    canvasY: 0,
+    drawHeight: viewportHeight,
+  })
+
+  let canvasFilled = viewportHeight
+
+  for (let iter = 0; iter < 200 && canvasFilled < fullHeight; iter++) {
+    const remaining = fullHeight - canvasFilled
+
+    if (H > 0) {
+      const targetScroll = canvasFilled - H
+      if (targetScroll >= maxScroll) {
+        const scrollY = maxScroll
+        const drawHeight = remaining
+        const sourceHeight = drawHeight
+        const sourceY = viewportHeight - remaining
+        steps.push({
+          scrollY,
+          sourceY: Math.max(H, sourceY),
+          sourceHeight,
+          canvasY: canvasFilled,
+          drawHeight,
+        })
+        canvasFilled += drawHeight
+        break
+      } else {
+        const drawHeight = Math.min(remaining, stride)
+        steps.push({
+          scrollY: targetScroll,
+          sourceY: H,
+          sourceHeight: drawHeight,
+          canvasY: canvasFilled,
+          drawHeight,
+        })
+        canvasFilled += drawHeight
+      }
+    } else {
+      const targetScroll = canvasFilled
+      if (targetScroll >= maxScroll) {
+        const scrollY = maxScroll
+        const drawHeight = remaining
+        const sourceY = viewportHeight - remaining
+        steps.push({
+          scrollY,
+          sourceY: Math.max(0, sourceY),
+          sourceHeight: drawHeight,
+          canvasY: canvasFilled,
+          drawHeight,
+        })
+        canvasFilled += drawHeight
+        break
+      } else {
+        const drawHeight = Math.min(remaining, viewportHeight)
+        steps.push({
+          scrollY: targetScroll,
+          sourceY: 0,
+          sourceHeight: drawHeight,
+          canvasY: canvasFilled,
+          drawHeight,
+        })
+        canvasFilled += drawHeight
+      }
+    }
+  }
+
+  return steps
+}
+
+// Hide the given elements (visibility:hidden !important) and return a restore fn.
 function hideAll(els: HTMLElement[]): () => void {
-  const touched = els.map((el) => ({ el, prev: el.style.getPropertyValue('visibility'), prio: el.style.getPropertyPriority('visibility') }))
-  for (const el of els) el.style.setProperty('visibility', 'hidden', 'important')
-  return () => { for (const { el, prev, prio } of touched) prev ? el.style.setProperty('visibility', prev, prio) : el.style.removeProperty('visibility') }
+  const touched = els.map((el) => ({
+    el,
+    prevVisibility: el.style.getPropertyValue('visibility'),
+    prioVisibility: el.style.getPropertyPriority('visibility'),
+    prevOpacity: el.style.getPropertyValue('opacity'),
+    prevPointerEvents: el.style.getPropertyValue('pointer-events'),
+  }))
+  for (const el of els) {
+    el.style.setProperty('visibility', 'hidden', 'important')
+    el.style.setProperty('opacity', '0', 'important')
+    el.style.setProperty('pointer-events', 'none', 'important')
+  }
+  return () => {
+    for (const item of touched) {
+      if (item.prevVisibility) item.el.style.setProperty('visibility', item.prevVisibility, item.prioVisibility)
+      else item.el.style.removeProperty('visibility')
+      if (item.prevOpacity) item.el.style.setProperty('opacity', item.prevOpacity)
+      else item.el.style.removeProperty('opacity')
+      if (item.prevPointerEvents) item.el.style.setProperty('pointer-events', item.prevPointerEvents)
+      else item.el.style.removeProperty('pointer-events')
+    }
+  }
+}
+
+export function findTopHeaderInfo(exclude: Set<Element>, vw: number, vh: number): { elements: HTMLElement[]; topHeaderHeight: number } {
+  const elements: HTMLElement[] = []
+  let maxBottom = 0
+
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
+    if (exclude.has(el)) continue
+    let pos = ''
+    try { pos = getComputedStyle(el).position } catch { continue }
+    if (pos === 'fixed' || pos === 'sticky' || pos === '-webkit-sticky') {
+      try {
+        const r = el.getBoundingClientRect()
+        // Skip large app-shells / modal backdrops (> 60% viewport height)
+        if (r.height > vh * 0.6) continue
+        elements.push(el)
+        if (r.top <= 8 && r.width >= vw * 0.35 && r.height > 0 && r.height <= vh * 0.4) {
+          if (r.bottom > maxBottom) maxBottom = r.bottom
+        }
+      } catch {
+        elements.push(el)
+      }
+    }
+  }
+
+  return { elements, topHeaderHeight: Math.max(0, Math.round(maxBottom)) }
 }
 
 // Collect position:fixed / position:sticky elements (excluding ones we already hide), so they can be
 // hidden after the first frame and not repeat in every stitched segment.
-function findFixedSticky(exclude: Set<Element>): HTMLElement[] {
-  const out: HTMLElement[] = []
-  for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
-    if (exclude.has(el)) continue
-    const pos = getComputedStyle(el).position
-    if (pos === 'fixed' || pos === 'sticky') out.push(el)
-  }
-  return out
+export function findFixedSticky(exclude: Set<Element>): HTMLElement[] {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768
+  return findTopHeaderInfo(exclude, vw, vh).elements
 }
 
 export async function captureFullPage(deps: FullPageDeps): Promise<string> {
@@ -86,17 +239,32 @@ export async function captureFullPage(deps: FullPageDeps): Promise<string> {
   const { fullW, fullH, vw, vh, dpr } = pageDimensions()
 
   const savedX = window.scrollX, savedY = window.scrollY
-  const savedBehavior = document.documentElement.style.scrollBehavior
-  document.documentElement.style.scrollBehavior = 'auto'
+  const savedHtmlBehavior = document.documentElement.style.getPropertyValue('scroll-behavior')
+  const savedHtmlPrio = document.documentElement.style.getPropertyPriority('scroll-behavior')
+  const savedBodyBehavior = document.body ? document.body.style.getPropertyValue('scroll-behavior') : ''
+  const savedBodyPrio = document.body ? document.body.style.getPropertyPriority('scroll-behavior') : ''
+  document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important')
+  if (document.body) document.body.style.setProperty('scroll-behavior', 'auto', 'important')
 
   // Cap the capture to the canvas limit (very long pages truncate at the bottom rather than failing).
-  const capW = Math.min(fullW, Math.floor(maxCanvasPx / dpr))
-  const capH = Math.min(fullH, Math.floor(maxCanvasPx / dpr))
+  // High-DPI scaling (e.g. Windows 125%-200%, Retina) can multiply canvas height beyond the browser limit.
+  // Clamp effective DPR so canvas dimensions stay strictly within maxCanvasPx (typically 16384px).
+  const effectiveDpr = Math.max(1, Math.min(dpr, Math.floor(maxCanvasPx / Math.max(fullW, fullH, 1))))
+  const capW = Math.min(fullW, Math.floor(maxCanvasPx / effectiveDpr))
+  const capH = Math.min(fullH, Math.floor(maxCanvasPx / effectiveDpr))
   const canvas = document.createElement('canvas')
-  canvas.width = Math.round(capW * dpr)
-  canvas.height = Math.round(capH * dpr)
+  canvas.width = Math.round(capW * effectiveDpr)
+  canvas.height = Math.round(capH * effectiveDpr)
   const ctx = canvas.getContext('2d')
-  if (!ctx) { document.documentElement.style.scrollBehavior = savedBehavior; return deps.capture() }
+  if (!ctx) {
+    if (savedHtmlBehavior) document.documentElement.style.setProperty('scroll-behavior', savedHtmlBehavior, savedHtmlPrio)
+    else document.documentElement.style.removeProperty('scroll-behavior')
+    if (document.body) {
+      if (savedBodyBehavior) document.body.style.setProperty('scroll-behavior', savedBodyBehavior, savedBodyPrio)
+      else document.body.style.removeProperty('scroll-behavior')
+    }
+    return deps.capture()
+  }
 
   const overlays = findKlavityOverlays()
   const restoreOverlays = hideAll(overlays)             // our composer: hidden for the whole capture
@@ -104,24 +272,81 @@ export async function captureFullPage(deps: FullPageDeps): Promise<string> {
   let restoreFixed: (() => void) | null = null
 
   try {
-    const positions = captureGrid(capW, capH, vw, vh)
-    for (let i = 0; i < positions.length; i++) {
-      window.scrollTo(positions[i].x, positions[i].y)
-      await raf()
-      await sleep(renderWaitMs)
-      const dataUrl = await deps.capture()
-      // Use the ACTUAL (clamped) scroll offset so edge frames overlap-and-overwrite rather than leaving gaps.
-      const ax = window.scrollX, ay = window.scrollY
-      const img = await loadImage(dataUrl)
-      ctx.drawImage(img, Math.round(ax * dpr), Math.round(ay * dpr))
-      // After the first (top) frame, hide other fixed/sticky elements so headers/footers don't repeat.
-      if (i === 0) restoreFixed = hideAll(findFixedSticky(overlaySet))
+    const headerInfo = findTopHeaderInfo(overlaySet, vw, vh)
+
+    // Treat normal pages as 1D vertical if content width fits viewport or only differs by scrollbar width (<=32px)
+    const isOneD = capW <= vw || (fullW - vw <= 32 && (document.documentElement?.scrollWidth ?? 0) <= vw)
+    if (isOneD) {
+      // 1D vertical capture: seamless scroll-stitch with sticky header exclusion
+      const steps = planSeamlessScrollStitch(capH, vh, headerInfo.topHeaderHeight)
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i]
+        window.scrollTo(0, step.scrollY)
+        await raf()
+        await sleep(renderWaitMs)
+        const dataUrl = await deps.capture()
+        const img = await loadImage(dataUrl)
+
+        const sx = 0
+        const sy = Math.round(step.sourceY * effectiveDpr)
+        const sw = Math.round(vw * effectiveDpr)
+        const sh = Math.round(step.sourceHeight * effectiveDpr)
+
+        const dx = 0
+        const dy = Math.round(step.canvasY * effectiveDpr)
+        const dw = Math.round(vw * effectiveDpr)
+        const dh = Math.round(step.drawHeight * effectiveDpr)
+
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+
+        // After the first (top) frame, hide fixed/sticky elements so headers/footers don't repeat.
+        if (i === 0 && steps.length > 1 && headerInfo.elements.length > 0) {
+          restoreFixed = hideAll(headerInfo.elements)
+        }
+      }
+    } else {
+      // 2D grid fallback for horizontal + vertical overflowing pages
+      const positions = captureGrid(capW, capH, vw, vh)
+      for (let i = 0; i < positions.length; i++) {
+        window.scrollTo(positions[i].x, positions[i].y)
+        await raf()
+        await sleep(renderWaitMs)
+        const dataUrl = await deps.capture()
+        // Use the ACTUAL (clamped) scroll offset so edge frames overlap-and-overwrite rather than leaving gaps.
+        const ax = window.scrollX, ay = window.scrollY
+        const img = await loadImage(dataUrl)
+        ctx.drawImage(img, Math.round(ax * effectiveDpr), Math.round(ay * effectiveDpr))
+        // After the first (top) frame, hide other fixed/sticky elements so headers/footers don't repeat.
+        if (i === 0 && headerInfo.elements.length > 0) {
+          restoreFixed = hideAll(headerInfo.elements)
+        }
+      }
     }
-    return canvas.toDataURL('image/png')
+    try {
+      const png = canvas.toDataURL('image/png')
+      // If PNG is under 5MB, keep PNG; if oversized, encode as high-quality JPEG to stay safely within the 8MB upload cap
+      if (png && png.length > 64 && png.length <= 5 * 1024 * 1024) {
+        return png
+      }
+      const jpeg = canvas.toDataURL('image/jpeg', 0.88)
+      if (jpeg && jpeg.length > 64) return jpeg
+      return png || deps.capture()
+    } catch {
+      try {
+        const jpeg = canvas.toDataURL('image/jpeg', 0.88)
+        if (jpeg && jpeg.length > 64) return jpeg
+      } catch {}
+      return deps.capture()
+    }
   } finally {
     if (restoreFixed) restoreFixed()
     restoreOverlays()
-    document.documentElement.style.scrollBehavior = savedBehavior
+    if (savedHtmlBehavior) document.documentElement.style.setProperty('scroll-behavior', savedHtmlBehavior, savedHtmlPrio)
+    else document.documentElement.style.removeProperty('scroll-behavior')
+    if (document.body) {
+      if (savedBodyBehavior) document.body.style.setProperty('scroll-behavior', savedBodyBehavior, savedBodyPrio)
+      else document.body.style.removeProperty('scroll-behavior')
+    }
     window.scrollTo(savedX, savedY)
   }
 }

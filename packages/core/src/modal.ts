@@ -548,6 +548,8 @@ export interface ModalCallbacks {
   // controller's addScreenshot() (the host already knows those). The host uses it to append the shot,
   // tagged with the current page URL, to the evidence session. Absent => nothing extra happens.
   onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined) => void
+  // Fired when an in-place capture (e.g. background full-page render) swaps out a fast preview.
+  onShotReplaced?: (index: number, dataUrl: string, quality: CaptureQuality | undefined) => void
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
@@ -741,6 +743,7 @@ export function buildModal(
   // renderer couldn't inline dropped to white gaps). Drives a non-intrusive callout pointing at the Screen
   // button. Cleared when the shot is retaken sharp / removed. Index-aligned like the quality + page arrays.
   let screenshotSuggestSharp: boolean[] = []
+  let inFlightFullRender: Promise<void> | null = null
   // KLA-621: parallel array of per-shot capture provenance — screenshotCapture[i] tells Retake what to redo
   // for screenshots[i] (region rect / picked element selector / sharp mode). undefined for shots with no known
   // provenance (uploads / pastes) → Retake keeps its legacy full-frame behaviour. Index-aligned like the rest.
@@ -3427,6 +3430,10 @@ export function buildModal(
     // still fire; removing a shot mid-compression would splice the live arrays and misalign the annotation
     // map against the (already-captured) screenshot list. Building the payload from these frozen snapshots
     // makes post-submit mutation harmless — the report reflects exactly the state at the moment of Submit.
+    // If a full-page render is settling, give microtasks a chance to swap it in before snapshotting
+    if (inFlightFullRender) {
+      await Promise.race([inFlightFullRender, Promise.resolve()])
+    }
     const compressedSnapshot = screenshotCompressed.slice()
     const annotationsSnapshot = buildAnnotationsPayload()
     const filesSnapshot = attachedFiles.slice()
@@ -3551,6 +3558,7 @@ export function buildModal(
     if (annotationsByIndex[index]) delete annotationsByIndex[index]
     delete undoStacks[index]; delete cropStacks[index]
     updateStrip()
+    try { callbacks.onShotReplaced?.(index, dataUrl, quality) } catch { /* best-effort */ }
   }
 
   // KLAVITYKLA-509: viewport-first capture. Render the FAST above-the-fold preview immediately so the strip
@@ -3574,7 +3582,7 @@ export function buildModal(
     } catch { /* preview failed — the background full render below becomes the primary shot */ }
     finally { restore?.() }
     // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
-    void (async () => {
+    const fullRenderP = (async () => {
       const restore2 = maskOn ? maskNumbers(document.body) : null
       try {
         const full = await callbacks.onCaptureFull()
@@ -3585,8 +3593,12 @@ export function buildModal(
           if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); if (activeBtn) setActiveCapture(activeBtn) }
         }
       } catch { capturing = false; updateStrip() }
-      finally { restore2?.() }
+      finally {
+        restore2?.()
+        if (inFlightFullRender === fullRenderP) inFlightFullRender = null
+      }
     })()
+    inFlightFullRender = fullRenderP
     return true
   }
 
