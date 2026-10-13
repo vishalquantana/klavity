@@ -10123,6 +10123,285 @@
       border-color: var(--indigo)
     }
 
+    /* KD-217: images / videos on a comment — chips under the composer, thumbnails and clips in the posted comment */
+    .tkt-cmt-body:empty {
+      display: none
+    }
+
+    .tkt-cmt-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 6px 0 2px
+    }
+
+    .tkt-cmt-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 220px;
+      padding: 3px 4px 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--ink-3);
+      font-size: 12px;
+      color: var(--paper)
+    }
+
+    .tkt-cmt-chip .nm {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .tkt-cmt-chip .sz {
+      color: var(--paper-faint);
+      font-size: 11px
+    }
+
+    .tkt-cmt-chip button {
+      border: 0;
+      background: transparent;
+      color: var(--paper-dim);
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 999px
+    }
+
+    .tkt-cmt-chip button:hover {
+      color: var(--rose)
+    }
+
+    /* picked files: a small preview card each (thumbnail, name, size, remove) */
+    .tkt-cmt-chip.tkt-cmt-chip-p {
+      position: relative;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      width: 104px;
+      max-width: 104px;
+      padding: 4px;
+      border-radius: 10px
+    }
+
+    .tkt-cmt-chip-p .pv {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: zoom-in;
+      display: block;
+      line-height: 0
+    }
+
+    .tkt-cmt-chip-p .th {
+      width: 100%;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 6px;
+      display: block;
+      background: #000
+    }
+
+    .tkt-cmt-chip-p .nm {
+      font-size: 11px
+    }
+
+    .tkt-cmt-chip-p .sz {
+      font-size: 10px
+    }
+
+    .tkt-cmt-chip-p button.rm {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 18px;
+      height: 18px;
+      line-height: 16px;
+      padding: 0;
+      text-align: center;
+      color: #fff;
+      background: rgba(0, 0, 0, .6);
+      border-radius: 999px
+    }
+
+    .tkt-cmt-chip-p button.rm:hover {
+      color: #fff;
+      background: var(--rose)
+    }
+
+    .tkt-cmt-atts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px
+    }
+
+    .tkt-cmt-att-img {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0;
+      background: var(--ink-3);
+      cursor: zoom-in;
+      overflow: hidden
+    }
+
+    .tkt-cmt-att-img img {
+      display: block;
+      max-width: 220px;
+      max-height: 150px;
+      object-fit: cover
+    }
+
+    .tkt-cmt-att-vid {
+      max-width: 260px;
+      max-height: 170px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #000
+    }
+
+    /* Jira-style comments: avatar + bold name + time on one line, text, then plain Edit · Delete links */
+    .tkt-tl-item.tkt-jc {
+      gap: 12px;
+      padding: 12px 0
+    }
+
+    .tkt-tl-item.tkt-jc::before {
+      display: none
+    }
+
+    .tkt-jc-av {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      flex: none;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      user-select: none
+    }
+
+    .tkt-jc-main {
+      flex: 1;
+      min-width: 0
+    }
+
+    .tkt-jc-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      font-size: 13px
+    }
+
+    .tkt-jc-name {
+      font-weight: 650;
+      color: var(--paper)
+    }
+
+    .tkt-jc-time {
+      color: var(--paper-faint);
+      font-size: 12px
+    }
+
+    .tkt-jc-head .tkt-cmt-edited {
+      font-style: normal;
+      font-size: 11px;
+      color: var(--paper-faint);
+      background: var(--ink-3);
+      border-radius: 4px;
+      padding: 0 5px
+    }
+
+    .tkt-jc-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--paper-faint)
+    }
+
+    .tkt-jc-actions button {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font: inherit;
+      color: var(--paper-dim);
+      cursor: pointer
+    }
+
+    .tkt-jc-actions button:hover {
+      color: var(--indigo);
+      text-decoration: underline
+    }
+
+    .tkt-jc-actions .tkt-jc-del-yes {
+      color: var(--rose);
+      font-weight: 600
+    }
+
+    .tkt-jc-actions .tkt-jc-confirm {
+      display: none;
+      align-items: center;
+      gap: 8px
+    }
+
+    .tkt-jc-actions.confirming .tkt-jc-normal {
+      display: none
+    }
+
+    .tkt-jc-actions.confirming .tkt-jc-confirm {
+      display: inline-flex
+    }
+
+    .tkt-jc-compose {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin: 4px 0 8px
+    }
+
+    .tkt-jc-compose .tkt-comment-form {
+      flex: 1;
+      min-width: 0
+    }
+
+    .tkt-comment-form.collapsed .tkt-comment-row,
+    .tkt-comment-form.collapsed .tkt-cmt-chips {
+      display: none
+    }
+
+    .tkt-comment-form.collapsed .tkt-comment-ta {
+      height: 36px;
+      min-height: 36px;
+      resize: none;
+      overflow: hidden;
+      cursor: text
+    }
+
+    .tkt-cmt-sorthd {
+      display: flex;
+      justify-content: flex-end;
+      margin: 2px 0 0
+    }
+
+    .tkt-cmt-sort {
+      border: 0;
+      background: transparent;
+      color: var(--paper-dim);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 4px
+    }
+
+    .tkt-cmt-sort:hover {
+      color: var(--indigo)
+    }
+
     .tkt-comment-row {
       display: flex;
       align-items: center;
@@ -23295,6 +23574,35 @@
 
     // #707: escape a comment body, then highlight @handle mentions (see the composer's @-mention picker).
     // Escaping FIRST keeps this XSS-safe; the highlight only wraps the already-escaped @token in a span.
+    // Jira-style comment header pieces. The avatar is the person's initial on a colour picked from their address, so the same person
+    // always gets the same colour.
+    function cmtAvatarHtml(email) {
+      const name = String(email || "?")
+      const ch = (name.trim()[0] || "?").toUpperCase()
+      const colors = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"]
+      let h = 0
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+      return '<div class="tkt-jc-av" style="background:' + colors[h % colors.length] + '" aria-hidden="true">' + esc(ch) + '</div>'
+    }
+    function cmtHeadHtml(item) {
+      const author = item.author ? esc(String(item.author).split("@")[0]) : "Anonymous"
+      let full = ""
+      try { full = new Date(Number(item.createdAt)).toLocaleString() } catch (e) { }
+      return '<span class="tkt-jc-name">' + author + '</span><span class="tkt-jc-time" title="' + esc(full) + '">' + esc(ago(item.createdAt)) + '</span>'
+        + (item.editedAt ? '<span class="tkt-cmt-edited">Edited</span>' : "")
+    }
+    // KD-217: the images / videos attached to a comment. Images open in the media preview; videos play inline.
+    function commentAttsHtml(atts) {
+      const list = Array.isArray(atts) ? atts.filter(a => a && a.url) : []
+      if (!list.length) return ""
+      return '<div class="tkt-cmt-atts">' + list.map((a, i) => {
+        const name = esc(String(a.filename || "attachment"))
+        if (/^video\//i.test(String(a.contentType || ""))) {
+          return '<video class="tkt-cmt-att-vid" src="' + esc(String(a.url)) + '" controls preload="metadata" playsinline title="' + name + '"></video>'
+        }
+        return '<button type="button" class="tkt-cmt-att-img" data-i="' + i + '" title="' + name + '"><img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy"></button>'
+      }).join("") + '</div>'
+    }
     function renderCommentBody(text) {
       return esc(String(text == null ? "" : text)).replace(/(^|\s)@([\w.\-]+)/g, (_m, pre, h) => pre + '<span class="t3-m">@' + h + "</span>")
     }
@@ -23313,12 +23621,12 @@
         const isOwn = !!item.author && item.author === (state && state.email)
         const isAdmin = !!(state && state.active && state.active.role === "admin")
         const canManage = ticketId && item.id && (isOwn || isAdmin)
-        bodyHtml = `<div class="tkt-tl-author">${author}</div>
+        bodyHtml = `<div class="tkt-jc-head">${cmtHeadHtml(item)}</div>
       <div class="tkt-tl-text tkt-cmt-body">${renderCommentBody(item.body)}</div>
-      <div class="tkt-tl-meta">${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}</div>
-      ${canManage ? `<div class="tkt-cmt-actions">
-        <button type="button" class="tkt-cmt-edit" title="Edit comment" aria-label="Edit comment">${kicon('pencil', { size: 12 })}</button>
-        <button type="button" class="tkt-cmt-del" title="Delete comment" aria-label="Delete comment">${kicon('trash-2', { size: 12 })}</button>
+      <div class="tkt-cmt-attwrap">${commentAttsHtml(item.attachments)}</div>
+      ${canManage ? `<div class="tkt-jc-actions">
+        <span class="tkt-jc-normal"><button type="button" class="tkt-jc-edit" aria-label="Edit comment">Edit</button> · <button type="button" class="tkt-jc-del" aria-label="Delete comment">Delete</button></span>
+        <span class="tkt-jc-confirm">Delete this comment? <button type="button" class="tkt-jc-del-yes">Delete</button><button type="button" class="tkt-jc-del-no">Cancel</button></span>
       </div>` : ""}`
       } else if (item.kind === "ticket_export") {
         dotClass = "tkt-tl-dot-export"; icon = TL_ICONS.export
@@ -23336,25 +23644,46 @@
       <div class="tkt-tl-meta">${actor ? actor + " · " : ""}${esc(ago(item.createdAt))}</div>`
       }
 
-      el.innerHTML = `<div class="tkt-tl-dot ${dotClass}">${icon}</div><div class="tkt-tl-body">${bodyHtml}</div>`
+      if (item.kind === "comment") {
+        el.className = "tkt-tl-item tkt-jc"   // Jira-style: avatar column + main column (no timeline dot)
+        el.innerHTML = cmtAvatarHtml(item.author) + '<div class="tkt-jc-main">' + bodyHtml + '</div>'
+      } else {
+        el.innerHTML = `<div class="tkt-tl-dot ${dotClass}">${icon}</div><div class="tkt-tl-body">${bodyHtml}</div>`
+      }
 
       // KD-158: wire the edit/delete affordances (only rendered above when canManage is true).
       if (item.kind === "comment" && item.id && ticketId) {
-        const editBtn = el.querySelector(".tkt-cmt-edit")
-        const delBtn = el.querySelector(".tkt-cmt-del")
+        const editBtn = el.querySelector(".tkt-jc-edit")
+        const delBtn = el.querySelector(".tkt-jc-del")
         const bodyEl = el.querySelector(".tkt-cmt-body")
-        const metaEl = el.querySelector(".tkt-tl-meta")
+        const metaEl = el.querySelector(".tkt-jc-head")
+        const attWrapEl = el.querySelector(".tkt-cmt-attwrap")
+        const wireAtts = function () {   // KD-217 (re-run after an edit repaints the attachments)
+          if (!attWrapEl) return
+          attWrapEl.querySelectorAll(".tkt-cmt-att-img").forEach(function (b) {
+            b.addEventListener("click", function (ev) {
+              ev.stopPropagation()
+              const a = (item.attachments || []).filter(x => x && x.url)[Number(b.getAttribute("data-i"))]
+              if (a) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: "image", openUrl: a.url })
+            })
+          })
+        }
+        wireAtts()
         if (delBtn) {
-          delBtn.addEventListener("click", async (ev) => {
+          // Inline "Delete this comment? Delete · Cancel" (no browser popup).
+          const actionsEl = el.querySelector(".tkt-jc-actions")
+          const yesBtn = el.querySelector(".tkt-jc-del-yes"), noBtn = el.querySelector(".tkt-jc-del-no")
+          delBtn.addEventListener("click", (ev) => { ev.stopPropagation(); if (actionsEl) actionsEl.classList.add("confirming") })
+          if (noBtn) noBtn.addEventListener("click", (ev) => { ev.stopPropagation(); if (actionsEl) actionsEl.classList.remove("confirming") })
+          if (yesBtn) yesBtn.addEventListener("click", async (ev) => {
             ev.stopPropagation()
-            if (!window.confirm("Delete this comment? This can't be undone.")) return
-            delBtn.disabled = true
+            yesBtn.disabled = true
             const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
               method: "DELETE",
             }).catch(() => null)
             const d = r ? await r.json().catch(() => ({})) : {}
             if (r && r.ok && d.ok) el.remove()
-            else { delBtn.disabled = false; alert(d.error || "Couldn't delete comment.") }
+            else { yesBtn.disabled = false; if (actionsEl) actionsEl.classList.remove("confirming"); alert(d.error || "Couldn't delete comment.") }
           })
         }
         if (editBtn && bodyEl) {
@@ -23375,25 +23704,52 @@
             const cancelB = document.createElement("button")
             cancelB.type = "button"; cancelB.className = "btn btn-ghost btn-sm"; cancelB.textContent = "Cancel"
             row.appendChild(saveB); row.appendChild(cancelB)
-            wrap.appendChild(ta); wrap.appendChild(row)
+            // KD-217: the comment's current files, each with a remove button. Removing is only applied when Save is pressed.
+            let removeKeys = []
+            const keepAtts = () => (item.attachments || []).filter(a => a && a.key && removeKeys.indexOf(String(a.key)) < 0)
+            const attsBox = document.createElement("div")
+            attsBox.className = "tkt-cmt-chips tkt-cmt-edit-atts"
+            const paintEditAtts = () => {
+              const list = keepAtts()
+              attsBox.classList.toggle("hide", !list.length)
+              attsBox.innerHTML = list.map(a => {
+                const isVid = /^video\//i.test(String(a.contentType || ""))
+                const th = a.url ? (isVid ? '<video class="th" src="' + esc(String(a.url)) + '#t=0.1" muted preload="metadata" playsinline></video>'
+                  : '<img class="th" src="' + esc(String(a.url)) + '" alt="">') : ""
+                return '<span class="tkt-cmt-chip tkt-cmt-chip-p"><span class="pv">' + th + '</span>'
+                  + '<span class="nm" title="' + esc(String(a.filename || "")) + '">' + esc(String(a.filename || "attachment")) + '</span>'
+                  + '<button type="button" class="rm" data-rmkey="' + esc(String(a.key)) + '" aria-label="Remove ' + esc(String(a.filename || "attachment")) + '" title="Remove">&times;</button></span>'
+              }).join("")
+            }
+            attsBox.addEventListener("click", (e3) => {
+              e3.stopPropagation()
+              const b = e3.target && e3.target.closest ? e3.target.closest("[data-rmkey]") : null
+              if (!b) return
+              removeKeys.push(b.getAttribute("data-rmkey")); paintEditAtts()
+            })
+            paintEditAtts()
+            if (attWrapEl) attWrapEl.style.display = "none"
+            wrap.appendChild(ta); wrap.appendChild(attsBox); wrap.appendChild(row)
             bodyEl.insertAdjacentElement("afterend", wrap)
             try { ta.focus(); const n = ta.value.length; ta.setSelectionRange(n, n) } catch (e) { }
             let done = false
-            const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; wrap.remove() }
+            const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; if (attWrapEl) attWrapEl.style.display = ""; wrap.remove() }
             const commit = async () => {
               if (done) return
               const next = ta.value.trim()
-              if (!next) return
+              if (!next && !keepAtts().length) return   // text may be empty only while an attachment is left
               saveB.disabled = true
               const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
                 method: "PATCH", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ body: next })
+                body: JSON.stringify({ body: next, removeAttachments: removeKeys })
               }).catch(() => null)
               const d = r ? await r.json().catch(() => ({})) : {}
               if (r && r.ok && d.comment) {
                 item.body = d.comment.body; item.editedAt = d.comment.editedAt
+                if (Array.isArray(d.comment.attachments)) item.attachments = d.comment.attachments
+                if (attWrapEl) { attWrapEl.innerHTML = commentAttsHtml(item.attachments); wireAtts() }
                 bodyEl.innerHTML = renderCommentBody(item.body)
-                if (metaEl) metaEl.innerHTML = `${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}`
+                if (metaEl) metaEl.innerHTML = cmtHeadHtml(item)
                 teardown()
               } else {
                 saveB.disabled = false
@@ -23420,15 +23776,19 @@
       // [Comments] (the comments list + composer). The slide-over panel and board-expand keep the classic
       // single stack (Activity heading → merged list → composer). Same ids/handlers/@mention either way.
       const _tabbed = (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")
-      const _composerHtml = `<div class="tkt-comment-form">
+      const _composerHtml = `<div class="tkt-jc-compose">${cmtAvatarHtml(state && state.email)}<div class="tkt-comment-form collapsed">
       <div class="t3-mention hide" role="listbox" aria-label="Tag a teammate"></div>
-      <textarea class="tkt-comment-ta" placeholder="Leave a comment… @ to tag" rows="2"></textarea>
+      <textarea class="tkt-comment-ta" placeholder="Add a comment… @ to tag" rows="3"></textarea>
+      <div class="tkt-cmt-chips hide"></div>
       <div class="tkt-comment-row">
-        <button class="btn btn-indigo btn-sm tkt-comment-submit">Comment</button>
+        <button class="btn btn-indigo btn-sm tkt-comment-submit">Save</button>
+        <button type="button" class="btn btn-ghost btn-sm tkt-comment-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost btn-sm tkt-cmt-attach" title="Attach images or videos (or paste / drop them)">${kicon('paperclip', { size: 13 })} Attach</button>
+        <input type="file" class="tkt-cmt-file" accept="image/*,video/*" multiple hidden>
         <span class="tkt-comment-hint muted" style="font-size:11px">@ to mention · ⌘↵ to send</span>
         <span class="tkt-comment-msg" style="color:var(--paper-faint)"></span>
       </div>
-    </div>`
+    </div></div>`
       if (_tabbed) {
         wrap.classList.add("tkt-tl-tabbed")
         wrap.innerHTML = `<div class="t3-tabs" role="tablist">
@@ -23439,8 +23799,9 @@
         <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
       </div>
       <div class="t3-tabpanel hide" data-panel="comments" role="tabpanel">
-        <div class="tkt-tl-list tkt-cmt-list" id="cl-${esc(ticketId)}"></div>
         ${_composerHtml}
+        <div class="tkt-cmt-sorthd"><button type="button" class="tkt-cmt-sort" title="Change the order of comments"></button></div>
+        <div class="tkt-tl-list tkt-cmt-list" id="cl-${esc(ticketId)}"></div>
       </div>`
       } else {
         wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
@@ -23520,6 +23881,7 @@
             return
           }
           if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); if (submitBtn) submitBtn.click() }
+          else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); collapseComposer() }   // Esc closes the comment box only — not the whole ticket page
         })
         ta.addEventListener("blur", () => setTimeout(closeMention, 120))
       }
@@ -23541,6 +23903,11 @@
       // #533: comments the user just posted this session, kept locally so a lagging/failed /timeline read
       // can never remove one that's already on screen. Merged (deduped by id) into every reload.
       const localComments = []
+      // Jira-style order toggle (Comments tab): newest first by default, remembered per browser. The last server read is kept so a
+      // re-sort / optimistic post can repaint without another request.
+      let cmtNewestFirst = true
+      try { cmtNewestFirst = localStorage.getItem("klav.cmtOrder") !== "oldest" } catch (e) { }
+      let _lastServerItems = []
 
       // Render the merged list (server items + synthesized origin + any locally-posted comments), deduped
       // by id and sorted oldest→newest. Shared by the optimistic append and the network reload paths.
@@ -23563,6 +23930,7 @@
           // + count). One merged sort above keeps chronology within each list.
           const acts = items.filter(it => it.kind !== "comment")
           const cmts = items.filter(it => it.kind === "comment")
+          if (cmtNewestFirst) cmts.reverse()
           listEl.innerHTML = acts.length ? "" : '<div class="tkt-tl-empty">No activity yet.</div>'
           acts.forEach(item => listEl.appendChild(renderTimelineItem(item, ticketId)))
           cmtListEl.innerHTML = cmts.length ? "" : '<div class="tkt-tl-empty">No comments yet.</div>'
@@ -23590,7 +23958,7 @@
         const to = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) { } }, 9000) : null
         const clearTo = () => { if (to) clearTimeout(to) }
         tktRead("timeline", ticketId, "/api/feedback/" + encodeURIComponent(ticketId) + "/timeline", ctrl ? { signal: ctrl.signal } : undefined)
-          .then(d => { clearTo(); paintTimeline((d.items || []).slice()) })
+          .then(d => { clearTo(); _lastServerItems = (d.items || []).slice(); paintTimeline(_lastServerItems) })
           .catch(() => {
             clearTo()
             // Short retry/backoff on a failed read before giving up (never drops a local comment).
@@ -23609,19 +23977,119 @@
 
       reloadTimeline()
 
+      // KD-217: images / videos on a comment. Picked with the Attach button, pasted into the box, or dropped on the form; kept as
+      // chips until Comment is pressed (then sent as multipart with the text). Same limits as ticket attachments.
+      const attachBtn = wrap.querySelector(".tkt-cmt-attach")
+      const fileInp = wrap.querySelector(".tkt-cmt-file")
+      const chipsEl = wrap.querySelector(".tkt-cmt-chips")
+      let pendingFiles = []
+      const _chipUrls = new Map()   // File -> blob: URL used for its preview; revoked once the file is removed or posted
+      function chipUrl(f) {
+        let u = _chipUrls.get(f)
+        if (u === undefined) { try { u = URL.createObjectURL(f) } catch (e) { u = "" } _chipUrls.set(f, u) }
+        return u
+      }
+      function pruneChipUrls() {
+        _chipUrls.forEach((u, f) => { if (pendingFiles.indexOf(f) < 0) { try { if (u) URL.revokeObjectURL(u) } catch (e) { } _chipUrls.delete(f) } })
+      }
+      function paintChips() {
+        if (!chipsEl) return
+        pruneChipUrls()
+        chipsEl.classList.toggle("hide", !pendingFiles.length)
+        chipsEl.innerHTML = pendingFiles.map((f, i) => {
+          const u = chipUrl(f), isVid = /^video\//i.test(f.type || "")
+          const th = !u ? "" : isVid
+            ? '<video class="th" src="' + esc(u) + '#t=0.1" muted preload="metadata" playsinline></video>'
+            : '<img class="th" src="' + esc(u) + '" alt="">'
+          return '<span class="tkt-cmt-chip tkt-cmt-chip-p"><button type="button" class="pv" data-pv="' + i + '" title="Preview ' + esc(f.name) + '" aria-label="Preview ' + esc(f.name) + '">' + th + '</button>'
+            + '<span class="nm" title="' + esc(f.name) + '">' + esc(f.name) + '</span><span class="sz">' + esc(_attachFmtBytes(f.size)) + '</span>'
+            + '<button type="button" class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(f.name) + '">&times;</button></span>'
+        }).join("")
+      }
+      function cmtMsg(text, bad) { if (msgEl) { msgEl.style.color = bad ? "var(--rose)" : "var(--paper-faint)"; msgEl.textContent = text || "" } }
+      function addPending(list) {
+        const problems = []
+        for (const f of Array.prototype.slice.call(list || [])) {
+          const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || "")
+          if (!isImg && !isVid) { problems.push(f.name + " is not an image or video"); continue }
+          if (pendingFiles.length >= ATTACH_MAX_FILES) { problems.push("at most " + ATTACH_MAX_FILES + " files per comment"); break }
+          if (pendingFiles.some(x => x.name === f.name && x.size === f.size)) continue
+          if (f.size > (isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX)) { problems.push(f.name + " is too large (" + _attachFmtBytes(isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX) + " max)"); continue }
+          if (pendingFiles.reduce((n, x) => n + x.size, 0) + f.size > ATTACH_TOTAL_MAX) { problems.push("total size limit reached"); break }
+          pendingFiles.push(f)
+        }
+        paintChips()
+        cmtMsg(problems.length ? "Not added: " + problems.join("; ") + "." : "", !!problems.length)
+      }
+      if (attachBtn && fileInp) {
+        attachBtn.addEventListener("click", () => fileInp.click())
+        fileInp.addEventListener("change", () => { addPending(fileInp.files); fileInp.value = "" })
+      }
+      if (chipsEl) chipsEl.addEventListener("click", ev => {
+        const pv = ev.target && ev.target.closest ? ev.target.closest("[data-pv]") : null
+        if (pv) {   // enlarge the picked file before posting
+          const f = pendingFiles[Number(pv.getAttribute("data-pv"))]
+          if (f && chipUrl(f)) openMediaPreview({ url: chipUrl(f), name: f.name, kind: /^video\//i.test(f.type || "") ? "video" : "image" })
+          return
+        }
+        const b = ev.target && ev.target.closest ? ev.target.closest("[data-rm]") : null
+        if (!b) return
+        pendingFiles.splice(Number(b.getAttribute("data-rm")), 1); paintChips(); cmtMsg("")
+      })
+      if (ta) ta.addEventListener("paste", ev => {
+        const files = ev.clipboardData && ev.clipboardData.files ? Array.prototype.slice.call(ev.clipboardData.files) : []
+        const media = files.filter(f => /^(image|video)\//i.test(f.type || ""))
+        if (media.length) { ev.preventDefault(); addPending(media) }   // pasted text still pastes normally
+      })
+      const cmtForm = wrap.querySelector(".tkt-comment-form")
+      const cancelBtn = wrap.querySelector(".tkt-comment-cancel")
+      const sortBtn = wrap.querySelector(".tkt-cmt-sort")
+      function expandComposer() { if (cmtForm) cmtForm.classList.remove("collapsed") }
+      function collapseComposer() {
+        if (!cmtForm) return
+        if (ta) ta.value = ""
+        pendingFiles = []; paintChips(); cmtMsg(""); closeMention()
+        cmtForm.classList.add("collapsed")
+        try { if (ta) ta.blur() } catch (e) { }
+      }
+      if (ta) ta.addEventListener("focus", expandComposer)
+      if (attachBtn) attachBtn.addEventListener("click", expandComposer)
+      if (cancelBtn) cancelBtn.addEventListener("click", collapseComposer)
+      function paintSortBtn() { if (sortBtn) sortBtn.textContent = cmtNewestFirst ? "Newest first ↓" : "Oldest first ↑" }
+      if (sortBtn) {
+        paintSortBtn()
+        sortBtn.addEventListener("click", () => {
+          cmtNewestFirst = !cmtNewestFirst
+          try { localStorage.setItem("klav.cmtOrder", cmtNewestFirst ? "newest" : "oldest") } catch (e) { }
+          paintSortBtn(); paintTimeline(_lastServerItems)
+        })
+      }
+      if (cmtForm) {
+        cmtForm.addEventListener("dragover", ev => { if (ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], "Files") >= 0) ev.preventDefault() })
+        cmtForm.addEventListener("drop", ev => { if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) { ev.preventDefault(); addPending(ev.dataTransfer.files) } })
+      }
+
       if (submitBtn && ta) {
         submitBtn.addEventListener("click", async () => {
           const text = ta.value.trim()
-          if (!text) return
+          if (!text && !pendingFiles.length) return
           submitBtn.disabled = true
-          if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Saving…" }
-          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ body: text })
-          }).catch(() => null)
+          if (attachBtn) attachBtn.disabled = true
+          if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = pendingFiles.length ? "Uploading…" : "Saving…" }
+          let reqInit
+          if (pendingFiles.length) {
+            const fd = new FormData(); fd.set("body", text); pendingFiles.forEach(f => fd.append("files", f))
+            reqInit = { method: "POST", body: fd }   // the browser sets the multipart content-type
+          } else {
+            reqInit = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body: text }) }
+          }
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", reqInit).catch(() => null)
           submitBtn.disabled = false
+          if (attachBtn) attachBtn.disabled = false
           if (r && r.status === 201) {
             ta.value = ""
+            pendingFiles = []; paintChips()
+            if (cmtForm) cmtForm.classList.add("collapsed")   // back to the one-line "Add a comment…" bar
             // #533: the 201 body IS the created comment — render it optimistically instead of discarding it
             // and hoping a follow-up /timeline read returns it (that read races the write and can drop it).
             const d = await r.json().catch(() => ({}))
@@ -23629,9 +24097,9 @@
             if (c && (c.id != null || c.body)) {
               localComments.push({
                 kind: "comment", id: c.id, author: c.author || null,
-                body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(),
+                body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(), attachments: c.attachments || [],
               })
-              paintTimeline([])   // instant on-screen render from local state (no network wait)
+              paintTimeline(_lastServerItems)   // instant on-screen render from local state (no network wait)
               _activateTab("comments")   // #725d: surface the just-posted comment (no-op off the tabbed page)
             }
             if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Comment posted." }
