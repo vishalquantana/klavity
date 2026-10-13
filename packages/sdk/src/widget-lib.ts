@@ -158,8 +158,11 @@ export async function compressScreenshot(dataUrl: string, opts: { maxWidth?: num
       i.src = dataUrl
     })
     const nw = img.naturalWidth, nh = img.naturalHeight
-    if (!nw || !nh) return dataUrl
-    const scale = nw > maxWidth ? maxWidth / nw : 1
+    const maxDimension = 16000
+    let scale = nw > maxWidth ? maxWidth / nw : 1
+    if (nh * scale > maxDimension) {
+      scale = maxDimension / nh
+    }
     const w = Math.round(nw * scale), h = Math.round(nh * scale)
     const canvas = document.createElement("canvas")
     canvas.width = w; canvas.height = h

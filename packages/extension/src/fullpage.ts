@@ -247,11 +247,14 @@ export async function captureFullPage(deps: FullPageDeps): Promise<string> {
   if (document.body) document.body.style.setProperty('scroll-behavior', 'auto', 'important')
 
   // Cap the capture to the canvas limit (very long pages truncate at the bottom rather than failing).
-  const capW = Math.min(fullW, Math.floor(maxCanvasPx / dpr))
-  const capH = Math.min(fullH, Math.floor(maxCanvasPx / dpr))
+  // High-DPI scaling (e.g. Windows 125%-200%, Retina) can multiply canvas height beyond the browser limit.
+  // Clamp effective DPR so canvas dimensions stay strictly within maxCanvasPx (typically 16384px).
+  const effectiveDpr = Math.max(1, Math.min(dpr, Math.floor(maxCanvasPx / Math.max(fullW, fullH, 1))))
+  const capW = Math.min(fullW, Math.floor(maxCanvasPx / effectiveDpr))
+  const capH = Math.min(fullH, Math.floor(maxCanvasPx / effectiveDpr))
   const canvas = document.createElement('canvas')
-  canvas.width = Math.round(capW * dpr)
-  canvas.height = Math.round(capH * dpr)
+  canvas.width = Math.round(capW * effectiveDpr)
+  canvas.height = Math.round(capH * effectiveDpr)
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     if (savedHtmlBehavior) document.documentElement.style.setProperty('scroll-behavior', savedHtmlBehavior, savedHtmlPrio)
@@ -271,7 +274,9 @@ export async function captureFullPage(deps: FullPageDeps): Promise<string> {
   try {
     const headerInfo = findTopHeaderInfo(overlaySet, vw, vh)
 
-    if (capW <= vw) {
+    // Treat normal pages as 1D vertical if content width fits viewport or only differs by scrollbar width (<=32px)
+    const isOneD = capW <= vw || (fullW - vw <= 32 && (document.documentElement?.scrollWidth ?? 0) <= vw)
+    if (isOneD) {
       // 1D vertical capture: seamless scroll-stitch with sticky header exclusion
       const steps = planSeamlessScrollStitch(capH, vh, headerInfo.topHeaderHeight)
       for (let i = 0; i < steps.length; i++) {
@@ -283,14 +288,14 @@ export async function captureFullPage(deps: FullPageDeps): Promise<string> {
         const img = await loadImage(dataUrl)
 
         const sx = 0
-        const sy = Math.round(step.sourceY * dpr)
-        const sw = Math.round(vw * dpr)
-        const sh = Math.round(step.sourceHeight * dpr)
+        const sy = Math.round(step.sourceY * effectiveDpr)
+        const sw = Math.round(vw * effectiveDpr)
+        const sh = Math.round(step.sourceHeight * effectiveDpr)
 
         const dx = 0
-        const dy = Math.round(step.canvasY * dpr)
-        const dw = Math.round(vw * dpr)
-        const dh = Math.round(step.drawHeight * dpr)
+        const dy = Math.round(step.canvasY * effectiveDpr)
+        const dw = Math.round(vw * effectiveDpr)
+        const dh = Math.round(step.drawHeight * effectiveDpr)
 
         ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
 
@@ -310,14 +315,29 @@ export async function captureFullPage(deps: FullPageDeps): Promise<string> {
         // Use the ACTUAL (clamped) scroll offset so edge frames overlap-and-overwrite rather than leaving gaps.
         const ax = window.scrollX, ay = window.scrollY
         const img = await loadImage(dataUrl)
-        ctx.drawImage(img, Math.round(ax * dpr), Math.round(ay * dpr))
+        ctx.drawImage(img, Math.round(ax * effectiveDpr), Math.round(ay * effectiveDpr))
         // After the first (top) frame, hide other fixed/sticky elements so headers/footers don't repeat.
         if (i === 0 && headerInfo.elements.length > 0) {
           restoreFixed = hideAll(headerInfo.elements)
         }
       }
     }
-    return canvas.toDataURL('image/png')
+    try {
+      const png = canvas.toDataURL('image/png')
+      // If PNG is under 5MB, keep PNG; if oversized, encode as high-quality JPEG to stay safely within the 8MB upload cap
+      if (png && png.length > 64 && png.length <= 5 * 1024 * 1024) {
+        return png
+      }
+      const jpeg = canvas.toDataURL('image/jpeg', 0.88)
+      if (jpeg && jpeg.length > 64) return jpeg
+      return png || deps.capture()
+    } catch {
+      try {
+        const jpeg = canvas.toDataURL('image/jpeg', 0.88)
+        if (jpeg && jpeg.length > 64) return jpeg
+      } catch {}
+      return deps.capture()
+    }
   } finally {
     if (restoreFixed) restoreFixed()
     restoreOverlays()
