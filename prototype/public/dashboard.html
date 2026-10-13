@@ -22306,7 +22306,6 @@
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
         ${_showMetaLine ? `<div class="tkt-meta-line muted">${(t.urlHost || t.urlPath) ? esc((t.urlHost || "") + (t.urlPath || "")) : ""}${((t.urlHost || t.urlPath) && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}</div>` : ""}
-        ${t.sourceReferrer ? `<div class="tkt-meta-line muted">Referred from: ${esc(t.sourceReferrer)}</div>` : ""}
       </div>` : ""
       // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
       // KLAVITYKLA-513: a null/missing priority must resolve to the ONE canonical default 'medium'
