@@ -10594,6 +10594,21 @@
       font-size: 13px
     }
 
+    /* KD-227: Labels popup opened from a ticket — click a label to add it to the ticket */
+    .ml-row.ml-pick .ml-name {
+      cursor: pointer
+    }
+
+    .ml-row.ml-pick:hover {
+      border-color: var(--indigo)
+    }
+
+    .ml-added-tag {
+      margin-left: 6px;
+      font-size: 11px;
+      color: var(--paper-faint)
+    }
+
     .ml-edit-inp {
       flex: 1;
       background: var(--ink);
@@ -14410,6 +14425,15 @@
     .kdd-item:hover, .kdd-item:focus-visible { background: rgba(99,102,241,.12); outline: none }
     .kdd-item[aria-checked="true"] { font-weight: 700 }
     .kdd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    /* KD-227: Labels picker in the same skin — label names keep their case, the list scrolls when long,
+       and the hidden <select> is only the state holder. */
+    .tkt-lbl-kdd .kdd-btn { min-width: 0; text-transform: none; font-weight: 500; color: var(--paper-dim) }
+    .tkt-lbl-kdd .kdd-btn:hover, .tkt-lbl-kdd .kdd-btn[aria-expanded="true"] { color: var(--paper) }
+    .tkt-lbl-kdd .kdd-menu { max-height: 260px; overflow-y: auto }
+    .tkt-lbl-kdd .kdd-item { text-transform: none }
+    .tkt-lbl-kdd .tkt-lbl-add-item { color: var(--indigo); font-weight: 600 }
+    .tkt-lbl-kdd .tkt-lbl-sel { position: absolute; width: 0; height: 0; padding: 0; border: 0; opacity: 0; pointer-events: none }
+    .tkt-lbl-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0 }
 
     .tkt-pri-sel,
     .tkt-status-sel {
@@ -22636,7 +22660,13 @@
           <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
             <div class="tkt-lbl-controls">
               <div class="lbl-chips tkt-lbl-chips"></div>
-              <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
+              ${/* KD-227: same .kdd skin as Status/Priority. The hidden <select> stays the state holder (its
+                   change handler attaches the label / opens the Labels popup); the menu is rebuilt by populateSel. */''}
+              <span class="kdd tkt-lbl-kdd">
+                <button type="button" class="kdd-btn tkt-lbl-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Add label"><span class="kdd-txt">+ Add label</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <span class="kdd-menu hide tkt-lbl-menu" role="menu" aria-label="Labels"></span>
+                <select class="lbl-add-sel tkt-lbl-sel" tabindex="-1" aria-hidden="true"><option value="">+ Add label…</option></select>
+              </span>
               <button class="tkt-lbl-empty-add hide" type="button">+ Add label</button>
             </div>
             <div class="lbl-ghost-chips tkt-lbl-ghost-chips"></div>
@@ -23383,6 +23413,9 @@
       const lblChipsEl = detailEl.querySelector(".tkt-lbl-chips")
       const lblSel = detailEl.querySelector(".tkt-lbl-sel")
       const ghostChipsEl = detailEl.querySelector(".tkt-lbl-ghost-chips")
+      const lblKdd = detailEl.querySelector(".tkt-lbl-kdd")
+      const lblBtn = detailEl.querySelector(".tkt-lbl-btn")
+      const lblMenu = detailEl.querySelector(".tkt-lbl-menu")
       if (lblRow && lblChipsEl && lblSel) {
         const ticketLabels = (t.labels || []).slice()
         const renderLblChips = () => {
@@ -23409,21 +23442,51 @@
         // #653: clean empty state — when there are NO project labels at all, hide the empty select and
         // show a "+ Add label" affordance that opens the manage-labels modal (so a first label can be made).
         const emptyAddBtn = detailEl.querySelector(".tkt-lbl-empty-add")
+        const attachToTicket = async label => {
+          await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ labelId: label.id })
+          }).catch(() => null)
+          if (!ticketLabels.find(l => l.id === label.id)) ticketLabels.push(label)
+          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          if (tkt) tkt.labels = ticketLabels.slice()
+          renderLblChips()
+          populateSel()
+          renderGhostChips()
+        }
+        // KD-227: "+ Add label…" opens the Labels popup for THIS ticket — click an existing label to add it,
+        // or type a new name to create it; either way it's added to the ticket.
+        const openLabelPopupForTicket = () => {
+          if (typeof openManageLabels === "function") openManageLabels({
+            ticket: {
+              add: label => (lblRow.isConnected ? attachToTicket(label) : undefined),
+              has: lid => ticketLabels.some(l => l.id === lid),
+            },
+          })
+        }
         if (emptyAddBtn) {
           emptyAddBtn.addEventListener("click", ev => {
             ev.stopPropagation()
-            if (typeof openManageLabels === "function") openManageLabels()
+            openLabelPopupForTicket()
           })
         }
         const populateSel = () => {
           const projectLabels = state._labels || []
           const attached = new Set(ticketLabels.map(l => l.id))
           const available = projectLabels.filter(l => !attached.has(l.id))
-          lblSel.innerHTML = '<option value="">+ Add label…</option>' +
+          // KD-227: the list starts with "+ Add label…" (opens the Labels popup to create/add a label), followed by
+          // the labels that can be attached. The hidden select mirrors the menu so `change` stays the one entry point.
+          lblSel.innerHTML = '<option value="" hidden selected>+ Add label…</option><option value="__add_label__">+ Add label…</option>' +
             available.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
-          lblSel.style.display = available.length ? "" : "none"
-          // Fall back to the "+ Add label" button only when the project has no labels to attach at all
-          // (an existing project WITH labels, all already attached, just hides the select — no dead button).
+          if (lblMenu) {
+            lblMenu.innerHTML = '<button type="button" class="kdd-item tkt-lbl-add-item" role="menuitem" data-val="__add_label__">+ Add label…</button>' +
+              available.map(l => `<button type="button" class="kdd-item" role="menuitem" data-val="${esc(l.id)}"><span class="tkt-lbl-dot" style="background:${esc(l.color)}"></span><span class="kdd-txt">${esc(l.name)}</span></button>`).join("")
+          }
+          // KD-227: stays visible even when every label is attached — it's the way into the popup to create more.
+          const showPicker = projectLabels.length > 0
+          if (lblKdd) lblKdd.style.display = showPicker ? "" : "none"
+          else lblSel.style.display = showPicker ? "" : "none"
+          // Fall back to the "+ Add label" button only when the project has no labels at all.
           if (emptyAddBtn) emptyAddBtn.classList.toggle("hide", projectLabels.length > 0)
         }
 
@@ -23461,23 +23524,51 @@
 
         renderLblChips()
         populateSel()
+        // KD-227: called by refreshTicketLabelOptions() after Manage Labels changes the project's labels —
+        // re-sync attached chips (rename/recolor/delete) and rebuild the dropdown so a new label is selectable.
+        lblRow._klavLblRefresh = () => {
+          const byId = new Map((state._labels || []).map(l => [l.id, l]))
+          for (let i = ticketLabels.length - 1; i >= 0; i--) {
+            const cur = byId.get(ticketLabels[i].id)
+            if (cur) ticketLabels[i] = cur
+            else ticketLabels.splice(i, 1)
+          }
+          renderLblChips()
+          populateSel()
+          renderGhostChips()
+        }
+        // KD-227: Status/Priority-style menu. Picking an item drives the hidden select's `change` (below);
+        // outside-click / Escape closing comes from the shared .kdd handlers above.
+        if (lblBtn && lblMenu) {
+          const setOpen = open => { lblMenu.classList.toggle("hide", !open); lblBtn.setAttribute("aria-expanded", String(open)) }
+          lblBtn.addEventListener("click", ev => {
+            ev.stopPropagation()
+            const willOpen = lblMenu.classList.contains("hide")
+            detailEl.querySelectorAll(".kdd-menu").forEach(m => {
+              if (m === lblMenu) return
+              m.classList.add("hide")
+              const b = m.parentElement && m.parentElement.querySelector(".kdd-btn"); if (b) b.setAttribute("aria-expanded", "false")
+            })
+            setOpen(willOpen)
+          })
+          lblMenu.addEventListener("click", ev => {
+            const it = ev.target.closest(".kdd-item")
+            if (!it) return
+            ev.stopPropagation()
+            setOpen(false)
+            lblSel.value = it.getAttribute("data-val")
+            lblSel.dispatchEvent(new Event("change", { bubbles: true }))
+          })
+        }
         lblSel.addEventListener("change", async ev => {
           ev.stopPropagation()
           const lid = lblSel.value
           if (!lid) return
           lblSel.value = ""
+          if (lid === "__add_label__") { openLabelPopupForTicket(); return }
           const label = (state._labels || []).find(l => l.id === lid)
           if (!label) return
-          await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ labelId: lid })
-          }).catch(() => null)
-          if (!ticketLabels.find(l => l.id === lid)) ticketLabels.push(label)
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
-          if (tkt) tkt.labels = ticketLabels.slice()
-          renderLblChips()
-          populateSel()
-          renderGhostChips()
+          await attachToTicket(label)
         })
 
         // Fetch AI suggestions async (non-blocking); renders ghost chips when ready. Only for the detail the user
@@ -25584,6 +25675,9 @@
     }
 
     function refreshTicketLabelOptions() {
+      // KD-227: also repaint every open ticket's Labels picker, so a label created/renamed/deleted in
+      // Manage Labels shows up in (or leaves) the ticket's "+ Add label…" dropdown right away.
+      document.querySelectorAll(".tkt-lbl-row").forEach(el => { if (typeof el._klavLblRefresh === "function") el._klavLblRefresh() })
       const fbLabel = document.getElementById("fbLabel")
       if (!fbLabel) return
       const selected = _tktFilters.label
@@ -28558,33 +28652,63 @@
     }
 
     let _mlBound = false
-    function openManageLabels() {
+    // KD-227: set when the popup is opened from a ticket's "+ Add label…" — { add(label), has(id) }. Clicking a
+    // label in the list adds it to that ticket, and a label created here is added too. Cleared on every open/close.
+    let _mlTicket = null
+    const _mlAddToTicket = async label => {
+      if (!_mlTicket) return
+      await _mlTicket.add(label)
+      renderMlList()
+      try { document.getElementById("mlNewName").focus() } catch (e) { }
+    }
+    function openManageLabels(opts) {
       const bg = document.getElementById("manageLabelsBg"); if (!bg) return
+      _mlTicket = (opts && opts.ticket) || null
+      document.getElementById("mlErr").textContent = ""
       renderMlList()
       bg.classList.add("show")
+      setTimeout(() => { try { document.getElementById("mlNewName").focus() } catch (e) { } }, 0)
       if (!_mlBound) {
         _mlBound = true
-        document.getElementById("mlCloseBtn").addEventListener("click", () => bg.classList.remove("show"))
-        bg.addEventListener("click", ev => { if (ev.target === bg) bg.classList.remove("show") })
-        document.getElementById("mlAddBtn").addEventListener("click", async () => {
+        const closeMl = () => { bg.classList.remove("show"); _mlTicket = null }
+        document.getElementById("mlCloseBtn").addEventListener("click", closeMl)
+        bg.addEventListener("click", ev => { if (ev.target === bg) closeMl() })
+        const addLabel = async () => {
           const name = document.getElementById("mlNewName").value.trim()
           const color = document.getElementById("mlNewColor").value
           const err = document.getElementById("mlErr")
           if (!name) { err.textContent = "Name is required."; return }
           err.textContent = ""
-          const projId = curProjId(); if (!projId) return
+          const projId = curProjId()
+          if (!projId) { err.textContent = "Couldn't create label — no project selected. Reload and try again."; return }
           const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`, {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ name, color })
           }).catch(() => null)
           const d = r ? await r.json().catch(() => ({})) : {}
-          if (!r || !r.ok) { err.textContent = d.error || "Couldn't create label."; return }
           if (!state._labels) state._labels = []
+          // KD-227: 409 = the label already exists — use it (add it to a stale local list, and to the
+          // ticket the popup was opened from) instead of failing.
+          if (r && r.status === 409 && d.label) {
+            if (!state._labels.some(l => l.id === d.label.id)) { state._labels.push(d.label); refreshTicketLabelOptions(); renderMlList() }
+            if (_mlTicket) { document.getElementById("mlNewName").value = ""; await _mlAddToTicket(d.label); err.textContent = `"${d.label.name}" already exists — added it to this ticket.`; return }
+            err.textContent = (d.error || "That label already exists.")
+            return
+          }
+          if (!r || !r.ok) {
+            // KD-227: say WHY (offline / server error) instead of a bare "Couldn't create label."
+            err.textContent = d.error || (r ? `Couldn't create label (server error ${r.status}). Try again.` : "Couldn't create label — can't reach the server. Check your connection and try again.")
+            return
+          }
           state._labels.push(d.label)
+          state._labels.sort((a, b) => String(a.name).localeCompare(String(b.name)))
           refreshTicketLabelOptions()
           document.getElementById("mlNewName").value = ""
           renderMlList()
-        })
+          await _mlAddToTicket(d.label)
+        }
+        document.getElementById("mlAddBtn").addEventListener("click", addLabel)
+        document.getElementById("mlNewName").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addLabel() } })
       }
     }
 
@@ -28643,6 +28767,21 @@
       <span class="ml-name" data-lid="${esc(l.id)}">${esc(l.name)}</span>
       <button class="ml-edit-btn" data-lid="${esc(l.id)}" title="Rename or recolor label" type="button" aria-label="Edit label">${kicon('pencil', { size: 14 })}</button>
       <button class="ml-del-btn" data-lid="${esc(l.id)}" title="Delete label" type="button" aria-label="Delete label">${kicon('x', { size: 15 })}</button>`
+        // KD-227: opened from a ticket — click a label to add it to that ticket (already-added ones are marked).
+        if (_mlTicket) {
+          const nameEl = row.querySelector(".ml-name")
+          if (_mlTicket.has(l.id)) {
+            row.classList.add("ml-added")
+            nameEl.insertAdjacentHTML("beforeend", ' <span class="ml-added-tag">Added</span>')
+          } else {
+            row.classList.add("ml-pick")
+            nameEl.setAttribute("role", "button"); nameEl.setAttribute("tabindex", "0")
+            nameEl.title = "Add to this ticket"
+            const pick = ev => { ev.stopPropagation(); document.getElementById("mlErr").textContent = ""; _mlAddToTicket(l) }
+            nameEl.addEventListener("click", pick)
+            nameEl.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(ev) } })
+          }
+        }
         row.querySelector(".ml-edit-btn").addEventListener("click", ev => {
           ev.stopPropagation()
           document.getElementById("mlErr").textContent = ""
