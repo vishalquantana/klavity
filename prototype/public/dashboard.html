@@ -12284,7 +12284,7 @@
     }
 
     .tkt-rec-loading {
-      display: flex;
+      display: none !important;
       align-items: center;
       gap: 7px;
       font-size: 12px;
@@ -12498,7 +12498,7 @@
     }
 
     .tkt-rec-error {
-      display: flex;
+      display: none;
       align-items: center;
       gap: 6px;
       font-size: 12.5px;
@@ -12509,12 +12509,20 @@
       padding: 8px 10px
     }
 
+    .tkt-rec-error.hide {
+      display: none !important;
+    }
+
     .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-video {
       display: none
     }
 
+    .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-error {
+      display: flex;
+    }
+
     .tkt-rec-dl {
-      display: inline-flex;
+      display: none;
       align-items: center;
       gap: 6px;
       align-self: flex-start;
@@ -12526,6 +12534,10 @@
       border-radius: 8px;
       padding: 5px 11px;
       transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), transform var(--mi-dur) var(--mi-ease)
+    }
+
+    .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-dl {
+      display: inline-flex;
     }
 
     .tkt-rec-dl svg {
@@ -21940,7 +21952,7 @@
         var repairing = false
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
-          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "")
+          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "") || /^\//.test(v.getAttribute("src") || "")
           if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
