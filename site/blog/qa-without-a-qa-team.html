@@ -1,0 +1,194 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Do QA Without a QA Team: A Practical AI Playbook · Klavity</title>
+<meta name="description" content="You can't skip QA, only reassign it. Here's how small teams cover the three jobs a QA team does using automation, AI personas, and one owner.">
+<link rel="canonical" href="https://klavity.in/blog/qa-without-a-qa-team">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Do QA Without a QA Team: A Practical AI Playbook"><meta property="og:description" content="You can't skip QA, only reassign it. Here's how small teams cover the three jobs a QA team does using automation, AI personas, and one owner.">
+<meta property="og:url" content="https://klavity.in/blog/qa-without-a-qa-team"><meta property="og:image" content="https://klavity.in/blog/qa-without-a-qa-team.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Do QA Without a QA Team: A Practical AI Playbook"><meta name="twitter:description" content="You can't skip QA, only reassign it. Here's how small teams cover the three jobs a QA team does using automation, AI personas, and one owner."><meta name="twitter:image" content="https://klavity.in/blog/qa-without-a-qa-team.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Do QA Without a QA Team: A Practical AI Playbook","description":"You can't skip QA, only reassign it. Here's how small teams cover the three jobs a QA team does using automation, AI personas, and one owner.","datePublished":"2026-10-13","dateModified":"2026-10-13","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/qa-without-a-qa-team.svg"}},"mainEntityOfPage":"https://klavity.in/blog/qa-without-a-qa-team","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Do QA Without a QA Team: A Practical AI Playbook","item":"https://klavity.in/blog/qa-without-a-qa-team"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/qa-without-a-qa-team"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can AI completely replace a QA team?","acceptedAnswer":{"@type":"Answer","text":"No. AI QA replaces the repetitive part of the work — walking flows, spotting visual and console-level breakage, drafting structured reports, keeping selectors alive. It does not replace judgment about whether a behaviour is a bug, which browsers a given client cares about, or whether a defect justifies delaying a release. Keep those with a named human."}},{"@type":"Question","name":"How many automated tests does a small team actually need?","acceptedAnswer":{"@type":"Answer","text":"Fewer than most teams assume. Cover the money path — signup, login, checkout, the one core action — with a handful of reliable end-to-end checks that run on every deploy, and add a permanent regression test any time a tier-1 flow breaks twice. A small suite you trust beats a large suite you've learned to ignore."}},{"@type":"Question","name":"Who should own QA if we have no QA engineer?","acceptedAnswer":{"@type":"Answer","text":"One named person per release, not the team collectively. Shared ownership is the most common reason sign-off silently stops happening. Rotating the role between developers works fine as long as it is explicit who holds it for the current release."}},{"@type":"Question","name":"What's the first thing to set up if we have no QA process at all?","acceptedAnswer":{"@type":"Answer","text":"One-click bug reporting, then one automated check on your highest-risk flow. Reporting comes first because it converts vague complaints into actionable tickets immediately, with no test authoring required."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-10-13</div>
+    <h1>How to Do QA Without a QA Team: A Practical AI Playbook</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Three QA jobs reassigned: verify, detect, triage">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="48" y="40" width="704" height="2" fill="#6366f1" opacity="0.35"/>
+
+  <rect x="56" y="80" width="200" height="118" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="56" y="80" width="200" height="118" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <rect x="76" y="100" width="160" height="18" rx="4" fill="#6366f1" opacity="0.55"/>
+  <rect x="76" y="130" width="112" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="76" y="148" width="138" height="8" rx="4" fill="#f5f0e8" opacity="0.14"/>
+  <circle cx="86" cy="176" r="9" fill="#4ade80" opacity="0.85"/>
+  <polyline points="82,176 85,180 91,172" fill="none" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="300" y="80" width="200" height="118" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="300" y="80" width="200" height="118" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="400" cy="128" r="26" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+  <line x1="419" y1="147" x2="438" y2="166" stroke="#6366f1" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="400" cy="128" r="7" fill="#f87171" opacity="0.9"/>
+  <rect x="320" y="176" width="92" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+
+  <rect x="544" y="80" width="200" height="118" rx="12" fill="#f5f0e8" opacity="0.05"/>
+  <rect x="544" y="80" width="200" height="118" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <rect x="566" y="102" width="156" height="10" rx="5" fill="#f87171" opacity="0.75"/>
+  <rect x="566" y="124" width="120" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="566" y="142" width="142" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="566" y="166" width="64" height="20" rx="6" fill="#4ade80" opacity="0.8"/>
+
+  <path d="M256 139 L300 139" stroke="#6366f1" stroke-width="2" stroke-dasharray="5 5"/>
+  <path d="M500 139 L544 139" stroke="#6366f1" stroke-width="2" stroke-dasharray="5 5"/>
+
+  <rect x="56" y="258" width="688" height="106" rx="12" fill="#6366f1" opacity="0.1"/>
+  <rect x="56" y="258" width="688" height="106" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <circle cx="120" cy="311" r="24" fill="#6366f1" opacity="0.65"/>
+  <circle cx="120" cy="303" r="8" fill="#1e1b2e"/>
+  <path d="M106 320 q14 -14 28 0" fill="#1e1b2e"/>
+  <rect x="176" y="294" width="180" height="10" rx="5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="176" y="316" width="118" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <path d="M430 311 L470 311" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M460 303 L470 311 L460 319" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="492" y="286" width="212" height="50" rx="10" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.8"/>
+  <polyline points="516,311 526,322 546,298" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <rect x="566" y="306" width="114" height="10" rx="5" fill="#4ade80" opacity="0.35"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>QA without a QA team works when you reassign the three jobs a QA function performs — pre-release verification, post-release detection, and triage — rather than dropping them. The practical setup is a narrow automated suite over the money path, an AI persona pass before each release, one-click bug reporting for escapes, and one named release owner who makes the judgment calls.</div>
+    <div class="prose"><p>You can do QA without a QA team by reassigning the three jobs a QA team actually does &mdash; pre-release verification, post-release detection, and triage &mdash; to automation, AI testing agents, and one named owner per release. No team skips QA successfully; teams that say they have "no QA process" still do QA, they just do it in production with their clients and users as the test suite. The workable version for a small agency or a solo founder is a narrow automated suite over the money path, an AI persona pass before each release, and a one-click bug-report channel for whatever escapes.</p>
+
+<h2>What does a QA team actually do that you have to replace?</h2>
+<p>Before you can run QA without a QA team, you need to know what you are replacing. Strip away job titles and a QA function does three distinct things:</p>
+<ol>
+<li><strong>Verification before release.</strong> Does the thing we just built work, and did it break anything that used to work?</li>
+<li><strong>Detection after release.</strong> When something breaks in the wild, do we find out before the client does?</li>
+<li><strong>Triage and reporting.</strong> Turning "it's broken" into a ticket a developer can act on without a reply thread.</li>
+</ol>
+<p>Each of these has to land somewhere. The common failure is not that small teams choose badly &mdash; it's that they never assign jobs 2 and 3 at all, so detection defaults to the client's email and triage defaults to a Slack message that says "the site is weird on mobile."</p>
+
+<h3>Why the third job is the one that quietly costs the most</h3>
+<p>Verification gaps cost you a bug. Triage gaps cost you the same bug three times: once to report it vaguely, once to chase reproduction steps, once to discover it was environment-specific. A bug report that ships with exact steps, the environment, and console plus network evidence skips that whole loop &mdash; which is why <a href="/snap">Snap</a> captures that payload automatically from a right-click instead of asking the reporter to describe it.</p>
+
+<h2>How do you decide what to test when nobody owns QA?</h2>
+<p>With no QA headcount, coverage is a budget, not an aspiration. Spend it risk-first:</p>
+<ul>
+<li><strong>Tier 1 &mdash; the money path.</strong> Signup, login, checkout, contact form, the one core action the product exists for. If these break, the engagement is in trouble today. These get automated checks that run on every deploy.</li>
+<li><strong>Tier 2 &mdash; high-traffic secondary flows.</strong> Search, filtering, dashboard load, account settings. These get an AI persona or scripted pass before each release, not on every commit.</li>
+<li><strong>Tier 3 &mdash; everything else.</strong> Admin corners, rarely used settings, legacy pages. Explicitly best-effort. Write that down so it's a decision rather than an accident.</li>
+</ul>
+<p>Two rules keep the budget honest. First, a tier-1 flow that breaks twice gets a regression test the same week, permanently. Second, you cap the suite: a small team can maintain a handful of reliable end-to-end tests far better than dozens of flaky ones. Our guide on <a href="/blog/which-tests-to-automate-first">which tests to automate first</a> works through that ordering in detail.</p>
+
+<h2>Can AI QA replace a QA team?</h2>
+<p>Not as a like-for-like swap, and anyone selling it that way is overselling. What <a href="/blog/ai-qa-complete-guide">AI QA</a> genuinely replaces is the repetitive, high-volume part of the work &mdash; walking flows, noticing visual and console-level breakage, drafting a structured report, keeping selectors alive as the UI shifts. That is most of the clock time in a small-team QA process.</p>
+<p>What it does not replace is judgment: deciding whether a behaviour is a bug or an intentional product choice, knowing which client cares about which browser, and weighing whether a defect is worth delaying a release. Those stay with a human. So the honest framing is not "AI instead of QA" but "AI does the passes, a named human makes the calls."</p>
+<p>In practice that maps onto three moving parts:</p>
+<ul>
+<li><strong>Persona passes</strong> &mdash; <a href="/sims">Sims</a> drives your site as different user types, which surfaces the paths a builder never takes because they know where the sharp edges are.</li>
+<li><strong>Self-maintaining regression</strong> &mdash; <a href="/autosim">AutoSim</a> keeps end-to-end tests running as markup changes, so the suite doesn't rot the moment a designer renames a class.</li>
+<li><strong>Human-reported escapes</strong> &mdash; Snap turns whatever a client or user hits into a complete ticket, so detection doesn't depend on someone being articulate.</li>
+</ul>
+
+<h2>How do the options compare for a team with no QA headcount?</h2>
+<table>
+<thead><tr><th>Approach</th><th>Who finds bugs first</th><th>Ongoing cost</th><th>Maintenance burden</th><th>Best for</th></tr></thead>
+<tbody>
+<tr><td>No QA at all</td><td>The client or end user</td><td>Zero upfront, high in rework and reputation</td><td>None</td><td>Nothing you bill for</td></tr>
+<tr><td>Ad-hoc manual clicking</td><td>Whoever happens to look</td><td>Developer hours before each release</td><td>None, but coverage drifts</td><td>Very early prototypes</td></tr>
+<tr><td>Hire or contract QA</td><td>A trained human</td><td>Salary or retainer</td><td>Low for you, high for them</td><td>Teams past a few shipping engineers</td></tr>
+<tr><td>AI-assisted QA + one owner</td><td>Automated passes, before release</td><td>Tool cost plus a small weekly slice of one person</td><td>Low if the suite stays narrow</td><td>Agencies, freelancers, solo founders</td></tr>
+</tbody>
+</table>
+<p>The fourth row is the only one that scales down cleanly to a two-person shop, because its cost is tool cost rather than headcount.</p>
+
+<h2>What does QA without a QA team look like week to week?</h2>
+<p>Keep the process small enough that it survives a busy week:</p>
+<ol>
+<li><strong>Name a release owner.</strong> One person per release signs off. Rotate it if you like, but it is never "the team" &mdash; shared ownership is how sign-off gets skipped.</li>
+<li><strong>Automate tier 1 on every deploy.</strong> A handful of end-to-end checks on the money path, run in CI, failing loudly.</li>
+<li><strong>Run one pre-release pass.</strong> AI personas plus a short human checklist over tier 2. Our <a href="/blog/pre-launch-qa-checklist-for-web-agencies">pre-launch QA checklist</a> is a usable starting list.</li>
+<li><strong>Make reporting one action.</strong> Clients, stakeholders, and users should file a bug without writing prose. If filing is hard, you lose reports you needed.</li>
+<li><strong>Review escapes monthly.</strong> Every bug a client found before you did is a 10-minute question: which tier was it in, and does it deserve a permanent test? This is the loop that makes the process get better instead of just existing.</li>
+</ol>
+<p>That's roughly an hour of standing process per release, most of it waiting for automated passes to finish. If you want the fuller version of this cycle, see our breakdown of an <a href="/blog/ai-qa-workflow">AI QA workflow</a>.</p>
+
+<h2>What are the common failure modes?</h2>
+<ul>
+<li><strong>Testing what's easy instead of what's risky.</strong> A suite that covers the marketing page and not checkout is decoration.</li>
+<li><strong>Letting the suite grow faster than you can maintain it.</strong> Flaky tests get ignored, then the whole suite gets ignored.</li>
+<li><strong>Treating AI output as a verdict.</strong> Automated findings are leads. Someone confirms them, or you'll ship fixes for non-bugs.</li>
+<li><strong>No owner.</strong> Every other item on this list is recoverable. This one isn't, because nobody notices the process stopped.</li>
+</ul>
+
+<h2>Where should you start?</h2>
+<p>Pick your single highest-risk flow &mdash; the one that, if it broke silently for a week, would cost you a client. Automate that one flow, give whoever reports bugs a one-click way to do it, and add a pre-release persona pass. That's a working QA process without a QA team, and it fits in an afternoon.</p>
+<p><a href="/onboarding">Try Klavity free</a> and run your first automated pass over a client site before your next release &mdash; no QA hire required.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Assign all three QA jobs: verify, detect, triage</li><li>Automate the money path first, cap the suite small</li><li>Name one release owner, never “the team”</li><li>Review every client-found escape for a permanent test</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can AI completely replace a QA team?</summary><p>No. AI QA replaces the repetitive part of the work — walking flows, spotting visual and console-level breakage, drafting structured reports, keeping selectors alive. It does not replace judgment about whether a behaviour is a bug, which browsers a given client cares about, or whether a defect justifies delaying a release. Keep those with a named human.</p></details><details><summary>How many automated tests does a small team actually need?</summary><p>Fewer than most teams assume. Cover the money path — signup, login, checkout, the one core action — with a handful of reliable end-to-end checks that run on every deploy, and add a permanent regression test any time a tier-1 flow breaks twice. A small suite you trust beats a large suite you've learned to ignore.</p></details><details><summary>Who should own QA if we have no QA engineer?</summary><p>One named person per release, not the team collectively. Shared ownership is the most common reason sign-off silently stops happening. Rotating the role between developers works fine as long as it is explicit who holds it for the current release.</p></details><details><summary>What's the first thing to set up if we have no QA process at all?</summary><p>One-click bug reporting, then one automated check on your highest-risk flow. Reporting comes first because it converts vague complaints into actionable tickets immediately, with no test authoring required.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
