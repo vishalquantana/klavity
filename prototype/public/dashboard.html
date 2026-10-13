@@ -23351,7 +23351,12 @@
               method: "DELETE",
             }).catch(() => null)
             const d = r ? await r.json().catch(() => ({})) : {}
-            if (r && r.ok && d.ok) el.remove()
+            if (r && r.ok && d.ok) {
+              // KD-182: tell the owning timeline (buildTimelineSection) so it drops the comment from its data and
+              // repaints — that's what updates the Comments tab count. Dispatched before remove() so it bubbles.
+              el.dispatchEvent(new CustomEvent("klav:comment-deleted", { bubbles: true, detail: { id: item.id } }))
+              el.remove()
+            }
             else { delBtn.disabled = false; alert(d.error || "Couldn't delete comment.") }
           })
         }
@@ -23539,12 +23544,16 @@
       // #533: comments the user just posted this session, kept locally so a lagging/failed /timeline read
       // can never remove one that's already on screen. Merged (deduped by id) into every reload.
       const localComments = []
+      // KD-182: comments deleted this session (filtered out of every paint, so a stale/in-flight /timeline read
+      // can't bring one back) and the last server read (so a delete repaints the full list, not just local items).
+      const deletedCommentIds = new Set()
+      let lastServerItems = []
 
       // Render the merged list (server items + synthesized origin + any locally-posted comments), deduped
       // by id and sorted oldest→newest. Shared by the optimistic append and the network reload paths.
       function paintTimeline(serverItems) {
         if (!listEl) return
-        const items = (serverItems || []).slice()
+        const items = (serverItems || []).filter(it => !(it && it.kind === "comment" && deletedCommentIds.has(String(it.id))))
         const seen = new Set(items.map(it => it && it.id != null ? String(it.id) : null).filter(Boolean))
         // Fold in locally-posted comments the server read hasn't returned yet (race / lag / failure).
         for (const c of localComments) {
@@ -23588,7 +23597,7 @@
         const to = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) { } }, 9000) : null
         const clearTo = () => { if (to) clearTimeout(to) }
         tktRead("timeline", ticketId, "/api/feedback/" + encodeURIComponent(ticketId) + "/timeline", ctrl ? { signal: ctrl.signal } : undefined)
-          .then(d => { clearTo(); paintTimeline((d.items || []).slice()) })
+          .then(d => { clearTo(); lastServerItems = (d.items || []).slice(); paintTimeline(lastServerItems) })
           .catch(() => {
             clearTo()
             // Short retry/backoff on a failed read before giving up (never drops a local comment).
@@ -23606,6 +23615,18 @@
       }
 
       reloadTimeline()
+
+      // KD-182: a deleted comment used to vanish from the list while the Comments tab count stayed the same
+      // (and a comment posted this session could reappear from localComments). Drop it from every source,
+      // forget the cached /timeline read, and repaint so the count is recomputed.
+      wrap.addEventListener("klav:comment-deleted", ev => {
+        const id = ev && ev.detail && ev.detail.id
+        if (id == null) return
+        deletedCommentIds.add(String(id))
+        for (let i = localComments.length - 1; i >= 0; i--) if (String(localComments[i].id) === String(id)) localComments.splice(i, 1)
+        if (typeof _tktReads !== "undefined") _tktReads.delete(String(ticketId) + "|timeline")
+        paintTimeline(lastServerItems)
+      })
 
       if (submitBtn && ta) {
         submitBtn.addEventListener("click", async () => {
