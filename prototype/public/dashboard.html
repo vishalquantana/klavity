@@ -7537,9 +7537,9 @@
     /* editable description (click-to-edit / pencil → textarea + Save/Cancel) */
     /* KLA-832: the Description reads as a clearly-outlined white card (repo "white cards on beige" standard) —
    a visible border/stroke + padding so the detail body never sits as bare text directly on the page bg. */
-    .tkt-desc {
-      background: var(--ink-2);
-      border: 1px solid var(--line);
+    .tkt-desc{
+      background:var(--ink-2);
+      border:1px solid var(--line);
       border-radius: 12px;
       padding: 13px 15px
     }
@@ -12109,7 +12109,8 @@
 
     .tkt-rec-video {
       width: 100%;
-      max-height: 360px;
+      max-height: 600px;
+      object-fit: contain;
       border-radius: 10px;
       background: #000;
       display: block
@@ -21543,12 +21544,16 @@
         // so a reporter can always retrieve their own evidence. Inline SVG download glyph (no emoji; kicon has no
         // 'download' icon registered).
         var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+        var isMp4 = (r.contentType && r.contentType.includes("mp4")) || (String(r.key || "").endsWith(".mp4"))
+        var dlExt = isMp4 ? "mp4" : "webm"
         var vid = r.url
           ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '">'
-          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline></video>'
+          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline>'
+          + '<source src="' + esc(String(r.url)) + '"' + (r.contentType ? ' type="' + esc(String(r.contentType)) + '"' : '') + '>'
+          + 'Your browser does not support video playback.</video>'
           + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading recording…</div>'
           + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This recording couldn’t play here. Download it to view.</div>'
-          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.webm" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
+          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.' + dlExt + '" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
           + '</div>'
           : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
         var st = r.transcript_status || "none"
@@ -21601,23 +21606,25 @@
         var loadingEl = wrap ? wrap.querySelector(".tkt-rec-loading") : null
         var errEl = wrap ? wrap.querySelector(".tkt-rec-error") : null
         function hideLoading() { if (loadingEl) loadingEl.classList.add("hide") }
+        if (v.readyState >= 1) hideLoading()
         var repairing = false
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
-          // Infinity / NaN / 0 duration → force the browser to compute the real one by seeking to the end.
-          if (!isFinite(v.duration) || v.duration <= 0) {
+          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "")
+          if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
           }
         })
         v.addEventListener("durationchange", function () {
-          // After the forced seek the duration is now finite; snap the playhead back to the start, once.
           if (repairing && isFinite(v.duration) && v.duration > 0) {
             repairing = false
             try { v.currentTime = 0 } catch (e) { }
           }
         })
+        v.addEventListener("loadeddata", hideLoading)
         v.addEventListener("canplay", hideLoading)
+        v.addEventListener("playing", hideLoading)
         v.addEventListener("error", function () {
           hideLoading()
           if (errEl) errEl.classList.remove("hide")
