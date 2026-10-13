@@ -7799,6 +7799,75 @@
       -webkit-overflow-scrolling: touch
     }
 
+    /* KD-297: the board's own horizontal scrollbar sat under the TALLEST column — i.e. at the very end of the
+       page. .kb-hscroll is a mirror scrollbar (wireKanbanHScroll) that sticks to the bottom of the viewport
+       while the board is on screen and docks right under the board at its end; the board's native bar is
+       hidden so only one shows. Trackpad / shift+wheel still scroll the board directly.
+       Desktop only: on phones (≤760px) the board is swiped directly, so it keeps its native bar + column snap. */
+    @media (min-width: 761px) {
+      .kanban.kb-has-hscroll {
+        scrollbar-width: none;
+        /* Column snap fought the mirrored scroll (snap nudges the board → the bar follows → jitter). */
+        scroll-snap-type: none
+      }
+
+      .kanban.kb-has-hscroll::-webkit-scrollbar {
+        display: none
+      }
+    }
+
+    @media (max-width: 760px) {
+      .kb-hscroll {
+        display: none !important
+      }
+    }
+
+    .kb-hscroll {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      height: 16px;
+      margin-top: 2px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      background: var(--ink-2)
+    }
+
+    .kb-hscroll.hide {
+      display: none
+    }
+
+    /* Always-visible thumb (overlay scrollbars — macOS, some Chrome setups — would otherwise hide it until
+       scrolled, defeating the point). WebKit/Blink use the pseudo-elements; Firefox the standard props. */
+    .kb-hscroll::-webkit-scrollbar {
+      height: 10px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-track {
+      background: var(--ink-3);
+      border-radius: 999px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-thumb {
+      background: var(--paper-faint);
+      border-radius: 999px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-thumb:hover {
+      background: var(--paper-dim)
+    }
+
+    @supports (-moz-appearance: none) {
+      .kb-hscroll {
+        scrollbar-width: thin;
+        scrollbar-color: var(--paper-faint) var(--ink-3)
+      }
+    }
+
+    .kb-hscroll-in {
+      height: 1px
+    }
+
     /* KD-165: each column is now independently drag-resizable (Jira-board style — see wireKanbanResize),
    which needs a real per-column WIDTH to drag, not #676's "grow to fill" flex-basis. --kb-w is set
    per-column (persisted to localStorage) by wireKanbanResize; a column with no saved width falls back
@@ -26568,6 +26637,50 @@
     // localStorage keyed by column (so "In Progress" wider / "Dismissed" narrower survives a reload,
     // independently, same as a real Jira board). Re-wired on every render (columns are rebuilt from
     // scratch each time) — cheap: only as many listeners as visible columns.
+    // KD-297: a mirror horizontal scrollbar for the board (see .kb-hscroll). It's appended right after the board
+    // and is position:sticky; bottom:0, so it stays at the bottom of the screen while the board is in view and
+    // docks under the board at its end. Its inner spacer tracks the board's scrollWidth (columns can be resized,
+    // the window can change), and the two scroll positions are kept in sync both ways.
+    let _kbHScrollRO = null
+    function wireKanbanHScroll(board, boardEl) {
+      if (_kbHScrollRO) { try { _kbHScrollRO.disconnect() } catch (e) { } _kbHScrollRO = null }
+      const bar = document.createElement("div")
+      bar.className = "kb-hscroll hide"
+      bar.setAttribute("aria-hidden", "true")   // a mirror of the board's own scroll; the board stays the a11y target
+      const inner = document.createElement("div")
+      inner.className = "kb-hscroll-in"
+      bar.appendChild(inner)
+      board.appendChild(bar)
+      boardEl.classList.add("kb-has-hscroll")
+      const measure = () => {
+        if (!bar.isConnected) return
+        inner.style.width = boardEl.scrollWidth + "px"
+        bar.classList.toggle("hide", boardEl.scrollWidth <= boardEl.clientWidth + 1)
+        if (Math.abs(bar.scrollLeft - boardEl.scrollLeft) > 1) bar.scrollLeft = boardEl.scrollLeft
+      }
+      // One side drives at a time: whichever element the user is scrolling copies its position to the other, and
+      // the echo scroll event that copy triggers is ignored (until the driver has been idle ~150ms). Without the
+      // lock the two kept correcting each other by a pixel or so per frame — visible as flicker.
+      let driver = null, idleT = 0
+      const follow = (src, dst, name) => src.addEventListener("scroll", () => {
+        if (driver && driver !== name) return
+        driver = name
+        if (dst.scrollLeft !== src.scrollLeft) dst.scrollLeft = src.scrollLeft
+        clearTimeout(idleT)
+        idleT = setTimeout(() => { driver = null }, 150)
+      }, { passive: true })
+      follow(bar, boardEl, "bar")
+      follow(boardEl, bar, "board")
+      if (typeof ResizeObserver !== "undefined") {
+        _kbHScrollRO = new ResizeObserver(() => measure())
+        _kbHScrollRO.observe(boardEl)
+        boardEl.querySelectorAll(".kb-col").forEach(c => _kbHScrollRO.observe(c))   // a column drag-resize changes scrollWidth
+      } else {
+        window.addEventListener("resize", measure)
+      }
+      measure()
+    }
+
     function wireKanbanResize(boardEl) {
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
       const storeKey = (key) => "klav:kbcol:" + key
@@ -26836,6 +26949,7 @@
       board.appendChild(bulkBar)
       board.appendChild(boardEl)
       wireKanbanResize(boardEl) // KD-165: restore + wire each column's drag-resize handle
+      wireKanbanHScroll(board, boardEl) // KD-297: horizontal scrollbar pinned to the viewport bottom
       // Live count/visibility sync when selection changes via checkbox or shift-click (no full rebuild).
       syncKbSelectionUi = () => {
         const bar = board.querySelector("#tktBulkBar")
