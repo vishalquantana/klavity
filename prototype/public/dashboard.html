@@ -21326,7 +21326,9 @@
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
           // Infinity / NaN / 0 duration → force the browser to compute the real one by seeking to the end.
-          if (!isFinite(v.duration) || v.duration <= 0) {
+          // Only attempt on non-remote URLs (seeking to 1e101 over remote HTTP/S3 causes HTTP 416 range errors).
+          var isRemote = /^https?:\/\//i.test(v.src || "")
+          if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
           }
