@@ -13942,6 +13942,13 @@
       display: block
     }
 
+    /* Once a Sim is added, the modal shows only the "ready — run a review" block (close button stays) */
+    .sm-modal:has(.sm-success.show)> :not(.sm-top):not(.sm-success),
+    .sm-success .sm-next-steps,
+    .sm-success .sm-success-foot {
+      display: none
+    }
+
     .sm-success-hd {
       text-align: center;
       margin-bottom: 16px
