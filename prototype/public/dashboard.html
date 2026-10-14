@@ -16726,7 +16726,6 @@
               <option value="qa_review">QA Review</option>
               <option value="done">Done</option>
               <option value="dismissed">Dismissed</option>
-              <option value="closed">Closed</option>
             </select>
             <select id="fbPriority" title="Filter by priority">
               <option value="">All priorities</option>
@@ -26387,6 +26386,9 @@
             _tktFilters[key] = val ? val.split(",").map(s => s.trim()).filter(Boolean) : []
           })
         _tktFilters.search = sp.get("q") || ""
+        // KD-223: "Closed" (= Done + Dismissed) was dropped from the Status filter — it isn't a real status.
+        // An old link carrying ?status=closed falls back to All statuses instead of matching nothing.
+        _tktFilters.status = _tktFilters.status.filter(s => s !== "closed")
       } catch (e) { }
     }
 
@@ -26721,14 +26723,7 @@
       const f = _tktFilters || {}
       if (f.status && f.status.length) {
         const statuses = Array.isArray(f.status) ? f.status : String(f.status).split(",").filter(Boolean)
-        if (statuses.length) {
-          const want = []
-          for (const s of statuses) {
-            if (s === "closed") want.push("done", "dismissed")
-            else want.push(s)
-          }
-          if (!want.includes(t.status || "open")) return false
-        }
+        if (statuses.length && !statuses.includes(t.status || "open")) return false
       }
       if (f.priority) {
         const wantP = Array.isArray(f.priority) ? f.priority : String(f.priority).split(",").filter(Boolean)
@@ -26768,7 +26763,6 @@
     }
 
     function ticketStatusParamFor(view) {
-      if (_tktFilters.status === "closed") return "done,dismissed"
       if (_tktFilters.status) return _tktFilters.status
       return ALL_STATUSES
     }
