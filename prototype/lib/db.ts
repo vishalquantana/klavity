@@ -8620,7 +8620,8 @@ export async function listTicketsPaginated(
   }
 
   if (opts.priorities && opts.priorities.length) {
-    conditions.push(`f.priority IN (${opts.priorities.map(() => "?").join(",")})`)
+    // KD-236: an unset priority is "medium" (the canonical default the UI shows), so the Medium filter includes it.
+    conditions.push(`COALESCE(NULLIF(f.priority, ''), 'medium') IN (${opts.priorities.map(() => "?").join(",")})`)
     args.push(...opts.priorities)
   }
 

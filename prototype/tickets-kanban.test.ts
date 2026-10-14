@@ -249,10 +249,15 @@ test("KD-224: every board card shows its priority right beside the source chip",
   const high = kbCardMetaHtml({ priority: "high", labels: [] })
   expect(high).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-high"')
   expect(high).toContain(">high</span>")
-  // An unset priority still shows a chip, so no card is left without one.
-  const none = kbCardMetaHtml({ priority: null, labels: [] })
-  expect(none).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-none"')
-  expect(none).toContain(">No priority</span>")
+  // KD-236: an unset priority shows the canonical default "medium" — the same value the ticket detail page shows
+  // for that ticket (it used to read "No priority" on the card while the detail page said medium).
+  for (const unset of [null, undefined, ""]) {
+    const none = kbCardMetaHtml({ priority: unset, labels: [] })
+    expect(none).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-medium"')
+    expect(none).toContain(">medium</span>")
+    expect(none).not.toContain("No priority")
+  }
+  expect(html).toContain('const curPri = t.priority || "medium"') // the detail page's default this mirrors
   // Urgent has its own colour.
   expect(src).toContain(".chip.sev-urgent {")
 })
