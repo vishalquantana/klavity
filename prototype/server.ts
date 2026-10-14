@@ -12,7 +12,7 @@ import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
-import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
+import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
@@ -52,7 +52,7 @@ import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./li
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
 import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
-import { notifyReporterOnFix } from "./lib/fixed-notification"
+import { notifyReporterOnFix, shouldNotifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
@@ -13268,17 +13268,24 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         if (activityWrites.length) await Promise.all(activityWrites)
-        if (meta.status !== undefined && meta.status !== fbRow.status) {
-          const proj = fbRow.contactEmail ? await projectById(fbRow.projectId).catch(() => null) : null
-          void notifyReporterOnFix({
-            contactEmail: fbRow.contactEmail,
-            previousStatus: fbRow.status,
-            nextStatus: meta.status,
-            title: effectiveTicketTitle(fbRow),
-            projectName: proj?.name ?? "your project",
-            // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
-            ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
-          })
+        // KD-230: only a real "fixed" transition with a reporter email notifies anyone, and its project +
+        // permalink lookups run in the background — previously every status change awaited the permalink
+        // lookup (an extra DB round-trip) before responding, even when no email could ever be sent.
+        if (meta.status !== undefined && meta.status !== fbRow.status
+          && shouldNotifyReporterOnFix({ contactEmail: fbRow.contactEmail, previousStatus: fbRow.status, nextStatus: meta.status })) {
+          const nextStatus = meta.status
+          void (async () => {
+            const proj = await projectById(fbRow.projectId).catch(() => null)
+            await notifyReporterOnFix({
+              contactEmail: fbRow.contactEmail,
+              previousStatus: fbRow.status,
+              nextStatus,
+              title: effectiveTicketTitle(fbRow),
+              projectName: proj?.name ?? "your project",
+              // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
+              ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
+            })
+          })().catch((e: any) => console.warn("fix notification skipped:", e?.message || e))
         }
         // ── Triage-gated auto-copy (KLA-282) ─────────────────────────────────────────────────────
         // Fire auto-copy when a report is triage-ACCEPTED: status transitions to "open" from either
@@ -13639,7 +13646,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
     }
     // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
     if (projMatch) {
       const pid = projMatch[1]
       const sub = projMatch[2] || ""
@@ -14881,16 +14888,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const sp = url.searchParams
         const statuses = sp.get("status") ? sp.get("status")!.split(",").filter(Boolean) : []
         const priorities = sp.get("priority") ? sp.get("priority")!.split(",").filter(Boolean) : []
-        const assignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const rawAssignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const assignees = rawAssignee !== undefined ? rawAssignee.split(",").map(s => s.trim()) : undefined
         const rawSource = sp.get("source") ?? ""
-        const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
-        const label = sp.get("label")?.trim() || undefined
+        const sources = rawSource ? rawSource.split(",").map(s => s.trim()).filter(Boolean) : []
+        const rawLabel = sp.get("label")?.trim() || undefined
+        const labels = rawLabel ? rawLabel.split(",").map(s => s.trim()).filter(Boolean) : []
         // `q` performs project-scoped, paginated server-side text search. Keep the bound
         // modest to avoid unexpectedly expensive broad LIKE queries.
         const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
         const page = Math.max(1, Number(sp.get("page") || "1"))
         const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
-        const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, label, search, page, limit })
+        const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignees, sources, labels, search, page, limit })
         const ticketIds = result.tickets.map((t: any) => t.id)
         const labelsMap = await labelsForFeedbackBatch(ticketIds)
         result.tickets = result.tickets.map((t: any) => ({ ...t, labels: labelsMap[t.id] || [] }))
@@ -14981,6 +14990,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (_kd159Ms >= 1000) console.warn(`[slow-ticket-create] ${_kd159Ms.toFixed(0)}ms project=${proj.id}`)
         // JTBD 2.15: surface a silently-skipped notification email so the UI can warn.
         return json({ ok: true, ticketId: id, ...(createEmailSent === false ? { assigneeEmailSent: false } : {}) }, 201)
+      }
+
+      // DELETE /api/projects/:id/tickets/bulk — bulk delete tickets
+      // Body: { ticketIds: string[] }
+      if ((req.method === "DELETE" && sub === "/tickets/bulk") || (req.method === "POST" && (sub === "/tickets/bulk-delete" || sub === "/tickets/bulk/delete" || sub === "/tickets/bulk"))) {
+        const body = await req.json().catch(() => ({}))
+        if (req.method === "POST" && sub === "/tickets/bulk" && body.action !== "delete") {
+          // not a delete request on POST /tickets/bulk
+        } else {
+          const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
+          if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
+
+          const result = await deleteTicketsBulk(proj.id, ticketIds)
+          if (result.deleted > 0) {
+            await insertActivity({
+              projectId: proj.id,
+              type: "tickets_deleted",
+              actorEmail: me,
+              meta: { count: result.deleted, ticketIds: result.ticketIds },
+            }).catch((e: any) => console.warn("bulk delete activity skipped:", e?.message || e))
+          }
+          return json({ ok: true, deleted: result.deleted, ticketIds: result.ticketIds })
+        }
       }
 
       // PATCH /api/projects/:id/tickets/bulk — KLA-178: apply one action to multiple tickets at once.

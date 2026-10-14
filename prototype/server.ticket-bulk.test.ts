@@ -296,3 +296,36 @@ test("bulk accept (new -> open) fires auto-copy, and a non-accept status change 
     await exec("DELETE FROM connectors WHERE id=?", [cid])
   }
 })
+
+test("DELETE /api/projects/:id/tickets/bulk permanently deletes tickets and respects project scoping", async () => {
+  const DEL_A = `fb_del_a_${RUN}`
+  const DEL_B = `fb_del_b_${RUN}`
+  const DEL_OTHER = `fb_del_other_${RUN}`
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [DEL_A, PROJ, "Ticket to delete A", "low", "open", NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [DEL_B, PROJ, "Ticket to delete B", "low", "open", NOW])
+  await exec("INSERT INTO feedback (id, project_id, observation, priority, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", [DEL_OTHER, OTHER_PROJ, "Ticket in other project", "low", "open", NOW])
+
+  // Outsider gets 403
+  const rOut = await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [DEL_A] }, SID_OUT)
+  expect(rOut.status).toBe(403)
+
+  // Empty or invalid payload
+  const rEmpty = await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [] }, SID_MEMBER)
+  expect(rEmpty.status).toBe(400)
+
+  // Attempting to delete ticket from another project along with ticket from this project
+  const rDel = await req("DELETE", `/api/projects/${PROJ}/tickets/bulk`, { ticketIds: [DEL_A, DEL_B, DEL_OTHER] }, SID_MEMBER)
+  expect(rDel.status).toBe(200)
+  const data = await rDel.json()
+  expect(data.ok).toBe(true)
+  expect(data.deleted).toBe(2)
+
+  // Verify DEL_A and DEL_B are deleted from feedback table
+  const qA = await raw.execute({ sql: "SELECT id FROM feedback WHERE id IN (?, ?)", args: [DEL_A, DEL_B] })
+  expect(qA.rows.length).toBe(0)
+
+  // Verify DEL_OTHER is NOT deleted (was in OTHER_PROJ)
+  const qOther = await raw.execute({ sql: "SELECT id FROM feedback WHERE id = ?", args: [DEL_OTHER] })
+  expect(qOther.rows.length).toBe(1)
+})
+

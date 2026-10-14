@@ -8582,8 +8582,11 @@ export async function listTicketsPaginated(
     statuses?: string[]      // e.g. ["open","in_progress"]; empty = all non-new
     priorities?: string[]    // e.g. ["urgent","high"]
     assignee?: string        // exact email match; empty string = unassigned; omit = all
+    assignees?: string[]     // multi-assignee list; empty string or __unassigned__ = unassigned
     source?: "sim" | "human" | "manual" // sim = sim_id IS NOT NULL; human = sim_id IS NULL and not manual; manual = source='manual'
+    sources?: string[]       // multi-source list
     label?: string           // exact label id; omit = all labels
+    labels?: string[]        // multi-label list
     search?: string          // case-insensitive text search across ticket content
     page?: number            // 1-indexed, default 1
     limit?: number           // default 50, max 200
@@ -8617,11 +8620,22 @@ export async function listTicketsPaginated(
   }
 
   if (opts.priorities && opts.priorities.length) {
-    conditions.push(`f.priority IN (${opts.priorities.map(() => "?").join(",")})`)
+    // KD-236: an unset priority is "medium" (the canonical default the UI shows), so the Medium filter includes it.
+    conditions.push(`COALESCE(NULLIF(f.priority, ''), 'medium') IN (${opts.priorities.map(() => "?").join(",")})`)
     args.push(...opts.priorities)
   }
 
-  if (opts.assignee !== undefined) {
+  if (opts.assignees && opts.assignees.length) {
+    const hasUnassigned = opts.assignees.includes("") || opts.assignees.includes("__unassigned__")
+    const named = opts.assignees.filter(a => a && a !== "__unassigned__")
+    const aParts: string[] = []
+    if (hasUnassigned) aParts.push("(f.assignee IS NULL OR f.assignee='')")
+    if (named.length) {
+      aParts.push(`f.assignee IN (${named.map(() => "?").join(",")})`)
+      args.push(...named)
+    }
+    if (aParts.length) conditions.push(`(${aParts.join(" OR ")})`)
+  } else if (opts.assignee !== undefined) {
     if (opts.assignee === "") {
       conditions.push("(f.assignee IS NULL OR f.assignee='')")
     } else {
@@ -8630,17 +8644,21 @@ export async function listTicketsPaginated(
     }
   }
 
-  if (opts.source === "sim") conditions.push("f.sim_id IS NOT NULL")
-  else if (opts.source === "manual") conditions.push("f.source='manual'")
-  else if (opts.source === "human") conditions.push("f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual')")
+  const sources = (opts.sources && opts.sources.length) ? opts.sources : (opts.source ? [opts.source] : [])
+  if (sources.length) {
+    const sParts: string[] = []
+    if (sources.includes("sim")) sParts.push("f.sim_id IS NOT NULL")
+    if (sources.includes("manual")) sParts.push("f.source='manual'")
+    if (sources.includes("human")) sParts.push("(f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual'))")
+    if (sParts.length) conditions.push(`(${sParts.join(" OR ")})`)
+  }
 
-  if (opts.label) {
-    // Scope the label through the ticket's project too: a label from another tenant can never
-    // influence this result, even if its ID were somehow supplied by a caller.
+  const labels = (opts.labels && opts.labels.length) ? opts.labels : (opts.label ? [opts.label] : [])
+  if (labels.length) {
     conditions.push(`EXISTS (SELECT 1 FROM ticket_labels tl
                              JOIN labels l ON l.id = tl.label_id
-                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id = ?)`)
-    args.push(opts.label)
+                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id IN (${labels.map(() => "?").join(",")}))`)
+    args.push(...labels)
   }
 
   const search = opts.search?.trim()
@@ -8724,6 +8742,46 @@ export async function listTicketsPaginated(
   })
 
   return { tickets, total, page, totalPages }
+}
+
+export async function deleteTicketsBulk(
+  projectId: string,
+  ticketIds: string[]
+): Promise<{ deleted: number; ticketIds: string[] }> {
+  const cleanIds = Array.isArray(ticketIds)
+    ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
+    : []
+  if (!cleanIds.length) return { deleted: 0, ticketIds: [] }
+
+  const placeholders = cleanIds.map(() => "?").join(",")
+  const existingRows = await db!.execute({
+    sql: `SELECT id FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
+    args: [projectId, ...cleanIds],
+  })
+  const validIds = existingRows.rows.map((r: any) => String(r.id)).filter(Boolean)
+  if (!validIds.length) return { deleted: 0, ticketIds: [] }
+
+  const validPlaceholders = validIds.map(() => "?").join(",")
+
+  const stmts: Array<{ sql: string; args: any[] }> = [
+    { sql: `DELETE FROM ticket_comments WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_labels WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_exports WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM activity_events WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback_occurrences WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback_replays WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_viewers WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_assignment_invites WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM export_requests WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM export_outbox WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `UPDATE submission_keys SET feedback_id=NULL WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback WHERE project_id = ? AND id IN (${validPlaceholders})`, args: [projectId, ...validIds] },
+  ]
+
+  await db!.batch(stmts, "write")
+  invalidateDashboardCache(projectId)
+
+  return { deleted: validIds.length, ticketIds: validIds }
 }
 
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────

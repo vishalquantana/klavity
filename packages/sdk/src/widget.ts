@@ -1812,6 +1812,8 @@ async function mount() {
           // SERVER resolves the real Klavity intake project from KLAVITY_INTAKE_PROJECT_ID — the client only
           // ever sends this flag (never a target project id), so a report can't be routed to an arbitrary project.
           feedbackTarget: p.feedbackTarget,
+          // KD-224: the accepted AI-Enhance draft's P1/P2/P3 — mapped to a ticket priority in prepareSubmission.
+          suggestedPriority: p.suggestedPriority,
         }
         // Post-filing bookkeeping shared by both paths: fire the public 'submit' event and clear a
         // multi-page evidence session (KLA-412) now that the report is stored.
@@ -2866,9 +2868,16 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
  */
 export type PreparedSubmission = { fd: FormData; key: string; sent: boolean }
 
+// KD-224: AI-Enhance's P-tag (P1 blocker / P2 workaround exists / P3 minor — see report-enhance.ts) → the
+// ticket priority vocabulary (urgent/high/medium/low). P3 lands on 'medium', the canonical default.
+const ENHANCE_PRIORITY_TO_TICKET: Record<string, "urgent" | "high" | "medium"> = { P1: "urgent", P2: "high", P3: "medium" }
+export function enhancePriorityToTicket(p: string | undefined | null): "urgent" | "high" | "medium" | null {
+  return ENHANCE_PRIORITY_TO_TICKET[String(p || "").trim().toUpperCase()] || null
+}
+
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity'; suggestedPriority?: string },
 ): Promise<PreparedSubmission> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
@@ -2920,6 +2929,12 @@ export async function prepareSubmission(
   // client never names a target project id — the server resolves KLAVITY_INTAKE_PROJECT_ID — so this can't
   // be abused to route a report into an arbitrary project (no IDOR).
   if (payload.feedbackTarget === "klavity") fd.set("feedback_target", "klavity")
+  // KD-224: an accepted AI-Enhance draft carries a P1/P2/P3 suggestion. Send it as the ticket's `priority`
+  // so the stored row (and therefore the board card) matches what the reporter saw; without it the row is
+  // stored with NO priority. Unknown/absent values send nothing. Untrusted/anonymous intake still lands as
+  // status 'new' — the server's priority-self-elevation guard is unaffected.
+  const enhancedPriority = enhancePriorityToTicket(payload.suggestedPriority)
+  if (enhancedPriority) fd.set("priority", enhancedPriority)
 
   // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
   const key = payload.submissionKey || newSubmissionKey()
