@@ -25047,6 +25047,7 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
     // #736: when the dedicated full page opens we push a CLEAN /t/<id> URL to the address bar; this remembers
     // the board URL (…/dashboard?project=…#tickets) to restore when the page closes or the user hits Back.
     let _tktBoardReturnUrl = null
+    let _tktBoardScrollY = 0
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
     // the in-app history story — a FRESH load of /t/<id> is still served by the server route (ticket.html).
@@ -25090,6 +25091,9 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       return p
     }
     async function openSingleTicket(id, mode) {
+      if (mode === "full" && !document.body.classList.contains("tkt-page-open")) {
+        _tktBoardScrollY = window.scrollY || window.pageYOffset || 0
+      }
       if (mode === "panel" || mode === "full") _tktSingleMode = mode
       tktReadsReset()   // a fresh open never inherits reads from a previous ticket
       // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
@@ -25248,7 +25252,9 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       if (panel) {
         // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
         document.body.classList.remove("tkt-page-open")
-        const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+        if (document.body.getAttribute("data-view") !== "tickets") {
+          const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+        }
       } else {
         // KLA-563 dedicated page: activate the Tickets view chrome but NEVER mount the board — the page
         // renders directly from the single-ticket fetch. renderTicketsView() early-returns while this flag
@@ -25508,7 +25514,7 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
         }
       } catch (e) { }
       // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
-      try { if (single.__focusTarget) single.__focusTarget.focus() } catch (e) { }
+      try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
       // Panel scrolls itself to top; the dedicated page scrolls the window.
       if (panel) { try { single.scrollTop = 0 } catch (e) { } }
       else { try { window.scrollTo(0, 0) } catch (e) { } }
@@ -25566,9 +25572,16 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       // the ~25s liveness poll is suppressed while a ticket is open (dashLiveBusy checks #ticketSingle),
       // so it was never nuked — only re-render the view when the dedicated page had replaced it.
       _tktSingleMode = "panel"
-      if (!wasPanel) renderTicketsView()
+      if (!wasPanel) {
+        renderTicketsView()
+        if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
+          try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
+          catch (e) { window.scrollTo(0, _tktBoardScrollY) }
+        }
+      }
+      _tktBoardScrollY = 0
       // a11y §10: return focus to the card / control that opened the detail.
-      try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus() } catch (e) { }
+      try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus({ preventScroll: true }) } catch (e) { }
       window.__klavTktInvoker = null
     }
 
