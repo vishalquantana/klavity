@@ -4371,10 +4371,32 @@
       cursor: default
     }
 
+    .tkt-pg-btn.active {
+      background: var(--indigo, #6366f1);
+      color: #fff;
+      border-color: var(--indigo, #6366f1);
+      font-weight: 600;
+      cursor: default
+    }
+
+    .tkt-pg-btn.tkt-pg-num {
+      min-width: 34px;
+      padding: 6px 10px;
+      text-align: center
+    }
+
+    .tkt-pg-ellipsis {
+      font-size: 13px;
+      color: var(--paper-faint);
+      padding: 0 4px;
+      user-select: none
+    }
+
     .tkt-pg-info {
       font-size: 12px;
       color: var(--paper-faint);
-      font-family: var(--mono)
+      font-family: var(--mono);
+      margin-left: 6px
     }
 
     .tkt-list-empty {
@@ -25890,9 +25912,10 @@
     }
     // ── KLA-169: Tickets filter bar + list view ──────────────────────────────────────────────────────
     let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
-    let _tktListState = { page: 1, totalPages: 1, loading: false }
+    let _tktListState = { page: 1, limit: 50, totalPages: 1, total: 0, loading: false }
     let _tktBoardState = { loading: false }
     let _tktBoardTickets = []
+    let _tktBoardTotal = null
     let _tktBoardLoadedPid = null // KLA-779: pid the board was actually FETCHED for (even if the result is empty), so an empty project isn't re-fetched on every render/poll
     // #536: the board caches the FULL, unfiltered project set here; status/priority/label/assignee/
     // source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
@@ -26148,7 +26171,7 @@
     function ticketStatusParamFor(view) {
       if (_tktFilters.status === "closed") return "done,dismissed"
       if (_tktFilters.status) return _tktFilters.status
-      return view === "board" ? ALL_STATUSES : ""
+      return ALL_STATUSES
     }
 
     function ticketQueryParams(view, page, limit) {
@@ -26173,7 +26196,8 @@
       const projId = state && state.active && state.active.id
       if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; return }
 
-      const sp = ticketQueryParams("list", _tktListState.page, 50)
+      const limit = _tktListState.limit || 50
+      const sp = ticketQueryParams("list", _tktListState.page, limit)
       // #720: SWR key encodes project + every filter + the page, so cached rows always match the exact
       // query on screen (sorting/filtering stays correct — a different filter/page is a different key).
       const cacheKey = "tktlist:" + projId + ":" + sp.toString()
@@ -26195,6 +26219,7 @@
         if (!res.ok) throw new Error("HTTP " + res.status)
         const data = await res.json()
         _tktListState.totalPages = data.totalPages || 1
+        _tktListState.total = data.total || 0
         // Live-refresh: record the project-level change-token so the rev poll (ticketsRevTick) can detect a
         // ticket filed/changed AFTER the list loaded and revalidate — the LIST previously never refetched on
         // poll/focus, so a report filed while the list was open stayed invisible until a manual reload (the
@@ -26255,6 +26280,7 @@
         // clobber the just-moved card back into its old column (mirrors refreshAll's guard).
         mergeLocalEdits(data, _fetchStart)
         _tktBoardTickets = data.tickets || []
+        _tktBoardTotal = (typeof data.total === "number") ? data.total : (data.tickets ? data.tickets.length : 0)
         _tktBoardProjId = projId
         _tktBoardLoadedPid = projId // KLA-779: mark this project's board as loaded (even when empty) — no re-fetch spin
         if (data.rev != null) { _tktBoardRev = data.rev; _tktBoardRevPid = projId } // QA C2.2: authoritative live-poll baseline
@@ -26617,9 +26643,15 @@
         const bar = wrap.querySelector("#tktBulkBar")
         if (bar) { bar.classList.toggle("show", _bulkSelected.size > 0); const cnt = bar.querySelector(".bulk-count"); if (cnt) cnt.textContent = _bulkSelected.size + " selected" }
       })
+      const cntEl = $("ticketKanbanCount")
+      if (cntEl) cntEl.textContent = total ? total : ""
+      const limit = _tktListState.limit || 50
+      const startIdx = total === 0 ? 0 : ((_tktListState.page - 1) * limit) + 1
+      const endIdx = Math.min(total, startIdx + filtered.length - 1)
+      const rangeText = total > 0 ? `Showing ${startIdx}–${endIdx} of ${total} tickets · ` : `${total} tickets · `
       const hdrLabel = document.createElement("span")
       hdrLabel.style.cssText = "font-size:12px;color:var(--paper-faint);font-family:var(--mono)"
-      hdrLabel.textContent = total + " ticket" + (total !== 1 ? "s" : "") + " · page " + _tktListState.page + " of " + _tktListState.totalPages
+      hdrLabel.textContent = `${rangeText}page ${_tktListState.page} of ${_tktListState.totalPages}`
       hdr.appendChild(cbAll); hdr.appendChild(hdrLabel)
       wrap.appendChild(hdr)
 
@@ -26719,16 +26751,55 @@
       if (_tktListState.totalPages > 1) {
         const pg = document.createElement("div")
         pg.className = "tkt-pg"
+        const curPage = _tktListState.page
+        const totalP = _tktListState.totalPages
+
         const prev = document.createElement("button")
-        prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = _tktListState.page <= 1
+        prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = curPage <= 1
         // JTBD 2.14: preserve selection across pages — do NOT clear on paginate.
         prev.addEventListener("click", () => { _tktListState.page--; fetchAndRenderTktList() })
-        const info = document.createElement("span")
-        info.className = "tkt-pg-info"; info.textContent = _tktListState.page + " / " + _tktListState.totalPages
+        pg.appendChild(prev)
+
+        const pageNums = []
+        if (totalP <= 7) {
+          for (let i = 1; i <= totalP; i++) pageNums.push(i)
+        } else {
+          pageNums.push(1)
+          if (curPage > 3) pageNums.push("...")
+          const start = Math.max(2, curPage - 1)
+          const end = Math.min(totalP - 1, curPage + 1)
+          for (let i = start; i <= end; i++) {
+            if (!pageNums.includes(i)) pageNums.push(i)
+          }
+          if (curPage < totalP - 2) pageNums.push("...")
+          if (!pageNums.includes(totalP)) pageNums.push(totalP)
+        }
+
+        pageNums.forEach(p => {
+          if (p === "...") {
+            const el = document.createElement("span")
+            el.className = "tkt-pg-ellipsis"; el.textContent = "…"
+            pg.appendChild(el)
+          } else {
+            const btn = document.createElement("button")
+            btn.className = "tkt-pg-btn tkt-pg-num" + (p === curPage ? " active" : "")
+            btn.textContent = p
+            if (p !== curPage) {
+              btn.addEventListener("click", () => { _tktListState.page = p; fetchAndRenderTktList() })
+            }
+            pg.appendChild(btn)
+          }
+        })
+
         const next = document.createElement("button")
-        next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = _tktListState.page >= _tktListState.totalPages
+        next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = curPage >= totalP
         next.addEventListener("click", () => { _tktListState.page++; fetchAndRenderTktList() })
-        pg.appendChild(prev); pg.appendChild(info); pg.appendChild(next)
+        pg.appendChild(next)
+
+        const info = document.createElement("span")
+        info.className = "tkt-pg-info"; info.textContent = `Page ${curPage} of ${totalP}`
+        pg.appendChild(info)
+
         wrap.appendChild(pg)
       }
 
