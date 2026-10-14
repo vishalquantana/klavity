@@ -23630,15 +23630,45 @@
 
       const statusSelEl = detailEl.querySelector(".tkt-status-sel")
       if (statusSelEl) {
-        let _prevStatus = curStatus
+        // KD-230: OPTIMISTIC status change. The page (dropdown, header pill, dot, board card, sidebar count)
+        // moves to the picked status AT ONCE and the PATCH runs in the background — previously every one of
+        // those waited for the PATCH round-trip (2–3s against the hosted DB). On failure we roll back to the
+        // last server-CONFIRMED status. Rapid re-picks are sequenced: only the LATEST pick's outcome may
+        // repaint or roll back, so an older response can never clobber a newer choice.
+        let _prevStatus = curStatus     // what the page currently SHOWS (moves on every pick)
+        let _savedStatus = curStatus    // last status the server confirmed — the rollback target
+        let _statusSeq = 0, _savedSeq = 0
+        let _reverting = false
+        const applyStatus = (newStatus) => {
+          openCountOnStatusChange(_prevStatus, newStatus)   // KD-265: live sidebar count
+          _prevStatus = newStatus
+          // #653: repaint the status dot to the new state color.
+          const _dot = detailEl.querySelector(".prop-dot")
+          if (_dot) _dot.className = "prop-dot ds-" + newStatus
+          // Update state
+          const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
+          if (tkt) tkt.status = newStatus
+          // Also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it, NOT
+          // state.tickets. Mirrors the optimistic drag path (moveTicketColumn) so onChange's
+          // renderTicketsKanban() moves the card into its new column immediately instead of waiting
+          // up to 15s for the next boardRevTick poll (which is suppressed while the ticket is open).
+          const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
+          if (bt) bt.status = newStatus
+          recordLocalEdit(ticketId, { status: newStatus })   // #532
+          if (onChange) onChange("status", newStatus)
+        }
         statusSelEl.addEventListener("change", async (ev) => {
           ev.stopPropagation()
+          if (_reverting) return                      // our own rollback repaint — not a new pick
           const newStatus = statusSelEl.value
-          // #537: reflect in-flight state immediately (disable + aria-busy) so a change during a
-          // project-switch race / offline blip isn't a silent no-op.
-          statusSelEl.disabled = true; statusSelEl.setAttribute("aria-busy", "true")
+          if (newStatus === _prevStatus) return
+          const seq = ++_statusSeq
+          applyStatus(newStatus)
+          // #537: reflect in-flight state (aria-busy) so a change during a project-switch race / offline
+          // blip isn't a silent no-op.
+          statusSelEl.setAttribute("aria-busy", "true")
           // #532: bump the mutation guard so the 25s liveness poll's refreshAll() can't wholesale-repaint
-          // the board mid-save and clobber the just-saved value.
+          // the board mid-save and clobber the just-picked value.
           window.__klavMutating++
           let d = {}
           try {
@@ -23647,24 +23677,13 @@
               body: JSON.stringify({ status: newStatus })
             }).catch(() => null)
             d = r ? await r.json().catch(() => ({})) : {}
-          } finally { window.__klavMutating--; statusSelEl.disabled = false; statusSelEl.removeAttribute("aria-busy") }
+          } finally {
+            window.__klavMutating--
+            if (seq === _statusSeq) statusSelEl.removeAttribute("aria-busy")
+          }
           if (d.ok) {
-            openCountOnStatusChange(_prevStatus, newStatus)   // KD-265: live sidebar count
-            _prevStatus = newStatus
-            // #653: repaint the status dot to the new state color.
-            const _dot = detailEl.querySelector(".prop-dot")
-            if (_dot) _dot.className = "prop-dot ds-" + newStatus
-            // Update state
-            const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
-            if (tkt) tkt.status = newStatus
-            // Also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it, NOT
-            // state.tickets. Mirrors the optimistic drag path (moveTicketColumn) so onChange's
-            // renderTicketsKanban() moves the card into its new column immediately instead of waiting
-            // up to 15s for the next boardRevTick poll (which is suppressed while the ticket is open).
-            const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
-            if (bt) bt.status = newStatus
-            recordLocalEdit(ticketId, { status: newStatus })   // #532
-            if (onChange) onChange("status", newStatus)
+            if (seq > _savedSeq) { _savedSeq = seq; _savedStatus = newStatus }
+            if (seq !== _statusSeq) return            // a newer pick is in flight; it reports its own result
             // B.7: closing a guard-caught ticket → OFFER the one-click regression-caught receipt (never
             // auto-sent). The server flags offerRegressionReceipt only for a real transition into done on
             // a guard-caught ticket with no prior receipt. Nudge the closer to the (now-visible) button.
@@ -23674,9 +23693,15 @@
               showTktMsg(detailEl, "Saved.", false)
             }
           } else {
-            // Revert the visible selection to the last-saved value on failure.
-            statusSelEl.value = _prevStatus
-            showTktMsg(detailEl, d.error || "Couldn't save — retry.", true)
+            if (seq !== _statusSeq) return            // a newer pick is in flight; it decides the final state
+            // Roll the whole page back to the last-saved status. Re-dispatching `change` lets the dropdown
+            // skin repaint from the select (the _reverting flag keeps this handler from re-saving it).
+            _reverting = true
+            statusSelEl.value = _savedStatus
+            statusSelEl.dispatchEvent(new Event("change", { bubbles: true }))
+            _reverting = false
+            applyStatus(_savedStatus)
+            showTktMsg(detailEl, d.error || "Couldn't save — reverted. Retry.", true)
           }
         })
       }
