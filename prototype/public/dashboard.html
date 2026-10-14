@@ -6965,15 +6965,19 @@
     .prop-dot.ds-blocked {
       background: #dc2626
     }
+
     .prop-dot.ds-ready_for_deployment {
       background: #7c3aed
     }
+
     .prop-dot.ds-deployed {
       background: #0d9488
     }
+
     .prop-dot.ds-qa_review {
       background: #0891b2
     }
+
     .prop-dot.ds-done {
       background: var(--green)
     }
@@ -7537,9 +7541,9 @@
     /* editable description (click-to-edit / pencil → textarea + Save/Cancel) */
     /* KLA-832: the Description reads as a clearly-outlined white card (repo "white cards on beige" standard) —
    a visible border/stroke + padding so the detail body never sits as bare text directly on the page bg. */
-    .tkt-desc {
-      background: var(--ink-2);
-      border: 1px solid var(--line);
+    .tkt-desc{
+      background:var(--ink-2);
+      border:1px solid var(--line);
       border-radius: 12px;
       padding: 13px 15px
     }
@@ -7799,6 +7803,75 @@
       -webkit-overflow-scrolling: touch
     }
 
+    /* KD-297: the board's own horizontal scrollbar sat under the TALLEST column — i.e. at the very end of the
+       page. .kb-hscroll is a mirror scrollbar (wireKanbanHScroll) that sticks to the bottom of the viewport
+       while the board is on screen and docks right under the board at its end; the board's native bar is
+       hidden so only one shows. Trackpad / shift+wheel still scroll the board directly.
+       Desktop only: on phones (≤760px) the board is swiped directly, so it keeps its native bar + column snap. */
+    @media (min-width: 761px) {
+      .kanban.kb-has-hscroll {
+        scrollbar-width: none;
+        /* Column snap fought the mirrored scroll (snap nudges the board → the bar follows → jitter). */
+        scroll-snap-type: none
+      }
+
+      .kanban.kb-has-hscroll::-webkit-scrollbar {
+        display: none
+      }
+    }
+
+    @media (max-width: 760px) {
+      .kb-hscroll {
+        display: none !important
+      }
+    }
+
+    .kb-hscroll {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      height: 16px;
+      margin-top: 2px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      background: var(--ink-2)
+    }
+
+    .kb-hscroll.hide {
+      display: none
+    }
+
+    /* Always-visible thumb (overlay scrollbars — macOS, some Chrome setups — would otherwise hide it until
+       scrolled, defeating the point). WebKit/Blink use the pseudo-elements; Firefox the standard props. */
+    .kb-hscroll::-webkit-scrollbar {
+      height: 10px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-track {
+      background: var(--ink-3);
+      border-radius: 999px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-thumb {
+      background: var(--paper-faint);
+      border-radius: 999px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-thumb:hover {
+      background: var(--paper-dim)
+    }
+
+    @supports (-moz-appearance: none) {
+      .kb-hscroll {
+        scrollbar-width: thin;
+        scrollbar-color: var(--paper-faint) var(--ink-3)
+      }
+    }
+
+    .kb-hscroll-in {
+      height: 1px
+    }
+
     /* KD-165: each column is now independently drag-resizable (Jira-board style — see wireKanbanResize),
    which needs a real per-column WIDTH to drag, not #676's "grow to fill" flex-basis. --kb-w is set
    per-column (persisted to localStorage) by wireKanbanResize; a column with no saved width falls back
@@ -7943,12 +8016,15 @@
     .kb-dot-blocked {
       background: #dc2626
     }
+
     .kb-dot-ready_for_deployment {
       background: #7c3aed
     }
+
     .kb-dot-deployed {
       background: #0d9488
     }
+
     .kb-dot-done {
       background: var(--green)
     }
@@ -8249,30 +8325,38 @@
       background: rgba(220, 38, 38, .15);
       color: #dc2626
     }
+
     .tkt-pill.p-blocked .pdot {
       background: #dc2626
     }
+
     .tkt-pill.p-ready_for_deployment {
       background: rgba(124, 58, 237, .15);
       color: #7c3aed
     }
+
     .tkt-pill.p-ready_for_deployment .pdot {
       background: #7c3aed
     }
+
     .tkt-pill.p-deployed {
       background: rgba(13, 148, 136, .15);
       color: #0d9488
     }
+
     .tkt-pill.p-deployed .pdot {
       background: #0d9488
     }
+
     .tkt-pill.p-qa_review {
       background: rgba(8, 145, 178, .15);
       color: #0891b2
     }
+
     .tkt-pill.p-qa_review .pdot {
       background: #0891b2
     }
+
     .tkt-pill.p-done {
       background: rgba(15, 157, 107, .15);
       color: var(--green)
@@ -10594,6 +10678,21 @@
       font-size: 13px
     }
 
+    /* KD-227: Labels popup opened from a ticket — click a label to add it to the ticket */
+    .ml-row.ml-pick .ml-name {
+      cursor: pointer
+    }
+
+    .ml-row.ml-pick:hover {
+      border-color: var(--indigo)
+    }
+
+    .ml-added-tag {
+      margin-left: 6px;
+      font-size: 11px;
+      color: var(--paper-faint)
+    }
+
     .ml-edit-inp {
       flex: 1;
       background: var(--ink);
@@ -12109,7 +12208,8 @@
 
     .tkt-rec-video {
       width: 100%;
-      max-height: 360px;
+      max-height: 600px;
+      object-fit: contain;
       border-radius: 10px;
       background: #000;
       display: block
@@ -12218,18 +12318,102 @@
 
     /* KD-100: attachments on the New ticket dialog — drop zone + preview grid */
     /* New ticket → Project: pill trigger + centred, rounded list (design: Downloads/image (15).png) */
-    .ntp { position: relative }
-    .ntp-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; background: var(--ink); border: 1px solid var(--line); border-radius: 999px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 11px 36px; cursor: pointer; outline: none }
-    .ntp-btn:hover { border-color: var(--indigo) }
-    .ntp-btn:focus-visible, .ntp-btn[aria-expanded="true"] { border-color: var(--indigo) }
-    .ntp-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100% }
-    .ntp-chev { flex: none; transition: transform .15s ease }
-    .ntp-btn[aria-expanded="true"] .ntp-chev { transform: rotate(180deg) }
-    .ntp-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; background: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; max-height: 240px; overflow-y: auto }
-    .ntp-list.hide { display: none }
-    .ntp-item { display: block; width: 100%; box-sizing: border-box; text-align: center; background: transparent; border: 0; border-radius: 10px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 9px 12px; cursor: pointer }
-    .ntp-item:hover, .ntp-item:focus-visible { background: var(--ink-2); color: var(--paper); outline: none }
-    .ntp-item[aria-selected="true"] { color: var(--paper); font-weight: 700 }
+    .ntp {
+      position: relative
+    }
+
+    .ntp-btn {
+      width: 100%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      position: relative;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--paper-dim);
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 11px 36px;
+      cursor: pointer;
+      outline: none
+    }
+
+    .ntp-btn:hover {
+      border-color: var(--indigo)
+    }
+
+    .ntp-btn:focus-visible,
+    .ntp-btn[aria-expanded="true"] {
+      border-color: var(--indigo)
+    }
+
+    .ntp-btn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%
+    }
+
+    .ntp-chev {
+      flex: none;
+      transition: transform .15s ease
+    }
+
+    .ntp-btn[aria-expanded="true"] .ntp-chev {
+      transform: rotate(180deg)
+    }
+
+    .ntp-list {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 30;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .14);
+      padding: 6px;
+      max-height: 240px;
+      overflow-y: auto
+    }
+
+    .ntp-list.hide {
+      display: none
+    }
+
+    .ntp-item {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      text-align: center;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      color: var(--paper-dim);
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 9px 12px;
+      cursor: pointer
+    }
+
+    .ntp-item:hover,
+    .ntp-item:focus-visible {
+      background: var(--ink-2);
+      color: var(--paper);
+      outline: none
+    }
+
+    .ntp-item[aria-selected="true"] {
+      color: var(--paper);
+      font-weight: 700
+    }
+
     .newtkt-drop {
       display: flex;
       align-items: center;
@@ -12747,31 +12931,42 @@
       align-items: center;
       justify-content: center;
       max-width: 100%;
-      max-height: 78vh;
-      overflow: hidden;
+      max-height: 80vh;
+      overflow-y: auto;
+      overflow-x: auto;
       border-radius: 12px;
       background: #050507;
-      border: 1px solid rgba(255, 255, 255, .1)
+      border: 1px solid rgba(255, 255, 255, .1);
+      scroll-behavior: smooth
+    }
+
+    .media-pv-media-holder:has(.zoomed),
+    .media-pv-media-holder.has-zoomed {
+      align-items: flex-start
     }
 
     .media-pv-imgwrap {
       position: relative;
       display: inline-block;
       max-width: 100%;
-      max-height: 78vh;
       line-height: 0;
-      transition: transform .2s
+      transition: transform .2s;
+      cursor: zoom-in
     }
 
     .media-pv-imgwrap.zoomed {
-      overflow: auto;
-      max-height: 78vh;
-      cursor: zoom-out
+      cursor: zoom-out;
+      width: 100%;
+      text-align: center
     }
 
     .media-pv-imgwrap.zoomed img {
-      transform: scale(1.75);
-      transform-origin: top left
+      max-height: none;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      object-fit: contain;
+      transform: none
     }
 
     .media-pv-imgwrap img,
@@ -14387,28 +14582,163 @@
        state holder (.kdd-native) so the existing save path keeps working; this is only its skin. A
        custom menu is what lets each option carry its status dot / priority swatch, which a native
        option list cannot render. */
-    .kdd { position: relative; display: inline-flex; align-items: center }
-    .kdd-native { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none }
-    .kdd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 9px;
-      border: 1px solid transparent; background: transparent; color: var(--paper);
-      font-family: var(--body); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-      min-width: 124px; text-transform: capitalize;
-      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease }
-    .kdd-btn:hover { background: var(--ink-3) }
-    .kdd-btn:focus-visible { outline: none; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
-    .kdd-btn[aria-expanded="true"] { background: var(--ink-2); border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
-    .kdd-caret { margin-left: auto; color: var(--muted); transition: transform .15s }
-    .kdd-btn[aria-expanded="true"] .kdd-caret { transform: rotate(180deg) }
-    .kdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 180px; padding: 5px;
-      background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px;
-      box-shadow: 0 12px 32px rgba(0,0,0,.28); display: flex; flex-direction: column; gap: 2px }
-    .kdd-menu.hide { display: none }
-    .kdd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0;
-      border-radius: 8px; background: transparent; color: var(--paper); font-family: var(--body);
-      font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-transform: capitalize }
-    .kdd-item:hover, .kdd-item:focus-visible { background: rgba(99,102,241,.12); outline: none }
-    .kdd-item[aria-checked="true"] { font-weight: 700 }
-    .kdd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .kdd {
+      position: relative;
+      display: inline-flex;
+      align-items: center
+    }
+
+    .kdd-native {
+      position: absolute;
+      width: 0;
+      height: 0;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .kdd-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border-radius: 9px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      min-width: 124px;
+      text-transform: capitalize;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease
+    }
+
+    .kdd-btn:hover {
+      background: var(--ink-3)
+    }
+
+    .kdd-btn:focus-visible {
+      outline: none;
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .14)
+    }
+
+    .kdd-btn[aria-expanded="true"] {
+      background: var(--ink-2);
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .14)
+    }
+
+    .kdd-caret {
+      margin-left: auto;
+      color: var(--muted);
+      transition: transform .15s
+    }
+
+    .kdd-btn[aria-expanded="true"] .kdd-caret {
+      transform: rotate(180deg)
+    }
+
+    .kdd-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 40;
+      min-width: 180px;
+      padding: 5px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+      display: flex;
+      flex-direction: column;
+      gap: 2px
+    }
+
+    .kdd-menu.hide {
+      display: none
+    }
+
+    .kdd-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      text-transform: capitalize
+    }
+
+    .kdd-item:hover,
+    .kdd-item:focus-visible {
+      background: rgba(99, 102, 241, .12);
+      outline: none
+    }
+
+    .kdd-item[aria-checked="true"] {
+      font-weight: 700
+    }
+
+    .kdd-txt {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    /* KD-227: Labels picker in the same skin — label names keep their case, the list scrolls when long,
+       and the hidden <select> is only the state holder. */
+    .tkt-lbl-kdd .kdd-btn {
+      min-width: 0;
+      text-transform: none;
+      font-weight: 500;
+      color: var(--paper-dim)
+    }
+
+    .tkt-lbl-kdd .kdd-btn:hover,
+    .tkt-lbl-kdd .kdd-btn[aria-expanded="true"] {
+      color: var(--paper)
+    }
+
+    .tkt-lbl-kdd .kdd-menu {
+      max-height: 260px;
+      overflow-y: auto
+    }
+
+    .tkt-lbl-kdd .kdd-item {
+      text-transform: none
+    }
+
+    .tkt-lbl-kdd .tkt-lbl-add-item {
+      color: var(--indigo);
+      font-weight: 600
+    }
+
+    .tkt-lbl-kdd .tkt-lbl-sel {
+      position: absolute;
+      width: 0;
+      height: 0;
+      padding: 0;
+      border: 0;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .tkt-lbl-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0
+    }
 
     .tkt-pri-sel,
     .tkt-status-sel {
@@ -15592,7 +15922,8 @@
             <path d="M6 13H2" />
             <path d="m8 2 1.88 1.88" />
             <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount" title="To Do, Open and In Progress tickets"></span></button>
+          </svg></span>Tickets <span class="ct" id="navTicketCount"
+          title="To Do, Open and In Progress tickets"></span></button>
       <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
             width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -21549,12 +21880,16 @@
         // so a reporter can always retrieve their own evidence. Inline SVG download glyph (no emoji; kicon has no
         // 'download' icon registered).
         var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+        var isMp4 = (r.contentType && r.contentType.includes("mp4")) || (String(r.key || "").endsWith(".mp4"))
+        var dlExt = isMp4 ? "mp4" : "webm"
         var vid = r.url
           ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '">'
-          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline></video>'
+          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline>'
+          + '<source src="' + esc(String(r.url)) + '"' + (r.contentType ? ' type="' + esc(String(r.contentType)) + '"' : '') + '>'
+          + 'Your browser does not support video playback.</video>'
           + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading recording…</div>'
           + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This recording couldn’t play here. Download it to view.</div>'
-          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.webm" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
+          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.' + dlExt + '" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
           + '</div>'
           : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
         var st = r.transcript_status || "none"
@@ -21607,23 +21942,25 @@
         var loadingEl = wrap ? wrap.querySelector(".tkt-rec-loading") : null
         var errEl = wrap ? wrap.querySelector(".tkt-rec-error") : null
         function hideLoading() { if (loadingEl) loadingEl.classList.add("hide") }
+        if (v.readyState >= 1) hideLoading()
         var repairing = false
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
-          // Infinity / NaN / 0 duration → force the browser to compute the real one by seeking to the end.
-          if (!isFinite(v.duration) || v.duration <= 0) {
+          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "")
+          if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
           }
         })
         v.addEventListener("durationchange", function () {
-          // After the forced seek the duration is now finite; snap the playhead back to the start, once.
           if (repairing && isFinite(v.duration) && v.duration > 0) {
             repairing = false
             try { v.currentTime = 0 } catch (e) { }
           }
         })
+        v.addEventListener("loadeddata", hideLoading)
         v.addEventListener("canplay", hideLoading)
+        v.addEventListener("playing", hideLoading)
         v.addEventListener("error", function () {
           hideLoading()
           if (errEl) errEl.classList.remove("hide")
@@ -21818,6 +22155,11 @@
       if (o.kind !== "video") {
         const imgWrap = document.createElement("div"); imgWrap.className = "media-pv-imgwrap"
         imgWrap.appendChild(media)
+        imgWrap.addEventListener("click", function(e) {
+          if (e.target.closest("button") || e.target.closest("a")) return
+          imgWrap.classList.toggle("zoomed")
+          holder.classList.toggle("has-zoomed", imgWrap.classList.contains("zoomed"))
+        })
         if (o.annotations) {
           const redact = typeof buildRedactionSvg === "function" ? buildRedactionSvg(o.annotations) : null
           if (redact) imgWrap.appendChild(redact)
@@ -21851,7 +22193,10 @@
         zoomBtn.innerHTML = `${kicon('search', { size: 13 })} Zoom`
         zoomBtn.addEventListener("click", () => {
           const wrap = box.querySelector(".media-pv-imgwrap")
-          if (wrap) wrap.classList.toggle("zoomed")
+          if (wrap) {
+            wrap.classList.toggle("zoomed")
+            holder.classList.toggle("has-zoomed", wrap.classList.contains("zoomed"))
+          }
         })
         tools.appendChild(zoomBtn)
       }
@@ -22432,7 +22777,7 @@
           } else if (it.kind === "replay") {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
             el.setAttribute("title", "Session replay")
-            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) {} })
+            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) { } })
           } else {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("VIDEO", true))
             el.setAttribute("title", "Recording")
@@ -22591,7 +22936,6 @@
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
         ${_showMetaLine ? `<div class="tkt-meta-line muted">${(t.urlHost || t.urlPath) ? esc((t.urlHost || "") + (t.urlPath || "")) : ""}${((t.urlHost || t.urlPath) && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}</div>` : ""}
-        ${t.sourceReferrer ? `<div class="tkt-meta-line muted">Referred from: ${esc(t.sourceReferrer)}</div>` : ""}
       </div>` : ""
       // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
       // KLAVITYKLA-513: a null/missing priority must resolve to the ONE canonical default 'medium'
@@ -22619,7 +22963,7 @@
         <span class="tkt-prop-lb">Priority</span>
         <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
           <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
-          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent","high","medium","low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
           <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
         </span></span>
         <span class="tkt-prop-lb">Assignee</span>
@@ -22635,7 +22979,13 @@
           <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
             <div class="tkt-lbl-controls">
               <div class="lbl-chips tkt-lbl-chips"></div>
-              <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
+              ${/* KD-227: same .kdd skin as Status/Priority. The hidden <select> stays the state holder (its
+                   change handler attaches the label / opens the Labels popup); the menu is rebuilt by populateSel. */''}
+              <span class="kdd tkt-lbl-kdd">
+                <button type="button" class="kdd-btn tkt-lbl-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Add label"><span class="kdd-txt">+ Add label</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <span class="kdd-menu hide tkt-lbl-menu" role="menu" aria-label="Labels"></span>
+                <select class="lbl-add-sel tkt-lbl-sel" tabindex="-1" aria-hidden="true"><option value="">+ Add label…</option></select>
+              </span>
               <button class="tkt-lbl-empty-add hide" type="button">+ Add label</button>
             </div>
             <div class="lbl-ghost-chips tkt-lbl-ghost-chips"></div>
@@ -23382,6 +23732,9 @@
       const lblChipsEl = detailEl.querySelector(".tkt-lbl-chips")
       const lblSel = detailEl.querySelector(".tkt-lbl-sel")
       const ghostChipsEl = detailEl.querySelector(".tkt-lbl-ghost-chips")
+      const lblKdd = detailEl.querySelector(".tkt-lbl-kdd")
+      const lblBtn = detailEl.querySelector(".tkt-lbl-btn")
+      const lblMenu = detailEl.querySelector(".tkt-lbl-menu")
       if (lblRow && lblChipsEl && lblSel) {
         const ticketLabels = (t.labels || []).slice()
         const renderLblChips = () => {
@@ -23408,21 +23761,51 @@
         // #653: clean empty state — when there are NO project labels at all, hide the empty select and
         // show a "+ Add label" affordance that opens the manage-labels modal (so a first label can be made).
         const emptyAddBtn = detailEl.querySelector(".tkt-lbl-empty-add")
+        const attachToTicket = async label => {
+          await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ labelId: label.id })
+          }).catch(() => null)
+          if (!ticketLabels.find(l => l.id === label.id)) ticketLabels.push(label)
+          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          if (tkt) tkt.labels = ticketLabels.slice()
+          renderLblChips()
+          populateSel()
+          renderGhostChips()
+        }
+        // KD-227: "+ Add label…" opens the Labels popup for THIS ticket — click an existing label to add it,
+        // or type a new name to create it; either way it's added to the ticket.
+        const openLabelPopupForTicket = () => {
+          if (typeof openManageLabels === "function") openManageLabels({
+            ticket: {
+              add: label => (lblRow.isConnected ? attachToTicket(label) : undefined),
+              has: lid => ticketLabels.some(l => l.id === lid),
+            },
+          })
+        }
         if (emptyAddBtn) {
           emptyAddBtn.addEventListener("click", ev => {
             ev.stopPropagation()
-            if (typeof openManageLabels === "function") openManageLabels()
+            openLabelPopupForTicket()
           })
         }
         const populateSel = () => {
           const projectLabels = state._labels || []
           const attached = new Set(ticketLabels.map(l => l.id))
           const available = projectLabels.filter(l => !attached.has(l.id))
-          lblSel.innerHTML = '<option value="">+ Add label…</option>' +
+          // KD-227: the list starts with "+ Add label…" (opens the Labels popup to create/add a label), followed by
+          // the labels that can be attached. The hidden select mirrors the menu so `change` stays the one entry point.
+          lblSel.innerHTML = '<option value="" hidden selected>+ Add label…</option><option value="__add_label__">+ Add label…</option>' +
             available.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
-          lblSel.style.display = available.length ? "" : "none"
-          // Fall back to the "+ Add label" button only when the project has no labels to attach at all
-          // (an existing project WITH labels, all already attached, just hides the select — no dead button).
+          if (lblMenu) {
+            lblMenu.innerHTML = '<button type="button" class="kdd-item tkt-lbl-add-item" role="menuitem" data-val="__add_label__">+ Add label…</button>' +
+              available.map(l => `<button type="button" class="kdd-item" role="menuitem" data-val="${esc(l.id)}"><span class="tkt-lbl-dot" style="background:${esc(l.color)}"></span><span class="kdd-txt">${esc(l.name)}</span></button>`).join("")
+          }
+          // KD-227: stays visible even when every label is attached — it's the way into the popup to create more.
+          const showPicker = projectLabels.length > 0
+          if (lblKdd) lblKdd.style.display = showPicker ? "" : "none"
+          else lblSel.style.display = showPicker ? "" : "none"
+          // Fall back to the "+ Add label" button only when the project has no labels at all.
           if (emptyAddBtn) emptyAddBtn.classList.toggle("hide", projectLabels.length > 0)
         }
 
@@ -23460,23 +23843,51 @@
 
         renderLblChips()
         populateSel()
+        // KD-227: called by refreshTicketLabelOptions() after Manage Labels changes the project's labels —
+        // re-sync attached chips (rename/recolor/delete) and rebuild the dropdown so a new label is selectable.
+        lblRow._klavLblRefresh = () => {
+          const byId = new Map((state._labels || []).map(l => [l.id, l]))
+          for (let i = ticketLabels.length - 1; i >= 0; i--) {
+            const cur = byId.get(ticketLabels[i].id)
+            if (cur) ticketLabels[i] = cur
+            else ticketLabels.splice(i, 1)
+          }
+          renderLblChips()
+          populateSel()
+          renderGhostChips()
+        }
+        // KD-227: Status/Priority-style menu. Picking an item drives the hidden select's `change` (below);
+        // outside-click / Escape closing comes from the shared .kdd handlers above.
+        if (lblBtn && lblMenu) {
+          const setOpen = open => { lblMenu.classList.toggle("hide", !open); lblBtn.setAttribute("aria-expanded", String(open)) }
+          lblBtn.addEventListener("click", ev => {
+            ev.stopPropagation()
+            const willOpen = lblMenu.classList.contains("hide")
+            detailEl.querySelectorAll(".kdd-menu").forEach(m => {
+              if (m === lblMenu) return
+              m.classList.add("hide")
+              const b = m.parentElement && m.parentElement.querySelector(".kdd-btn"); if (b) b.setAttribute("aria-expanded", "false")
+            })
+            setOpen(willOpen)
+          })
+          lblMenu.addEventListener("click", ev => {
+            const it = ev.target.closest(".kdd-item")
+            if (!it) return
+            ev.stopPropagation()
+            setOpen(false)
+            lblSel.value = it.getAttribute("data-val")
+            lblSel.dispatchEvent(new Event("change", { bubbles: true }))
+          })
+        }
         lblSel.addEventListener("change", async ev => {
           ev.stopPropagation()
           const lid = lblSel.value
           if (!lid) return
           lblSel.value = ""
+          if (lid === "__add_label__") { openLabelPopupForTicket(); return }
           const label = (state._labels || []).find(l => l.id === lid)
           if (!label) return
-          await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ labelId: lid })
-          }).catch(() => null)
-          if (!ticketLabels.find(l => l.id === lid)) ticketLabels.push(label)
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
-          if (tkt) tkt.labels = ticketLabels.slice()
-          renderLblChips()
-          populateSel()
-          renderGhostChips()
+          await attachToTicket(label)
         })
 
         // Fetch AI suggestions async (non-blocking); renders ghost chips when ready. Only for the detail the user
@@ -25583,6 +25994,9 @@
     }
 
     function refreshTicketLabelOptions() {
+      // KD-227: also repaint every open ticket's Labels picker, so a label created/renamed/deleted in
+      // Manage Labels shows up in (or leaves) the ticket's "+ Add label…" dropdown right away.
+      document.querySelectorAll(".tkt-lbl-row").forEach(el => { if (typeof el._klavLblRefresh === "function") el._klavLblRefresh() })
       const fbLabel = document.getElementById("fbLabel")
       if (!fbLabel) return
       const selected = _tktFilters.label
@@ -26474,6 +26888,50 @@
     // localStorage keyed by column (so "In Progress" wider / "Dismissed" narrower survives a reload,
     // independently, same as a real Jira board). Re-wired on every render (columns are rebuilt from
     // scratch each time) — cheap: only as many listeners as visible columns.
+    // KD-297: a mirror horizontal scrollbar for the board (see .kb-hscroll). It's appended right after the board
+    // and is position:sticky; bottom:0, so it stays at the bottom of the screen while the board is in view and
+    // docks under the board at its end. Its inner spacer tracks the board's scrollWidth (columns can be resized,
+    // the window can change), and the two scroll positions are kept in sync both ways.
+    let _kbHScrollRO = null
+    function wireKanbanHScroll(board, boardEl) {
+      if (_kbHScrollRO) { try { _kbHScrollRO.disconnect() } catch (e) { } _kbHScrollRO = null }
+      const bar = document.createElement("div")
+      bar.className = "kb-hscroll hide"
+      bar.setAttribute("aria-hidden", "true")   // a mirror of the board's own scroll; the board stays the a11y target
+      const inner = document.createElement("div")
+      inner.className = "kb-hscroll-in"
+      bar.appendChild(inner)
+      board.appendChild(bar)
+      boardEl.classList.add("kb-has-hscroll")
+      const measure = () => {
+        if (!bar.isConnected) return
+        inner.style.width = boardEl.scrollWidth + "px"
+        bar.classList.toggle("hide", boardEl.scrollWidth <= boardEl.clientWidth + 1)
+        if (Math.abs(bar.scrollLeft - boardEl.scrollLeft) > 1) bar.scrollLeft = boardEl.scrollLeft
+      }
+      // One side drives at a time: whichever element the user is scrolling copies its position to the other, and
+      // the echo scroll event that copy triggers is ignored (until the driver has been idle ~150ms). Without the
+      // lock the two kept correcting each other by a pixel or so per frame — visible as flicker.
+      let driver = null, idleT = 0
+      const follow = (src, dst, name) => src.addEventListener("scroll", () => {
+        if (driver && driver !== name) return
+        driver = name
+        if (dst.scrollLeft !== src.scrollLeft) dst.scrollLeft = src.scrollLeft
+        clearTimeout(idleT)
+        idleT = setTimeout(() => { driver = null }, 150)
+      }, { passive: true })
+      follow(bar, boardEl, "bar")
+      follow(boardEl, bar, "board")
+      if (typeof ResizeObserver !== "undefined") {
+        _kbHScrollRO = new ResizeObserver(() => measure())
+        _kbHScrollRO.observe(boardEl)
+        boardEl.querySelectorAll(".kb-col").forEach(c => _kbHScrollRO.observe(c))   // a column drag-resize changes scrollWidth
+      } else {
+        window.addEventListener("resize", measure)
+      }
+      measure()
+    }
+
     function wireKanbanResize(boardEl) {
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
       const storeKey = (key) => "klav:kbcol:" + key
@@ -26742,6 +27200,7 @@
       board.appendChild(bulkBar)
       board.appendChild(boardEl)
       wireKanbanResize(boardEl) // KD-165: restore + wire each column's drag-resize handle
+      wireKanbanHScroll(board, boardEl) // KD-297: horizontal scrollbar pinned to the viewport bottom
       // Live count/visibility sync when selection changes via checkbox or shift-click (no full rebuild).
       syncKbSelectionUi = () => {
         const bar = board.querySelector("#tktBulkBar")
@@ -28557,33 +29016,63 @@
     }
 
     let _mlBound = false
-    function openManageLabels() {
+    // KD-227: set when the popup is opened from a ticket's "+ Add label…" — { add(label), has(id) }. Clicking a
+    // label in the list adds it to that ticket, and a label created here is added too. Cleared on every open/close.
+    let _mlTicket = null
+    const _mlAddToTicket = async label => {
+      if (!_mlTicket) return
+      await _mlTicket.add(label)
+      renderMlList()
+      try { document.getElementById("mlNewName").focus() } catch (e) { }
+    }
+    function openManageLabels(opts) {
       const bg = document.getElementById("manageLabelsBg"); if (!bg) return
+      _mlTicket = (opts && opts.ticket) || null
+      document.getElementById("mlErr").textContent = ""
       renderMlList()
       bg.classList.add("show")
+      setTimeout(() => { try { document.getElementById("mlNewName").focus() } catch (e) { } }, 0)
       if (!_mlBound) {
         _mlBound = true
-        document.getElementById("mlCloseBtn").addEventListener("click", () => bg.classList.remove("show"))
-        bg.addEventListener("click", ev => { if (ev.target === bg) bg.classList.remove("show") })
-        document.getElementById("mlAddBtn").addEventListener("click", async () => {
+        const closeMl = () => { bg.classList.remove("show"); _mlTicket = null }
+        document.getElementById("mlCloseBtn").addEventListener("click", closeMl)
+        bg.addEventListener("click", ev => { if (ev.target === bg) closeMl() })
+        const addLabel = async () => {
           const name = document.getElementById("mlNewName").value.trim()
           const color = document.getElementById("mlNewColor").value
           const err = document.getElementById("mlErr")
           if (!name) { err.textContent = "Name is required."; return }
           err.textContent = ""
-          const projId = curProjId(); if (!projId) return
+          const projId = curProjId()
+          if (!projId) { err.textContent = "Couldn't create label — no project selected. Reload and try again."; return }
           const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`, {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ name, color })
           }).catch(() => null)
           const d = r ? await r.json().catch(() => ({})) : {}
-          if (!r || !r.ok) { err.textContent = d.error || "Couldn't create label."; return }
           if (!state._labels) state._labels = []
+          // KD-227: 409 = the label already exists — use it (add it to a stale local list, and to the
+          // ticket the popup was opened from) instead of failing.
+          if (r && r.status === 409 && d.label) {
+            if (!state._labels.some(l => l.id === d.label.id)) { state._labels.push(d.label); refreshTicketLabelOptions(); renderMlList() }
+            if (_mlTicket) { document.getElementById("mlNewName").value = ""; await _mlAddToTicket(d.label); err.textContent = `"${d.label.name}" already exists — added it to this ticket.`; return }
+            err.textContent = (d.error || "That label already exists.")
+            return
+          }
+          if (!r || !r.ok) {
+            // KD-227: say WHY (offline / server error) instead of a bare "Couldn't create label."
+            err.textContent = d.error || (r ? `Couldn't create label (server error ${r.status}). Try again.` : "Couldn't create label — can't reach the server. Check your connection and try again.")
+            return
+          }
           state._labels.push(d.label)
+          state._labels.sort((a, b) => String(a.name).localeCompare(String(b.name)))
           refreshTicketLabelOptions()
           document.getElementById("mlNewName").value = ""
           renderMlList()
-        })
+          await _mlAddToTicket(d.label)
+        }
+        document.getElementById("mlAddBtn").addEventListener("click", addLabel)
+        document.getElementById("mlNewName").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addLabel() } })
       }
     }
 
@@ -28642,6 +29131,21 @@
       <span class="ml-name" data-lid="${esc(l.id)}">${esc(l.name)}</span>
       <button class="ml-edit-btn" data-lid="${esc(l.id)}" title="Rename or recolor label" type="button" aria-label="Edit label">${kicon('pencil', { size: 14 })}</button>
       <button class="ml-del-btn" data-lid="${esc(l.id)}" title="Delete label" type="button" aria-label="Delete label">${kicon('x', { size: 15 })}</button>`
+        // KD-227: opened from a ticket — click a label to add it to that ticket (already-added ones are marked).
+        if (_mlTicket) {
+          const nameEl = row.querySelector(".ml-name")
+          if (_mlTicket.has(l.id)) {
+            row.classList.add("ml-added")
+            nameEl.insertAdjacentHTML("beforeend", ' <span class="ml-added-tag">Added</span>')
+          } else {
+            row.classList.add("ml-pick")
+            nameEl.setAttribute("role", "button"); nameEl.setAttribute("tabindex", "0")
+            nameEl.title = "Add to this ticket"
+            const pick = ev => { ev.stopPropagation(); document.getElementById("mlErr").textContent = ""; _mlAddToTicket(l) }
+            nameEl.addEventListener("click", pick)
+            nameEl.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(ev) } })
+          }
+        }
         row.querySelector(".ml-edit-btn").addEventListener("click", ev => {
           ev.stopPropagation()
           document.getElementById("mlErr").textContent = ""
@@ -31237,17 +31741,24 @@
         <input id="newTktTitleInp" maxlength="500" placeholder="e.g. Checkout fails on iOS Safari"
           style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box" />
       </label>
-      <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+      <div
+        style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
         <span id="newTktProjectLbl">Project <span style="color:var(--rose)">*</span></span>
         <div class="ntp" id="newTktProjectBox">
-          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden tabindex="-1"></select>
-          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="newTktProjectLbl newTktProjectName">
+          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden
+            tabindex="-1"></select>
+          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false"
+            aria-labelledby="newTktProjectLbl newTktProjectName">
             <span id="newTktProjectName">Select project</span>
-            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
           </button>
           <div class="ntp-list hide" id="newTktProjectList" role="listbox" aria-labelledby="newTktProjectLbl"></div>
         </div>
-        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0" role="alert"></span>
+        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0"
+          role="alert"></span>
       </div>
       <label
         style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
@@ -31291,7 +31802,9 @@
           <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach files</button>
           <span>or drop them here</span>
         </div>
-        <input type="file" id="newTktFileInp" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+        <input type="file" id="newTktFileInp"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple hidden>
         <div class="newtkt-files" id="newTktFilesGrid"></div>
         <div id="newTktFilesMsg" style="font-size:12px;color:var(--rose);margin-top:6px"></div>
       </div>

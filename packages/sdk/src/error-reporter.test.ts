@@ -69,7 +69,10 @@ describe('installErrorReporter — dedup + beacon', () => {
       contextSnapshot: () => ({}),
     })
 
-    window.dispatchEvent(new ErrorEvent('error', { message: 'boom', error: new Error('boom') }))
+    const onErr = (e: ErrorEvent) => { e.preventDefault() }
+    window.addEventListener('error', onErr)
+    window.dispatchEvent(new ErrorEvent('error', { message: 'boom', error: new Error('boom'), cancelable: true }))
+    window.removeEventListener('error', onErr)
     console.error('should not beacon')
 
     expect(sent.length).toBe(0)

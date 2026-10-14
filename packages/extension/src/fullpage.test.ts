@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { captureGrid } from './fullpage'
+import { captureGrid, planSeamlessScrollStitch } from './fullpage'
 
 describe('captureGrid (scroll-stitch position grid)', () => {
   it('a single-screen page is one frame at the origin', () => {
@@ -32,5 +32,47 @@ describe('captureGrid (scroll-stitch position grid)', () => {
 
   it('guards against zero/degenerate inputs', () => {
     expect(captureGrid(0, 0, 0, 0)).toEqual([{ x: 0, y: 0 }])
+  })
+})
+
+describe('planSeamlessScrollStitch (extension 1D seamless full-page)', () => {
+  it('when topHeaderHeight > 0: Frame 0 includes header; subsequent frames crop header and seamlessly tile canvas', () => {
+    // 2000px page, 800px viewport, 60px header (.bar)
+    const steps = planSeamlessScrollStitch(2000, 800, 60)
+    expect(steps.length).toBeGreaterThan(1)
+
+    expect(steps[0]).toEqual({
+      scrollY: 0,
+      sourceY: 0,
+      sourceHeight: 800,
+      canvasY: 0,
+      drawHeight: 800,
+    })
+
+    // Step 1: excludes header (sourceY = 60), scrolls to canvasFilled - 60 = 740
+    expect(steps[1].canvasY).toBe(800)
+    expect(steps[1].sourceY).toBe(60)
+    expect(steps[1].scrollY).toBe(740)
+    expect(steps[1].drawHeight).toBe(740)
+
+    // Verify strict continuity
+    for (let i = 1; i < steps.length; i++) {
+      expect(steps[i].sourceY).toBeGreaterThanOrEqual(60)
+      expect(steps[i].canvasY).toBe(steps[i - 1].canvasY + steps[i - 1].drawHeight)
+    }
+
+    const last = steps[steps.length - 1]
+    expect(last.canvasY + last.drawHeight).toBe(2000)
+  })
+
+  it('single frame when fullHeight <= viewportHeight', () => {
+    const steps = planSeamlessScrollStitch(700, 800, 60)
+    expect(steps).toEqual([{
+      scrollY: 0,
+      sourceY: 0,
+      sourceHeight: 700,
+      canvasY: 0,
+      drawHeight: 700,
+    }])
   })
 })
