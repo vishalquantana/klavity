@@ -11,7 +11,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -49,10 +49,11 @@ import { autoMatch } from "./lib/connector-automatch"
 import { finalizeSuccessfulExport } from "./lib/export-finalize"
 import { applyReconcileOps, recurrenceFromEvents, pickCitation, groundQuote, type ReconcileOp, type Trait, type TraitEventRow } from "./lib/provenance"
 import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./lib/transcript-parse"
-import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
+import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketStatusEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
 import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
 import { notifyReporterOnFix, shouldNotifyReporterOnFix } from "./lib/fixed-notification"
+import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
@@ -521,6 +522,36 @@ async function notifyTicketAssignee(input: { projectId: string; feedbackId: stri
     }).catch((e: any) => console.warn("ticket assignment email skipped:", e?.message || e))
   }
   return { emailSent: canEmail }
+}
+
+// KD-221: email the ticket's assignee + reporter about a status change — never the person who made it
+// (see lib/status-notification.ts). `row` is the ticket BEFORE the update; pass `assignee` when the same
+// update also reassigned it. Fire-and-forget: never throws, never blocks the response.
+async function emailStatusChange(input: {
+  projectId: string; feedbackId: string; row: any; fromStatus: string | null; toStatus: string
+  actorEmail: string | null; assignee?: string | null; projectName?: string | null
+}): Promise<void> {
+  try {
+    const row = input.row || {}
+    const projectName = input.projectName ?? (await projectById(input.projectId).catch(() => null))?.name ?? null
+    await notifyStatusChange({
+      actorEmail: input.actorEmail,
+      assignee: input.assignee !== undefined ? input.assignee : (row.assignee ?? null),
+      reporter: row.contactEmail || row.actorEmail || null,
+      contactEmail: row.contactEmail ?? null,
+      fromStatus: input.fromStatus, toStatus: input.toStatus,
+      ticketTitle: effectiveTicketTitle(row), projectName,
+    }, {
+      send: sendTicketStatusEmail,
+      // Members get the pretty permalink; an outside reporter (a contact, no project access) gets the
+      // /t/<id> link, which doesn't need membership.
+      linkFor: async (email) => (await projectAccess(email, input.projectId).catch(() => null))
+        ? prettyDeepLinkUrl(input.feedbackId, input.projectId, { seqNum: row.seqNum ?? null })
+        : ticketDeepLinkUrl(input.feedbackId),
+    })
+  } catch (e: any) {
+    console.warn("status-change email skipped:", e?.message || e)
+  }
 }
 
 await initDb()
@@ -4747,6 +4778,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         feedbackId: exportRow.feedbackId,
         meta: { from: beforeFeedback?.status ?? null, to: newStatus, source: "connector_webhook", connectorType: type, externalKey },
       }).catch((e: any) => console.warn("ticket status activity skipped:", e?.message || e))
+      // KD-221: a status synced from the external tracker has no Klavity actor → assignee + reporter both hear it.
+      if (beforeFeedback) void emailStatusChange({ projectId: exportRow.projectId, feedbackId: exportRow.feedbackId, row: beforeFeedback,
+        fromStatus: beforeFeedback.status ?? null, toStatus: newStatus, actorEmail: null })
       const proj = beforeFeedback?.contactEmail ? await projectById(exportRow.projectId).catch(() => null) : null
       void notifyReporterOnFix({
         contactEmail: beforeFeedback?.contactEmail ?? null,
@@ -10389,6 +10423,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const writes: Promise<any>[] = []
           if (meta.status !== undefined && meta.status !== row.status) {
             writes.push(insertActivity({ projectId: tpid, type: "ticket_status_changed", actorEmail: tInfo.email, feedbackId: fid, meta: { from: row.status, to: meta.status } }).catch(() => { }))
+            // KD-221: email the assignee + reporter (not the person who changed it). Fire-and-forget.
+            void emailStatusChange({ projectId: tpid, feedbackId: fid, row, fromStatus: row.status ?? null, toStatus: meta.status,
+              actorEmail: tInfo.email, assignee: meta.assignee !== undefined ? meta.assignee : row.assignee })
           }
           if (meta.priority !== undefined && meta.priority !== row.priority) {
             writes.push(insertActivity({ projectId: tpid, type: "ticket_priority_changed", actorEmail: tInfo.email, feedbackId: fid, meta: { from: row.priority, to: meta.priority } }).catch(() => { }))
@@ -11740,6 +11777,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Quantana traffic so the growth team can exclude it from funnels.
       return json({ email: me, workspaces: ms, active, members, internal: isInternalEmail(me) })
     }
+    // KD-221: in-app notifications (top-bar bell) for the signed-in user — only ever their own rows.
+    //   GET  /api/notifications            → { notifications: [...newest first], unread }
+    //   POST /api/notifications/read {ids} → mark those read; { all: true } marks everything read
+    if (req.method === "GET" && path === "/api/notifications") {
+      const lim = Number(url.searchParams.get("limit") || 30)
+      const [notifications, unread] = await Promise.all([listNotifications(me, Number.isFinite(lim) ? lim : 30), countUnreadNotifications(me)])
+      return json({ notifications, unread })
+    }
+    if (req.method === "POST" && path === "/api/notifications/read") {
+      const body = await req.json().catch(() => ({}))
+      const ids = body && body.all === true ? null : (Array.isArray(body?.ids) ? body.ids.map((x: any) => String(x)) : [])
+      const marked = await markNotificationsRead(me, ids)
+      return json({ ok: true, marked, unread: await countUnreadNotifications(me) })
+    }
     // ── dashboard-on-login aggregate (P1): one round-trip, reads only, no AI/vision. ──
     // Derived single project ('proj_'+workspaceId) until the P2 schema lands; UI is already project-shaped.
     if (req.method === "GET" && path === "/api/dashboard") {
@@ -12773,6 +12824,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // Push this Klavity-authored comment to every linked external tracker. The push runs
         // asynchronously and NEVER blocks or throws into this response path — a sync failure
         // is recorded as an activity event and visible in the timeline.
+        // KD-221: tell the assignee in-app (top-bar bell). Fire-and-forget; the actor is excluded.
+        void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_commented", actorEmail: me, feedbackId: fid,
+          meta: { snippet: text.slice(0, 140) } }).catch(() => { })
         // INBOUND SEAM: source is always "klavity" here (Phase 1). When inbound sync (Phase 2)
         // is built, comments echoed from the tracker will carry source:"inbound" and will be
         // skipped by pushCommentToLinkedIssues to prevent loops.
@@ -13211,6 +13265,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             meta: { from: fbRow.title ?? null, to: newTitle },
           }).catch((e: any) => console.warn("ticket title activity skipped:", e?.message || e)))
         }
+        // KD-221: description edits aren't an activity event, so notify the assignee directly. Fire-and-forget.
+        if (meta.observation !== undefined && (meta.observation ?? "") !== (fbRow.observation ?? "")) {
+          void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_description_changed", actorEmail: me, feedbackId: fid })
+            .catch(() => { })
+        }
         if (meta.status !== undefined && meta.status !== fbRow.status) {
           activityWrites.push(insertActivity({
             projectId: fbRow.projectId,
@@ -13268,11 +13327,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           }
         }
         if (activityWrites.length) await Promise.all(activityWrites)
+        if (meta.status !== undefined && meta.status !== fbRow.status) {
+          // KD-221: email the assignee + reporter (not the person who changed it). Fire-and-forget.
+          void emailStatusChange({ projectId: fbRow.projectId, feedbackId: fid, row: fbRow, fromStatus: fbRow.status ?? null, toStatus: meta.status,
+            actorEmail: me, assignee: meta.assignee !== undefined ? meta.assignee : fbRow.assignee })
+        }
         // KD-230: only a real "fixed" transition with a reporter email notifies anyone, and its project +
         // permalink lookups run in the background — previously every status change awaited the permalink
         // lookup (an extra DB round-trip) before responding, even when no email could ever be sent.
         if (meta.status !== undefined && meta.status !== fbRow.status
-          && shouldNotifyReporterOnFix({ contactEmail: fbRow.contactEmail, previousStatus: fbRow.status, nextStatus: meta.status })) {
+          && shouldNotifyReporterOnFix({ contactEmail: fbRow.contactEmail, previousStatus: fbRow.status, nextStatus: meta.status, actorEmail: me })) {
           const nextStatus = meta.status
           void (async () => {
             const proj = await projectById(fbRow.projectId).catch(() => null)
@@ -13280,6 +13344,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               contactEmail: fbRow.contactEmail,
               previousStatus: fbRow.status,
               nextStatus,
+              actorEmail: me,
               title: effectiveTicketTitle(fbRow),
               projectName: proj?.name ?? "your project",
               // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
@@ -13516,6 +13581,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-286 (JTBD 5.7): mirror the ticket's now-current label set to linked external
         // issues. Fire-and-forget; syncTicketFields re-reads the full label set after the attach.
         syncTicketFields(fid, fbRow.projectId, me)
+        // KD-221: tell the assignee (top-bar bell). Fire-and-forget.
+        void notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_label_added", actorEmail: me, feedbackId: fid,
+          meta: { label: projectLabels.find(l => l.id === labelId)?.name ?? null } }).catch(() => { })
         return json({ ok: true })
       }
 
@@ -13525,6 +13593,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-286 (JTBD 5.7): mirror the ticket's now-current label set to linked external
         // issues after removal. Fire-and-forget.
         syncTicketFields(fid, fbRow.projectId, me)
+        // KD-221: tell the assignee (top-bar bell). Fire-and-forget.
+        void (async () => {
+          const name = (await listLabels(fbRow.projectId).catch(() => [])).find(l => l.id === labelIdParam)?.name ?? null
+          await notifyAssigneeOfTicketUpdate({ projectId: fbRow.projectId, type: "ticket_label_removed", actorEmail: me, feedbackId: fid, meta: { label: name } })
+        })().catch(() => { })
         return json({ ok: true })
       }
 
@@ -15131,10 +15204,14 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             }
             if (activityWrites.length) await Promise.all(activityWrites)
             if (changed && hasStatus && meta.status !== row.status) {
+              // KD-221: email the assignee + reporter (not the person who changed it). Fire-and-forget.
+              void emailStatusChange({ projectId: proj.id, feedbackId: tid, row, fromStatus: row.status ?? null, toStatus: meta.status,
+                actorEmail: me, assignee: hasAssignee ? meta.assignee : row.assignee, projectName: proj.name })
               void notifyReporterOnFix({
                 contactEmail: row.contactEmail,
                 previousStatus: row.status,
                 nextStatus: meta.status,
+                actorEmail: me,
                 title: effectiveTicketTitle(row),
                 projectName: proj.name,
                 // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
