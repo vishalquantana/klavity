@@ -1239,6 +1239,12 @@ export async function applySchema(c: Client) {
     await c.execute("ALTER TABLE ticket_comments ADD COLUMN edited_at INTEGER")
       .catch((e: any) => console.warn("ticket_comments.edited_at ALTER skipped:", e?.message || e))
   }
+  // KD-217: images / videos attached to a comment — JSON array of { key, filename, contentType, size } (same shape as a ticket's
+  // attachments). NULL = none.
+  if (needCol("ticket_comments", "attachments_json")) {
+    await c.execute("ALTER TABLE ticket_comments ADD COLUMN attachments_json TEXT")
+      .catch((e: any) => console.warn("ticket_comments.attachments_json ALTER skipped:", e?.message || e))
+  }
 
   // ── feedback_replays.s3_key (KLA-757/759 perf): the gzipped rrweb event buffer is uploaded to object
   // storage at ingest and the object key stored here, so GET /api/feedback/:id/replay streams the blob
@@ -3978,8 +3984,18 @@ export async function listActivity(projectId: string, opts: { actorEmail?: strin
   return r.rows.map(rowToActivity)
 }
 
+export type CommentAttachment = { key: string; filename: string; contentType: string; size?: number; url?: string | null }
 export type TicketCommentRow = {
   id: string; feedbackId: string; author: string | null; body: string; createdAt: number; editedAt: number | null
+  // KD-217: images / videos attached to the comment (storage entries; the server adds a presigned url when it returns them).
+  attachments: CommentAttachment[]
+}
+function parseCommentAttachments(raw: any): CommentAttachment[] {
+  if (raw == null || raw === "") return []
+  try {
+    const v = JSON.parse(String(raw))
+    return Array.isArray(v) ? v.filter((a) => a && typeof a === "object" && a.key) : []
+  } catch { return [] }
 }
 function rowToTicketComment(x: any): TicketCommentRow {
   return {
@@ -3989,11 +4005,13 @@ function rowToTicketComment(x: any): TicketCommentRow {
     body: String(x.body),
     createdAt: Number(x.created_at),
     editedAt: x.edited_at != null ? Number(x.edited_at) : null,
+    attachments: parseCommentAttachments(x.attachments_json),
   }
 }
-export async function insertTicketComment(feedbackId: string, author: string | null, body: string): Promise<TicketCommentRow> {
+export async function insertTicketComment(feedbackId: string, author: string | null, body: string, attachments: CommentAttachment[] = []): Promise<TicketCommentRow> {
   const trimmed = String(body || "").trim()
-  if (!trimmed) throw new Error("comment body required")
+  // KD-217: a comment may be attachments only (no text) — but never completely empty.
+  if (!trimmed && !attachments.length) throw new Error("comment body required")
   // KLA-780 round-3 (Muse C3-6, checklist L): a comment on a MERGED (hidden) row would be invisible on
   // the board. Redirect it to the live survivor so the comment lands on the ticket that's actually shown.
   {
@@ -4006,10 +4024,10 @@ export async function insertTicketComment(feedbackId: string, author: string | n
   const id = "tc_" + crypto.randomUUID()
   const createdAt = Date.now()
   await db!.execute({
-    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at) VALUES (?,?,?,?,?)",
-    args: [id, feedbackId, author ?? null, trimmed, createdAt],
+    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at,attachments_json) VALUES (?,?,?,?,?,?)",
+    args: [id, feedbackId, author ?? null, trimmed, createdAt, attachments.length ? JSON.stringify(attachments) : null],
   })
-  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt }
+  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt, editedAt: null, attachments }
 }
 export async function listTicketComments(feedbackId: string): Promise<TicketCommentRow[]> {
   const r = await db!.execute({
@@ -4021,14 +4039,26 @@ export async function listTicketComments(feedbackId: string): Promise<TicketComm
 
 // KD-158: edit an already-posted comment's body. Scoped by feedbackId so a comment id can't be
 // used to edit a comment on an unrelated ticket. Returns the updated row, or null if not found.
-export async function updateTicketComment(commentId: string, feedbackId: string, body: string): Promise<TicketCommentRow | null> {
+export async function updateTicketComment(commentId: string, feedbackId: string, body: string, removeKeys: string[] = []): Promise<TicketCommentRow | null> {
   const trimmed = String(body || "").trim()
-  if (!trimmed) throw new Error("comment body required")
   const editedAt = Date.now()
-  const r = await db!.execute({
-    sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?",
-    args: [trimmed, editedAt, commentId, feedbackId],
-  })
+  // KD-217: an edit may also drop some of the comment's attachments (removeKeys = their storage keys). The text may then be empty
+  // only while at least one attachment is left — a comment is never completely empty.
+  let attachmentsJson: string | null | undefined
+  if (removeKeys.length) {
+    const cur = await db!.execute({ sql: "SELECT attachments_json FROM ticket_comments WHERE id=? AND feedback_id=? LIMIT 1", args: [commentId, feedbackId] })
+    if (!cur.rows.length) return null
+    const keep = parseCommentAttachments((cur.rows[0] as any).attachments_json).filter((a) => !removeKeys.includes(String(a.key)))
+    if (!trimmed && !keep.length) throw new Error("comment body required")
+    attachmentsJson = keep.length ? JSON.stringify(keep) : null
+  } else if (!trimmed) {
+    const cur = await db!.execute({ sql: "SELECT attachments_json FROM ticket_comments WHERE id=? AND feedback_id=? LIMIT 1", args: [commentId, feedbackId] })
+    if (!cur.rows.length) return null
+    if (!parseCommentAttachments((cur.rows[0] as any).attachments_json).length) throw new Error("comment body required")
+  }
+  const r = attachmentsJson === undefined
+    ? await db!.execute({ sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?", args: [trimmed, editedAt, commentId, feedbackId] })
+    : await db!.execute({ sql: "UPDATE ticket_comments SET body=?, edited_at=?, attachments_json=? WHERE id=? AND feedback_id=?", args: [trimmed, editedAt, attachmentsJson, commentId, feedbackId] })
   if (Number(r.rowsAffected) === 0) return null
   const sel = await db!.execute({ sql: "SELECT * FROM ticket_comments WHERE id=? LIMIT 1", args: [commentId] })
   return sel.rows.length ? rowToTicketComment(sel.rows[0]) : null
@@ -4044,7 +4074,7 @@ export async function deleteTicketComment(commentId: string, feedbackId: string)
 }
 
 export type TicketTimelineItem =
-  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null }
+  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null; attachments: CommentAttachment[] }
   | { id: string; kind: "activity"; type: string; actorEmail: string | null; meta: any; createdAt: number }
   | { id: string; kind: "ticket_export"; type: "connector_export"; actorEmail: string | null; meta: any; createdAt: number }
 
@@ -4062,7 +4092,7 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
   ])
   const items: TicketTimelineItem[] = [
     ...comments.map((c): TicketTimelineItem => ({
-      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt,
+      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt, attachments: c.attachments,
     })),
     ...activity.rows.map((r: any): TicketTimelineItem => ({
       id: String(r.id),
@@ -7316,11 +7346,15 @@ export async function removeFeedbackAttachment(feedbackId: string, projectId: st
 // point at one object — deleting it would break the other. Underscore / percent in the key only widen the LIKE, so at worst we
 // keep an orphan object and never delete a shared one.
 export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedbackId: string): Promise<boolean> {
+  const like = "%\"key\":" + JSON.stringify(key) + "%"
   const r = await db!.execute({
     sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND attachments_json LIKE ? LIMIT 1",
-    args: [exceptFeedbackId, "%\"key\":" + JSON.stringify(key) + "%"],
+    args: [exceptFeedbackId, like],
   })
-  return r.rows.length > 0
+  if (r.rows.length > 0) return true
+  // KD-217: a stored file may also be attached to a comment (a deleted comment's rows are already gone when this runs).
+  const c = await db!.execute({ sql: "SELECT 1 AS x FROM ticket_comments WHERE attachments_json LIKE ? LIMIT 1", args: [like] })
+  return c.rows.length > 0
 }
 
 // KD-214: detach a ticket's own report screenshot (feedback.screenshot_id). Compare-and-swap on the screenshot id, so a stale
@@ -8548,8 +8582,11 @@ export async function listTicketsPaginated(
     statuses?: string[]      // e.g. ["open","in_progress"]; empty = all non-new
     priorities?: string[]    // e.g. ["urgent","high"]
     assignee?: string        // exact email match; empty string = unassigned; omit = all
+    assignees?: string[]     // multi-assignee list; empty string or __unassigned__ = unassigned
     source?: "sim" | "human" | "manual" // sim = sim_id IS NOT NULL; human = sim_id IS NULL and not manual; manual = source='manual'
+    sources?: string[]       // multi-source list
     label?: string           // exact label id; omit = all labels
+    labels?: string[]        // multi-label list
     search?: string          // case-insensitive text search across ticket content
     page?: number            // 1-indexed, default 1
     limit?: number           // default 50, max 200
@@ -8583,11 +8620,22 @@ export async function listTicketsPaginated(
   }
 
   if (opts.priorities && opts.priorities.length) {
-    conditions.push(`f.priority IN (${opts.priorities.map(() => "?").join(",")})`)
+    // KD-236: an unset priority is "medium" (the canonical default the UI shows), so the Medium filter includes it.
+    conditions.push(`COALESCE(NULLIF(f.priority, ''), 'medium') IN (${opts.priorities.map(() => "?").join(",")})`)
     args.push(...opts.priorities)
   }
 
-  if (opts.assignee !== undefined) {
+  if (opts.assignees && opts.assignees.length) {
+    const hasUnassigned = opts.assignees.includes("") || opts.assignees.includes("__unassigned__")
+    const named = opts.assignees.filter(a => a && a !== "__unassigned__")
+    const aParts: string[] = []
+    if (hasUnassigned) aParts.push("(f.assignee IS NULL OR f.assignee='')")
+    if (named.length) {
+      aParts.push(`f.assignee IN (${named.map(() => "?").join(",")})`)
+      args.push(...named)
+    }
+    if (aParts.length) conditions.push(`(${aParts.join(" OR ")})`)
+  } else if (opts.assignee !== undefined) {
     if (opts.assignee === "") {
       conditions.push("(f.assignee IS NULL OR f.assignee='')")
     } else {
@@ -8596,17 +8644,21 @@ export async function listTicketsPaginated(
     }
   }
 
-  if (opts.source === "sim") conditions.push("f.sim_id IS NOT NULL")
-  else if (opts.source === "manual") conditions.push("f.source='manual'")
-  else if (opts.source === "human") conditions.push("f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual')")
+  const sources = (opts.sources && opts.sources.length) ? opts.sources : (opts.source ? [opts.source] : [])
+  if (sources.length) {
+    const sParts: string[] = []
+    if (sources.includes("sim")) sParts.push("f.sim_id IS NOT NULL")
+    if (sources.includes("manual")) sParts.push("f.source='manual'")
+    if (sources.includes("human")) sParts.push("(f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual'))")
+    if (sParts.length) conditions.push(`(${sParts.join(" OR ")})`)
+  }
 
-  if (opts.label) {
-    // Scope the label through the ticket's project too: a label from another tenant can never
-    // influence this result, even if its ID were somehow supplied by a caller.
+  const labels = (opts.labels && opts.labels.length) ? opts.labels : (opts.label ? [opts.label] : [])
+  if (labels.length) {
     conditions.push(`EXISTS (SELECT 1 FROM ticket_labels tl
                              JOIN labels l ON l.id = tl.label_id
-                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id = ?)`)
-    args.push(opts.label)
+                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id IN (${labels.map(() => "?").join(",")}))`)
+    args.push(...labels)
   }
 
   const search = opts.search?.trim()

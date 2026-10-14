@@ -1,8 +1,8 @@
 import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
-import { Annotator } from './annotator'
+import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
-import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from './voice-input'
+import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
@@ -360,6 +360,8 @@ export interface ModalCallbacks {
   // full current text (not a diff) so the host can just persist-overwrite. Best-effort, fire-and-forget —
   // never blocks typing or Submit. Absent → composer identical to today (no persistence, full back-compat).
   onDescriptionChange?: (text: string) => void
+  // Persist the typed title (if the title field is shown) into the active draft session.
+  onTitleChange?: (text: string) => void
   // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
   // AI" button appears under the description; clicking it hands the reporter's current text + the primary
   // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
@@ -369,7 +371,13 @@ export interface ModalCallbacks {
   // Widget-only — the extension omits it (no button), preserving parity with onClarityTip/onPickElement.
   onEnhance?: (
     text: string,
-    ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null },
+    ctx?: {
+      images?: number
+      shot?: string
+      annotations?: any
+      annotationTexts?: string[]
+      picked?: { selector: string; text: string } | null
+    },
   ) => Promise<EnhanceDraftLike | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
@@ -540,6 +548,8 @@ export interface ModalCallbacks {
   // controller's addScreenshot() (the host already knows those). The host uses it to append the shot,
   // tagged with the current page URL, to the evidence session. Absent => nothing extra happens.
   onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined) => void
+  // Fired when an in-place capture (e.g. background full-page render) swaps out a fast preview.
+  onShotReplaced?: (index: number, dataUrl: string, quality: CaptureQuality | undefined) => void
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
@@ -733,6 +743,7 @@ export function buildModal(
   // renderer couldn't inline dropped to white gaps). Drives a non-intrusive callout pointing at the Screen
   // button. Cleared when the shot is retaken sharp / removed. Index-aligned like the quality + page arrays.
   let screenshotSuggestSharp: boolean[] = []
+  let inFlightFullRender: Promise<void> | null = null
   // KLA-621: parallel array of per-shot capture provenance — screenshotCapture[i] tells Retake what to redo
   // for screenshots[i] (region rect / picked element selector / sharp mode). undefined for shots with no known
   // provenance (uploads / pastes) → Retake keeps its legacy full-frame behaviour. Index-aligned like the rest.
@@ -2640,7 +2651,7 @@ export function buildModal(
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
-  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0 || desc.value.trim().length > 0 || ((modal.querySelector('#klavity-title') as HTMLInputElement | null)?.value.trim().length ?? 0) > 0
   // KLA-773: closing with unsaved evidence (screenshot / recording / replay / files) used to discard it
   // silently — X, backdrop click and Esc all called close() unconditionally. Guard those three paths with a
   // lightweight in-modal confirm (never a blocking window.confirm() — that would freeze the host page). The
@@ -2706,10 +2717,40 @@ export function buildModal(
   if (callbacks.onDescriptionChange) {
     const onDescriptionChange = callbacks.onDescriptionChange
     let descPersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushDesc = () => {
+      if (descPersistTimer) { clearTimeout(descPersistTimer); descPersistTimer = null }
+      try { onDescriptionChange(desc.value) } catch { /* best-effort */ }
+    }
     desc.addEventListener('input', () => {
       if (descPersistTimer) clearTimeout(descPersistTimer)
-      descPersistTimer = setTimeout(() => { try { onDescriptionChange(desc.value) } catch { /* best-effort */ } }, 600)
+      descPersistTimer = setTimeout(flushDesc, 600)
     })
+    desc.addEventListener('blur', flushDesc)
+    desc.addEventListener('change', flushDesc)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushDesc)
+      window.addEventListener('pagehide', flushDesc)
+    }
+  }
+
+  const titleInp = modal.querySelector('#klavity-title') as HTMLInputElement | null
+  if (titleInp && callbacks.onTitleChange) {
+    const onTitleChange = callbacks.onTitleChange
+    let titlePersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushTitle = () => {
+      if (titlePersistTimer) { clearTimeout(titlePersistTimer); titlePersistTimer = null }
+      try { onTitleChange(titleInp.value) } catch { /* best-effort */ }
+    }
+    titleInp.addEventListener('input', () => {
+      if (titlePersistTimer) clearTimeout(titlePersistTimer)
+      titlePersistTimer = setTimeout(flushTitle, 600)
+    })
+    titleInp.addEventListener('blur', flushTitle)
+    titleInp.addEventListener('change', flushTitle)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushTitle)
+      window.addEventListener('pagehide', flushTitle)
+    }
   }
   // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
   // Shown for any well-formed address (see the markup note on why we never ask the server whether it
@@ -2876,6 +2917,26 @@ export function buildModal(
     let originalText: string | null = null
     // The primary screenshot for grounding: the active hero shot, else the first captured shot.
     const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
+    const getActiveAnnotatedShotSync = (): string | null => {
+      const base = primaryShot()
+      if (!base) return ''
+      const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+      const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+      if (!ann || !Array.isArray(ann.shapes) || !ann.shapes.length) return base
+
+      // If the hero stage currently has the canvas for this index, use it directly (already rendered):
+      const stage = shadowRoot.getElementById('klavity-hero-stage')
+      const heroCanvas = stage?.querySelector('canvas') as HTMLCanvasElement | null
+      if (heroCanvas && activeIndex === targetIdx && heroCanvas.width > 1 && heroCanvas.height > 1) {
+        try {
+          const url = heroCanvas.toDataURL('image/png')
+          if (url && url.length > 64) return url
+        } catch { /* fallback to offscreen renderer */ }
+      }
+
+      return null
+    }
+
     const runEnhance = async () => {
       if (busy) return
       const text = desc.value.trim()
@@ -2885,7 +2946,21 @@ export function buildModal(
       if (spinEl) spinEl.hidden = false
       try {
         const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
-        const draft = await onEnhance(text, { images: screenshots.length, shot: primaryShot(), picked })
+        const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+        const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+        const annotationTexts = extractAnnotationTexts(ann?.shapes)
+        const base = primaryShot()
+        let shot = getActiveAnnotatedShotSync()
+        if (shot === null) {
+          shot = await renderAnnotatedImage(base, ann.shapes, ann.w, ann.h)
+        }
+        const draft = await onEnhance(text, {
+          images: screenshots.length,
+          shot,
+          annotations: ann,
+          annotationTexts,
+          picked,
+        })
         if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
         if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
         desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place
@@ -3184,9 +3259,20 @@ export function buildModal(
 
     // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
     const wire = (engine: DictationEngine) => {
+      let lastInterim = ''
       engine.onTranscript = (text) => {
-        const existing = desc.value
-        desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+        lastInterim = ''
+        streamBase = joinSpeechSegments(streamBase, text)
+        desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
+      engine.onInterim = (text) => {
+        lastInterim = text || ''
+        const sep = streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : ''
+        desc.value = streamBase + (text ? sep + text : '')
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
@@ -3201,10 +3287,21 @@ export function buildModal(
         setVoiceStatus('err', message, 4000)
       }
       engine.onStop = () => {
+        if (lastInterim) {
+          streamBase = joinSpeechSegments(streamBase, lastInterim)
+          lastInterim = ''
+        }
+        if (streamBase) {
+          streamBase = formatSpeechFinal(streamBase)
+          desc.value = streamBase
+        }
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
         clearInfoStatus()
+        refreshSubmit()
       }
     }
 
@@ -3216,6 +3313,7 @@ export function buildModal(
       // The user may have pressed Stop before the server came back unavailable — don't resurrect it.
       if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
       if (VoiceInput.isSupported()) {
+        streamBase = desc.value
         voice = makeWebSpeech()
         setVoiceStatus('info', 'Reconnecting dictation…')
         void voice.start()
@@ -3243,14 +3341,16 @@ export function buildModal(
       let lastInterim = ''
       s.onTranscript = (text) => {
         lastInterim = ''
-        streamBase = streamBase + sep() + text
+        streamBase = joinSpeechSegments(streamBase, text)
         desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       s.onInterim = (text) => {
         lastInterim = text || ''
         desc.value = streamBase + sep() + text
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
@@ -3259,8 +3359,15 @@ export function buildModal(
       s.onStop = () => {
         // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
         // final already folded into streamBase and lastInterim is ''.
-        if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = '' }
+        if (lastInterim) {
+          streamBase = joinSpeechSegments(streamBase, lastInterim)
+          lastInterim = ''
+        }
+        if (streamBase) {
+          streamBase = formatSpeechFinal(streamBase)
+        }
         desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
         try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }
@@ -3323,6 +3430,10 @@ export function buildModal(
     // still fire; removing a shot mid-compression would splice the live arrays and misalign the annotation
     // map against the (already-captured) screenshot list. Building the payload from these frozen snapshots
     // makes post-submit mutation harmless — the report reflects exactly the state at the moment of Submit.
+    // If a full-page render is settling, give microtasks a chance to swap it in before snapshotting
+    if (inFlightFullRender) {
+      await Promise.race([inFlightFullRender, Promise.resolve()])
+    }
     const compressedSnapshot = screenshotCompressed.slice()
     const annotationsSnapshot = buildAnnotationsPayload()
     const filesSnapshot = attachedFiles.slice()
@@ -3447,6 +3558,7 @@ export function buildModal(
     if (annotationsByIndex[index]) delete annotationsByIndex[index]
     delete undoStacks[index]; delete cropStacks[index]
     updateStrip()
+    try { callbacks.onShotReplaced?.(index, dataUrl, quality) } catch { /* best-effort */ }
   }
 
   // KLAVITYKLA-509: viewport-first capture. Render the FAST above-the-fold preview immediately so the strip
@@ -3470,7 +3582,7 @@ export function buildModal(
     } catch { /* preview failed — the background full render below becomes the primary shot */ }
     finally { restore?.() }
     // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
-    void (async () => {
+    const fullRenderP = (async () => {
       const restore2 = maskOn ? maskNumbers(document.body) : null
       try {
         const full = await callbacks.onCaptureFull()
@@ -3481,8 +3593,12 @@ export function buildModal(
           if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); if (activeBtn) setActiveCapture(activeBtn) }
         }
       } catch { capturing = false; updateStrip() }
-      finally { restore2?.() }
+      finally {
+        restore2?.()
+        if (inFlightFullRender === fullRenderP) inFlightFullRender = null
+      }
     })()
+    inFlightFullRender = fullRenderP
     return true
   }
 

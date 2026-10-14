@@ -234,6 +234,34 @@ async function buildOneThumb(dataUrl: string): Promise<string> {
   }
 }
 
+async function compressExtScreenshot(dataUrl: string): Promise<string> {
+  const maxWidth = 2000, quality = 0.85, maxDimension = 16000
+  if (dataUrl.startsWith('data:image/jpeg') || typeof document === 'undefined' || !dataUrl.startsWith('data:image/')) return dataUrl
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl
+    })
+    const nw = img.naturalWidth, nh = img.naturalHeight
+    if (!nw || !nh) return dataUrl
+    let scale = nw > maxWidth ? maxWidth / nw : 1
+    if (nh * scale > maxDimension) {
+      scale = maxDimension / nh
+    }
+    const w = Math.round(nw * scale), h = Math.round(nh * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return dataUrl
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    const out = canvas.toDataURL('image/jpeg', quality)
+    return out.length < dataUrl.length ? out : dataUrl
+  } catch {
+    return dataUrl
+  }
+}
+
 // ── Modal ────────────────────────────────────────────────────────────────────
 // Only the three context-menu icons remain; the report composer (and all of its
 // camera/crop/image/send/pencil/trash/close iconography) now lives in buildModal.
@@ -335,7 +363,17 @@ function buildComposerAssist(assist: AssistScope, clarityOn: boolean): Partial<M
       try {
         const res = await assistFetch(backendUrl + '/api/report/enhance', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ projectId, text, pageUrl: location.href, shot: ctx?.shot || '', picked: ctx?.picked || null, images: ctx?.images ?? 0, client: captureExtClientInfo() }),
+          body: JSON.stringify({
+            projectId,
+            text,
+            pageUrl: location.href,
+            shot: ctx?.shot || '',
+            annotations: ctx?.annotations || null,
+            annotationTexts: ctx?.annotationTexts || [],
+            picked: ctx?.picked || null,
+            images: ctx?.images ?? 0,
+            client: captureExtClientInfo(),
+          }),
         }, 30_000) // vision call — longer timeout than the cheap tip
         if (!res.ok) return null
         const data = await res.json().catch(() => null)
@@ -420,6 +458,9 @@ async function openComposer(
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
     // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
     onRetakeSharp: onCaptureFull,
+    // Safely pre-compress high-res captures (especially full-page scroll-stitches) into high-quality JPEG
+    // so they stay under the server's 8MB limit and prevent upload rejection / evidence loss.
+    compressImage: compressExtScreenshot,
     // PX4 #411/#425 (ext↔widget parity): enhanced-composer opts from the project's modalConfig.composer,
     // parsed identically to the widget. All default off → classic Bug/Feature composer. When a project
     // opts in, the extension now offers the same Title field, extended issue-type chips (Bug/Feature/
@@ -447,6 +488,15 @@ async function openComposer(
     // #442: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste /
     // auto-capture), tagged with the CURRENT page. Serialized to avoid lost updates.
     onShotAdded: session ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(dataUrl)) } : undefined,
+    onShotReplaced: session ? (index: number, dataUrl: string) => {
+      void queueEvWrite(async () => {
+        const latest = await evGetActive(evStorage)
+        if (!latest || !latest.shots[index]) return
+        latest.shots[index].dataUrl = dataUrl
+        latest.shots[index].bytes = dataUrl.length
+        evSession = await evPut(evStorage, latest)
+      })
+    } : undefined,
     // #442: keep the session in sync when the reporter removes a thumbnail (index-aligned with the strip).
     onShotRemoved: session ? (index: number) => removeEvShotAt(index) : undefined,
     // Reset the single-slot controller ref whenever the composer closes (so it can reopen), and for a
@@ -716,7 +766,8 @@ export async function submitViaSW(
         return { ...rest, dataUrl }
       }))
     : undefined
-  const screenshotThumbs = await buildExtThumbnails(p.screenshots).catch(() => [] as string[])
+  const safeScreenshots = await Promise.all((p.screenshots || []).map((s) => compressExtScreenshot(s)))
+  const screenshotThumbs = await buildExtThumbnails(safeScreenshots).catch(() => [] as string[])
   const payload: SubmitReportPayload = {
     type: p.type,
     // PX4 #411 (ext↔widget parity): the precise issue kind (bug/feature/task/query) the reporter chose,
@@ -729,7 +780,7 @@ export async function submitViaSW(
     description,
     // B1: console logs attached only when the reporter opted in via the composer toggle (default OFF).
     context: buildContext(p.attachConsole),
-    screenshots: [...p.screenshots],
+    screenshots: safeScreenshots,
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
     // their own path; these ride the /api/feedback `files` field (forwarded in the background).
     ...(filesForSW && filesForSW.length ? { files: filesForSW } : {}),

@@ -52,6 +52,7 @@ describe("buildDeepgramStreamUrl", () => {
     expect(u.searchParams.get("interim_results")).toBe("true")
     expect(u.searchParams.get("punctuate")).toBe("true")
     expect(u.searchParams.get("smart_format")).toBe("true")
+    expect(u.searchParams.get("dictation")).toBe("true")
     expect(u.searchParams.get("endpointing")).toBe("300")
   })
 })

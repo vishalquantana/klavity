@@ -132,12 +132,27 @@ export function openModal(type: ReportType = 'bug') {
       } catch { return null }
     },
     // KLA-586 AI "Enhance" (POST /api/report/enhance): the reporter's one-liner + the primary shot + picked
-    // element → a structured developer-ready draft. Longer timeout (vision call).
-    onEnhance: async (text: string, ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null }) => {
+    onEnhance: async (text: string, ctx?: {
+      images?: number
+      shot?: string
+      annotations?: any
+      annotationTexts?: string[]
+      picked?: { selector: string; text: string } | null
+    }) => {
       try {
         const res = await fetchWithTimeout(backendBase() + '/api/report/enhance', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ projectId: _projectId, text, pageUrl: location.href, shot: ctx?.shot || '', picked: ctx?.picked || null, images: ctx?.images ?? 0, client: captureClientInfo() }),
+          body: JSON.stringify({
+            projectId: _projectId,
+            text,
+            pageUrl: location.href,
+            shot: ctx?.shot || '',
+            annotations: ctx?.annotations || null,
+            annotationTexts: ctx?.annotationTexts || [],
+            picked: ctx?.picked || null,
+            images: ctx?.images ?? 0,
+            client: captureClientInfo(),
+          }),
         }, 30_000)
         if (!res.ok) return null
         const data = await res.json().catch(() => null)

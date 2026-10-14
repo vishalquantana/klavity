@@ -46,9 +46,9 @@ test("KD-162: falls back to fallbackDraftTitle's wording when the last path segm
     createdAt: Date.now(),
   })
   const lines = out.split("\n")
-  // no raw digit-string masquerading as a title — falls back to the clean noun+path form instead
-  expect(lines[0]).toBe("Screenshot report on /dashboard/reports/8472910384729104")
-  expect(lines[1]).toBe("Application path : /dashboard/reports/8472910384729104")
+  // no raw digit-string masquerading as a title — falls back to the clean noun+path form (id shown as :id) instead
+  expect(lines[0]).toBe("Screenshot report on /dashboard/reports/:id")   // KD-162: ids are masked in the shown text
+  expect(lines[1]).toBe("Application path : /dashboard/reports/:id")
   expect(lines[2]).toMatch(/^Captured: /)
 })
 

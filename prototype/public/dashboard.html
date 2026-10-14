@@ -4096,6 +4096,115 @@
       background-color: rgba(99, 102, 241, .08)
     }
 
+    /* KLA-169 / KD-235: Multi-select dropdowns for ticket filters */
+    .tkt-ms-wrap {
+      position: relative;
+      display: inline-block;
+    }
+
+    .tkt-ms-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--ink-3) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 5px 26px 5px 10px;
+      font-size: 12px;
+      color: var(--paper);
+      cursor: pointer;
+      transition: border-color .15s, background-color .15s, color .15s;
+      font-family: inherit;
+      line-height: normal;
+      text-align: left;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      box-sizing: border-box;
+      max-width: 220px;
+    }
+
+    .tkt-ms-btn-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tkt-ms-btn:hover {
+      border-color: var(--indigo);
+    }
+
+    .tkt-ms-btn:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 1px;
+    }
+
+    .tkt-ms-btn.active {
+      border-color: var(--indigo);
+      background-color: rgba(99, 102, 241, .08);
+      color: var(--indigo);
+      font-weight: 500;
+    }
+
+    .tkt-ms-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      min-width: 180px;
+      max-width: 280px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+      padding: 4px;
+      z-index: 100;
+    }
+
+    .tkt-ms-menu.hide {
+      display: none !important;
+    }
+
+    .tkt-ms-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--paper);
+      cursor: pointer;
+      user-select: none;
+      transition: background .12s, color .12s;
+    }
+
+    .tkt-ms-item:hover {
+      background: rgba(255, 255, 255, .06);
+    }
+
+    .tkt-ms-item.selected {
+      background: rgba(99, 102, 241, .12);
+      color: var(--indigo-lite, #a5b4fc);
+      font-weight: 500;
+    }
+
+    .tkt-ms-item input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--indigo);
+      cursor: pointer;
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    .tkt-ms-item .tkt-ms-txt {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .tkt-fb-label {
       font-size: 11px;
       font-weight: 600;
@@ -4371,10 +4480,32 @@
       cursor: default
     }
 
+    .tkt-pg-btn.active {
+      background: var(--indigo, #6366f1);
+      color: #fff;
+      border-color: var(--indigo, #6366f1);
+      font-weight: 600;
+      cursor: default
+    }
+
+    .tkt-pg-btn.tkt-pg-num {
+      min-width: 34px;
+      padding: 6px 10px;
+      text-align: center
+    }
+
+    .tkt-pg-ellipsis {
+      font-size: 13px;
+      color: var(--paper-faint);
+      padding: 0 4px;
+      user-select: none
+    }
+
     .tkt-pg-info {
       font-size: 12px;
       color: var(--paper-faint);
-      font-family: var(--mono)
+      font-family: var(--mono);
+      margin-left: 6px
     }
 
     .tkt-list-empty {
@@ -6965,15 +7096,19 @@
     .prop-dot.ds-blocked {
       background: #dc2626
     }
+
     .prop-dot.ds-ready_for_deployment {
       background: #7c3aed
     }
+
     .prop-dot.ds-deployed {
       background: #0d9488
     }
+
     .prop-dot.ds-qa_review {
       background: #0891b2
     }
+
     .prop-dot.ds-done {
       background: var(--green)
     }
@@ -7571,6 +7706,21 @@
       opacity: 1
     }
 
+    /* Empty description: a visible, clickable "Add a description…" prompt, and the pencil stays visible (no hover needed). */
+    .tkt-desc-placeholder {
+      color: var(--paper-faint);
+      font-style: italic;
+      cursor: text
+    }
+
+    .tkt-desc-empty .tkt-obs {
+      cursor: text
+    }
+
+    .tkt-desc-empty .tkt-desc-edit {
+      opacity: 1
+    }
+
     .tkt-desc-edit:hover {
       color: var(--indigo);
       transform: var(--mi-lift)
@@ -7784,6 +7934,75 @@
       -webkit-overflow-scrolling: touch
     }
 
+    /* KD-297: the board's own horizontal scrollbar sat under the TALLEST column — i.e. at the very end of the
+       page. .kb-hscroll is a mirror scrollbar (wireKanbanHScroll) that sticks to the bottom of the viewport
+       while the board is on screen and docks right under the board at its end; the board's native bar is
+       hidden so only one shows. Trackpad / shift+wheel still scroll the board directly.
+       Desktop only: on phones (≤760px) the board is swiped directly, so it keeps its native bar + column snap. */
+    @media (min-width: 761px) {
+      .kanban.kb-has-hscroll {
+        scrollbar-width: none;
+        /* Column snap fought the mirrored scroll (snap nudges the board → the bar follows → jitter). */
+        scroll-snap-type: none
+      }
+
+      .kanban.kb-has-hscroll::-webkit-scrollbar {
+        display: none
+      }
+    }
+
+    @media (max-width: 760px) {
+      .kb-hscroll {
+        display: none !important
+      }
+    }
+
+    .kb-hscroll {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      height: 16px;
+      margin-top: 2px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      background: var(--ink-2)
+    }
+
+    .kb-hscroll.hide {
+      display: none
+    }
+
+    /* Always-visible thumb (overlay scrollbars — macOS, some Chrome setups — would otherwise hide it until
+       scrolled, defeating the point). WebKit/Blink use the pseudo-elements; Firefox the standard props. */
+    .kb-hscroll::-webkit-scrollbar {
+      height: 10px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-track {
+      background: var(--ink-3);
+      border-radius: 999px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-thumb {
+      background: var(--paper-faint);
+      border-radius: 999px
+    }
+
+    .kb-hscroll::-webkit-scrollbar-thumb:hover {
+      background: var(--paper-dim)
+    }
+
+    @supports (-moz-appearance: none) {
+      .kb-hscroll {
+        scrollbar-width: thin;
+        scrollbar-color: var(--paper-faint) var(--ink-3)
+      }
+    }
+
+    .kb-hscroll-in {
+      height: 1px
+    }
+
     /* KD-165: each column is now independently drag-resizable (Jira-board style — see wireKanbanResize),
    which needs a real per-column WIDTH to drag, not #676's "grow to fill" flex-basis. --kb-w is set
    per-column (persisted to localStorage) by wireKanbanResize; a column with no saved width falls back
@@ -7928,12 +8147,15 @@
     .kb-dot-blocked {
       background: #dc2626
     }
+
     .kb-dot-ready_for_deployment {
       background: #7c3aed
     }
+
     .kb-dot-deployed {
       background: #0d9488
     }
+
     .kb-dot-done {
       background: var(--green)
     }
@@ -8234,30 +8456,38 @@
       background: rgba(220, 38, 38, .15);
       color: #dc2626
     }
+
     .tkt-pill.p-blocked .pdot {
       background: #dc2626
     }
+
     .tkt-pill.p-ready_for_deployment {
       background: rgba(124, 58, 237, .15);
       color: #7c3aed
     }
+
     .tkt-pill.p-ready_for_deployment .pdot {
       background: #7c3aed
     }
+
     .tkt-pill.p-deployed {
       background: rgba(13, 148, 136, .15);
       color: #0d9488
     }
+
     .tkt-pill.p-deployed .pdot {
       background: #0d9488
     }
+
     .tkt-pill.p-qa_review {
       background: rgba(8, 145, 178, .15);
       color: #0891b2
     }
+
     .tkt-pill.p-qa_review .pdot {
       background: #0891b2
     }
+
     .tkt-pill.p-done {
       background: rgba(15, 157, 107, .15);
       color: var(--green)
@@ -8848,7 +9078,11 @@
 
     .tkt-browser .tkt-shot {
       margin: 0;
-      padding: 0
+      padding: 0;
+      max-height: 520px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-behavior: smooth
     }
 
     .tkt-shot-sk {
@@ -10108,6 +10342,285 @@
       border-color: var(--indigo)
     }
 
+    /* KD-217: images / videos on a comment — chips under the composer, thumbnails and clips in the posted comment */
+    .tkt-cmt-body:empty {
+      display: none
+    }
+
+    .tkt-cmt-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 6px 0 2px
+    }
+
+    .tkt-cmt-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 220px;
+      padding: 3px 4px 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--ink-3);
+      font-size: 12px;
+      color: var(--paper)
+    }
+
+    .tkt-cmt-chip .nm {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .tkt-cmt-chip .sz {
+      color: var(--paper-faint);
+      font-size: 11px
+    }
+
+    .tkt-cmt-chip button {
+      border: 0;
+      background: transparent;
+      color: var(--paper-dim);
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 999px
+    }
+
+    .tkt-cmt-chip button:hover {
+      color: var(--rose)
+    }
+
+    /* picked files: a small preview card each (thumbnail, name, size, remove) */
+    .tkt-cmt-chip.tkt-cmt-chip-p {
+      position: relative;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      width: 104px;
+      max-width: 104px;
+      padding: 4px;
+      border-radius: 10px
+    }
+
+    .tkt-cmt-chip-p .pv {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: zoom-in;
+      display: block;
+      line-height: 0
+    }
+
+    .tkt-cmt-chip-p .th {
+      width: 100%;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 6px;
+      display: block;
+      background: #000
+    }
+
+    .tkt-cmt-chip-p .nm {
+      font-size: 11px
+    }
+
+    .tkt-cmt-chip-p .sz {
+      font-size: 10px
+    }
+
+    .tkt-cmt-chip-p button.rm {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 18px;
+      height: 18px;
+      line-height: 16px;
+      padding: 0;
+      text-align: center;
+      color: #fff;
+      background: rgba(0, 0, 0, .6);
+      border-radius: 999px
+    }
+
+    .tkt-cmt-chip-p button.rm:hover {
+      color: #fff;
+      background: var(--rose)
+    }
+
+    .tkt-cmt-atts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px
+    }
+
+    .tkt-cmt-att-img {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0;
+      background: var(--ink-3);
+      cursor: zoom-in;
+      overflow: hidden
+    }
+
+    .tkt-cmt-att-img img {
+      display: block;
+      max-width: 220px;
+      max-height: 150px;
+      object-fit: cover
+    }
+
+    .tkt-cmt-att-vid {
+      max-width: 260px;
+      max-height: 170px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #000
+    }
+
+    /* Jira-style comments: avatar + bold name + time on one line, text, then plain Edit · Delete links */
+    .tkt-tl-item.tkt-jc {
+      gap: 12px;
+      padding: 12px 0
+    }
+
+    .tkt-tl-item.tkt-jc::before {
+      display: none
+    }
+
+    .tkt-jc-av {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      flex: none;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      user-select: none
+    }
+
+    .tkt-jc-main {
+      flex: 1;
+      min-width: 0
+    }
+
+    .tkt-jc-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      font-size: 13px
+    }
+
+    .tkt-jc-name {
+      font-weight: 650;
+      color: var(--paper)
+    }
+
+    .tkt-jc-time {
+      color: var(--paper-faint);
+      font-size: 12px
+    }
+
+    .tkt-jc-head .tkt-cmt-edited {
+      font-style: normal;
+      font-size: 11px;
+      color: var(--paper-faint);
+      background: var(--ink-3);
+      border-radius: 4px;
+      padding: 0 5px
+    }
+
+    .tkt-jc-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--paper-faint)
+    }
+
+    .tkt-jc-actions button {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font: inherit;
+      color: var(--paper-dim);
+      cursor: pointer
+    }
+
+    .tkt-jc-actions button:hover {
+      color: var(--indigo);
+      text-decoration: underline
+    }
+
+    .tkt-jc-actions .tkt-jc-del-yes {
+      color: var(--rose);
+      font-weight: 600
+    }
+
+    .tkt-jc-actions .tkt-jc-confirm {
+      display: none;
+      align-items: center;
+      gap: 8px
+    }
+
+    .tkt-jc-actions.confirming .tkt-jc-normal {
+      display: none
+    }
+
+    .tkt-jc-actions.confirming .tkt-jc-confirm {
+      display: inline-flex
+    }
+
+    .tkt-jc-compose {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin: 4px 0 8px
+    }
+
+    .tkt-jc-compose .tkt-comment-form {
+      flex: 1;
+      min-width: 0
+    }
+
+    .tkt-comment-form.collapsed .tkt-comment-row,
+    .tkt-comment-form.collapsed .tkt-cmt-chips {
+      display: none
+    }
+
+    .tkt-comment-form.collapsed .tkt-comment-ta {
+      height: 36px;
+      min-height: 36px;
+      resize: none;
+      overflow: hidden;
+      cursor: text
+    }
+
+    .tkt-cmt-sorthd {
+      display: flex;
+      justify-content: flex-end;
+      margin: 2px 0 0
+    }
+
+    .tkt-cmt-sort {
+      border: 0;
+      background: transparent;
+      color: var(--paper-dim);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 4px
+    }
+
+    .tkt-cmt-sort:hover {
+      color: var(--indigo)
+    }
+
     .tkt-comment-row {
       display: flex;
       align-items: center;
@@ -10298,6 +10811,21 @@
     .ml-name {
       flex: 1;
       font-size: 13px
+    }
+
+    /* KD-227: Labels popup opened from a ticket — click a label to add it to the ticket */
+    .ml-row.ml-pick .ml-name {
+      cursor: pointer
+    }
+
+    .ml-row.ml-pick:hover {
+      border-color: var(--indigo)
+    }
+
+    .ml-added-tag {
+      margin-left: 6px;
+      font-size: 11px;
+      color: var(--paper-faint)
     }
 
     .ml-edit-inp {
@@ -11815,7 +12343,8 @@
 
     .tkt-rec-video {
       width: 100%;
-      max-height: 360px;
+      max-height: 600px;
+      object-fit: contain;
       border-radius: 10px;
       background: #000;
       display: block
@@ -11890,7 +12419,7 @@
     }
 
     .tkt-rec-loading {
-      display: flex;
+      display: none !important;
       align-items: center;
       gap: 7px;
       font-size: 12px;
@@ -11924,18 +12453,102 @@
 
     /* KD-100: attachments on the New ticket dialog — drop zone + preview grid */
     /* New ticket → Project: pill trigger + centred, rounded list (design: Downloads/image (15).png) */
-    .ntp { position: relative }
-    .ntp-btn { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; position: relative; background: var(--ink); border: 1px solid var(--line); border-radius: 999px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 11px 36px; cursor: pointer; outline: none }
-    .ntp-btn:hover { border-color: var(--indigo) }
-    .ntp-btn:focus-visible, .ntp-btn[aria-expanded="true"] { border-color: var(--indigo) }
-    .ntp-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100% }
-    .ntp-chev { flex: none; transition: transform .15s ease }
-    .ntp-btn[aria-expanded="true"] .ntp-chev { transform: rotate(180deg) }
-    .ntp-list { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 30; background: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 6px; max-height: 240px; overflow-y: auto }
-    .ntp-list.hide { display: none }
-    .ntp-item { display: block; width: 100%; box-sizing: border-box; text-align: center; background: transparent; border: 0; border-radius: 10px; color: var(--paper-dim); font-family: var(--body); font-size: 14px; font-weight: 500; padding: 9px 12px; cursor: pointer }
-    .ntp-item:hover, .ntp-item:focus-visible { background: var(--ink-2); color: var(--paper); outline: none }
-    .ntp-item[aria-selected="true"] { color: var(--paper); font-weight: 700 }
+    .ntp {
+      position: relative
+    }
+
+    .ntp-btn {
+      width: 100%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      position: relative;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--paper-dim);
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 11px 36px;
+      cursor: pointer;
+      outline: none
+    }
+
+    .ntp-btn:hover {
+      border-color: var(--indigo)
+    }
+
+    .ntp-btn:focus-visible,
+    .ntp-btn[aria-expanded="true"] {
+      border-color: var(--indigo)
+    }
+
+    .ntp-btn span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%
+    }
+
+    .ntp-chev {
+      flex: none;
+      transition: transform .15s ease
+    }
+
+    .ntp-btn[aria-expanded="true"] .ntp-chev {
+      transform: rotate(180deg)
+    }
+
+    .ntp-list {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 6px);
+      z-index: 30;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .14);
+      padding: 6px;
+      max-height: 240px;
+      overflow-y: auto
+    }
+
+    .ntp-list.hide {
+      display: none
+    }
+
+    .ntp-item {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      text-align: center;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      color: var(--paper-dim);
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 500;
+      padding: 9px 12px;
+      cursor: pointer
+    }
+
+    .ntp-item:hover,
+    .ntp-item:focus-visible {
+      background: var(--ink-2);
+      color: var(--paper);
+      outline: none
+    }
+
+    .ntp-item[aria-selected="true"] {
+      color: var(--paper);
+      font-weight: 700
+    }
+
     .newtkt-drop {
       display: flex;
       align-items: center;
@@ -12020,7 +12633,7 @@
     }
 
     .tkt-rec-error {
-      display: flex;
+      display: none;
       align-items: center;
       gap: 6px;
       font-size: 12.5px;
@@ -12031,12 +12644,20 @@
       padding: 8px 10px
     }
 
+    .tkt-rec-error.hide {
+      display: none !important;
+    }
+
     .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-video {
       display: none
     }
 
+    .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-error {
+      display: flex;
+    }
+
     .tkt-rec-dl {
-      display: inline-flex;
+      display: none;
       align-items: center;
       gap: 6px;
       align-self: flex-start;
@@ -12048,6 +12669,10 @@
       border-radius: 8px;
       padding: 5px 11px;
       transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), transform var(--mi-dur) var(--mi-ease)
+    }
+
+    .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-dl {
+      display: inline-flex;
     }
 
     .tkt-rec-dl svg {
@@ -12224,6 +12849,46 @@
 
     .tkt-attach-msg:empty {
       display: none
+    }
+
+    /* KD-190: Drag & drop files onto Evidence & Media / Attachments or ticket preview/details */
+    .tkt-attach-dropzone {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--paper-faint);
+      background: rgba(255, 255, 255, 0.02);
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    .tkt-attach-dropzone.over,
+    .tkt-attach-wrap.drag-over .tkt-attach-dropzone {
+      border-color: var(--indigo, #6366f1);
+      background: rgba(99, 102, 241, .08);
+      color: var(--paper);
+    }
+
+    .tkt-attach-wrap.drag-over {
+      outline: 2px dashed var(--indigo, #6366f1);
+      outline-offset: 4px;
+      border-radius: 12px;
+    }
+
+    .tkt-detail-drop-active {
+      outline: 2px dashed rgba(99, 102, 241, .45);
+      outline-offset: -2px;
+      position: relative;
+    }
+
+    .tkt-attach-drop-hint {
+      font-size: 12px;
+      color: var(--paper-faint);
+      pointer-events: none;
     }
 
     /* KD-193: remove (×) + inline confirm on every uploaded attachment; Cancel on an upload that is still being sent */
@@ -12453,31 +13118,42 @@
       align-items: center;
       justify-content: center;
       max-width: 100%;
-      max-height: 78vh;
-      overflow: hidden;
+      max-height: 80vh;
+      overflow-y: auto;
+      overflow-x: auto;
       border-radius: 12px;
       background: #050507;
-      border: 1px solid rgba(255, 255, 255, .1)
+      border: 1px solid rgba(255, 255, 255, .1);
+      scroll-behavior: smooth
+    }
+
+    .media-pv-media-holder:has(.zoomed),
+    .media-pv-media-holder.has-zoomed {
+      align-items: flex-start
     }
 
     .media-pv-imgwrap {
       position: relative;
       display: inline-block;
       max-width: 100%;
-      max-height: 78vh;
       line-height: 0;
-      transition: transform .2s
+      transition: transform .2s;
+      cursor: zoom-in
     }
 
     .media-pv-imgwrap.zoomed {
-      overflow: auto;
-      max-height: 78vh;
-      cursor: zoom-out
+      cursor: zoom-out;
+      width: 100%;
+      text-align: center
     }
 
     .media-pv-imgwrap.zoomed img {
-      transform: scale(1.75);
-      transform-origin: top left
+      max-height: none;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      object-fit: contain;
+      transform: none
     }
 
     .media-pv-imgwrap img,
@@ -13288,6 +13964,13 @@
       display: block
     }
 
+    /* Once a Sim is added, the modal shows only the "ready — run a review" block (close button stays) */
+    .sm-modal:has(.sm-success.show)> :not(.sm-top):not(.sm-success),
+    .sm-success .sm-next-steps,
+    .sm-success .sm-success-foot {
+      display: none
+    }
+
     .sm-success-hd {
       text-align: center;
       margin-bottom: 16px
@@ -14093,28 +14776,163 @@
        state holder (.kdd-native) so the existing save path keeps working; this is only its skin. A
        custom menu is what lets each option carry its status dot / priority swatch, which a native
        option list cannot render. */
-    .kdd { position: relative; display: inline-flex; align-items: center }
-    .kdd-native { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none }
-    .kdd-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 9px;
-      border: 1px solid transparent; background: transparent; color: var(--paper);
-      font-family: var(--body); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-      min-width: 124px; text-transform: capitalize;
-      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease }
-    .kdd-btn:hover { background: var(--ink-3) }
-    .kdd-btn:focus-visible { outline: none; border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
-    .kdd-btn[aria-expanded="true"] { background: var(--ink-2); border-color: var(--indigo); box-shadow: 0 0 0 3px rgba(99,102,241,.14) }
-    .kdd-caret { margin-left: auto; color: var(--muted); transition: transform .15s }
-    .kdd-btn[aria-expanded="true"] .kdd-caret { transform: rotate(180deg) }
-    .kdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; min-width: 180px; padding: 5px;
-      background: var(--ink-2); border: 1px solid var(--line); border-radius: 12px;
-      box-shadow: 0 12px 32px rgba(0,0,0,.28); display: flex; flex-direction: column; gap: 2px }
-    .kdd-menu.hide { display: none }
-    .kdd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 0;
-      border-radius: 8px; background: transparent; color: var(--paper); font-family: var(--body);
-      font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; text-transform: capitalize }
-    .kdd-item:hover, .kdd-item:focus-visible { background: rgba(99,102,241,.12); outline: none }
-    .kdd-item[aria-checked="true"] { font-weight: 700 }
-    .kdd-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .kdd {
+      position: relative;
+      display: inline-flex;
+      align-items: center
+    }
+
+    .kdd-native {
+      position: absolute;
+      width: 0;
+      height: 0;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .kdd-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border-radius: 9px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      min-width: 124px;
+      text-transform: capitalize;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease
+    }
+
+    .kdd-btn:hover {
+      background: var(--ink-3)
+    }
+
+    .kdd-btn:focus-visible {
+      outline: none;
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .14)
+    }
+
+    .kdd-btn[aria-expanded="true"] {
+      background: var(--ink-2);
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .14)
+    }
+
+    .kdd-caret {
+      margin-left: auto;
+      color: var(--muted);
+      transition: transform .15s
+    }
+
+    .kdd-btn[aria-expanded="true"] .kdd-caret {
+      transform: rotate(180deg)
+    }
+
+    .kdd-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 40;
+      min-width: 180px;
+      padding: 5px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+      display: flex;
+      flex-direction: column;
+      gap: 2px
+    }
+
+    .kdd-menu.hide {
+      display: none
+    }
+
+    .kdd-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      text-transform: capitalize
+    }
+
+    .kdd-item:hover,
+    .kdd-item:focus-visible {
+      background: rgba(99, 102, 241, .12);
+      outline: none
+    }
+
+    .kdd-item[aria-checked="true"] {
+      font-weight: 700
+    }
+
+    .kdd-txt {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    /* KD-227: Labels picker in the same skin — label names keep their case, the list scrolls when long,
+       and the hidden <select> is only the state holder. */
+    .tkt-lbl-kdd .kdd-btn {
+      min-width: 0;
+      text-transform: none;
+      font-weight: 500;
+      color: var(--paper-dim)
+    }
+
+    .tkt-lbl-kdd .kdd-btn:hover,
+    .tkt-lbl-kdd .kdd-btn[aria-expanded="true"] {
+      color: var(--paper)
+    }
+
+    .tkt-lbl-kdd .kdd-menu {
+      max-height: 260px;
+      overflow-y: auto
+    }
+
+    .tkt-lbl-kdd .kdd-item {
+      text-transform: none
+    }
+
+    .tkt-lbl-kdd .tkt-lbl-add-item {
+      color: var(--indigo);
+      font-weight: 600
+    }
+
+    .tkt-lbl-kdd .tkt-lbl-sel {
+      position: absolute;
+      width: 0;
+      height: 0;
+      padding: 0;
+      border: 0;
+      opacity: 0;
+      pointer-events: none
+    }
+
+    .tkt-lbl-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0
+    }
 
     .tkt-pri-sel,
     .tkt-status-sel {
@@ -15298,7 +16116,8 @@
             <path d="M6 13H2" />
             <path d="m8 2 1.88 1.88" />
             <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
-          </svg></span>Tickets <span class="ct" id="navTicketCount" title="To Do, Open and In Progress tickets"></span></button>
+          </svg></span>Tickets <span class="ct" id="navTicketCount"
+          title="To Do, Open and In Progress tickets"></span></button>
       <button class="nv" data-go="triage"><span class="ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
             width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -17943,7 +18762,7 @@
       // (last-project bookkeeping, URL replaceState) never depends on the discarded payload.
       const superseded = reqSeq < _dashAppliedSeq
       if (superseded) data = state
-      else { _dashAppliedSeq = reqSeq; _dashLastAppliedRequestAt = reqAt; dashNoteNetworkApplied(); state = data; render() }
+      else { _dashAppliedSeq = reqSeq; _dashLastAppliedRequestAt = reqAt; dashNoteNetworkApplied(); carryClientOnlyState(data, state); state = data; render() }
       // #654/#655: hydrate whatever view is currently shown (usually overview → the trend chart). The
       // boot-time setView() ran before state existed (loadViewData no-ops without state), so this is the
       // first chance to lazily load the initial view's on-demand data. Settings data still waits for a
@@ -17983,6 +18802,18 @@
       const s = document.createElement("script")
       s.src = "/widget.js"; s.defer = true; s.dataset.project = pid
       document.body.appendChild(s)
+    }
+
+    // KD-233: project labels are loaded separately (loadLabels → state._labels) and are not part of the
+    // /api/dashboard payload, so every `state = data` swap (the ~25s poll, any refresh after a change) used to drop
+    // them — and nothing reloaded them: the Labels popup then said "No labels yet" and the ticket label pickers
+    // went empty. Carry them onto the fresh payload while it's still the same project.
+    function carryClientOnlyState(next, prev) {
+      if (!next || !prev || !Array.isArray(prev._labels) || !prev._labelsPid) return
+      if (next.active && next.active.id === prev._labelsPid && next._labels === undefined) {
+        next._labels = prev._labels
+        next._labelsPid = prev._labelsPid
+      }
     }
 
     // Re-fetch /api/dashboard and re-render — used after triage accept/dismiss so counts + banner + kanban
@@ -18033,6 +18864,7 @@
       _dashAppliedSeq = seq
       _dashLastAppliedRequestAt = fetchStart   // request ISSUE time (taken just before the fetch), not completion time
       dashNoteNetworkApplied()
+      carryClientOnlyState(data, state)   // KD-233: keep the loaded project labels across the swap
       state = data
       render(false, isPoll === true)   // #658: poll → scoped to the active view; mutation refresh → full
       if (data.active && data.active.id) {                                       // keep cache fresh after triage actions
@@ -18217,16 +19049,19 @@
           if (!pid) return
           _deepLinkTicketConsumed = true      // commit NOW: a concurrent poll won't fire a second fetch, and a slow
           // fetch resolving after the user navigated away won't re-enter here
+          // KD-181: the boot already hid the board chrome for the ticket page — if the ticket can't be
+          // loaded, fall back to the board instead of leaving an empty page.
+          const _bootFail = () => { if (!window.__klavDeepLinkNavAway && window.__klavTktPageOpen && typeof closeSingleTicket === "function") closeSingleTicket() }
           fetch("/api/feedback/" + encodeURIComponent(ticketId), { credentials: "include" })
             .then(r => r.ok ? r.json() : null).then(d => {
-              if (!d || !d.report) return
+              if (!d || !d.report) { _bootFail(); return }
               // If the user has clicked away to another view while we fetched, do NOT yank them back.
               if (window.__klavDeepLinkNavAway) return
               const report = d.report
               if (!state.tickets) state.tickets = []
               if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
               openSingleTicket(ticketId, "full")   // KLA-562: shared deep link → full-page route
-            }).catch(() => { })
+            }).catch(_bootFail)
         }
       } catch (e) { }
     }
@@ -20550,13 +21385,21 @@
         input.removeAttribute("aria-activedescendant")
       }
     }
+    // KD-179: where to land after switching project. Stay on the page (view) the user was on — Tickets, Reports, Recurring… —
+    // instead of falling back to Overview. Only the view name is kept: a ticket id / sub-path belongs to the OLD project.
+    function projSwitchUrl(id, hash) {
+      var views = ["overview", "tickets", "triage", "recurring", "sims", "autosims", "snap", "pagebugs", "guards", "team", "settings"]
+      var url = "/dashboard?project=" + encodeURIComponent(id)
+      var view = String(hash || "").replace(/^#/, "").split("/")[0].split("?")[0]
+      return views.indexOf(view) >= 0 ? url + "#" + view : url
+    }
     function projSwitchChoose(i) {
       const p = projSwitch.matches[i]
       if (!p) return
       const activeId = state && state.active ? state.active.id : null
       if (p.id === activeId) { projSwitchClose(); return }
       // Reuse the existing navigation to switch projects.
-      location.href = "/dashboard?project=" + encodeURIComponent(p.id)
+      location.href = projSwitchUrl(p.id, location.hash)   // KD-179: keep the current page
     }
     function projSwitchKeydown(e) {
       const n = projSwitch.matches.length
@@ -21071,6 +21914,7 @@
           fb.appendChild(opt)
         })
         fb.value = cur
+        if (typeof updateTktMultiSelect === "function") updateTktMultiSelect("fbAssignee")
       }
     }
     function setTicketAssigneeLocal(ticketId, assignee) {
@@ -21198,19 +22042,28 @@
     }
     // #717: repaint the read-view description with smart-link chips (used on first render + after each save).
     function renderDescObs(obsEl, text) {
-      if (obsEl) obsEl.innerHTML = linkifyDescription(text)
+      if (!obsEl) return
+      obsEl.innerHTML = descObsInner(text)
+      const box = obsEl.closest ? obsEl.closest(".tkt-desc") : null
+      if (box) box.classList.toggle("tkt-desc-empty", !String(text == null ? "" : text).trim())   // KD: keep the empty-state look in sync
+    }
+    // A ticket created without a description has none to show — render a clear "Add a description…" prompt in its place so there is
+    // something to click (the whole block used to be hidden, leaving no way to add one later). Clicking it opens the usual editor.
+    function descObsInner(text) {
+      const raw = String(text == null ? "" : text)
+      return raw.trim() ? linkifyDescription(raw) : '<span class="tkt-desc-placeholder">Add a description…</span>'
     }
     function descriptionBlockHtml(text) {
       const raw = String(text == null ? "" : text)
       const label = "Description"
       // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
       // #717: the read view is auto-linkified (display-only); editing still shows the RAW url text.
-      return `<div class="tkt-desc">
+      return `<div class="tkt-desc${raw.trim() ? "" : " tkt-desc-empty"}">
     <div class="tkt-desc-head">
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs" title="Click to edit">${linkifyDescription(raw)}</div>
+    <div class="tkt-obs" title="Click to edit">${descObsInner(raw)}</div>
   </div>`
     }
     // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -21232,12 +22085,16 @@
         // so a reporter can always retrieve their own evidence. Inline SVG download glyph (no emoji; kicon has no
         // 'download' icon registered).
         var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
+        var isMp4 = (r.contentType && r.contentType.includes("mp4")) || (String(r.key || "").endsWith(".mp4"))
+        var dlExt = isMp4 ? "mp4" : "webm"
         var vid = r.url
           ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '">'
-          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline></video>'
+          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline>'
+          + '<source src="' + esc(String(r.url)) + '"' + (r.contentType ? ' type="' + esc(String(r.contentType)) + '"' : '') + '>'
+          + 'Your browser does not support video playback.</video>'
           + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading recording…</div>'
           + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This recording couldn’t play here. Download it to view.</div>'
-          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.webm" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
+          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.' + dlExt + '" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
           + '</div>'
           : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
         var st = r.transcript_status || "none"
@@ -21290,23 +22147,25 @@
         var loadingEl = wrap ? wrap.querySelector(".tkt-rec-loading") : null
         var errEl = wrap ? wrap.querySelector(".tkt-rec-error") : null
         function hideLoading() { if (loadingEl) loadingEl.classList.add("hide") }
+        if (v.readyState >= 1) hideLoading()
         var repairing = false
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
-          // Infinity / NaN / 0 duration → force the browser to compute the real one by seeking to the end.
-          if (!isFinite(v.duration) || v.duration <= 0) {
+          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "") || /^\//.test(v.getAttribute("src") || "")
+          if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
           }
         })
         v.addEventListener("durationchange", function () {
-          // After the forced seek the duration is now finite; snap the playhead back to the start, once.
           if (repairing && isFinite(v.duration) && v.duration > 0) {
             repairing = false
             try { v.currentTime = 0 } catch (e) { }
           }
         })
+        v.addEventListener("loadeddata", hideLoading)
         v.addEventListener("canplay", hideLoading)
+        v.addEventListener("playing", hideLoading)
         v.addEventListener("error", function () {
           hideLoading()
           if (errEl) errEl.classList.remove("hide")
@@ -21501,6 +22360,11 @@
       if (o.kind !== "video") {
         const imgWrap = document.createElement("div"); imgWrap.className = "media-pv-imgwrap"
         imgWrap.appendChild(media)
+        imgWrap.addEventListener("click", function (e) {
+          if (e.target.closest("button") || e.target.closest("a")) return
+          imgWrap.classList.toggle("zoomed")
+          holder.classList.toggle("has-zoomed", imgWrap.classList.contains("zoomed"))
+        })
         if (o.annotations) {
           const redact = typeof buildRedactionSvg === "function" ? buildRedactionSvg(o.annotations) : null
           if (redact) imgWrap.appendChild(redact)
@@ -21534,7 +22398,10 @@
         zoomBtn.innerHTML = `${kicon('search', { size: 13 })} Zoom`
         zoomBtn.addEventListener("click", () => {
           const wrap = box.querySelector(".media-pv-imgwrap")
-          if (wrap) wrap.classList.toggle("zoomed")
+          if (wrap) {
+            wrap.classList.toggle("zoomed")
+            holder.classList.toggle("has-zoomed", wrap.classList.contains("zoomed"))
+          }
         })
         tools.appendChild(zoomBtn)
       }
@@ -21875,7 +22742,7 @@
       var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
       var uploading = pending.some(function (u) { return u.status === "uploading" })
       var pendingHtml = pending.map(_attachTileHtml).join("")
-      var _dlSvg = _ATTACH_DL_SVG
+      var _dlSvg = typeof _ATTACH_DL_SVG !== "undefined" ? _ATTACH_DL_SVG : '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
       var thumbs = ""
       var items = atts.map(function (a, i) {
         var name = esc(String(a.filename || ("attachment-" + (i + 1))))
@@ -21902,9 +22769,11 @@
         + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
         + (pendingHtml ? '<div class="tkt-attach-thumbs tkt-attach-pendings">' + pendingHtml + '</div>' : '')
         + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
-        + '<div class="tkt-attach-list">' + items + '</div>'
+        + '<div class="tkt-attach-dropzone">'
         + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button"' + (uploading ? ' disabled aria-busy="true"' : '') + '>'
         + (uploading ? '<span class="tkt-spin">' + kicon('loader', { size: 13 }) + '</span> Uploading…' : kicon('paperclip', { size: 13 }) + ' Add attachment') + '</button>'
+        + '<span class="tkt-attach-drop-hint">or drop files here</span>'
+        + '</div>'
         + '<input type="file" class="tkt-attach-input" multiple hidden>'
         + '<div class="tkt-attach-msg muted" style="font-size:12px;color:' + (attachMsgFor(t.id).isErr ? 'var(--rose)' : 'var(--paper-faint)') + '" role="status" aria-live="polite">' + esc(attachMsgFor(t.id).text) + '</div>'
         + '</div>'
@@ -21991,8 +22860,39 @@
         else if (no) { ev.stopPropagation(); attachCancelRemove(id, no.getAttribute("data-attach-remove-no")); attachRerender(id) }
         else if (yes) { ev.stopPropagation(); attachConfirmRemove(id, yes.getAttribute("data-attach-remove-yes"), _attachHooks) }
       })
-      if (!addBtn || !input) return
-      addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+      if (!input) return
+      var uploading = attachInFlight(id)
+      var t3AttachBtn = detailEl.querySelector(".t3-attach-btn")
+      if (t3AttachBtn) {
+        t3AttachBtn.disabled = uploading
+        if (uploading) t3AttachBtn.setAttribute("aria-busy", "true")
+        else t3AttachBtn.removeAttribute("aria-busy")
+        t3AttachBtn.onclick = function (ev) {
+          ev.preventDefault()
+          if (!attachInFlight(id)) input.click()
+        }
+      }
+      if (addBtn) {
+        addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
+      }
+      var handleIncomingFiles = function (rawFiles) {
+        var files = Array.prototype.slice.call(rawFiles || [])
+        if (!files.length) return
+        var proceed = function (picked) {
+          var cur = (_attachCtx.get(id) || {}).t || t
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var notes = []
+          if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
+          plan.rejected.forEach(function (x) { notes.push(x) })
+          if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
+          if (!notes.length) attachSetMsg(id, "", false)
+          if (!plan.accept.length) return
+          attachStartUpload(id, plan.accept, _attachHooks)
+        }
+        if (!files.some(imgOptCandidate)) { proceed(files); return }
+        attachSetMsg(id, "Optimising images…", false)
+        Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
+      }
       input.addEventListener("change", function () {
         var files = Array.prototype.slice.call(input.files || [])
         input.value = ""
@@ -22013,8 +22913,9 @@
         // }
         if (!files.length) return
         var proceed = function (picked) {
+          var files = picked
           var cur = (_attachCtx.get(id) || {}).t || t
-          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id)) // attachPlanUpload(files)
           var notes = []
           if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
           plan.rejected.forEach(function (x) { notes.push(x) })
@@ -22029,6 +22930,123 @@
         attachSetMsg(id, "Optimising images…", false)
         Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
       })
+
+      // KD-190: Drag and drop files onto Evidence & Media / Attachments or the ticket preview/details area
+      var hasFiles = function (ev) {
+        if (!ev.dataTransfer) return false
+        var types = ev.dataTransfer.types
+        return !!types && (Array.prototype.indexOf.call(types, "Files") >= 0 || Array.prototype.indexOf.call(types, "application/x-moz-file") >= 0)
+      }
+      var dropZone = wrap.querySelector(".tkt-attach-dropzone") || wrap
+      var wrapDragCount = 0
+      wrap.addEventListener("dragenter", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        wrapDragCount++
+        wrap.classList.add("drag-over")
+        if (dropZone) dropZone.classList.add("over")
+      })
+      wrap.addEventListener("dragover", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+        wrap.classList.add("drag-over")
+        if (dropZone) dropZone.classList.add("over")
+      })
+      wrap.addEventListener("dragleave", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        wrapDragCount--
+        if (wrapDragCount <= 0) {
+          wrapDragCount = 0
+          wrap.classList.remove("drag-over")
+          if (dropZone) dropZone.classList.remove("over")
+        }
+      })
+      wrap.addEventListener("drop", function (ev) {
+        wrapDragCount = 0
+        wrap.classList.remove("drag-over")
+        if (dropZone) dropZone.classList.remove("over")
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        ev.stopPropagation()
+        var dropped = ev.dataTransfer && ev.dataTransfer.files
+        if (dropped && dropped.length) handleIncomingFiles(dropped)
+      })
+
+      // Wire detailEl for dropping anywhere in ticket details/preview view
+      detailEl._handleAttachDrop = handleIncomingFiles
+      if (!detailEl._wireAttachDrop) {
+        detailEl._wireAttachDrop = true
+        var detailDragCount = 0
+        detailEl.addEventListener("dragenter", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          detailDragCount++
+          detailEl.classList.add("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.add("drag-over")
+        })
+        detailEl.addEventListener("dragover", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+          detailEl.classList.add("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.add("drag-over")
+        })
+        detailEl.addEventListener("dragleave", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          detailDragCount--
+          if (detailDragCount <= 0) {
+            detailDragCount = 0
+            detailEl.classList.remove("tkt-detail-drop-active")
+            var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+            if (curWrap) curWrap.classList.remove("drag-over")
+          }
+        })
+        detailEl.addEventListener("drop", function (ev) {
+          detailDragCount = 0
+          detailEl.classList.remove("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.remove("drag-over")
+          if (ev.target && ev.target.closest && ev.target.closest(".cmt-form")) return
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          var dropped = ev.dataTransfer && ev.dataTransfer.files
+          if (dropped && dropped.length && typeof detailEl._handleAttachDrop === "function") {
+            detailEl._handleAttachDrop(dropped)
+          }
+        })
+      }
+
+      // Wire Evidence & Media strip / left stage in cockpit view if present
+      var evStrip = detailEl.querySelector(".t3-evidence") || detailEl.querySelector(".t3-left")
+      if (evStrip && !evStrip._wireAttachDrop) {
+        evStrip._wireAttachDrop = true
+        evStrip.addEventListener("dragover", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+          evStrip.classList.add("drag-over")
+        })
+        evStrip.addEventListener("dragleave", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          evStrip.classList.remove("drag-over")
+        })
+        evStrip.addEventListener("drop", function (ev) {
+          evStrip.classList.remove("drag-over")
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          ev.stopPropagation()
+          var dropped = ev.dataTransfer && ev.dataTransfer.files
+          if (dropped && dropped.length && typeof detailEl._handleAttachDrop === "function") {
+            detailEl._handleAttachDrop(dropped)
+          }
+        })
+      }
     }
     // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
     // ticket's REAL evidence — its screenshot + session replay + any recordings — switching what the strip
@@ -22102,7 +23120,7 @@
           } else if (it.kind === "replay") {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("REPLAY", true))
             el.setAttribute("title", "Session replay")
-            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) {} })
+            el.addEventListener("click", function () { _evSelect(strip, el); try { openReplay(t.id) } catch (e) { } })
           } else {
             el.appendChild(_evFallback()); el.appendChild(_evPlay()); el.appendChild(_evBadge("VIDEO", true))
             el.setAttribute("title", "Recording")
@@ -22234,7 +23252,9 @@
       // #538: a multi-line description must never be suppressed just because its FIRST line happens
       // to match the ticket title — only hide when the entire (single-line) observation IS the title.
       const _obsMultiline = !!(t.observation && /\n/.test(String(t.observation).trim()))
-      const _showObs = t.observation && (!isSingle || _obsMultiline || t.observation.trim() !== (t.title || "").trim())
+      // A ticket with NO description still gets the (empty-state) Description block in the single-ticket view, so one can be added later.
+      const _showObs = (t.observation && (!isSingle || _obsMultiline || t.observation.trim() !== (t.title || "").trim()))
+        || (isSingle && !String(t.observation == null ? "" : t.observation).trim())
       const _showSevChip = !isSingle && !!t.priority
       const _showSentiment = !isSingle && !!t.sentiment
       const _showSimChip = !isSingle && !!t.simName
@@ -22259,7 +23279,6 @@
         ${_showBug ? `<div class="tkt-bug">${_showBugTitle ? `<div class="tkt-bug-t">${kicon('bug')} ${esc(_bugTitle)}</div>` : ""}${_showBugBody ? `<div class="tkt-bug-b">${esc(_bugBody)}</div>` : ""}</div>` : ""}
         ${t.sourceQuote ? `<div class="tkt-prov">"${esc(t.sourceQuote)}"${t.sourceDate ? ` · raised ${esc(ago(t.sourceDate))}` : ""}</div>` : ""}
         ${_showMetaLine ? `<div class="tkt-meta-line muted">${(t.urlHost || t.urlPath) ? esc((t.urlHost || "") + (t.urlPath || "")) : ""}${((t.urlHost || t.urlPath) && t.createdAt) ? " · " : ""}${t.createdAt ? esc(ago(t.createdAt)) : ""}</div>` : ""}
-        ${t.sourceReferrer ? `<div class="tkt-meta-line muted">Referred from: ${esc(t.sourceReferrer)}</div>` : ""}
       </div>` : ""
       // KLA-199: priority picker — persists via PATCH, updates state + rail + sev chip in-place
       // KLAVITYKLA-513: a null/missing priority must resolve to the ONE canonical default 'medium'
@@ -22287,7 +23306,7 @@
         <span class="tkt-prop-lb">Priority</span>
         <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
           <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
-          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent","high","medium","low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
           <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
         </span></span>
         <span class="tkt-prop-lb">Assignee</span>
@@ -22303,7 +23322,13 @@
           <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
             <div class="tkt-lbl-controls">
               <div class="lbl-chips tkt-lbl-chips"></div>
-              <select class="lbl-add-sel tkt-lbl-sel"><option value="">+ Add label…</option></select>
+              ${/* KD-227: same .kdd skin as Status/Priority. The hidden <select> stays the state holder (its
+                   change handler attaches the label / opens the Labels popup); the menu is rebuilt by populateSel. */''}
+              <span class="kdd tkt-lbl-kdd">
+                <button type="button" class="kdd-btn tkt-lbl-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Add label"><span class="kdd-txt">+ Add label</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+                <span class="kdd-menu hide tkt-lbl-menu" role="menu" aria-label="Labels"></span>
+                <select class="lbl-add-sel tkt-lbl-sel" tabindex="-1" aria-hidden="true"><option value="">+ Add label…</option></select>
+              </span>
               <button class="tkt-lbl-empty-add hide" type="button">+ Add label</button>
             </div>
             <div class="lbl-ghost-chips tkt-lbl-ghost-chips"></div>
@@ -22339,7 +23364,7 @@
         const _hostHref = _mHost ? (/^https?:\/\//.test(_mHost) ? _mHost : "https://" + _mHost) : ""
         const _descTools = `<div class="t3-desctools">
         <button class="btn btn-indigo btn-sm t3-enh-btn" type="button" title="Rewrite this description into a structured bug report with AI">${kicon('sparkles', { size: 13 })} Enhance with AI</button>
-        <!-- t3-attach-btn -->
+        <button class="btn btn-ghost btn-sm t3-attach-btn" type="button" title="Attach files">${kicon('paperclip', { size: 13 })} Attach</button>
       </div>`
         // KD-158: existing attachments + "+ Add attachment" — a reusable fragment, same as _recHtml.
         const _attachHtml = buildAttachmentsHtml(t)
@@ -22608,15 +23633,45 @@
 
       const statusSelEl = detailEl.querySelector(".tkt-status-sel")
       if (statusSelEl) {
-        let _prevStatus = curStatus
+        // KD-230: OPTIMISTIC status change. The page (dropdown, header pill, dot, board card, sidebar count)
+        // moves to the picked status AT ONCE and the PATCH runs in the background — previously every one of
+        // those waited for the PATCH round-trip (2–3s against the hosted DB). On failure we roll back to the
+        // last server-CONFIRMED status. Rapid re-picks are sequenced: only the LATEST pick's outcome may
+        // repaint or roll back, so an older response can never clobber a newer choice.
+        let _prevStatus = curStatus     // what the page currently SHOWS (moves on every pick)
+        let _savedStatus = curStatus    // last status the server confirmed — the rollback target
+        let _statusSeq = 0, _savedSeq = 0
+        let _reverting = false
+        const applyStatus = (newStatus) => {
+          openCountOnStatusChange(_prevStatus, newStatus)   // KD-265: live sidebar count
+          _prevStatus = newStatus
+          // #653: repaint the status dot to the new state color.
+          const _dot = detailEl.querySelector(".prop-dot")
+          if (_dot) _dot.className = "prop-dot ds-" + newStatus
+          // Update state
+          const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
+          if (tkt) tkt.status = newStatus
+          // Also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it, NOT
+          // state.tickets. Mirrors the optimistic drag path (moveTicketColumn) so onChange's
+          // renderTicketsKanban() moves the card into its new column immediately instead of waiting
+          // up to 15s for the next boardRevTick poll (which is suppressed while the ticket is open).
+          const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
+          if (bt) bt.status = newStatus
+          recordLocalEdit(ticketId, { status: newStatus })   // #532
+          if (onChange) onChange("status", newStatus)
+        }
         statusSelEl.addEventListener("change", async (ev) => {
           ev.stopPropagation()
+          if (_reverting) return                      // our own rollback repaint — not a new pick
           const newStatus = statusSelEl.value
-          // #537: reflect in-flight state immediately (disable + aria-busy) so a change during a
-          // project-switch race / offline blip isn't a silent no-op.
-          statusSelEl.disabled = true; statusSelEl.setAttribute("aria-busy", "true")
+          if (newStatus === _prevStatus) return
+          const seq = ++_statusSeq
+          applyStatus(newStatus)
+          // #537: reflect in-flight state (aria-busy) so a change during a project-switch race / offline
+          // blip isn't a silent no-op.
+          statusSelEl.setAttribute("aria-busy", "true")
           // #532: bump the mutation guard so the 25s liveness poll's refreshAll() can't wholesale-repaint
-          // the board mid-save and clobber the just-saved value.
+          // the board mid-save and clobber the just-picked value.
           window.__klavMutating++
           let d = {}
           try {
@@ -22625,24 +23680,13 @@
               body: JSON.stringify({ status: newStatus })
             }).catch(() => null)
             d = r ? await r.json().catch(() => ({})) : {}
-          } finally { window.__klavMutating--; statusSelEl.disabled = false; statusSelEl.removeAttribute("aria-busy") }
+          } finally {
+            window.__klavMutating--
+            if (seq === _statusSeq) statusSelEl.removeAttribute("aria-busy")
+          }
           if (d.ok) {
-            openCountOnStatusChange(_prevStatus, newStatus)   // KD-265: live sidebar count
-            _prevStatus = newStatus
-            // #653: repaint the status dot to the new state color.
-            const _dot = detailEl.querySelector(".prop-dot")
-            if (_dot) _dot.className = "prop-dot ds-" + newStatus
-            // Update state
-            const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
-            if (tkt) tkt.status = newStatus
-            // Also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it, NOT
-            // state.tickets. Mirrors the optimistic drag path (moveTicketColumn) so onChange's
-            // renderTicketsKanban() moves the card into its new column immediately instead of waiting
-            // up to 15s for the next boardRevTick poll (which is suppressed while the ticket is open).
-            const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
-            if (bt) bt.status = newStatus
-            recordLocalEdit(ticketId, { status: newStatus })   // #532
-            if (onChange) onChange("status", newStatus)
+            if (seq > _savedSeq) { _savedSeq = seq; _savedStatus = newStatus }
+            if (seq !== _statusSeq) return            // a newer pick is in flight; it reports its own result
             // B.7: closing a guard-caught ticket → OFFER the one-click regression-caught receipt (never
             // auto-sent). The server flags offerRegressionReceipt only for a real transition into done on
             // a guard-caught ticket with no prior receipt. Nudge the closer to the (now-visible) button.
@@ -22652,9 +23696,15 @@
               showTktMsg(detailEl, "Saved.", false)
             }
           } else {
-            // Revert the visible selection to the last-saved value on failure.
-            statusSelEl.value = _prevStatus
-            showTktMsg(detailEl, d.error || "Couldn't save — retry.", true)
+            if (seq !== _statusSeq) return            // a newer pick is in flight; it decides the final state
+            // Roll the whole page back to the last-saved status. Re-dispatching `change` lets the dropdown
+            // skin repaint from the select (the _reverting flag keeps this handler from re-saving it).
+            _reverting = true
+            statusSelEl.value = _savedStatus
+            statusSelEl.dispatchEvent(new Event("change", { bubbles: true }))
+            _reverting = false
+            applyStatus(_savedStatus)
+            showTktMsg(detailEl, d.error || "Couldn't save — reverted. Retry.", true)
           }
         })
       }
@@ -23050,6 +24100,9 @@
       const lblChipsEl = detailEl.querySelector(".tkt-lbl-chips")
       const lblSel = detailEl.querySelector(".tkt-lbl-sel")
       const ghostChipsEl = detailEl.querySelector(".tkt-lbl-ghost-chips")
+      const lblKdd = detailEl.querySelector(".tkt-lbl-kdd")
+      const lblBtn = detailEl.querySelector(".tkt-lbl-btn")
+      const lblMenu = detailEl.querySelector(".tkt-lbl-menu")
       if (lblRow && lblChipsEl && lblSel) {
         const ticketLabels = (t.labels || []).slice()
         const renderLblChips = () => {
@@ -23076,21 +24129,51 @@
         // #653: clean empty state — when there are NO project labels at all, hide the empty select and
         // show a "+ Add label" affordance that opens the manage-labels modal (so a first label can be made).
         const emptyAddBtn = detailEl.querySelector(".tkt-lbl-empty-add")
+        const attachToTicket = async label => {
+          await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ labelId: label.id })
+          }).catch(() => null)
+          if (!ticketLabels.find(l => l.id === label.id)) ticketLabels.push(label)
+          const tkt = (state.tickets || []).find(x => x.id === ticketId)
+          if (tkt) tkt.labels = ticketLabels.slice()
+          renderLblChips()
+          populateSel()
+          renderGhostChips()
+        }
+        // KD-227: "+ Add label…" opens the Labels popup for THIS ticket — click an existing label to add it,
+        // or type a new name to create it; either way it's added to the ticket.
+        const openLabelPopupForTicket = () => {
+          if (typeof openManageLabels === "function") openManageLabels({
+            ticket: {
+              add: label => (lblRow.isConnected ? attachToTicket(label) : undefined),
+              has: lid => ticketLabels.some(l => l.id === lid),
+            },
+          })
+        }
         if (emptyAddBtn) {
           emptyAddBtn.addEventListener("click", ev => {
             ev.stopPropagation()
-            if (typeof openManageLabels === "function") openManageLabels()
+            openLabelPopupForTicket()
           })
         }
         const populateSel = () => {
           const projectLabels = state._labels || []
           const attached = new Set(ticketLabels.map(l => l.id))
           const available = projectLabels.filter(l => !attached.has(l.id))
-          lblSel.innerHTML = '<option value="">+ Add label…</option>' +
+          // KD-227: the list starts with "+ Add label…" (opens the Labels popup to create/add a label), followed by
+          // the labels that can be attached. The hidden select mirrors the menu so `change` stays the one entry point.
+          lblSel.innerHTML = '<option value="" hidden selected>+ Add label…</option><option value="__add_label__">+ Add label…</option>' +
             available.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
-          lblSel.style.display = available.length ? "" : "none"
-          // Fall back to the "+ Add label" button only when the project has no labels to attach at all
-          // (an existing project WITH labels, all already attached, just hides the select — no dead button).
+          if (lblMenu) {
+            lblMenu.innerHTML = '<button type="button" class="kdd-item tkt-lbl-add-item" role="menuitem" data-val="__add_label__">+ Add label…</button>' +
+              available.map(l => `<button type="button" class="kdd-item" role="menuitem" data-val="${esc(l.id)}"><span class="tkt-lbl-dot" style="background:${esc(l.color)}"></span><span class="kdd-txt">${esc(l.name)}</span></button>`).join("")
+          }
+          // KD-227: stays visible even when every label is attached — it's the way into the popup to create more.
+          const showPicker = projectLabels.length > 0
+          if (lblKdd) lblKdd.style.display = showPicker ? "" : "none"
+          else lblSel.style.display = showPicker ? "" : "none"
+          // Fall back to the "+ Add label" button only when the project has no labels at all.
           if (emptyAddBtn) emptyAddBtn.classList.toggle("hide", projectLabels.length > 0)
         }
 
@@ -23128,23 +24211,51 @@
 
         renderLblChips()
         populateSel()
+        // KD-227: called by refreshTicketLabelOptions() after Manage Labels changes the project's labels —
+        // re-sync attached chips (rename/recolor/delete) and rebuild the dropdown so a new label is selectable.
+        lblRow._klavLblRefresh = () => {
+          const byId = new Map((state._labels || []).map(l => [l.id, l]))
+          for (let i = ticketLabels.length - 1; i >= 0; i--) {
+            const cur = byId.get(ticketLabels[i].id)
+            if (cur) ticketLabels[i] = cur
+            else ticketLabels.splice(i, 1)
+          }
+          renderLblChips()
+          populateSel()
+          renderGhostChips()
+        }
+        // KD-227: Status/Priority-style menu. Picking an item drives the hidden select's `change` (below);
+        // outside-click / Escape closing comes from the shared .kdd handlers above.
+        if (lblBtn && lblMenu) {
+          const setOpen = open => { lblMenu.classList.toggle("hide", !open); lblBtn.setAttribute("aria-expanded", String(open)) }
+          lblBtn.addEventListener("click", ev => {
+            ev.stopPropagation()
+            const willOpen = lblMenu.classList.contains("hide")
+            detailEl.querySelectorAll(".kdd-menu").forEach(m => {
+              if (m === lblMenu) return
+              m.classList.add("hide")
+              const b = m.parentElement && m.parentElement.querySelector(".kdd-btn"); if (b) b.setAttribute("aria-expanded", "false")
+            })
+            setOpen(willOpen)
+          })
+          lblMenu.addEventListener("click", ev => {
+            const it = ev.target.closest(".kdd-item")
+            if (!it) return
+            ev.stopPropagation()
+            setOpen(false)
+            lblSel.value = it.getAttribute("data-val")
+            lblSel.dispatchEvent(new Event("change", { bubbles: true }))
+          })
+        }
         lblSel.addEventListener("change", async ev => {
           ev.stopPropagation()
           const lid = lblSel.value
           if (!lid) return
           lblSel.value = ""
+          if (lid === "__add_label__") { openLabelPopupForTicket(); return }
           const label = (state._labels || []).find(l => l.id === lid)
           if (!label) return
-          await fetch(`/api/feedback/${encodeURIComponent(ticketId)}/labels`, {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ labelId: lid })
-          }).catch(() => null)
-          if (!ticketLabels.find(l => l.id === lid)) ticketLabels.push(label)
-          const tkt = (state.tickets || []).find(x => x.id === ticketId)
-          if (tkt) tkt.labels = ticketLabels.slice()
-          renderLblChips()
-          populateSel()
-          renderGhostChips()
+          await attachToTicket(label)
         })
 
         // Fetch AI suggestions async (non-blocking); renders ghost chips when ready. Only for the detail the user
@@ -23246,6 +24357,35 @@
 
     // #707: escape a comment body, then highlight @handle mentions (see the composer's @-mention picker).
     // Escaping FIRST keeps this XSS-safe; the highlight only wraps the already-escaped @token in a span.
+    // Jira-style comment header pieces. The avatar is the person's initial on a colour picked from their address, so the same person
+    // always gets the same colour.
+    function cmtAvatarHtml(email) {
+      const name = String(email || "?")
+      const ch = (name.trim()[0] || "?").toUpperCase()
+      const colors = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"]
+      let h = 0
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+      return '<div class="tkt-jc-av" style="background:' + colors[h % colors.length] + '" aria-hidden="true">' + esc(ch) + '</div>'
+    }
+    function cmtHeadHtml(item) {
+      const author = item.author ? esc(String(item.author).split("@")[0]) : "Anonymous"
+      let full = ""
+      try { full = new Date(Number(item.createdAt)).toLocaleString() } catch (e) { }
+      return '<span class="tkt-jc-name">' + author + '</span><span class="tkt-jc-time" title="' + esc(full) + '">' + esc(ago(item.createdAt)) + '</span>'
+        + (item.editedAt ? '<span class="tkt-cmt-edited">Edited</span>' : "")
+    }
+    // KD-217: the images / videos attached to a comment. Images open in the media preview; videos play inline.
+    function commentAttsHtml(atts) {
+      const list = Array.isArray(atts) ? atts.filter(a => a && a.url) : []
+      if (!list.length) return ""
+      return '<div class="tkt-cmt-atts">' + list.map((a, i) => {
+        const name = esc(String(a.filename || "attachment"))
+        if (/^video\//i.test(String(a.contentType || ""))) {
+          return '<video class="tkt-cmt-att-vid" src="' + esc(String(a.url)) + '" controls preload="metadata" playsinline title="' + name + '"></video>'
+        }
+        return '<button type="button" class="tkt-cmt-att-img" data-i="' + i + '" title="' + name + '"><img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy"></button>'
+      }).join("") + '</div>'
+    }
     function renderCommentBody(text) {
       return esc(String(text == null ? "" : text)).replace(/(^|\s)@([\w.\-]+)/g, (_m, pre, h) => pre + '<span class="t3-m">@' + h + "</span>")
     }
@@ -23264,12 +24404,12 @@
         const isOwn = !!item.author && item.author === (state && state.email)
         const isAdmin = !!(state && state.active && state.active.role === "admin")
         const canManage = ticketId && item.id && (isOwn || isAdmin)
-        bodyHtml = `<div class="tkt-tl-author">${author}</div>
+        bodyHtml = `<div class="tkt-jc-head">${cmtHeadHtml(item)}</div>
       <div class="tkt-tl-text tkt-cmt-body">${renderCommentBody(item.body)}</div>
-      <div class="tkt-tl-meta">${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}</div>
-      ${canManage ? `<div class="tkt-cmt-actions">
-        <button type="button" class="tkt-cmt-edit" title="Edit comment" aria-label="Edit comment">${kicon('pencil', { size: 12 })}</button>
-        <button type="button" class="tkt-cmt-del" title="Delete comment" aria-label="Delete comment">${kicon('trash-2', { size: 12 })}</button>
+      <div class="tkt-cmt-attwrap">${commentAttsHtml(item.attachments)}</div>
+      ${canManage ? `<div class="tkt-jc-actions">
+        <span class="tkt-jc-normal"><button type="button" class="tkt-jc-edit" aria-label="Edit comment">Edit</button> · <button type="button" class="tkt-jc-del" aria-label="Delete comment">Delete</button></span>
+        <span class="tkt-jc-confirm">Delete this comment? <button type="button" class="tkt-jc-del-yes">Delete</button><button type="button" class="tkt-jc-del-no">Cancel</button></span>
       </div>` : ""}`
       } else if (item.kind === "ticket_export") {
         dotClass = "tkt-tl-dot-export"; icon = TL_ICONS.export
@@ -23287,25 +24427,46 @@
       <div class="tkt-tl-meta">${actor ? actor + " · " : ""}${esc(ago(item.createdAt))}</div>`
       }
 
-      el.innerHTML = `<div class="tkt-tl-dot ${dotClass}">${icon}</div><div class="tkt-tl-body">${bodyHtml}</div>`
+      if (item.kind === "comment") {
+        el.className = "tkt-tl-item tkt-jc"   // Jira-style: avatar column + main column (no timeline dot)
+        el.innerHTML = cmtAvatarHtml(item.author) + '<div class="tkt-jc-main">' + bodyHtml + '</div>'
+      } else {
+        el.innerHTML = `<div class="tkt-tl-dot ${dotClass}">${icon}</div><div class="tkt-tl-body">${bodyHtml}</div>`
+      }
 
       // KD-158: wire the edit/delete affordances (only rendered above when canManage is true).
       if (item.kind === "comment" && item.id && ticketId) {
-        const editBtn = el.querySelector(".tkt-cmt-edit")
-        const delBtn = el.querySelector(".tkt-cmt-del")
+        const editBtn = el.querySelector(".tkt-jc-edit")
+        const delBtn = el.querySelector(".tkt-jc-del")
         const bodyEl = el.querySelector(".tkt-cmt-body")
-        const metaEl = el.querySelector(".tkt-tl-meta")
+        const metaEl = el.querySelector(".tkt-jc-head")
+        const attWrapEl = el.querySelector(".tkt-cmt-attwrap")
+        const wireAtts = function () {   // KD-217 (re-run after an edit repaints the attachments)
+          if (!attWrapEl) return
+          attWrapEl.querySelectorAll(".tkt-cmt-att-img").forEach(function (b) {
+            b.addEventListener("click", function (ev) {
+              ev.stopPropagation()
+              const a = (item.attachments || []).filter(x => x && x.url)[Number(b.getAttribute("data-i"))]
+              if (a) openMediaPreview({ url: a.url, name: String(a.filename || "attachment"), kind: "image", openUrl: a.url })
+            })
+          })
+        }
+        wireAtts()
         if (delBtn) {
-          delBtn.addEventListener("click", async (ev) => {
+          // Inline "Delete this comment? Delete · Cancel" (no browser popup).
+          const actionsEl = el.querySelector(".tkt-jc-actions")
+          const yesBtn = el.querySelector(".tkt-jc-del-yes"), noBtn = el.querySelector(".tkt-jc-del-no")
+          delBtn.addEventListener("click", (ev) => { ev.stopPropagation(); if (actionsEl) actionsEl.classList.add("confirming") })
+          if (noBtn) noBtn.addEventListener("click", (ev) => { ev.stopPropagation(); if (actionsEl) actionsEl.classList.remove("confirming") })
+          if (yesBtn) yesBtn.addEventListener("click", async (ev) => {
             ev.stopPropagation()
-            if (!window.confirm("Delete this comment? This can't be undone.")) return
-            delBtn.disabled = true
+            yesBtn.disabled = true
             const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
               method: "DELETE",
             }).catch(() => null)
             const d = r ? await r.json().catch(() => ({})) : {}
             if (r && r.ok && d.ok) el.remove()
-            else { delBtn.disabled = false; alert(d.error || "Couldn't delete comment.") }
+            else { yesBtn.disabled = false; if (actionsEl) actionsEl.classList.remove("confirming"); alert(d.error || "Couldn't delete comment.") }
           })
         }
         if (editBtn && bodyEl) {
@@ -23326,25 +24487,52 @@
             const cancelB = document.createElement("button")
             cancelB.type = "button"; cancelB.className = "btn btn-ghost btn-sm"; cancelB.textContent = "Cancel"
             row.appendChild(saveB); row.appendChild(cancelB)
-            wrap.appendChild(ta); wrap.appendChild(row)
+            // KD-217: the comment's current files, each with a remove button. Removing is only applied when Save is pressed.
+            let removeKeys = []
+            const keepAtts = () => (item.attachments || []).filter(a => a && a.key && removeKeys.indexOf(String(a.key)) < 0)
+            const attsBox = document.createElement("div")
+            attsBox.className = "tkt-cmt-chips tkt-cmt-edit-atts"
+            const paintEditAtts = () => {
+              const list = keepAtts()
+              attsBox.classList.toggle("hide", !list.length)
+              attsBox.innerHTML = list.map(a => {
+                const isVid = /^video\//i.test(String(a.contentType || ""))
+                const th = a.url ? (isVid ? '<video class="th" src="' + esc(String(a.url)) + '#t=0.1" muted preload="metadata" playsinline></video>'
+                  : '<img class="th" src="' + esc(String(a.url)) + '" alt="">') : ""
+                return '<span class="tkt-cmt-chip tkt-cmt-chip-p"><span class="pv">' + th + '</span>'
+                  + '<span class="nm" title="' + esc(String(a.filename || "")) + '">' + esc(String(a.filename || "attachment")) + '</span>'
+                  + '<button type="button" class="rm" data-rmkey="' + esc(String(a.key)) + '" aria-label="Remove ' + esc(String(a.filename || "attachment")) + '" title="Remove">&times;</button></span>'
+              }).join("")
+            }
+            attsBox.addEventListener("click", (e3) => {
+              e3.stopPropagation()
+              const b = e3.target && e3.target.closest ? e3.target.closest("[data-rmkey]") : null
+              if (!b) return
+              removeKeys.push(b.getAttribute("data-rmkey")); paintEditAtts()
+            })
+            paintEditAtts()
+            if (attWrapEl) attWrapEl.style.display = "none"
+            wrap.appendChild(ta); wrap.appendChild(attsBox); wrap.appendChild(row)
             bodyEl.insertAdjacentElement("afterend", wrap)
             try { ta.focus(); const n = ta.value.length; ta.setSelectionRange(n, n) } catch (e) { }
             let done = false
-            const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; wrap.remove() }
+            const teardown = () => { if (done) return; done = true; el.classList.remove("tkt-cmt-editing"); bodyEl.style.display = ""; if (attWrapEl) attWrapEl.style.display = ""; wrap.remove() }
             const commit = async () => {
               if (done) return
               const next = ta.value.trim()
-              if (!next) return
+              if (!next && !keepAtts().length) return   // text may be empty only while an attachment is left
               saveB.disabled = true
               const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments/" + encodeURIComponent(item.id), {
                 method: "PATCH", headers: { "content-type": "application/json" },
-                body: JSON.stringify({ body: next })
+                body: JSON.stringify({ body: next, removeAttachments: removeKeys })
               }).catch(() => null)
               const d = r ? await r.json().catch(() => ({})) : {}
               if (r && r.ok && d.comment) {
                 item.body = d.comment.body; item.editedAt = d.comment.editedAt
+                if (Array.isArray(d.comment.attachments)) item.attachments = d.comment.attachments
+                if (attWrapEl) { attWrapEl.innerHTML = commentAttsHtml(item.attachments); wireAtts() }
                 bodyEl.innerHTML = renderCommentBody(item.body)
-                if (metaEl) metaEl.innerHTML = `${esc(ago(item.createdAt))}${item.editedAt ? ' · <span class="tkt-cmt-edited">edited</span>' : ""}`
+                if (metaEl) metaEl.innerHTML = cmtHeadHtml(item)
                 teardown()
               } else {
                 saveB.disabled = false
@@ -23371,15 +24559,19 @@
       // [Comments] (the comments list + composer). The slide-over panel and board-expand keep the classic
       // single stack (Activity heading → merged list → composer). Same ids/handlers/@mention either way.
       const _tabbed = (typeof _tktSingleMode !== "undefined" && _tktSingleMode !== "panel")
-      const _composerHtml = `<div class="tkt-comment-form">
+      const _composerHtml = `<div class="tkt-jc-compose">${cmtAvatarHtml(state && state.email)}<div class="tkt-comment-form collapsed">
       <div class="t3-mention hide" role="listbox" aria-label="Tag a teammate"></div>
-      <textarea class="tkt-comment-ta" placeholder="Leave a comment… @ to tag" rows="2"></textarea>
+      <textarea class="tkt-comment-ta" placeholder="Add a comment… @ to tag" rows="3"></textarea>
+      <div class="tkt-cmt-chips hide"></div>
       <div class="tkt-comment-row">
-        <button class="btn btn-indigo btn-sm tkt-comment-submit">Comment</button>
+        <button class="btn btn-indigo btn-sm tkt-comment-submit">Save</button>
+        <button type="button" class="btn btn-ghost btn-sm tkt-comment-cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost btn-sm tkt-cmt-attach" title="Attach images or videos (or paste / drop them)">${kicon('paperclip', { size: 13 })} Attach</button>
+        <input type="file" class="tkt-cmt-file" accept="image/*,video/*" multiple hidden>
         <span class="tkt-comment-hint muted" style="font-size:11px">@ to mention · ⌘↵ to send</span>
         <span class="tkt-comment-msg" style="color:var(--paper-faint)"></span>
       </div>
-    </div>`
+    </div></div>`
       if (_tabbed) {
         wrap.classList.add("tkt-tl-tabbed")
         wrap.innerHTML = `<div class="t3-tabs" role="tablist">
@@ -23390,8 +24582,9 @@
         <div class="tkt-tl-list" id="tl-${esc(ticketId)}"><div class="tkt-tl-empty" style="padding:6px 0">Loading…</div></div>
       </div>
       <div class="t3-tabpanel hide" data-panel="comments" role="tabpanel">
-        <div class="tkt-tl-list tkt-cmt-list" id="cl-${esc(ticketId)}"></div>
         ${_composerHtml}
+        <div class="tkt-cmt-sorthd"><button type="button" class="tkt-cmt-sort" title="Change the order of comments"></button></div>
+        <div class="tkt-tl-list tkt-cmt-list" id="cl-${esc(ticketId)}"></div>
       </div>`
       } else {
         wrap.innerHTML = `<div class="tkt-timeline-hd">Activity</div>
@@ -23471,6 +24664,7 @@
             return
           }
           if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); if (submitBtn) submitBtn.click() }
+          else if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); collapseComposer() }   // Esc closes the comment box only — not the whole ticket page
         })
         ta.addEventListener("blur", () => setTimeout(closeMention, 120))
       }
@@ -23492,6 +24686,11 @@
       // #533: comments the user just posted this session, kept locally so a lagging/failed /timeline read
       // can never remove one that's already on screen. Merged (deduped by id) into every reload.
       const localComments = []
+      // Jira-style order toggle (Comments tab): newest first by default, remembered per browser. The last server read is kept so a
+      // re-sort / optimistic post can repaint without another request.
+      let cmtNewestFirst = true
+      try { cmtNewestFirst = localStorage.getItem("klav.cmtOrder") !== "oldest" } catch (e) { }
+      let _lastServerItems = []
 
       // Render the merged list (server items + synthesized origin + any locally-posted comments), deduped
       // by id and sorted oldest→newest. Shared by the optimistic append and the network reload paths.
@@ -23514,6 +24713,7 @@
           // + count). One merged sort above keeps chronology within each list.
           const acts = items.filter(it => it.kind !== "comment")
           const cmts = items.filter(it => it.kind === "comment")
+          if (cmtNewestFirst) cmts.reverse()
           listEl.innerHTML = acts.length ? "" : '<div class="tkt-tl-empty">No activity yet.</div>'
           acts.forEach(item => listEl.appendChild(renderTimelineItem(item, ticketId)))
           cmtListEl.innerHTML = cmts.length ? "" : '<div class="tkt-tl-empty">No comments yet.</div>'
@@ -23541,7 +24741,7 @@
         const to = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) { } }, 9000) : null
         const clearTo = () => { if (to) clearTimeout(to) }
         tktRead("timeline", ticketId, "/api/feedback/" + encodeURIComponent(ticketId) + "/timeline", ctrl ? { signal: ctrl.signal } : undefined)
-          .then(d => { clearTo(); paintTimeline((d.items || []).slice()) })
+          .then(d => { clearTo(); _lastServerItems = (d.items || []).slice(); paintTimeline(_lastServerItems) })
           .catch(() => {
             clearTo()
             // Short retry/backoff on a failed read before giving up (never drops a local comment).
@@ -23560,19 +24760,119 @@
 
       reloadTimeline()
 
+      // KD-217: images / videos on a comment. Picked with the Attach button, pasted into the box, or dropped on the form; kept as
+      // chips until Comment is pressed (then sent as multipart with the text). Same limits as ticket attachments.
+      const attachBtn = wrap.querySelector(".tkt-cmt-attach")
+      const fileInp = wrap.querySelector(".tkt-cmt-file")
+      const chipsEl = wrap.querySelector(".tkt-cmt-chips")
+      let pendingFiles = []
+      const _chipUrls = new Map()   // File -> blob: URL used for its preview; revoked once the file is removed or posted
+      function chipUrl(f) {
+        let u = _chipUrls.get(f)
+        if (u === undefined) { try { u = URL.createObjectURL(f) } catch (e) { u = "" } _chipUrls.set(f, u) }
+        return u
+      }
+      function pruneChipUrls() {
+        _chipUrls.forEach((u, f) => { if (pendingFiles.indexOf(f) < 0) { try { if (u) URL.revokeObjectURL(u) } catch (e) { } _chipUrls.delete(f) } })
+      }
+      function paintChips() {
+        if (!chipsEl) return
+        pruneChipUrls()
+        chipsEl.classList.toggle("hide", !pendingFiles.length)
+        chipsEl.innerHTML = pendingFiles.map((f, i) => {
+          const u = chipUrl(f), isVid = /^video\//i.test(f.type || "")
+          const th = !u ? "" : isVid
+            ? '<video class="th" src="' + esc(u) + '#t=0.1" muted preload="metadata" playsinline></video>'
+            : '<img class="th" src="' + esc(u) + '" alt="">'
+          return '<span class="tkt-cmt-chip tkt-cmt-chip-p"><button type="button" class="pv" data-pv="' + i + '" title="Preview ' + esc(f.name) + '" aria-label="Preview ' + esc(f.name) + '">' + th + '</button>'
+            + '<span class="nm" title="' + esc(f.name) + '">' + esc(f.name) + '</span><span class="sz">' + esc(_attachFmtBytes(f.size)) + '</span>'
+            + '<button type="button" class="rm" data-rm="' + i + '" aria-label="Remove ' + esc(f.name) + '">&times;</button></span>'
+        }).join("")
+      }
+      function cmtMsg(text, bad) { if (msgEl) { msgEl.style.color = bad ? "var(--rose)" : "var(--paper-faint)"; msgEl.textContent = text || "" } }
+      function addPending(list) {
+        const problems = []
+        for (const f of Array.prototype.slice.call(list || [])) {
+          const isImg = /^image\//i.test(f.type || ""), isVid = /^video\//i.test(f.type || "")
+          if (!isImg && !isVid) { problems.push(f.name + " is not an image or video"); continue }
+          if (pendingFiles.length >= ATTACH_MAX_FILES) { problems.push("at most " + ATTACH_MAX_FILES + " files per comment"); break }
+          if (pendingFiles.some(x => x.name === f.name && x.size === f.size)) continue
+          if (f.size > (isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX)) { problems.push(f.name + " is too large (" + _attachFmtBytes(isVid ? ATTACH_VIDEO_MAX : ATTACH_IMG_MAX) + " max)"); continue }
+          if (pendingFiles.reduce((n, x) => n + x.size, 0) + f.size > ATTACH_TOTAL_MAX) { problems.push("total size limit reached"); break }
+          pendingFiles.push(f)
+        }
+        paintChips()
+        cmtMsg(problems.length ? "Not added: " + problems.join("; ") + "." : "", !!problems.length)
+      }
+      if (attachBtn && fileInp) {
+        attachBtn.addEventListener("click", () => fileInp.click())
+        fileInp.addEventListener("change", () => { addPending(fileInp.files); fileInp.value = "" })
+      }
+      if (chipsEl) chipsEl.addEventListener("click", ev => {
+        const pv = ev.target && ev.target.closest ? ev.target.closest("[data-pv]") : null
+        if (pv) {   // enlarge the picked file before posting
+          const f = pendingFiles[Number(pv.getAttribute("data-pv"))]
+          if (f && chipUrl(f)) openMediaPreview({ url: chipUrl(f), name: f.name, kind: /^video\//i.test(f.type || "") ? "video" : "image" })
+          return
+        }
+        const b = ev.target && ev.target.closest ? ev.target.closest("[data-rm]") : null
+        if (!b) return
+        pendingFiles.splice(Number(b.getAttribute("data-rm")), 1); paintChips(); cmtMsg("")
+      })
+      if (ta) ta.addEventListener("paste", ev => {
+        const files = ev.clipboardData && ev.clipboardData.files ? Array.prototype.slice.call(ev.clipboardData.files) : []
+        const media = files.filter(f => /^(image|video)\//i.test(f.type || ""))
+        if (media.length) { ev.preventDefault(); addPending(media) }   // pasted text still pastes normally
+      })
+      const cmtForm = wrap.querySelector(".tkt-comment-form")
+      const cancelBtn = wrap.querySelector(".tkt-comment-cancel")
+      const sortBtn = wrap.querySelector(".tkt-cmt-sort")
+      function expandComposer() { if (cmtForm) cmtForm.classList.remove("collapsed") }
+      function collapseComposer() {
+        if (!cmtForm) return
+        if (ta) ta.value = ""
+        pendingFiles = []; paintChips(); cmtMsg(""); closeMention()
+        cmtForm.classList.add("collapsed")
+        try { if (ta) ta.blur() } catch (e) { }
+      }
+      if (ta) ta.addEventListener("focus", expandComposer)
+      if (attachBtn) attachBtn.addEventListener("click", expandComposer)
+      if (cancelBtn) cancelBtn.addEventListener("click", collapseComposer)
+      function paintSortBtn() { if (sortBtn) sortBtn.textContent = cmtNewestFirst ? "Newest first ↓" : "Oldest first ↑" }
+      if (sortBtn) {
+        paintSortBtn()
+        sortBtn.addEventListener("click", () => {
+          cmtNewestFirst = !cmtNewestFirst
+          try { localStorage.setItem("klav.cmtOrder", cmtNewestFirst ? "newest" : "oldest") } catch (e) { }
+          paintSortBtn(); paintTimeline(_lastServerItems)
+        })
+      }
+      if (cmtForm) {
+        cmtForm.addEventListener("dragover", ev => { if (ev.dataTransfer && Array.prototype.indexOf.call(ev.dataTransfer.types || [], "Files") >= 0) ev.preventDefault() })
+        cmtForm.addEventListener("drop", ev => { if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) { ev.preventDefault(); addPending(ev.dataTransfer.files) } })
+      }
+
       if (submitBtn && ta) {
         submitBtn.addEventListener("click", async () => {
           const text = ta.value.trim()
-          if (!text) return
+          if (!text && !pendingFiles.length) return
           submitBtn.disabled = true
-          if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = "Saving…" }
-          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ body: text })
-          }).catch(() => null)
+          if (attachBtn) attachBtn.disabled = true
+          if (msgEl) { msgEl.style.color = "var(--paper-faint)"; msgEl.textContent = pendingFiles.length ? "Uploading…" : "Saving…" }
+          let reqInit
+          if (pendingFiles.length) {
+            const fd = new FormData(); fd.set("body", text); pendingFiles.forEach(f => fd.append("files", f))
+            reqInit = { method: "POST", body: fd }   // the browser sets the multipart content-type
+          } else {
+            reqInit = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body: text }) }
+          }
+          const r = await fetch("/api/feedback/" + encodeURIComponent(ticketId) + "/comments", reqInit).catch(() => null)
           submitBtn.disabled = false
+          if (attachBtn) attachBtn.disabled = false
           if (r && r.status === 201) {
             ta.value = ""
+            pendingFiles = []; paintChips()
+            if (cmtForm) cmtForm.classList.add("collapsed")   // back to the one-line "Add a comment…" bar
             // #533: the 201 body IS the created comment — render it optimistically instead of discarding it
             // and hoping a follow-up /timeline read returns it (that read races the write and can drop it).
             const d = await r.json().catch(() => ({}))
@@ -23580,9 +24880,9 @@
             if (c && (c.id != null || c.body)) {
               localComments.push({
                 kind: "comment", id: c.id, author: c.author || null,
-                body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(),
+                body: c.body != null ? c.body : text, createdAt: c.createdAt || Date.now(), attachments: c.attachments || [],
               })
-              paintTimeline([])   // instant on-screen render from local state (no network wait)
+              paintTimeline(_lastServerItems)   // instant on-screen render from local state (no network wait)
               _activateTab("comments")   // #725d: surface the just-posted comment (no-op off the tabbed page)
             }
             if (msgEl) { msgEl.style.color = "var(--green)"; msgEl.textContent = "Comment posted." }
@@ -23927,6 +25227,7 @@
     // #736: when the dedicated full page opens we push a CLEAN /t/<id> URL to the address bar; this remembers
     // the board URL (…/dashboard?project=…#tickets) to restore when the page closes or the user hits Back.
     let _tktBoardReturnUrl = null
+    let _tktBoardScrollY = 0
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
     // the in-app history story — a FRESH load of /t/<id> is still served by the server route (ticket.html).
@@ -23970,6 +25271,9 @@
       return p
     }
     async function openSingleTicket(id, mode) {
+      if (mode === "full" && !document.body.classList.contains("tkt-page-open")) {
+        _tktBoardScrollY = window.scrollY || window.pageYOffset || 0
+      }
       if (mode === "panel" || mode === "full") _tktSingleMode = mode
       tktReadsReset()   // a fresh open never inherits reads from a previous ticket
       // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
@@ -24128,7 +25432,9 @@
       if (panel) {
         // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
         document.body.classList.remove("tkt-page-open")
-        const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+        if (document.body.getAttribute("data-view") !== "tickets") {
+          const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+        }
       } else {
         // KLA-563 dedicated page: activate the Tickets view chrome but NEVER mount the board — the page
         // renders directly from the single-ticket fetch. renderTicketsView() early-returns while this flag
@@ -24388,7 +25694,7 @@
         }
       } catch (e) { }
       // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
-      try { if (single.__focusTarget) single.__focusTarget.focus() } catch (e) { }
+      try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
       // Panel scrolls itself to top; the dedicated page scrolls the window.
       if (panel) { try { single.scrollTop = 0 } catch (e) { } }
       else { try { window.scrollTo(0, 0) } catch (e) { } }
@@ -24446,9 +25752,16 @@
       // the ~25s liveness poll is suppressed while a ticket is open (dashLiveBusy checks #ticketSingle),
       // so it was never nuked — only re-render the view when the dedicated page had replaced it.
       _tktSingleMode = "panel"
-      if (!wasPanel) renderTicketsView()
+      if (!wasPanel) {
+        renderTicketsView()
+        if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
+          try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
+          catch (e) { window.scrollTo(0, _tktBoardScrollY) }
+        }
+      }
+      _tktBoardScrollY = 0
       // a11y §10: return focus to the card / control that opened the detail.
-      try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus() } catch (e) { }
+      try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus({ preventScroll: true }) } catch (e) { }
       window.__klavTktInvoker = null
     }
 
@@ -24964,9 +26277,10 @@
     }
     // ── KLA-169: Tickets filter bar + list view ──────────────────────────────────────────────────────
     let _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
-    let _tktListState = { page: 1, totalPages: 1, loading: false }
+    let _tktListState = { page: 1, limit: 50, totalPages: 1, total: 0, loading: false }
     let _tktBoardState = { loading: false }
     let _tktBoardTickets = []
+    let _tktBoardTotal = null
     let _tktBoardLoadedPid = null // KLA-779: pid the board was actually FETCHED for (even if the result is empty), so an empty project isn't re-fetched on every render/poll
     // #536: the board caches the FULL, unfiltered project set here; status/priority/label/assignee/
     // source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
@@ -24987,7 +26301,14 @@
     function syncTicketFiltersToUrl() {
       try {
         const u = new URL(location.href)
-        const params = { status: _tktFilters.status, priority: _tktFilters.priority, label: _tktFilters.label, assignee: _tktFilters.assignee, source: _tktFilters.source, q: _tktFilters.search }
+        const params = {
+          status: Array.isArray(_tktFilters.status) ? _tktFilters.status.join(",") : (_tktFilters.status || ""),
+          priority: Array.isArray(_tktFilters.priority) ? _tktFilters.priority.join(",") : (_tktFilters.priority || ""),
+          label: Array.isArray(_tktFilters.label) ? _tktFilters.label.join(",") : (_tktFilters.label || ""),
+          assignee: Array.isArray(_tktFilters.assignee) ? _tktFilters.assignee.join(",") : (_tktFilters.assignee || ""),
+          source: Array.isArray(_tktFilters.source) ? _tktFilters.source.join(",") : (_tktFilters.source || ""),
+          q: _tktFilters.search
+        }
         Object.entries(params).forEach(([key, value]) => value ? u.searchParams.set(key, value) : u.searchParams.delete(key))
         u.searchParams.delete("page")
         history.replaceState(null, "", u.toString())
@@ -24997,10 +26318,11 @@
     function loadTicketFiltersFromUrl() {
       try {
         const sp = new URL(location.href).searchParams
-          ;["status", "priority", "label", "assignee", "source", "q"].forEach(key => {
-            const filterKey = key === "q" ? "search" : key
-            _tktFilters[filterKey] = sp.get(key) || ""
+          ;["status", "priority", "label", "assignee", "source"].forEach(key => {
+            const val = sp.get(key)
+            _tktFilters[key] = val ? val.split(",").map(s => s.trim()).filter(Boolean) : []
           })
+        _tktFilters.search = sp.get("q") || ""
       } catch (e) { }
     }
 
@@ -25010,23 +26332,22 @@
     // the current filter path unchanged. Status/label stay behind the "Filters" (advanced) dropdowns.
     let _tktQuick = "all"
     function tktQuickToFilters(q) {
-      _tktFilters.assignee = ""; _tktFilters.priority = ""; _tktFilters.source = ""
-      if (q === "mine") _tktFilters.assignee = (state && state.email) || ""
-      else if (q === "unassigned") _tktFilters.assignee = "__unassigned__"
-      else if (q === "high") _tktFilters.priority = "urgent,high"
-      else if (q === "auto") _tktFilters.source = "sim"
+      _tktFilters.assignee = []
+      _tktFilters.priority = []
+      _tktFilters.source = []
+      _tktFilters.status = []
+      _tktFilters.label = []
+      if (q === "mine") _tktFilters.assignee = (state && state.email) ? [state.email] : []
+      else if (q === "unassigned") _tktFilters.assignee = ["__unassigned__"]
+      else if (q === "high") _tktFilters.priority = ["urgent", "high"]
+      else if (q === "auto") _tktFilters.source = ["sim"]
     }
     function renderQuickChips() {
       document.querySelectorAll("#tktQuickChips .tkt-chip").forEach(c => c.classList.toggle("on", c.dataset.q === _tktQuick))
     }
     // Reflect what a chip set back onto the advanced dropdowns so they stay consistent when opened.
     function syncFilterDropdownsFromState() {
-      const fbPriority = document.getElementById("fbPriority")
-      const fbAssignee = document.getElementById("fbAssignee")
-      const fbSource = document.getElementById("fbSource")
-      if (fbPriority) { fbPriority.value = (_tktFilters.priority.indexOf(",") >= 0 ? "" : _tktFilters.priority); fbPriority.classList.toggle("active", !!fbPriority.value) }
-      if (fbAssignee) { fbAssignee.value = _tktFilters.assignee; fbAssignee.classList.toggle("active", !!_tktFilters.assignee) }
-      if (fbSource) { fbSource.value = _tktFilters.source; fbSource.classList.toggle("active", !!_tktFilters.source) }
+      if (typeof updateAllTktMultiSelects === "function") updateAllTktMultiSelects()
     }
     function applyQuickChip(q) {
       _tktQuick = q
@@ -25040,11 +26361,16 @@
     // Derive which chip (if any) matches the current filters — used on load / after Clear.
     function deriveQuickFromFilters() {
       const f = _tktFilters
-      if (f.priority === "urgent,high") return "high"
-      if (f.source === "sim" && !f.priority && !f.assignee) return "auto"
-      if (f.assignee === "__unassigned__") return "unassigned"
-      if (f.assignee && state && f.assignee === state.email) return "mine"
-      if (!f.assignee && !f.priority && !f.source && !f.status && !f.label) return "all"
+      const hasStatus = Array.isArray(f.status) ? f.status.length > 0 : !!f.status
+      const hasLabel = Array.isArray(f.label) ? f.label.length > 0 : !!f.label
+      const pri = Array.isArray(f.priority) ? f.priority.slice().sort().join(",") : (f.priority || "")
+      const assign = Array.isArray(f.assignee) ? f.assignee.join(",") : (f.assignee || "")
+      const src = Array.isArray(f.source) ? f.source.join(",") : (f.source || "")
+      if ((pri === "high,urgent" || pri === "urgent,high") && !hasStatus && !hasLabel && !assign && !src) return "high"
+      if (src === "sim" && !hasStatus && !hasLabel && !pri && !assign) return "auto"
+      if (assign === "__unassigned__" && !hasStatus && !hasLabel && !pri && !src) return "unassigned"
+      if (assign && state && assign === state.email && !hasStatus && !hasLabel && !pri && !src) return "mine"
+      if (!assign && !pri && !src && !hasStatus && !hasLabel) return "all"
       return "__none__"
     }
 
@@ -25061,12 +26387,173 @@
       return `<span class="src-chip src-${k}">${label}</span>`
     }
 
+    const TKT_MS_CONFIGS = [
+      { id: "fbStatus", key: "status", defaultLabel: "All statuses", title: "Status" },
+      { id: "fbPriority", key: "priority", defaultLabel: "All priorities", title: "Priority" },
+      { id: "fbLabel", key: "label", defaultLabel: "All labels", title: "Label" },
+      { id: "fbAssignee", key: "assignee", defaultLabel: "All assignees", title: "Assignee" },
+      { id: "fbSource", key: "source", defaultLabel: "All sources", title: "Source" },
+    ]
+
+    function updateTktMultiSelect(selectId) {
+      const selectEl = document.getElementById(selectId)
+      if (!selectEl) return
+      const cfg = TKT_MS_CONFIGS.find(c => c.id === selectId)
+      if (!cfg) return
+      const parent = selectEl.parentElement
+      if (!parent) return
+      let wrap = parent.querySelector(`.tkt-ms-wrap[data-for="${selectId}"]`)
+      if (!wrap) return
+      const btn = wrap.querySelector(".tkt-ms-btn")
+      const btnText = wrap.querySelector(".tkt-ms-btn-text")
+      const menu = wrap.querySelector(".tkt-ms-menu")
+      const current = Array.isArray(_tktFilters[cfg.key]) ? _tktFilters[cfg.key] : []
+
+      if (current.length === 0) {
+        btnText.textContent = cfg.defaultLabel
+        btn.classList.remove("active")
+      } else if (current.length === 1) {
+        const opt = Array.from(selectEl.options).find(o => o.value === current[0])
+        btnText.textContent = opt ? (opt.textContent || opt.value) : current[0]
+        btn.classList.add("active")
+      } else {
+        btnText.textContent = `${cfg.title} (${current.length})`
+        btn.classList.add("active")
+      }
+
+      let html = ""
+      const isAllChecked = current.length === 0
+      Array.from(selectEl.options).forEach(opt => {
+        const val = opt.value
+        const txt = opt.textContent || ""
+        const isAll = (val === "")
+        const checked = isAll ? isAllChecked : current.includes(val)
+        html += `<label class="tkt-ms-item${checked ? ' selected' : ''}" data-val="${esc(val)}">`
+          + `<input type="checkbox" ${checked ? 'checked' : ''} />`
+          + `<span class="tkt-ms-txt">${esc(txt)}</span>`
+          + `</label>`
+      })
+      menu.innerHTML = html
+
+      menu.querySelectorAll(".tkt-ms-item").forEach(item => {
+        item.addEventListener("click", e => {
+          e.stopPropagation()
+          const val = item.getAttribute("data-val")
+          const cb = item.querySelector('input[type="checkbox"]')
+          if (e.target !== cb) cb.checked = !cb.checked
+          const isNowChecked = cb.checked
+
+          if (val === "") {
+            _tktFilters[cfg.key] = []
+          } else {
+            let arr = Array.isArray(_tktFilters[cfg.key]) ? [..._tktFilters[cfg.key]] : []
+            if (isNowChecked) {
+              if (!arr.includes(val)) arr.push(val)
+            } else {
+              arr = arr.filter(x => x !== val)
+            }
+            _tktFilters[cfg.key] = arr
+          }
+
+          updateTktMultiSelect(selectId)
+          onTktFilterUpdated()
+        })
+      })
+    }
+
+    function updateAllTktMultiSelects() {
+      TKT_MS_CONFIGS.forEach(cfg => updateTktMultiSelect(cfg.id))
+    }
+
+    function onTktFilterUpdated() {
+      const fbClear = document.getElementById("fbClearBtn")
+      const hasFilter = (
+        (_tktFilters.status && _tktFilters.status.length > 0) ||
+        (_tktFilters.priority && _tktFilters.priority.length > 0) ||
+        (_tktFilters.label && _tktFilters.label.length > 0) ||
+        (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
+        (_tktFilters.source && _tktFilters.source.length > 0) ||
+        !!_tktFilters.search
+      )
+      if (fbClear) fbClear.classList.toggle("hide", !hasFilter)
+      _tktListState.page = 1
+      _tktQuick = deriveQuickFromFilters()
+      renderQuickChips()
+      syncTicketFiltersToUrl()
+      renderTicketsView()
+    }
+
+    function initTktMultiSelect(cfg) {
+      const selectEl = document.getElementById(cfg.id)
+      if (!selectEl) return
+      selectEl.style.display = "none"
+      let wrap = selectEl.parentElement?.querySelector(`.tkt-ms-wrap[data-for="${cfg.id}"]`)
+      if (!wrap) {
+        wrap = document.createElement("div")
+        wrap.className = "tkt-ms-wrap"
+        wrap.setAttribute("data-for", cfg.id)
+        wrap.innerHTML = `<button class="tkt-ms-btn" type="button" aria-haspopup="listbox" aria-expanded="false" title="Filter by ${cfg.title.toLowerCase()}">`
+          + `<span class="tkt-ms-btn-text">${esc(cfg.defaultLabel)}</span>`
+          + `</button>`
+          + `<div class="tkt-ms-menu hide" role="listbox"></div>`
+        selectEl.insertAdjacentElement("afterend", wrap)
+
+        const btn = wrap.querySelector(".tkt-ms-btn")
+        const menu = wrap.querySelector(".tkt-ms-menu")
+
+        btn.addEventListener("click", e => {
+          e.stopPropagation()
+          const isOpen = !menu.classList.contains("hide")
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            if (m !== menu) {
+              m.classList.add("hide")
+              const pBtn = m.parentElement?.querySelector(".tkt-ms-btn")
+              if (pBtn) pBtn.setAttribute("aria-expanded", "false")
+            }
+          })
+          if (isOpen) {
+            menu.classList.add("hide")
+            btn.setAttribute("aria-expanded", "false")
+          } else {
+            updateTktMultiSelect(cfg.id)
+            menu.classList.remove("hide")
+            btn.setAttribute("aria-expanded", "true")
+          }
+        })
+      }
+      updateTktMultiSelect(cfg.id)
+    }
+
+    if (!window.__klavTktMsDocBound) {
+      window.__klavTktMsDocBound = true
+      document.addEventListener("click", e => {
+        if (!e.target.closest(".tkt-ms-wrap")) {
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            m.classList.add("hide")
+            const btn = m.parentElement?.querySelector(".tkt-ms-btn")
+            if (btn) btn.setAttribute("aria-expanded", "false")
+          })
+        }
+      })
+      document.addEventListener("keydown", e => {
+        if (e.key === "Escape") {
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            m.classList.add("hide")
+            const btn = m.parentElement?.querySelector(".tkt-ms-btn")
+            if (btn) btn.setAttribute("aria-expanded", "false")
+          })
+        }
+      })
+    }
+
     function refreshTicketLabelOptions() {
+      // KD-227: also repaint every open ticket's Labels picker, so a label created/renamed/deleted in
+      // Manage Labels shows up in (or leaves) the ticket's "+ Add label…" dropdown right away.
+      document.querySelectorAll(".tkt-lbl-row").forEach(el => { if (typeof el._klavLblRefresh === "function") el._klavLblRefresh() })
       const fbLabel = document.getElementById("fbLabel")
       if (!fbLabel) return
-      const selected = _tktFilters.label
       fbLabel.innerHTML = '<option value="">All labels</option>' + ((state && state._labels) || []).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
-      fbLabel.value = selected
+      if (typeof updateTktMultiSelect === "function") updateTktMultiSelect("fbLabel")
     }
 
     function tktFilterBarBind() {
@@ -25083,19 +26570,25 @@
       _tktFbBound = true
 
       loadTicketFiltersFromUrl()
-      fbStatus.value = _tktFilters.status; fbPriority.value = _tktFilters.priority
-      fbAssignee.value = _tktFilters.assignee; fbSource.value = _tktFilters.source
+      refreshAssigneeOptions()
+      refreshTicketLabelOptions()
+      TKT_MS_CONFIGS.forEach(initTktMultiSelect)
+
       const searchEl = document.getElementById("kanbanSearch")
       if (searchEl) searchEl.value = _tktFilters.search
-        ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
-      fbClear.classList.toggle("hide", !Object.values(_tktFilters).some(v => !!v))
+      const hasFilter = (
+        (_tktFilters.status && _tktFilters.status.length > 0) ||
+        (_tktFilters.priority && _tktFilters.priority.length > 0) ||
+        (_tktFilters.label && _tktFilters.label.length > 0) ||
+        (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
+        (_tktFilters.source && _tktFilters.source.length > 0) ||
+        !!_tktFilters.search
+      )
+      fbClear.classList.toggle("hide", !hasFilter)
 
       // View toggle
       if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
       if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
-
-      refreshAssigneeOptions()
-      refreshTicketLabelOptions()
 
       // KLA-562: wire the quick-filter chips + the "Filters" (advanced dropdowns) toggle.
       const chipRow = document.getElementById("tktQuickChips")
@@ -25113,36 +26606,11 @@
       _tktQuick = deriveQuickFromFilters()
       renderQuickChips()
 
-      const onFilterChange = () => {
-        _tktFilters.status = fbStatus.value
-        _tktFilters.priority = fbPriority.value
-        _tktFilters.label = fbLabel.value
-        _tktFilters.assignee = fbAssignee.value
-        _tktFilters.source = fbSource.value
-          // Active state on selects
-          ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
-        // Show/hide clear button
-        const hasFilter = Object.values(_tktFilters).some(v => !!v)
-        fbClear && fbClear.classList.toggle("hide", !hasFilter)
-        _tktListState.page = 1
-        // KLA-562: a manual dropdown change may diverge from any quick chip — re-derive the active chip.
-        _tktQuick = deriveQuickFromFilters(); renderQuickChips()
-        // JTBD 2.14: keep selection across filter changes — clear only on explicit Clear or project switch.
-        syncTicketFiltersToUrl()
-        renderTicketsView()
-      }
-
-      fbStatus.addEventListener("change", onFilterChange)
-      fbPriority.addEventListener("change", onFilterChange)
-      fbLabel.addEventListener("change", onFilterChange)
-      fbAssignee.addEventListener("change", onFilterChange)
-      fbSource.addEventListener("change", onFilterChange)
       fbClear.addEventListener("click", () => {
-        fbStatus.value = ""; fbPriority.value = ""; fbLabel.value = ""; fbAssignee.value = ""; fbSource.value = ""
-          ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.remove("active"))
-        fbClear.classList.add("hide")
-        _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
+        _tktFilters = { status: [], priority: [], label: [], assignee: [], source: [], search: "" }
         if (searchEl) searchEl.value = ""
+        updateAllTktMultiSelects()
+        fbClear.classList.add("hide")
         _tktListState.page = 1
         _tktQuick = "all"; renderQuickChips()   // KLA-562: Clear resets to the "All" chip
         syncTicketFiltersToUrl()
@@ -25187,24 +26655,43 @@
     // cached full set without a fetch. Fields are the normalized shapes from listTicketsPaginated.
     function tktMatchesSelectFilters(t) {
       const f = _tktFilters || {}
-      if (f.status) {
-        const want = f.status === "closed" ? ["done", "dismissed"] : [f.status]
-        if (!want.includes(t.status || "open")) return false
+      if (f.status && f.status.length) {
+        const statuses = Array.isArray(f.status) ? f.status : String(f.status).split(",").filter(Boolean)
+        if (statuses.length) {
+          const want = []
+          for (const s of statuses) {
+            if (s === "closed") want.push("done", "dismissed")
+            else want.push(s)
+          }
+          if (!want.includes(t.status || "open")) return false
+        }
       }
       if (f.priority) {
-        // KLA-562: a quick chip can set a comma preset (e.g. "urgent,high" for the High-priority chip),
-        // which the server splits on comma too — mirror that OR-match here for the client-side board.
-        const wantP = String(f.priority).split(",").filter(Boolean)
-        if (!wantP.includes(t.priority)) return false
+        const wantP = Array.isArray(f.priority) ? f.priority : String(f.priority).split(",").filter(Boolean)
+        if (wantP.length && !wantP.includes(t.priority || "medium")) return false   // KD-236: unset = medium
       }
-      if (f.assignee) {
-        if (f.assignee === "__unassigned__") { if (t.assignee) return false }
-        else if ((t.assignee || "") !== f.assignee) return false
+      if (f.assignee && f.assignee.length) {
+        const wantA = Array.isArray(f.assignee) ? f.assignee : [f.assignee]
+        if (wantA.length) {
+          const match = wantA.some(a => a === "__unassigned__" ? (!t.assignee || t.assignee === "") : (t.assignee || "") === a)
+          if (!match) return false
+        }
       }
-      if (f.source && t.source !== f.source) return false
-      if (f.label) {
-        const labs = Array.isArray(t.labels) ? t.labels : []
-        if (!labs.some(l => String(l && l.id != null ? l.id : l) === String(f.label))) return false
+      if (f.source && f.source.length) {
+        const wantS = Array.isArray(f.source) ? f.source : String(f.source).split(",").filter(Boolean)
+        if (wantS.length) {
+          const tSource = ticketSourceKind(t)
+          const match = wantS.some(s => s === tSource || s === t.source)
+          if (!match) return false
+        }
+      }
+      if (f.label && f.label.length) {
+        const wantL = Array.isArray(f.label) ? f.label : [f.label]
+        if (wantL.length) {
+          const labs = Array.isArray(t.labels) ? t.labels : []
+          const match = wantL.some(wl => labs.some(l => String(l && l.id != null ? l.id : l) === String(wl)))
+          if (!match) return false
+        }
       }
       if (f.search) {
         const q = String(f.search).toLowerCase()
@@ -25219,17 +26706,21 @@
     function ticketStatusParamFor(view) {
       if (_tktFilters.status === "closed") return "done,dismissed"
       if (_tktFilters.status) return _tktFilters.status
-      return view === "board" ? ALL_STATUSES : ""
+      return ALL_STATUSES
     }
 
     function ticketQueryParams(view, page, limit) {
       const sp = new URLSearchParams()
       const statusParam = ticketStatusParamFor(view)
       if (statusParam) sp.set("status", statusParam)
-      if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
-      if (_tktFilters.label) sp.set("label", _tktFilters.label)
-      if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
-      if (_tktFilters.source) sp.set("source", _tktFilters.source)
+      const p = Array.isArray(_tktFilters.priority) ? _tktFilters.priority.join(",") : _tktFilters.priority
+      if (p) sp.set("priority", p)
+      const l = Array.isArray(_tktFilters.label) ? _tktFilters.label.join(",") : _tktFilters.label
+      if (l) sp.set("label", l)
+      const a = Array.isArray(_tktFilters.assignee) ? _tktFilters.assignee.join(",") : _tktFilters.assignee
+      if (a) sp.set("assignee", a === "__unassigned__" ? "" : a)
+      const src = Array.isArray(_tktFilters.source) ? _tktFilters.source.join(",") : _tktFilters.source
+      if (src) sp.set("source", src)
       if (_tktFilters.search) sp.set("q", _tktFilters.search)
       sp.set("page", String(page))
       sp.set("limit", String(limit))
@@ -25244,7 +26735,8 @@
       const projId = state && state.active && state.active.id
       if (!projId) { listEl.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; return }
 
-      const sp = ticketQueryParams("list", _tktListState.page, 50)
+      const limit = _tktListState.limit || 50
+      const sp = ticketQueryParams("list", _tktListState.page, limit)
       // #720: SWR key encodes project + every filter + the page, so cached rows always match the exact
       // query on screen (sorting/filtering stays correct — a different filter/page is a different key).
       const cacheKey = "tktlist:" + projId + ":" + sp.toString()
@@ -25266,6 +26758,7 @@
         if (!res.ok) throw new Error("HTTP " + res.status)
         const data = await res.json()
         _tktListState.totalPages = data.totalPages || 1
+        _tktListState.total = data.total || 0
         // Live-refresh: record the project-level change-token so the rev poll (ticketsRevTick) can detect a
         // ticket filed/changed AFTER the list loaded and revalidate — the LIST previously never refetched on
         // poll/focus, so a report filed while the list was open stayed invisible until a manual reload (the
@@ -25326,6 +26819,7 @@
         // clobber the just-moved card back into its old column (mirrors refreshAll's guard).
         mergeLocalEdits(data, _fetchStart)
         _tktBoardTickets = data.tickets || []
+        _tktBoardTotal = (typeof data.total === "number") ? data.total : (data.tickets ? data.tickets.length : 0)
         _tktBoardProjId = projId
         _tktBoardLoadedPid = projId // KLA-779: mark this project's board as loaded (even when empty) — no re-fetch spin
         if (data.rev != null) { _tktBoardRev = data.rev; _tktBoardRevPid = projId } // QA C2.2: authoritative live-poll baseline
@@ -25688,9 +27182,15 @@
         const bar = wrap.querySelector("#tktBulkBar")
         if (bar) { bar.classList.toggle("show", _bulkSelected.size > 0); const cnt = bar.querySelector(".bulk-count"); if (cnt) cnt.textContent = _bulkSelected.size + " selected" }
       })
+      const cntEl = $("ticketKanbanCount")
+      if (cntEl) cntEl.textContent = total ? total : ""
+      const limit = _tktListState.limit || 50
+      const startIdx = total === 0 ? 0 : ((_tktListState.page - 1) * limit) + 1
+      const endIdx = Math.min(total, startIdx + filtered.length - 1)
+      const rangeText = total > 0 ? `Showing ${startIdx}–${endIdx} of ${total} tickets · ` : `${total} tickets · `
       const hdrLabel = document.createElement("span")
       hdrLabel.style.cssText = "font-size:12px;color:var(--paper-faint);font-family:var(--mono)"
-      hdrLabel.textContent = total + " ticket" + (total !== 1 ? "s" : "") + " · page " + _tktListState.page + " of " + _tktListState.totalPages
+      hdrLabel.textContent = `${rangeText}page ${_tktListState.page} of ${_tktListState.totalPages}`
       hdr.appendChild(cbAll); hdr.appendChild(hdrLabel)
       wrap.appendChild(hdr)
 
@@ -25720,7 +27220,7 @@
         })
         row.appendChild(cb)
 
-        const pri = t.priority || ""
+        const pri = t.priority || "medium"   // KD-236: unset = the canonical default, same as the detail page
         const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
         const sub = [t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
 
@@ -25790,16 +27290,55 @@
       if (_tktListState.totalPages > 1) {
         const pg = document.createElement("div")
         pg.className = "tkt-pg"
+        const curPage = _tktListState.page
+        const totalP = _tktListState.totalPages
+
         const prev = document.createElement("button")
-        prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = _tktListState.page <= 1
+        prev.className = "tkt-pg-btn"; prev.textContent = "← Prev"; prev.disabled = curPage <= 1
         // JTBD 2.14: preserve selection across pages — do NOT clear on paginate.
         prev.addEventListener("click", () => { _tktListState.page--; fetchAndRenderTktList() })
-        const info = document.createElement("span")
-        info.className = "tkt-pg-info"; info.textContent = _tktListState.page + " / " + _tktListState.totalPages
+        pg.appendChild(prev)
+
+        const pageNums = []
+        if (totalP <= 7) {
+          for (let i = 1; i <= totalP; i++) pageNums.push(i)
+        } else {
+          pageNums.push(1)
+          if (curPage > 3) pageNums.push("...")
+          const start = Math.max(2, curPage - 1)
+          const end = Math.min(totalP - 1, curPage + 1)
+          for (let i = start; i <= end; i++) {
+            if (!pageNums.includes(i)) pageNums.push(i)
+          }
+          if (curPage < totalP - 2) pageNums.push("...")
+          if (!pageNums.includes(totalP)) pageNums.push(totalP)
+        }
+
+        pageNums.forEach(p => {
+          if (p === "...") {
+            const el = document.createElement("span")
+            el.className = "tkt-pg-ellipsis"; el.textContent = "…"
+            pg.appendChild(el)
+          } else {
+            const btn = document.createElement("button")
+            btn.className = "tkt-pg-btn tkt-pg-num" + (p === curPage ? " active" : "")
+            btn.textContent = p
+            if (p !== curPage) {
+              btn.addEventListener("click", () => { _tktListState.page = p; fetchAndRenderTktList() })
+            }
+            pg.appendChild(btn)
+          }
+        })
+
         const next = document.createElement("button")
-        next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = _tktListState.page >= _tktListState.totalPages
+        next.className = "tkt-pg-btn"; next.textContent = "Next →"; next.disabled = curPage >= totalP
         next.addEventListener("click", () => { _tktListState.page++; fetchAndRenderTktList() })
-        pg.appendChild(prev); pg.appendChild(info); pg.appendChild(next)
+        pg.appendChild(next)
+
+        const info = document.createElement("span")
+        info.className = "tkt-pg-info"; info.textContent = `Page ${curPage} of ${totalP}`
+        pg.appendChild(info)
+
         wrap.appendChild(pg)
       }
 
@@ -25878,10 +27417,11 @@
     // #704: shared builder for a kanban card's meta row (status/priority/source/assignee/recur/labels).
     // Used by renderCard AND the optimistic bulk-action DOM update so both stay in lockstep.
     function kbCardMetaHtml(t) {
-      // KD-224: every card shows its priority, right beside the source chip; an unset priority reads "No priority".
-      const sevChip = t.priority
-        ? `<span class="chip sev-${esc(t.priority)}" title="Priority: ${esc(t.priority)}">${esc(t.priority)}</span>`
-        : `<span class="chip sev-none" title="Priority: not set">No priority</span>`
+      // KD-224: every card shows its priority, right beside the source chip.
+      // KD-236: an unset priority is "medium" — the ONE canonical default the ticket detail page, triage and the
+      // priority filters use (KLAVITYKLA-513). The card used to say "No priority" for the same ticket.
+      const pri = t.priority || "medium"
+      const sevChip = `<span class="chip sev-${esc(pri)}" title="Priority: ${esc(pri)}">${esc(pri)}</span>`
       // KLA-775: the per-card STATUS chip is dropped from the board card face — the kanban column the card
       // sits in already communicates its status, so the chip was redundant clutter. (Other views build
       // their own status label; this only affects the board card meta row.)
@@ -25953,6 +27493,50 @@
     // localStorage keyed by column (so "In Progress" wider / "Dismissed" narrower survives a reload,
     // independently, same as a real Jira board). Re-wired on every render (columns are rebuilt from
     // scratch each time) — cheap: only as many listeners as visible columns.
+    // KD-297: a mirror horizontal scrollbar for the board (see .kb-hscroll). It's appended right after the board
+    // and is position:sticky; bottom:0, so it stays at the bottom of the screen while the board is in view and
+    // docks under the board at its end. Its inner spacer tracks the board's scrollWidth (columns can be resized,
+    // the window can change), and the two scroll positions are kept in sync both ways.
+    let _kbHScrollRO = null
+    function wireKanbanHScroll(board, boardEl) {
+      if (_kbHScrollRO) { try { _kbHScrollRO.disconnect() } catch (e) { } _kbHScrollRO = null }
+      const bar = document.createElement("div")
+      bar.className = "kb-hscroll hide"
+      bar.setAttribute("aria-hidden", "true")   // a mirror of the board's own scroll; the board stays the a11y target
+      const inner = document.createElement("div")
+      inner.className = "kb-hscroll-in"
+      bar.appendChild(inner)
+      board.appendChild(bar)
+      boardEl.classList.add("kb-has-hscroll")
+      const measure = () => {
+        if (!bar.isConnected) return
+        inner.style.width = boardEl.scrollWidth + "px"
+        bar.classList.toggle("hide", boardEl.scrollWidth <= boardEl.clientWidth + 1)
+        if (Math.abs(bar.scrollLeft - boardEl.scrollLeft) > 1) bar.scrollLeft = boardEl.scrollLeft
+      }
+      // One side drives at a time: whichever element the user is scrolling copies its position to the other, and
+      // the echo scroll event that copy triggers is ignored (until the driver has been idle ~150ms). Without the
+      // lock the two kept correcting each other by a pixel or so per frame — visible as flicker.
+      let driver = null, idleT = 0
+      const follow = (src, dst, name) => src.addEventListener("scroll", () => {
+        if (driver && driver !== name) return
+        driver = name
+        if (dst.scrollLeft !== src.scrollLeft) dst.scrollLeft = src.scrollLeft
+        clearTimeout(idleT)
+        idleT = setTimeout(() => { driver = null }, 150)
+      }, { passive: true })
+      follow(bar, boardEl, "bar")
+      follow(boardEl, bar, "board")
+      if (typeof ResizeObserver !== "undefined") {
+        _kbHScrollRO = new ResizeObserver(() => measure())
+        _kbHScrollRO.observe(boardEl)
+        boardEl.querySelectorAll(".kb-col").forEach(c => _kbHScrollRO.observe(c))   // a column drag-resize changes scrollWidth
+      } else {
+        window.addEventListener("resize", measure)
+      }
+      measure()
+    }
+
     function wireKanbanResize(boardEl) {
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
       const storeKey = (key) => "klav:kbcol:" + key
@@ -26221,6 +27805,7 @@
       board.appendChild(bulkBar)
       board.appendChild(boardEl)
       wireKanbanResize(boardEl) // KD-165: restore + wire each column's drag-resize handle
+      wireKanbanHScroll(board, boardEl) // KD-297: horizontal scrollbar pinned to the viewport bottom
       // Live count/visibility sync when selection changes via checkbox or shift-click (no full rebuild).
       syncKbSelectionUi = () => {
         const bar = board.querySelector("#tktBulkBar")
@@ -28021,48 +29606,103 @@
     })
 
     // ── KLA-174: Ticket Labels ─────────────────────────────────────────────────────────────────────────
-    async function loadLabels(admin) {
-      const projId = curProjId(); if (!projId) return
+    // KD-233: the Labels popup used to show "No labels yet" when opened before this load finished (slow server) and
+    // never updated when it did; a failed load also left it empty for good. Now: concurrent callers share one
+    // request, the loaded project is recorded (state._labelsPid), a failure is remembered (_labelsLoadFailed)
+    // and lets a later open retry, and an open popup repaints when the labels arrive.
+    let _labelsLoading = null, _labelsLoadFailed = false
+    function labelsLoadedForActive() { return !!(state && Array.isArray(state._labels) && state._labelsPid === curProjId()) }
+    function isManageLabelsOpen() { const bg = document.getElementById("manageLabelsBg"); return !!(bg && bg.classList.contains("show")) }
+    function loadLabels(admin) {
+      const projId = curProjId(); if (!projId) return Promise.resolve(false)
+      if (_labelsLoading && _labelsLoading.pid === projId) return _labelsLoading.p
+      const p = _loadLabelsNow(projId).finally(() => { if (_labelsLoading && _labelsLoading.p === p) _labelsLoading = null })
+      _labelsLoading = { pid: projId, p }
+      return p
+    }
+    async function _loadLabelsNow(projId) {
+      _labelsLoadFailed = false
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`).catch(() => null)
-      if (!r || !r.ok) return
-      const d = await r.json().catch(() => ({}))
-      state._labels = d.labels || []
+      const d = r && r.ok ? await r.json().catch(() => null) : null
+      if (curProjId() !== projId) return false   // project changed mid-flight → drop
+      if (!d || !Array.isArray(d.labels)) {
+        _labelsLoadFailed = true
+        if (window.__klavSubLoaded) window.__klavSubLoaded.labels = false   // let the next Tickets/Settings visit retry
+        if (isManageLabelsOpen()) renderMlList()
+        return false
+      }
+      state._labels = d.labels
+      state._labelsPid = projId
       refreshTicketLabelOptions()
+      if (isManageLabelsOpen()) renderMlList()
       // KLA-778: label management is available to any project member (not admin-only), mirroring the
       // member-accessible ticket mutations + the relaxed server label routes. `admin` is kept as an
       // arg for call-site compatibility but no longer gates the affordance.
       const btn = document.getElementById("manageLabelsBtn")
       if (btn) btn.style.display = ""
+      return true
     }
 
     let _mlBound = false
-    function openManageLabels() {
-      const bg = document.getElementById("manageLabelsBg"); if (!bg) return
+    // KD-227: set when the popup is opened from a ticket's "+ Add label…" — { add(label), has(id) }. Clicking a
+    // label in the list adds it to that ticket, and a label created here is added too. Cleared on every open/close.
+    let _mlTicket = null
+    const _mlAddToTicket = async label => {
+      if (!_mlTicket) return
+      await _mlTicket.add(label)
       renderMlList()
+      try { document.getElementById("mlNewName").focus() } catch (e) { }
+    }
+    function openManageLabels(opts) {
+      const bg = document.getElementById("manageLabelsBg"); if (!bg) return
+      _mlTicket = (opts && opts.ticket) || null
+      document.getElementById("mlErr").textContent = ""
+      renderMlList()
+      // KD-233: labels not loaded (yet) for this project → fetch them now; the list repaints when they land.
+      if (!labelsLoadedForActive()) loadLabels()
       bg.classList.add("show")
+      setTimeout(() => { try { document.getElementById("mlNewName").focus() } catch (e) { } }, 0)
       if (!_mlBound) {
         _mlBound = true
-        document.getElementById("mlCloseBtn").addEventListener("click", () => bg.classList.remove("show"))
-        bg.addEventListener("click", ev => { if (ev.target === bg) bg.classList.remove("show") })
-        document.getElementById("mlAddBtn").addEventListener("click", async () => {
+        const closeMl = () => { bg.classList.remove("show"); _mlTicket = null }
+        document.getElementById("mlCloseBtn").addEventListener("click", closeMl)
+        bg.addEventListener("click", ev => { if (ev.target === bg) closeMl() })
+        const addLabel = async () => {
           const name = document.getElementById("mlNewName").value.trim()
           const color = document.getElementById("mlNewColor").value
           const err = document.getElementById("mlErr")
           if (!name) { err.textContent = "Name is required."; return }
           err.textContent = ""
-          const projId = curProjId(); if (!projId) return
+          const projId = curProjId()
+          if (!projId) { err.textContent = "Couldn't create label — no project selected. Reload and try again."; return }
           const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`, {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ name, color })
           }).catch(() => null)
           const d = r ? await r.json().catch(() => ({})) : {}
-          if (!r || !r.ok) { err.textContent = d.error || "Couldn't create label."; return }
           if (!state._labels) state._labels = []
+          // KD-227: 409 = the label already exists — use it (add it to a stale local list, and to the
+          // ticket the popup was opened from) instead of failing.
+          if (r && r.status === 409 && d.label) {
+            if (!state._labels.some(l => l.id === d.label.id)) { state._labels.push(d.label); refreshTicketLabelOptions(); renderMlList() }
+            if (_mlTicket) { document.getElementById("mlNewName").value = ""; await _mlAddToTicket(d.label); err.textContent = `"${d.label.name}" already exists — added it to this ticket.`; return }
+            err.textContent = (d.error || "That label already exists.")
+            return
+          }
+          if (!r || !r.ok) {
+            // KD-227: say WHY (offline / server error) instead of a bare "Couldn't create label."
+            err.textContent = d.error || (r ? `Couldn't create label (server error ${r.status}). Try again.` : "Couldn't create label — can't reach the server. Check your connection and try again.")
+            return
+          }
           state._labels.push(d.label)
+          state._labels.sort((a, b) => String(a.name).localeCompare(String(b.name)))
           refreshTicketLabelOptions()
           document.getElementById("mlNewName").value = ""
           renderMlList()
-        })
+          await _mlAddToTicket(d.label)
+        }
+        document.getElementById("mlAddBtn").addEventListener("click", addLabel)
+        document.getElementById("mlNewName").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addLabel() } })
       }
     }
 
@@ -28096,6 +29736,16 @@
 
     function renderMlList() {
       const list = document.getElementById("mlList"); if (!list) return
+      // KD-233: never claim "No labels yet" before this project's labels have actually loaded.
+      if (!labelsLoadedForActive()) {
+        if (_labelsLoadFailed) {   // cleared again as soon as a retry starts (_loadLabelsNow)
+          list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">Couldn\'t load labels. <button type="button" class="btn btn-ghost btn-sm" id="mlRetry">Retry</button></div>'
+          const rb = document.getElementById("mlRetry"); if (rb) rb.addEventListener("click", () => { loadLabels(); renderMlList() })
+        } else {
+          list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">Loading labels…</div>'
+        }
+        return
+      }
       const labels = state._labels || []
       if (!labels.length) { list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">No labels yet. Add one below.</div>'; return }
       list.innerHTML = ""
@@ -28121,6 +29771,21 @@
       <span class="ml-name" data-lid="${esc(l.id)}">${esc(l.name)}</span>
       <button class="ml-edit-btn" data-lid="${esc(l.id)}" title="Rename or recolor label" type="button" aria-label="Edit label">${kicon('pencil', { size: 14 })}</button>
       <button class="ml-del-btn" data-lid="${esc(l.id)}" title="Delete label" type="button" aria-label="Delete label">${kicon('x', { size: 15 })}</button>`
+        // KD-227: opened from a ticket — click a label to add it to that ticket (already-added ones are marked).
+        if (_mlTicket) {
+          const nameEl = row.querySelector(".ml-name")
+          if (_mlTicket.has(l.id)) {
+            row.classList.add("ml-added")
+            nameEl.insertAdjacentHTML("beforeend", ' <span class="ml-added-tag">Added</span>')
+          } else {
+            row.classList.add("ml-pick")
+            nameEl.setAttribute("role", "button"); nameEl.setAttribute("tabindex", "0")
+            nameEl.title = "Add to this ticket"
+            const pick = ev => { ev.stopPropagation(); document.getElementById("mlErr").textContent = ""; _mlAddToTicket(l) }
+            nameEl.addEventListener("click", pick)
+            nameEl.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(ev) } })
+          }
+        }
         row.querySelector(".ml-edit-btn").addEventListener("click", ev => {
           ev.stopPropagation()
           document.getElementById("mlErr").textContent = ""
@@ -29664,7 +31329,9 @@
           // P1 deep-link loop fix: strip the ?ticket= deep-link param whenever the user leaves the tickets
           // view. openSingleTicket() keeps re-writing ?ticket= into the URL, so without this a later reload
           // (or the ~25s liveness poll on a fresh load) would drag the user back into that ticket.
-          try {
+          // KD-181: skipped on a ticket-page reload boot — the address bar already holds the ticket URL, and
+          // rewriting it to "#tickets" flashed a board URL until the ticket rendered and restored it.
+          if (!window.__klavTktBootKeepUrl) try {
             var _u = new URL(location.href);
             if (v !== 'tickets') _u.searchParams.delete('ticket');
             history.replaceState(null, '', v === 'overview' ? (_u.pathname + _u.search) : (_u.pathname + _u.search + '#' + v));
@@ -29785,7 +31452,13 @@
         // KD-229: served at a ticket permalink (reload of the full ticket page) → same no-board Tickets boot.
         if (!deepTriage && !deepTkt && document.querySelector('meta[name="klav-boot-ticket"]')) deepTkt = true;
         if (deepTriage) { window._pendingTriageFocus = decodeURIComponent(deepTriage[1]); setView('triage'); }
-        else if (deepTkt) { window.__klavTktPageOpen = true; setView('tickets'); }
+        // KD-181: also apply the page-mode body class NOW (not only once the ticket renders) so the board's
+        // heading/toolbar/filter chrome never paints, and keep the ticket URL intact through setView.
+        else if (deepTkt) {
+          window.__klavTktPageOpen = true; document.body.classList.add('tkt-page-open');
+          window.__klavTktBootKeepUrl = true;
+          try { setView('tickets'); } finally { window.__klavTktBootKeepUrl = false; }
+        }
         else { setView(VIEWS.indexOf(init) >= 0 ? init : 'overview'); }
       })();
   </script>
@@ -30716,17 +32389,24 @@
         <input id="newTktTitleInp" maxlength="500" placeholder="e.g. Checkout fails on iOS Safari"
           style="background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--paper);font-family:var(--body);font-size:14px;padding:9px 12px;outline:none;width:100%;box-sizing:border-box" />
       </label>
-      <div style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
+      <div
+        style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
         <span id="newTktProjectLbl">Project <span style="color:var(--rose)">*</span></span>
         <div class="ntp" id="newTktProjectBox">
-          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden tabindex="-1"></select>
-          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="newTktProjectLbl newTktProjectName">
+          <select id="newTktProjectSel" aria-label="Project" aria-required="true" required hidden
+            tabindex="-1"></select>
+          <button type="button" class="ntp-btn" id="newTktProjectBtn" aria-haspopup="listbox" aria-expanded="false"
+            aria-labelledby="newTktProjectLbl newTktProjectName">
             <span id="newTktProjectName">Select project</span>
-            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="ntp-chev" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
           </button>
           <div class="ntp-list hide" id="newTktProjectList" role="listbox" aria-labelledby="newTktProjectLbl"></div>
         </div>
-        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0" role="alert"></span>
+        <span id="newTktProjectErr" style="font-size:12px;font-weight:400;color:var(--rose);min-height:0"
+          role="alert"></span>
       </div>
       <label
         style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--paper-dim);margin-bottom:12px">
@@ -30770,7 +32450,9 @@
           <button class="btn btn-ghost btn-sm" id="newTktAttachBtn" type="button">Attach files</button>
           <span>or drop them here</span>
         </div>
-        <input type="file" id="newTktFileInp" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+        <input type="file" id="newTktFileInp"
+          accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple hidden>
         <div class="newtkt-files" id="newTktFilesGrid"></div>
         <div id="newTktFilesMsg" style="font-size:12px;color:var(--rose);margin-top:6px"></div>
       </div>

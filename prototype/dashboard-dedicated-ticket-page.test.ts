@@ -152,6 +152,7 @@ test("buildTktDetail renders a 2-col grid (details+attachments | properties) on 
   expect(fn).toContain('class="t3-activity-mount"')
   // Enhance + Attach tools
   expect(fn).toContain("t3-enh-btn")
+  expect(fn).toContain("t3-attach-btn")
   expect(fn).toContain("if (_pageThreeCol) wireT3Resize(detailEl)")
 })
 
@@ -175,7 +176,7 @@ test("#707: the two drag gutters resize + PERSIST both column widths to localSto
 
 test("#707: comment composer supports @mentions (dropdown from projectMemberEmails) + ⌘↵ send", () => {
   const fn = extractFn(HTML, "function buildTimelineSection(ticketId, report)")
-  expect(fn).toContain('placeholder="Leave a comment… @ to tag"')
+  expect(fn).toContain('placeholder="Add a comment… @ to tag"')
   expect(fn).toContain('class="t3-mention hide"')
   expect(fn).toContain("projectMemberEmails()")
   expect(fn).toContain("function pickMention(i)")
@@ -238,7 +239,7 @@ test("#725d: buildTimelineSection renders an Activity/Comments tab switcher on t
   expect(fn).toContain("tkt-cmt-list")
   expect(fn).toContain('id="cl-')
   // composer still carries the @mention picker + placeholder inside the Comments tab
-  expect(fn).toContain('placeholder="Leave a comment… @ to tag"')
+  expect(fn).toContain('placeholder="Add a comment… @ to tag"')
   expect(fn).toContain('class="t3-mention hide"')
   // per-tab counts + default-to-Comments-when-any-exist (else Activity), respecting a manual pick
   expect(fn).toContain('_setTabCount("activity"')
