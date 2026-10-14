@@ -16532,7 +16532,6 @@
               <option value="qa_review">QA Review</option>
               <option value="done">Done</option>
               <option value="dismissed">Dismissed</option>
-              <option value="closed">Closed</option>
             </select>
             <select id="fbPriority" title="Filter by priority">
               <option value="">All priorities</option>
@@ -25927,6 +25926,9 @@
             const filterKey = key === "q" ? "search" : key
             _tktFilters[filterKey] = sp.get(key) || ""
           })
+        // KD-223: "Closed" (= Done + Dismissed) was dropped from the Status filter — it isn't a real status.
+        // An old link carrying ?status=closed falls back to All statuses instead of matching nothing.
+        if (_tktFilters.status === "closed") _tktFilters.status = ""
       } catch (e) { }
     }
 
@@ -26117,8 +26119,7 @@
     function tktMatchesSelectFilters(t) {
       const f = _tktFilters || {}
       if (f.status) {
-        const want = f.status === "closed" ? ["done", "dismissed"] : [f.status]
-        if (!want.includes(t.status || "open")) return false
+        if ((t.status || "open") !== f.status) return false
       }
       if (f.priority) {
         // KLA-562: a quick chip can set a comma preset (e.g. "urgent,high" for the High-priority chip),
@@ -26146,7 +26147,6 @@
     }
 
     function ticketStatusParamFor(view) {
-      if (_tktFilters.status === "closed") return "done,dismissed"
       if (_tktFilters.status) return _tktFilters.status
       return view === "board" ? ALL_STATUSES : ""
     }

@@ -108,12 +108,15 @@ test("Ticket detail priority editor persists via PATCH and is timeline-tracked (
   expect(html).toContain('ticket_priority_changed:')
 })
 
-test("Tickets kanban fetch includes all board statuses by default and supports Closed filter", () => {
+test("Tickets kanban fetch includes all board statuses by default; no fake 'Closed' status filter", () => {
   // KD-208: the literal list became ALL_STATUSES, derived from STATUS_ORDER.
   expect(html).toContain('return view === "board" ? ALL_STATUSES : ""')
   expect(html).toContain('const ALL_STATUSES = STATUS_ORDER.join(",")')
-  expect(html).toContain('if (_tktFilters.status === "closed") return "done,dismissed"')
-  expect(html).toContain('<option value="closed">Closed</option>')
+  // KD-223: "Closed" isn't a real status (it was a Done+Dismissed shortcut) — removed from the Status filter,
+  // and an old ?status=closed link falls back to All statuses.
+  expect(html).not.toContain('<option value="closed">Closed</option>')
+  expect(html).not.toContain('if (_tktFilters.status === "closed") return "done,dismissed"')
+  expect(html).toContain('if (_tktFilters.status === "closed") _tktFilters.status = ""')
 })
 
 test("Dragging a ticket across columns PATCHes feedback status; same-column drag is ignored", () => {
