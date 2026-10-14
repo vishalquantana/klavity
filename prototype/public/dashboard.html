@@ -19491,6 +19491,7 @@
         `<button class="btn btn-indigo btn-sm" id="tgBulkAccept" type="button">Accept as bugs</button>` +
         (showBulkSend ? `<button class="btn btn-indigo btn-sm" id="tgBulkSend" type="button">${kicon("chevron-right", { size: 13 })} Send to Jira</button>` : "") +
         `<button class="btn btn-ghost btn-sm" id="tgBulkDismiss" type="button">Dismiss</button>` +
+        `<button class="btn btn-ghost btn-sm" id="tgBulkDelete" type="button" style="color:var(--red,#e05252)">Delete</button>` +
         `<span class="bulk-sep"></span>` +
         `<button class="btn btn-ghost btn-sm" id="tgBulkClear" type="button" style="font-size:12px">Clear</button>`
       bar.classList.add("show")
@@ -19507,6 +19508,32 @@
         else tgFlash("No human Snap reports selected.")
       })
       bar.querySelector("#tgBulkDismiss").addEventListener("click", (ev) => tgDismiss([..._tgSelected], ev.currentTarget))
+      const bulkDelete = bar.querySelector("#tgBulkDelete")
+      if (bulkDelete) bulkDelete.addEventListener("click", async (ev) => {
+        const ids = [..._tgSelected]
+        if (!ids.length) return
+        if (!confirm(`Are you sure you want to permanently delete ${ids.length} report${ids.length === 1 ? "" : "s"}? This action cannot be undone.`)) return
+        const pid = curProjId(); if (!pid) return
+        const restoreBtn = tgBtnPending(ev.currentTarget)
+        const removed = tgRemoveLocal(ids)
+        window.__klavMutating++
+        try {
+          const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/bulk", {
+            method: "DELETE", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ticketIds: ids })
+          }).catch(() => null)
+          restoreBtn()
+          if (!r || !r.ok) {
+            tgRestoreLocal(removed)
+            tgFlash("Couldn't delete — retry.")
+            return
+          }
+          const res = await r.json().catch(() => ({}))
+          klavToast(`${res.deleted || ids.length} report${(res.deleted || ids.length) === 1 ? "" : "s"} deleted.`)
+        } finally {
+          window.__klavMutating--
+        }
+      })
       bar.querySelector("#tgBulkClear").addEventListener("click", () => {
         _tgSelected.clear()
         if (host) host.querySelectorAll(".tg-item").forEach(r => { r.classList.remove("tg-selected"); const c = r.querySelector(".tg-cb"); if (c) c.checked = false })
@@ -25464,9 +25491,12 @@
         ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x', { size: 13 })} Close</button>`
           + `<span class="tph-sp"></span>`
           + `<button class="tkt-panel-btn" data-act="expand" type="button" aria-label="Expand to full, shareable page" title="Open as a full, shareable page">${kicon('app-window', { size: 13 })} Full page</button>`
+          + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Permanently delete ticket" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
         ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
         // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
         ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full"))
+        const pDelBtn = ph.querySelector('[data-act="delete"]')
+        if (pDelBtn) pDelBtn.addEventListener("click", () => doDeleteSingleTicket())
         single.appendChild(ph)
         single.__focusTarget = ph.querySelector('[data-act="close"]')
       } else {
@@ -25494,6 +25524,7 @@
           + statusPillHtml(t.status)
           + `<span class="tph-sp"></span>`
           + `<button class="tkt-panel-btn" data-act="copy" type="button" aria-label="Copy link to this ticket">${kicon('link', { size: 13 })} Copy link</button>`
+          + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Permanently delete ticket" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
           + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left', { size: 15 })}</button>`
           + `<button class="tkt-icon-btn" data-act="next" type="button" aria-label="Next ticket"${hasNext ? "" : " disabled"}>${kicon('chevron-right', { size: 15 })}</button>`
         ph.querySelector('[data-act="back"]').addEventListener("click", closeSingleTicket)
@@ -25504,12 +25535,45 @@
           copyBtn.innerHTML = ok ? (kicon('check', { size: 13 }) + " Copied") : (kicon('x', { size: 13 }) + " Copy failed")
           setTimeout(() => { copyBtn.innerHTML = orig }, 1800)
         })
+        const pgDelBtn = ph.querySelector('[data-act="delete"]')
+        if (pgDelBtn) pgDelBtn.addEventListener("click", () => doDeleteSingleTicket())
         if (hasPrev) ph.querySelector('[data-act="prev"]').addEventListener("click", () => openSingleTicket(ids[cur - 1], "full"))
         if (hasNext) ph.querySelector('[data-act="next"]').addEventListener("click", () => openSingleTicket(ids[cur + 1], "full"))
         // #735: the compact-header "#<key>" pill also copies the clean /t/<id> permalink.
         try { wireTktKeyCopy(ph.querySelector(".tkt-page-key"), id) } catch (e) { }
         single.appendChild(ph)
         single.__focusTarget = ph.querySelector('[data-act="back"]')
+      }
+
+      const doDeleteSingleTicket = async () => {
+        const pid = (state.active && state.active.id) || t.projectId || (typeof curProjId === "function" ? curProjId() : null)
+        if (!confirm(`Are you sure you want to permanently delete ticket ${key}? This action cannot be undone.`)) return
+        window.__klavMutating++
+        try {
+          const r = await fetch(`/api/projects/${encodeURIComponent(pid)}/tickets/bulk`, {
+            method: "DELETE", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ticketIds: [id] })
+          }).catch(() => null)
+          if (!r || !r.ok) {
+            if (typeof klavToast === "function") klavToast("Failed to delete ticket. Please try again.", true)
+            return
+          }
+          if (Array.isArray(state.tickets)) {
+            state.tickets = state.tickets.filter(x => String(x.id) !== String(id))
+          }
+          if (Array.isArray(_tktBoardTickets)) {
+            _tktBoardTickets = _tktBoardTickets.filter(x => String(x.id) !== String(id))
+          }
+          closeSingleTicket()
+          if (typeof klavToast === "function") klavToast(`Ticket ${key} deleted.`)
+          if (typeof renderTicketsKanban === "function") renderTicketsKanban()
+          if (typeof renderTktList === "function" && listView && !listView.classList.contains("hide")) {
+            const wrap = document.getElementById("tktListContent")
+            if (wrap) renderTktList(wrap, state.tickets || [], (state.tickets || []).length)
+          }
+        } finally {
+          window.__klavMutating--
+        }
       }
       const head = document.createElement("div"); head.className = "single-head"
       const renderHead = () => {
@@ -27098,7 +27162,9 @@
           `<select class="bulk-sel" id="bulkRemoveLabel"><option value="">− remove…</option>${labelOpts}</select>`
         ) : "") +
         `<span class="bulk-sep"></span>` +
-        `<button class="btn btn-ghost btn-sm" id="bulkClose" type="button" style="font-size:12px">Close all</button>`
+        `<button class="btn btn-ghost btn-sm" id="bulkClose" type="button" style="font-size:12px">Close all</button>` +
+        `<span class="bulk-sep"></span>` +
+        `<button class="btn btn-ghost btn-sm" id="bulkDelete" type="button" style="font-size:12px;color:var(--red,#e05252)">${window.kicon ? window.kicon("trash", { size: 12 }) + " " : ""}Delete</button>`
 
       // JTBD 2.14: metadata mutations get an Undo toast (restores prior values). Label add/remove
       // isn't reversible via `prior`, so those get an explicit confirm before applying.
@@ -27144,6 +27210,37 @@
         })
       }
       bar.querySelector("#bulkClose").addEventListener("click", () => doAction({ status: "done" }))
+      const bulkDelBtn = bar.querySelector("#bulkDelete")
+      if (bulkDelBtn) bulkDelBtn.addEventListener("click", async () => {
+        const ids = [..._bulkSelected]
+        if (!ids.length) return
+        const n = ids.length
+        if (!confirm(`Are you sure you want to permanently delete ${n} ticket${n === 1 ? "" : "s"}? This action cannot be undone.`)) return
+        window.__klavMutating++
+        try {
+          const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
+            method: "DELETE", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ticketIds: ids })
+          }).catch(() => null)
+          if (!r || !r.ok) {
+            if (typeof klavToast === "function") klavToast("Failed to delete tickets. Please try again.", true)
+            return
+          }
+          const res = await r.json().catch(() => ({}))
+          _bulkSelected.clear()
+          if (Array.isArray(state.tickets)) {
+            state.tickets = state.tickets.filter(t => !ids.includes(String(t.id)))
+          }
+          if (Array.isArray(_tktBoardTickets)) {
+            _tktBoardTickets = _tktBoardTickets.filter(t => !ids.includes(String(t.id)))
+          }
+          const deletedCount = typeof res.deleted === "number" ? res.deleted : n
+          if (typeof klavToast === "function") klavToast(`${deletedCount} ticket${deletedCount === 1 ? "" : "s"} deleted.`)
+          if (onDone) onDone()
+        } finally {
+          window.__klavMutating--
+        }
+      })
 
       return bar
     }
