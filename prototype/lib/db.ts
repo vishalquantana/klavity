@@ -8726,6 +8726,46 @@ export async function listTicketsPaginated(
   return { tickets, total, page, totalPages }
 }
 
+export async function deleteTicketsBulk(
+  projectId: string,
+  ticketIds: string[]
+): Promise<{ deleted: number; ticketIds: string[] }> {
+  const cleanIds = Array.isArray(ticketIds)
+    ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
+    : []
+  if (!cleanIds.length) return { deleted: 0, ticketIds: [] }
+
+  const placeholders = cleanIds.map(() => "?").join(",")
+  const existingRows = await db!.execute({
+    sql: `SELECT id FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
+    args: [projectId, ...cleanIds],
+  })
+  const validIds = existingRows.rows.map((r: any) => String(r.id)).filter(Boolean)
+  if (!validIds.length) return { deleted: 0, ticketIds: [] }
+
+  const validPlaceholders = validIds.map(() => "?").join(",")
+
+  const stmts: Array<{ sql: string; args: any[] }> = [
+    { sql: `DELETE FROM ticket_comments WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_labels WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_exports WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM activity_events WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback_occurrences WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback_replays WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_viewers WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_assignment_invites WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM export_requests WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM export_outbox WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `UPDATE submission_keys SET feedback_id=NULL WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback WHERE project_id = ? AND id IN (${validPlaceholders})`, args: [projectId, ...validIds] },
+  ]
+
+  await db!.batch(stmts, "write")
+  invalidateDashboardCache(projectId)
+
+  return { deleted: validIds.length, ticketIds: validIds }
+}
+
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────
 // One row per manual trigger: captures who ran, what URL, which Sims, and the
 // full reactions payload so the dashboard can show run history.
