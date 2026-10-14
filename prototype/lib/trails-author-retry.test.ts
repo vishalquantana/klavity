@@ -239,3 +239,17 @@ test.if(RUN_BROWSER)("KLA-69: persistent stall on both rolls terminates with sta
   expect(callCount).toBe(2)
   expect(out.stallReason).toMatch(/always stuck/)
 }, 30000)
+
+// A 402 from the AI provider (credits exhausted) stalls at once with a stable prefix the dashboard turns into an actionable message.
+test.if(RUN_BROWSER)("402 provider error stalls immediately with provider_credits_exhausted and is not retried", async () => {
+  let callCount = 0
+  const model: AuthorModel = async () => {
+    callCount++
+    throw new ModelCallError("author model 402", false, false, 402)
+  }
+  const out = await authorTrail("proj_retry", { name: "T", objective: "do X", baseUrl: FIXTURE_URL },
+    makeAuthorOpts(model))
+  expect(out.status).toBe("stalled")
+  expect(out.stallReason).toMatch(/^provider_credits_exhausted:/)
+  expect(callCount).toBe(1)
+})

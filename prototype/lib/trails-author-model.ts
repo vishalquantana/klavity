@@ -240,6 +240,8 @@ export const openRouterAuthorModel: AuthorModel = async (input, ctx) => {
     if (!res.ok) {
       await reconcileDailySpend(DEFAULT_AI_CALL_EST_USD, 0); reconciled = true
       await recordFailure()
+      // 402 = the provider account has no credits left. Loud on purpose: ops has to top the account up, and the user can't fix it.
+      if (res.status === 402) console.error("[provider-402] AutoSim author model call refused with 402 Payment Required — check the OpenRouter key's credits and limit")
       // 401/403 = auth failure → fatal. 429/5xx = transient → retryable.
       const retryable = res.status === 429 || res.status >= 500
       const fatal = res.status === 401 || res.status === 403

@@ -798,6 +798,9 @@ export async function authorTrail(
           } catch (e: any) {
             if (e instanceof ModelCallError) {
               if (e.budgetExhausted) return await stall(`budget_exhausted: daily AI budget reached after ${llmCalls} model calls`, page.url())
+              // Provider 402 = the AI provider account is out of credits. Stable prefix so the dashboard can show a clear, actionable
+              // message instead of a raw status line; this is account configuration, not something the user's objective caused.
+              if (e.httpStatus === 402) return await stall(`provider_credits_exhausted: AI provider credits exhausted after ${llmCalls} model calls`, page.url())
               if (!e.retryable) return await stall(`model auth error: ${e.message}`, page.url())
             }
             lastErr = e

@@ -3029,6 +3029,60 @@
       margin-top: 20px
     }
 
+    /* The wizard's buttons must read as disabled, not just faded: grey, flat, no lift, not-allowed cursor. */
+    .wiz-nav .btn:disabled,
+    .wiz-nav .btn[aria-disabled="true"] {
+      opacity: .5;
+      filter: grayscale(.55);
+      box-shadow: none;
+      transform: none;
+      cursor: not-allowed
+    }
+
+    .wiz-nav .btn:disabled:hover,
+    .wiz-nav .btn[aria-disabled="true"]:hover {
+      transform: none;
+      box-shadow: none;
+      filter: grayscale(.55)
+    }
+
+    .wiz-spin {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 7px;
+      vertical-align: -2px;
+      border: 2px solid rgba(255, 255, 255, .45);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: wizspin .7s linear infinite
+    }
+
+    @keyframes wizspin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .wiz-count {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--paper-faint);
+      text-align: right
+    }
+
+    .wiz-count.over,
+    .wiz-count.short {
+      color: var(--rose);
+      font-weight: 600
+    }
+
+    .wiz-hint-unmet {
+      margin: 8px 0 0;
+      font-size: 12.5px;
+      color: var(--paper-dim)
+    }
+
     .wiz-approve-row {
       display: flex;
       align-items: center;
@@ -32601,7 +32655,8 @@
       <label>Start URL <input id="ntUrl" placeholder="https://yourapp.com" /></label>
       <label>Objective
         <textarea id="ntObj" rows="4"
-          placeholder="Log in, create a project, open it, then delete it and log out."></textarea>
+          placeholder="Log in, create a project, open it, then delete it and log out." aria-describedby="ntObjCount"></textarea>
+        <div class="wiz-count" id="ntObjCount" aria-live="polite">0 / 4,000 · at least 10 characters</div>
       </label>
       <p class="hint" id="ntCleanupHint">Tip: end where you started — include cleanup steps so every run leaves your
         data tidy.</p>
@@ -32783,7 +32838,9 @@
       <div id="wiz3" class="wiz-panel" style="display:none">
         <p class="wiz-desc">Describe what the AutoSim should do, step by step.</p>
         <label class="wiz-field">Objective<textarea id="wizObj" rows="5"
-            placeholder="e.g. Log in, open the chat widget, ask 'what are your hours?', wait for the reply, then upload my-receipt.pdf in the support form and submit."></textarea></label>
+            placeholder="e.g. Log in, open the chat widget, ask 'what are your hours?', wait for the reply, then upload my-receipt.pdf in the support form and submit."
+            aria-describedby="wizObjCount"></textarea></label>
+        <div class="wiz-count" id="wizObjCount" aria-live="polite">0 / 4,000 · at least 10 characters</div>
         <p class="hint">Tip: include cleanup steps so every run leaves your data tidy. For a chatbot, spell out each
           message and say to wait for the reply before the next.</p>
         <div class="wiz-field" style="margin-top:4px">
@@ -32825,6 +32882,7 @@
       </div>
       <div id="wizProgress" style="display:none;margin-top:14px"></div>
       <div class="wiz-err" id="wizErr" role="alert"></div>
+      <p class="wiz-hint-unmet" id="wizUnmet" aria-live="polite"></p>
       <div class="wiz-nav" id="wizNav">
         <button class="btn btn-ghost" id="wizBack" style="display:none">&#8592; Back</button>
         <span style="flex:1"></span>
@@ -34391,8 +34449,21 @@
         } catch (err) { _ntSse = null; _ntSseSid = null }
       }
       function stopAuthorLive() { if (_ntSse) { try { _ntSse.close() } catch { } } _ntSse = null; _ntSseSid = null }
+      // Stalls that no change to the objective can fix (credits / budget / provider access): don't tell the user to refine it.
+      function isInfraStall(reason) { return /provider_credits_exhausted|author model 402|openrouter 402|payment required|budget_exhausted|daily ai budget|model auth error/i.test(String(reason || "")) }
+      function stallHint(reason, fallback) { return isInfraStall(reason) ? "Your objective is fine — this needs a workspace admin to fix. Try again once it is sorted." : fallback }
+      // Error shown when starting the authoring fails (400/402/403/…): the server's message, plus an Upgrade link when it sends one.
+      function startErrHtml(e, statusText) {
+        var h = esc((e && e.error) || statusText || "Couldn't start AutoSim.")
+        var u = e && e.upgradeUrl ? String(e.upgradeUrl) : ""
+        if (u && (u.charAt(0) === "/" || /^https:\/\//i.test(u))) h += ' <a href="' + esc(u) + '" target="_blank" rel="noopener" style="color:var(--indigo)">Upgrade</a>'
+        return '<div class="nt-stall">' + h + "</div>"
+      }
       function humanizeStall(reason) {
         if (!reason) return null; var r = String(reason)
+        if (/provider_credits_exhausted|author model 402|openrouter 402|payment required/i.test(r)) return "AutoSim's AI provider has run out of credits. Please ask your workspace admin to top them up, then try again."
+        if (/budget_exhausted|daily ai budget/i.test(r)) return "The daily AI budget has been reached. Try again tomorrow, or ask your workspace admin to raise the limit."
+        if (/model auth error/i.test(r)) return "AutoSim couldn't reach its AI provider (access was refused). Please ask your workspace admin to check the AI provider key."
         if (/budget cap/i.test(r)) return "We hit our cost limit while drafting this trail."
         if (/drive deadline|deadline exceeded/i.test(r)) return "AutoSim ran out of time while working on your trail."
         if (/author model error/i.test(r)) return "Something went wrong with AutoSim's reasoning — please try again shortly."
@@ -34450,7 +34521,7 @@
           var stalBtns = ""
           if (s.checkpoint) stalBtns += '<button class="btn btn-indigo" id="ntResume" style="font-size:12px;padding:5px 12px">Resume from checkpoint</button>'
           if (s.trailId) stalBtns += '<button class="btn btn-ghost" id="ntDraft" style="font-size:12px;padding:5px 12px">Review partial draft</button>'
-          box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) + '</div><div class="hint">Refine the objective above and hit Create AutoSim again.</div>'
+          box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) + '</div><div class="hint">' + esc(stallHint(s.stallReason, "Refine the objective above and hit Create AutoSim again.")) + '</div>'
             + (stalBtns ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' + stalBtns + '</div>' : "")
           var ntR = document.getElementById("ntResume")
           if (ntR) { ntR.addEventListener("click", async function () { ntR.disabled = true; ntR.textContent = "Resuming…"; var rr = await fetch("/api/trails/author/" + encodeURIComponent(sessionId) + "/resume" + projQ(), { method: "POST" }); if (!rr.ok) { ntR.disabled = false; ntR.textContent = "Resume from checkpoint"; return }; var rd = await rr.json(); pollAuthor(rd.sessionId, box) }) }
@@ -34473,7 +34544,7 @@
         document.getElementById("wizErr").textContent = ""
         document.getElementById("wizProgress").style.display = "none"; document.getElementById("wizProgress").innerHTML = ""
         document.getElementById("wizNav").style.display = ""
-        var cb = document.getElementById("wizCreate"); cb.disabled = false; cb.textContent = "Create & Run"
+        var cb = document.getElementById("wizCreate"); cb.disabled = false; cb.removeAttribute("data-busy"); cb.removeAttribute("aria-busy"); cb.textContent = "Create & Run"
         // Reset the inline "add a test account" form so a prior open never leaves it showing.
         var accAdd = document.getElementById("wizAccAdd"); if (accAdd) accAdd.classList.add("hide")
         var accMsg = document.getElementById("wizAccMsg"); if (accMsg) { accMsg.textContent = ""; accMsg.style.color = "" }
@@ -34495,6 +34566,8 @@
         document.getElementById("wizNext").style.display = wizStep < 5 ? "" : "none"
         document.getElementById("wizCreate").style.display = wizStep === 5 ? "" : "none"
         if (wizStep === 4) renderWizSimList(); if (wizStep === 5) renderWizReview()
+        paintObjCount("wizObj", "wizObjCount"); wizSyncCreate()
+        var _um = document.getElementById("wizUnmet"); if (_um && wizStep !== 5) _um.textContent = ""
         var inp = document.querySelector("#wiz" + wizStep + " input, #wiz" + wizStep + " textarea")
         if (inp) setTimeout(function () { inp.focus() }, 60)
       }
@@ -34521,10 +34594,41 @@
         var checked = document.querySelector("input[name=\"wizSim\"]:checked")
         document.getElementById("wizRevSim").textContent = (checked && checked.value) ? checked.value : "Default reviewer"
       }
+      // One source for the objective limits (the server enforces the same 10–4000). Used by the wizard, the older modal and the counters.
+      var OBJ_MIN = 10, OBJ_MAX = 4000
+      function objLengthMsg(len) {
+        if (len < OBJ_MIN) return "Objective is too short — use at least " + OBJ_MIN + " characters" + (len ? " (you have " + len + ")." : ".")
+        if (len > OBJ_MAX) return "Objective is too long — use at most 4,000 characters (" + (len - OBJ_MAX).toLocaleString() + " over)."
+        return null
+      }
+      function paintObjCount(inputId, countId) {
+        var inp = document.getElementById(inputId), el = document.getElementById(countId); if (!inp || !el) return
+        var len = inp.value.trim().length
+        el.classList.toggle("over", len > OBJ_MAX); el.classList.toggle("short", len > 0 && len < OBJ_MIN)
+        el.textContent = len.toLocaleString() + " / 4,000" + (len > OBJ_MAX ? " · " + (len - OBJ_MAX).toLocaleString() + " over the limit" : len < OBJ_MIN ? " · at least " + OBJ_MIN + " characters" : "")
+      }
+      // The first thing still missing before Create & Run can work (steps 1–3), or null when the wizard is ready.
+      function wizFirstUnmet() {
+        for (var n = 1; n <= 3; n++) { var m = wizValidate(n); if (m) return { step: n, msg: m } }
+        return null
+      }
+      // Create & Run is only enabled when steps 1–3 are valid; otherwise it is disabled and says why.
+      function wizSyncCreate() {
+        var cb = document.getElementById("wizCreate"); if (!cb || cb.getAttribute("data-busy") === "1") return
+        var unmet = wizFirstUnmet(), hint = document.getElementById("wizUnmet")
+        cb.disabled = !!unmet; cb.setAttribute("aria-disabled", unmet ? "true" : "false")
+        cb.title = unmet ? ("Not ready yet — " + unmet.msg) : ""
+        if (hint) hint.textContent = unmet ? ("Not ready yet (step " + unmet.step + "): " + unmet.msg) : ""
+      }
+      function wizResetCreate(btn, label) {
+        if (!btn) return
+        btn.removeAttribute("data-busy"); btn.removeAttribute("aria-busy"); btn.disabled = false; btn.textContent = label
+        wizSyncCreate()
+      }
       function wizValidate(n) {
         if (n === 1 && !document.getElementById("wizName").value.trim()) return "Please enter a name for this AutoSim."
         if (n === 2) { var v = document.getElementById("wizUrl").value.trim(); if (!v) return "Please enter the URL to start from."; if (!/^https?:\/\//i.test(v)) return "URL must start with https:// (or http://)" }
-        if (n === 3) { var v2 = document.getElementById("wizObj").value.trim(); if (!v2) return "Please describe what the AutoSim should do."; if (v2.length < 15) return "Add a bit more detail — a few clear steps work best." }
+        if (n === 3) { var v2 = document.getElementById("wizObj").value.trim(); if (!v2) return "Please describe what the AutoSim should do."; var lm = objLengthMsg(v2.length); if (lm) return lm }
         return null
       }
       async function wizPollAuthor(sessionId, box, createBtn) {
@@ -34566,10 +34670,10 @@
           var wizStalBtns = '<button class="btn btn-ghost" id="wizRetry">← Edit objective</button>'
           if (s.checkpoint) wizStalBtns += '<button class="btn btn-indigo" id="wizResume" style="font-size:12px;padding:5px 12px">Resume from checkpoint</button>'
           if (s.trailId) wizStalBtns += '<button class="btn btn-ghost" id="wizDraft" style="font-size:12px;padding:5px 12px">Review partial draft</button>'
-          box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) + '</div><div class="hint" style="margin-top:6px">Refine the objective and try again.</div>'
+          box.innerHTML = html + '<div class="nt-stall">Stopped: ' + esc(display) + '</div><div class="hint" style="margin-top:6px">' + esc(stallHint(s.stallReason, "Refine the objective and try again.")) + '</div>'
             + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' + wizStalBtns + '</div>'
           var retry = document.getElementById("wizRetry")
-          if (retry) { retry.addEventListener("click", function () { document.getElementById("wizNav").style.display = ""; box.style.display = "none"; box.innerHTML = ""; wizStep = 3; wizRender(); createBtn.disabled = false; createBtn.textContent = "Create & Run" }) }
+          if (retry) { retry.addEventListener("click", function () { document.getElementById("wizNav").style.display = ""; box.style.display = "none"; box.innerHTML = ""; wizStep = 3; wizRender(); wizResetCreate(createBtn, "Create & Run") }) }
           var wizR = document.getElementById("wizResume")
           if (wizR) { wizR.addEventListener("click", async function () { wizR.disabled = true; wizR.textContent = "Resuming…"; var rr = await fetch("/api/trails/author/" + encodeURIComponent(sessionId) + "/resume" + projQ(), { method: "POST" }); if (!rr.ok) { wizR.disabled = false; wizR.textContent = "Resume from checkpoint"; return }; var rd = await rr.json(); closeWizard(); document.getElementById("ntName").value = s.name || ""; document.getElementById("ntUrl").value = s.baseUrl || ""; document.getElementById("ntObj").value = s.objective || ""; document.getElementById("ntGo").disabled = true; var ntBox = document.getElementById("ntProgress"); ntBox.innerHTML = '<div class="nt-live">Resuming AutoSim session…</div>'; document.getElementById("ntBg").classList.add("show"); pollAuthor(rd.sessionId, ntBox) }) }
           var wizDraft = document.getElementById("wizDraft")
@@ -34866,10 +34970,14 @@
         // wizard
         document.getElementById("wizNext").addEventListener("click", function () { var err = wizValidate(wizStep); var errEl = document.getElementById("wizErr"); if (err) { errEl.textContent = err; return } errEl.textContent = ""; wizStep++; wizRender() })
         document.getElementById("wizBack").addEventListener("click", function () { document.getElementById("wizErr").textContent = ""; if (wizStep > 1) { wizStep--; wizRender() } })
+        document.getElementById("wizObj").addEventListener("input", function () { paintObjCount("wizObj", "wizObjCount"); wizSyncCreate() })
+        document.getElementById("wizName").addEventListener("input", wizSyncCreate)
+        document.getElementById("wizUrl").addEventListener("input", wizSyncCreate)
         document.getElementById("wizClose").addEventListener("click", closeWizard)
         document.getElementById("wizBg").addEventListener("click", function (e) { if (e.target === this) closeWizard() })
         document.getElementById("wizCreate").addEventListener("click", async function () {
-          var btn = this; btn.disabled = true; btn.textContent = "Creating…"
+          var unmetNow = wizFirstUnmet(); if (unmetNow) { document.getElementById("wizErr").textContent = unmetNow.msg; wizStep = unmetNow.step; wizRender(); return }
+          var btn = this; btn.disabled = true; btn.setAttribute("data-busy", "1"); btn.setAttribute("aria-busy", "true"); btn.innerHTML = '<span class="wiz-spin" aria-hidden="true"></span>Creating…'
           document.getElementById("wizErr").textContent = ""
           var box = document.getElementById("wizProgress"); box.style.display = ""; box.innerHTML = '<div class="nt-live">AutoSim is recording your path…</div>'
           document.getElementById("wizNav").style.display = "none"
@@ -34885,30 +34993,33 @@
           if (wizAttachments.length) body.attachments = wizAttachments.map(function (a) { return { name: a.name, key: a.key, filename: a.filename, contentType: a.contentType } })
           try {
             var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-            if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; document.getElementById("wizNav").style.display = ""; btn.disabled = false; btn.textContent = "Try again"; return }
+            if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = startErrHtml(e, r.statusText); document.getElementById("wizNav").style.display = ""; wizResetCreate(btn, "Try again"); return }
             var d = await r.json(); wizPollAuthor(d.sessionId, box, btn)
           } catch (e) {
             box.innerHTML = '<div class="nt-stall">Network error starting AutoSim.</div>'
             document.getElementById("wizNav").style.display = ""
-            btn.disabled = false; btn.textContent = "Try again"
+            wizResetCreate(btn, "Try again")
           }
         })
         // new trail button & modal
         document.getElementById("newTrailBtn").addEventListener("click", openWizard)
         document.getElementById("ntCancel").addEventListener("click", function () { document.getElementById("ntBg").classList.remove("show") })
         document.getElementById("ntGo").addEventListener("click", async function () {
+          var ntLenMsg = objLengthMsg(document.getElementById("ntObj").value.trim().length)
+          if (ntLenMsg) { document.getElementById("ntProgress").innerHTML = '<div class="nt-stall">' + esc(ntLenMsg) + "</div>"; return }
           var btn = this; btn.disabled = true
           var box = document.getElementById("ntProgress"); box.innerHTML = ""
           var body = { name: document.getElementById("ntName").value.trim(), objective: document.getElementById("ntObj").value.trim(), base_url: document.getElementById("ntUrl").value.trim(), viewport: document.getElementById("ntViewport").value || "desktop", test_account: document.getElementById("ntAcc").value || undefined }
           try {
             var r = await fetch("/api/trails/author" + projQ(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-            if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = '<div class="nt-stall">' + esc(e.error || r.statusText) + "</div>"; btn.disabled = false; return }
+            if (!r.ok) { var e = await r.json().catch(function () { return {} }); box.innerHTML = startErrHtml(e, r.statusText); btn.disabled = false; return }
             var d = await r.json(); pollAuthor(d.sessionId, box)
           } catch (e) {
             box.innerHTML = '<div class="nt-stall">Network error starting AutoSim.</div>'
             btn.disabled = false
           }
         })
+        document.getElementById("ntObj").addEventListener("input", function () { paintObjCount("ntObj", "ntObjCount") })
         document.getElementById("ntBg").addEventListener("click", function (e) { if (e.target === this) this.classList.remove("show") })
 
         // kick off data load
