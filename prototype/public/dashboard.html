@@ -18762,7 +18762,7 @@
       // (last-project bookkeeping, URL replaceState) never depends on the discarded payload.
       const superseded = reqSeq < _dashAppliedSeq
       if (superseded) data = state
-      else { _dashAppliedSeq = reqSeq; _dashLastAppliedRequestAt = reqAt; dashNoteNetworkApplied(); state = data; render() }
+      else { _dashAppliedSeq = reqSeq; _dashLastAppliedRequestAt = reqAt; dashNoteNetworkApplied(); carryClientOnlyState(data, state); state = data; render() }
       // #654/#655: hydrate whatever view is currently shown (usually overview → the trend chart). The
       // boot-time setView() ran before state existed (loadViewData no-ops without state), so this is the
       // first chance to lazily load the initial view's on-demand data. Settings data still waits for a
@@ -18802,6 +18802,18 @@
       const s = document.createElement("script")
       s.src = "/widget.js"; s.defer = true; s.dataset.project = pid
       document.body.appendChild(s)
+    }
+
+    // KD-233: project labels are loaded separately (loadLabels → state._labels) and are not part of the
+    // /api/dashboard payload, so every `state = data` swap (the ~25s poll, any refresh after a change) used to drop
+    // them — and nothing reloaded them: the Labels popup then said "No labels yet" and the ticket label pickers
+    // went empty. Carry them onto the fresh payload while it's still the same project.
+    function carryClientOnlyState(next, prev) {
+      if (!next || !prev || !Array.isArray(prev._labels) || !prev._labelsPid) return
+      if (next.active && next.active.id === prev._labelsPid && next._labels === undefined) {
+        next._labels = prev._labels
+        next._labelsPid = prev._labelsPid
+      }
     }
 
     // Re-fetch /api/dashboard and re-render — used after triage accept/dismiss so counts + banner + kanban
@@ -18852,6 +18864,7 @@
       _dashAppliedSeq = seq
       _dashLastAppliedRequestAt = fetchStart   // request ISSUE time (taken just before the fetch), not completion time
       dashNoteNetworkApplied()
+      carryClientOnlyState(data, state)   // KD-233: keep the loaded project labels across the swap
       state = data
       render(false, isPoll === true)   // #658: poll → scoped to the active view; mutation refresh → full
       if (data.active && data.active.id) {                                       // keep cache fresh after triage actions
@@ -29565,18 +29578,41 @@
     })
 
     // ── KLA-174: Ticket Labels ─────────────────────────────────────────────────────────────────────────
-    async function loadLabels(admin) {
-      const projId = curProjId(); if (!projId) return
+    // KD-233: the Labels popup used to show "No labels yet" when opened before this load finished (slow server) and
+    // never updated when it did; a failed load also left it empty for good. Now: concurrent callers share one
+    // request, the loaded project is recorded (state._labelsPid), a failure is remembered (_labelsLoadFailed)
+    // and lets a later open retry, and an open popup repaints when the labels arrive.
+    let _labelsLoading = null, _labelsLoadFailed = false
+    function labelsLoadedForActive() { return !!(state && Array.isArray(state._labels) && state._labelsPid === curProjId()) }
+    function isManageLabelsOpen() { const bg = document.getElementById("manageLabelsBg"); return !!(bg && bg.classList.contains("show")) }
+    function loadLabels(admin) {
+      const projId = curProjId(); if (!projId) return Promise.resolve(false)
+      if (_labelsLoading && _labelsLoading.pid === projId) return _labelsLoading.p
+      const p = _loadLabelsNow(projId).finally(() => { if (_labelsLoading && _labelsLoading.p === p) _labelsLoading = null })
+      _labelsLoading = { pid: projId, p }
+      return p
+    }
+    async function _loadLabelsNow(projId) {
+      _labelsLoadFailed = false
       const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/labels`).catch(() => null)
-      if (!r || !r.ok) return
-      const d = await r.json().catch(() => ({}))
-      state._labels = d.labels || []
+      const d = r && r.ok ? await r.json().catch(() => null) : null
+      if (curProjId() !== projId) return false   // project changed mid-flight → drop
+      if (!d || !Array.isArray(d.labels)) {
+        _labelsLoadFailed = true
+        if (window.__klavSubLoaded) window.__klavSubLoaded.labels = false   // let the next Tickets/Settings visit retry
+        if (isManageLabelsOpen()) renderMlList()
+        return false
+      }
+      state._labels = d.labels
+      state._labelsPid = projId
       refreshTicketLabelOptions()
+      if (isManageLabelsOpen()) renderMlList()
       // KLA-778: label management is available to any project member (not admin-only), mirroring the
       // member-accessible ticket mutations + the relaxed server label routes. `admin` is kept as an
       // arg for call-site compatibility but no longer gates the affordance.
       const btn = document.getElementById("manageLabelsBtn")
       if (btn) btn.style.display = ""
+      return true
     }
 
     let _mlBound = false
@@ -29594,6 +29630,8 @@
       _mlTicket = (opts && opts.ticket) || null
       document.getElementById("mlErr").textContent = ""
       renderMlList()
+      // KD-233: labels not loaded (yet) for this project → fetch them now; the list repaints when they land.
+      if (!labelsLoadedForActive()) loadLabels()
       bg.classList.add("show")
       setTimeout(() => { try { document.getElementById("mlNewName").focus() } catch (e) { } }, 0)
       if (!_mlBound) {
@@ -29670,6 +29708,16 @@
 
     function renderMlList() {
       const list = document.getElementById("mlList"); if (!list) return
+      // KD-233: never claim "No labels yet" before this project's labels have actually loaded.
+      if (!labelsLoadedForActive()) {
+        if (_labelsLoadFailed) {   // cleared again as soon as a retry starts (_loadLabelsNow)
+          list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">Couldn\'t load labels. <button type="button" class="btn btn-ghost btn-sm" id="mlRetry">Retry</button></div>'
+          const rb = document.getElementById("mlRetry"); if (rb) rb.addEventListener("click", () => { loadLabels(); renderMlList() })
+        } else {
+          list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">Loading labels…</div>'
+        }
+        return
+      }
       const labels = state._labels || []
       if (!labels.length) { list.innerHTML = '<div class="muted" style="font-size:13px;padding:4px 2px">No labels yet. Add one below.</div>'; return }
       list.innerHTML = ""
