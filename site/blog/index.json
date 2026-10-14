@@ -845,5 +845,12 @@
     "excerpt": "You can't skip QA, only reassign it. Here's how small teams cover the three jobs a QA team does using automation, AI personas, and one owner.",
     "category": "Insights",
     "date": "2026-10-13"
+  },
+  {
+    "slug": "replit-app-testing",
+    "title": "Replit App Testing: How to QA an Agent-Built App Before Launch",
+    "excerpt": "Replit app testing means verifying the deployed build — not the workspace preview — with a new account, production secrets and a real database.",
+    "category": "Guides",
+    "date": "2026-10-14"
   }
 ]

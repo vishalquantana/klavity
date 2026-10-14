@@ -1,0 +1,205 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replit App Testing: How to QA an Agent-Built App Before Launch · Klavity</title>
+<meta name="description" content="Replit app testing means verifying the deployed build — not the workspace preview — with a new account, production secrets and a real database.">
+<link rel="canonical" href="https://klavity.in/blog/replit-app-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Replit App Testing: How to QA an Agent-Built App Before Launch"><meta property="og:description" content="Replit app testing means verifying the deployed build — not the workspace preview — with a new account, production secrets and a real database.">
+<meta property="og:url" content="https://klavity.in/blog/replit-app-testing"><meta property="og:image" content="https://klavity.in/blog/replit-app-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Replit App Testing: How to QA an Agent-Built App Before Launch"><meta name="twitter:description" content="Replit app testing means verifying the deployed build — not the workspace preview — with a new account, production secrets and a real database."><meta name="twitter:image" content="https://klavity.in/blog/replit-app-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Replit App Testing: How to QA an Agent-Built App Before Launch","description":"Replit app testing means verifying the deployed build — not the workspace preview — with a new account, production secrets and a real database.","datePublished":"2026-10-14","dateModified":"2026-10-14","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/replit-app-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/replit-app-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Replit App Testing: How to QA an Agent-Built App Before Launch","item":"https://klavity.in/blog/replit-app-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/replit-app-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Why does my Replit app work in the preview but break after deploying?","acceptedAnswer":{"@type":"Answer","text":"The workspace and the deployment are configured separately, and the deployment is published from your code at the moment you deploy rather than mirroring the workspace live. The usual causes are a secret that exists in the workspace but not in the deployment's configuration, a database URL that resolves differently, an OAuth callback that only allow-lists the dev URL, or a change you made but never redeployed."}},{"@type":"Question","name":"What is the fastest way to test a Replit app?","acceptedAnswer":{"@type":"Answer","text":"Deploy, open the public URL in a private window, sign up with a fresh email, log out and back in, then create a second account and try to reach the first account's data by URL. That five-minute pass catches first-run empty states, broken sessions and missing tenant isolation — the three most common failures in agent-generated apps."}},{"@type":"Question","name":"Do I need automated tests for a Replit app?","acceptedAnswer":{"@type":"Answer","text":"Yes, once the app has users or a client depends on it, because every Agent prompt can rewrite files you never read and effectively acts as an unreviewed refactor. Cover the core flows — sign-up, create, pay, log back in — with end-to-end tests, and prefer tooling that repairs its own selectors, since generated UIs change shape often."}},{"@type":"Question","name":"How do I check my Replit app for security problems?","acceptedAnswer":{"@type":"Answer","text":"Start with tenant isolation: create two accounts and try to read one account's records as the other, both through the UI and by editing IDs in the URL or API path. Then confirm no secrets are exposed in client-side code and that every API route filters by the signed-in user rather than trusting an ID from the request."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-14</div>
+    <h1>Replit App Testing: How to QA an Agent-Built App Before Launch</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Replit app testing: the workspace preview passes while the deployed build fails on secrets, database and tenant isolation">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+
+  <rect x="56" y="64" width="296" height="196" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.45" stroke-width="1.5"/>
+  <rect x="56" y="64" width="296" height="30" rx="12" fill="#6366f1" fill-opacity="0.16"/>
+  <circle cx="76" cy="79" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="90" cy="79" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="104" cy="79" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <rect x="124" y="73" width="150" height="12" rx="6" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="80" y="116" width="120" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="80" y="140" width="244" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="80" y="164" width="208" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="80" y="208" width="88" height="26" rx="7" fill="#6366f1" fill-opacity="0.5"/>
+  <circle cx="312" cy="226" r="16" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="1.5"/>
+  <polyline points="305,226 310,232 319,220" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round"/>
+
+  <line x1="368" y1="162" x2="428" y2="162" stroke="#6366f1" stroke-width="2.2" stroke-dasharray="7 6"/>
+  <polyline points="420,154 430,162 420,170" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="448" y="64" width="296" height="196" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#f87171" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="448" y="64" width="296" height="30" rx="12" fill="#f87171" fill-opacity="0.14"/>
+  <circle cx="468" cy="79" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="482" cy="79" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="496" cy="79" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <rect x="516" y="73" width="186" height="12" rx="6" fill="#f5f0e8" fill-opacity="0.12"/>
+  <rect x="472" y="116" width="120" height="10" rx="5" fill="#f5f0e8" fill-opacity="0.3"/>
+  <rect x="472" y="140" width="150" height="8" rx="4" fill="#f87171" fill-opacity="0.5"/>
+  <rect x="472" y="164" width="118" height="8" rx="4" fill="#f87171" fill-opacity="0.35"/>
+  <rect x="472" y="208" width="88" height="26" rx="7" fill="#f5f0e8" fill-opacity="0.08"/>
+  <circle cx="704" cy="226" r="17" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="1.5"/>
+  <path d="M697 219 L711 233 M711 219 L697 233" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+
+  <rect x="56" y="332" width="200" height="54" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.12"/>
+  <circle cx="86" cy="359" r="11" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="94" y1="359" x2="122" y2="359" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="112" y1="359" x2="112" y2="367" stroke="#f87171" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="140" y="353" width="96" height="12" rx="6" fill="#f5f0e8" fill-opacity="0.16"/>
+
+  <rect x="300" y="332" width="200" height="54" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.12"/>
+  <path d="M322 348 a16 6 0 1 0 32 0 a16 6 0 1 0 -32 0 M322 348 v22 a16 6 0 0 0 32 0 v-22" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <rect x="372" y="353" width="110" height="12" rx="6" fill="#f5f0e8" fill-opacity="0.16"/>
+
+  <rect x="544" y="332" width="200" height="54" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.12"/>
+  <circle cx="570" cy="359" r="10" fill="#6366f1" fill-opacity="0.55"/>
+  <circle cx="590" cy="359" r="10" fill="#f87171" fill-opacity="0.45"/>
+  <rect x="612" y="353" width="110" height="12" rx="6" fill="#f5f0e8" fill-opacity="0.16"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Replit app testing means checking the published deployment, not the workspace preview: a deployment is published from your code at deploy time, and its secrets, database and callback URLs are configured separately from the workspace. Test signed out in a private window, with a brand-new account and a second account, after every round of Agent changes.</div>
+    <div class="prose"><p><strong>Replit app testing</strong> means verifying that the app Replit's Agent built actually works on the published deployment &mdash; with a brand-new account, production secrets and a production database &mdash; not just inside the workspace preview. Replit takes you from a prompt to a running full-stack app in one pass, so the code runs and the preview renders long before anyone has checked sign-up, data isolation, billing or mobile layout. A useful Replit app testing pass is short and repeatable: walk the two or three flows the app exists for the way a stranger would, on the deployed URL, after every round of Agent changes.</p>
+
+<h2>What does Replit app testing actually involve?</h2>
+<p>Replit is a browser-based development environment with an AI Agent that writes and edits whole projects for you. It gives you a workspace preview, a Secrets manager for environment variables, a built-in Postgres database, object storage and a separate Deployments step that publishes your app to a real URL. That architecture is what makes Replit feel instant, and it is exactly why testing has to be its own job.</p>
+<p>Replit app testing is not one tool. It is three questions people usually collapse into one:</p>
+<ul>
+<li><strong>Does it run?</strong> The workspace preview answers this, and it is close to the only question the preview answers reliably.</li>
+<li><strong>Does it work?</strong> Can someone who is not you finish the job the app exists for &mdash; sign up, create the thing, pay, log back in tomorrow and still see their own data and only their own data?</li>
+<li><strong>Does it keep working?</strong> After the next prompt rewrites six files you never opened, is last week's flow still intact?</li>
+</ul>
+<p>Nearly every bug a real user reports in a prompt-built app lives in the second and third questions. The first one passed, which is why it shipped.</p>
+
+<h2>Why isn't the Replit preview enough?</h2>
+<p>The preview is an honest answer to a narrow question: how the app renders for you, signed in as you, on your screen, against whatever rows you happened to create while building. Four things it structurally cannot show you:</p>
+<ul>
+<li><strong>The first-run state.</strong> You have seed data. A new user has an empty table, and empty-state handling is one of the most common gaps in generated UI code &mdash; blank screens, spinners that never resolve, charts that divide by zero.</li>
+<li><strong>Someone else's permissions.</strong> If the generated schema has no row-level security or the API route never filters by the session user, every signed-in account can read every row. In a preview where you are the only user, that looks perfect.</li>
+<li><strong>The real environment.</strong> The workspace and the deployment are configured separately. A secret, callback URL or build command that works in one can be missing in the other.</li>
+<li><strong>Other browsers and real devices.</strong> The preview is one engine, one viewport, one set of fonts, usually on a desktop.</li>
+</ul>
+<p>This is the same pattern we documented for the other prompt-to-app builders in <a href="/blog/bolt-new-testing">Bolt.new testing</a> and <a href="/blog/lovable-app-testing">Lovable app testing</a>. The tool differs; the blind spot does not.</p>
+
+<h2>What breaks between the Replit workspace and the live deployment?</h2>
+<p>This gap is the single most Replit-specific source of &ldquo;it worked in the editor&rdquo; bugs, because a deployment is published from your code at the moment you deploy &mdash; it is not a live mirror of the workspace. Editing a file in the workspace does not change the live site until you redeploy, so the URL your client is clicking can be older than the version you just tested.</p>
+<table>
+<thead><tr><th>What differs</th><th>Typical symptom</th><th>How to check it</th></tr></thead>
+<tbody>
+<tr><td>Secrets / environment variables</td><td>Works in preview, 500s in production on the one route that calls the API</td><td>Open the deployment's own secrets or environment config and confirm every key the code reads is present there, not only in the workspace</td></tr>
+<tr><td>Development vs production database</td><td>Live app is empty, or test rows show up for real users</td><td>Confirm which database URL the deployment resolves to, and that migrations ran against it</td></tr>
+<tr><td>OAuth and redirect URLs</td><td>Login works locally, then redirects to a blank page or an error after deploying</td><td>Add the production domain to the provider's allowed callback and origin lists, not just the dev URL</td></tr>
+<tr><td>Build and run commands</td><td>Deployment fails, or serves a stale build</td><td>Deploy and then load the public URL in a private window &mdash; not the preview pane &mdash; and confirm your newest change is visible</td></tr>
+<tr><td>Scale-to-zero cold starts</td><td>First request after an idle period is slow or times out in the client</td><td>Load the app cold, after leaving it alone, and watch for client-side fetch timeouts and loading states that never clear</td></tr>
+</tbody>
+</table>
+<p>The practical rule: <strong>test the deployment, in a private window, signed out.</strong> If you only ever test the preview while logged in, you are testing a different application than your users are using.</p>
+
+<h2>What should you test first in a Replit app?</h2>
+<p>Order by what costs you the most when it fails, not by what is easiest to click.</p>
+<ol>
+<li><strong>Sign-up as a genuinely new user.</strong> New email, private window, on the deployed URL. Then log out and log back in. Session persistence and the first-run empty state break constantly in generated code.</li>
+<li><strong>Data isolation with two accounts.</strong> Create account A, add a record, then sign in as B and try to reach A's record &mdash; through the UI and by editing the ID in the URL or the API path. An agent that was asked for &ldquo;a dashboard&rdquo; was never asked to enforce tenancy. See <a href="/blog/vibe-coding-security-risks">vibe coding security risks</a> for the rest of this class.</li>
+<li><strong>Anything that takes money or sends mail.</strong> Payments and transactional email depend on live keys and webhook URLs that differ per environment. A webhook pointed at a dead dev URL fails silently.</li>
+<li><strong>The unhappy paths.</strong> Submit the form empty, paste 5,000 characters into a name field, upload a 40&nbsp;MB file, double-click submit, hit back mid-flow. Generated happy paths are usually solid; generated error handling usually is not.</li>
+<li><strong>Mobile.</strong> Load the deployed URL on an actual phone. Fixed widths, modals taller than the viewport and tap targets that only work with a mouse are routine.</li>
+</ol>
+
+<h2>How do you keep a Replit app tested after every Agent prompt?</h2>
+<p>This is where prompt-built apps diverge from hand-written ones. One Agent instruction can touch many files at once, including code you have never read, so every prompt is effectively a refactor with no review. Manual spot-checking does not survive that cadence &mdash; you need the same short pass to run again, cheaply, every time.</p>
+<p>Three things make that sustainable:</p>
+<ul>
+<li><strong>A written checklist</strong> (below) that you re-run on the deployment before each handoff, so the pass does not depend on what you happen to remember that day.</li>
+<li><strong>Automated end-to-end coverage of the core flows</strong>, so sign-up, create, pay and log-back-in are verified by a machine rather than by hope. The standard objection is that E2E tests break whenever the UI shifts &mdash; which, with an Agent rewriting components, is often. <a href="/autosim">AutoSim</a> exists for exactly that case: it repairs its own selectors when the UI moves instead of failing the run.</li>
+<li><strong>A path for the bugs you still miss.</strong> When a client or user hits something, you want the console errors, network requests and environment captured at the moment it happened, not a screenshot in WhatsApp. That is what <a href="/snap">Snap</a> does, and it is the difference between a fix and a &ldquo;cannot reproduce.&rdquo;</li>
+</ul>
+<p>If you want to go further and have unfamiliar users walk the flows before real ones do, <a href="/sims">Sims</a> runs AI personas through your app and reports what they got stuck on. The broader method is in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>A short Replit app testing checklist</h2>
+<ol>
+<li>Deploy, then open the public URL in a private window &mdash; confirm your latest change is live.</li>
+<li>Sign up with a fresh email; check the empty state renders something useful.</li>
+<li>Log out, log back in; confirm the session and the data survive.</li>
+<li>With a second account, attempt to read the first account's records by URL and by API path.</li>
+<li>Confirm every secret the code reads exists in the deployment's configuration.</li>
+<li>Confirm the deployment points at the production database and that migrations ran.</li>
+<li>Run one real payment and one real transactional email end to end.</li>
+<li>Break every form on purpose: empty, oversized, duplicate submit.</li>
+<li>Load the deployed URL on a phone.</li>
+<li>Open the browser console on the main flow and confirm it is clean.</li>
+</ol>
+<p>Ten minutes of this, run on the deployment rather than the preview, catches the large majority of what clients and users would otherwise report for you.</p>
+
+<h2>Try Klavity free</h2>
+<p>Replit will keep shipping code faster than you can read it. The fix is not to prompt more carefully &mdash; it is to put a repeatable verification step between the Agent and your users. <a href="/onboarding">Try Klavity free</a> and scan your next Replit deployment before anyone else does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test the deployed URL in a private window, never the workspace preview.</li><li>Confirm deployment secrets, database and OAuth callbacks separately from the workspace.</li><li>Use two accounts to prove one user cannot read another's rows.</li><li>Re-run the same short pass after every Agent prompt, automated where you can.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Why does my Replit app work in the preview but break after deploying?</summary><p>The workspace and the deployment are configured separately, and the deployment is published from your code at the moment you deploy rather than mirroring the workspace live. The usual causes are a secret that exists in the workspace but not in the deployment's configuration, a database URL that resolves differently, an OAuth callback that only allow-lists the dev URL, or a change you made but never redeployed.</p></details><details><summary>What is the fastest way to test a Replit app?</summary><p>Deploy, open the public URL in a private window, sign up with a fresh email, log out and back in, then create a second account and try to reach the first account's data by URL. That five-minute pass catches first-run empty states, broken sessions and missing tenant isolation — the three most common failures in agent-generated apps.</p></details><details><summary>Do I need automated tests for a Replit app?</summary><p>Yes, once the app has users or a client depends on it, because every Agent prompt can rewrite files you never read and effectively acts as an unreviewed refactor. Cover the core flows — sign-up, create, pay, log back in — with end-to-end tests, and prefer tooling that repairs its own selectors, since generated UIs change shape often.</p></details><details><summary>How do I check my Replit app for security problems?</summary><p>Start with tenant isolation: create two accounts and try to read one account's records as the other, both through the UI and by editing IDs in the URL or API path. Then confirm no secrets are exposed in client-side code and that every API route filters by the signed-in user rather than trusting an ID from the request.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
