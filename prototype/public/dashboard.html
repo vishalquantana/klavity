@@ -8947,7 +8947,11 @@
 
     .tkt-browser .tkt-shot {
       margin: 0;
-      padding: 0
+      padding: 0;
+      max-height: 520px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-behavior: smooth
     }
 
     .tkt-shot-sk {
@@ -12625,7 +12629,7 @@
     }
 
     /* KD-193: in-progress / failed upload tiles + a disabled "Uploading…" Add button */
-    .tkt-attach-pending {
+    .tkt-attach-pending{
       position: relative;
       display: flex;
       flex-direction: column;
@@ -12656,7 +12660,7 @@
       overflow: hidden
     }
 
-    .tkt-attach-pending .tkt-attach-bar i {
+    .tkt-attach-pending .tkt-attach-bar i{
       display: block;
       height: 100%;
       background: var(--indigo);
@@ -12678,7 +12682,7 @@
       color: var(--paper-faint)
     }
 
-    .tkt-attach-pending.err {
+    .tkt-attach-pending.err{
       border-color: var(--rose);
       background: rgba(219, 39, 119, .06)
     }
@@ -12695,13 +12699,53 @@
       flex-wrap: wrap
     }
 
-    .tkt-attach-add-btn:disabled {
+    .tkt-attach-add-btn:disabled{
       opacity: .65;
       cursor: not-allowed
     }
 
     .tkt-attach-msg:empty {
       display: none
+    }
+
+    /* KD-190: Drag & drop files onto Evidence & Media / Attachments or ticket preview/details */
+    .tkt-attach-dropzone {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--paper-faint);
+      background: rgba(255, 255, 255, 0.02);
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    .tkt-attach-dropzone.over,
+    .tkt-attach-wrap.drag-over .tkt-attach-dropzone {
+      border-color: var(--indigo, #6366f1);
+      background: rgba(99, 102, 241, .08);
+      color: var(--paper);
+    }
+
+    .tkt-attach-wrap.drag-over {
+      outline: 2px dashed var(--indigo, #6366f1);
+      outline-offset: 4px;
+      border-radius: 12px;
+    }
+
+    .tkt-detail-drop-active {
+      outline: 2px dashed rgba(99, 102, 241, .45);
+      outline-offset: -2px;
+      position: relative;
+    }
+
+    .tkt-attach-drop-hint {
+      font-size: 12px;
+      color: var(--paper-faint);
+      pointer-events: none;
     }
 
     /* KD-193: remove (×) + inline confirm on every uploaded attachment; Cancel on an upload that is still being sent */
@@ -22258,10 +22302,10 @@
     // the result only appeared after a slow round-trip, a full re-render mid-upload wiped the UI state, and picking the same file twice
     // uploaded it twice. State now lives HERE (per ticket, outside the DOM) so any re-render restores the in-flight tiles and the
     // finished upload still lands; progress is real (XMLHttpRequest); duplicates are skipped; a toast confirms the result.
-    const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
-    const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
-    const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
-    const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
+const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
+const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
+const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
+const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
     const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
     const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
     const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
@@ -22531,7 +22575,7 @@
       var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
       var uploading = pending.some(function (u) { return u.status === "uploading" })
       var pendingHtml = pending.map(_attachTileHtml).join("")
-      var _dlSvg = _ATTACH_DL_SVG
+      var _dlSvg = typeof _ATTACH_DL_SVG !== "undefined" ? _ATTACH_DL_SVG : '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
       var thumbs = ""
       var items = atts.map(function (a, i) {
         var name = esc(String(a.filename || ("attachment-" + (i + 1))))
@@ -22558,9 +22602,11 @@
         + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
         + (pendingHtml ? '<div class="tkt-attach-thumbs tkt-attach-pendings">' + pendingHtml + '</div>' : '')
         + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
-        + '<div class="tkt-attach-list">' + items + '</div>'
+        + '<div class="tkt-attach-dropzone">'
         + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button"' + (uploading ? ' disabled aria-busy="true"' : '') + '>'
         + (uploading ? '<span class="tkt-spin">' + kicon('loader', { size: 13 }) + '</span> Uploading…' : kicon('paperclip', { size: 13 }) + ' Add attachment') + '</button>'
+        + '<span class="tkt-attach-drop-hint">or drop files here</span>'
+        + '</div>'
         + '<input type="file" class="tkt-attach-input" multiple hidden>'
         + '<div class="tkt-attach-msg muted" style="font-size:12px;color:' + (attachMsgFor(t.id).isErr ? 'var(--rose)' : 'var(--paper-faint)') + '" role="status" aria-live="polite">' + esc(attachMsgFor(t.id).text) + '</div>'
         + '</div>'
@@ -22662,6 +22708,24 @@
       if (addBtn) {
         addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
       }
+      var handleIncomingFiles = function (rawFiles) {
+        var files = Array.prototype.slice.call(rawFiles || [])
+        if (!files.length) return
+        var proceed = function (picked) {
+          var cur = (_attachCtx.get(id) || {}).t || t
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var notes = []
+          if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
+          plan.rejected.forEach(function (x) { notes.push(x) })
+          if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
+          if (!notes.length) attachSetMsg(id, "", false)
+          if (!plan.accept.length) return
+          attachStartUpload(id, plan.accept, _attachHooks)
+        }
+        if (!files.some(imgOptCandidate)) { proceed(files); return }
+        attachSetMsg(id, "Optimising images…", false)
+        Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
+      }
       input.addEventListener("change", function () {
         var files = Array.prototype.slice.call(input.files || [])
         input.value = ""
@@ -22682,8 +22746,9 @@
         // }
         if (!files.length) return
         var proceed = function (picked) {
+          var files = picked
           var cur = (_attachCtx.get(id) || {}).t || t
-          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id)) // attachPlanUpload(files)
           var notes = []
           if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
           plan.rejected.forEach(function (x) { notes.push(x) })
@@ -22698,6 +22763,123 @@
         attachSetMsg(id, "Optimising images…", false)
         Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
       })
+
+      // KD-190: Drag and drop files onto Evidence & Media / Attachments or the ticket preview/details area
+      var hasFiles = function (ev) {
+        if (!ev.dataTransfer) return false
+        var types = ev.dataTransfer.types
+        return !!types && (Array.prototype.indexOf.call(types, "Files") >= 0 || Array.prototype.indexOf.call(types, "application/x-moz-file") >= 0)
+      }
+      var dropZone = wrap.querySelector(".tkt-attach-dropzone") || wrap
+      var wrapDragCount = 0
+      wrap.addEventListener("dragenter", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        wrapDragCount++
+        wrap.classList.add("drag-over")
+        if (dropZone) dropZone.classList.add("over")
+      })
+      wrap.addEventListener("dragover", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+        wrap.classList.add("drag-over")
+        if (dropZone) dropZone.classList.add("over")
+      })
+      wrap.addEventListener("dragleave", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        wrapDragCount--
+        if (wrapDragCount <= 0) {
+          wrapDragCount = 0
+          wrap.classList.remove("drag-over")
+          if (dropZone) dropZone.classList.remove("over")
+        }
+      })
+      wrap.addEventListener("drop", function (ev) {
+        wrapDragCount = 0
+        wrap.classList.remove("drag-over")
+        if (dropZone) dropZone.classList.remove("over")
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        ev.stopPropagation()
+        var dropped = ev.dataTransfer && ev.dataTransfer.files
+        if (dropped && dropped.length) handleIncomingFiles(dropped)
+      })
+
+      // Wire detailEl for dropping anywhere in ticket details/preview view
+      detailEl._handleAttachDrop = handleIncomingFiles
+      if (!detailEl._wireAttachDrop) {
+        detailEl._wireAttachDrop = true
+        var detailDragCount = 0
+        detailEl.addEventListener("dragenter", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          detailDragCount++
+          detailEl.classList.add("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.add("drag-over")
+        })
+        detailEl.addEventListener("dragover", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+          detailEl.classList.add("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.add("drag-over")
+        })
+        detailEl.addEventListener("dragleave", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          detailDragCount--
+          if (detailDragCount <= 0) {
+            detailDragCount = 0
+            detailEl.classList.remove("tkt-detail-drop-active")
+            var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+            if (curWrap) curWrap.classList.remove("drag-over")
+          }
+        })
+        detailEl.addEventListener("drop", function (ev) {
+          detailDragCount = 0
+          detailEl.classList.remove("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.remove("drag-over")
+          if (ev.target && ev.target.closest && ev.target.closest(".cmt-form")) return
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          var dropped = ev.dataTransfer && ev.dataTransfer.files
+          if (dropped && dropped.length && typeof detailEl._handleAttachDrop === "function") {
+            detailEl._handleAttachDrop(dropped)
+          }
+        })
+      }
+
+      // Wire Evidence & Media strip / left stage in cockpit view if present
+      var evStrip = detailEl.querySelector(".t3-evidence") || detailEl.querySelector(".t3-left")
+      if (evStrip && !evStrip._wireAttachDrop) {
+        evStrip._wireAttachDrop = true
+        evStrip.addEventListener("dragover", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+          evStrip.classList.add("drag-over")
+        })
+        evStrip.addEventListener("dragleave", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          evStrip.classList.remove("drag-over")
+        })
+        evStrip.addEventListener("drop", function (ev) {
+          evStrip.classList.remove("drag-over")
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          ev.stopPropagation()
+          var dropped = ev.dataTransfer && ev.dataTransfer.files
+          if (dropped && dropped.length && typeof detailEl._handleAttachDrop === "function") {
+            detailEl._handleAttachDrop(dropped)
+          }
+        })
+      }
     }
     // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
     // ticket's REAL evidence — its screenshot + session replay + any recordings — switching what the strip
