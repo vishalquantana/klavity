@@ -118,3 +118,20 @@ test("listTicketsPaginated: multi-select assignees, sources, and priorities", as
   const rSources = await listTicketsPaginated(proj, { sources: ["sim", "manual"] })
   expect(rSources.tickets.map(t => t.id).sort()).toEqual([t1, t3].sort())
 })
+
+// KD-236: an unset priority is the canonical default "medium" (what the ticket detail page shows), so the Medium
+// filter must include it — and only Medium.
+test("listTicketsPaginated: the Medium filter includes tickets with no stored priority", async () => {
+  const proj = `proj_tkl_unsetpri_${Date.now()}`
+  const unset = await insertFeedback({ projectId: proj, observation: "No priority stored" })
+  const blank = await insertFeedback({ projectId: proj, observation: "Blank priority" })
+  const med = await insertFeedback({ projectId: proj, priority: "medium", observation: "Medium bug" })
+  const high = await insertFeedback({ projectId: proj, priority: "high", observation: "High bug" })
+  for (const id of [unset, blank, med, high]) await updateFeedbackMeta(proj, id, { status: "open" })
+  await db!.execute({ sql: "UPDATE feedback SET priority=NULL WHERE id=?", args: [unset] })
+  await db!.execute({ sql: "UPDATE feedback SET priority='' WHERE id=?", args: [blank] })
+  const rMed = await listTicketsPaginated(proj, { priorities: ["medium"] })
+  expect(rMed.tickets.map(t => t.id).sort()).toEqual([unset, blank, med].sort())
+  const rHigh = await listTicketsPaginated(proj, { priorities: ["high"] })
+  expect(rHigh.tickets.map(t => t.id)).toEqual([high])
+})

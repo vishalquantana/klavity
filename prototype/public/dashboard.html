@@ -26597,7 +26597,7 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       }
       if (f.priority) {
         const wantP = Array.isArray(f.priority) ? f.priority : String(f.priority).split(",").filter(Boolean)
-        if (wantP.length && !wantP.includes(t.priority)) return false
+        if (wantP.length && !wantP.includes(t.priority || "medium")) return false   // KD-236: unset = medium
       }
       if (f.assignee && f.assignee.length) {
         const wantA = Array.isArray(f.assignee) ? f.assignee : [f.assignee]
@@ -27145,7 +27145,7 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
         })
         row.appendChild(cb)
 
-        const pri = t.priority || ""
+        const pri = t.priority || "medium"   // KD-236: unset = the canonical default, same as the detail page
         const srcLabel = t.simName ? t.simName : (t.source === "human" ? "Human" : "Report")
         const sub = [t.urlPath ? esc(t.urlPath) : "", ticketAgo(t)].filter(Boolean).join(" · ")
 
@@ -27303,10 +27303,11 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
     // #704: shared builder for a kanban card's meta row (status/priority/source/assignee/recur/labels).
     // Used by renderCard AND the optimistic bulk-action DOM update so both stay in lockstep.
     function kbCardMetaHtml(t) {
-      // KD-224: every card shows its priority, right beside the source chip; an unset priority reads "No priority".
-      const sevChip = t.priority
-        ? `<span class="chip sev-${esc(t.priority)}" title="Priority: ${esc(t.priority)}">${esc(t.priority)}</span>`
-        : `<span class="chip sev-none" title="Priority: not set">No priority</span>`
+      // KD-224: every card shows its priority, right beside the source chip.
+      // KD-236: an unset priority is "medium" — the ONE canonical default the ticket detail page, triage and the
+      // priority filters use (KLAVITYKLA-513). The card used to say "No priority" for the same ticket.
+      const pri = t.priority || "medium"
+      const sevChip = `<span class="chip sev-${esc(pri)}" title="Priority: ${esc(pri)}">${esc(pri)}</span>`
       // KLA-775: the per-card STATUS chip is dropped from the board card face — the kanban column the card
       // sits in already communicates its status, so the chip was redundant clutter. (Other views build
       // their own status label; this only affects the board card meta row.)
