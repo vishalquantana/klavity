@@ -25271,6 +25271,11 @@
       return p
     }
     async function openSingleTicket(id, mode) {
+      // KD-239: any ticket opened in this page load means the boot deep link (if any) is done with. Opening one from
+      // the board writes ?ticket=<id> into the URL; without this, the next poll/refresh ran maybeOpenDeepLinkTicket(),
+      // took that for a fresh shared link and re-opened the ticket full-page — rebuilding it mid-comment (the
+      // half-typed comment vanished, as if the page had reloaded).
+      _deepLinkTicketConsumed = true
       if (mode === "full" && !document.body.classList.contains("tkt-page-open")) {
         _tktBoardScrollY = window.scrollY || window.pageYOffset || 0
       }
