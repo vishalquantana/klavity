@@ -14988,6 +14988,40 @@
       color: #0c0a08
     }
 
+    /* KD-221: notifications bell + panel (same surface language as .avatar-menu) */
+    .ntf-wrap { position: relative; display: inline-flex }
+    .ntf-btn { position: relative }
+    .ntf-btn[aria-expanded="true"] { border-color: var(--indigo); color: var(--paper) }
+    .ntf-badge { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+      background: var(--rose); color: #fff; font-family: var(--body); font-size: 10.5px; font-weight: 700; line-height: 18px;
+      text-align: center; box-shadow: 0 0 0 2px var(--ink); pointer-events: none }
+    .ntf-badge.hide { display: none }
+    .ntf-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 45; width: 380px; max-width: calc(100vw - 24px);
+      background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+      display: flex; flex-direction: column; overflow: hidden }
+    .ntf-panel.hide { display: none }
+    .ntf-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--line) }
+    .ntf-title { font-family: var(--body); font-size: 14px; font-weight: 700; color: var(--paper) }
+    .ntf-markall { border: 0; background: transparent; color: var(--indigo); font-family: var(--body); font-size: 12.5px;
+      font-weight: 600; cursor: pointer; padding: 4px 6px; border-radius: 7px }
+    .ntf-markall:hover { background: rgba(99, 102, 241, .1) }
+    .ntf-markall:disabled { color: var(--paper-faint); cursor: default; background: transparent }
+    .ntf-list { max-height: min(440px, 70vh); overflow-y: auto; padding: 6px }
+    .ntf-empty { padding: 26px 12px; text-align: center; color: var(--paper-faint); font-family: var(--body); font-size: 13px }
+    .ntf-item { display: flex; gap: 10px; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: transparent;
+      color: var(--paper); font-family: var(--body); text-align: left; cursor: pointer }
+    .ntf-item:hover, .ntf-item:focus-visible { background: rgba(99, 102, 241, .08); outline: none }
+    .ntf-item.unread { background: rgba(99, 102, 241, .06) }
+    .ntf-dot { flex: 0 0 8px; height: 8px; margin-top: 6px; border-radius: 50% }
+    .ntf-item.unread .ntf-dot { background: var(--indigo) }
+    .ntf-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px }
+    .ntf-text { font-size: 13px; line-height: 1.4; color: var(--paper-dim) }
+    .ntf-text b { color: var(--paper); font-weight: 600 }
+    .ntf-item.unread .ntf-text { color: var(--paper) }
+    .ntf-tkt { font-size: 12.5px; font-weight: 600; color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+    .ntf-meta { font-size: 11.5px; color: var(--paper-faint) }
+
     .avatar-menu {
       position: absolute;
       top: calc(100% + 8px);
@@ -15180,6 +15214,24 @@
         </div>
       </div>
       <div class="right">
+        <!-- KD-221: notifications — updates on tickets assigned to you (wireNotifications) -->
+        <div class="ntf-wrap" id="ntfWrap">
+          <button class="nav-icon ntf-btn" id="ntfBtn" type="button" aria-haspopup="dialog" aria-expanded="false"
+            aria-controls="ntfPanel" aria-label="Notifications" title="Notifications"><svg xmlns="http://www.w3.org/2000/svg"
+              class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+              <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+            </svg><span class="ntf-badge hide" id="ntfBadge" aria-hidden="true"></span></button>
+          <div class="ntf-panel hide" id="ntfPanel" role="dialog" aria-label="Notifications">
+            <div class="ntf-hd">
+              <span class="ntf-title">Notifications</span>
+              <button type="button" class="ntf-markall" id="ntfMarkAll">Mark all as read</button>
+            </div>
+            <div class="ntf-list" id="ntfList"><div class="ntf-empty">Loading…</div></div>
+            <span id="ntfUnreadHint" hidden>Unread</span>
+          </div>
+        </div>
         <div class="theme-seg" id="themeToggle" role="group" aria-label="Theme">
           <button type="button" data-theme-set="light" aria-label="Light mode" title="Light mode"></button>
           <button type="button" data-theme-set="dark" aria-label="Dark mode" title="Dark mode"></button>
@@ -24812,6 +24864,109 @@
       document.addEventListener("keydown", (e) => { if (isOpen() && e.key === "Escape") { e.preventDefault(); close(true) } })
     }
 
+    // ── KD-221: Notifications bell (top bar) ──────────────────────────────────────────────────────────────
+    // Updates on tickets assigned to you (status, priority, comments, labels, description, assignment…), made
+    // by someone else. Polls /api/notifications (every 60s + when the tab regains focus); opening the panel
+    // shows the latest 30; clicking one marks it read and opens the ticket.
+    function ntfText(n) {
+      const who = n.actorEmail ? `<b>${esc(String(n.actorEmail).split("@")[0])}</b>` : "<b>Someone</b>"
+      const m = n.meta || {}
+      const me = String((state && state.email) || "").toLowerCase()
+      const handle = (e) => esc(String(e || "").split("@")[0])
+      switch (n.type) {
+        case "ticket_created": return `${who} assigned you a new ticket`
+        case "ticket_assignee_changed":
+          if (m.to && String(m.to).toLowerCase() === me) return `${who} assigned you this ticket`
+          return m.to ? `${who} reassigned this ticket to <b>${handle(m.to)}</b>` : `${who} unassigned you from this ticket`
+        case "ticket_status_changed": return `${who} changed status to <b>${esc((typeof STATUS_LABELS !== "undefined" && STATUS_LABELS[m.to]) || m.to || "")}</b>`
+        case "ticket_priority_changed": return `${who} changed priority to <b>${esc(m.to || "none")}</b>`
+        case "ticket_title_changed": return `${who} renamed the ticket`
+        case "ticket_description_changed": return `${who} updated the description`
+        case "ticket_commented": return `${who} commented${m.snippet ? `: “${esc(String(m.snippet).slice(0, 120))}”` : ""}`
+        case "ticket_label_added": return `${who} added label <b>${esc(m.label || "")}</b>`
+        case "ticket_label_removed": return `${who} removed label <b>${esc(m.label || "")}</b>`
+        case "ticket_attachment_added": return `${who} added an attachment`
+        case "ticket_attachment_removed": return `${who} removed an attachment`
+        case "ticket_screenshot_annotated": return `${who} annotated the screenshot`
+        case "ticket_qa_closed": return `${who} closed the ticket after QA`
+        default: return `${who} updated the ticket`
+      }
+    }
+
+    function wireNotifications() {
+      const btn = document.getElementById("ntfBtn"), panel = document.getElementById("ntfPanel")
+      const list = document.getElementById("ntfList"), badge = document.getElementById("ntfBadge"), markAll = document.getElementById("ntfMarkAll")
+      if (!btn || !panel || !list || btn._wired) return
+      btn._wired = true
+      let items = [], unread = 0, loading = false
+      const isOpen = () => !panel.classList.contains("hide")
+      const paintBadge = () => {
+        if (!badge) return
+        badge.textContent = unread > 99 ? "99+" : String(unread)
+        badge.classList.toggle("hide", unread <= 0)
+        btn.setAttribute("aria-label", unread > 0 ? `Notifications — ${unread} unread` : "Notifications")
+        if (markAll) markAll.disabled = unread <= 0
+      }
+      const paintList = () => {
+        if (!items.length) { list.innerHTML = '<div class="ntf-empty">You\'re all caught up — updates on tickets assigned to you show up here.</div>'; return }
+        list.innerHTML = items.map(n => `<button type="button" class="ntf-item${n.readAt ? "" : " unread"}" data-id="${esc(n.id)}"${n.readAt ? "" : ' aria-describedby="ntfUnreadHint"'}>
+          <span class="ntf-dot" aria-hidden="true"></span>
+          <span class="ntf-body">
+            <span class="ntf-text">${ntfText(n)}</span>
+            ${n.ticketTitle ? `<span class="ntf-tkt">${esc(n.ticketTitle)}</span>` : ""}
+            <span class="ntf-meta">${n.projectName ? esc(n.projectName) + " · " : ""}${esc(ago(n.createdAt))}</span>
+          </span></button>`).join("")
+      }
+      const load = async () => {
+        if (loading || document.hidden) return
+        loading = true
+        try {
+          const r = await fetch("/api/notifications?limit=30").catch(() => null)
+          if (!r || !r.ok) return
+          const d = await r.json().catch(() => null)
+          if (!d) return
+          items = Array.isArray(d.notifications) ? d.notifications : []
+          unread = Number(d.unread) || 0
+          paintBadge()
+          if (isOpen()) paintList()
+        } finally { loading = false }
+      }
+      const markRead = async (body) => {
+        const r = await fetch("/api/notifications/read", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null)
+        const d = r && r.ok ? await r.json().catch(() => null) : null
+        if (d && typeof d.unread === "number") { unread = d.unread; paintBadge() }
+      }
+      const close = (refocus) => { panel.classList.add("hide"); btn.setAttribute("aria-expanded", "false"); if (refocus) { try { btn.focus() } catch (e) { } } }
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation()
+        if (isOpen()) { close(false); return }
+        panel.classList.remove("hide"); btn.setAttribute("aria-expanded", "true")
+        paintList()
+        load()
+      })
+      list.addEventListener("click", (e) => {
+        const it = e.target.closest(".ntf-item"); if (!it) return
+        e.stopPropagation()
+        const n = items.find(x => x.id === it.getAttribute("data-id")); if (!n) return
+        if (!n.readAt) { n.readAt = Date.now(); unread = Math.max(0, unread - 1); paintBadge(); markRead({ ids: [n.id] }) }
+        close(false)
+        if (!n.feedbackId) return
+        if (state && state.active && state.active.id === n.projectId && typeof openSingleTicket === "function") openSingleTicket(n.feedbackId, "full")
+        else location.href = "/t/" + encodeURIComponent(n.feedbackId)
+      })
+      if (markAll) markAll.addEventListener("click", (e) => {
+        e.stopPropagation()
+        items.forEach(n => { if (!n.readAt) n.readAt = Date.now() })
+        unread = 0; paintBadge(); paintList()
+        markRead({ all: true })
+      })
+      document.addEventListener("click", (e) => { if (isOpen() && !panel.contains(e.target) && !btn.contains(e.target)) close(false) })
+      document.addEventListener("keydown", (e) => { if (isOpen() && e.key === "Escape") { e.preventDefault(); close(true) } })
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) load() })
+      setInterval(load, 60000)
+      load()
+    }
+
     // ── KLA-173: New ticket compose modal ─────────────────────────────────────────────────────────────
     function openNewTicketModal() {
       const bg = document.getElementById("newTktBg"); if (!bg) return
@@ -33042,6 +33197,7 @@
       if (newTicketBtn) newTicketBtn.addEventListener("click", openNewTicketModal)
       wireCreateMenu()   // top-nav "Create New" dropdown
       wireAvatarMenu()   // top-nav account menu (email + Log out)
+      wireNotifications()   // KD-221: top-nav notifications bell
       const newTktBg = document.getElementById("newTktBg")
       if (newTktBg) {
         // KD-194: Keep New ticket popup open when clicking outside boundary; only close on Cancel or X.

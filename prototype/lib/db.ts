@@ -228,6 +228,19 @@ export async function applySchema(c: Client) {
     )`,
     `CREATE INDEX IF NOT EXISTS evt_proj_idx ON activity_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS evt_actor_idx ON activity_events (project_id, actor_email, created_at)`,
+    // KD-221: in-app notifications (top-bar bell) — one row per recipient per ticket update.
+    `CREATE TABLE IF NOT EXISTS notifications (
+       id TEXT PRIMARY KEY,
+       recipient_email TEXT NOT NULL,
+       project_id TEXT NOT NULL,
+       feedback_id TEXT,
+       type TEXT NOT NULL,
+       actor_email TEXT,
+       meta_json TEXT,
+       created_at INTEGER NOT NULL,
+       read_at INTEGER
+    )`,
+    `CREATE INDEX IF NOT EXISTS notif_recipient_idx ON notifications (recipient_email, created_at)`,
     // #722 (P1): per-ticket timeline — ticketActivityTimeline runs
     // `WHERE project_id=? AND feedback_id=? ORDER BY created_at ASC, id ASC`. No index covered feedback_id,
     // so every ticket-open scanned the whole (high-write) project event partition. This composite turns it
@@ -3940,7 +3953,113 @@ export async function insertActivity(a: ActivityInsert): Promise<string> {
            a.feedbackId ?? null, a.screenshotId ?? null, a.meta != null ? JSON.stringify(a.meta) : null, Date.now()],
   })
   invalidateDashboardCache(a.projectId) // #722 (P2.2): new activity event changes the activity count
+  // KD-221: ticket updates notify the ticket's assignee (top-bar bell). Fire-and-forget — never slows or
+  // fails the write that logged the activity.
+  void notifyAssigneeOfTicketUpdate(a).catch((e: any) => console.warn("notification skipped:", e?.message || e))
   return id
+}
+
+// ── KD-221: in-app notifications ─────────────────────────────────────────────────────────────────────
+// Ticket-update activity types that notify the ticket's assignee. Comment/label/description updates aren't
+// activity events, so their routes call notifyAssigneeOfTicketUpdate directly with these extra types.
+export const NOTIFY_ASSIGNEE_TYPES = new Set([
+  "ticket_created", // a new ticket created already assigned to someone else → "assigned you a new ticket"
+  "ticket_status_changed", "ticket_priority_changed", "ticket_assignee_changed", "ticket_title_changed",
+  "ticket_attachment_added", "ticket_attachment_removed", "ticket_screenshot_annotated", "ticket_qa_closed",
+  "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
+])
+
+const _notifEmail = (v: unknown): string | null => {
+  const e = v == null ? "" : String(v).trim().toLowerCase()
+  return e && e.includes("@") ? e : null
+}
+
+export async function createNotification(n: {
+  recipientEmail: string; projectId: string; feedbackId?: string | null; type: string; actorEmail?: string | null; meta?: any
+}): Promise<string> {
+  const id = "ntf_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO notifications (id,recipient_email,project_id,feedback_id,type,actor_email,meta_json,created_at,read_at)
+          VALUES (?,?,?,?,?,?,?,?,NULL)`,
+    args: [id, n.recipientEmail.toLowerCase(), n.projectId, n.feedbackId ?? null, n.type, n.actorEmail ?? null,
+           n.meta != null ? JSON.stringify(n.meta) : null, Date.now()],
+  })
+  return id
+}
+
+// Who hears about a ticket update: the ticket's current assignee — never the person who made the change.
+// For an assignment change, the NEW assignee ("assigned you") and the PREVIOUS one ("reassigned") hear it.
+export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<number> {
+  if (!db || !a.feedbackId || !NOTIFY_ASSIGNEE_TYPES.has(a.type)) return 0
+  const actor = _notifEmail(a.actorEmail)
+  const recipients: string[] = []
+  if (a.type === "ticket_assignee_changed") {
+    for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
+  } else {
+    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const assignee = _notifEmail(r.rows[0]?.assignee)
+    if (assignee) recipients.push(assignee)
+  }
+  const uniq = [...new Set(recipients)].filter(e => e !== actor)
+  for (const to of uniq) {
+    await createNotification({ recipientEmail: to, projectId: a.projectId, feedbackId: a.feedbackId, type: a.type, actorEmail: actor, meta: a.meta ?? null })
+  }
+  return uniq.length
+}
+
+export type NotificationRow = {
+  id: string; projectId: string; projectName: string | null; feedbackId: string | null; type: string
+  actorEmail: string | null; meta: any; createdAt: number; readAt: number | null
+  ticketTitle: string | null; ticketSeq: number | null
+}
+
+export async function listNotifications(recipientEmail: string, limit = 30): Promise<NotificationRow[]> {
+  const r = await db!.execute({
+    sql: `SELECT n.*, p.name AS project_name, f.title AS f_title, f.suggested_bug_json AS f_sb, f.observation AS f_obs, f.seq_num AS f_seq,
+                 (f.id IS NOT NULL) AS f_exists
+          FROM notifications n
+          LEFT JOIN projects p ON p.id = n.project_id
+          LEFT JOIN feedback f ON f.id = n.feedback_id
+          WHERE n.recipient_email = ?
+          ORDER BY n.created_at DESC LIMIT ?`,
+    args: [recipientEmail.toLowerCase(), Math.max(1, Math.min(100, limit))],
+  })
+  return r.rows.map((x: any) => {
+    let meta: any = null
+    try { meta = x.meta_json ? JSON.parse(String(x.meta_json)) : null } catch { meta = null }
+    return {
+      id: String(x.id), projectId: String(x.project_id), projectName: x.project_name != null ? String(x.project_name) : null,
+      feedbackId: x.feedback_id != null ? String(x.feedback_id) : null, type: String(x.type),
+      actorEmail: x.actor_email != null ? String(x.actor_email) : null, meta,
+      createdAt: Number(x.created_at), readAt: x.read_at != null ? Number(x.read_at) : null,
+      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs }) : null,
+      ticketSeq: x.f_seq != null ? Number(x.f_seq) : null,
+    }
+  })
+}
+
+export async function countUnreadNotifications(recipientEmail: string): Promise<number> {
+  const r = await db!.execute({
+    sql: "SELECT COUNT(*) AS n FROM notifications WHERE recipient_email=? AND read_at IS NULL",
+    args: [recipientEmail.toLowerCase()],
+  })
+  return Number(r.rows[0]?.n ?? 0)
+}
+
+// Mark the recipient's notifications read — the given ids, or all of them when `ids` is null.
+export async function markNotificationsRead(recipientEmail: string, ids: string[] | null): Promise<number> {
+  const now = Date.now()
+  if (ids === null) {
+    const r = await db!.execute({ sql: "UPDATE notifications SET read_at=? WHERE recipient_email=? AND read_at IS NULL", args: [now, recipientEmail.toLowerCase()] })
+    return r.rowsAffected ?? 0
+  }
+  const clean = ids.map(String).filter(Boolean).slice(0, 100)
+  if (!clean.length) return 0
+  const r = await db!.execute({
+    sql: `UPDATE notifications SET read_at=? WHERE recipient_email=? AND read_at IS NULL AND id IN (${clean.map(() => "?").join(",")})`,
+    args: [now, recipientEmail.toLowerCase(), ...clean],
+  })
+  return r.rowsAffected ?? 0
 }
 
 // ── dashboard reads (P1) — indexed, project-scoped, newest-first. Reads only. ──
@@ -8245,6 +8364,7 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
   await db!.execute({ sql: "DELETE FROM project_members WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM monitoring_consent WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM extension_tokens WHERE email=?", args: [e] })
+  await db!.execute({ sql: "DELETE FROM notifications WHERE recipient_email=?", args: [e] }) // KD-221
   await db!.execute({ sql: "DELETE FROM login_otps WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM sessions WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM users WHERE email=?", args: [e] })

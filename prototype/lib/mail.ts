@@ -470,6 +470,21 @@ function escMail(s: string): string {
   return s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string))
 }
 
+// KD-221: ticket status changed — to the assignee / reporter (lib/status-notification.ts builds the copy).
+export async function sendTicketStatusEmail(to: string, mail: { subject: string; text: string; html: string }) {
+  const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
+  await sgSend({
+    to: [to],
+    from: { email: from, name: "Klavity" },
+    subject: mail.subject,
+    content: [
+      { type: "text/plain", value: mail.text },
+      { type: "text/html", value: mail.html },
+    ],
+    type: "ticket_status",
+  })
+}
+
 export async function sendTicketAssignmentEmail(input: TicketAssignmentEmail) {
   const from = process.env.KLAV_MAIL_FROM || "noreply@klavity.in"
   const project = input.projectName ? ` in ${input.projectName}` : ""
