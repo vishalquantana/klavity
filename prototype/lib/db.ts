@@ -8582,8 +8582,11 @@ export async function listTicketsPaginated(
     statuses?: string[]      // e.g. ["open","in_progress"]; empty = all non-new
     priorities?: string[]    // e.g. ["urgent","high"]
     assignee?: string        // exact email match; empty string = unassigned; omit = all
+    assignees?: string[]     // multi-assignee list; empty string or __unassigned__ = unassigned
     source?: "sim" | "human" | "manual" // sim = sim_id IS NOT NULL; human = sim_id IS NULL and not manual; manual = source='manual'
+    sources?: string[]       // multi-source list
     label?: string           // exact label id; omit = all labels
+    labels?: string[]        // multi-label list
     search?: string          // case-insensitive text search across ticket content
     page?: number            // 1-indexed, default 1
     limit?: number           // default 50, max 200
@@ -8621,7 +8624,17 @@ export async function listTicketsPaginated(
     args.push(...opts.priorities)
   }
 
-  if (opts.assignee !== undefined) {
+  if (opts.assignees && opts.assignees.length) {
+    const hasUnassigned = opts.assignees.includes("") || opts.assignees.includes("__unassigned__")
+    const named = opts.assignees.filter(a => a && a !== "__unassigned__")
+    const aParts: string[] = []
+    if (hasUnassigned) aParts.push("(f.assignee IS NULL OR f.assignee='')")
+    if (named.length) {
+      aParts.push(`f.assignee IN (${named.map(() => "?").join(",")})`)
+      args.push(...named)
+    }
+    if (aParts.length) conditions.push(`(${aParts.join(" OR ")})`)
+  } else if (opts.assignee !== undefined) {
     if (opts.assignee === "") {
       conditions.push("(f.assignee IS NULL OR f.assignee='')")
     } else {
@@ -8630,17 +8643,21 @@ export async function listTicketsPaginated(
     }
   }
 
-  if (opts.source === "sim") conditions.push("f.sim_id IS NOT NULL")
-  else if (opts.source === "manual") conditions.push("f.source='manual'")
-  else if (opts.source === "human") conditions.push("f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual')")
+  const sources = (opts.sources && opts.sources.length) ? opts.sources : (opts.source ? [opts.source] : [])
+  if (sources.length) {
+    const sParts: string[] = []
+    if (sources.includes("sim")) sParts.push("f.sim_id IS NOT NULL")
+    if (sources.includes("manual")) sParts.push("f.source='manual'")
+    if (sources.includes("human")) sParts.push("(f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual'))")
+    if (sParts.length) conditions.push(`(${sParts.join(" OR ")})`)
+  }
 
-  if (opts.label) {
-    // Scope the label through the ticket's project too: a label from another tenant can never
-    // influence this result, even if its ID were somehow supplied by a caller.
+  const labels = (opts.labels && opts.labels.length) ? opts.labels : (opts.label ? [opts.label] : [])
+  if (labels.length) {
     conditions.push(`EXISTS (SELECT 1 FROM ticket_labels tl
                              JOIN labels l ON l.id = tl.label_id
-                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id = ?)`)
-    args.push(opts.label)
+                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id IN (${labels.map(() => "?").join(",")}))`)
+    args.push(...labels)
   }
 
   const search = opts.search?.trim()
