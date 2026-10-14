@@ -15597,6 +15597,20 @@
       color: #0c0a08
     }
 
+    /* KD-180: project-switch loading overlay */
+    .psw-overlay { position: fixed; inset: 0; z-index: 2147483000; display: none; align-items: center; justify-content: center;
+      background: rgba(12, 10, 8, .38); backdrop-filter: blur(2px) }
+    .psw-overlay.show { display: flex }
+    .psw-card { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 26px 34px; min-width: 260px;
+      background: var(--ink-2); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 18px 48px rgba(0, 0, 0, .3);
+      font-family: var(--body); text-align: center }
+    .psw-spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(99, 102, 241, .2); border-top-color: var(--indigo);
+      animation: spin .8s linear infinite }
+    .psw-title { font-size: 15px; font-weight: 600; color: var(--paper) }
+    .psw-title b { font-weight: 700 }
+    .psw-sub { font-size: 12.5px; color: var(--paper-faint) }
+    @media (prefers-reduced-motion: reduce) { .psw-spin { animation-duration: 2.4s } }
+
     .avatar-menu {
       position: absolute;
       top: calc(100% + 8px);
@@ -15692,6 +15706,40 @@
 </head>
 
 <body data-view="overview">
+  <!-- KD-180: project-switch loading overlay. Shown the moment a project is picked (projSwitchChoose) and kept up
+       across the reload until the new project's dashboard paints (load() → projSwitchOverlayHide). -->
+  <div class="psw-overlay" id="pswOverlay" role="status" aria-live="polite" aria-hidden="true">
+    <div class="psw-card">
+      <span class="psw-spin" aria-hidden="true"></span>
+      <div class="psw-title">Switching to <b id="pswName">project</b>…</div>
+      <div class="psw-sub">Loading tickets, reports and settings</div>
+    </div>
+  </div>
+  <script>
+    // KD-180: keep the overlay up from the very first paint of the reloaded page (before the big dashboard script
+    // has even parsed) when this load is the switch the user just started.
+    (function () {
+      try {
+        var s = JSON.parse(sessionStorage.getItem("klav:projSwitch") || "null")
+        var pid = new URL(location.href).searchParams.get("project")
+        if (s && s.pid && s.pid === pid && Date.now() - s.at < 60000) {
+          document.getElementById("pswName").textContent = s.name || "project"
+          var o = document.getElementById("pswOverlay"); o.classList.add("show"); o.setAttribute("aria-hidden", "false")
+        } else sessionStorage.removeItem("klav:projSwitch")
+      } catch (e) { }
+      // KD-180: landing on the Tickets board (the usual project-switch target) used to fetch the board only AFTER
+      // /api/dashboard returned — two slow round trips back to back. The project id is already in the URL, so start
+      // the board fetch now, in parallel; fetchAndRenderTktBoard() picks this up when the URL matches exactly
+      // (the status list mirrors ALL_STATUSES — on any mismatch it just fetches normally).
+      try {
+        var u = new URL(location.href), p = u.searchParams.get("project")
+        if (p && /^#tickets\/?$/.test(location.hash) && !u.searchParams.get("ticket")) {
+          var url = "/api/projects/" + encodeURIComponent(p) + "/tickets?status=" + encodeURIComponent("open,new,in_progress,blocked,ready_for_deployment,deployed,qa_review,done,dismissed") + "&page=1&limit=200"
+          window.__klavEarlyBoard = { url: url, at: Date.now(), p: fetch(url, { credentials: "same-origin" }) }
+        }
+      } catch (e) { }
+    })()
+  </script>
   <div class="bar">
     <div class="bar-in">
       <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
@@ -18482,6 +18530,7 @@
         const cached = swrRead(dashCacheKey(dashTargetProjId()))
         if (cached) {
           state = cached; render(true)   // fromCache: skip network sub-loaders until fresh confirms the project
+          projSwitchOverlayHide()        // KD-180: the new project's content is on screen
           // #535: instant deep-link restore from cache when the ticket is already present (no network wait).
           try { maybeOpenDeepLinkTicket() } catch (e) { }
         }
@@ -18535,6 +18584,8 @@
         }
       } catch (e) { data = null }
       finally { kbar.done(); if (inflight) dashInflightLeave(inflight); if (inflight2) dashInflightLeave(inflight2) }
+      // KD-180: the switch has resolved (painted below, or failed with its own message) — drop the overlay.
+      if (!redirected) setTimeout(projSwitchOverlayHide, 0)
       if (redirected) return
       // Step 5: the browser-wide session changed user while this was in flight → apply/render/cache NOTHING; re-init cleanly.
       if (dashIdentityChanged()) { location.reload(); return }
@@ -21188,9 +21239,29 @@
       if (!p) return
       const activeId = state && state.active ? state.active.id : null
       if (p.id === activeId) { projSwitchClose(); return }
+      projSwitchClose(false)
+      projSwitchOverlayShow(p.id, p.name)   // KD-180: clear feedback right away; stays up across the reload
       // Reuse the existing navigation to switch projects.
       location.href = projSwitchUrl(p.id, location.hash)   // KD-179: keep the current page
     }
+    // KD-180: the project-switch overlay (#pswOverlay). The switch is a full page load; the marker in sessionStorage
+    // lets the reloaded page keep the overlay up (see the inline script after <body>) until load() paints.
+    const PSW_KEY = "klav:projSwitch"
+    function projSwitchOverlayShow(pid, name) {
+      try { sessionStorage.setItem(PSW_KEY, JSON.stringify({ pid: pid, name: name || "", at: Date.now() })) } catch (e) { }
+      const o = $("pswOverlay"), n = $("pswName")
+      if (n) n.textContent = name || "project"
+      if (o) { o.classList.add("show"); o.setAttribute("aria-hidden", "false") }
+    }
+    function projSwitchOverlayHide() {
+      try { sessionStorage.removeItem(PSW_KEY) } catch (e) { }
+      const o = $("pswOverlay")
+      if (o && o.classList.contains("show")) { o.classList.remove("show"); o.setAttribute("aria-hidden", "true") }
+    }
+    // Never strand the overlay: a page restored from the back/forward cache (Back after switching) and a load that
+    // somehow never paints both clear it.
+    window.addEventListener("pageshow", (e) => { if (e.persisted) projSwitchOverlayHide() })
+    setTimeout(projSwitchOverlayHide, 60000)
     function projSwitchKeydown(e) {
       const n = projSwitch.matches.length
       if (e.key === "ArrowDown") {
@@ -26245,9 +26316,20 @@
       sp.set("page", "1")
       sp.set("limit", "200")
 
-      const _fetchStart = Date.now()
+      let _fetchStart = Date.now()
       try {
-        const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
+        const boardUrl = `/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`
+        // KD-180: reuse the board fetch the page started at boot (in parallel with /api/dashboard) — once, and only
+        // for the exact same request. A failed early fetch falls back to a normal one.
+        let res = null
+        const early = window.__klavEarlyBoard
+        if (early && early.url === boardUrl) {
+          window.__klavEarlyBoard = null
+          res = await early.p.catch(() => null)
+          if (res && res.ok) _fetchStart = early.at
+          else res = null
+        }
+        if (!res) res = await fetch(boardUrl)
         if (!res.ok) throw new Error("HTTP " + res.status)
         const data = await res.json()
         // A board GET already in flight when the user saves (status dropdown / drag) returns a
