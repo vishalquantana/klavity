@@ -95,3 +95,26 @@ test("listTicketsPaginated: search remains tenant-scoped and paginated", async (
   expect(secondPage.tickets).toHaveLength(1)
   expect([...firstPage.tickets, ...secondPage.tickets].some(t => t.id === other)).toBe(false)
 })
+
+test("listTicketsPaginated: multi-select assignees, sources, and priorities", async () => {
+  const proj = `proj_tkl_multi_${Date.now()}`
+  const t1 = await insertFeedback({ projectId: proj, priority: "urgent", simId: "sim_1", observation: "Urgent sim bug" })
+  const t2 = await insertFeedback({ projectId: proj, priority: "high", observation: "High human bug" })
+  const t3 = await insertFeedback({ projectId: proj, priority: "low", observation: "Low manual bug" })
+  await updateFeedbackMeta(proj, t1, { status: "open", assignee: "alice@example.com" })
+  await updateFeedbackMeta(proj, t2, { status: "open", assignee: "bob@example.com" })
+  await updateFeedbackMeta(proj, t3, { status: "open", assignee: "" })
+  await db!.execute({ sql: "UPDATE feedback SET source='manual' WHERE id=?", args: [t3] })
+
+  // Multi-assignees
+  const rAssignee = await listTicketsPaginated(proj, { assignees: ["alice@example.com", "__unassigned__"] })
+  expect(rAssignee.tickets.map(t => t.id).sort()).toEqual([t1, t3].sort())
+
+  // Multi-priorities
+  const rPriority = await listTicketsPaginated(proj, { priorities: ["urgent", "low"] })
+  expect(rPriority.tickets.map(t => t.id).sort()).toEqual([t1, t3].sort())
+
+  // Multi-sources
+  const rSources = await listTicketsPaginated(proj, { sources: ["sim", "manual"] })
+  expect(rSources.tickets.map(t => t.id).sort()).toEqual([t1, t3].sort())
+})

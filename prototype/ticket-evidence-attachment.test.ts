@@ -64,3 +64,11 @@ test("image attachments in buildAttachmentsHtml do not render play overlay", () 
   expect(fn).toContain('<span class="tkt-attach-play">')
 })
 
+test("KD-190: wireAttachments supports drag-and-drop file upload on attachments and ticket view", () => {
+  const fn = extractFn(HTML, "function wireAttachments(")
+  expect(fn).toContain('KD-190')
+  expect(fn).toContain('dataTransfer')
+  expect(fn).toContain('handleIncomingFiles')
+  expect(fn).toContain('detailEl._handleAttachDrop')
+})
+

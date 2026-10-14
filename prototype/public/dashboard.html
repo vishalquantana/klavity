@@ -4096,6 +4096,115 @@
       background-color: rgba(99, 102, 241, .08)
     }
 
+    /* KLA-169 / KD-235: Multi-select dropdowns for ticket filters */
+    .tkt-ms-wrap {
+      position: relative;
+      display: inline-block;
+    }
+
+    .tkt-ms-btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--ink-3) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 5px 26px 5px 10px;
+      font-size: 12px;
+      color: var(--paper);
+      cursor: pointer;
+      transition: border-color .15s, background-color .15s, color .15s;
+      font-family: inherit;
+      line-height: normal;
+      text-align: left;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      box-sizing: border-box;
+      max-width: 220px;
+    }
+
+    .tkt-ms-btn-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tkt-ms-btn:hover {
+      border-color: var(--indigo);
+    }
+
+    .tkt-ms-btn:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 1px;
+    }
+
+    .tkt-ms-btn.active {
+      border-color: var(--indigo);
+      background-color: rgba(99, 102, 241, .08);
+      color: var(--indigo);
+      font-weight: 500;
+    }
+
+    .tkt-ms-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      min-width: 180px;
+      max-width: 280px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+      padding: 4px;
+      z-index: 100;
+    }
+
+    .tkt-ms-menu.hide {
+      display: none !important;
+    }
+
+    .tkt-ms-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--paper);
+      cursor: pointer;
+      user-select: none;
+      transition: background .12s, color .12s;
+    }
+
+    .tkt-ms-item:hover {
+      background: rgba(255, 255, 255, .06);
+    }
+
+    .tkt-ms-item.selected {
+      background: rgba(99, 102, 241, .12);
+      color: var(--indigo-lite, #a5b4fc);
+      font-weight: 500;
+    }
+
+    .tkt-ms-item input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--indigo);
+      cursor: pointer;
+      margin: 0;
+      flex-shrink: 0;
+    }
+
+    .tkt-ms-item .tkt-ms-txt {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .tkt-fb-label {
       font-size: 11px;
       font-weight: 600;
@@ -7563,9 +7672,9 @@
     /* editable description (click-to-edit / pencil → textarea + Save/Cancel) */
     /* KLA-832: the Description reads as a clearly-outlined white card (repo "white cards on beige" standard) —
    a visible border/stroke + padding so the detail body never sits as bare text directly on the page bg. */
-    .tkt-desc{
-      background:var(--ink-2);
-      border:1px solid var(--line);
+    .tkt-desc {
+      background: var(--ink-2);
+      border: 1px solid var(--line);
       border-radius: 12px;
       padding: 13px 15px
     }
@@ -8969,7 +9078,11 @@
 
     .tkt-browser .tkt-shot {
       margin: 0;
-      padding: 0
+      padding: 0;
+      max-height: 520px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-behavior: smooth
     }
 
     .tkt-shot-sk {
@@ -12306,7 +12419,7 @@
     }
 
     .tkt-rec-loading {
-      display: flex;
+      display: none !important;
       align-items: center;
       gap: 7px;
       font-size: 12px;
@@ -12520,7 +12633,7 @@
     }
 
     .tkt-rec-error {
-      display: flex;
+      display: none;
       align-items: center;
       gap: 6px;
       font-size: 12.5px;
@@ -12531,12 +12644,20 @@
       padding: 8px 10px
     }
 
+    .tkt-rec-error.hide {
+      display: none !important;
+    }
+
     .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-video {
       display: none
     }
 
+    .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-error {
+      display: flex;
+    }
+
     .tkt-rec-dl {
-      display: inline-flex;
+      display: none;
       align-items: center;
       gap: 6px;
       align-self: flex-start;
@@ -12548,6 +12669,10 @@
       border-radius: 8px;
       padding: 5px 11px;
       transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), transform var(--mi-dur) var(--mi-ease)
+    }
+
+    .tkt-rec-vwrap.tkt-rec-failed .tkt-rec-dl {
+      display: inline-flex;
     }
 
     .tkt-rec-dl svg {
@@ -12724,6 +12849,46 @@
 
     .tkt-attach-msg:empty {
       display: none
+    }
+
+    /* KD-190: Drag & drop files onto Evidence & Media / Attachments or ticket preview/details */
+    .tkt-attach-dropzone {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--paper-faint);
+      background: rgba(255, 255, 255, 0.02);
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    .tkt-attach-dropzone.over,
+    .tkt-attach-wrap.drag-over .tkt-attach-dropzone {
+      border-color: var(--indigo, #6366f1);
+      background: rgba(99, 102, 241, .08);
+      color: var(--paper);
+    }
+
+    .tkt-attach-wrap.drag-over {
+      outline: 2px dashed var(--indigo, #6366f1);
+      outline-offset: 4px;
+      border-radius: 12px;
+    }
+
+    .tkt-detail-drop-active {
+      outline: 2px dashed rgba(99, 102, 241, .45);
+      outline-offset: -2px;
+      position: relative;
+    }
+
+    .tkt-attach-drop-hint {
+      font-size: 12px;
+      color: var(--paper-faint);
+      pointer-events: none;
     }
 
     /* KD-193: remove (×) + inline confirm on every uploaded attachment; Cancel on an upload that is still being sent */
@@ -21726,6 +21891,7 @@
           fb.appendChild(opt)
         })
         fb.value = cur
+        if (typeof updateTktMultiSelect === "function") updateTktMultiSelect("fbAssignee")
       }
     }
     function setTicketAssigneeLocal(ticketId, assignee) {
@@ -21962,7 +22128,7 @@
         var repairing = false
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
-          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "")
+          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "") || /^\//.test(v.getAttribute("src") || "")
           if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
@@ -22171,7 +22337,7 @@
       if (o.kind !== "video") {
         const imgWrap = document.createElement("div"); imgWrap.className = "media-pv-imgwrap"
         imgWrap.appendChild(media)
-        imgWrap.addEventListener("click", function(e) {
+        imgWrap.addEventListener("click", function (e) {
           if (e.target.closest("button") || e.target.closest("a")) return
           imgWrap.classList.toggle("zoomed")
           holder.classList.toggle("has-zoomed", imgWrap.classList.contains("zoomed"))
@@ -22553,7 +22719,7 @@
       var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
       var uploading = pending.some(function (u) { return u.status === "uploading" })
       var pendingHtml = pending.map(_attachTileHtml).join("")
-      var _dlSvg = _ATTACH_DL_SVG
+      var _dlSvg = typeof _ATTACH_DL_SVG !== "undefined" ? _ATTACH_DL_SVG : '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
       var thumbs = ""
       var items = atts.map(function (a, i) {
         var name = esc(String(a.filename || ("attachment-" + (i + 1))))
@@ -22580,9 +22746,11 @@
         + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
         + (pendingHtml ? '<div class="tkt-attach-thumbs tkt-attach-pendings">' + pendingHtml + '</div>' : '')
         + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
-        + '<div class="tkt-attach-list">' + items + '</div>'
+        + '<div class="tkt-attach-dropzone">'
         + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button"' + (uploading ? ' disabled aria-busy="true"' : '') + '>'
         + (uploading ? '<span class="tkt-spin">' + kicon('loader', { size: 13 }) + '</span> Uploading…' : kicon('paperclip', { size: 13 }) + ' Add attachment') + '</button>'
+        + '<span class="tkt-attach-drop-hint">or drop files here</span>'
+        + '</div>'
         + '<input type="file" class="tkt-attach-input" multiple hidden>'
         + '<div class="tkt-attach-msg muted" style="font-size:12px;color:' + (attachMsgFor(t.id).isErr ? 'var(--rose)' : 'var(--paper-faint)') + '" role="status" aria-live="polite">' + esc(attachMsgFor(t.id).text) + '</div>'
         + '</div>'
@@ -22684,6 +22852,24 @@
       if (addBtn) {
         addBtn.addEventListener("click", function () { if (!attachInFlight(id)) input.click() })   // no second pick while one is in flight
       }
+      var handleIncomingFiles = function (rawFiles) {
+        var files = Array.prototype.slice.call(rawFiles || [])
+        if (!files.length) return
+        var proceed = function (picked) {
+          var cur = (_attachCtx.get(id) || {}).t || t
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var notes = []
+          if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
+          plan.rejected.forEach(function (x) { notes.push(x) })
+          if (notes.length) { attachSetMsg(id, notes.join(" "), true); attachToast(notes.join(" "), "warn") }
+          if (!notes.length) attachSetMsg(id, "", false)
+          if (!plan.accept.length) return
+          attachStartUpload(id, plan.accept, _attachHooks)
+        }
+        if (!files.some(imgOptCandidate)) { proceed(files); return }
+        attachSetMsg(id, "Optimising images…", false)
+        Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
+      }
       input.addEventListener("change", function () {
         var files = Array.prototype.slice.call(input.files || [])
         input.value = ""
@@ -22704,8 +22890,9 @@
         // }
         if (!files.length) return
         var proceed = function (picked) {
+          var files = picked
           var cur = (_attachCtx.get(id) || {}).t || t
-          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id))
+          var plan = attachPlanUpload(picked, Array.isArray(cur.attachments) ? cur.attachments : [], attachUploadsFor(id)) // attachPlanUpload(files)
           var notes = []
           if (plan.duplicates.length) notes.push(plan.duplicates.join(", ") + (plan.duplicates.length === 1 ? " is" : " are") + " already attached — skipped.")
           plan.rejected.forEach(function (x) { notes.push(x) })
@@ -22720,6 +22907,123 @@
         attachSetMsg(id, "Optimising images…", false)
         Promise.all(files.map(compressImageFile)).then(proceed, function () { proceed(files) })
       })
+
+      // KD-190: Drag and drop files onto Evidence & Media / Attachments or the ticket preview/details area
+      var hasFiles = function (ev) {
+        if (!ev.dataTransfer) return false
+        var types = ev.dataTransfer.types
+        return !!types && (Array.prototype.indexOf.call(types, "Files") >= 0 || Array.prototype.indexOf.call(types, "application/x-moz-file") >= 0)
+      }
+      var dropZone = wrap.querySelector(".tkt-attach-dropzone") || wrap
+      var wrapDragCount = 0
+      wrap.addEventListener("dragenter", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        wrapDragCount++
+        wrap.classList.add("drag-over")
+        if (dropZone) dropZone.classList.add("over")
+      })
+      wrap.addEventListener("dragover", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+        wrap.classList.add("drag-over")
+        if (dropZone) dropZone.classList.add("over")
+      })
+      wrap.addEventListener("dragleave", function (ev) {
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        wrapDragCount--
+        if (wrapDragCount <= 0) {
+          wrapDragCount = 0
+          wrap.classList.remove("drag-over")
+          if (dropZone) dropZone.classList.remove("over")
+        }
+      })
+      wrap.addEventListener("drop", function (ev) {
+        wrapDragCount = 0
+        wrap.classList.remove("drag-over")
+        if (dropZone) dropZone.classList.remove("over")
+        if (!hasFiles(ev)) return
+        ev.preventDefault()
+        ev.stopPropagation()
+        var dropped = ev.dataTransfer && ev.dataTransfer.files
+        if (dropped && dropped.length) handleIncomingFiles(dropped)
+      })
+
+      // Wire detailEl for dropping anywhere in ticket details/preview view
+      detailEl._handleAttachDrop = handleIncomingFiles
+      if (!detailEl._wireAttachDrop) {
+        detailEl._wireAttachDrop = true
+        var detailDragCount = 0
+        detailEl.addEventListener("dragenter", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          detailDragCount++
+          detailEl.classList.add("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.add("drag-over")
+        })
+        detailEl.addEventListener("dragover", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+          detailEl.classList.add("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.add("drag-over")
+        })
+        detailEl.addEventListener("dragleave", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          detailDragCount--
+          if (detailDragCount <= 0) {
+            detailDragCount = 0
+            detailEl.classList.remove("tkt-detail-drop-active")
+            var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+            if (curWrap) curWrap.classList.remove("drag-over")
+          }
+        })
+        detailEl.addEventListener("drop", function (ev) {
+          detailDragCount = 0
+          detailEl.classList.remove("tkt-detail-drop-active")
+          var curWrap = detailEl.querySelector(".tkt-attach-wrap")
+          if (curWrap) curWrap.classList.remove("drag-over")
+          if (ev.target && ev.target.closest && ev.target.closest(".cmt-form")) return
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          var dropped = ev.dataTransfer && ev.dataTransfer.files
+          if (dropped && dropped.length && typeof detailEl._handleAttachDrop === "function") {
+            detailEl._handleAttachDrop(dropped)
+          }
+        })
+      }
+
+      // Wire Evidence & Media strip / left stage in cockpit view if present
+      var evStrip = detailEl.querySelector(".t3-evidence") || detailEl.querySelector(".t3-left")
+      if (evStrip && !evStrip._wireAttachDrop) {
+        evStrip._wireAttachDrop = true
+        evStrip.addEventListener("dragover", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy"
+          evStrip.classList.add("drag-over")
+        })
+        evStrip.addEventListener("dragleave", function (ev) {
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          evStrip.classList.remove("drag-over")
+        })
+        evStrip.addEventListener("drop", function (ev) {
+          evStrip.classList.remove("drag-over")
+          if (!hasFiles(ev)) return
+          ev.preventDefault()
+          ev.stopPropagation()
+          var dropped = ev.dataTransfer && ev.dataTransfer.files
+          if (dropped && dropped.length && typeof detailEl._handleAttachDrop === "function") {
+            detailEl._handleAttachDrop(dropped)
+          }
+        })
+      }
     }
     // #726: Evidence & Media thumbnail strip for the cockpit left column. Wires the big media stage to the
     // ticket's REAL evidence — its screenshot + session replay + any recordings — switching what the strip
@@ -24875,6 +25179,7 @@
     // #736: when the dedicated full page opens we push a CLEAN /t/<id> URL to the address bar; this remembers
     // the board URL (…/dashboard?project=…#tickets) to restore when the page closes or the user hits Back.
     let _tktBoardReturnUrl = null
+    let _tktBoardScrollY = 0
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
     // the in-app history story — a FRESH load of /t/<id> is still served by the server route (ticket.html).
@@ -24918,6 +25223,9 @@
       return p
     }
     async function openSingleTicket(id, mode) {
+      if (mode === "full" && !document.body.classList.contains("tkt-page-open")) {
+        _tktBoardScrollY = window.scrollY || window.pageYOffset || 0
+      }
       if (mode === "panel" || mode === "full") _tktSingleMode = mode
       tktReadsReset()   // a fresh open never inherits reads from a previous ticket
       // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
@@ -25076,7 +25384,9 @@
       if (panel) {
         // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
         document.body.classList.remove("tkt-page-open")
-        const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+        if (document.body.getAttribute("data-view") !== "tickets") {
+          const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
+        }
       } else {
         // KLA-563 dedicated page: activate the Tickets view chrome but NEVER mount the board — the page
         // renders directly from the single-ticket fetch. renderTicketsView() early-returns while this flag
@@ -25336,7 +25646,7 @@
         }
       } catch (e) { }
       // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
-      try { if (single.__focusTarget) single.__focusTarget.focus() } catch (e) { }
+      try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
       // Panel scrolls itself to top; the dedicated page scrolls the window.
       if (panel) { try { single.scrollTop = 0 } catch (e) { } }
       else { try { window.scrollTo(0, 0) } catch (e) { } }
@@ -25394,9 +25704,16 @@
       // the ~25s liveness poll is suppressed while a ticket is open (dashLiveBusy checks #ticketSingle),
       // so it was never nuked — only re-render the view when the dedicated page had replaced it.
       _tktSingleMode = "panel"
-      if (!wasPanel) renderTicketsView()
+      if (!wasPanel) {
+        renderTicketsView()
+        if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
+          try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
+          catch (e) { window.scrollTo(0, _tktBoardScrollY) }
+        }
+      }
+      _tktBoardScrollY = 0
       // a11y §10: return focus to the card / control that opened the detail.
-      try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus() } catch (e) { }
+      try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus({ preventScroll: true }) } catch (e) { }
       window.__klavTktInvoker = null
     }
 
@@ -25936,7 +26253,14 @@
     function syncTicketFiltersToUrl() {
       try {
         const u = new URL(location.href)
-        const params = { status: _tktFilters.status, priority: _tktFilters.priority, label: _tktFilters.label, assignee: _tktFilters.assignee, source: _tktFilters.source, q: _tktFilters.search }
+        const params = {
+          status: Array.isArray(_tktFilters.status) ? _tktFilters.status.join(",") : (_tktFilters.status || ""),
+          priority: Array.isArray(_tktFilters.priority) ? _tktFilters.priority.join(",") : (_tktFilters.priority || ""),
+          label: Array.isArray(_tktFilters.label) ? _tktFilters.label.join(",") : (_tktFilters.label || ""),
+          assignee: Array.isArray(_tktFilters.assignee) ? _tktFilters.assignee.join(",") : (_tktFilters.assignee || ""),
+          source: Array.isArray(_tktFilters.source) ? _tktFilters.source.join(",") : (_tktFilters.source || ""),
+          q: _tktFilters.search
+        }
         Object.entries(params).forEach(([key, value]) => value ? u.searchParams.set(key, value) : u.searchParams.delete(key))
         u.searchParams.delete("page")
         history.replaceState(null, "", u.toString())
@@ -25946,10 +26270,11 @@
     function loadTicketFiltersFromUrl() {
       try {
         const sp = new URL(location.href).searchParams
-          ;["status", "priority", "label", "assignee", "source", "q"].forEach(key => {
-            const filterKey = key === "q" ? "search" : key
-            _tktFilters[filterKey] = sp.get(key) || ""
+          ;["status", "priority", "label", "assignee", "source"].forEach(key => {
+            const val = sp.get(key)
+            _tktFilters[key] = val ? val.split(",").map(s => s.trim()).filter(Boolean) : []
           })
+        _tktFilters.search = sp.get("q") || ""
       } catch (e) { }
     }
 
@@ -25959,23 +26284,22 @@
     // the current filter path unchanged. Status/label stay behind the "Filters" (advanced) dropdowns.
     let _tktQuick = "all"
     function tktQuickToFilters(q) {
-      _tktFilters.assignee = ""; _tktFilters.priority = ""; _tktFilters.source = ""
-      if (q === "mine") _tktFilters.assignee = (state && state.email) || ""
-      else if (q === "unassigned") _tktFilters.assignee = "__unassigned__"
-      else if (q === "high") _tktFilters.priority = "urgent,high"
-      else if (q === "auto") _tktFilters.source = "sim"
+      _tktFilters.assignee = []
+      _tktFilters.priority = []
+      _tktFilters.source = []
+      _tktFilters.status = []
+      _tktFilters.label = []
+      if (q === "mine") _tktFilters.assignee = (state && state.email) ? [state.email] : []
+      else if (q === "unassigned") _tktFilters.assignee = ["__unassigned__"]
+      else if (q === "high") _tktFilters.priority = ["urgent", "high"]
+      else if (q === "auto") _tktFilters.source = ["sim"]
     }
     function renderQuickChips() {
       document.querySelectorAll("#tktQuickChips .tkt-chip").forEach(c => c.classList.toggle("on", c.dataset.q === _tktQuick))
     }
     // Reflect what a chip set back onto the advanced dropdowns so they stay consistent when opened.
     function syncFilterDropdownsFromState() {
-      const fbPriority = document.getElementById("fbPriority")
-      const fbAssignee = document.getElementById("fbAssignee")
-      const fbSource = document.getElementById("fbSource")
-      if (fbPriority) { fbPriority.value = (_tktFilters.priority.indexOf(",") >= 0 ? "" : _tktFilters.priority); fbPriority.classList.toggle("active", !!fbPriority.value) }
-      if (fbAssignee) { fbAssignee.value = _tktFilters.assignee; fbAssignee.classList.toggle("active", !!_tktFilters.assignee) }
-      if (fbSource) { fbSource.value = _tktFilters.source; fbSource.classList.toggle("active", !!_tktFilters.source) }
+      if (typeof updateAllTktMultiSelects === "function") updateAllTktMultiSelects()
     }
     function applyQuickChip(q) {
       _tktQuick = q
@@ -25989,11 +26313,16 @@
     // Derive which chip (if any) matches the current filters — used on load / after Clear.
     function deriveQuickFromFilters() {
       const f = _tktFilters
-      if (f.priority === "urgent,high") return "high"
-      if (f.source === "sim" && !f.priority && !f.assignee) return "auto"
-      if (f.assignee === "__unassigned__") return "unassigned"
-      if (f.assignee && state && f.assignee === state.email) return "mine"
-      if (!f.assignee && !f.priority && !f.source && !f.status && !f.label) return "all"
+      const hasStatus = Array.isArray(f.status) ? f.status.length > 0 : !!f.status
+      const hasLabel = Array.isArray(f.label) ? f.label.length > 0 : !!f.label
+      const pri = Array.isArray(f.priority) ? f.priority.slice().sort().join(",") : (f.priority || "")
+      const assign = Array.isArray(f.assignee) ? f.assignee.join(",") : (f.assignee || "")
+      const src = Array.isArray(f.source) ? f.source.join(",") : (f.source || "")
+      if ((pri === "high,urgent" || pri === "urgent,high") && !hasStatus && !hasLabel && !assign && !src) return "high"
+      if (src === "sim" && !hasStatus && !hasLabel && !pri && !assign) return "auto"
+      if (assign === "__unassigned__" && !hasStatus && !hasLabel && !pri && !src) return "unassigned"
+      if (assign && state && assign === state.email && !hasStatus && !hasLabel && !pri && !src) return "mine"
+      if (!assign && !pri && !src && !hasStatus && !hasLabel) return "all"
       return "__none__"
     }
 
@@ -26010,15 +26339,173 @@
       return `<span class="src-chip src-${k}">${label}</span>`
     }
 
+    const TKT_MS_CONFIGS = [
+      { id: "fbStatus", key: "status", defaultLabel: "All statuses", title: "Status" },
+      { id: "fbPriority", key: "priority", defaultLabel: "All priorities", title: "Priority" },
+      { id: "fbLabel", key: "label", defaultLabel: "All labels", title: "Label" },
+      { id: "fbAssignee", key: "assignee", defaultLabel: "All assignees", title: "Assignee" },
+      { id: "fbSource", key: "source", defaultLabel: "All sources", title: "Source" },
+    ]
+
+    function updateTktMultiSelect(selectId) {
+      const selectEl = document.getElementById(selectId)
+      if (!selectEl) return
+      const cfg = TKT_MS_CONFIGS.find(c => c.id === selectId)
+      if (!cfg) return
+      const parent = selectEl.parentElement
+      if (!parent) return
+      let wrap = parent.querySelector(`.tkt-ms-wrap[data-for="${selectId}"]`)
+      if (!wrap) return
+      const btn = wrap.querySelector(".tkt-ms-btn")
+      const btnText = wrap.querySelector(".tkt-ms-btn-text")
+      const menu = wrap.querySelector(".tkt-ms-menu")
+      const current = Array.isArray(_tktFilters[cfg.key]) ? _tktFilters[cfg.key] : []
+
+      if (current.length === 0) {
+        btnText.textContent = cfg.defaultLabel
+        btn.classList.remove("active")
+      } else if (current.length === 1) {
+        const opt = Array.from(selectEl.options).find(o => o.value === current[0])
+        btnText.textContent = opt ? (opt.textContent || opt.value) : current[0]
+        btn.classList.add("active")
+      } else {
+        btnText.textContent = `${cfg.title} (${current.length})`
+        btn.classList.add("active")
+      }
+
+      let html = ""
+      const isAllChecked = current.length === 0
+      Array.from(selectEl.options).forEach(opt => {
+        const val = opt.value
+        const txt = opt.textContent || ""
+        const isAll = (val === "")
+        const checked = isAll ? isAllChecked : current.includes(val)
+        html += `<label class="tkt-ms-item${checked ? ' selected' : ''}" data-val="${esc(val)}">`
+          + `<input type="checkbox" ${checked ? 'checked' : ''} />`
+          + `<span class="tkt-ms-txt">${esc(txt)}</span>`
+          + `</label>`
+      })
+      menu.innerHTML = html
+
+      menu.querySelectorAll(".tkt-ms-item").forEach(item => {
+        item.addEventListener("click", e => {
+          e.stopPropagation()
+          const val = item.getAttribute("data-val")
+          const cb = item.querySelector('input[type="checkbox"]')
+          if (e.target !== cb) cb.checked = !cb.checked
+          const isNowChecked = cb.checked
+
+          if (val === "") {
+            _tktFilters[cfg.key] = []
+          } else {
+            let arr = Array.isArray(_tktFilters[cfg.key]) ? [..._tktFilters[cfg.key]] : []
+            if (isNowChecked) {
+              if (!arr.includes(val)) arr.push(val)
+            } else {
+              arr = arr.filter(x => x !== val)
+            }
+            _tktFilters[cfg.key] = arr
+          }
+
+          updateTktMultiSelect(selectId)
+          onTktFilterUpdated()
+        })
+      })
+    }
+
+    function updateAllTktMultiSelects() {
+      TKT_MS_CONFIGS.forEach(cfg => updateTktMultiSelect(cfg.id))
+    }
+
+    function onTktFilterUpdated() {
+      const fbClear = document.getElementById("fbClearBtn")
+      const hasFilter = (
+        (_tktFilters.status && _tktFilters.status.length > 0) ||
+        (_tktFilters.priority && _tktFilters.priority.length > 0) ||
+        (_tktFilters.label && _tktFilters.label.length > 0) ||
+        (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
+        (_tktFilters.source && _tktFilters.source.length > 0) ||
+        !!_tktFilters.search
+      )
+      if (fbClear) fbClear.classList.toggle("hide", !hasFilter)
+      _tktListState.page = 1
+      _tktQuick = deriveQuickFromFilters()
+      renderQuickChips()
+      syncTicketFiltersToUrl()
+      renderTicketsView()
+    }
+
+    function initTktMultiSelect(cfg) {
+      const selectEl = document.getElementById(cfg.id)
+      if (!selectEl) return
+      selectEl.style.display = "none"
+      let wrap = selectEl.parentElement?.querySelector(`.tkt-ms-wrap[data-for="${cfg.id}"]`)
+      if (!wrap) {
+        wrap = document.createElement("div")
+        wrap.className = "tkt-ms-wrap"
+        wrap.setAttribute("data-for", cfg.id)
+        wrap.innerHTML = `<button class="tkt-ms-btn" type="button" aria-haspopup="listbox" aria-expanded="false" title="Filter by ${cfg.title.toLowerCase()}">`
+          + `<span class="tkt-ms-btn-text">${esc(cfg.defaultLabel)}</span>`
+          + `</button>`
+          + `<div class="tkt-ms-menu hide" role="listbox"></div>`
+        selectEl.insertAdjacentElement("afterend", wrap)
+
+        const btn = wrap.querySelector(".tkt-ms-btn")
+        const menu = wrap.querySelector(".tkt-ms-menu")
+
+        btn.addEventListener("click", e => {
+          e.stopPropagation()
+          const isOpen = !menu.classList.contains("hide")
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            if (m !== menu) {
+              m.classList.add("hide")
+              const pBtn = m.parentElement?.querySelector(".tkt-ms-btn")
+              if (pBtn) pBtn.setAttribute("aria-expanded", "false")
+            }
+          })
+          if (isOpen) {
+            menu.classList.add("hide")
+            btn.setAttribute("aria-expanded", "false")
+          } else {
+            updateTktMultiSelect(cfg.id)
+            menu.classList.remove("hide")
+            btn.setAttribute("aria-expanded", "true")
+          }
+        })
+      }
+      updateTktMultiSelect(cfg.id)
+    }
+
+    if (!window.__klavTktMsDocBound) {
+      window.__klavTktMsDocBound = true
+      document.addEventListener("click", e => {
+        if (!e.target.closest(".tkt-ms-wrap")) {
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            m.classList.add("hide")
+            const btn = m.parentElement?.querySelector(".tkt-ms-btn")
+            if (btn) btn.setAttribute("aria-expanded", "false")
+          })
+        }
+      })
+      document.addEventListener("keydown", e => {
+        if (e.key === "Escape") {
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            m.classList.add("hide")
+            const btn = m.parentElement?.querySelector(".tkt-ms-btn")
+            if (btn) btn.setAttribute("aria-expanded", "false")
+          })
+        }
+      })
+    }
+
     function refreshTicketLabelOptions() {
       // KD-227: also repaint every open ticket's Labels picker, so a label created/renamed/deleted in
       // Manage Labels shows up in (or leaves) the ticket's "+ Add label…" dropdown right away.
       document.querySelectorAll(".tkt-lbl-row").forEach(el => { if (typeof el._klavLblRefresh === "function") el._klavLblRefresh() })
       const fbLabel = document.getElementById("fbLabel")
       if (!fbLabel) return
-      const selected = _tktFilters.label
       fbLabel.innerHTML = '<option value="">All labels</option>' + ((state && state._labels) || []).map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join("")
-      fbLabel.value = selected
+      if (typeof updateTktMultiSelect === "function") updateTktMultiSelect("fbLabel")
     }
 
     function tktFilterBarBind() {
@@ -26035,19 +26522,25 @@
       _tktFbBound = true
 
       loadTicketFiltersFromUrl()
-      fbStatus.value = _tktFilters.status; fbPriority.value = _tktFilters.priority
-      fbAssignee.value = _tktFilters.assignee; fbSource.value = _tktFilters.source
+      refreshAssigneeOptions()
+      refreshTicketLabelOptions()
+      TKT_MS_CONFIGS.forEach(initTktMultiSelect)
+
       const searchEl = document.getElementById("kanbanSearch")
       if (searchEl) searchEl.value = _tktFilters.search
-        ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
-      fbClear.classList.toggle("hide", !Object.values(_tktFilters).some(v => !!v))
+      const hasFilter = (
+        (_tktFilters.status && _tktFilters.status.length > 0) ||
+        (_tktFilters.priority && _tktFilters.priority.length > 0) ||
+        (_tktFilters.label && _tktFilters.label.length > 0) ||
+        (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
+        (_tktFilters.source && _tktFilters.source.length > 0) ||
+        !!_tktFilters.search
+      )
+      fbClear.classList.toggle("hide", !hasFilter)
 
       // View toggle
       if (listBtn) listBtn.addEventListener("click", () => { _tktView = "list"; listBtn.classList.add("active"); boardBtn && boardBtn.classList.remove("active"); renderTicketsView() })
       if (boardBtn) boardBtn.addEventListener("click", () => { _tktView = "board"; boardBtn.classList.add("active"); listBtn && listBtn.classList.remove("active"); renderTicketsView() })
-
-      refreshAssigneeOptions()
-      refreshTicketLabelOptions()
 
       // KLA-562: wire the quick-filter chips + the "Filters" (advanced dropdowns) toggle.
       const chipRow = document.getElementById("tktQuickChips")
@@ -26065,36 +26558,11 @@
       _tktQuick = deriveQuickFromFilters()
       renderQuickChips()
 
-      const onFilterChange = () => {
-        _tktFilters.status = fbStatus.value
-        _tktFilters.priority = fbPriority.value
-        _tktFilters.label = fbLabel.value
-        _tktFilters.assignee = fbAssignee.value
-        _tktFilters.source = fbSource.value
-          // Active state on selects
-          ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.toggle("active", !!sel.value))
-        // Show/hide clear button
-        const hasFilter = Object.values(_tktFilters).some(v => !!v)
-        fbClear && fbClear.classList.toggle("hide", !hasFilter)
-        _tktListState.page = 1
-        // KLA-562: a manual dropdown change may diverge from any quick chip — re-derive the active chip.
-        _tktQuick = deriveQuickFromFilters(); renderQuickChips()
-        // JTBD 2.14: keep selection across filter changes — clear only on explicit Clear or project switch.
-        syncTicketFiltersToUrl()
-        renderTicketsView()
-      }
-
-      fbStatus.addEventListener("change", onFilterChange)
-      fbPriority.addEventListener("change", onFilterChange)
-      fbLabel.addEventListener("change", onFilterChange)
-      fbAssignee.addEventListener("change", onFilterChange)
-      fbSource.addEventListener("change", onFilterChange)
       fbClear.addEventListener("click", () => {
-        fbStatus.value = ""; fbPriority.value = ""; fbLabel.value = ""; fbAssignee.value = ""; fbSource.value = ""
-          ;[fbStatus, fbPriority, fbLabel, fbAssignee, fbSource].forEach(sel => sel.classList.remove("active"))
-        fbClear.classList.add("hide")
-        _tktFilters = { status: "", priority: "", label: "", assignee: "", source: "", search: "" }
+        _tktFilters = { status: [], priority: [], label: [], assignee: [], source: [], search: "" }
         if (searchEl) searchEl.value = ""
+        updateAllTktMultiSelects()
+        fbClear.classList.add("hide")
         _tktListState.page = 1
         _tktQuick = "all"; renderQuickChips()   // KLA-562: Clear resets to the "All" chip
         syncTicketFiltersToUrl()
@@ -26139,24 +26607,43 @@
     // cached full set without a fetch. Fields are the normalized shapes from listTicketsPaginated.
     function tktMatchesSelectFilters(t) {
       const f = _tktFilters || {}
-      if (f.status) {
-        const want = f.status === "closed" ? ["done", "dismissed"] : [f.status]
-        if (!want.includes(t.status || "open")) return false
+      if (f.status && f.status.length) {
+        const statuses = Array.isArray(f.status) ? f.status : String(f.status).split(",").filter(Boolean)
+        if (statuses.length) {
+          const want = []
+          for (const s of statuses) {
+            if (s === "closed") want.push("done", "dismissed")
+            else want.push(s)
+          }
+          if (!want.includes(t.status || "open")) return false
+        }
       }
       if (f.priority) {
-        // KLA-562: a quick chip can set a comma preset (e.g. "urgent,high" for the High-priority chip),
-        // which the server splits on comma too — mirror that OR-match here for the client-side board.
-        const wantP = String(f.priority).split(",").filter(Boolean)
-        if (!wantP.includes(t.priority)) return false
+        const wantP = Array.isArray(f.priority) ? f.priority : String(f.priority).split(",").filter(Boolean)
+        if (wantP.length && !wantP.includes(t.priority)) return false
       }
-      if (f.assignee) {
-        if (f.assignee === "__unassigned__") { if (t.assignee) return false }
-        else if ((t.assignee || "") !== f.assignee) return false
+      if (f.assignee && f.assignee.length) {
+        const wantA = Array.isArray(f.assignee) ? f.assignee : [f.assignee]
+        if (wantA.length) {
+          const match = wantA.some(a => a === "__unassigned__" ? (!t.assignee || t.assignee === "") : (t.assignee || "") === a)
+          if (!match) return false
+        }
       }
-      if (f.source && t.source !== f.source) return false
-      if (f.label) {
-        const labs = Array.isArray(t.labels) ? t.labels : []
-        if (!labs.some(l => String(l && l.id != null ? l.id : l) === String(f.label))) return false
+      if (f.source && f.source.length) {
+        const wantS = Array.isArray(f.source) ? f.source : String(f.source).split(",").filter(Boolean)
+        if (wantS.length) {
+          const tSource = ticketSourceKind(t)
+          const match = wantS.some(s => s === tSource || s === t.source)
+          if (!match) return false
+        }
+      }
+      if (f.label && f.label.length) {
+        const wantL = Array.isArray(f.label) ? f.label : [f.label]
+        if (wantL.length) {
+          const labs = Array.isArray(t.labels) ? t.labels : []
+          const match = wantL.some(wl => labs.some(l => String(l && l.id != null ? l.id : l) === String(wl)))
+          if (!match) return false
+        }
       }
       if (f.search) {
         const q = String(f.search).toLowerCase()
@@ -26178,10 +26665,14 @@
       const sp = new URLSearchParams()
       const statusParam = ticketStatusParamFor(view)
       if (statusParam) sp.set("status", statusParam)
-      if (_tktFilters.priority) sp.set("priority", _tktFilters.priority)
-      if (_tktFilters.label) sp.set("label", _tktFilters.label)
-      if (_tktFilters.assignee) sp.set("assignee", _tktFilters.assignee === "__unassigned__" ? "" : _tktFilters.assignee)
-      if (_tktFilters.source) sp.set("source", _tktFilters.source)
+      const p = Array.isArray(_tktFilters.priority) ? _tktFilters.priority.join(",") : _tktFilters.priority
+      if (p) sp.set("priority", p)
+      const l = Array.isArray(_tktFilters.label) ? _tktFilters.label.join(",") : _tktFilters.label
+      if (l) sp.set("label", l)
+      const a = Array.isArray(_tktFilters.assignee) ? _tktFilters.assignee.join(",") : _tktFilters.assignee
+      if (a) sp.set("assignee", a === "__unassigned__" ? "" : a)
+      const src = Array.isArray(_tktFilters.source) ? _tktFilters.source.join(",") : _tktFilters.source
+      if (src) sp.set("source", src)
       if (_tktFilters.search) sp.set("q", _tktFilters.search)
       sp.set("page", String(page))
       sp.set("limit", String(limit))
