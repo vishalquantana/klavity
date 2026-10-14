@@ -14881,16 +14881,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const sp = url.searchParams
         const statuses = sp.get("status") ? sp.get("status")!.split(",").filter(Boolean) : []
         const priorities = sp.get("priority") ? sp.get("priority")!.split(",").filter(Boolean) : []
-        const assignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const rawAssignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const assignees = rawAssignee !== undefined ? rawAssignee.split(",").map(s => s.trim()) : undefined
         const rawSource = sp.get("source") ?? ""
-        const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
-        const label = sp.get("label")?.trim() || undefined
+        const sources = rawSource ? rawSource.split(",").map(s => s.trim()).filter(Boolean) : []
+        const rawLabel = sp.get("label")?.trim() || undefined
+        const labels = rawLabel ? rawLabel.split(",").map(s => s.trim()).filter(Boolean) : []
         // `q` performs project-scoped, paginated server-side text search. Keep the bound
         // modest to avoid unexpectedly expensive broad LIKE queries.
         const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
         const page = Math.max(1, Number(sp.get("page") || "1"))
         const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
-        const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, label, search, page, limit })
+        const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignees, sources, labels, search, page, limit })
         const ticketIds = result.tickets.map((t: any) => t.id)
         const labelsMap = await labelsForFeedbackBatch(ticketIds)
         result.tickets = result.tickets.map((t: any) => ({ ...t, labels: labelsMap[t.id] || [] }))
