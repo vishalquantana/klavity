@@ -184,6 +184,27 @@ test("PATCH label is allowed for members (KLA-778)", async () => {
   expect(d.ok).toBe(true)
 })
 
+// KD-227: a duplicate name used to hit the UNIQUE constraint and return a bare 500 ("Couldn't create label.").
+test("POST /api/projects/:id/labels with an existing name (any case) returns 409 + the existing label (KD-227)", async () => {
+  for (const name of ["Bug Report", "bug report"]) {
+    const r = await req("POST", `/api/projects/${PROJ}/labels`, { name, color: "#000000" })
+    expect(r.status).toBe(409)
+    const d = await r.json()
+    expect(d.error).toContain("already exists")
+    expect(d.label.id).toBe(createdLabelId)
+  }
+  const d2 = await (await req("GET", `/api/projects/${PROJ}/labels`)).json()
+  expect(d2.labels.filter((l: any) => l.name.toLowerCase() === "bug report").length).toBe(1)
+})
+
+test("PATCH a label onto another label's name returns 409, not 500 (KD-227)", async () => {
+  const other = await (await req("POST", `/api/projects/${PROJ}/labels`, { name: "Temp KD-227" })).json()
+  const r = await req("PATCH", `/api/projects/${PROJ}/labels/${other.label.id}`, { name: "BUG REPORT" })
+  expect(r.status).toBe(409)
+  expect((await r.json()).error).toContain("already exists")
+  await req("DELETE", `/api/projects/${PROJ}/labels/${other.label.id}`)
+})
+
 // …while an outsider still gets 403 (negative control for both PATCH and DELETE).
 test("PATCH/DELETE label returns 403 for non-members (KLA-778 negative control)", async () => {
   const rp = await req("PATCH", `/api/projects/${PROJ}/labels/${createdLabelId}`, { name: "X", color: "#000000" }, SID_OUT)

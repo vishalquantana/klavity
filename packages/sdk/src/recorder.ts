@@ -18,6 +18,8 @@
 // ── Caps ──────────────────────────────────────────────────────────────────────────────────────────────
 // Length cap: 3 min hard auto-stop (keeps blobs bounded + cheap to transcribe later). Size cap: ~50MB —
 // mirrors the server's RECORDING_MAX_BYTES so a client-accepted recording also passes server intake.
+import { fixWebmDuration } from './webm-duration'
+
 export const RECORDING_MAX_DURATION_MS = 3 * 60 * 1000
 export const RECORDING_MAX_BYTES = 50 * 1024 * 1024
 
@@ -342,13 +344,21 @@ export async function startRecording(
 
   const cleanupStreams = stopAllTracks
 
-  recorder.onstop = () => {
+  recorder.onstop = async () => {
     deps.caf(rafId)
     if (tickId) { deps.clearInterval(tickId); tickId = 0 }
     const durationMs = elapsedMs()
-    const blob = new Blob(chunks, { type: mime.split(';')[0] })
     cleanupStreams()
     setState('stopped')
+    const rawBlob = new Blob(chunks, { type: mime.split(';')[0] })
+    let blob = rawBlob
+    if (durationMs > 0 && (rawBlob.type.includes('webm') || mime.includes('webm'))) {
+      try {
+        blob = await fixWebmDuration(rawBlob, durationMs)
+      } catch {
+        blob = rawBlob
+      }
+    }
     resolveDone({
       id, blob, mime: blob.type || mime, durationMs, bytes: blob.size || totalBytes,
       width: canvas.width, height: canvas.height, screenOnly, hadCamera, hadAudio,

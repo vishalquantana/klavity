@@ -178,6 +178,14 @@ describe("prepareSubmission / sendPrepared", () => {
     await sendPrepared(prep, { backendUrl: "https://k.test", firstParty: true, token: "" }); await sendPrepared(prep, { backendUrl: "https://k.test", firstParty: true, token: "" })
     expect(prep.fd.get("submission_key")).toBe(key)
   })
+  it("KD-224: an accepted AI-Enhance P-tag is stored as the ticket priority (P1→urgent, P2→high, P3→medium); none/garbage → no field", async () => {
+    const c = { backendUrl: "https://k.test", projectId: "p1", firstParty: true, token: "" }
+    expect((await prepareSubmission(c, { ...payload, suggestedPriority: "P1" })).fd.get("priority")).toBe("urgent")
+    expect((await prepareSubmission(c, { ...payload, suggestedPriority: "P2" })).fd.get("priority")).toBe("high")
+    expect((await prepareSubmission(c, { ...payload, suggestedPriority: "p3" })).fd.get("priority")).toBe("medium")
+    expect((await prepareSubmission(c, { ...payload, suggestedPriority: "P9" })).fd.has("priority")).toBe(false)
+    expect((await prepareSubmission(c, payload)).fd.has("priority")).toBe(false)
+  })
   it("two different reports get different keys; an explicit key is respected", async () => {
     const c = { backendUrl: "https://k.test", projectId: "p1", firstParty: true, token: "" }
     const a = await prepareSubmission(c, payload), b = await prepareSubmission(c, payload), e = await prepareSubmission(c, { ...payload, submissionKey: "caller-chosen-key-123456" })

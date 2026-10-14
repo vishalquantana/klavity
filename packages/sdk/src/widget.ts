@@ -4,7 +4,15 @@ import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage,
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
-import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
+import {
+  planScrollStitch,
+  planSeamlessScrollStitch,
+  clampCaptureHeight,
+  findTopFixedStickyHeaders,
+  hideFixedStickyElements,
+  restoreFixedStickyElements,
+  type FixedStickyRestoreItem,
+} from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
@@ -493,6 +501,23 @@ function sharpCaptureSupported(): boolean {
 const _raf = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
 const _sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const STREAM_SETTLE_MS = 180 // let the live stream catch up to a new scroll position before grabbing a frame
+const _waitForVideoFrame = (video: HTMLVideoElement, ms = STREAM_SETTLE_MS): Promise<void> =>
+  new Promise<void>((resolve) => {
+    let resolved = false
+    const done = () => {
+      if (!resolved) {
+        resolved = true
+        resolve()
+      }
+    }
+    const timer = setTimeout(done, ms)
+    if (typeof (video as any).requestVideoFrameCallback === "function") {
+      (video as any).requestVideoFrameCallback(() => {
+        clearTimeout(timer)
+        requestAnimationFrame(() => done())
+      })
+    }
+  })
 
 // Hide every position:fixed / position:sticky element (except our own host) via visibility:hidden — keeps
 // layout so the stitched frames stay aligned. Records prior values for restore.
@@ -640,8 +665,15 @@ async function captureSharpFullPage(): Promise<string> {
 
   const widgetHost = document.getElementById(HOST_ID)
   const prevHostDisplay = widgetHost ? widgetHost.style.display : ""
-  const hiddenFixed: Array<{ el: HTMLElement; v: string }> = []
+  let restoredFixed: FixedStickyRestoreItem[] = []
   const origX = window.scrollX, origY = window.scrollY
+
+  const origHtmlBehavior = document.documentElement.style.getPropertyValue("scroll-behavior")
+  const origHtmlPriority = document.documentElement.style.getPropertyPriority("scroll-behavior")
+  const origBodyBehavior = document.body ? document.body.style.getPropertyValue("scroll-behavior") : ""
+  const origBodyPriority = document.body ? document.body.style.getPropertyPriority("scroll-behavior") : ""
+  document.documentElement.style.setProperty("scroll-behavior", "auto", "important")
+  if (document.body) document.body.style.setProperty("scroll-behavior", "auto", "important")
 
   try {
     const video = document.createElement("video")
@@ -674,19 +706,49 @@ async function captureSharpFullPage(): Promise<string> {
     // Hide OUR floating launcher for every frame (the composer is already hidden by the modal).
     if (widgetHost) widgetHost.style.display = "none"
 
-    const stops = planScrollStitch(fullH, vh)
-    const drawW = Math.round(vw * scale), drawH = Math.round(vh * scale)
-    for (let i = 0; i < stops.length; i++) {
-      window.scrollTo(0, stops[i])
-      await _raf(); await _raf(); await _sleep(STREAM_SETTLE_MS)
-      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, Math.round(stops[i] * scale), drawW, drawH)
+    const headerInfo = findTopFixedStickyHeaders(document, HOST_ID)
+    const steps = planSeamlessScrollStitch(fullH, vh, headerInfo.height)
+    const drawW = Math.round(vw * scale)
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      window.scrollTo(0, step.scrollY)
+      await _raf(); await _raf()
+      await _waitForVideoFrame(video, STREAM_SETTLE_MS)
+
+      const sx = 0
+      const sy = Math.round(step.sourceY * scale)
+      const sw = video.videoWidth
+      const sh = Math.round(step.sourceHeight * scale)
+
+      const dx = 0
+      const dy = Math.round(step.canvasY * scale)
+      const dw = drawW
+      const dh = Math.round(step.drawHeight * scale)
+
+      ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh)
+
       // After the TOP frame, hide fixed/sticky so they don't repeat; the next stop's settle lets the
       // stream reflect the change before that frame is drawn.
-      if (i === 0 && stops.length > 1) hideFixedSticky(hiddenFixed)
+      if (i === 0 && steps.length > 1 && headerInfo.elements.length > 0) {
+        restoredFixed = hideFixedStickyElements(headerInfo.elements)
+      }
     }
     return canvas.toDataURL("image/png")
   } finally {
-    for (const h of hiddenFixed) h.el.style.visibility = h.v
+    if (restoredFixed.length > 0) restoreFixedStickyElements(restoredFixed)
+    if (origHtmlBehavior) {
+      document.documentElement.style.setProperty("scroll-behavior", origHtmlBehavior, origHtmlPriority)
+    } else {
+      document.documentElement.style.removeProperty("scroll-behavior")
+    }
+    if (document.body) {
+      if (origBodyBehavior) {
+        document.body.style.setProperty("scroll-behavior", origBodyBehavior, origBodyPriority)
+      } else {
+        document.body.style.removeProperty("scroll-behavior")
+      }
+    }
     if (widgetHost) widgetHost.style.display = prevHostDisplay
     window.scrollTo(origX, origY)
     // KLA-621: do NOT stop the stream — it's the shared session stream, reused by later captures + released on close.
@@ -1750,6 +1812,8 @@ async function mount() {
           // SERVER resolves the real Klavity intake project from KLAVITY_INTAKE_PROJECT_ID — the client only
           // ever sends this flag (never a target project id), so a report can't be routed to an arbitrary project.
           feedbackTarget: p.feedbackTarget,
+          // KD-224: the accepted AI-Enhance draft's P1/P2/P3 — mapped to a ticket priority in prepareSubmission.
+          suggestedPriority: p.suggestedPriority,
         }
         // Post-filing bookkeeping shared by both paths: fire the public 'submit' event and clear a
         // multi-page evidence session (KLA-412) now that the report is stored.
@@ -1996,7 +2060,7 @@ async function mount() {
     // 'full' mode AND only to identified project members (own first-party page, or a signed-in widget
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
-    const showSims = rightClickMode === 'full' && (firstParty || !!getToken())
+    const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2804,9 +2868,16 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
  */
 export type PreparedSubmission = { fd: FormData; key: string; sent: boolean }
 
+// KD-224: AI-Enhance's P-tag (P1 blocker / P2 workaround exists / P3 minor — see report-enhance.ts) → the
+// ticket priority vocabulary (urgent/high/medium/low). P3 lands on 'medium', the canonical default.
+const ENHANCE_PRIORITY_TO_TICKET: Record<string, "urgent" | "high" | "medium"> = { P1: "urgent", P2: "high", P3: "medium" }
+export function enhancePriorityToTicket(p: string | undefined | null): "urgent" | "high" | "medium" | null {
+  return ENHANCE_PRIORITY_TO_TICKET[String(p || "").trim().toUpperCase()] || null
+}
+
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity'; suggestedPriority?: string },
 ): Promise<PreparedSubmission> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
@@ -2858,6 +2929,12 @@ export async function prepareSubmission(
   // client never names a target project id — the server resolves KLAVITY_INTAKE_PROJECT_ID — so this can't
   // be abused to route a report into an arbitrary project (no IDOR).
   if (payload.feedbackTarget === "klavity") fd.set("feedback_target", "klavity")
+  // KD-224: an accepted AI-Enhance draft carries a P1/P2/P3 suggestion. Send it as the ticket's `priority`
+  // so the stored row (and therefore the board card) matches what the reporter saw; without it the row is
+  // stored with NO priority. Unknown/absent values send nothing. Untrusted/anonymous intake still lands as
+  // status 'new' — the server's priority-self-elevation guard is unaffected.
+  const enhancedPriority = enhancePriorityToTicket(payload.suggestedPriority)
+  if (enhancedPriority) fd.set("priority", enhancedPriority)
 
   // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
   const key = payload.submissionKey || newSubmissionKey()

@@ -12,7 +12,7 @@ import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
 import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
-import { countFoundingAccounts, liveFeedbackId } from "./lib/db"
+import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
@@ -52,7 +52,7 @@ import { parseTranscript, speakersFromLines, offsetToTime, formatTs } from "./li
 import { sendOtp, sendLeadAlert, sendTicketAssignmentEmail, sendTicketStatusEmail, sendTicketAssignmentInviteEmail, sendMemberInviteEmail, sendInstallInstructionsEmail } from "./lib/mail"
 // First-class member invites + visibility (JTBD 6.4 / KLAVITYKLA-294) — composes existing tables, no migration.
 import { listProjectInvites, revokeProjectInvite, getPendingInvite } from "./lib/member-invites"
-import { notifyReporterOnFix } from "./lib/fixed-notification"
+import { notifyReporterOnFix, shouldNotifyReporterOnFix } from "./lib/fixed-notification"
 import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
@@ -61,6 +61,7 @@ import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getOb
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
+import { patchWebmDuration } from "../packages/sdk/src/webm-duration"
 import {
   claimSubmission, refreshClaim, releaseClaim, finishDedupedSubmission, saveEvidenceState, evidenceStateStatement, pruneSubmissionKeys, PROCESS_OWNER,
   parseSubmissionKey, parseRepairSlots, parseSlotMap, slotFor, deterministicId, missingSlots, type EvidenceState,
@@ -109,7 +110,7 @@ import { scoreReportClarity, VAGUE_PHRASES } from "../packages/core/src/report-c
 import { MODEL_CHOICES, MODEL_CHOICE_IDS, DEFAULT_WEIGHTS, pickModel, parseWeightsForm, weightsToPct } from "./lib/models"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { removeFeedbackAttachment, attachmentKeyReferencedElsewhere } from "./lib/db"   // KD-193
-import { detachFeedbackScreenshot, screenshotReferencedElsewhere, screenshotById as screenshotRowById, deleteScreenshotRow } from "./lib/db"   // KD-214
+import { detachFeedbackScreenshot, screenshotReferencedElsewhere, screenshotById as screenshotRowById, deleteScreenshotRow, type CommentAttachment } from "./lib/db"   // KD-214, KD-217
 import { projectAccessForRow, listFeedbackWithMeta, type ProjectRow } from "./lib/db" // /api/dashboard round-trip reduction
 
 // Per-request context. A project-bound Bearer token (widget token) records its bound project here so
@@ -199,6 +200,46 @@ import { extractInventory, extractLinks, verifyLinks, brokenLinkFindings, filter
 import { fetchOidcDiscovery, buildAuthorizationUrl, exchangeCode, verifyIdToken, validateSsoDomain, verifyDomainOwnership, ssoDomainTxtValue, SSO_DOMAIN_TXT_PREFIX, type OidcDiscovery, type OidcClaims } from "./lib/sso"
 import { getAccountOidcConfig, upsertAccountOidcConfig, deleteAccountOidcConfig, findAccountByOidcDomain, markOidcDomainVerified, getAccountSamlConfig, upsertAccountSamlConfig, deleteAccountSamlConfig, findAccountBySamlDomain, markSamlDomainVerified, createSsoState, consumeSsoState, ensureAccountMember } from "./lib/db"
 import { fetchIdpMetadata, parseIdpMetadata, validateIdpMetadata, buildAuthnRequestUrl, validateSamlResponse, type SamlIdpMetadata, type SamlIdentity } from "./lib/saml"
+
+// ── KD-217: images / videos on a ticket comment ──────────────────────────────────────────────────────────────────────────
+// Short-lived read URLs for a comment's stored files (same 1 h presign the ticket attachments use).
+function signCommentAttachments(atts: CommentAttachment[] | undefined | null): CommentAttachment[] {
+  return (atts || []).map((a) => ({ ...a, url: (() => { try { return presignGet(String(a.key), 3600) } catch { return null } })() }))
+}
+// Validate then store the files of a comment. Only images and videos are accepted (what the ticket asks for); at most 5 files, the same
+// per-file / total size caps as ticket attachments, every size checked BEFORE anything is uploaded so a rejected request leaves no
+// orphan objects. Uploads run in parallel and keep their order.
+async function uploadCommentFiles(files: File[]): Promise<{ attachments: CommentAttachment[]; error?: string; status?: number }> {
+  const picked = files.filter((f) => f.size > 0).slice(0, 5)
+  const isImage = (f: File) => /^image\//i.test(f.type || "")
+  for (const f of picked) {
+    if (!isImage(f) && !isVideoAttachment(f.type, f.name)) return { attachments: [], error: "Only images and videos can be attached to a comment (" + f.name + ").", status: 400 }
+  }
+  const videoMax = Number(process.env.ATTACH_VIDEO_MAX_BYTES) || 100 * 1024 * 1024
+  const totalMax = Number(process.env.ATTACH_TOTAL_MAX_BYTES) || 120 * 1024 * 1024
+  let total = 0
+  for (const f of picked) {
+    const cap = isImage(f) ? SCREENSHOTS.maxBytes : videoMax
+    if (f.size > cap) return { attachments: [], error: "File " + f.name + " exceeds " + mbLabel(cap) + ".", status: 400 }
+    total += f.size
+    if (total > totalMax) return { attachments: [], error: "Attachments exceed the " + mbLabel(totalMax) + " total limit.", status: 400 }
+  }
+  const stored = await Promise.all(picked.map(async (f): Promise<CommentAttachment | null> => {
+    try {
+      const generic = !f.type || f.type === "application/octet-stream"
+      const videoMime = videoMimeFromName(f.name || "")
+      const type = (generic && videoMime) ? videoMime : (f.type || "application/octet-stream")
+      const up = await uploadAttachment(new Uint8Array(await f.arrayBuffer()), f.name || "attachment", type)
+      return { key: up.key, filename: up.filename, contentType: up.contentType, size: f.size }
+    } catch (e: any) {
+      console.error("comment attachment upload failed (non-fatal):", e?.message || e)
+      return null
+    }
+  }))
+  const attachments = stored.filter((a): a is CommentAttachment => !!a)
+  if (!attachments.length) return { attachments: [], error: "No attachments could be uploaded.", status: 500 }
+  return { attachments }
+}
 
 const KEY = process.env.OPENROUTER_API_KEY
 const MODEL = process.env.KLAV_MODEL || "google/gemini-2.5-flash"
@@ -3361,14 +3402,18 @@ function clientIp(req: Request, server?: { requestIP?: (r: Request) => { address
 // for rrweb and images + esm.sh for the index page's html-to-image module import), while still locking
 // frame-ancestors (clickjacking), object-src and base-uri,
 // and blocking third-party script origins. Tighten script-src to nonces in a later, browser-tested pass.
+// Stored files (screenshots, attachments, recordings, comment images / videos) are opened straight from object storage through short-lived
+// signed links, so the page must be allowed to load media from there: https: for real storage, plus the storage origin itself when it is
+// plain http (a local MinIO at http://localhost:9000). Without this, an uploaded image / video is blocked by the browser and will not open.
+const _S3_HTTP_ORIGIN = (() => { try { const u = new URL(String(process.env.S3_ENDPOINT || "")); return u.protocol === "http:" ? " " + u.origin : "" } catch { return "" } })()
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://esm.sh https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.clarity.ms https://*.clarity.ms",
   // Fonts are self-hosted (site/fonts/) — no third-party font origins needed.
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "img-src 'self' data: blob: https:",
-  "media-src 'self' blob: data:",
+  "img-src 'self' data: blob: https:" + _S3_HTTP_ORIGIN,
+  "media-src 'self' blob: data: https:" + _S3_HTTP_ORIGIN,
   "worker-src 'self' blob:",
   "connect-src 'self' https:",
   "frame-ancestors 'self'",
@@ -5922,7 +5967,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           catch (err) { return { ok: false, err } }
         }))
         const recUps: Array<Promise<AttUp> | null> = recPlan.map(({ rf, ri, slot }) => !want(slot) ? null : uploadLimit(async (): Promise<AttUp> => {
-          try { return { ok: true, up: await uploadAttachment(new Uint8Array(await rf.arrayBuffer()), rf.name || `recording-${ri}.webm`, rf.type || "video/webm", dk(slot)) } }
+          try {
+            const m = recMeta[ri] || {}
+            let bytes = new Uint8Array(await rf.arrayBuffer())
+            const durMs = Number(m.durationMs) || 0
+            if (durMs > 0 && (rf.type?.includes("webm") || rf.name?.endsWith(".webm"))) {
+              try { bytes = patchWebmDuration(bytes, durMs) } catch { /* best-effort duration patch */ }
+            }
+            return { ok: true, up: await uploadAttachment(bytes, rf.name || `recording-${ri}.webm`, rf.type || "video/webm", dk(slot)) }
+          }
           catch (err) { return { ok: false, err } }
         }))
         const [shotRes, thumbRes, attRes, recRes] = await Promise.all([Promise.all(shotUps), Promise.all(thumbUps), Promise.all(attUps), Promise.all(recUps)])
@@ -12737,15 +12790,35 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       if (req.method === "GET" && isComments) {
-        return json({ feedbackId: fid, comments: await listTicketComments(fid) })
+        return json({ feedbackId: fid, comments: (await listTicketComments(fid)).map((c) => ({ ...c, attachments: signCommentAttachments(c.attachments) })) })
       }
 
       if (req.method === "POST" && isComments) {
-        const body = await req.json().catch(() => ({}))
-        const text = String(body.body ?? body.comment ?? "").trim()
-        if (!text) return json({ error: "Comment body is required." }, 400)
+        // KD-217: a comment may carry images / videos. Those arrive as multipart/form-data (fields: body, files); a plain JSON
+        // { body } request (older clients, the v1 API) still works exactly as before.
+        let text = ""
+        let commentFiles: File[] = []
+        if ((req.headers.get("content-type") || "").toLowerCase().startsWith("multipart/form-data")) {
+          const form = await req.formData().catch(() => null)
+          if (!form) return json({ error: "Expected multipart/form-data." }, 400)
+          text = String(form.get("body") ?? form.get("comment") ?? "").trim()
+          commentFiles = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0)
+        } else {
+          const body = await req.json().catch(() => ({}))
+          text = String(body.body ?? body.comment ?? "").trim()
+        }
+        if (!text && !commentFiles.length) return json({ error: "Comment body is required." }, 400)
         if (text.length > 5000) return json({ error: "Comment body must be 5000 characters or fewer." }, 400)
-        const comment = await insertTicketComment(fid, me, text)
+        let commentAtts: CommentAttachment[] = []
+        if (commentFiles.length) {
+          const up = await uploadCommentFiles(commentFiles)
+          if (up.error) return json({ error: up.error }, up.status || 400)
+          commentAtts = up.attachments
+        }
+        const comment = await insertTicketComment(fid, me, text, commentAtts)
+        // What the trackers / emails / Slack show: the typed text plus the NAMES of the attached files (the files themselves stay in Klavity).
+        const attachNote = commentAtts.length ? "[Attached: " + commentAtts.map((a) => a.filename).join(", ") + "]" : ""
+        const notifyText = [text, attachNote].filter(Boolean).join(String.fromCharCode(10, 10))
 
         // KLAVITYKLA-290 Phase 1 — outbound comment sync (fire-and-forget).
         // Push this Klavity-authored comment to every linked external tracker. The push runs
@@ -12757,7 +12830,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // INBOUND SEAM: source is always "klavity" here (Phase 1). When inbound sync (Phase 2)
         // is built, comments echoed from the tracker will carry source:"inbound" and will be
         // skipped by pushCommentToLinkedIssues to prevent loops.
-        pushCommentToLinkedIssues(fbRow.projectId, fid, text, {
+        pushCommentToLinkedIssues(fbRow.projectId, fid, notifyText, {
           authorEmail: me,
           klavityCommentId: comment.id,
           source: "klavity",
@@ -12778,7 +12851,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             feedbackId: fid,
             ticketTitle: effectiveTicketTitle(fbRow),
             projectName: projName,
-            commentBody: text,
+            commentBody: notifyText,
             ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
             author: me,
             assignee: fbRow.assignee,
@@ -12787,7 +12860,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           })
         })().catch((e: any) => console.warn("[notify] comment notification failed:", e?.message || e))
 
-        return json({ comment }, 201)
+        return json({ comment: { ...comment, attachments: signCommentAttachments(comment.attachments) } }, 201)
       }
 
       // KD-158: PATCH/DELETE /api/feedback/:id/comments/:commentId — a poster may edit or delete
@@ -12803,16 +12876,38 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (req.method === "DELETE") {
           const ok = await deleteTicketComment(commentIdParam, fid)
           if (!ok) return json({ error: "Comment not found." }, 404)
+          // KD-217: remove the comment's files too — unless a ticket attachment or another comment still points at the same object.
+          const commentAttKeys = (existing.attachments || []).map((a) => String(a.key))
+          if (commentAttKeys.length) {
+            void (async () => {
+              for (const k of commentAttKeys) {
+                try { if (!(await attachmentKeyReferencedElsewhere(k, fid))) await deleteObject(k) }
+                catch (e: any) { console.warn("comment attachment cleanup skipped:", e?.message || e) }
+              }
+            })()
+          }
           return json({ ok: true })
         }
 
         const body = await req.json().catch(() => ({}))
         const text = String(body.body ?? body.comment ?? "").trim()
-        if (!text) return json({ error: "Comment body is required." }, 400)
+        // KD-217: an edit may drop attachments (removeAttachments = storage keys, only ones that really belong to this comment).
+        const wantRemove = Array.isArray(body.removeAttachments) ? body.removeAttachments.map((k: any) => String(k)) : []
+        const removedAtts = (existing.attachments || []).filter((a) => wantRemove.includes(String(a.key)))
+        const attsLeft = (existing.attachments || []).length - removedAtts.length
+        if (!text && !attsLeft) return json({ error: "Comment body is required." }, 400)
         if (text.length > 5000) return json({ error: "Comment body must be 5000 characters or fewer." }, 400)
-        const updated = await updateTicketComment(commentIdParam, fid, text)
+        const updated = await updateTicketComment(commentIdParam, fid, text, removedAtts.map((a) => String(a.key)))
         if (!updated) return json({ error: "Comment not found." }, 404)
-        return json({ comment: updated })
+        if (removedAtts.length) {
+          void (async () => {   // delete the dropped files unless a ticket attachment or another comment still points at them
+            for (const a of removedAtts) {
+              try { if (!(await attachmentKeyReferencedElsewhere(String(a.key), fid))) await deleteObject(String(a.key)) }
+              catch (e: any) { console.warn("comment attachment cleanup skipped:", e?.message || e) }
+            }
+          })()
+        }
+        return json({ comment: { ...updated, attachments: signCommentAttachments(updated.attachments) } })
       }
 
       // GET /api/feedback/:id/attachments?key=<storage key> — download or stream an attachment (members only).
@@ -13015,7 +13110,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
 
       if (req.method === "GET" && isTimeline) {
-        return json({ feedbackId: fid, items: await ticketActivityTimeline(fbRow.projectId, fid) })
+        return json({ feedbackId: fid, items: (await ticketActivityTimeline(fbRow.projectId, fid)).map((it: any) => it.kind === "comment" ? { ...it, attachments: signCommentAttachments(it.attachments) } : it) })
       }
 
       // GET /api/feedback/:id/memory — recurring-issue memory: how many times this issue has been
@@ -13236,17 +13331,26 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // KD-221: email the assignee + reporter (not the person who changed it). Fire-and-forget.
           void emailStatusChange({ projectId: fbRow.projectId, feedbackId: fid, row: fbRow, fromStatus: fbRow.status ?? null, toStatus: meta.status,
             actorEmail: me, assignee: meta.assignee !== undefined ? meta.assignee : fbRow.assignee })
-          const proj = fbRow.contactEmail ? await projectById(fbRow.projectId).catch(() => null) : null
-          void notifyReporterOnFix({
-            contactEmail: fbRow.contactEmail,
-            previousStatus: fbRow.status,
-            nextStatus: meta.status,
-            actorEmail: me,
-            title: effectiveTicketTitle(fbRow),
-            projectName: proj?.name ?? "your project",
-            // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
-            ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
-          })
+        }
+        // KD-230: only a real "fixed" transition with a reporter email notifies anyone, and its project +
+        // permalink lookups run in the background — previously every status change awaited the permalink
+        // lookup (an extra DB round-trip) before responding, even when no email could ever be sent.
+        if (meta.status !== undefined && meta.status !== fbRow.status
+          && shouldNotifyReporterOnFix({ contactEmail: fbRow.contactEmail, previousStatus: fbRow.status, nextStatus: meta.status, actorEmail: me })) {
+          const nextStatus = meta.status
+          void (async () => {
+            const proj = await projectById(fbRow.projectId).catch(() => null)
+            await notifyReporterOnFix({
+              contactEmail: fbRow.contactEmail,
+              previousStatus: fbRow.status,
+              nextStatus,
+              actorEmail: me,
+              title: effectiveTicketTitle(fbRow),
+              projectName: proj?.name ?? "your project",
+              // #727/#745: fast single-ticket permalink (pretty /<slug>/<KEY>-<n> when backfilled).
+              ticketUrl: await prettyDeepLinkUrl(fid, fbRow.projectId, { seqNum: fbRow.seqNum ?? null }),
+            })
+          })().catch((e: any) => console.warn("fix notification skipped:", e?.message || e))
         }
         // ── Triage-gated auto-copy (KLA-282) ─────────────────────────────────────────────────────
         // Fire auto-copy when a report is triage-ACCEPTED: status transitions to "open" from either
@@ -13615,7 +13719,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       return json({ project: { id: created.id, name: created.name, accountId: created.accountId, status: created.status, siteUrl: created.siteUrl, role: "admin" } }, 201)
     }
     // Project detail + members (projectAccess-gated) and project-scoped invite (R4) + monitored-urls (P3b) + connectors.
-    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
+    const projMatch = path.match(/^\/api\/projects\/([^/]+?)(\/members|\/people|\/invite|\/activity|\/rename|\/config|\/branding|\/triage|\/tickets(?:\/bulk(?:\/delete)?|\/bulk-delete|\/rev)?|\/recurring|\/replays|\/widget-status|\/heartbeat-diagnosis(?:\/email)?|\/share-token|\/labels(?:\/[^/]+)?|\/label-rules|\/monitored-urls(?:\/[^/]+)?|\/connectors(?:\/[^/]+)?(?:\/(?:test|import|meta|mappings))?|\/export-outbox|\/export-policy|\/snap-routing|\/export-requests(?:\/[^/]+\/(?:approve|reject))?|\/test-accounts(?:\/[^/]+)?|\/sim-matches(?:\/[^/]+(?:\/(?:confirm|reject))?)?|\/autosim-auth(?:\/setup-token)?|\/trust-report\/send|\/sims-digest\/send|\/trails-autofile|\/regression-events(?:\/[^/]+\/ack)?|\/ci-tokens(?:\/[^/]+)?|\/ai-instructions|\/plan)?$/)
     if (projMatch) {
       const pid = projMatch[1]
       const sub = projMatch[2] || ""
@@ -14857,16 +14961,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const sp = url.searchParams
         const statuses = sp.get("status") ? sp.get("status")!.split(",").filter(Boolean) : []
         const priorities = sp.get("priority") ? sp.get("priority")!.split(",").filter(Boolean) : []
-        const assignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const rawAssignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
+        const assignees = rawAssignee !== undefined ? rawAssignee.split(",").map(s => s.trim()) : undefined
         const rawSource = sp.get("source") ?? ""
-        const source = rawSource === "sim" ? "sim" : rawSource === "manual" ? "manual" : rawSource === "human" ? "human" : undefined
-        const label = sp.get("label")?.trim() || undefined
+        const sources = rawSource ? rawSource.split(",").map(s => s.trim()).filter(Boolean) : []
+        const rawLabel = sp.get("label")?.trim() || undefined
+        const labels = rawLabel ? rawLabel.split(",").map(s => s.trim()).filter(Boolean) : []
         // `q` performs project-scoped, paginated server-side text search. Keep the bound
         // modest to avoid unexpectedly expensive broad LIKE queries.
         const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
         const page = Math.max(1, Number(sp.get("page") || "1"))
         const limit = Math.min(200, Math.max(1, Number(sp.get("limit") || "50")))
-        const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignee, source, label, search, page, limit })
+        const result = await listTicketsPaginated(proj.id, { statuses, priorities, assignees, sources, labels, search, page, limit })
         const ticketIds = result.tickets.map((t: any) => t.id)
         const labelsMap = await labelsForFeedbackBatch(ticketIds)
         result.tickets = result.tickets.map((t: any) => ({ ...t, labels: labelsMap[t.id] || [] }))
@@ -14957,6 +15063,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (_kd159Ms >= 1000) console.warn(`[slow-ticket-create] ${_kd159Ms.toFixed(0)}ms project=${proj.id}`)
         // JTBD 2.15: surface a silently-skipped notification email so the UI can warn.
         return json({ ok: true, ticketId: id, ...(createEmailSent === false ? { assigneeEmailSent: false } : {}) }, 201)
+      }
+
+      // DELETE /api/projects/:id/tickets/bulk — bulk delete tickets
+      // Body: { ticketIds: string[] }
+      if ((req.method === "DELETE" && sub === "/tickets/bulk") || (req.method === "POST" && (sub === "/tickets/bulk-delete" || sub === "/tickets/bulk/delete" || sub === "/tickets/bulk"))) {
+        const body = await req.json().catch(() => ({}))
+        if (req.method === "POST" && sub === "/tickets/bulk" && body.action !== "delete") {
+          // not a delete request on POST /tickets/bulk
+        } else {
+          const ticketIds: string[] = Array.isArray(body.ticketIds) ? body.ticketIds.slice(0, 200).map(String) : []
+          if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
+
+          const result = await deleteTicketsBulk(proj.id, ticketIds)
+          if (result.deleted > 0) {
+            await insertActivity({
+              projectId: proj.id,
+              type: "tickets_deleted",
+              actorEmail: me,
+              meta: { count: result.deleted, ticketIds: result.ticketIds },
+            }).catch((e: any) => console.warn("bulk delete activity skipped:", e?.message || e))
+          }
+          return json({ ok: true, deleted: result.deleted, ticketIds: result.ticketIds })
+        }
       }
 
       // PATCH /api/projects/:id/tickets/bulk — KLA-178: apply one action to multiple tickets at once.
@@ -15121,8 +15250,20 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!name) return json({ error: "name is required." }, 400)
         if (name.length > 100) return json({ error: "name must be 100 characters or fewer." }, 400)
         const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color ?? "")) ? String(body.color) : "#6366f1"
-        const label = await createLabel(proj.id, name, color)
-        return json({ label }, 201)
+        // KD-227: a duplicate name used to hit the UNIQUE(project_id, name) constraint and surface as a bare
+        // 500 ("Couldn't create label."). Answer 409 with the existing label instead (case-insensitive, so
+        // "Bug" and "bug" don't both appear in the picker); the catch covers a concurrent create.
+        const dupOf = (labels: { name: string }[]) => labels.find(l => l.name.toLowerCase() === name.toLowerCase())
+        const existing = dupOf(await listLabels(proj.id))
+        if (existing) return json({ error: `A label named "${existing.name}" already exists.`, label: existing }, 409)
+        try {
+          const label = await createLabel(proj.id, name, color)
+          return json({ label }, 201)
+        } catch (e) {
+          const raced = dupOf(await listLabels(proj.id))
+          if (raced) return json({ error: `A label named "${raced.name}" already exists.`, label: raced }, 409)
+          throw e
+        }
       }
 
       // PATCH /api/projects/:id/labels/:lid — update label { name?, color? }
@@ -15136,6 +15277,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!name) return json({ error: "name is required." }, 400)
           if (name.length > 100) return json({ error: "name must be 100 characters or fewer." }, 400)
           const color = /^#[0-9a-fA-F]{6}$/.test(String(body.color ?? "")) ? String(body.color) : "#6366f1"
+          // KD-227: renaming onto another label's name would hit the UNIQUE constraint (500) — answer 409.
+          const clash = (await listLabels(proj.id)).find(l => l.id !== lid && l.name.toLowerCase() === name.toLowerCase())
+          if (clash) return json({ error: `A label named "${clash.name}" already exists.` }, 409)
           const ok = await updateLabel(proj.id, lid, name, color)
           if (!ok) return json({ error: "Label not found." }, 404)
           return json({ ok: true })
