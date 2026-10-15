@@ -35098,6 +35098,10 @@
         if (typeof window.initTrailsView === "function") window.initTrailsView()
         openWizard()
       }
+      // Page opened straight on AutoSims (reload, bookmark, shared link): the sidebar's setView('autosims') already ran in an earlier script
+      // block, BEFORE window.initTrailsView was defined above, so its call was skipped and nothing ever wired the view — "+ New AutoSim", the
+      // wizard buttons and the trail list stayed dead until you switched to another page and back. Run the (idempotent) init now.
+      try { if (/^#autosims(\/|$)/.test(location.hash) && typeof window.initTrailsView === "function") window.initTrailsView() } catch (e) { console.error("AutoSims init failed", e) }
       // B.10: the Guards board is its own top-level view now — expose its loader so the sidebar's
       // setView('guards') (a different script block) can populate it on activation.
       window.loadExpectations = loadExpectations
