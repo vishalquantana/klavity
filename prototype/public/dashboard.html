@@ -8072,7 +8072,45 @@
       gap: 8px;
       padding: 6px 4px;
       margin: -4px -4px 0;
-      border-radius: 10px
+      border-radius: 10px;
+      user-select: none
+    }
+
+    .kb-head[draggable="true"] {
+      cursor: grab
+    }
+
+    .kb-head[draggable="true"]:active {
+      cursor: grabbing
+    }
+
+    .kb-head .kb-grip {
+      display: inline-flex;
+      align-items: center;
+      color: var(--paper-faint);
+      opacity: .4;
+      cursor: grab;
+      margin-right: -2px;
+      transition: opacity .15s ease, color .15s ease
+    }
+
+    .kb-head:hover .kb-grip {
+      opacity: .85;
+      color: var(--paper-dim)
+    }
+
+    .kb-col.col-dragging {
+      opacity: .45
+    }
+
+    .kb-col.col-drop-before {
+      border-left: 3px solid var(--indigo) !important;
+      box-shadow: -4px 0 12px -2px rgba(99, 102, 241, .45)
+    }
+
+    .kb-col.col-drop-after {
+      border-right: 3px solid var(--indigo) !important;
+      box-shadow: 4px 0 12px -2px rgba(99, 102, 241, .45)
     }
 
     .kb-head .kb-title {
@@ -25405,7 +25443,8 @@
       const groups = {}; KANBAN_COLS.forEach(c => { groups[c.key] = [] })
       vis.forEach(t => { const k = kanbanKeyForStatus(t.status); if (groups[k]) groups[k].push(t) })
       KANBAN_COLS.forEach(c => { groups[c.key] = kbOrderColumn(groups[c.key], c.key) })   // KD-203: same per-lane order as the board
-      const ids = []; KANBAN_COLS.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
+      const orderedCols = typeof getOrderedKanbanCols === "function" ? getOrderedKanbanCols() : KANBAN_COLS
+      const ids = []; orderedCols.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
       return ids
     }
     // Share-viewer onboarding: the shareable canonical URL is the ADAPTIVE ticket link /t/<id>. A member
@@ -27733,6 +27772,85 @@
         : '<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 4h10"/><path d="M11 8h7"/><path d="M11 12h4"/>'
       return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + head + '</svg>'
     }
+    // Ticket 382/384: Drag-and-drop column reordering for the Tickets board.
+    // The user's custom column order is persisted in localStorage per user + project (same key pattern
+    // as kbSortKey). If the user resets or switches projects, the board adapts seamlessly.
+    let _kbColOrder = null
+    let _kbColOrderLoadedKey = null
+    let _kbColDragging = null
+    function kbColOrderKey() {
+      const u = (typeof swrUid === "function" ? swrUid() : null), p = state && state.active && state.active.id
+      return (u && p) ? "klav:kbcolorder:" + u + ":" + p : (p ? "klav:kbcolorder:" + p : "klav:kbcolorder")
+    }
+    function kbColOrderLoad() {
+      const key = kbColOrderKey()
+      if (key === _kbColOrderLoadedKey && _kbColOrder) return _kbColOrder
+      _kbColOrderLoadedKey = key
+      let list = null
+      if (key) {
+        try {
+          const raw = localStorage.getItem(key)
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed) && parsed.length) list = parsed
+          }
+        } catch (e) { }
+      }
+      const valid = STATUS_ORDER
+      if (list) {
+        const seen = new Set()
+        const merged = []
+        list.forEach(k => {
+          if (valid.includes(k) && !seen.has(k)) {
+            seen.add(k)
+            merged.push(k)
+          }
+        })
+        valid.forEach(k => {
+          if (!seen.has(k)) {
+            seen.add(k)
+            merged.push(k)
+          }
+        })
+        _kbColOrder = merged
+      } else {
+        _kbColOrder = [...STATUS_ORDER]
+      }
+      return _kbColOrder
+    }
+    function kbColOrderSave() {
+      const key = kbColOrderKey()
+      if (key && _kbColOrder) {
+        try { localStorage.setItem(key, JSON.stringify(_kbColOrder)) } catch (e) { }
+      }
+    }
+    function getOrderedKanbanCols() {
+      const order = kbColOrderLoad()
+      const map = new Map(KANBAN_COLS.map(c => [c.key, c]))
+      const result = []
+      order.forEach(k => {
+        const col = map.get(k)
+        if (col) result.push(col)
+      })
+      KANBAN_COLS.forEach(c => {
+        if (!result.includes(c)) result.push(c)
+      })
+      return result
+    }
+    function moveKanbanColumn(fromKey, toKey, isBefore) {
+      if (!fromKey || !toKey || fromKey === toKey) return
+      const order = [...kbColOrderLoad()]
+      const fromIdx = order.indexOf(fromKey)
+      if (fromIdx < 0) return
+      order.splice(fromIdx, 1)
+      let toIdx = order.indexOf(toKey)
+      if (toIdx < 0) return
+      if (!isBefore) toIdx++
+      order.splice(toIdx, 0, fromKey)
+      _kbColOrder = order
+      kbColOrderSave()
+      renderTicketsKanban(_tktBoardTickets)
+    }
     // KD-165: Jira-style drag-to-resize for the ticket board's columns. Unlike #707's wireT3Resize (2 fixed
     // gutters sharing ONE grid, each setting a named CSS var on that shared parent), every kanban column is
     // independent — each drags its OWN width, set directly on that .kb-col's --kb-w and persisted to
@@ -27886,13 +28004,14 @@
       // that re-renders the bulk bar + card visuals in place without a full board rebuild.
       const boardIds = new Set(tickets.map(t => String(t.id)))
         ;[..._bulkSelected].forEach(id => { if (!boardIds.has(String(id))) _bulkSelected.delete(id) })
+      const orderedCols = typeof getOrderedKanbanCols === "function" ? getOrderedKanbanCols() : KANBAN_COLS
       const orderedIds = []
-      KANBAN_COLS.forEach(col => groups[col.key].forEach(t => orderedIds.push(String(t.id))))
+      orderedCols.forEach(col => groups[col.key].forEach(t => orderedIds.push(String(t.id))))
       let _kbLastClicked = null
 
       const boardEl = document.createElement("div")
       boardEl.className = "kanban"
-      KANBAN_COLS.forEach(col => {
+      orderedCols.forEach(col => {
         const items = groups[col.key]
         const colEl = document.createElement("div")
         colEl.className = "kb-col"
@@ -27906,10 +28025,13 @@
         colEl.appendChild(resizeHandle)
         const head = document.createElement("div")
         head.className = "kb-head"
+        head.setAttribute("draggable", "true")
+        head.setAttribute("data-col-key", col.key)
+        head.title = "Drag column to reorder"
         // KD-203: per-lane sort toggle (default = server order; pressed = Ticket ID ascending). Only this lane changes.
         const _sortAsc = _kbSortDir[col.key] === "asc"
         const _sortTip = _sortAsc ? "Ticket ID ascending — click to go back to newest first" : "Newest first (default) — click to sort by Ticket ID, ascending"
-        head.innerHTML = `<span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
+        head.innerHTML = `<span class="kb-grip" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg></span><span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
           + `<button type="button" class="kb-sort${_sortAsc ? " on" : ""}" aria-pressed="${_sortAsc}" aria-label="Sort ${esc(col.label)} by Ticket ID: ${_sortAsc ? "ascending" : "newest first"}" title="${_sortTip}">${kbSortSvg(_sortAsc)}</button>`
         head.querySelector(".kb-sort").addEventListener("click", ev => {
           ev.stopPropagation()
@@ -27917,6 +28039,26 @@
           renderTicketsKanban(boardTickets)
           const again = board.querySelector('.kb-col[data-key="' + col.key + '"] .kb-sort')   // the board is rebuilt: keep keyboard focus on this lane's button
           if (again) again.focus()
+        })
+        head.addEventListener("dragstart", ev => {
+          if (ev.target.closest("button") || ev.target.closest("a") || ev.target.closest(".kb-resize")) {
+            ev.preventDefault()
+            return
+          }
+          _kbColDragging = col.key
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = "move"
+            ev.dataTransfer.setData("application/x-klav-col-key", col.key)
+            ev.dataTransfer.setData("text/plain", col.key)
+          }
+          colEl.classList.add("col-dragging")
+        })
+        head.addEventListener("dragend", () => {
+          _kbColDragging = null
+          colEl.classList.remove("col-dragging")
+          boardEl.querySelectorAll(".col-drop-before, .col-drop-after, .col-dragging").forEach(el => {
+            el.classList.remove("col-drop-before", "col-drop-after", "col-dragging")
+          })
         })
         colEl.appendChild(head)
 
@@ -27928,10 +28070,45 @@
         // + .kb-list{flex:1}) means the header, padding, and the empty space below the last card all
         // accept a drop. The drop still fires exactly once (single colEl handler; events from cards
         // bubble up) and moveTicketColumn keeps the status-change behaviour unchanged.
-        colEl.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
-        colEl.addEventListener("dragleave", ev => { if (!colEl.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
+        // Ticket 382/384: differentiate column header drag vs ticket card drag.
+        colEl.addEventListener("dragover", ev => {
+          ev.preventDefault()
+          const isColDrag = Boolean(_kbColDragging) || (ev.dataTransfer && ev.dataTransfer.types && ev.dataTransfer.types.includes("application/x-klav-col-key"))
+          if (isColDrag) {
+            if (_kbColDragging === col.key) return
+            const rect = colEl.getBoundingClientRect()
+            const midX = rect.left + rect.width / 2
+            const isBefore = ev.clientX < midX
+            colEl.classList.toggle("col-drop-before", isBefore)
+            colEl.classList.toggle("col-drop-after", !isBefore)
+          } else {
+            colEl.classList.add("drag-over")
+          }
+        })
+        colEl.addEventListener("dragleave", ev => {
+          if (!colEl.contains(ev.relatedTarget)) {
+            colEl.classList.remove("drag-over", "col-drop-before", "col-drop-after")
+          }
+        })
         colEl.addEventListener("drop", ev => {
           ev.preventDefault()
+          const colKeyData = (ev.dataTransfer && typeof ev.dataTransfer.getData === "function") ? ev.dataTransfer.getData("application/x-klav-col-key") : null
+          const isColDrag = Boolean(colKeyData) || Boolean(_kbColDragging) || (ev.dataTransfer && ev.dataTransfer.types && ev.dataTransfer.types.includes("application/x-klav-col-key"))
+          if (isColDrag) {
+            colEl.classList.remove("col-drop-before", "col-drop-after")
+            const fromColKey = colKeyData || _kbColDragging
+            _kbColDragging = null
+            boardEl.querySelectorAll(".col-drop-before, .col-drop-after, .col-dragging").forEach(el => {
+              el.classList.remove("col-drop-before", "col-drop-after", "col-dragging")
+            })
+            if (fromColKey && fromColKey !== col.key) {
+              const rect = colEl.getBoundingClientRect()
+              const midX = rect.left + rect.width / 2
+              const isBefore = ev.clientX < midX
+              moveKanbanColumn(fromColKey, col.key, isBefore)
+            }
+            return
+          }
           colEl.classList.remove("drag-over")
           const ticketId = ev.dataTransfer.getData("text/plain")
           const fromKey = ev.dataTransfer.getData("application/x-klav-ticket-status")
