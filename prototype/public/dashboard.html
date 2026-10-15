@@ -18607,7 +18607,7 @@
           if (!_isRetry) { setTimeout(() => { try { swrSection(cacheKey, fetcher, apply, host, true) } catch (e) { } }, 1200); return }
           window.__klavRetry = window.__klavRetry || {}
           window.__klavRetry[cacheKey] = () => { if (el && el.querySelector && !el.querySelector(".sk")) el.innerHTML = '<div class="sk sk-card"></div>'; swrSection(cacheKey, fetcher, apply, host, false) }
-          el.innerHTML = emptyState("", "Couldn't load.", '<button class="btn btn-sm" type="button" onclick="__klavRetryRun(\'' + String(cacheKey).replace(/'/g, "") + '\')">Retry</button>')
+          el.innerHTML = emptyState("", (window.__klavErr && window.__klavErr[cacheKey]) || "Couldn't load.", '<button class="btn btn-sm" type="button" onclick="__klavRetryRun(\'' + String(cacheKey).replace(/'/g, "") + '\')">Retry</button>')
         }
       }
     }
@@ -19087,6 +19087,7 @@
           ticketId = _boot.id
           if (_tktBoardReturnUrl == null) _tktBoardReturnUrl = "/dashboard?project=" + encodeURIComponent(_boot.projectId) + "#tickets"
         }
+        try { const _fr = new URLSearchParams(location.search).get("fromRun"); if (_fr && ticketId) _fromSimRun = { run: _fr, ticket: ticketId } } catch (e) { }
         if (!ticketId) return
         // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
         const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
@@ -19169,10 +19170,21 @@
       // renderer (the old renderTriageFilters()/renderTriageList() names never existed).
       await swrSection(
         "triage:" + pid,
-        async () => { const r = await safeFetch("/api/projects/" + encodeURIComponent(pid) + "/triage"); if (!r || !r.ok) return null; return await r.json() },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
+        async () => {
+          const r = await safeFetch("/api/projects/" + encodeURIComponent(pid) + "/triage")
+          window.__klavErr = window.__klavErr || {}
+          const ek = "triage:" + pid
+          if (!r) { window.__klavErr[ek] = "Couldn't reach Klavity — check your connection and retry."; return null }
+          if (r.status === 401) { location.href = "/login"; return null }
+          if (!r.ok) { window.__klavErr[ek] = (r.status === 403 || r.status === 404) ? "You don't have access to this project's reports." : "Klavity had a problem loading reports (HTTP " + r.status + "). Please retry."; return null }
+          delete window.__klavErr[ek]
+          return await r.json()
+        },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
         (d) => { _triageItems = (d && d.triage) || []; renderTriageView() },
         "triageList",
       )
+      // A deep link (#triage/<id>) the inbox could not satisfy — the list failed to load — still opens the report itself.
+      if (window._pendingTriageFocus) { const fid = window._pendingTriageFocus; window._pendingTriageFocus = null; openReportOutsideInbox(fid) }
       // KLA-255: also render pending sim-match confirmations in the same triage card.
       renderSimMatches()
     }
@@ -19635,6 +19647,7 @@
         const fid = window._pendingTriageFocus; window._pendingTriageFocus = null
         const t = (items).find(x => String(x.id) === String(fid))
         if (t && typeof openSingleTicket === "function") openReportCockpit(String(fid), t)
+        else if (!t) openReportOutsideInbox(fid)   // not waiting for triage any more (accepted, dismissed, merged, filed open) — open it where it lives
         else focusTriageRow(fid)
       }
     }
@@ -19770,6 +19783,23 @@
     }
 
     // Scroll to a feedback row (by id) in New reports and pulse it so the deep-link lands somewhere obvious.
+    // New reports only lists reports still waiting for triage, so a link to one that was already accepted / dismissed / merged, or was filed
+    // straight to Open (high-priority Sim findings), used to land on the inbox and silently do nothing. Look the report up and open it in
+    // Tickets, saying where it is; if it truly can't be found or reached, say that.
+    async function openReportOutsideInbox(fid) {
+      if (!fid) return
+      try {
+        const r = await fetch("/api/feedback/" + encodeURIComponent(fid), { credentials: "include" })
+        if (r.status === 401) { location.href = "/login"; return }
+        if (!r.ok) { klavToast((r.status === 403 || r.status === 404) ? "We couldn't find that report in this project." : "Couldn't open that report right now — please try again.", true); return }
+        const d = await r.json().catch(() => ({}))
+        const st = d && d.report && d.report.status
+        setView("tickets")
+        if (typeof openSingleTicket === "function") openSingleTicket(String(fid))
+        klavToast(st && st !== "new" ? ("That report is already " + String(ticketStatusLabel(st)).toLowerCase() + " — opened in Tickets.") : "Opened in Tickets.")
+      } catch (e) { klavToast("Couldn't reach Klavity — check your connection and try again.", true) }
+    }
+    window.openReportOutsideInbox = openReportOutsideInbox
     function focusTriageRow(fid) {
       if (!fid) return
       const host = $("triageList"); if (!host) return
@@ -25305,6 +25335,7 @@
     // #736: when the dedicated full page opens we push a CLEAN /t/<id> URL to the address bar; this remembers
     // the board URL (…/dashboard?project=…#tickets) to restore when the page closes or the user hits Back.
     let _tktBoardReturnUrl = null
+    let _fromSimRun = null   // { run, ticket }: set when a report is opened from a Sim run (?fromRun=<id>); that ticket's page then offers "Back to Sim run"
     let _tktBoardScrollY = 0
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
@@ -25579,6 +25610,14 @@
           + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left', { size: 15 })}</button>`
           + `<button class="tkt-icon-btn" data-act="next" type="button" aria-label="Next ticket"${hasNext ? "" : " disabled"}>${kicon('chevron-right', { size: 15 })}</button>`
         ph.querySelector('[data-act="back"]').addEventListener("click", closeSingleTicket)
+        if (_fromSimRun && String(_fromSimRun.ticket) === String(id)) {   // opened from a Sim run: a way back to that run
+          const _pidRun = (state.active && state.active.id) || t.projectId || ""
+          const runLink = document.createElement("a")
+          runLink.className = "tkt-back-link"; runLink.setAttribute("data-act", "back-run")
+          runLink.href = "/sim-runs?project=" + encodeURIComponent(_pidRun) + "&run=" + encodeURIComponent(_fromSimRun.run)
+          runLink.textContent = "↩ Back to Sim run"
+          const backBtn = ph.querySelector('[data-act="back"]'); backBtn.insertAdjacentElement("afterend", runLink)
+        }
         const copyBtn = ph.querySelector('[data-act="copy"]')
         copyBtn.addEventListener("click", async () => {
           const ok = await copyText(prettyTicketUrlById(id))
