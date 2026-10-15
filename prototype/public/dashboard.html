@@ -13674,6 +13674,67 @@
       padding: 6px 0
     }
 
+    /* Inline validation under the field that needs fixing (instead of a line far below the example chips). */
+    .sm-ferr {
+      color: var(--rose);
+      font-size: 12.5px;
+      margin: 6px 2px 0
+    }
+
+    .sm-err a {
+      color: var(--indigo);
+      font-weight: 600
+    }
+
+    .sm-modal {
+      position: relative
+    }
+
+    /* "Discard this Sim?" — shown over the dialog when closing would lose what was typed or generated. */
+    .sm-discard {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      align-items: center;
+      justify-content: center;
+      background: rgba(20, 16, 30, .45);
+      border-radius: inherit
+    }
+
+    .sm-discard.show {
+      display: flex
+    }
+
+    .sm-discard-box {
+      background: var(--card, #fff);
+      color: var(--paper, #161310);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      width: min(340px, 86%);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+      text-align: left
+    }
+
+    .sm-discard-box strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px
+    }
+
+    .sm-discard-box p {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: var(--paper-dim)
+    }
+
+    .sm-discard-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px
+    }
+
     .sm-sim {
       background: var(--ink);
       border: 1px solid var(--line);
@@ -32312,29 +32373,68 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       function fail(msg) { out.innerHTML = `<div class="sm-err">${esc(msg || "Something went wrong. Try again.")}</div>`; }
       function projQ() { const p = curProjId(); return p ? ("?project=" + encodeURIComponent(p)) : ""; }
 
-      async function postJSON(url, body) {
-        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      async function postJSON(url, body, opts) {
+        // A hung AI call used to leave "Imagining your Sim…" on screen forever. Give up after a minute with a clear message.
+        const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) { } }, (opts && opts.timeoutMs) || 60000) : null;
+        let r;
+        try {
+          r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: ctrl ? ctrl.signal : undefined });
+        } catch (e) {
+          if (timer) clearTimeout(timer);
+          const timedOut = !!(ctrl && ctrl.signal.aborted);
+          const err = new Error(timedOut ? "This is taking longer than expected. Please try again in a moment." : "Couldn't reach Klavity — check your connection and try again.");
+          err.status = 0; err.code = timedOut ? "timeout" : "network"; throw err;
+        }
+        if (timer) clearTimeout(timer);
         const d = await r.json().catch(() => ({}));
         // GTM round 2: carry status + code so callers can react to 402 quota_exceeded (plan drawer).
-        if (!r.ok) { const err = new Error(d.error || ("HTTP " + r.status)); err.traceId = d.id || null; err.status = r.status; err.code = d.code || null; throw err; }
+        if (!r.ok) { const err = new Error(d.error || ("HTTP " + r.status)); err.traceId = d.id || null; err.status = r.status; err.code = d.code || null; err.upgradeUrl = d.upgradeUrl || null; throw err; }
         return d;
       }
+      // Disable the button and show a spinner while `fn` runs, so a second click can't fire a parallel AI call.
+      async function withBusy(btn, label, fn) {
+        if (!btn || btn.disabled) return;
+        const orig = btn.innerHTML;
+        btn.disabled = true; btn.setAttribute("aria-busy", "true");
+        btn.innerHTML = '<span class="sm-spin" style="margin-right:6px"></span>' + esc(label);
+        try { await fn(); } finally { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.innerHTML = orig; }
+      }
+      // Validation error right under the input that needs fixing (and focus it), cleared as soon as the user types.
+      function clearFieldErr() { ov.querySelectorAll(".sm-ferr").forEach(e => e.remove()); }
+      function fieldErr(inputEl, msg) {
+        clearFieldErr();
+        const host = inputEl.closest(".sm-field") || inputEl;
+        const d = document.createElement("div"); d.className = "sm-ferr"; d.setAttribute("role", "alert"); d.textContent = msg;
+        host.insertAdjacentElement("afterend", d);
+        try { inputEl.focus(); d.scrollIntoView({ block: "nearest" }); } catch (e) { }
+        inputEl.addEventListener("input", clearFieldErr, { once: true });
+      }
+      // Error with an optional Upgrade link (same-site path or https only).
+      function failUpgrade(msg, upgradeUrl) {
+        const u = upgradeUrl ? String(upgradeUrl) : "";
+        const link = (u && (u.charAt(0) === "/" || u.indexOf("https://") === 0)) ? ' <a href="' + esc(u) + '" target="_blank" rel="noopener">Upgrade</a>' : "";
+        out.innerHTML = '<div class="sm-err">' + esc(msg || "Something went wrong. Try again.") + link + "</div>";
+      }
       async function genBrief() {
-        const v = $("smBrief").value.trim(); if (v.length < 4) { fail("Describe your user in a sentence."); return; }
+        clearFieldErr();
+        const v = $("smBrief").value.trim(); if (v.length < 4) { fieldErr($("smBrief"), "Describe your user in a sentence — a few words is enough."); return; }
         think("Imagining your Sim…");
         // KLAVITYKLA-301: stamp which modal tab generated these Sims so saveSim can send source to server
         lastSimSource = PANE_TO_SOURCE["describe"] || "describe";
         try { const d = await postJSON("/api/persona/brief", { brief: v }); showSims(d.persona ? [d.persona] : []); } catch (e) { fail(e.message); }
       }
       async function genSite() {
-        const v = $("smUrl").value.trim(); if (!v) { fail("Enter your product’s URL."); return; }
+        clearFieldErr();
+        const v = $("smUrl").value.trim(); if (!v) { fieldErr($("smUrl"), "Enter your product’s URL."); return; }
         think("Reading " + v + "…");
         lastSiteUrl = v; // KLAVITYKLA-388: carry into the run-now prefill after Add / Add-all
         lastSimSource = PANE_TO_SOURCE["site"] || "from-site";
         try { const d = await postJSON("/api/persona/site", { url: v }); showSims(d.personas || []); } catch (e) { fail(e.message); }
       }
       async function genCall() {
-        const v = $("smTx").value.trim(); if (v.length < 20) { fail("Paste a bit more of the call (a few lines)."); return; }
+        clearFieldErr();
+        const v = $("smTx").value.trim(); if (v.length < 20) { fieldErr($("smTx"), "Paste a bit more of the call (a few lines)."); return; }
         think("Reading the call, pulling out who’s who…");
         lastSimSource = PANE_TO_SOURCE["call"] || "transcript";
         try { const d = await postJSON("/api/extract", { transcript: v }); showSims(d.personas || []); }
@@ -32532,6 +32632,8 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
             if (typeof openPlanDrawer === "function") openPlanDrawer();
             return;
           }
+          // A project on the Snap-only plan can't add Sims: say so plainly and offer the upgrade, instead of a bare error line.
+          if (e && e.status === 402) { failUpgrade(e.message || "Sims are a Pro feature — upgrade to add one.", e.upgradeUrl); return; }
           fail(e.message);
         }
       }
@@ -32587,7 +32689,9 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       $("smChips").innerHTML = EXAMPLES.map(x => `<button class="sm-chip">${esc(x)}</button>`).join("");
       $("smChips").addEventListener("click", (e) => { const c = e.target.closest(".sm-chip"); if (!c) return; $("smBrief").value = c.textContent; genBrief(); });
       // primary actions
-      $("smBriefGo").onclick = genBrief; $("smUrlGo").onclick = genSite; $("smTxGo").onclick = genCall;
+      $("smBriefGo").onclick = () => withBusy($("smBriefGo"), "Imagining…", genBrief);
+      $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
+      $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
 
       // "From a call" transcript file upload (.txt / .vtt / .srt) — loads file text into the paste box before Extract
       const smFileLbl = $("smFileLbl"); if (smFileLbl) smFileLbl.innerHTML = kicon("paperclip", { size: 14 }) + " Upload transcript" + smFileLbl.querySelector("input").outerHTML;
@@ -32643,6 +32747,7 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
         const first = !(state && state.sims && state.sims.length);
         $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
         // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
+        hideDiscard(); clearFieldErr();
         out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
         hideSuccessPanel();
         selectPane(mode);
@@ -32653,7 +32758,7 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
       let simNewReturnUrl = null;
       // fromPop=true means popstate already moved history — don't touch it again.
       function close(fromPop) {
-        ov.classList.remove("show"); document.body.style.overflow = ""; hideSuccessPanel();
+        ov.classList.remove("show"); document.body.style.overflow = ""; hideSuccessPanel(); hideDiscard();
         // If WE pushed the /sim/new entry, pop it with history.back() so the browser Back button
         // isn't left pointing at an entry that just re-opens the surface (replaceState made Back
         // look like a no-op). Deep-link hits (no pushed entry) still replace, so Back leaves the app.
@@ -32664,14 +32769,51 @@ const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES def
         simNewReturnUrl = null;
         if (simAdded) { simAdded = false; load(); }
       }
-      $("simClose").onclick = function () { close(); };
-      ov.addEventListener("mousedown", (e) => { if (e.target === ov) close(); });
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ov.classList.contains("show")) close(); });
+      // Closing (✕, backdrop, Escape, browser Back, tab close) used to throw away whatever was typed or generated, with no warning.
+      // Now, if there is anything unsaved, ask first. Nothing to lose (or already saved) closes straight away as before.
+      function simSuccessShown() { return successEl.classList.contains("show"); }
+      function simDirty() {
+        if (!ov.classList.contains("show") || simSuccessShown()) return false;
+        const siteDefault = ((state && state.active && state.active.siteUrl) || "").trim();
+        if ($("smBrief").value.trim() || $("smTx").value.trim() || $("smUrl").value.trim() !== siteDefault) return true;
+        return !!out.querySelector(".sm-sim:not(.added)");   // generated Sims that were not added yet
+      }
+      let discardEl = null;
+      function hideDiscard() { if (discardEl) discardEl.classList.remove("show"); }
+      function discardOpen() { return !!(discardEl && discardEl.classList.contains("show")); }
+      function showDiscard() {
+        if (!discardEl) {
+          discardEl = document.createElement("div");
+          discardEl.className = "sm-discard"; discardEl.id = "smDiscard";
+          discardEl.innerHTML = '<div class="sm-discard-box" role="alertdialog" aria-modal="true" aria-labelledby="smDiscardT"><strong id="smDiscardT">Discard this Sim?</strong>'
+            + '<p>What you typed or generated here hasn’t been added yet and will be lost.</p>'
+            + '<div class="sm-discard-row"><button type="button" class="btn btn-ghost btn-sm" id="smKeep">Keep editing</button><button type="button" class="btn btn-indigo btn-sm" id="smDiscardGo">Discard</button></div></div>';
+          (ov.querySelector(".sm-modal") || ov).appendChild(discardEl);
+          discardEl.querySelector("#smKeep").onclick = function () { hideDiscard(); const b = $("smBrief"); if (b) b.focus(); };
+          discardEl.querySelector("#smDiscardGo").onclick = function () { hideDiscard(); close(); };
+        }
+        discardEl.classList.add("show");
+        setTimeout(() => { const k = discardEl && discardEl.querySelector("#smKeep"); if (k) k.focus(); }, 30);
+      }
+      // fromPop: the browser already stepped back off /sim/new; if we keep the dialog open, put that history entry back.
+      function requestClose(fromPop) {
+        if (!simDirty()) { close(fromPop); return; }
+        if (fromPop) { try { history.pushState(null, "", simNewUrl(currentMode())); } catch (e) { } }
+        showDiscard();
+      }
+      $("simClose").onclick = function () { requestClose(); };
+      ov.addEventListener("mousedown", (e) => { if (e.target === ov) requestClose(); });
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !ov.classList.contains("show")) return;
+        if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
+        requestClose();
+      });
+      window.addEventListener("beforeunload", (e) => { if (simDirty()) { e.preventDefault(); e.returnValue = ""; } });
       // Back/forward: /sim/new opens the surface; navigating away closes it.
       window.addEventListener("popstate", function () {
         autoOpened = true;
         if (atSimNew()) { if (!ov.classList.contains("show")) openSimSurface(currentMode()); else selectPane(currentMode()); }
-        else if (ov.classList.contains("show")) { close(true); }
+        else if (ov.classList.contains("show")) { requestClose(true); }
       });
 
       // exposed openers — navigate to the dedicated /sim/new page, then reveal the surface.
