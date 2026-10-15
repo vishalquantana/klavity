@@ -12810,7 +12810,7 @@
     }
 
     /* KD-193: in-progress / failed upload tiles + a disabled "Uploading…" Add button */
-    .tkt-attach-pending {
+    .tkt-attach-pending{
       position: relative;
       display: flex;
       flex-direction: column;
@@ -12841,7 +12841,7 @@
       overflow: hidden
     }
 
-    .tkt-attach-pending .tkt-attach-bar i {
+    .tkt-attach-pending .tkt-attach-bar i{
       display: block;
       height: 100%;
       background: var(--indigo);
@@ -12863,7 +12863,7 @@
       color: var(--paper-faint)
     }
 
-    .tkt-attach-pending.err {
+    .tkt-attach-pending.err{
       border-color: var(--rose);
       background: rgba(219, 39, 119, .06)
     }
@@ -12880,7 +12880,7 @@
       flex-wrap: wrap
     }
 
-    .tkt-attach-add-btn:disabled {
+    .tkt-attach-add-btn:disabled{
       opacity: .65;
       cursor: not-allowed
     }
@@ -22585,10 +22585,10 @@
     // the result only appeared after a slow round-trip, a full re-render mid-upload wiped the UI state, and picking the same file twice
     // uploaded it twice. State now lives HERE (per ticket, outside the DOM) so any re-render restores the in-flight tiles and the
     // finished upload still lands; progress is real (XMLHttpRequest); duplicates are skipped; a toast confirms the result.
-    const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
-    const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
-    const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
-    const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
+const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
+const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
+const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
+const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
     const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
     const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
     const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
@@ -22828,14 +22828,18 @@
       onCancelled: function (id, n) { attachRerender(id); attachToast(n === 1 ? "Upload cancelled" : "Upload cancelled (" + n + " files)", "ok") },
       onRemoved: function (id, key) { _attachRemoveFromLists(id, key); attachRerender(id); attachToast("Attachment removed", "ok") },
       onRemoveFail: function (id, key, msg) { attachRerender(id); attachToast(msg, "warn") },
-      onFail: function (id, msg) { attachRerender(id); attachToast(msg, "warn") },
+      onFail: function (id, msg) {
+        msg = msg || "Failed to upload attachment. Please try again."
+        attachRerender(id)
+        attachToast(msg, "warn")
+      },
       onDone: function (id, res) {
         _attachApplyServerList(id, res.attachments)
         attachRerender(id)
         const n = res.attachments.length, notes = []
         if (res.duplicates.length) notes.push(res.duplicates.join(", ") + (res.duplicates.length === 1 ? " was" : " were") + " already attached — skipped.")
         if (res.ignored.length) notes.push(res.ignored.join(", ") + (res.ignored.length === 1 ? " was" : " were") + " not uploaded (at most " + ATTACH_MAX_FILES + " files at a time).")
-        if (n) attachToast(n === 1 ? "Attachment uploaded successfully" : n + " attachments uploaded successfully", "ok")
+        if (n) attachToast(n === 1 ? ("Attachment uploaded successfully" + ".") : (n + " attachments uploaded successfully" + "."), "ok")
         if (notes.length) { attachSetMsg(id, [attachMsgFor(id).text].concat(notes).filter(Boolean).join(" "), true); if (!n) attachToast(notes.join(" "), "warn") }
       }
     }
@@ -22885,6 +22889,7 @@
         + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
         + (pendingHtml ? '<div class="tkt-attach-thumbs tkt-attach-pendings">' + pendingHtml + '</div>' : '')
         + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
+        + (items ? '<div class="tkt-attach-list">' + items + '</div>' : '')
         + '<div class="tkt-attach-dropzone">'
         + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button"' + (uploading ? ' disabled aria-busy="true"' : '') + '>'
         + (uploading ? '<span class="tkt-spin">' + kicon('loader', { size: 13 }) + '</span> Uploading…' : kicon('paperclip', { size: 13 }) + ' Add attachment') + '</button>'
