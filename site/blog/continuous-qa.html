@@ -1,0 +1,207 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Continuous QA: Catch Client-Site Bugs on Every Deploy · Klavity</title>
+<meta name="description" content="Continuous QA runs quality checks on every deploy instead of a pre-launch sprint, so bugs surface in minutes - before your client finds them.">
+<link rel="canonical" href="https://klavity.in/blog/continuous-qa">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Continuous QA: Catch Client-Site Bugs on Every Deploy"><meta property="og:description" content="Continuous QA runs quality checks on every deploy instead of a pre-launch sprint, so bugs surface in minutes - before your client finds them.">
+<meta property="og:url" content="https://klavity.in/blog/continuous-qa"><meta property="og:image" content="https://klavity.in/blog/continuous-qa.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Continuous QA: Catch Client-Site Bugs on Every Deploy"><meta name="twitter:description" content="Continuous QA runs quality checks on every deploy instead of a pre-launch sprint, so bugs surface in minutes - before your client finds them."><meta name="twitter:image" content="https://klavity.in/blog/continuous-qa.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Continuous QA: Catch Client-Site Bugs on Every Deploy","description":"Continuous QA runs quality checks on every deploy instead of a pre-launch sprint, so bugs surface in minutes - before your client finds them.","datePublished":"2026-10-15","dateModified":"2026-10-15","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/continuous-qa.svg"}},"mainEntityOfPage":"https://klavity.in/blog/continuous-qa","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Continuous QA: Catch Client-Site Bugs on Every Deploy","item":"https://klavity.in/blog/continuous-qa"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/continuous-qa"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is continuous QA?","acceptedAnswer":{"@type":"Answer","text":"Continuous QA is the practice of running quality checks automatically on every deploy instead of in a single pre-launch test sprint. It combines scripted end-to-end checks on critical user paths, automated exploratory passes, and structured bug capture from production, so defects are detected minutes after they are introduced."}},{"@type":"Question","name":"How is continuous QA different from continuous integration?","acceptedAnswer":{"@type":"Answer","text":"CI answers a narrow question on every commit: does the build pass and do the unit tests succeed? Continuous QA asks the broader one: can a real person still complete the flows the product exists for? It runs on the deployed application, not the build artifact."}},{"@type":"Question","name":"Can you do continuous QA without a QA team?","acceptedAnswer":{"@type":"Answer","text":"Yes. Continuous QA is mostly configuration rather than headcount. A workable baseline is a smoke check over critical routes, one end-to-end test per revenue path, a nightly exploratory pass, and an in-app capture tool so production bugs arrive as reproducible tickets."}},{"@type":"Question","name":"What should continuous QA check on every deploy?","acceptedAnswer":{"@type":"Answer","text":"Scope by revenue path, not page count. Gate promotion on a smoke check (non-2xx responses and console errors on critical routes) and end-to-end tests for each money path such as signup, checkout, and form submission. Treat visual diffs and exploratory findings as signals to triage rather than hard gates."}},{"@type":"Question","name":"What is the main failure mode of continuous QA?","acceptedAnswer":{"@type":"Answer","text":"Flaky checks. A suite that reports failures nobody believes gets muted, and a muted suite is worse than none because it consumes attention without returning signal. Give flake a hard budget: a check that fails twice without finding a real defect gets fixed or deleted."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-15</div>
+    <h1>Continuous QA: Catch Client-Site Bugs on Every Deploy</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Continuous QA: every deploy passes through automated checks, one failing check caught before promotion">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="140" x2="800" y2="140" stroke="#f5f0e8" stroke-opacity="0.06" stroke-width="1"/>
+  <line x1="0" y1="280" x2="800" y2="280" stroke="#f5f0e8" stroke-opacity="0.06" stroke-width="1"/>
+
+  <rect x="44" y="62" width="112" height="56" rx="10" fill="#6366f1" fill-opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="62" y1="82" x2="124" y2="82" stroke="#f5f0e8" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/>
+  <line x1="62" y1="96" x2="104" y2="96" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="4" stroke-linecap="round"/>
+
+  <rect x="44" y="182" width="112" height="56" rx="10" fill="#6366f1" fill-opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="62" y1="202" x2="130" y2="202" stroke="#f5f0e8" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/>
+  <line x1="62" y1="216" x2="96" y2="216" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="4" stroke-linecap="round"/>
+
+  <rect x="44" y="302" width="112" height="56" rx="10" fill="#6366f1" fill-opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="62" y1="322" x2="118" y2="322" stroke="#f5f0e8" stroke-opacity="0.45" stroke-width="4" stroke-linecap="round"/>
+  <line x1="62" y1="336" x2="112" y2="336" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="4" stroke-linecap="round"/>
+
+  <path d="M168 90 C210 90 212 210 254 210" fill="none" stroke="#6366f1" stroke-opacity="0.55" stroke-width="2"/>
+  <path d="M168 210 L250 210" fill="none" stroke="#6366f1" stroke-opacity="0.55" stroke-width="2"/>
+  <path d="M168 330 C210 330 212 210 254 210" fill="none" stroke="#6366f1" stroke-opacity="0.55" stroke-width="2"/>
+  <polyline points="248,204 258,210 248,216" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="266" y="186" width="366" height="48" rx="24" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.5" stroke-width="1.5"/>
+
+  <circle cx="320" cy="210" r="17" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="312,210 318,217 329,204" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+
+  <circle cx="400" cy="210" r="17" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="392,210 398,217 409,204" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+
+  <circle cx="480" cy="210" r="19" fill="#f87171" fill-opacity="0.2" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="473" y1="203" x2="487" y2="217" stroke="#f87171" stroke-width="2.8" stroke-linecap="round"/>
+  <line x1="487" y1="203" x2="473" y2="217" stroke="#f87171" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M480 160 L480 184" stroke="#f87171" stroke-opacity="0.7" stroke-width="2" stroke-dasharray="4 4"/>
+  <rect x="438" y="122" width="84" height="34" rx="8" fill="#f87171" fill-opacity="0.14" stroke="#f87171" stroke-width="1.5"/>
+  <circle cx="462" cy="139" r="6" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="474" y1="139" x2="500" y2="139" stroke="#f87171" stroke-opacity="0.65" stroke-width="3" stroke-linecap="round"/>
+
+  <circle cx="580" cy="210" r="17" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="572,210 578,217 589,204" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round"/>
+
+  <path d="M640 210 L688 210" fill="none" stroke="#4ade80" stroke-opacity="0.6" stroke-width="2"/>
+  <polyline points="682,204 692,210 682,216" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="700" y="162" width="76" height="96" rx="10" fill="#f5f0e8" fill-opacity="0.07" stroke="#4ade80" stroke-opacity="0.75" stroke-width="1.5"/>
+  <line x1="700" y1="182" x2="776" y2="182" stroke="#4ade80" stroke-opacity="0.45" stroke-width="1.5"/>
+  <circle cx="712" cy="172" r="3" fill="#4ade80" fill-opacity="0.8"/>
+  <polyline points="722,214 734,228 756,198" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Continuous QA runs quality checks automatically on every deploy rather than once before launch. It layers deterministic checks on critical paths, AI exploratory passes, and in-app capture from production, so a defect is known within minutes of being introduced instead of weeks later. The metric it moves is escaped defects: bugs your client reports before you do.</div>
+    <div class="prose"><p><strong>Continuous QA is the practice of running quality checks automatically on every deploy, instead of once in a test sprint before launch.</strong> A continuous QA setup wires three layers into the release flow: fast automated checks on the handful of user paths that actually earn money, AI-driven exploratory passes that probe the app the way a real visitor would, and a one-click capture path so whoever finds a bug files a report a developer can act on. The payoff is timing — defects surface in minutes, while the change is still fresh in the developer's head, rather than weeks later when a client clicks the staging link and finds them first.</p>
+
+<h2>What is continuous QA, exactly?</h2>
+<p>Continuous QA borrows its shape from continuous integration. CI asks a narrow question on every commit: does this build and do the unit tests pass? Continuous QA asks the broader one: <em>can a real person still do the things this site exists to let them do?</em></p>
+<p>That means it runs on a trigger, not a calendar. Every merge to main, every preview deploy, every production release fires the same set of checks. Nobody has to remember to run QA, and nobody has to negotiate for time to do it — which is the usual reason pre-launch QA gets compressed into the last afternoon before handover.</p>
+<p>Three layers do the work, and they catch different classes of bug:</p>
+<ul>
+<li><strong>Deterministic path checks.</strong> Scripted end-to-end runs over the critical flows: load, sign up, log in, add to cart, submit the contact form, complete checkout. These catch hard breakage — a 500, a dead button, a form that silently drops submissions.</li>
+<li><strong>Exploratory passes.</strong> Automated agents that browse without a script, following links, filling fields with awkward input, and resizing the viewport. These catch the bugs nobody wrote a test for, which is most of them.</li>
+<li><strong>Human capture.</strong> When a client, a teammate, or a real user does hit something, a structured report — screenshot, console log, network trace, browser and viewport — lands in the tracker without a round of "can you tell me the steps?"</li>
+</ul>
+<p>Skip any one layer and you get a predictable gap. Path checks alone only ever re-test what already broke once. Exploratory alone gives you noise without a baseline. Capture alone means your client is still your QA team.</p>
+
+<h2>Why does pre-launch QA keep missing bugs?</h2>
+<p>Because the assumption underneath it stopped being true. A pre-launch QA sprint works when code ships in large, infrequent batches: you freeze, you test the frozen thing, you release. Agencies and solo builders now ship small changes continuously, and AI coding tools have pushed that rate up further — a feature that used to take a week of typing now lands in an afternoon.</p>
+<p>Verification did not speed up to match. That gap is the whole problem, and it shows up in three recognisable ways:</p>
+<ul>
+<li><strong>The batch is never frozen.</strong> By the time QA finishes testing Friday's build, Monday's changes have already landed on top of it.</li>
+<li><strong>Testing concentrates on the new thing.</strong> The feature just built gets attention; the checkout flow it quietly broke does not.</li>
+<li><strong>Nobody owns the gap after handover.</strong> The site keeps receiving content edits, plugin updates, and third-party script changes long after the QA line item was invoiced.</li>
+</ul>
+<p>Continuous QA does not make your code better. It shortens the distance between a defect being introduced and somebody knowing about it — which is the variable you can actually control.</p>
+
+<h2>What should a continuous QA pipeline check on every deploy?</h2>
+<p>Scope by revenue path, not by page count. A 200-page marketing site usually has four or five flows that matter; test those on every deploy and sample the rest weekly.</p>
+<table>
+<tr><th>Layer</th><th>Runs when</th><th>Fails on</th><th>Catches</th></tr>
+<tr><td>Smoke checks</td><td>Every deploy, pre-promotion</td><td>Non-2xx on critical routes, uncaught console errors</td><td>Hard breakage, bad builds, broken redirects</td></tr>
+<tr><td>Critical-path E2E</td><td>Every deploy to staging</td><td>A flow step that cannot complete</td><td>Regressions in signup, checkout, forms, auth</td></tr>
+<tr><td>Visual diff</td><td>Every deploy</td><td>Pixel change above threshold on key templates</td><td>Layout collapse, CSS overrides, missing assets</td></tr>
+<tr><td>Exploratory agents</td><td>Nightly, and before handover</td><td>Error states, dead ends, broken validation</td><td>Untested edge cases, mobile-only bugs</td></tr>
+<tr><td>In-app capture</td><td>Continuously, in production</td><td>n/a — reports, not gates</td><td>Everything the other four missed</td></tr>
+</table>
+<p>Two of those are gates and should block a promotion. The rest are signals — treat them as a queue to triage, or you will teach your team to ignore red.</p>
+
+<h2>How do you set up continuous QA without a QA team?</h2>
+<p>Most agencies and solo builders have no dedicated tester, which is fine: continuous QA is mostly configuration, not headcount. A workable order:</p>
+<ol>
+<li><strong>Write down the money paths.</strong> Five or fewer, in plain language. "A visitor submits the quote form and the agency receives the email." If you cannot name them, nothing downstream will be scoped correctly.</li>
+<li><strong>Add a smoke check first.</strong> One run that hits every critical route and fails on a non-2xx or a console error. It is an afternoon of work and catches the most embarrassing class of bug.</li>
+<li><strong>Automate the money paths next.</strong> One E2E test each. Use resilient selectors — a test bound to a CSS class will break the next time someone restyles a button, and a test that cries wolf gets muted. <a href="/autosim">AutoSim</a> exists for exactly this: tests that re-anchor themselves when the markup shifts instead of failing on a renamed div.</li>
+<li><strong>Put exploratory coverage on a nightly schedule.</strong> Scripted tests only check what you thought of. <a href="/sims">Sims</a> runs AI personas against the app to probe the paths you did not write down.</li>
+<li><strong>Close the loop from production.</strong> Install a capture tool so the client's "it's broken" becomes a reproducible ticket. <a href="/snap">Snap</a> turns a right-click into a report with the console, network, and environment attached.</li>
+<li><strong>Convert every escaped bug into a test.</strong> Same day, no exceptions. This is the rule that makes the suite grow where your actual failures are rather than where you guessed they'd be.</li>
+</ol>
+<p>If you want the full architecture rather than the setup order, the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a> covers how these layers fit together, and <a href="/blog/ai-qa-workflow">the AI QA workflow</a> walks through a single change moving from commit to verified.</p>
+
+<h2>Continuous QA vs pre-launch QA: what actually changes?</h2>
+<table>
+<tr><th></th><th>Pre-launch QA</th><th>Continuous QA</th></tr>
+<tr><td>Trigger</td><td>A date before handover</td><td>Every deploy</td></tr>
+<tr><td>Scope per run</td><td>Everything, once</td><td>Critical paths, constantly</td></tr>
+<tr><td>Who finds escaped bugs</td><td>The client, post-launch</td><td>The pipeline, pre-promotion</td></tr>
+<tr><td>Cost shape</td><td>A billable block, then zero</td><td>Setup cost, then near-flat</td></tr>
+<tr><td>Fails when</td><td>Release cadence outruns the test window</td><td>Checks go flaky and get ignored</td></tr>
+</table>
+<p>Note the last row. Continuous QA has its own failure mode, and it is not technical — it is a muted channel. A suite that reports red for reasons nobody believes is worse than no suite, because it consumes attention and returns nothing.</p>
+
+<h2>What should you measure?</h2>
+<p>Three numbers tell you whether continuous QA is working, and none of them is test count:</p>
+<ul>
+<li><strong>Escaped defects.</strong> Bugs first reported by a client or end user, rather than caught by your own pipeline. This should trend down. It is the only metric your client implicitly tracks.</li>
+<li><strong>Time from introduction to detection.</strong> Not time to fix — time to <em>know</em>. Continuous QA is a bet that shrinking this shrinks everything downstream.</li>
+<li><strong>Flake rate.</strong> The share of failures that turned out not to be defects. Give it a hard budget: a check that fails twice without finding a real bug gets fixed or deleted that week. <a href="/blog/what-are-self-healing-end-to-end-tests">Self-healing tests</a> cut the common cause, which is selectors drifting as the UI changes.</li>
+</ul>
+
+<h2>Where does continuous QA fall short?</h2>
+<p>It is worth being straight about the limits. Continuous QA is strong on <em>did this break</em> and weak on <em>is this good</em>. It will not tell you the copy is confusing, the pricing page buries the plan you want to sell, or the onboarding asks for a credit card too early. It also cannot verify things it has no oracle for — whether the email that got sent was the <em>right</em> email, whether the tax calculation matches the client's accountant.</p>
+<p>And it does not replace reading your own diffs. Automated checks verify behaviour you can assert; a human reviewer catches the decision that was wrong before it became behaviour. Continuous QA buys back the time to do that review properly, which is most of its value.</p>
+
+<h2>Try it on your next deploy</h2>
+<p>Pick one client site. Name its money paths, add a smoke check and one E2E test per path, schedule a nightly exploratory pass, and install capture so production bugs arrive as tickets instead of Slack messages. That is a continuous QA baseline, and it is a day of setup — not a hire.</p>
+<p><a href="/onboarding"><strong>Scan your next client site free</strong></a> — Klavity runs Snap, Sims, and AutoSim against your staging or production URL and reports what it finds before your client does.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Run checks on every deploy, not on a date before handover.</li><li>Scope tests by revenue path - five money paths, not 200 pages.</li><li>Gate on smoke and critical-path E2E; triage visual and exploratory findings.</li><li>Turn every escaped bug into a test the same day it is reported.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is continuous QA?</summary><p>Continuous QA is the practice of running quality checks automatically on every deploy instead of in a single pre-launch test sprint. It combines scripted end-to-end checks on critical user paths, automated exploratory passes, and structured bug capture from production, so defects are detected minutes after they are introduced.</p></details><details><summary>How is continuous QA different from continuous integration?</summary><p>CI answers a narrow question on every commit: does the build pass and do the unit tests succeed? Continuous QA asks the broader one: can a real person still complete the flows the product exists for? It runs on the deployed application, not the build artifact.</p></details><details><summary>Can you do continuous QA without a QA team?</summary><p>Yes. Continuous QA is mostly configuration rather than headcount. A workable baseline is a smoke check over critical routes, one end-to-end test per revenue path, a nightly exploratory pass, and an in-app capture tool so production bugs arrive as reproducible tickets.</p></details><details><summary>What should continuous QA check on every deploy?</summary><p>Scope by revenue path, not page count. Gate promotion on a smoke check (non-2xx responses and console errors on critical routes) and end-to-end tests for each money path such as signup, checkout, and form submission. Treat visual diffs and exploratory findings as signals to triage rather than hard gates.</p></details><details><summary>What is the main failure mode of continuous QA?</summary><p>Flaky checks. A suite that reports failures nobody believes gets muted, and a muted suite is worse than none because it consumes attention without returning signal. Give flake a hard budget: a check that fails twice without finding a real defect gets fixed or deleted.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

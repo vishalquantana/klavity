@@ -852,5 +852,12 @@
     "excerpt": "Replit app testing means verifying the deployed build — not the workspace preview — with a new account, production secrets and a real database.",
     "category": "Guides",
     "date": "2026-10-14"
+  },
+  {
+    "slug": "continuous-qa",
+    "title": "Continuous QA: Catch Client-Site Bugs on Every Deploy",
+    "excerpt": "Continuous QA runs quality checks on every deploy instead of a pre-launch sprint, so bugs surface in minutes - before your client finds them.",
+    "category": "Guides",
+    "date": "2026-10-15"
   }
 ]
