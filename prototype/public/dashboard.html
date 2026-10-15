@@ -10062,6 +10062,61 @@
     }
 
     /* A.8 occurrence timeline — per-report receipts (own wording + date + screenshot) */
+    /* collapsed-by-default occurrence timeline: toggle in the header, one-line summary, grouped repeats */
+    .tkt-occ-toggle {
+      border: 0;
+      background: transparent;
+      color: var(--indigo);
+      font: inherit;
+      font-size: 12.5px;
+      cursor: pointer;
+      padding: 2px 6px
+    }
+
+    .tkt-occ-toggle:hover {
+      text-decoration: underline
+    }
+
+    .tkt-occ-sum {
+      font-size: 12.5px;
+      margin: 2px 0 4px
+    }
+
+    .tkt-occ-n {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, .14);
+      color: var(--indigo);
+      font-size: 11.5px;
+      font-weight: 700
+    }
+
+    .tkt-occ-more {
+      border: 0;
+      background: transparent;
+      color: var(--indigo);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px 0 0
+    }
+
+    .tkt-occ-more:hover {
+      text-decoration: underline
+    }
+
+    .tkt-occ-sub {
+      margin-top: 6px;
+      padding-left: 10px;
+      border-left: 2px solid var(--line)
+    }
+
+    .tkt-occ-sub .tkt-occ-item {
+      padding: 4px 0
+    }
+
     .tkt-occ-wrap {
       margin-top: 18px;
       border-top: 1px solid var(--line);
@@ -24981,6 +25036,28 @@
     // carries its own verbatim wording + date + screenshot (occurrences 2..N are no longer discarded on
     // dedup). Includes a "Copy timeline" button for client conversations. Returns null when there is
     // nothing to show (single occurrence) so the caller can skip appending it.
+    // Group a ticket's occurrences by identical wording + screenshot (first-seen order). A Sim re-run or a customer re-filing the same
+    // thing used to produce a wall of identical rows; each group renders once with ×N.
+    function occGroups(occ) {
+      const groups = []
+      ;(occ || []).forEach(o => {
+        const key = String(o.observation).trim() + "|" + (o.screenshotId || "")
+        const g = groups.find(x => x.key === key)
+        if (g) g.items.push(o); else groups.push({ key: key, items: [o] })
+      })
+      return groups
+    }
+    // The plain text behind "Copy timeline": one line per group, "N times" header counts every occurrence.
+    function occCopyBody(groups, total, day) {
+      const lines = groups.map(g => {
+        const first = g.items[0], last = g.items[g.items.length - 1]
+        const q = String(first.observation).trim()
+        if (g.items.length === 1) return "• " + day(first.seenAt) + ": \"" + q + "\""
+        const range = day(first.seenAt) === day(last.seenAt) ? day(first.seenAt) : day(first.seenAt) + " → " + day(last.seenAt)
+        return "• " + range + " (×" + g.items.length + "): \"" + q + "\""
+      })
+      return "This issue was reported " + total + " times:\n" + lines.join("\n")
+    }
     function buildOccurrenceTimeline(ticketId) {
       const wrap = document.createElement("div")
       // #718: the section now ALWAYS renders (no more self-hiding into dead space). When there are no repeat
@@ -24989,9 +25066,11 @@
       wrap.innerHTML = `<div class="tkt-occ-hd">
       <span class="tkt-occ-title">Occurrence timeline</span>
       <span class="tkt-occ-count"></span>
+      <button class="tkt-occ-toggle" type="button" aria-expanded="false" hidden>Show</button>
       <span class="info" tabindex="0" role="note" aria-label="How many times this exact issue has recurred. Only shown when it has come back (2+ times).">i<span class="tip">How many times this exact issue has recurred. Only shown when it has come back.</span></span>
       <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" disabled title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
     </div>
+    <div class="tkt-occ-sum muted hide"></div>
     <div class="tkt-occ-empty muted">Reported once — no repeat occurrences yet.</div>
     <div class="tkt-occ-list hide"></div>
     <div class="tkt-occ-msg muted" style="font-size:12px"></div>`
@@ -25000,18 +25079,39 @@
       const copyBtn = wrap.querySelector(".tkt-occ-copy")
       const emptyEl = wrap.querySelector(".tkt-occ-empty")
       const msgEl = wrap.querySelector(".tkt-occ-msg")
+      const toggleBtn = wrap.querySelector(".tkt-occ-toggle")
+      const sumEl = wrap.querySelector(".tkt-occ-sum")
+      // The full list is collapsed by default (a ticket re-reported many times used to push Activity far down the page); the choice is
+      // remembered per browser. While collapsed, a one-line summary says how many times and when.
+      let occOpen = false
+      try { occOpen = localStorage.getItem("klav.occOpen") === "1" } catch (e) { }
+      let occTotal = 0, copyBody = ""
+      const paintOpen = () => {
+        const has = occTotal >= 2
+        if (listEl) listEl.classList.toggle("hide", !has || !occOpen)
+        if (sumEl) sumEl.classList.toggle("hide", !has || occOpen)
+        if (toggleBtn) { toggleBtn.hidden = !has; toggleBtn.setAttribute("aria-expanded", occOpen ? "true" : "false"); toggleBtn.textContent = occOpen ? "Hide" : "Show" }
+      }
+      if (toggleBtn) toggleBtn.addEventListener("click", () => {
+        occOpen = !occOpen
+        try { localStorage.setItem("klav.occOpen", occOpen ? "1" : "0") } catch (e) { }
+        paintOpen()
+      })
       // #718: toggle between the empty state (copy disabled) and a populated timeline (copy enabled).
       const showEmpty = () => {
+        occTotal = 0; copyBody = ""
         if (emptyEl) emptyEl.classList.remove("hide")
         if (listEl) { listEl.classList.add("hide"); listEl.innerHTML = "" }
         if (countEl) countEl.textContent = ""
         if (copyBtn) copyBtn.disabled = true
+        paintOpen()
       }
       const showTimeline = (n) => {
+        occTotal = n
         if (emptyEl) emptyEl.classList.add("hide")
-        if (listEl) listEl.classList.remove("hide")
         if (countEl) countEl.textContent = "×" + n
         if (copyBtn) copyBtn.disabled = false
+        paintOpen()
       }
 
       const day = ms => { try { return new Date(Number(ms)).toISOString().slice(0, 10) } catch (e) { return "" } }
@@ -25044,23 +25144,55 @@
             // #718: real timeline → reveal the list, set the ×N pill, enable Copy timeline.
             showTimeline(occ.length)
             listEl.innerHTML = ""
-            occ.forEach(o => {
+            // One row per distinct report (same wording and screenshot): a Sim re-run, or a customer re-filing the same thing, produced many
+            // identical rows. Group them: first → last date and ×N, with the individual entries one click away.
+            const groups = occGroups(occ)
+            const quote = o => String(o.observation).trim()
+            const buildItem = (o, noShot) => {
               const item = document.createElement("div")
               item.className = "tkt-occ-item"
-              const shotHtml = o.screenshotId
+              const shotHtml = (o.screenshotId && !noShot)
                 ? `<div class="tkt-occ-shot" data-shot="${esc(o.screenshotId)}"></div>` : ""
               // Only stored repeat receipts (occurrenceId set, not the original) are splittable.
               const splitHtml = (o.occurrenceId && !o.isOriginal)
                 ? `<button class="btn btn-ghost btn-sm tkt-occ-split" type="button" data-occ="${esc(o.occurrenceId)}" title="This is a different bug — split it into its own ticket">${kicon('scissors')} Split out</button>` : ""
               item.innerHTML = `
             <div class="tkt-occ-date">${esc(day(o.seenAt))}${o.isOriginal ? '<div class="tkt-occ-orig">first</div>' : ''}</div>
-            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(String(o.observation).trim())}"</div>${splitHtml}</div>
+            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(quote(o))}"</div>${splitHtml}</div>
             ${shotHtml}`
               const splitBtn = item.querySelector(".tkt-occ-split")
               if (splitBtn) splitBtn.addEventListener("click", () => splitOccurrence(splitBtn.getAttribute("data-occ"), splitBtn))
-              listEl.appendChild(item)
-              loadOccShot(item)
+              return item
+            }
+            groups.forEach(g => {
+              const first = g.items[0], last = g.items[g.items.length - 1]
+              if (g.items.length === 1) {
+                const item = buildItem(first)
+                listEl.appendChild(item); loadOccShot(item)
+                return
+              }
+              const grp = document.createElement("div")
+              grp.className = "tkt-occ-item tkt-occ-grp"
+              const range = day(first.seenAt) === day(last.seenAt) ? day(first.seenAt) : day(first.seenAt) + " → " + day(last.seenAt)
+              const shotHtml = first.screenshotId ? `<div class="tkt-occ-shot" data-shot="${esc(first.screenshotId)}"></div>` : ""
+              grp.innerHTML = `
+            <div class="tkt-occ-date">${esc(range)}</div>
+            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(quote(first))}"<span class="tkt-occ-n">×${g.items.length}</span></div>
+              <button class="tkt-occ-more" type="button" aria-expanded="false">Show all ${g.items.length}</button>
+              <div class="tkt-occ-sub hide"></div></div>
+            ${shotHtml}`
+              const sub = grp.querySelector(".tkt-occ-sub"), more = grp.querySelector(".tkt-occ-more")
+              g.items.forEach(o => sub.appendChild(buildItem(o, true)))
+              more.addEventListener("click", () => {
+                const open = sub.classList.toggle("hide") === false
+                more.setAttribute("aria-expanded", open ? "true" : "false")
+                more.textContent = open ? "Hide" : "Show all " + g.items.length
+              })
+              listEl.appendChild(grp); loadOccShot(grp)
             })
+            const firstAt = occ[0].seenAt, lastAt = occ[occ.length - 1].seenAt
+            copyBody = occCopyBody(groups, occ.length, day)
+            if (sumEl) sumEl.textContent = "Reported " + occ.length + " times · first " + day(firstAt) + " · last " + day(lastAt) + (groups.length < occ.length ? " · " + groups.length + " distinct" : "")
           })
           .catch(() => { showEmpty() /* 404 = no recurrence memory (single report): show the empty state */ })
       }
@@ -25069,9 +25201,7 @@
 
       // Copy timeline text for client conversations — plain, quotable receipts.
       copyBtn.addEventListener("click", async () => {
-        const items = [...listEl.querySelectorAll(".tkt-occ-item")]
-        const lines = items.map(it => `• ${it.querySelector(".tkt-occ-date")?.textContent?.replace("first", "").trim()}: ${it.querySelector(".tkt-occ-quote")?.textContent}`)
-        const text = `This issue was reported ${items.length} times:\n${lines.join("\n")}`
+        const text = copyBody
         const ok = await copyText(text)
         const orig = copyBtn.innerHTML
         copyBtn.innerHTML = ok ? (kicon('check') + " Copied!") : (kicon('x') + " Copy failed")
