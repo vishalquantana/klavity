@@ -12419,11 +12419,58 @@
     }
 
     .tkt-rec-loading {
-      display: none !important;
+      display: flex;
       align-items: center;
       gap: 7px;
       font-size: 12px;
-      color: var(--paper-dim)
+      color: var(--paper-dim);
+    }
+
+    .tkt-rec-loading.hide {
+      display: none !important;
+    }
+
+    .media-pv-loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--paper-dim);
+      font-size: 13px;
+      padding: 24px;
+    }
+
+    .media-pv-loading.hide {
+      display: none !important;
+    }
+
+    .media-pv-loading svg {
+      width: 14px;
+      height: 14px;
+      animation: tktRecSpin 1s linear infinite;
+    }
+
+    .media-pv-error {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 24px;
+      color: var(--rose);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .media-pv-error.hide {
+      display: none !important;
+    }
+
+    .media-pv-vwrap {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      max-width: 100%;
     }
 
     .tkt-rec-loading svg {
@@ -12772,7 +12819,7 @@
     }
 
     /* KD-193: in-progress / failed upload tiles + a disabled "Uploading…" Add button */
-    .tkt-attach-pending {
+    .tkt-attach-pending{
       position: relative;
       display: flex;
       flex-direction: column;
@@ -12803,7 +12850,7 @@
       overflow: hidden
     }
 
-    .tkt-attach-pending .tkt-attach-bar i {
+    .tkt-attach-pending .tkt-attach-bar i{
       display: block;
       height: 100%;
       background: var(--indigo);
@@ -12825,7 +12872,7 @@
       color: var(--paper-faint)
     }
 
-    .tkt-attach-pending.err {
+    .tkt-attach-pending.err{
       border-color: var(--rose);
       background: rgba(219, 39, 119, .06)
     }
@@ -12842,7 +12889,7 @@
       flex-wrap: wrap
     }
 
-    .tkt-attach-add-btn:disabled {
+    .tkt-attach-add-btn:disabled{
       opacity: .65;
       cursor: not-allowed
     }
@@ -22153,7 +22200,33 @@
     // Build the recording player(s) + transcript panel(s) for a ticket. Segments (when present) render as
     // clickable timestamps that seek the paired <video>. Returns "" when the ticket has no recordings.
     function buildRecordingsHtml(t) {
-      var recs = Array.isArray(t.recordings) ? t.recordings : []
+      var recs = Array.isArray(t.recordings) ? t.recordings.slice() : []
+      if (Array.isArray(t.attachments)) {
+        t.attachments.forEach(function (att, idx) {
+          var mime = (att.contentType || att.mime_type || att.type || "").toLowerCase()
+          var fn = String(att.filename || att.key || att.url || "").toLowerCase()
+          var isVideo = mime.startsWith("video/") || fn.endsWith(".webm") || fn.endsWith(".mp4") || fn.endsWith(".mov")
+          if (isVideo) {
+            var fbUrl = (att.key && t.id) ? "/api/feedback/" + encodeURIComponent(t.id) + "/attachments?key=" + encodeURIComponent(att.key) : ""
+            var url = att.url || fbUrl
+            if (url && !recs.some(function (r) { return r.url === url || (r.key && att.key && r.key === att.key) })) {
+              recs.push({
+                id: att.id || ("att-vid-" + idx),
+                url: url,
+                key: att.key,
+                fallbackUrl: fbUrl,
+                filename: att.filename || ("video-" + (idx + 1) + (fn.endsWith(".mp4") ? ".mp4" : ".webm")),
+                contentType: mime || (fn.endsWith(".mp4") ? "video/mp4" : "video/webm")
+              })
+            }
+          }
+        })
+      }
+      recs.forEach(function (r) {
+        if (!r.fallbackUrl && r.key && t.id) {
+          r.fallbackUrl = "/api/feedback/" + encodeURIComponent(t.id) + "/attachments?key=" + encodeURIComponent(r.key)
+        }
+      })
       if (!recs.length) return ""
       return '<div class="tkt-recordings">' + recs.map(function (r, i) {
         var rid = esc(String(r.id || ("rec" + i)))
@@ -22163,16 +22236,16 @@
         // so a reporter can always retrieve their own evidence. Inline SVG download glyph (no emoji; kicon has no
         // 'download' icon registered).
         var _dlSvg = '<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>'
-        var isMp4 = (r.contentType && r.contentType.includes("mp4")) || (String(r.key || "").endsWith(".mp4"))
+        var isMp4 = (r.contentType && r.contentType.includes("mp4")) || (String(r.key || "").endsWith(".mp4")) || (String(r.filename || "").endsWith(".mp4"))
         var dlExt = isMp4 ? "mp4" : "webm"
-        var vid = r.url
+        var vid = r.url || r.fallbackUrl
           ? '<div class="tkt-rec-vwrap" data-rec="' + rid + '">'
-          + '<video class="tkt-rec-video" data-rec="' + rid + '" src="' + esc(String(r.url)) + '" controls preload="metadata" playsinline>'
-          + '<source src="' + esc(String(r.url)) + '"' + (r.contentType ? ' type="' + esc(String(r.contentType)) + '"' : '') + '>'
+          + '<video class="tkt-rec-video" data-rec="' + rid + '"' + (r.fallbackUrl ? ' data-fallback-url="' + esc(r.fallbackUrl) + '"' : '') + ' src="' + esc(String(r.url || r.fallbackUrl)) + '" controls preload="metadata" playsinline>'
+          + '<source src="' + esc(String(r.url || r.fallbackUrl)) + '"' + (r.contentType ? ' type="' + esc(String(r.contentType)) + '"' : '') + '>'
           + 'Your browser does not support video playback.</video>'
-          + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading recording…</div>'
-          + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This recording couldn’t play here. Download it to view.</div>'
-          + '<a class="tkt-rec-dl" href="' + esc(String(r.url)) + '" download="recording-' + rid + '.' + dlExt + '" target="_blank" rel="noopener">' + _dlSvg + ' Download recording</a>'
+          + '<div class="tkt-rec-loading">' + kicon('loader', { size: 13 }) + ' Loading video…</div>'
+          + '<div class="tkt-rec-error hide">' + kicon('triangle-alert', { size: 13 }) + ' This video couldn’t play here. Download it to view.</div>'
+          + '<a class="tkt-rec-dl" href="' + esc(String(r.url || r.fallbackUrl)) + '" download="' + esc(String(r.filename || ("recording-" + rid + "." + dlExt))) + '" target="_blank" rel="noopener">' + _dlSvg + ' Download ' + (isMp4 ? "video" : "recording") + '</a>'
           + '</div>'
           : '<div class="muted" style="font-size:12px">Recording unavailable</div>'
         var st = r.transcript_status || "none"
@@ -22227,12 +22300,29 @@
         function hideLoading() { if (loadingEl) loadingEl.classList.add("hide") }
         if (v.readyState >= 1) hideLoading()
         var repairing = false
+        var triedFallback = false
+
+        function tryFallback() {
+          var fallback = v.getAttribute("data-fallback-url")
+          if (!triedFallback && fallback && v.src !== fallback) {
+            triedFallback = true
+            var srcEl = v.querySelector("source")
+            if (srcEl) srcEl.src = fallback
+            v.src = fallback
+            v.load()
+            return true
+          }
+          return false
+        }
+
         v.addEventListener("loadedmetadata", function () {
           hideLoading()
-          var isRemote = /^https?:\/\//i.test(v.currentSrc || v.src || "") || /^\//.test(v.getAttribute("src") || "")
-          if (!isRemote && (!isFinite(v.duration) || v.duration <= 0)) {
+          if (!isFinite(v.duration) || isNaN(v.duration) || v.duration <= 0) {
             repairing = true
             try { v.currentTime = 1e101 } catch (e) { }
+            setTimeout(function () {
+              if (repairing) { repairing = false; try { v.currentTime = 0 } catch (e) { } }
+            }, 400)
           }
         })
         v.addEventListener("durationchange", function () {
@@ -22244,11 +22334,26 @@
         v.addEventListener("loadeddata", hideLoading)
         v.addEventListener("canplay", hideLoading)
         v.addEventListener("playing", hideLoading)
+        v.addEventListener("waiting", function () { if (loadingEl) loadingEl.classList.remove("hide") })
+        v.addEventListener("seeking", function () { if (loadingEl) loadingEl.classList.remove("hide") })
+        v.addEventListener("seeked", hideLoading)
         v.addEventListener("error", function () {
-          hideLoading()
-          if (errEl) errEl.classList.remove("hide")
-          if (wrap) wrap.classList.add("tkt-rec-failed")
+          if (!tryFallback()) {
+            hideLoading()
+            if (errEl) errEl.classList.remove("hide")
+            if (wrap) wrap.classList.add("tkt-rec-failed")
+          }
         })
+        var sourceEl = v.querySelector("source")
+        if (sourceEl) {
+          sourceEl.addEventListener("error", function () {
+            if (!tryFallback()) {
+              hideLoading()
+              if (errEl) errEl.classList.remove("hide")
+              if (wrap) wrap.classList.add("tkt-rec-failed")
+            }
+          })
+        }
       })
     }
     // ── Image optimisation before upload ───────────────────────────────────────────────────────────────────────────────
@@ -22431,7 +22536,12 @@
 
       const holder = document.createElement("div"); holder.className = "media-pv-media-holder"
       const media = document.createElement(o.kind === "video" ? "video" : "img")
-      if (o.kind === "video") { media.controls = true; media.autoplay = true; media.setAttribute("playsinline", "") } else { media.alt = o.name }
+      if (o.kind === "video") {
+        media.controls = true; media.autoplay = true; media.preload = "auto"
+        media.setAttribute("playsinline", ""); media.setAttribute("webkit-playsinline", "")
+      } else {
+        media.alt = o.name
+      }
       media.src = o.url
 
       let annSvgWrap = null
@@ -22455,7 +22565,75 @@
         }
         holder.appendChild(imgWrap)
       } else {
-        holder.appendChild(media)
+        const vwrap = document.createElement("div"); vwrap.className = "media-pv-vwrap"
+        const loading = document.createElement("div"); loading.className = "media-pv-loading"
+        loading.innerHTML = `${kicon('loader', { size: 14 })} <span>Loading video…</span>`
+        const errorEl = document.createElement("div"); errorEl.className = "media-pv-error hide"
+        errorEl.innerHTML = `<span>Unable to play video preview.</span>`
+        const retryBtn = document.createElement("button")
+        retryBtn.type = "button"; retryBtn.className = "media-pv-btn"
+        retryBtn.textContent = "Retry playback"
+
+        const fallbackUrl = o.fallbackUrl || ((o.key && o.ticketId) ? `/api/feedback/${encodeURIComponent(o.ticketId)}/attachments?key=${encodeURIComponent(o.key)}` : "")
+        let attemptedFallback = false
+
+        const hideLoading = () => loading.classList.add("hide")
+        const showError = () => {
+          loading.classList.add("hide")
+          errorEl.classList.remove("hide")
+        }
+
+        media.addEventListener("loadeddata", hideLoading)
+        media.addEventListener("canplay", hideLoading)
+        media.addEventListener("playing", hideLoading)
+
+        media.addEventListener("loadedmetadata", () => {
+          hideLoading()
+          if (!isFinite(media.duration) || isNaN(media.duration) || media.duration <= 0) {
+            let repairing = true
+            const onSeeked = () => {
+              media.removeEventListener("seeked", onSeeked)
+              try { media.currentTime = 0 } catch (e) { }
+            }
+            media.addEventListener("seeked", onSeeked)
+            try { media.currentTime = 1e101 } catch (e) { }
+            setTimeout(() => {
+              if (repairing) {
+                repairing = false
+                media.removeEventListener("seeked", onSeeked)
+                try { media.currentTime = 0 } catch (e) { }
+              }
+            }, 500)
+          }
+        })
+        media.addEventListener("durationchange", () => {
+          if (isFinite(media.duration) && media.duration > 0 && media.currentTime > 0) {
+            try { media.currentTime = 0 } catch (e) { }
+          }
+        })
+
+        media.addEventListener("error", () => {
+          if (fallbackUrl && !attemptedFallback && media.src !== fallbackUrl) {
+            attemptedFallback = true
+            media.src = fallbackUrl
+            media.load()
+            return
+          }
+          showError()
+        })
+
+        retryBtn.addEventListener("click", () => {
+          errorEl.classList.add("hide")
+          loading.classList.remove("hide")
+          media.load()
+          media.play().catch(() => {})
+        })
+        errorEl.appendChild(retryBtn)
+
+        vwrap.appendChild(loading)
+        vwrap.appendChild(errorEl)
+        vwrap.appendChild(media)
+        holder.appendChild(vwrap)
       }
 
       const bar = document.createElement("div"); bar.className = "media-pv-bar"
@@ -22547,13 +22725,13 @@
     // the result only appeared after a slow round-trip, a full re-render mid-upload wiped the UI state, and picking the same file twice
     // uploaded it twice. State now lives HERE (per ticket, outside the DOM) so any re-render restores the in-flight tiles and the
     // finished upload still lands; progress is real (XMLHttpRequest); duplicates are skipped; a toast confirms the result.
-    const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
-    const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
-    const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
-    const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
-    const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
-    const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
-    const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
+const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
+const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
+const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
+const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
+const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
+const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
+const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
     let _attachSeq = 0
     function _attachKey(name, size) { return String(name == null ? "" : name).trim().toLowerCase() + "|" + Number(size || 0) }
     function attachUploadsFor(ticketId) { return _attachUploads.get(String(ticketId)) || [] }
@@ -22825,19 +23003,20 @@
       var items = atts.map(function (a, i) {
         var name = esc(String(a.filename || ("attachment-" + (i + 1))))
         var size = a.size ? _attachFmtBytes(a.size) : ""
-        var kind = a.url ? attachKind(a) : ""
+        var attUrl = a.url || ((a.key && t.id) ? "/api/feedback/" + encodeURIComponent(t.id) + "/attachments?key=" + encodeURIComponent(a.key) : "")
+        var kind = attUrl ? attachKind(a) : ""
         if (kind) {   // KD-100: previewable → a clickable tile (opens the viewer); KD-193: + a remove (×) with inline confirm
           thumbs += '<div class="tkt-attach-tile"><button type="button" class="tkt-attach-thumb" data-idx="' + i + '" title="' + name + '">'
             + (kind === "image"
-              ? '<img src="' + esc(String(a.url)) + '" alt="' + name + '" loading="lazy">'
-              : '<video src="' + esc(String(a.url)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
+              ? '<img src="' + esc(String(attUrl)) + '" alt="' + name + '" loading="lazy">'
+              : '<video src="' + esc(String(attUrl)) + '#t=0.1" preload="metadata" muted playsinline></video><span class="tkt-attach-play">' + kicon('play', { size: 16 }) + '</span>')
             + '<span class="tkt-attach-cap">' + name + '</span></button>'
             + '<button type="button" class="tkt-attach-dl-btn" data-tile-dl="' + i + '" aria-label="Download ' + name + '" title="Download ' + name + '">' + _dlSvg + '</button>'
             + _attachRemoveUi(t, a) + '</div>'
           return ""
         }
-        var row = a.url
-          ? '<a class="tkt-attach-item" href="' + esc(String(a.url)) + '" target="_blank" rel="noopener" download="' + name + '" data-idx="' + i + '">'
+        var row = attUrl
+          ? '<a class="tkt-attach-item" href="' + esc(String(attUrl)) + '" target="_blank" rel="noopener" download="' + name + '" data-idx="' + i + '">'
           + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span>'
           + (size ? '<span class="tkt-attach-size">' + esc(size) + '</span>' : '') + '<span class="tkt-attach-dl-ico" title="Download">' + _dlSvg + '</span></a>'
           : '<span class="tkt-attach-item tkt-attach-unavailable">' + kicon('paperclip', { size: 13 }) + '<span class="tkt-attach-name">' + name + '</span><span>unavailable</span></span>'
@@ -22847,6 +23026,7 @@
         + '<div class="tkt-attach-hd">Attachments' + (atts.length ? ' <span class="tkt-attach-count">' + atts.length + '</span>' : '') + '</div>'
         + (pendingHtml ? '<div class="tkt-attach-thumbs tkt-attach-pendings">' + pendingHtml + '</div>' : '')
         + (thumbs ? '<div class="tkt-attach-thumbs">' + thumbs + '</div>' : '')
+        + (items ? '<div class="tkt-attach-list">' + items + '</div>' : '')
         + '<div class="tkt-attach-dropzone">'
         + '<button class="btn btn-ghost btn-sm tkt-attach-add-btn" type="button"' + (uploading ? ' disabled aria-busy="true"' : '') + '>'
         + (uploading ? '<span class="tkt-spin">' + kicon('loader', { size: 13 }) + '</span> Uploading…' : kicon('paperclip', { size: 13 }) + ' Add attachment') + '</button>'
@@ -22880,26 +23060,42 @@
           }
           var prevItems = []
           atts.forEach(function (a, ai) {
+            var attUrl = a.url || ((a.key && ticketId) ? "/api/feedback/" + encodeURIComponent(ticketId) + "/attachments?key=" + encodeURIComponent(a.key) : "")
             var k = attachKind(a)
-            if (k && a.url) {
+            if (k && attUrl) {
               prevItems.push({
-                url: a.url,
+                url: attUrl,
                 name: String(a.filename || ("attachment-" + (ai + 1))),
                 kind: k,
-                openUrl: a.url,
+                openUrl: attUrl,
                 annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null),
                 ticketId: ticketId,
                 key: a.key,
+                fallbackUrl: (a.key && ticketId) ? ("/api/feedback/" + encodeURIComponent(ticketId) + "/attachments?key=" + encodeURIComponent(a.key)) : "",
                 screenshotId: a.screenshotId
               })
             }
           })
           var clickedIdx = Number(b.getAttribute("data-idx"))
           var a = atts[clickedIdx]
-          if (!a || !a.url) return
-          var foundIdx = prevItems.findIndex(function (it) { return it.url === a.url })
+          if (!a) return
+          var attUrl = a.url || ((a.key && ticketId) ? "/api/feedback/" + encodeURIComponent(ticketId) + "/attachments?key=" + encodeURIComponent(a.key) : "")
+          if (!attUrl) return
+          var foundIdx = prevItems.findIndex(function (it) { return it.url === attUrl || (it.key && a.key && it.key === a.key) })
           if (foundIdx < 0) foundIdx = 0
-          openMediaPreview({ url: a.url, items: prevItems, index: foundIdx, name: String(a.filename || "attachment"), kind: attachKind(a), openUrl: a.url, annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null), ticketId: ticketId, key: a.key, screenshotId: a.screenshotId })
+          openMediaPreview({
+            url: attUrl,
+            items: prevItems,
+            index: foundIdx,
+            name: String(a.filename || "attachment"),
+            kind: attachKind(a),
+            openUrl: attUrl,
+            annotations: a.annotations || (a.isPrimaryScreenshot ? t.annotations : null),
+            ticketId: ticketId,
+            key: a.key,
+            fallbackUrl: (a.key && ticketId) ? ("/api/feedback/" + encodeURIComponent(ticketId) + "/attachments?key=" + encodeURIComponent(a.key)) : "",
+            screenshotId: a.screenshotId
+          })
         })
       })
       wrap.querySelectorAll("[data-tile-dl]").forEach(function (btn) {

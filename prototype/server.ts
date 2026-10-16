@@ -4123,7 +4123,57 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const rel = decodeURIComponent(path.slice(9))
     if (!rel.includes("..")) {
       const f = Bun.file(PUB + "/uploads/" + rel)
-      if (await f.exists()) return new Response(f)
+      if (await f.exists()) {
+        const ct = videoMimeFromName(rel) || f.type || "application/octet-stream"
+        const total = f.size
+        const rangeHeader = req.headers.get("range")
+        if (rangeHeader && /^bytes=/i.test(rangeHeader) && total > 0) {
+          const matches = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim())
+          if (matches) {
+            let start = 0
+            let end = total - 1
+            if (!matches[1] && matches[2]) {
+              start = Math.max(0, total - parseInt(matches[2], 10))
+            } else {
+              start = matches[1] ? parseInt(matches[1], 10) : 0
+              end = matches[2] ? parseInt(matches[2], 10) : (total - 1)
+            }
+            if (start >= total || start > end) {
+              return new Response(null, {
+                status: 416,
+                headers: {
+                  "content-range": `bytes */${total}`,
+                  "accept-ranges": "bytes",
+                },
+              })
+            }
+            end = Math.min(end, total - 1)
+            const chunkLen = end - start + 1
+            const slice = f.slice(start, end + 1)
+            return new Response(slice, {
+              status: 206,
+              headers: {
+                "content-type": ct,
+                "content-range": `bytes ${start}-${end}/${total}`,
+                "content-length": String(chunkLen),
+                "accept-ranges": "bytes",
+                "access-control-allow-origin": "*",
+                "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+                "cache-control": "public, max-age=3600",
+              },
+            })
+          }
+        }
+        return new Response(f, {
+          headers: {
+            "content-type": ct,
+            "content-length": String(total),
+            "access-control-allow-origin": "*",
+            "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+            "accept-ranges": "bytes",
+          },
+        })
+      }
     }
   }
   // ── permanent signed screenshot link (for external tracker tickets, never expires, revocable) ──
@@ -12916,23 +12966,82 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!fbAccess) return json({ error: "Only project members can view attachments." }, 403)
         const attKeyParam = String(url.searchParams.get("key") || "")
         if (!attKeyParam) return json({ error: "key is required." }, 400)
-        const atts = Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []
-        const found = atts.find((a: any) => String(a?.key) === attKeyParam || String(a?.filename) === attKeyParam)
+        const allItems = [
+          ...(Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []),
+          ...(Array.isArray((fbRow as any).recordings) ? (fbRow as any).recordings : []),
+        ]
+        const found = allItems.find((a: any) => String(a?.key) === attKeyParam || String(a?.filename) === attKeyParam || String(a?.id) === attKeyParam)
         if (!found) return json({ error: "Attachment not found." }, 404)
         const filename = String(found.filename || "attachment")
-        const ct = String(found.contentType || "application/octet-stream")
+        let ct = String(found.contentType || "application/octet-stream")
+        if ((!ct || ct === "application/octet-stream") && videoMimeFromName(filename)) {
+          ct = videoMimeFromName(filename)
+        }
         const isDownload = url.searchParams.get("download") === "1"
         const cd = isDownload
           ? `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
           : `inline; filename="${encodeURIComponent(filename)}"`
+
+        const rangeHeader = req.headers.get("range")
         try {
-          const { stream, contentType } = await getObjectStream(found.key)
+          if (rangeHeader && /^bytes=/i.test(rangeHeader)) {
+            const probe = await getObjectStream(found.key)
+            const total = probe.size
+            if (total && Number.isFinite(total) && total > 0) {
+              const matches = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim())
+              if (matches) {
+                let start = 0
+                let end = total - 1
+                if (!matches[1] && matches[2]) {
+                  start = Math.max(0, total - parseInt(matches[2], 10))
+                } else {
+                  start = matches[1] ? parseInt(matches[1], 10) : 0
+                  end = matches[2] ? parseInt(matches[2], 10) : (total - 1)
+                }
+                if (start >= total || start > end) {
+                  return new Response(null, {
+                    status: 416,
+                    headers: {
+                      "content-range": `bytes */${total}`,
+                      "accept-ranges": "bytes",
+                    },
+                  })
+                }
+                end = Math.min(end, total - 1)
+                const chunkLen = end - start + 1
+                const { stream, contentType } = await getObjectStream(found.key, { start, end })
+                return new Response(stream, {
+                  status: 206,
+                  headers: {
+                    "content-type": ct || contentType || "application/octet-stream",
+                    "content-range": `bytes ${start}-${end}/${total}`,
+                    "content-length": String(chunkLen),
+                    "accept-ranges": "bytes",
+                    "content-disposition": cd,
+                    "cache-control": "private, max-age=3600",
+                    "access-control-allow-origin": "*",
+                    "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+                  },
+                })
+              }
+            }
+          }
+
+          const { stream, contentType, size } = await getObjectStream(found.key)
+          const headers: Record<string, string> = {
+            "content-type": ct || contentType || "application/octet-stream",
+            "content-disposition": cd,
+            "cache-control": "private, max-age=3600",
+            "accept-ranges": "bytes",
+            "access-control-allow-origin": "*",
+            "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+          }
+          if (size && Number.isFinite(size) && size >= 0) {
+            headers["content-length"] = String(size)
+          }
           return new Response(stream, {
-            headers: {
-              "content-type": ct || contentType || "application/octet-stream",
-              "content-disposition": cd,
-              "cache-control": "private, max-age=300",
-            },
+            status: 200,
+            headers,
           })
         } catch (e: any) {
           try {

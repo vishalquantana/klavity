@@ -270,7 +270,10 @@ export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; 
 // so we hand over `file.stream()`; Bun.serve consumes it lazily as the client reads. Without a
 // known-length body Bun serves chunked transfer-encoding (no content-length) — fine for <img> embeds.
 // Throws if S3 isn't configured; a missing object throws from stat() and the caller maps to 404.
-export async function getObjectStream(key: string): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string; size: number | null }> {
+export async function getObjectStream(
+  key: string,
+  range?: { start: number; end: number },
+): Promise<{ stream: ReadableStream<Uint8Array>; contentType: string; size: number | null }> {
   if (!s3Configured()) {
     const localPath = join(LOCAL_PUB_DIR, key)
     const f = Bun.file(localPath)
@@ -281,7 +284,10 @@ export async function getObjectStream(key: string): Promise<{ stream: ReadableSt
     let size: number | null = null
     const st = await f.stat()
     if (st && Number.isFinite(st.size) && st.size >= 0) size = st.size
-    return { stream: f.stream() as unknown as ReadableStream<Uint8Array>, contentType: f.type || contentType, size }
+    const target = range && Number.isFinite(range.start) && Number.isFinite(range.end)
+      ? f.slice(range.start, range.end + 1)
+      : f
+    return { stream: target.stream() as unknown as ReadableStream<Uint8Array>, contentType: f.type || contentType, size }
   }
   const f = getClient().file(key)
   let contentType = "application/octet-stream"
@@ -289,7 +295,10 @@ export async function getObjectStream(key: string): Promise<{ stream: ReadableSt
   const st = await f.stat() // throws on not-found → caller 404s, same contract as getObjectBytes
   if (st?.type) contentType = st.type
   if (st && Number.isFinite(st.size) && st.size >= 0) size = st.size
-  return { stream: f.stream() as unknown as ReadableStream<Uint8Array>, contentType, size }
+  const target = range && Number.isFinite(range.start) && Number.isFinite(range.end)
+    ? f.slice(range.start, range.end + 1)
+    : f
+  return { stream: target.stream() as unknown as ReadableStream<Uint8Array>, contentType, size }
 }
 
 // Upload one screenshot and return its public path-style URL.
