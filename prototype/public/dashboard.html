@@ -18667,7 +18667,7 @@
     // in flight and completes + fades when the last one lands. Ref-counted so several
     // concurrent section refreshes share one bar. Created lazily in JS (no markup).
     const kbar = {
-      n: 0, el: null, hideT: null,
+      n: 0, el: null, hideT: null, quiet: false,
       ensure() {
         if (this.el) return this.el
         const b = document.createElement("div")
@@ -18686,6 +18686,11 @@
       start() {
         this.n++
         if (this.n > 1) return                     // a refresh is already showing the bar
+        // KD-298: on the Tickets page the bar only made people wait for a loader — the board paints straight from its cache and
+        // refreshes quietly in the background. Keep counting (so start/done stay balanced) but draw nothing there; every other
+        // page keeps its progress bar.
+        if (/^#tickets(\/|$)/.test(location.hash)) { this.quiet = true; return }
+        this.quiet = false
         const b = this.ensure()
         clearTimeout(this.hideT)
         b.style.transition = "none"; b.style.opacity = "1"; b.style.transform = "scaleX(0)"
@@ -18696,6 +18701,7 @@
         if (this.n === 0) return
         this.n--
         if (this.n > 0) return                     // other refreshes still running
+        if (this.quiet) { this.quiet = false; return }   // KD-298: nothing was drawn for this refresh
         const b = this.el; if (!b) return
         b.style.transition = "transform .2s ease-out"; b.style.transform = "scaleX(1)"   // snap to 100%
         this.hideT = setTimeout(() => {
