@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Reactive feedback widget versus proactive AI QA">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="48" y="56" width="290" height="196" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.18"/>
+  <rect x="48" y="56" width="290" height="28" rx="12" fill="#6366f1" fill-opacity="0.22"/>
+  <circle cx="68" cy="70" r="4" fill="#f87171"/>
+  <circle cx="83" cy="70" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="98" cy="70" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <rect x="70" y="104" width="150" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="70" y="124" width="104" height="9" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="70" y="162" width="118" height="34" rx="8" fill="none" stroke="#f87171" stroke-width="2" stroke-dasharray="6 5"/>
+  <circle cx="129" cy="179" r="9" fill="#f87171" fill-opacity="0.9"/>
+  <line x1="129" y1="166" x2="129" y2="172" stroke="#f87171" stroke-width="2"/>
+  <line x1="118" y1="172" x2="140" y2="186" stroke="#f87171" stroke-width="1.6" stroke-opacity="0.7"/>
+  <path d="M248 214 l16 22 l6 -10 l12 4 z" fill="#f5f0e8" fill-opacity="0.75"/>
+  <circle cx="272" cy="176" r="22" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2" stroke-dasharray="4 6"/>
+  <path d="M352 154 l56 0 m-14 -11 l14 11 l-14 11" fill="none" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+  <rect x="462" y="56" width="290" height="196" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.45"/>
+  <rect x="462" y="56" width="290" height="28" rx="12" fill="#6366f1" fill-opacity="0.35"/>
+  <circle cx="482" cy="70" r="4" fill="#4ade80"/>
+  <circle cx="497" cy="70" r="4" fill="#f5f0e8" fill-opacity="0.35"/>
+  <circle cx="504" cy="128" r="14" fill="#6366f1" fill-opacity="0.9"/>
+  <circle cx="504" cy="176" r="14" fill="#6366f1" fill-opacity="0.65"/>
+  <circle cx="504" cy="218" r="14" fill="#6366f1" fill-opacity="0.4"/>
+  <polyline points="546,128 630,128" fill="none" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="8" stroke-linecap="round"/>
+  <polyline points="546,176 606,176" fill="none" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="8" stroke-linecap="round"/>
+  <polyline points="546,218 648,218" fill="none" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="8" stroke-linecap="round"/>
+  <path d="M666 122 l7 8 l13 -15" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M666 212 l7 8 l13 -15" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="676" cy="176" r="10" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="671" y1="171" x2="681" y2="181" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="130" y1="330" x2="670" y2="330" stroke="#f5f0e8" stroke-opacity="0.16" stroke-width="2"/>
+  <circle cx="130" cy="330" r="16" fill="#1e1b2e" stroke="#6366f1" stroke-width="3"/>
+  <circle cx="400" cy="330" r="16" fill="#1e1b2e" stroke="#6366f1" stroke-width="3"/>
+  <circle cx="670" cy="330" r="16" fill="#4ade80" fill-opacity="0.18" stroke="#4ade80" stroke-width="3"/>
+  <rect x="122" y="326" width="16" height="8" rx="2" fill="#f87171"/>
+  <path d="M393 330 l6 7 l10 -13" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M662 330 l6 7 l10 -13" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
