@@ -866,5 +866,12 @@
     "excerpt": "Usersnap collects feedback from users who spot a bug. The best Usersnap alternative also finds the bugs nobody reported. Compared for agencies.",
     "category": "Compare",
     "date": "2026-10-16"
+  },
+  {
+    "slug": "v0-app-testing",
+    "title": "v0 App Testing: How to QA the UI That v0 Generated",
+    "excerpt": "v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.",
+    "category": "Learn",
+    "date": "2026-10-17"
   }
 ]

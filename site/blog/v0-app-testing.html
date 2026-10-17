@@ -1,0 +1,204 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v0 App Testing: How to QA the UI That v0 Generated · Klavity</title>
+<meta name="description" content="v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.">
+<link rel="canonical" href="https://klavity.in/blog/v0-app-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="v0 App Testing: How to QA the UI That v0 Generated"><meta property="og:description" content="v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.">
+<meta property="og:url" content="https://klavity.in/blog/v0-app-testing"><meta property="og:image" content="https://klavity.in/blog/v0-app-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="v0 App Testing: How to QA the UI That v0 Generated"><meta name="twitter:description" content="v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account."><meta name="twitter:image" content="https://klavity.in/blog/v0-app-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"v0 App Testing: How to QA the UI That v0 Generated","description":"v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.","datePublished":"2026-10-17","dateModified":"2026-10-17","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/v0-app-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/v0-app-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"v0 App Testing: How to QA the UI That v0 Generated","item":"https://klavity.in/blog/v0-app-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/v0-app-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is v0 app testing?","acceptedAnswer":{"@type":"Answer","text":"v0 app testing is checking that the UI Vercel's v0 generated actually works, rather than that it renders. It covers tracing every list and counter back to a real data source, submitting forms with invalid input, viewing the app as a brand-new user with no data, and confirming one account cannot read another's rows — all on a deployed build rather than the v0 preview."}},{"@type":"Question","name":"Why isn't the v0 preview enough to test an app?","acceptedAnswer":{"@type":"Answer","text":"The preview shows the component rendering for you, at your viewport, with whatever sample state the generator invented. It cannot show the first-run empty state, another user's permissions, or anything that depends on the deployed environment — environment variables, server actions and OAuth redirect URLs commonly behave differently once deployed."}},{"@type":"Question","name":"What breaks most often in v0-generated code?","acceptedAnswer":{"@type":"Answer","text":"Three things recur: hard-coded mock data that survives review because the page looks correct with it, validation that exists only in the browser, and mistakes at the Next.js server/client boundary such as a client component needing a server-only secret or an action missing its environment variable in production."}},{"@type":"Question","name":"How do I test a v0 component pasted into an existing project?","acceptedAnswer":{"@type":"Answer","text":"Diff the shared layer first. Check whether the paste changed your Tailwind config, overwrote an existing components/ui file, or added a duplicate copy of a library you already ship, since a generated component that replaces your button affects every page. Then run your existing test suite before reviewing the new screen."}},{"@type":"Question","name":"Can automated testing keep up with chat-based iteration?","acceptedAnswer":{"@type":"Answer","text":"Only if the tests tolerate changing markup. Regenerating a component rewrites class names and DOM structure, which breaks brittle selectors, so self-healing end-to-end tests plus AI personas running the real flows on the deployed build hold up far better than a manual pass nobody repeats after every prompt."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-10-17</div>
+    <h1>v0 App Testing: How to QA the UI That v0 Generated</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A generated UI rendering correctly while its data connection is broken">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="48" y="62" width="330" height="246" rx="12" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="48" y1="96" x2="378" y2="96" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="68" cy="79" r="4" fill="#f87171" opacity="0.7"/>
+  <circle cx="82" cy="79" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="96" cy="79" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="190" y="74" width="170" height="10" rx="5" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="70" y="116" width="120" height="14" rx="4" fill="#6366f1" opacity="0.85"/>
+  <rect x="70" y="146" width="132" height="62" rx="8" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="222" y="146" width="132" height="62" rx="8" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="84" y="162" width="54" height="8" rx="4" fill="#6366f1" opacity="0.7"/>
+  <rect x="236" y="162" width="54" height="8" rx="4" fill="#6366f1" opacity="0.7"/>
+  <rect x="84" y="182" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="236" y="182" width="86" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="70" y="226" width="284" height="9" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="70" y="246" width="284" height="9" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="70" y="266" width="196" height="9" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <polyline points="300,276 318,276 318,262" fill="none" stroke="#f87171" stroke-width="2" opacity="0.8"/>
+  <rect x="300" y="248" width="56" height="20" rx="6" fill="#f87171" opacity="0.18" stroke="#f87171" stroke-width="1.2"/>
+  <rect x="48" y="330" width="330" height="4" rx="2" fill="#4ade80" opacity="0.55"/>
+  <line x1="398" y1="185" x2="452" y2="185" stroke="#6366f1" stroke-width="2.5"/>
+  <line x1="498" y1="185" x2="552" y2="185" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="7 7" opacity="0.45"/>
+  <circle cx="475" cy="185" r="22" fill="#1e1b2e" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="466" y1="176" x2="484" y2="194" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="484" y1="176" x2="466" y2="194" stroke="#f87171" stroke-width="2.5"/>
+  <ellipse cx="652" cy="112" rx="68" ry="20" fill="#6366f1" opacity="0.22" stroke="#6366f1" stroke-width="1.8"/>
+  <path d="M584 112 L584 198 A68 20 0 0 0 720 198 L720 112" fill="#6366f1" opacity="0.1" stroke="#6366f1" stroke-width="1.8"/>
+  <ellipse cx="652" cy="155" rx="68" ry="20" fill="none" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <rect x="584" y="258" width="136" height="86" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#4ade80" stroke-width="1.5"/>
+  <line x1="584" y1="282" x2="720" y2="282" stroke="#4ade80" stroke-width="1.2" opacity="0.6"/>
+  <polyline points="616,308 638,328 692,292" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round"/>
+  <line x1="475" y1="207" x2="475" y2="292" stroke="#4ade80" stroke-width="2" stroke-dasharray="4 6" opacity="0.5"/>
+  <polyline points="552,292 575,292 575,300" fill="none" stroke="#4ade80" stroke-width="2" opacity="0.5"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>v0 app testing is verifying that a v0-generated interface is connected to real data, real error paths and real permissions — not just that it renders. Because v0 generates UI first, the usual gaps are mock arrays left inline, stubbed submit handlers, and missing empty, loading and failure states. Test the deployed build with a second account, and re-run a short fixed checklist after every prompt.</div>
+    <div class="prose"><p><strong>v0 app testing</strong> means checking that the interface Vercel's v0 generated is actually wired to real data, real error paths and real permissions &mdash; not just that it renders. v0 is a UI-first generator: it is very good at producing a polished React screen from a prompt, and that screen will often look finished while its data is a hard-coded array and its buttons are empty handlers. So v0 app testing is the pass that separates "this looks done" from "a stranger can complete this flow on the deployed site", and it has to run on a deployed build with a second account, not in the v0 preview.</p>
+
+<h2>What is v0 app testing, exactly?</h2>
+
+<p>v0 is Vercel's prompt-to-UI tool. You describe a screen (or paste a screenshot), and it generates React code for the Next.js App Router, styled with Tailwind CSS and built on shadcn/ui primitives. You can keep iterating in chat, deploy straight to Vercel, or pull individual generated components into a project you already have.</p>
+
+<p>That shape matters for QA, because it decides what is likely to be missing. A tool that scaffolds a whole backend tends to leave you auth and database wiring to verify. v0 starts from the interface, so what it most often leaves behind is a <em>presentational shell</em>: correct-looking markup in front of placeholder state.</p>
+
+<p>v0 app testing is therefore three separate questions that people collapse into one:</p>
+
+<ul>
+<li><strong>Does it render?</strong> The v0 preview answers this, and it is close to the only question the preview answers reliably.</li>
+<li><strong>Is it connected?</strong> Does the list come from your database, does the form write anything, does the error state ever appear?</li>
+<li><strong>Does it survive the next prompt?</strong> After the next chat turn regenerates the component, is last week's behaviour still intact?</li>
+</ul>
+
+<h2>Why doesn't a good-looking v0 preview mean the app works?</h2>
+
+<p>The preview is an honest answer to a narrow question: it shows the component rendering for you, at your viewport, with whatever sample state the generator invented. Four things it structurally cannot show you.</p>
+
+<table>
+<thead><tr><th>What you see in the preview</th><th>What is still unverified</th></tr></thead>
+<tbody>
+<tr><td>A table of rows</td><td>Whether the rows come from your data source or from a mock array declared at the top of the file</td></tr>
+<tr><td>A working-looking form</td><td>Whether submit does anything server-side, and whether validation exists outside the browser</td></tr>
+<tr><td>A clean dashboard</td><td>The empty state a brand-new account sees, and the loading and failure states</td></tr>
+<tr><td>Buttons and menus</td><td>Keyboard focus, labels on icon-only buttons, and whether the generated markup kept shadcn/ui's accessible primitives</td></tr>
+</tbody>
+</table>
+
+<p>The two failures worth looking for first are both specific to UI-first generation. The first is <strong>mock data left in place</strong>: generated screens frequently ship with inline sample arrays so the preview has something to draw, and that constant can survive right through review because the page looks correct with it. Search the generated file for literal arrays and objects before you approve anything.</p>
+
+<p>The second is the <strong>server/client boundary</strong>. v0 output is Next.js App Router code, which means a given component is either a server component or carries <code>"use client"</code>, and data mutations may be written as server actions. Mistakes here &mdash; a client component reaching for a server-only secret, an action that was never given its environment variable on Vercel, a redirect URL that was only ever allow-listed for localhost &mdash; usually do not appear until the deployed build. That is the single best argument for testing the deployment rather than the preview.</p>
+
+<h2>What should you test first in a v0-generated app?</h2>
+
+<p>Keep it short and fixed, and run it after every prompt rather than running a thorough pass once. Short-and-repeated beats thorough-and-once, because the regenerations are what break things.</p>
+
+<ol>
+<li><strong>Trace the data.</strong> Open the generated component and follow every list, chart and counter back to its source. Anything that resolves to a literal is not yet built.</li>
+<li><strong>Submit every form with bad input.</strong> Empty required fields, a 300-character name, an email without an @, a negative quantity. Then check the record that was actually written. Client-side-only validation is the normal default in generated forms.</li>
+<li><strong>Sign up as a new user in a clean browser profile.</strong> You have seed data; they have nothing. Empty states, first-run redirects and onboarding gaps all surface here and nowhere else.</li>
+<li><strong>Log in as a second user and try to read the first user's data.</strong> Change an ID in the URL. If the generated query never filtered by the signed-in user, every account can read every row.</li>
+<li><strong>Walk the screen with the keyboard only.</strong> Tab order, visible focus, labels on icon-only buttons, and whether a modal traps focus and closes on Escape. shadcn/ui primitives handle most of this correctly; generated markup that replaces a primitive with a styled <code>div</code> does not.</li>
+<li><strong>Load it on a real phone.</strong> Not a resized desktop window &mdash; an actual device, where sticky headers, long labels and <code>100vh</code> behave differently.</li>
+</ol>
+
+<h2>How do you test v0 components pasted into an existing client codebase?</h2>
+
+<p>This is the agency case, and it carries a risk the standalone case does not. When you lift a generated component into a repo you already maintain, you are importing someone else's assumptions about your design system: its own Tailwind classes against your tokens, its own copy of a shadcn/ui component against the one you already have, its own icon set, its own date formatting.</p>
+
+<p>So add two checks to the list above. First, <strong>diff the shared layer</strong>: did the paste modify <code>tailwind.config</code>, overwrite an existing <code>components/ui</code> file, or add a second copy of a library you already ship? A generated component that quietly replaces your button affects every page, not just the new one. Second, <strong>run your existing suite before you review the new screen</strong> &mdash; the regression you care about is in the pages nobody touched.</p>
+
+<h2>How is testing v0 different from testing Bolt, Lovable or Replit output?</h2>
+
+<p>The flows all look similar from outside, but each tool leaves a different gap, so the first thing to test differs.</p>
+
+<table>
+<thead><tr><th>Tool</th><th>What it mainly generates</th><th>Test this first</th></tr></thead>
+<tbody>
+<tr><td>v0 (Vercel)</td><td>React / Next.js UI on shadcn/ui, often pasted into an existing project</td><td>Whether the UI is connected to real data, and the server/client boundary on the deployed build</td></tr>
+<tr><td>Bolt.new</td><td>A full project in a browser container, deployed to a host</td><td>The deployed URL rather than the in-browser preview</td></tr>
+<tr><td>Lovable</td><td>App plus managed database and auth</td><td>The data layer: row-level security, auth boundaries, server-side validation</td></tr>
+<tr><td>Replit</td><td>Agent-built app in a workspace, then a deployment</td><td>The deployed build with production secrets, not the workspace preview</td></tr>
+</tbody>
+</table>
+
+<p>The common thread is the one we keep running into across all of them, and wrote up in <a href="/blog/testing-ai-generated-code">testing AI-generated code</a>: the code compiles and renders long before anyone has checked whether it behaves. The <a href="/blog/bolt-new-testing">Bolt.new testing checklist</a> is the closest neighbour to this one if you also build there.</p>
+
+<h2>How do you keep a v0 app tested after every prompt?</h2>
+
+<p>Manual passes do not survive contact with chat-based iteration &mdash; nobody re-walks six flows after every turn. That is the job automation is actually for:</p>
+
+<ul>
+<li><a href="/sims">Sims</a> runs AI personas against the deployed build as different kinds of user, including the new signed-up-this-minute user whose empty state you never see.</li>
+<li><a href="/autosim">AutoSim</a> turns the flows that matter into end-to-end tests that repair their own selectors, which is what makes them usable against regenerated markup where class names and DOM structure change every prompt.</li>
+<li><a href="/snap">Snap</a> gives whoever is reviewing &mdash; a client, a teammate, you on your phone &mdash; a right-click bug report with the console, network and environment attached, so the report is reproducible instead of "the dashboard looked wrong".</li>
+</ul>
+
+<p>For the wider picture of where automated checks fit around prompt-built code, see the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Try it on your next v0 build</h2>
+
+<p>Generate the screen, deploy it, then let personas walk it before your client does. <a href="/onboarding"><strong>Try Klavity free</strong></a> &mdash; point it at your deployed v0 app and see which flows a stranger cannot finish.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Trace every list and counter in generated code back to a real data source</li><li>Test the deployed build, never the v0 preview</li><li>Sign up as a new user in a clean profile to see the real empty state</li><li>Diff the shared layer before pasting a v0 component into a client repo</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is v0 app testing?</summary><p>v0 app testing is checking that the UI Vercel's v0 generated actually works, rather than that it renders. It covers tracing every list and counter back to a real data source, submitting forms with invalid input, viewing the app as a brand-new user with no data, and confirming one account cannot read another's rows — all on a deployed build rather than the v0 preview.</p></details><details><summary>Why isn't the v0 preview enough to test an app?</summary><p>The preview shows the component rendering for you, at your viewport, with whatever sample state the generator invented. It cannot show the first-run empty state, another user's permissions, or anything that depends on the deployed environment — environment variables, server actions and OAuth redirect URLs commonly behave differently once deployed.</p></details><details><summary>What breaks most often in v0-generated code?</summary><p>Three things recur: hard-coded mock data that survives review because the page looks correct with it, validation that exists only in the browser, and mistakes at the Next.js server/client boundary such as a client component needing a server-only secret or an action missing its environment variable in production.</p></details><details><summary>How do I test a v0 component pasted into an existing project?</summary><p>Diff the shared layer first. Check whether the paste changed your Tailwind config, overwrote an existing components/ui file, or added a duplicate copy of a library you already ship, since a generated component that replaces your button affects every page. Then run your existing test suite before reviewing the new screen.</p></details><details><summary>Can automated testing keep up with chat-based iteration?</summary><p>Only if the tests tolerate changing markup. Regenerating a component rewrites class names and DOM structure, which breaks brittle selectors, so self-healing end-to-end tests plus AI personas running the real flows on the deployed build hold up far better than a manual pass nobody repeats after every prompt.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
