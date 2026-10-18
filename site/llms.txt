@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [AI Website Testing: How Agencies Catch Bugs Pre-Launch](https://klavity.in/blog/ai-website-testing) — AI website testing uses models to walk a site like a user, find defects, and attach reproducible evidence. Here is what it catches and what it misses.
 - [v0 App Testing: How to QA the UI That v0 Generated](https://klavity.in/blog/v0-app-testing) — v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.
 - [Usersnap Alternative: Bug Reporting That Also Tests](https://klavity.in/blog/usersnap-alternative) — Usersnap collects feedback from users who spot a bug. The best Usersnap alternative also finds the bugs nobody reported. Compared for agencies.
 - [Continuous QA: Catch Client-Site Bugs on Every Deploy](https://klavity.in/blog/continuous-qa) — Continuous QA runs quality checks on every deploy instead of a pre-launch sprint, so bugs surface in minutes - before your client finds them.

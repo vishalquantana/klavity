@@ -873,5 +873,12 @@
     "excerpt": "v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.",
     "category": "Learn",
     "date": "2026-10-17"
+  },
+  {
+    "slug": "ai-website-testing",
+    "title": "AI Website Testing: How Agencies Catch Bugs Pre-Launch",
+    "excerpt": "AI website testing uses models to walk a site like a user, find defects, and attach reproducible evidence. Here is what it catches and what it misses.",
+    "category": "Guides",
+    "date": "2026-10-18"
   }
 ]
