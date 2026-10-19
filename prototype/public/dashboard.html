@@ -8072,7 +8072,45 @@
       gap: 8px;
       padding: 6px 4px;
       margin: -4px -4px 0;
-      border-radius: 10px
+      border-radius: 10px;
+      user-select: none
+    }
+
+    .kb-head[draggable="true"] {
+      cursor: grab
+    }
+
+    .kb-head[draggable="true"]:active {
+      cursor: grabbing
+    }
+
+    .kb-head .kb-grip {
+      display: inline-flex;
+      align-items: center;
+      color: var(--paper-faint);
+      opacity: .4;
+      cursor: grab;
+      margin-right: -2px;
+      transition: opacity .15s ease, color .15s ease
+    }
+
+    .kb-head:hover .kb-grip {
+      opacity: .85;
+      color: var(--paper-dim)
+    }
+
+    .kb-col.col-dragging {
+      opacity: .45
+    }
+
+    .kb-col.col-drop-before {
+      border-left: 3px solid var(--indigo) !important;
+      box-shadow: -4px 0 12px -2px rgba(99, 102, 241, .45)
+    }
+
+    .kb-col.col-drop-after {
+      border-right: 3px solid var(--indigo) !important;
+      box-shadow: 4px 0 12px -2px rgba(99, 102, 241, .45)
     }
 
     .kb-head .kb-title {
@@ -10062,6 +10100,61 @@
     }
 
     /* A.8 occurrence timeline — per-report receipts (own wording + date + screenshot) */
+    /* collapsed-by-default occurrence timeline: toggle in the header, one-line summary, grouped repeats */
+    .tkt-occ-toggle {
+      border: 0;
+      background: transparent;
+      color: var(--indigo);
+      font: inherit;
+      font-size: 12.5px;
+      cursor: pointer;
+      padding: 2px 6px
+    }
+
+    .tkt-occ-toggle:hover {
+      text-decoration: underline
+    }
+
+    .tkt-occ-sum {
+      font-size: 12.5px;
+      margin: 2px 0 4px
+    }
+
+    .tkt-occ-n {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: rgba(99, 102, 241, .14);
+      color: var(--indigo);
+      font-size: 11.5px;
+      font-weight: 700
+    }
+
+    .tkt-occ-more {
+      border: 0;
+      background: transparent;
+      color: var(--indigo);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px 0 0
+    }
+
+    .tkt-occ-more:hover {
+      text-decoration: underline
+    }
+
+    .tkt-occ-sub {
+      margin-top: 6px;
+      padding-left: 10px;
+      border-left: 2px solid var(--line)
+    }
+
+    .tkt-occ-sub .tkt-occ-item {
+      padding: 4px 0
+    }
+
     .tkt-occ-wrap {
       margin-top: 18px;
       border-top: 1px solid var(--line);
@@ -12819,7 +12912,7 @@
     }
 
     /* KD-193: in-progress / failed upload tiles + a disabled "Uploading…" Add button */
-    .tkt-attach-pending{
+    .tkt-attach-pending {
       position: relative;
       display: flex;
       flex-direction: column;
@@ -12850,7 +12943,7 @@
       overflow: hidden
     }
 
-    .tkt-attach-pending .tkt-attach-bar i{
+    .tkt-attach-pending .tkt-attach-bar i {
       display: block;
       height: 100%;
       background: var(--indigo);
@@ -12872,7 +12965,7 @@
       color: var(--paper-faint)
     }
 
-    .tkt-attach-pending.err{
+    .tkt-attach-pending.err {
       border-color: var(--rose);
       background: rgba(219, 39, 119, .06)
     }
@@ -12889,7 +12982,7 @@
       flex-wrap: wrap
     }
 
-    .tkt-attach-add-btn:disabled{
+    .tkt-attach-add-btn:disabled {
       opacity: .65;
       cursor: not-allowed
     }
@@ -13626,6 +13719,67 @@
       font-size: 12.5px;
       text-align: center;
       padding: 6px 0
+    }
+
+    /* Inline validation under the field that needs fixing (instead of a line far below the example chips). */
+    .sm-ferr {
+      color: var(--rose);
+      font-size: 12.5px;
+      margin: 6px 2px 0
+    }
+
+    .sm-err a {
+      color: var(--indigo);
+      font-weight: 600
+    }
+
+    .sm-modal {
+      position: relative
+    }
+
+    /* "Discard this Sim?" — shown over the dialog when closing would lose what was typed or generated. */
+    .sm-discard {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      align-items: center;
+      justify-content: center;
+      background: rgba(20, 16, 30, .45);
+      border-radius: inherit
+    }
+
+    .sm-discard.show {
+      display: flex
+    }
+
+    .sm-discard-box {
+      background: var(--card, #fff);
+      color: var(--paper, #161310);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      width: min(340px, 86%);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+      text-align: left
+    }
+
+    .sm-discard-box strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px
+    }
+
+    .sm-discard-box p {
+      margin: 0 0 14px;
+      font-size: 13px;
+      color: var(--paper-dim)
+    }
+
+    .sm-discard-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px
     }
 
     .sm-sim {
@@ -15839,38 +15993,186 @@
     }
 
     /* KD-221: notifications bell + panel (same surface language as .avatar-menu) */
-    .ntf-wrap { position: relative; display: inline-flex }
-    .ntf-btn { position: relative }
-    .ntf-btn[aria-expanded="true"] { border-color: var(--indigo); color: var(--paper) }
-    .ntf-badge { position: absolute; top: -5px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
-      background: var(--rose); color: #fff; font-family: var(--body); font-size: 10.5px; font-weight: 700; line-height: 18px;
-      text-align: center; box-shadow: 0 0 0 2px var(--ink); pointer-events: none }
-    .ntf-badge.hide { display: none }
-    .ntf-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 45; width: 380px; max-width: calc(100vw - 24px);
-      background: var(--ink-2); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
-      display: flex; flex-direction: column; overflow: hidden }
-    .ntf-panel.hide { display: none }
-    .ntf-hd { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px 10px;
-      border-bottom: 1px solid var(--line) }
-    .ntf-title { font-family: var(--body); font-size: 14px; font-weight: 700; color: var(--paper) }
-    .ntf-markall { border: 0; background: transparent; color: var(--indigo); font-family: var(--body); font-size: 12.5px;
-      font-weight: 600; cursor: pointer; padding: 4px 6px; border-radius: 7px }
-    .ntf-markall:hover { background: rgba(99, 102, 241, .1) }
-    .ntf-markall:disabled { color: var(--paper-faint); cursor: default; background: transparent }
-    .ntf-list { max-height: min(440px, 70vh); overflow-y: auto; padding: 6px }
-    .ntf-empty { padding: 26px 12px; text-align: center; color: var(--paper-faint); font-family: var(--body); font-size: 13px }
-    .ntf-item { display: flex; gap: 10px; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: transparent;
-      color: var(--paper); font-family: var(--body); text-align: left; cursor: pointer }
-    .ntf-item:hover, .ntf-item:focus-visible { background: rgba(99, 102, 241, .08); outline: none }
-    .ntf-item.unread { background: rgba(99, 102, 241, .06) }
-    .ntf-dot { flex: 0 0 8px; height: 8px; margin-top: 6px; border-radius: 50% }
-    .ntf-item.unread .ntf-dot { background: var(--indigo) }
-    .ntf-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px }
-    .ntf-text { font-size: 13px; line-height: 1.4; color: var(--paper-dim) }
-    .ntf-text b { color: var(--paper); font-weight: 600 }
-    .ntf-item.unread .ntf-text { color: var(--paper) }
-    .ntf-tkt { font-size: 12.5px; font-weight: 600; color: var(--paper); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-    .ntf-meta { font-size: 11.5px; color: var(--paper-faint) }
+    .ntf-wrap {
+      position: relative;
+      display: inline-flex
+    }
+
+    .ntf-btn {
+      position: relative
+    }
+
+    .ntf-btn[aria-expanded="true"] {
+      border-color: var(--indigo);
+      color: var(--paper)
+    }
+
+    .ntf-badge {
+      position: absolute;
+      top: -5px;
+      right: -6px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--rose);
+      color: #fff;
+      font-family: var(--body);
+      font-size: 10.5px;
+      font-weight: 700;
+      line-height: 18px;
+      text-align: center;
+      box-shadow: 0 0 0 2px var(--ink);
+      pointer-events: none
+    }
+
+    .ntf-badge.hide {
+      display: none
+    }
+
+    .ntf-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 45;
+      width: 380px;
+      max-width: calc(100vw - 24px);
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .28);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden
+    }
+
+    .ntf-panel.hide {
+      display: none
+    }
+
+    .ntf-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--line)
+    }
+
+    .ntf-title {
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--paper)
+    }
+
+    .ntf-markall {
+      border: 0;
+      background: transparent;
+      color: var(--indigo);
+      font-family: var(--body);
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 7px
+    }
+
+    .ntf-markall:hover {
+      background: rgba(99, 102, 241, .1)
+    }
+
+    .ntf-markall:disabled {
+      color: var(--paper-faint);
+      cursor: default;
+      background: transparent
+    }
+
+    .ntf-list {
+      max-height: min(440px, 70vh);
+      overflow-y: auto;
+      padding: 6px
+    }
+
+    .ntf-empty {
+      padding: 26px 12px;
+      text-align: center;
+      color: var(--paper-faint);
+      font-family: var(--body);
+      font-size: 13px
+    }
+
+    .ntf-item {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      padding: 10px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      text-align: left;
+      cursor: pointer
+    }
+
+    .ntf-item:hover,
+    .ntf-item:focus-visible {
+      background: rgba(99, 102, 241, .08);
+      outline: none
+    }
+
+    .ntf-item.unread {
+      background: rgba(99, 102, 241, .06)
+    }
+
+    .ntf-dot {
+      flex: 0 0 8px;
+      height: 8px;
+      margin-top: 6px;
+      border-radius: 50%
+    }
+
+    .ntf-item.unread .ntf-dot {
+      background: var(--indigo)
+    }
+
+    .ntf-body {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px
+    }
+
+    .ntf-text {
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--paper-dim)
+    }
+
+    .ntf-text b {
+      color: var(--paper);
+      font-weight: 600
+    }
+
+    .ntf-item.unread .ntf-text {
+      color: var(--paper)
+    }
+
+    .ntf-tkt {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--paper);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .ntf-meta {
+      font-size: 11.5px;
+      color: var(--paper-faint)
+    }
 
     .avatar-menu {
       position: absolute;
@@ -16067,18 +16369,21 @@
         <!-- KD-221: notifications — updates on tickets assigned to you (wireNotifications) -->
         <div class="ntf-wrap" id="ntfWrap">
           <button class="nav-icon ntf-btn" id="ntfBtn" type="button" aria-haspopup="dialog" aria-expanded="false"
-            aria-controls="ntfPanel" aria-label="Notifications" title="Notifications"><svg xmlns="http://www.w3.org/2000/svg"
-              class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            aria-controls="ntfPanel" aria-label="Notifications" title="Notifications"><svg
+              xmlns="http://www.w3.org/2000/svg" class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-              <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+              <path
+                d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
             </svg><span class="ntf-badge hide" id="ntfBadge" aria-hidden="true"></span></button>
           <div class="ntf-panel hide" id="ntfPanel" role="dialog" aria-label="Notifications">
             <div class="ntf-hd">
               <span class="ntf-title">Notifications</span>
               <button type="button" class="ntf-markall" id="ntfMarkAll">Mark all as read</button>
             </div>
-            <div class="ntf-list" id="ntfList"><div class="ntf-empty">Loading…</div></div>
+            <div class="ntf-list" id="ntfList">
+              <div class="ntf-empty">Loading…</div>
+            </div>
             <span id="ntfUnreadHint" hidden>Unread</span>
           </div>
         </div>
@@ -18560,7 +18865,7 @@
     // in flight and completes + fades when the last one lands. Ref-counted so several
     // concurrent section refreshes share one bar. Created lazily in JS (no markup).
     const kbar = {
-      n: 0, el: null, hideT: null,
+      n: 0, el: null, hideT: null, quiet: false,
       ensure() {
         if (this.el) return this.el
         const b = document.createElement("div")
@@ -18579,6 +18884,11 @@
       start() {
         this.n++
         if (this.n > 1) return                     // a refresh is already showing the bar
+        // KD-298: on the Tickets page the bar only made people wait for a loader — the board paints straight from its cache and
+        // refreshes quietly in the background. Keep counting (so start/done stay balanced) but draw nothing there; every other
+        // page keeps its progress bar.
+        if (/^#tickets(\/|$)/.test(location.hash)) { this.quiet = true; return }
+        this.quiet = false
         const b = this.ensure()
         clearTimeout(this.hideT)
         b.style.transition = "none"; b.style.opacity = "1"; b.style.transform = "scaleX(0)"
@@ -18589,6 +18899,7 @@
         if (this.n === 0) return
         this.n--
         if (this.n > 0) return                     // other refreshes still running
+        if (this.quiet) { this.quiet = false; return }   // KD-298: nothing was drawn for this refresh
         const b = this.el; if (!b) return
         b.style.transition = "transform .2s ease-out"; b.style.transform = "scaleX(1)"   // snap to 100%
         this.hideT = setTimeout(() => {
@@ -18654,7 +18965,7 @@
           if (!_isRetry) { setTimeout(() => { try { swrSection(cacheKey, fetcher, apply, host, true) } catch (e) { } }, 1200); return }
           window.__klavRetry = window.__klavRetry || {}
           window.__klavRetry[cacheKey] = () => { if (el && el.querySelector && !el.querySelector(".sk")) el.innerHTML = '<div class="sk sk-card"></div>'; swrSection(cacheKey, fetcher, apply, host, false) }
-          el.innerHTML = emptyState("", "Couldn't load.", '<button class="btn btn-sm" type="button" onclick="__klavRetryRun(\'' + String(cacheKey).replace(/'/g, "") + '\')">Retry</button>')
+          el.innerHTML = emptyState("", (window.__klavErr && window.__klavErr[cacheKey]) || "Couldn't load.", '<button class="btn btn-sm" type="button" onclick="__klavRetryRun(\'' + String(cacheKey).replace(/'/g, "") + '\')">Retry</button>')
         }
       }
     }
@@ -19134,6 +19445,7 @@
           ticketId = _boot.id
           if (_tktBoardReturnUrl == null) _tktBoardReturnUrl = "/dashboard?project=" + encodeURIComponent(_boot.projectId) + "#tickets"
         }
+        try { const _fr = new URLSearchParams(location.search).get("fromRun"); if (_fr && ticketId) _fromSimRun = { run: _fr, ticket: ticketId } } catch (e) { }
         if (!ticketId) return
         // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
         const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
@@ -19216,10 +19528,21 @@
       // renderer (the old renderTriageFilters()/renderTriageList() names never existed).
       await swrSection(
         "triage:" + pid,
-        async () => { const r = await safeFetch("/api/projects/" + encodeURIComponent(pid) + "/triage"); if (!r || !r.ok) return null; return await r.json() },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
+        async () => {
+          const r = await safeFetch("/api/projects/" + encodeURIComponent(pid) + "/triage")
+          window.__klavErr = window.__klavErr || {}
+          const ek = "triage:" + pid
+          if (!r) { window.__klavErr[ek] = "Couldn't reach Klavity — check your connection and retry."; return null }
+          if (r.status === 401) { location.href = "/login"; return null }
+          if (!r.ok) { window.__klavErr[ek] = (r.status === 403 || r.status === 404) ? "You don't have access to this project's reports." : "Klavity had a problem loading reports (HTTP " + r.status + "). Please retry."; return null }
+          delete window.__klavErr[ek]
+          return await r.json()
+        },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
         (d) => { _triageItems = (d && d.triage) || []; renderTriageView() },
         "triageList",
       )
+      // A deep link (#triage/<id>) the inbox could not satisfy — the list failed to load — still opens the report itself.
+      if (window._pendingTriageFocus) { const fid = window._pendingTriageFocus; window._pendingTriageFocus = null; openReportOutsideInbox(fid) }
       // KLA-255: also render pending sim-match confirmations in the same triage card.
       renderSimMatches()
     }
@@ -19682,6 +20005,7 @@
         const fid = window._pendingTriageFocus; window._pendingTriageFocus = null
         const t = (items).find(x => String(x.id) === String(fid))
         if (t && typeof openSingleTicket === "function") openReportCockpit(String(fid), t)
+        else if (!t) openReportOutsideInbox(fid)   // not waiting for triage any more (accepted, dismissed, merged, filed open) — open it where it lives
         else focusTriageRow(fid)
       }
     }
@@ -19817,6 +20141,23 @@
     }
 
     // Scroll to a feedback row (by id) in New reports and pulse it so the deep-link lands somewhere obvious.
+    // New reports only lists reports still waiting for triage, so a link to one that was already accepted / dismissed / merged, or was filed
+    // straight to Open (high-priority Sim findings), used to land on the inbox and silently do nothing. Look the report up and open it in
+    // Tickets, saying where it is; if it truly can't be found or reached, say that.
+    async function openReportOutsideInbox(fid) {
+      if (!fid) return
+      try {
+        const r = await fetch("/api/feedback/" + encodeURIComponent(fid), { credentials: "include" })
+        if (r.status === 401) { location.href = "/login"; return }
+        if (!r.ok) { klavToast((r.status === 403 || r.status === 404) ? "We couldn't find that report in this project." : "Couldn't open that report right now — please try again.", true); return }
+        const d = await r.json().catch(() => ({}))
+        const st = d && d.report && d.report.status
+        setView("tickets")
+        if (typeof openSingleTicket === "function") openSingleTicket(String(fid))
+        klavToast(st && st !== "new" ? ("That report is already " + String(ticketStatusLabel(st)).toLowerCase() + " — opened in Tickets.") : "Opened in Tickets.")
+      } catch (e) { klavToast("Couldn't reach Klavity — check your connection and try again.", true) }
+    }
+    window.openReportOutsideInbox = openReportOutsideInbox
     function focusTriageRow(fid) {
       if (!fid) return
       const host = $("triageList"); if (!host) return
@@ -22626,7 +22967,7 @@
           errorEl.classList.add("hide")
           loading.classList.remove("hide")
           media.load()
-          media.play().catch(() => {})
+          media.play().catch(() => { })
         })
         errorEl.appendChild(retryBtn)
 
@@ -22725,13 +23066,13 @@
     // the result only appeared after a slow round-trip, a full re-render mid-upload wiped the UI state, and picking the same file twice
     // uploaded it twice. State now lives HERE (per ticket, outside the DOM) so any re-render restores the in-flight tiles and the
     // finished upload still lands; progress is real (XMLHttpRequest); duplicates are skipped; a toast confirms the result.
-const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
-const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
-const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
-const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
-const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
-const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
-const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
+    const ATTACH_MAX_FILES = 5                         // the endpoint keeps only the first 5 files of a request
+    const ATTACH_IMG_MAX = 8 * 1024 * 1024             // SCREENSHOT_MAX_BYTES default (applies to every non-video file)
+    const ATTACH_VIDEO_MAX = 100 * 1024 * 1024         // ATTACH_VIDEO_MAX_BYTES default
+    const ATTACH_TOTAL_MAX = 120 * 1024 * 1024         // ATTACH_TOTAL_MAX_BYTES default
+    const _attachUploads = new Map()                   // ticketId → [{ id, file, name, size, status: "uploading"|"error", phase, pct, error }]
+    const _attachCtx = new Map()                       // ticketId → { detailEl, t }: where to repaint (refreshed on every (re)wire)
+    const _attachMsgs = new Map()                      // ticketId → { text, isErr }: the inline note under the block (skipped / rejected files…); survives re-renders
     let _attachSeq = 0
     function _attachKey(name, size) { return String(name == null ? "" : name).trim().toLowerCase() + "|" + Number(size || 0) }
     function attachUploadsFor(ticketId) { return _attachUploads.get(String(ticketId)) || [] }
@@ -22968,14 +23309,18 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       onCancelled: function (id, n) { attachRerender(id); attachToast(n === 1 ? "Upload cancelled" : "Upload cancelled (" + n + " files)", "ok") },
       onRemoved: function (id, key) { _attachRemoveFromLists(id, key); attachRerender(id); attachToast("Attachment removed", "ok") },
       onRemoveFail: function (id, key, msg) { attachRerender(id); attachToast(msg, "warn") },
-      onFail: function (id, msg) { attachRerender(id); attachToast(msg, "warn") },
+      onFail: function (id, msg) {
+        msg = msg || "Failed to upload attachment. Please try again."
+        attachRerender(id)
+        attachToast(msg, "warn")
+      },
       onDone: function (id, res) {
         _attachApplyServerList(id, res.attachments)
         attachRerender(id)
         const n = res.attachments.length, notes = []
         if (res.duplicates.length) notes.push(res.duplicates.join(", ") + (res.duplicates.length === 1 ? " was" : " were") + " already attached — skipped.")
         if (res.ignored.length) notes.push(res.ignored.join(", ") + (res.ignored.length === 1 ? " was" : " were") + " not uploaded (at most " + ATTACH_MAX_FILES + " files at a time).")
-        if (n) attachToast(n === 1 ? "Attachment uploaded successfully" : n + " attachments uploaded successfully", "ok")
+        if (n) attachToast(n === 1 ? ("Attachment uploaded successfully" + ".") : (n + " attachments uploaded successfully" + "."), "ok")
         if (notes.length) { attachSetMsg(id, [attachMsgFor(id).text].concat(notes).filter(Boolean).join(" "), true); if (!n) attachToast(notes.join(" "), "warn") }
       }
     }
@@ -25177,6 +25522,28 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
     // carries its own verbatim wording + date + screenshot (occurrences 2..N are no longer discarded on
     // dedup). Includes a "Copy timeline" button for client conversations. Returns null when there is
     // nothing to show (single occurrence) so the caller can skip appending it.
+    // Group a ticket's occurrences by identical wording + screenshot (first-seen order). A Sim re-run or a customer re-filing the same
+    // thing used to produce a wall of identical rows; each group renders once with ×N.
+    function occGroups(occ) {
+      const groups = []
+        ; (occ || []).forEach(o => {
+          const key = String(o.observation).trim() + "|" + (o.screenshotId || "")
+          const g = groups.find(x => x.key === key)
+          if (g) g.items.push(o); else groups.push({ key: key, items: [o] })
+        })
+      return groups
+    }
+    // The plain text behind "Copy timeline": one line per group, "N times" header counts every occurrence.
+    function occCopyBody(groups, total, day) {
+      const lines = groups.map(g => {
+        const first = g.items[0], last = g.items[g.items.length - 1]
+        const q = String(first.observation).trim()
+        if (g.items.length === 1) return "• " + day(first.seenAt) + ": \"" + q + "\""
+        const range = day(first.seenAt) === day(last.seenAt) ? day(first.seenAt) : day(first.seenAt) + " → " + day(last.seenAt)
+        return "• " + range + " (×" + g.items.length + "): \"" + q + "\""
+      })
+      return "This issue was reported " + total + " times:\n" + lines.join("\n")
+    }
     function buildOccurrenceTimeline(ticketId) {
       const wrap = document.createElement("div")
       // #718: the section now ALWAYS renders (no more self-hiding into dead space). When there are no repeat
@@ -25185,9 +25552,11 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       wrap.innerHTML = `<div class="tkt-occ-hd">
       <span class="tkt-occ-title">Occurrence timeline</span>
       <span class="tkt-occ-count"></span>
+      <button class="tkt-occ-toggle" type="button" aria-expanded="false" hidden>Show</button>
       <span class="info" tabindex="0" role="note" aria-label="How many times this exact issue has recurred. Only shown when it has come back (2+ times).">i<span class="tip">How many times this exact issue has recurred. Only shown when it has come back.</span></span>
       <button class="btn btn-ghost btn-sm tkt-occ-copy" type="button" disabled title="Copy this occurrence timeline for a client conversation">${kicon('clipboard-list')} Copy timeline</button>
     </div>
+    <div class="tkt-occ-sum muted hide"></div>
     <div class="tkt-occ-empty muted">Reported once — no repeat occurrences yet.</div>
     <div class="tkt-occ-list hide"></div>
     <div class="tkt-occ-msg muted" style="font-size:12px"></div>`
@@ -25196,18 +25565,39 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       const copyBtn = wrap.querySelector(".tkt-occ-copy")
       const emptyEl = wrap.querySelector(".tkt-occ-empty")
       const msgEl = wrap.querySelector(".tkt-occ-msg")
+      const toggleBtn = wrap.querySelector(".tkt-occ-toggle")
+      const sumEl = wrap.querySelector(".tkt-occ-sum")
+      // The full list is collapsed by default (a ticket re-reported many times used to push Activity far down the page); the choice is
+      // remembered per browser. While collapsed, a one-line summary says how many times and when.
+      let occOpen = false
+      try { occOpen = localStorage.getItem("klav.occOpen") === "1" } catch (e) { }
+      let occTotal = 0, copyBody = ""
+      const paintOpen = () => {
+        const has = occTotal >= 2
+        if (listEl) listEl.classList.toggle("hide", !has || !occOpen)
+        if (sumEl) sumEl.classList.toggle("hide", !has || occOpen)
+        if (toggleBtn) { toggleBtn.hidden = !has; toggleBtn.setAttribute("aria-expanded", occOpen ? "true" : "false"); toggleBtn.textContent = occOpen ? "Hide" : "Show" }
+      }
+      if (toggleBtn) toggleBtn.addEventListener("click", () => {
+        occOpen = !occOpen
+        try { localStorage.setItem("klav.occOpen", occOpen ? "1" : "0") } catch (e) { }
+        paintOpen()
+      })
       // #718: toggle between the empty state (copy disabled) and a populated timeline (copy enabled).
       const showEmpty = () => {
+        occTotal = 0; copyBody = ""
         if (emptyEl) emptyEl.classList.remove("hide")
         if (listEl) { listEl.classList.add("hide"); listEl.innerHTML = "" }
         if (countEl) countEl.textContent = ""
         if (copyBtn) copyBtn.disabled = true
+        paintOpen()
       }
       const showTimeline = (n) => {
+        occTotal = n
         if (emptyEl) emptyEl.classList.add("hide")
-        if (listEl) listEl.classList.remove("hide")
         if (countEl) countEl.textContent = "×" + n
         if (copyBtn) copyBtn.disabled = false
+        paintOpen()
       }
 
       const day = ms => { try { return new Date(Number(ms)).toISOString().slice(0, 10) } catch (e) { return "" } }
@@ -25240,23 +25630,55 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
             // #718: real timeline → reveal the list, set the ×N pill, enable Copy timeline.
             showTimeline(occ.length)
             listEl.innerHTML = ""
-            occ.forEach(o => {
+            // One row per distinct report (same wording and screenshot): a Sim re-run, or a customer re-filing the same thing, produced many
+            // identical rows. Group them: first → last date and ×N, with the individual entries one click away.
+            const groups = occGroups(occ)
+            const quote = o => String(o.observation).trim()
+            const buildItem = (o, noShot) => {
               const item = document.createElement("div")
               item.className = "tkt-occ-item"
-              const shotHtml = o.screenshotId
+              const shotHtml = (o.screenshotId && !noShot)
                 ? `<div class="tkt-occ-shot" data-shot="${esc(o.screenshotId)}"></div>` : ""
               // Only stored repeat receipts (occurrenceId set, not the original) are splittable.
               const splitHtml = (o.occurrenceId && !o.isOriginal)
                 ? `<button class="btn btn-ghost btn-sm tkt-occ-split" type="button" data-occ="${esc(o.occurrenceId)}" title="This is a different bug — split it into its own ticket">${kicon('scissors')} Split out</button>` : ""
               item.innerHTML = `
             <div class="tkt-occ-date">${esc(day(o.seenAt))}${o.isOriginal ? '<div class="tkt-occ-orig">first</div>' : ''}</div>
-            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(String(o.observation).trim())}"</div>${splitHtml}</div>
+            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(quote(o))}"</div>${splitHtml}</div>
             ${shotHtml}`
               const splitBtn = item.querySelector(".tkt-occ-split")
               if (splitBtn) splitBtn.addEventListener("click", () => splitOccurrence(splitBtn.getAttribute("data-occ"), splitBtn))
-              listEl.appendChild(item)
-              loadOccShot(item)
+              return item
+            }
+            groups.forEach(g => {
+              const first = g.items[0], last = g.items[g.items.length - 1]
+              if (g.items.length === 1) {
+                const item = buildItem(first)
+                listEl.appendChild(item); loadOccShot(item)
+                return
+              }
+              const grp = document.createElement("div")
+              grp.className = "tkt-occ-item tkt-occ-grp"
+              const range = day(first.seenAt) === day(last.seenAt) ? day(first.seenAt) : day(first.seenAt) + " → " + day(last.seenAt)
+              const shotHtml = first.screenshotId ? `<div class="tkt-occ-shot" data-shot="${esc(first.screenshotId)}"></div>` : ""
+              grp.innerHTML = `
+            <div class="tkt-occ-date">${esc(range)}</div>
+            <div class="tkt-occ-body"><div class="tkt-occ-quote">"${esc(quote(first))}"<span class="tkt-occ-n">×${g.items.length}</span></div>
+              <button class="tkt-occ-more" type="button" aria-expanded="false">Show all ${g.items.length}</button>
+              <div class="tkt-occ-sub hide"></div></div>
+            ${shotHtml}`
+              const sub = grp.querySelector(".tkt-occ-sub"), more = grp.querySelector(".tkt-occ-more")
+              g.items.forEach(o => sub.appendChild(buildItem(o, true)))
+              more.addEventListener("click", () => {
+                const open = sub.classList.toggle("hide") === false
+                more.setAttribute("aria-expanded", open ? "true" : "false")
+                more.textContent = open ? "Hide" : "Show all " + g.items.length
+              })
+              listEl.appendChild(grp); loadOccShot(grp)
             })
+            const firstAt = occ[0].seenAt, lastAt = occ[occ.length - 1].seenAt
+            copyBody = occCopyBody(groups, occ.length, day)
+            if (sumEl) sumEl.textContent = "Reported " + occ.length + " times · first " + day(firstAt) + " · last " + day(lastAt) + (groups.length < occ.length ? " · " + groups.length + " distinct" : "")
           })
           .catch(() => { showEmpty() /* 404 = no recurrence memory (single report): show the empty state */ })
       }
@@ -25265,9 +25687,7 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
 
       // Copy timeline text for client conversations — plain, quotable receipts.
       copyBtn.addEventListener("click", async () => {
-        const items = [...listEl.querySelectorAll(".tkt-occ-item")]
-        const lines = items.map(it => `• ${it.querySelector(".tkt-occ-date")?.textContent?.replace("first", "").trim()}: ${it.querySelector(".tkt-occ-quote")?.textContent}`)
-        const text = `This issue was reported ${items.length} times:\n${lines.join("\n")}`
+        const text = copyBody
         const ok = await copyText(text)
         const orig = copyBtn.innerHTML
         copyBtn.innerHTML = ok ? (kicon('check') + " Copied!") : (kicon('x') + " Copy failed")
@@ -25501,6 +25921,7 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
     // #736: when the dedicated full page opens we push a CLEAN /t/<id> URL to the address bar; this remembers
     // the board URL (…/dashboard?project=…#tickets) to restore when the page closes or the user hits Back.
     let _tktBoardReturnUrl = null
+    let _fromSimRun = null   // { run, ticket }: set when a report is opened from a Sim run (?fromRun=<id>); that ticket's page then offers "Back to Sim run"
     let _tktBoardScrollY = 0
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
@@ -25545,6 +25966,11 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       return p
     }
     async function openSingleTicket(id, mode) {
+      // KD-239: any ticket opened in this page load means the boot deep link (if any) is done with. Opening one from
+      // the board writes ?ticket=<id> into the URL; without this, the next poll/refresh ran maybeOpenDeepLinkTicket(),
+      // took that for a fresh shared link and re-opened the ticket full-page — rebuilding it mid-comment (the
+      // half-typed comment vanished, as if the page had reloaded).
+      _deepLinkTicketConsumed = true
       if (mode === "full" && !document.body.classList.contains("tkt-page-open")) {
         _tktBoardScrollY = window.scrollY || window.pageYOffset || 0
       }
@@ -25601,7 +26027,8 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       const groups = {}; KANBAN_COLS.forEach(c => { groups[c.key] = [] })
       vis.forEach(t => { const k = kanbanKeyForStatus(t.status); if (groups[k]) groups[k].push(t) })
       KANBAN_COLS.forEach(c => { groups[c.key] = kbOrderColumn(groups[c.key], c.key) })   // KD-203: same per-lane order as the board
-      const ids = []; KANBAN_COLS.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
+      const orderedCols = typeof getOrderedKanbanCols === "function" ? getOrderedKanbanCols() : KANBAN_COLS
+      const ids = []; orderedCols.forEach(c => groups[c.key].forEach(t => ids.push(String(t.id))))
       return ids
     }
     // Share-viewer onboarding: the shareable canonical URL is the ADAPTIVE ticket link /t/<id>. A member
@@ -25775,6 +26202,14 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
           + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left', { size: 15 })}</button>`
           + `<button class="tkt-icon-btn" data-act="next" type="button" aria-label="Next ticket"${hasNext ? "" : " disabled"}>${kicon('chevron-right', { size: 15 })}</button>`
         ph.querySelector('[data-act="back"]').addEventListener("click", closeSingleTicket)
+        if (_fromSimRun && String(_fromSimRun.ticket) === String(id)) {   // opened from a Sim run: a way back to that run
+          const _pidRun = (state.active && state.active.id) || t.projectId || ""
+          const runLink = document.createElement("a")
+          runLink.className = "tkt-back-link"; runLink.setAttribute("data-act", "back-run")
+          runLink.href = "/sim-runs?project=" + encodeURIComponent(_pidRun) + "&run=" + encodeURIComponent(_fromSimRun.run)
+          runLink.textContent = "↩ Back to Sim run"
+          const backBtn = ph.querySelector('[data-act="back"]'); backBtn.insertAdjacentElement("afterend", runLink)
+        }
         const copyBtn = ph.querySelector('[data-act="copy"]')
         copyBtn.addEventListener("click", async () => {
           const ok = await copyText(prettyTicketUrlById(id))
@@ -26845,10 +27280,10 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
         const txt = opt.textContent || ""
         const isAll = (val === "")
         const checked = isAll ? isAllChecked : current.includes(val)
-        html += `<label class="tkt-ms-item${checked ? ' selected' : ''}" data-val="${esc(val)}">`
+        html += `<div class="tkt-ms-item${checked ? ' selected' : ''}" data-val="${esc(val)}" role="option" aria-selected="${checked}">`
           + `<input type="checkbox" ${checked ? 'checked' : ''} />`
           + `<span class="tkt-ms-txt">${esc(txt)}</span>`
-          + `</label>`
+          + `</div>`
       })
       menu.innerHTML = html
 
@@ -26857,7 +27292,10 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
           e.stopPropagation()
           const val = item.getAttribute("data-val")
           const cb = item.querySelector('input[type="checkbox"]')
-          if (e.target !== cb) cb.checked = !cb.checked
+          if (e.target !== cb) {
+            e.preventDefault()
+            cb.checked = !cb.checked
+          }
           const isNowChecked = cb.checked
 
           if (val === "") {
@@ -27929,6 +28367,85 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
         : '<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="M11 4h10"/><path d="M11 8h7"/><path d="M11 12h4"/>'
       return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + head + '</svg>'
     }
+    // Ticket 382/384: Drag-and-drop column reordering for the Tickets board.
+    // The user's custom column order is persisted in localStorage per user + project (same key pattern
+    // as kbSortKey). If the user resets or switches projects, the board adapts seamlessly.
+    let _kbColOrder = null
+    let _kbColOrderLoadedKey = null
+    let _kbColDragging = null
+    function kbColOrderKey() {
+      const u = (typeof swrUid === "function" ? swrUid() : null), p = state && state.active && state.active.id
+      return (u && p) ? "klav:kbcolorder:" + u + ":" + p : (p ? "klav:kbcolorder:" + p : "klav:kbcolorder")
+    }
+    function kbColOrderLoad() {
+      const key = kbColOrderKey()
+      if (key === _kbColOrderLoadedKey && _kbColOrder) return _kbColOrder
+      _kbColOrderLoadedKey = key
+      let list = null
+      if (key) {
+        try {
+          const raw = localStorage.getItem(key)
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed) && parsed.length) list = parsed
+          }
+        } catch (e) { }
+      }
+      const valid = STATUS_ORDER
+      if (list) {
+        const seen = new Set()
+        const merged = []
+        list.forEach(k => {
+          if (valid.includes(k) && !seen.has(k)) {
+            seen.add(k)
+            merged.push(k)
+          }
+        })
+        valid.forEach(k => {
+          if (!seen.has(k)) {
+            seen.add(k)
+            merged.push(k)
+          }
+        })
+        _kbColOrder = merged
+      } else {
+        _kbColOrder = [...STATUS_ORDER]
+      }
+      return _kbColOrder
+    }
+    function kbColOrderSave() {
+      const key = kbColOrderKey()
+      if (key && _kbColOrder) {
+        try { localStorage.setItem(key, JSON.stringify(_kbColOrder)) } catch (e) { }
+      }
+    }
+    function getOrderedKanbanCols() {
+      const order = kbColOrderLoad()
+      const map = new Map(KANBAN_COLS.map(c => [c.key, c]))
+      const result = []
+      order.forEach(k => {
+        const col = map.get(k)
+        if (col) result.push(col)
+      })
+      KANBAN_COLS.forEach(c => {
+        if (!result.includes(c)) result.push(c)
+      })
+      return result
+    }
+    function moveKanbanColumn(fromKey, toKey, isBefore) {
+      if (!fromKey || !toKey || fromKey === toKey) return
+      const order = [...kbColOrderLoad()]
+      const fromIdx = order.indexOf(fromKey)
+      if (fromIdx < 0) return
+      order.splice(fromIdx, 1)
+      let toIdx = order.indexOf(toKey)
+      if (toIdx < 0) return
+      if (!isBefore) toIdx++
+      order.splice(toIdx, 0, fromKey)
+      _kbColOrder = order
+      kbColOrderSave()
+      renderTicketsKanban(_tktBoardTickets)
+    }
     // KD-165: Jira-style drag-to-resize for the ticket board's columns. Unlike #707's wireT3Resize (2 fixed
     // gutters sharing ONE grid, each setting a named CSS var on that shared parent), every kanban column is
     // independent — each drags its OWN width, set directly on that .kb-col's --kb-w and persisted to
@@ -28082,13 +28599,14 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       // that re-renders the bulk bar + card visuals in place without a full board rebuild.
       const boardIds = new Set(tickets.map(t => String(t.id)))
         ;[..._bulkSelected].forEach(id => { if (!boardIds.has(String(id))) _bulkSelected.delete(id) })
+      const orderedCols = typeof getOrderedKanbanCols === "function" ? getOrderedKanbanCols() : KANBAN_COLS
       const orderedIds = []
-      KANBAN_COLS.forEach(col => groups[col.key].forEach(t => orderedIds.push(String(t.id))))
+      orderedCols.forEach(col => groups[col.key].forEach(t => orderedIds.push(String(t.id))))
       let _kbLastClicked = null
 
       const boardEl = document.createElement("div")
       boardEl.className = "kanban"
-      KANBAN_COLS.forEach(col => {
+      orderedCols.forEach(col => {
         const items = groups[col.key]
         const colEl = document.createElement("div")
         colEl.className = "kb-col"
@@ -28102,10 +28620,13 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
         colEl.appendChild(resizeHandle)
         const head = document.createElement("div")
         head.className = "kb-head"
+        head.setAttribute("draggable", "true")
+        head.setAttribute("data-col-key", col.key)
+        head.title = "Drag column to reorder"
         // KD-203: per-lane sort toggle (default = server order; pressed = Ticket ID ascending). Only this lane changes.
         const _sortAsc = _kbSortDir[col.key] === "asc"
         const _sortTip = _sortAsc ? "Ticket ID ascending — click to go back to newest first" : "Newest first (default) — click to sort by Ticket ID, ascending"
-        head.innerHTML = `<span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
+        head.innerHTML = `<span class="kb-grip" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg></span><span class="kb-dot kb-dot-${col.key}"></span><span class="kb-title">${col.label}</span><span class="kb-n">${items.length}</span>`
           + `<button type="button" class="kb-sort${_sortAsc ? " on" : ""}" aria-pressed="${_sortAsc}" aria-label="Sort ${esc(col.label)} by Ticket ID: ${_sortAsc ? "ascending" : "newest first"}" title="${_sortTip}">${kbSortSvg(_sortAsc)}</button>`
         head.querySelector(".kb-sort").addEventListener("click", ev => {
           ev.stopPropagation()
@@ -28113,6 +28634,26 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
           renderTicketsKanban(boardTickets)
           const again = board.querySelector('.kb-col[data-key="' + col.key + '"] .kb-sort')   // the board is rebuilt: keep keyboard focus on this lane's button
           if (again) again.focus()
+        })
+        head.addEventListener("dragstart", ev => {
+          if (ev.target.closest("button") || ev.target.closest("a") || ev.target.closest(".kb-resize")) {
+            ev.preventDefault()
+            return
+          }
+          _kbColDragging = col.key
+          if (ev.dataTransfer) {
+            ev.dataTransfer.effectAllowed = "move"
+            ev.dataTransfer.setData("application/x-klav-col-key", col.key)
+            ev.dataTransfer.setData("text/plain", col.key)
+          }
+          colEl.classList.add("col-dragging")
+        })
+        head.addEventListener("dragend", () => {
+          _kbColDragging = null
+          colEl.classList.remove("col-dragging")
+          boardEl.querySelectorAll(".col-drop-before, .col-drop-after, .col-dragging").forEach(el => {
+            el.classList.remove("col-drop-before", "col-drop-after", "col-dragging")
+          })
         })
         colEl.appendChild(head)
 
@@ -28124,10 +28665,45 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
         // + .kb-list{flex:1}) means the header, padding, and the empty space below the last card all
         // accept a drop. The drop still fires exactly once (single colEl handler; events from cards
         // bubble up) and moveTicketColumn keeps the status-change behaviour unchanged.
-        colEl.addEventListener("dragover", ev => { ev.preventDefault(); colEl.classList.add("drag-over") })
-        colEl.addEventListener("dragleave", ev => { if (!colEl.contains(ev.relatedTarget)) colEl.classList.remove("drag-over") })
+        // Ticket 382/384: differentiate column header drag vs ticket card drag.
+        colEl.addEventListener("dragover", ev => {
+          ev.preventDefault()
+          const isColDrag = Boolean(_kbColDragging) || (ev.dataTransfer && ev.dataTransfer.types && ev.dataTransfer.types.includes("application/x-klav-col-key"))
+          if (isColDrag) {
+            if (_kbColDragging === col.key) return
+            const rect = colEl.getBoundingClientRect()
+            const midX = rect.left + rect.width / 2
+            const isBefore = ev.clientX < midX
+            colEl.classList.toggle("col-drop-before", isBefore)
+            colEl.classList.toggle("col-drop-after", !isBefore)
+          } else {
+            colEl.classList.add("drag-over")
+          }
+        })
+        colEl.addEventListener("dragleave", ev => {
+          if (!colEl.contains(ev.relatedTarget)) {
+            colEl.classList.remove("drag-over", "col-drop-before", "col-drop-after")
+          }
+        })
         colEl.addEventListener("drop", ev => {
           ev.preventDefault()
+          const colKeyData = (ev.dataTransfer && typeof ev.dataTransfer.getData === "function") ? ev.dataTransfer.getData("application/x-klav-col-key") : null
+          const isColDrag = Boolean(colKeyData) || Boolean(_kbColDragging) || (ev.dataTransfer && ev.dataTransfer.types && ev.dataTransfer.types.includes("application/x-klav-col-key"))
+          if (isColDrag) {
+            colEl.classList.remove("col-drop-before", "col-drop-after")
+            const fromColKey = colKeyData || _kbColDragging
+            _kbColDragging = null
+            boardEl.querySelectorAll(".col-drop-before, .col-drop-after, .col-dragging").forEach(el => {
+              el.classList.remove("col-drop-before", "col-drop-after", "col-dragging")
+            })
+            if (fromColKey && fromColKey !== col.key) {
+              const rect = colEl.getBoundingClientRect()
+              const midX = rect.left + rect.width / 2
+              const isBefore = ev.clientX < midX
+              moveKanbanColumn(fromColKey, col.key, isBefore)
+            }
+            return
+          }
           colEl.classList.remove("drag-over")
           const ticketId = ev.dataTransfer.getData("text/plain")
           const fromKey = ev.dataTransfer.getData("application/x-klav-ticket-status")
@@ -32154,29 +32730,68 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       function fail(msg) { out.innerHTML = `<div class="sm-err">${esc(msg || "Something went wrong. Try again.")}</div>`; }
       function projQ() { const p = curProjId(); return p ? ("?project=" + encodeURIComponent(p)) : ""; }
 
-      async function postJSON(url, body) {
-        const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      async function postJSON(url, body, opts) {
+        // A hung AI call used to leave "Imagining your Sim…" on screen forever. Give up after a minute with a clear message.
+        const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => { try { ctrl.abort() } catch (e) { } }, (opts && opts.timeoutMs) || 60000) : null;
+        let r;
+        try {
+          r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: ctrl ? ctrl.signal : undefined });
+        } catch (e) {
+          if (timer) clearTimeout(timer);
+          const timedOut = !!(ctrl && ctrl.signal.aborted);
+          const err = new Error(timedOut ? "This is taking longer than expected. Please try again in a moment." : "Couldn't reach Klavity — check your connection and try again.");
+          err.status = 0; err.code = timedOut ? "timeout" : "network"; throw err;
+        }
+        if (timer) clearTimeout(timer);
         const d = await r.json().catch(() => ({}));
         // GTM round 2: carry status + code so callers can react to 402 quota_exceeded (plan drawer).
-        if (!r.ok) { const err = new Error(d.error || ("HTTP " + r.status)); err.traceId = d.id || null; err.status = r.status; err.code = d.code || null; throw err; }
+        if (!r.ok) { const err = new Error(d.error || ("HTTP " + r.status)); err.traceId = d.id || null; err.status = r.status; err.code = d.code || null; err.upgradeUrl = d.upgradeUrl || null; throw err; }
         return d;
       }
+      // Disable the button and show a spinner while `fn` runs, so a second click can't fire a parallel AI call.
+      async function withBusy(btn, label, fn) {
+        if (!btn || btn.disabled) return;
+        const orig = btn.innerHTML;
+        btn.disabled = true; btn.setAttribute("aria-busy", "true");
+        btn.innerHTML = '<span class="sm-spin" style="margin-right:6px"></span>' + esc(label);
+        try { await fn(); } finally { btn.disabled = false; btn.removeAttribute("aria-busy"); btn.innerHTML = orig; }
+      }
+      // Validation error right under the input that needs fixing (and focus it), cleared as soon as the user types.
+      function clearFieldErr() { ov.querySelectorAll(".sm-ferr").forEach(e => e.remove()); }
+      function fieldErr(inputEl, msg) {
+        clearFieldErr();
+        const host = inputEl.closest(".sm-field") || inputEl;
+        const d = document.createElement("div"); d.className = "sm-ferr"; d.setAttribute("role", "alert"); d.textContent = msg;
+        host.insertAdjacentElement("afterend", d);
+        try { inputEl.focus(); d.scrollIntoView({ block: "nearest" }); } catch (e) { }
+        inputEl.addEventListener("input", clearFieldErr, { once: true });
+      }
+      // Error with an optional Upgrade link (same-site path or https only).
+      function failUpgrade(msg, upgradeUrl) {
+        const u = upgradeUrl ? String(upgradeUrl) : "";
+        const link = (u && (u.charAt(0) === "/" || u.indexOf("https://") === 0)) ? ' <a href="' + esc(u) + '" target="_blank" rel="noopener">Upgrade</a>' : "";
+        out.innerHTML = '<div class="sm-err">' + esc(msg || "Something went wrong. Try again.") + link + "</div>";
+      }
       async function genBrief() {
-        const v = $("smBrief").value.trim(); if (v.length < 4) { fail("Describe your user in a sentence."); return; }
+        clearFieldErr();
+        const v = $("smBrief").value.trim(); if (v.length < 4) { fieldErr($("smBrief"), "Describe your user in a sentence — a few words is enough."); return; }
         think("Imagining your Sim…");
         // KLAVITYKLA-301: stamp which modal tab generated these Sims so saveSim can send source to server
         lastSimSource = PANE_TO_SOURCE["describe"] || "describe";
         try { const d = await postJSON("/api/persona/brief", { brief: v }); showSims(d.persona ? [d.persona] : []); } catch (e) { fail(e.message); }
       }
       async function genSite() {
-        const v = $("smUrl").value.trim(); if (!v) { fail("Enter your product’s URL."); return; }
+        clearFieldErr();
+        const v = $("smUrl").value.trim(); if (!v) { fieldErr($("smUrl"), "Enter your product’s URL."); return; }
         think("Reading " + v + "…");
         lastSiteUrl = v; // KLAVITYKLA-388: carry into the run-now prefill after Add / Add-all
         lastSimSource = PANE_TO_SOURCE["site"] || "from-site";
         try { const d = await postJSON("/api/persona/site", { url: v }); showSims(d.personas || []); } catch (e) { fail(e.message); }
       }
       async function genCall() {
-        const v = $("smTx").value.trim(); if (v.length < 20) { fail("Paste a bit more of the call (a few lines)."); return; }
+        clearFieldErr();
+        const v = $("smTx").value.trim(); if (v.length < 20) { fieldErr($("smTx"), "Paste a bit more of the call (a few lines)."); return; }
         think("Reading the call, pulling out who’s who…");
         lastSimSource = PANE_TO_SOURCE["call"] || "transcript";
         try { const d = await postJSON("/api/extract", { transcript: v }); showSims(d.personas || []); }
@@ -32374,6 +32989,8 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
             if (typeof openPlanDrawer === "function") openPlanDrawer();
             return;
           }
+          // A project on the Snap-only plan can't add Sims: say so plainly and offer the upgrade, instead of a bare error line.
+          if (e && e.status === 402) { failUpgrade(e.message || "Sims are a Pro feature — upgrade to add one.", e.upgradeUrl); return; }
           fail(e.message);
         }
       }
@@ -32429,7 +33046,9 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       $("smChips").innerHTML = EXAMPLES.map(x => `<button class="sm-chip">${esc(x)}</button>`).join("");
       $("smChips").addEventListener("click", (e) => { const c = e.target.closest(".sm-chip"); if (!c) return; $("smBrief").value = c.textContent; genBrief(); });
       // primary actions
-      $("smBriefGo").onclick = genBrief; $("smUrlGo").onclick = genSite; $("smTxGo").onclick = genCall;
+      $("smBriefGo").onclick = () => withBusy($("smBriefGo"), "Imagining…", genBrief);
+      $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
+      $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
 
       // "From a call" transcript file upload (.txt / .vtt / .srt) — loads file text into the paste box before Extract
       const smFileLbl = $("smFileLbl"); if (smFileLbl) smFileLbl.innerHTML = kicon("paperclip", { size: 14 }) + " Upload transcript" + smFileLbl.querySelector("input").outerHTML;
@@ -32485,6 +33104,7 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
         const first = !(state && state.sims && state.sims.length);
         $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
         // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
+        hideDiscard(); clearFieldErr();
         out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
         hideSuccessPanel();
         selectPane(mode);
@@ -32495,7 +33115,7 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
       let simNewReturnUrl = null;
       // fromPop=true means popstate already moved history — don't touch it again.
       function close(fromPop) {
-        ov.classList.remove("show"); document.body.style.overflow = ""; hideSuccessPanel();
+        ov.classList.remove("show"); document.body.style.overflow = ""; hideSuccessPanel(); hideDiscard();
         // If WE pushed the /sim/new entry, pop it with history.back() so the browser Back button
         // isn't left pointing at an entry that just re-opens the surface (replaceState made Back
         // look like a no-op). Deep-link hits (no pushed entry) still replace, so Back leaves the app.
@@ -32506,14 +33126,51 @@ const _attachMsgs = new Map()                      // ticketId → { text, isErr
         simNewReturnUrl = null;
         if (simAdded) { simAdded = false; load(); }
       }
-      $("simClose").onclick = function () { close(); };
-      ov.addEventListener("mousedown", (e) => { if (e.target === ov) close(); });
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ov.classList.contains("show")) close(); });
+      // Closing (✕, backdrop, Escape, browser Back, tab close) used to throw away whatever was typed or generated, with no warning.
+      // Now, if there is anything unsaved, ask first. Nothing to lose (or already saved) closes straight away as before.
+      function simSuccessShown() { return successEl.classList.contains("show"); }
+      function simDirty() {
+        if (!ov.classList.contains("show") || simSuccessShown()) return false;
+        const siteDefault = ((state && state.active && state.active.siteUrl) || "").trim();
+        if ($("smBrief").value.trim() || $("smTx").value.trim() || $("smUrl").value.trim() !== siteDefault) return true;
+        return !!out.querySelector(".sm-sim:not(.added)");   // generated Sims that were not added yet
+      }
+      let discardEl = null;
+      function hideDiscard() { if (discardEl) discardEl.classList.remove("show"); }
+      function discardOpen() { return !!(discardEl && discardEl.classList.contains("show")); }
+      function showDiscard() {
+        if (!discardEl) {
+          discardEl = document.createElement("div");
+          discardEl.className = "sm-discard"; discardEl.id = "smDiscard";
+          discardEl.innerHTML = '<div class="sm-discard-box" role="alertdialog" aria-modal="true" aria-labelledby="smDiscardT"><strong id="smDiscardT">Discard this Sim?</strong>'
+            + '<p>What you typed or generated here hasn’t been added yet and will be lost.</p>'
+            + '<div class="sm-discard-row"><button type="button" class="btn btn-ghost btn-sm" id="smKeep">Keep editing</button><button type="button" class="btn btn-indigo btn-sm" id="smDiscardGo">Discard</button></div></div>';
+          (ov.querySelector(".sm-modal") || ov).appendChild(discardEl);
+          discardEl.querySelector("#smKeep").onclick = function () { hideDiscard(); const b = $("smBrief"); if (b) b.focus(); };
+          discardEl.querySelector("#smDiscardGo").onclick = function () { hideDiscard(); close(); };
+        }
+        discardEl.classList.add("show");
+        setTimeout(() => { const k = discardEl && discardEl.querySelector("#smKeep"); if (k) k.focus(); }, 30);
+      }
+      // fromPop: the browser already stepped back off /sim/new; if we keep the dialog open, put that history entry back.
+      function requestClose(fromPop) {
+        if (!simDirty()) { close(fromPop); return; }
+        if (fromPop) { try { history.pushState(null, "", simNewUrl(currentMode())); } catch (e) { } }
+        showDiscard();
+      }
+      $("simClose").onclick = function () { requestClose(); };
+      ov.addEventListener("mousedown", (e) => { if (e.target === ov) requestClose(); });
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !ov.classList.contains("show")) return;
+        if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
+        requestClose();
+      });
+      window.addEventListener("beforeunload", (e) => { if (simDirty()) { e.preventDefault(); e.returnValue = ""; } });
       // Back/forward: /sim/new opens the surface; navigating away closes it.
       window.addEventListener("popstate", function () {
         autoOpened = true;
         if (atSimNew()) { if (!ov.classList.contains("show")) openSimSurface(currentMode()); else selectPane(currentMode()); }
-        else if (ov.classList.contains("show")) { close(true); }
+        else if (ov.classList.contains("show")) { requestClose(true); }
       });
 
       // exposed openers — navigate to the dedicated /sim/new page, then reveal the surface.
