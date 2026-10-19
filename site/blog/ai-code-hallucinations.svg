@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI-generated code lines referencing a phantom package and a phantom API, caught by execution">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <rect x="56" y="54" width="330" height="246" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="56" y="54" width="330" height="34" rx="12" fill="#6366f1" opacity="0.16"/>
+  <circle cx="78" cy="71" r="5" fill="#f87171" opacity="0.7"/>
+  <circle cx="96" cy="71" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="114" cy="71" r="5" fill="#f5f0e8" opacity="0.3"/>
+
+  <rect x="80" y="108" width="190" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="132" width="250" height="9" rx="4.5" fill="#f87171" opacity="0.85"/>
+  <rect x="80" y="156" width="140" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="180" width="214" height="9" rx="4.5" fill="#f87171" opacity="0.85"/>
+  <rect x="80" y="204" width="170" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="228" width="232" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="252" width="118" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="64" y="126" width="3" height="21" fill="#f87171"/>
+  <rect x="64" y="174" width="3" height="21" fill="#f87171"/>
+
+  <path d="M386 137 L470 137" stroke="#f87171" stroke-width="2" stroke-dasharray="7 6" opacity="0.8"/>
+  <path d="M386 185 L470 185" stroke="#f87171" stroke-width="2" stroke-dasharray="7 6" opacity="0.8"/>
+
+  <rect x="478" y="108" width="246" height="58" rx="10" fill="#f87171" opacity="0.1"/>
+  <rect x="478" y="108" width="246" height="58" rx="10" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.8"/>
+  <path d="M500 128 L520 148 M520 128 L500 148" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="540" y="126" width="150" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="540" y="144" width="96" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="478" y="178" width="246" height="58" rx="10" fill="#f87171" opacity="0.1"/>
+  <rect x="478" y="178" width="246" height="58" rx="10" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.8"/>
+  <path d="M500 198 L520 218 M520 198 L500 218" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="540" y="196" width="128" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="540" y="214" width="166" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+
+  <path d="M221 300 L221 336 L400 336" stroke="#6366f1" stroke-width="2.2" fill="none" opacity="0.9"/>
+  <path d="M394 330 L402 336 L394 342" stroke="#6366f1" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <rect x="408" y="314" width="196" height="44" rx="22" fill="#6366f1" opacity="0.22"/>
+  <rect x="408" y="314" width="196" height="44" rx="22" fill="none" stroke="#6366f1" stroke-width="1.6"/>
+  <polyline points="432,336 441,345 457,327" stroke="#4ade80" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="472" y="332" width="112" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <circle cx="640" cy="336" r="13" fill="#4ade80" opacity="0.18"/>
+  <polyline points="633,336 639,342 648,330" stroke="#4ade80" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

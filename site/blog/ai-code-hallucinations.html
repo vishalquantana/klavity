@@ -1,0 +1,179 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Code Hallucinations: How to Catch Them Pre-Launch · Klavity</title>
+<meta name="description" content="AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them.">
+<link rel="canonical" href="https://klavity.in/blog/ai-code-hallucinations">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Code Hallucinations: How to Catch Them Pre-Launch"><meta property="og:description" content="AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them.">
+<meta property="og:url" content="https://klavity.in/blog/ai-code-hallucinations"><meta property="og:image" content="https://klavity.in/blog/ai-code-hallucinations.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Code Hallucinations: How to Catch Them Pre-Launch"><meta name="twitter:description" content="AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them."><meta name="twitter:image" content="https://klavity.in/blog/ai-code-hallucinations.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Code Hallucinations: How to Catch Them Pre-Launch","description":"AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them.","datePublished":"2026-10-19","dateModified":"2026-10-19","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-code-hallucinations.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-code-hallucinations","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Code Hallucinations: How to Catch Them Pre-Launch","item":"https://klavity.in/blog/ai-code-hallucinations"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-code-hallucinations"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is an AI code hallucination?","acceptedAnswer":{"@type":"Answer","text":"It is generated code that references something with no real referent — a function the library never exported, an npm package that was never published, a config key nothing reads, or an API response field the backend never sends. It differs from a logic bug: a logic bug does something real incorrectly, while a hallucination calls something that does not exist at all."}},{"@type":"Question","name":"Why don't code reviews catch AI code hallucinations?","acceptedAnswer":{"@type":"Answer","text":"Review checks plausibility, not existence. Confirming a symbol is real means leaving the diff and opening the installed package or the docs for every unfamiliar name. Type checking helps only where strong types exist, so hallucinations survive in untyped seams like JSON.parse results and untyped API clients. And a green build proves the code compiles, not that the symbol resolves at runtime."}},{"@type":"Question","name":"What is slopsquatting?","acceptedAnswer":{"@type":"Answer","text":"Slopsquatting is when an attacker publishes a real package under a name that AI models repeatedly hallucinate, so generated code installs the attacker's code. It differs from typosquatting, which relies on a human mistyping a real package name. The defence is to verify every AI-suggested dependency against the registry before installing, pin versions, and commit your lockfile."}},{"@type":"Question","name":"How do I test for hallucinations in AI-generated code?","acceptedAnswer":{"@type":"Answer","text":"Verify new imports against the package registry, install from scratch in a clean environment rather than a warm cache, grep for each unfamiliar symbol inside the installed package source, execute every branch against the real integration instead of a mock, and assert on the behaviour any new config key is supposed to change. Executing the path catches the most for the least effort."}},{"@type":"Question","name":"Which AI code hallucinations are hardest to find?","acceptedAnswer":{"@type":"Answer","text":"Phantom config keys and phantom API contracts, because neither throws an error. A setting nothing reads or a response field that is always undefined produces a working-looking app with a silent hole in it. These are the hallucinations most likely to be found by a client rather than by the team that shipped them."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Insights · 2026-10-19</div>
+    <h1>AI Code Hallucinations: How to Catch Them Pre-Launch</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI-generated code lines referencing a phantom package and a phantom API, caught by execution">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+
+  <rect x="56" y="54" width="330" height="246" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="56" y="54" width="330" height="34" rx="12" fill="#6366f1" opacity="0.16"/>
+  <circle cx="78" cy="71" r="5" fill="#f87171" opacity="0.7"/>
+  <circle cx="96" cy="71" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="114" cy="71" r="5" fill="#f5f0e8" opacity="0.3"/>
+
+  <rect x="80" y="108" width="190" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="132" width="250" height="9" rx="4.5" fill="#f87171" opacity="0.85"/>
+  <rect x="80" y="156" width="140" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="180" width="214" height="9" rx="4.5" fill="#f87171" opacity="0.85"/>
+  <rect x="80" y="204" width="170" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="228" width="232" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="80" y="252" width="118" height="9" rx="4.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="64" y="126" width="3" height="21" fill="#f87171"/>
+  <rect x="64" y="174" width="3" height="21" fill="#f87171"/>
+
+  <path d="M386 137 L470 137" stroke="#f87171" stroke-width="2" stroke-dasharray="7 6" opacity="0.8"/>
+  <path d="M386 185 L470 185" stroke="#f87171" stroke-width="2" stroke-dasharray="7 6" opacity="0.8"/>
+
+  <rect x="478" y="108" width="246" height="58" rx="10" fill="#f87171" opacity="0.1"/>
+  <rect x="478" y="108" width="246" height="58" rx="10" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.8"/>
+  <path d="M500 128 L520 148 M520 128 L500 148" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="540" y="126" width="150" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="540" y="144" width="96" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="478" y="178" width="246" height="58" rx="10" fill="#f87171" opacity="0.1"/>
+  <rect x="478" y="178" width="246" height="58" rx="10" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.8"/>
+  <path d="M500 198 L520 218 M520 198 L500 218" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="540" y="196" width="128" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="540" y="214" width="166" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+
+  <path d="M221 300 L221 336 L400 336" stroke="#6366f1" stroke-width="2.2" fill="none" opacity="0.9"/>
+  <path d="M394 330 L402 336 L394 342" stroke="#6366f1" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  <rect x="408" y="314" width="196" height="44" rx="22" fill="#6366f1" opacity="0.22"/>
+  <rect x="408" y="314" width="196" height="44" rx="22" fill="none" stroke="#6366f1" stroke-width="1.6"/>
+  <polyline points="432,336 441,345 457,327" stroke="#4ade80" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="472" y="332" width="112" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <circle cx="640" cy="336" r="13" fill="#4ade80" opacity="0.18"/>
+  <polyline points="633,336 639,342 648,330" stroke="#4ade80" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI code hallucinations are passages of generated code that reference things which do not exist: a method the library never exported, a package nobody published, a config key nothing reads. They pass review and often compile, because a hallucination is a claim about the outside world that reading the code cannot falsify. The only reliable detection is executing the code path that uses the invented thing.</div>
+    <div class="prose"><p><strong>AI code hallucinations are passages of generated code that reference things which do not exist</strong> — a function that was never in the library, a config key the framework never read, an npm package nobody published. They are dangerous precisely because they look correct: the naming is plausible, the syntax is valid, and the file often compiles. The only reliable way to catch AI code hallucinations is to execute the path that uses the invented thing, because a hallucination is an empirical claim about the outside world, and reading the code can never falsify it. Everything below is about building that execution step into your workflow before a client or user hits it.</p>
+
+<h2>What are AI code hallucinations?</h2>
+<p>A hallucination is not a logic bug. A logic bug is code that does something real, incorrectly. A hallucination is code that calls something which has no referent at all. The model has produced a statistically plausible token sequence — the method name <em>looks</em> like the method names in that library's docs — but the symbol was never implemented.</p>
+<p>That distinction matters for QA, because the two failure modes need different detection. Logic bugs are found by asserting on output. Hallucinations are found simply by <em>reaching the line</em>. If the line never runs in your tests, in your click-through, or in the one happy path you demoed, the hallucination ships intact and fails the first time a real user takes that branch.</p>
+
+<h2>What do AI code hallucinations actually look like in a codebase?</h2>
+<p>They cluster into four recognisable kinds. Knowing which kind you are looking at tells you which check will catch it.</p>
+<table>
+  <thead><tr><th>Kind</th><th>What the model invented</th><th>Where it fails</th><th>What catches it</th></tr></thead>
+  <tbody>
+    <tr><td>Phantom API</td><td>A method or option that the real library does not export</td><td>Runtime, on first call</td><td>Executing that code path</td></tr>
+    <tr><td>Phantom package</td><td>An import for a package that was never published</td><td>Install or build</td><td>A clean install from a fresh lockfile</td></tr>
+    <tr><td>Phantom config</td><td>A key in a config, env, or schema file that nothing reads</td><td>Silently — the setting simply has no effect</td><td>Asserting on the <em>behaviour</em> the setting is supposed to change</td></tr>
+    <tr><td>Phantom contract</td><td>A response field, column, or event name the backend never sends</td><td>Runtime, as an undefined value flowing downstream</td><td>An end-to-end run against the real API</td></tr>
+  </tbody>
+</table>
+<p>The phantom config and phantom contract cases are the expensive ones. Neither throws. A rate limit that is never applied, an audit flag that is never written, a <code>user.organisation_id</code> that is always <code>undefined</code> — these produce a working-looking app with a hole in it, and they are the hallucinations most likely to be found by a client rather than by you.</p>
+
+<h2>Why don't AI code hallucinations show up in code review?</h2>
+<p>Because review is reading, and a hallucination is only detectable by checking the code against reality. Three specific gaps let them through:</p>
+<ul>
+  <li><strong>Review checks plausibility, not existence.</strong> A reviewer scanning a 400-line AI-generated diff is asking "does this look like how we do things?" — not "does this method exist in version 4.2 of this library?" The second question requires leaving the diff and opening the docs, for every unfamiliar symbol.</li>
+  <li><strong>Type checking is only as strong as the types it has.</strong> A phantom method on a well-typed library is caught at compile time. A phantom field on a response typed <code>any</code>, parsed from <code>JSON.parse</code>, or coming from an untyped API client is not. Hallucinations survive in exactly the untyped seams where real integrations live.</li>
+  <li><strong>A green build proves compilation, not execution.</strong> Compilation proves the code is well-formed. It does not prove the symbol resolves at runtime, that the package installs from a clean cache, or that the remote field is populated. "It built" is the single most common reason a hallucination reaches production.</li>
+</ul>
+<p>This is the same structural blind spot described in <a href="/blog/vibe-coding-bugs-web-agencies">why vibe coding creates bugs your test suite will never catch</a>: AI raises the volume of code faster than it raises the volume of verification, and the gap is where hallucinations live.</p>
+
+<h2>How do you catch AI code hallucinations before launch?</h2>
+<p>Five checks, in the order that catches the most for the least effort:</p>
+<ol>
+  <li><strong>Verify every new import against the registry before anything else.</strong> For each dependency the AI added, confirm the package exists, check its publish date and download history, and read who maintains it. A package created last week with no history is a red flag, not a new discovery.</li>
+  <li><strong>Install from scratch, not from your warm cache.</strong> Delete <code>node_modules</code>, install from the lockfile in a clean environment, and build. A phantom package that resolved from a stale local cache will fail here — which is where you want it to fail, not in your client's CI.</li>
+  <li><strong>Grep for every unfamiliar symbol in the dependency's own source.</strong> If the AI called <code>client.batchUpsert()</code>, find <code>batchUpsert</code> in the installed package, not in the model's explanation of it. Your <code>node_modules</code> directory is the authority on what the library exports; the chat window is not.</li>
+  <li><strong>Run the path, don't read it.</strong> Every branch the AI wrote needs to be executed at least once against the real integration — not mocked. Mocks are the one place a phantom contract is guaranteed to pass, because you wrote the mock from the same hallucinated shape.</li>
+  <li><strong>Assert on effect for anything configuration-shaped.</strong> For each new config key, flag, or policy, write one check that the intended behaviour actually changed. If you cannot write that assertion, you cannot tell a working setting from a key that nothing reads.</li>
+</ol>
+<p>If you only have time for one of these, make it number four. Execution is the single check that catches all four kinds.</p>
+
+<h2>Which AI code hallucinations are a security problem?</h2>
+<p>Phantom packages, specifically. When a model repeatedly invents the same plausible package name, that name becomes a predictable target: an attacker can publish a real package under it and wait for generated code to install it. The practice has an accepted name — <em>slopsquatting</em> — distinguishing it from classic typosquatting, where the attacker relies on a human mistyping a real name. Here the attacker relies on a model inventing a name that was never real.</p>
+<p>The defensive measure is unglamorous and effective: never install a dependency you have not looked up, pin versions, commit your lockfile, and treat any AI-suggested import as unverified until you have seen the package's registry page yourself. More on the adjacent failure modes in <a href="/blog/vibe-coding-security-risks">vibe coding security risks</a>.</p>
+
+<h2>How does Klavity help catch AI code hallucinations?</h2>
+<p>Klavity is built around the one thing reading cannot do: running the app the way a user would. <a href="/sims">Sims</a> drives your real deployed site with AI personas that take the branches your demo never touched — which is precisely how phantom APIs and phantom contracts surface, as a thrown error or an <code>undefined</code> rendered on screen. <a href="/autosim">AutoSim</a> turns those paths into self-healing end-to-end tests, so a hallucination caught once stays caught as the AI rewrites the file around it. And when a bug does reach a client, <a href="/snap">Snap</a> captures it as a right-click report with the console error and network trace attached, so a phantom field shows up as evidence rather than as "it's broken on my end."</p>
+<p>None of this replaces the registry check or the clean install — those take two minutes and should be habit. It replaces the assumption that a green build means the code refers to real things. For the wider picture of where automated checks fit alongside human review, see the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>, and for the day-to-day workflow, <a href="/blog/testing-ai-generated-code">testing AI-generated code</a>.</p>
+
+<h2>The short version</h2>
+<p>AI code hallucinations are a verification problem, not a model problem. They will keep appearing for as long as generation is probabilistic, so the fix is not better prompting — it is a step in your process where generated code meets reality before a user does. Check the registry, install clean, grep the package, and above all run the path.</p>
+<p><strong><a href="/onboarding">Scan your next client site free</a></strong> — Klavity runs your real app the way a user would and reports what breaks, before the hallucinations do.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Verify every AI-added dependency on the registry before installing it</li><li>Install from a clean environment, not a warm local cache</li><li>Grep unfamiliar symbols in the installed package, not the chat window</li><li>Execute every generated branch against the real integration, not a mock</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is an AI code hallucination?</summary><p>It is generated code that references something with no real referent — a function the library never exported, an npm package that was never published, a config key nothing reads, or an API response field the backend never sends. It differs from a logic bug: a logic bug does something real incorrectly, while a hallucination calls something that does not exist at all.</p></details><details><summary>Why don't code reviews catch AI code hallucinations?</summary><p>Review checks plausibility, not existence. Confirming a symbol is real means leaving the diff and opening the installed package or the docs for every unfamiliar name. Type checking helps only where strong types exist, so hallucinations survive in untyped seams like JSON.parse results and untyped API clients. And a green build proves the code compiles, not that the symbol resolves at runtime.</p></details><details><summary>What is slopsquatting?</summary><p>Slopsquatting is when an attacker publishes a real package under a name that AI models repeatedly hallucinate, so generated code installs the attacker's code. It differs from typosquatting, which relies on a human mistyping a real package name. The defence is to verify every AI-suggested dependency against the registry before installing, pin versions, and commit your lockfile.</p></details><details><summary>How do I test for hallucinations in AI-generated code?</summary><p>Verify new imports against the package registry, install from scratch in a clean environment rather than a warm cache, grep for each unfamiliar symbol inside the installed package source, execute every branch against the real integration instead of a mock, and assert on the behaviour any new config key is supposed to change. Executing the path catches the most for the least effort.</p></details><details><summary>Which AI code hallucinations are hardest to find?</summary><p>Phantom config keys and phantom API contracts, because neither throws an error. A setting nothing reads or a response field that is always undefined produces a working-looking app with a silent hole in it. These are the hallucinations most likely to be found by a client rather than by the team that shipped them.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

@@ -880,5 +880,12 @@
     "excerpt": "AI website testing uses models to walk a site like a user, find defects, and attach reproducible evidence. Here is what it catches and what it misses.",
     "category": "Guides",
     "date": "2026-10-18"
+  },
+  {
+    "slug": "ai-code-hallucinations",
+    "title": "AI Code Hallucinations: How to Catch Them Pre-Launch",
+    "excerpt": "AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them.",
+    "category": "Insights",
+    "date": "2026-10-19"
   }
 ]
