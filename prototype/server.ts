@@ -87,7 +87,7 @@ import {
   MARKETING_PRESIGNUP_PROJECT_ID, makeTeaser, validateFreetoolEmail, checkFreetoolRun,
   bumpFreetoolRun, bumpFreetoolCost, ipBucket, freetoolDailyRunCap,
 } from "./lib/freetool-guard"
-import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./lib/sim-preview"
+import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout } from "./lib/sim-preview"
 // KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
 import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
 import { buildSuperadminPL, creditsMarginByWorkspace } from "./lib/superadmin"
@@ -151,7 +151,7 @@ import { nearMissSummary } from "./lib/expectations-nearmiss"
 import { createLabel, listLabels, updateLabel, deleteLabel, attachLabel, detachLabel, labelsForFeedback, labelsForFeedbackBatch, setSuggestedLabels, getSuggestedLabels, getSuggestedLabelsState } from "./lib/db"
 import { suggestLabelsForFeedback, draftTitleForFeedback, fallbackDraftTitle, fallbackDraftDescription, splitPagesTrail } from "./lib/label-suggest"
 import { generateTicketTitle, shouldAutoTitle } from "./lib/auto-title"
-import { generateEnhancedDraft, renderDraftToText } from "./lib/report-enhance"
+import { generateEnhancedDraft, renderDraftToText, formatAnnotationsForPrompt } from "./lib/report-enhance"
 // KLA-603: post-submit video-transcript enrichment (walkthrough AI-summary + transcript→tracker + keyframes).
 import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
 import { extractKeyframes } from "./lib/keyframes"
@@ -15611,20 +15611,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         let shot: { imageB64: string; mediaType: "image/jpeg"; authed?: boolean }
         try {
           if (pvProj) {
-            shot = await authedScreenshotUrl(pvUrl, pvProj.id)
+            shot = await withPreviewTimeout(authedScreenshotUrl(pvUrl, pvProj.id))
           } else {
-            shot = await screenshotUrl(pvUrl)
+            shot = await withPreviewTimeout(screenshotUrl(pvUrl))
           }
-        } catch {
-          // A behind-login page without a configured Test Account is the most common failure here:
-          // explain the limitation and point at Test Account setup, otherwise a generic hint.
-          if (pvProj && !(await projectHasHeadlessAuth(pvProj.id).catch(() => false))) {
-            return json({
-              error: "Couldn't preview that page. If it's behind a login, configure an AutoSim Test Account for this project so Sims can sign in before reviewing it — then try again.",
-              needsTestAccount: true,
-            }, 400)
-          }
-          return json({ error: "Couldn't open that page to preview it. Try a public page." }, 400)
+        } catch (shotErr: any) {
+          // Log the real reason (it used to be swallowed, so "Couldn't preview" was undiagnosable). No URL query/credentials: host+path only.
+          let logUrl = pvUrl; try { const u = new URL(pvUrl); logUrl = u.origin + u.pathname } catch { }
+          console.warn("[sim-preview] screenshot failed url=" + logUrl + " project=" + (pvProj ? pvProj.id : "-") + ":", shotErr?.message || shotErr)
+          // Say what actually went wrong: browser couldn't start / timed out (ours) vs. a login-gated page with no Test Account vs. an unreachable page.
+          const hasAuth = pvProj ? await projectHasHeadlessAuth(pvProj.id).catch(() => false) : true
+          const f = classifyPreviewFailure(shotErr, hasAuth)
+          return json(f.needsTestAccount ? { error: f.error, needsTestAccount: true } : { error: f.error }, f.kind === "browser_unavailable" ? 503 : 400)
         }
 
         // ── AUTHENTICATED branch: run real Sims, persist results ─────────────

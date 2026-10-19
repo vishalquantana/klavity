@@ -9,7 +9,7 @@
 // only (inside establishAutosimSession) and are NEVER returned to the caller, client, or logs.
 //
 // The browser factory is injectable so the plumbing is unit-testable without launching Chromium.
-import { acquireBrowser } from "./trails-browser-page"
+import { acquireBrowser, BrowserLaunchError } from "./trails-browser-page"
 import { isSafeUrl } from "./url-guard"
 import {
   loadAutosimAuthConfig, establishAutosimSession,
@@ -179,6 +179,35 @@ export async function authedScreenshotUrl(
   } finally {
     await browser.close().catch(() => {})
   }
+}
+
+/** Max time a preview screenshot (browser launch + navigation + shot) may take before we give up. */
+export const PREVIEW_SHOT_TIMEOUT_MS = 60_000
+
+/** Reject if `p` has not settled within `ms` — a browser that never launches would otherwise hang the request. */
+export function withPreviewTimeout<T>(p: Promise<T>, ms = PREVIEW_SHOT_TIMEOUT_MS): Promise<T> {
+  let t: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_, rej) => { t = setTimeout(() => rej(new Error("preview timed out after " + ms + "ms")), ms) })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(t))
+}
+
+export type PreviewFailureKind = "browser_unavailable" | "needs_test_account" | "page_unreachable"
+
+/**
+ * Turn a failed preview screenshot into the message the user sees. The old code blamed a missing Test Account for EVERY failure
+ * on a project without one — including the server being unable to start a browser at all, which sent people off to configure
+ * a login that was never the problem. Now: a browser that can't start / a shot that timed out says so; the Test Account hint is
+ * only for a project with no headless login configured when the browser itself worked.
+ */
+export function classifyPreviewFailure(err: unknown, hasHeadlessAuth: boolean): { kind: PreviewFailureKind; error: string; needsTestAccount?: true } {
+  const msg = String((err as any)?.message ?? err ?? "")
+  if (err instanceof BrowserLaunchError || /could not start a local browser|steel session|preview timed out|browser has been closed|connect(ion)? (refused|closed)/i.test(msg)) {
+    return { kind: "browser_unavailable", error: "Couldn't start the browser used to preview pages. This is a problem on our side, not with your page — please try again in a minute." }
+  }
+  if (!hasHeadlessAuth) {
+    return { kind: "needs_test_account", needsTestAccount: true, error: "Couldn't preview that page. If it's behind a login, configure an AutoSim Test Account for this project so Sims can sign in before reviewing it — then try again." }
+  }
+  return { kind: "page_unreachable", error: "Couldn't open that page to preview it. Try a public page." }
 }
 
 // A neutral ephemeral persona used when the caller has not generated one yet — "a first-time visitor

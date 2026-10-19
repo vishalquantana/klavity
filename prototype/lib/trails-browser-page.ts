@@ -634,7 +634,7 @@ class PuppeteerPage implements BrowserPage {
 
 class PuppeteerHandle implements BrowserHandle {
   readonly kind: string
-  constructor(private browser: any, private release: () => Promise<void>, region: string) { this.kind = "steel:" + region }
+  constructor(private browser: any, private release: () => Promise<void>, region: string) { this.kind = region.startsWith("local") ? region : "steel:" + region }
   async newPage(viewport?: TrailViewport | null) {
     const pages = await this.browser.pages()
     const page = pages[0] ?? (await this.browser.newPage())
@@ -784,6 +784,9 @@ export async function acquireBrowser(opts: AcquireOpts = {}): Promise<BrowserHan
   const cdpBase = process.env.AUTOSIM_CDP_URL
   if (cdpBase) return await connectRemotePuppeteer(cdpBase, opts)
   const { chromium } = await import("playwright")
+  // Bun on Windows: Playwright's chromium.launch() never finishes (its pipe transport hangs under Bun), so local
+  // previews/authoring timed out. Launch the same Chromium through puppeteer-core (WebSocket transport) instead.
+  if (isBunOnWindows()) return await launchLocalPuppeteer(chromium.executablePath(), opts)
   const browser = await launchLocalChromium(chromium, opts)
   return new PlaywrightHandle(browser, localBrowserWatchdogMs(opts))
 }
@@ -1116,6 +1119,30 @@ export async function acquireRemotePlaywrightBrowser(cdpBase: string, _opts: Acq
     )
   }
   return { browser, close: () => safeClose(browser.close()), kind: "cdp-remote" }
+}
+
+function isBunOnWindows(): boolean { return !!(process.versions as any).bun && process.platform === "win32" }
+
+/** Local Chromium via puppeteer-core — the path that works under Bun on Windows (see acquireBrowser). Closing kills the process. */
+async function launchLocalPuppeteer(executablePath: string, opts: AcquireOpts): Promise<BrowserHandle> {
+  const { default: puppeteer } = await import("puppeteer-core")
+  let browser: any
+  try {
+    browser = await puppeteer.launch({ executablePath, headless: opts.headless ?? true, args: opts.launchArgs ?? [], defaultViewport: null, timeout: 30_000 })
+  } catch (e) {
+    throw new BrowserLaunchError(
+      "Could not start a local browser (" + String((e as any)?.message ?? e) + "). Install Playwright's Chromium on the host (bunx playwright install chromium), or run walks remotely. " + REMOTE_HINT, e,
+    )
+  }
+  const proc = browser.process?.()
+  // proc.kill() ends only the parent on Windows and leaves Chromium's renderer/GPU children running — kill the whole tree.
+  const killTree = async () => {
+    try {
+      if (proc?.pid) (await import("node:child_process")).spawnSync("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { stdio: "ignore" })
+    } catch { }
+    try { proc?.kill() } catch { }
+  }
+  return new PuppeteerHandle(browser, killTree, "local-bun-win")
 }
 
 async function connectRemotePuppeteer(cdpBase: string, _opts: AcquireOpts): Promise<BrowserHandle> {

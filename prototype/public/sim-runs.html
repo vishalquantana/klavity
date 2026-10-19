@@ -626,9 +626,16 @@ function obsPriority(o){
   return o.priority || (o.suggestedBug && (o.suggestedBug.priority || o.suggestedBug.severity)) || null;
 }
 function dashProjQ(){ const p = projParam(); return p ? "?project=" + encodeURIComponent(p) : "" }
-// Deep-link an observation to the feedback row it created / bumped, in New reports.
-function feedbackLink(fid){
-  return "/dashboard" + dashProjQ() + "#triage/" + encodeURIComponent(fid);
+// Link an observation to the report (feedback row) it created or bumped. It opens the report itself — not the New reports inbox, which only
+// lists reports still waiting for triage and so showed nothing for one that was already accepted, merged or filed as high priority.
+// Always carries the project this run belongs to (not just the page's ?project= param), plus the run, so the report can offer a way back.
+function feedbackLink(fid, runId){
+  const pid = (state.active && state.active.id) || projParam();
+  const q = [];
+  if (pid) q.push("project=" + encodeURIComponent(pid));
+  q.push("ticket=" + encodeURIComponent(fid));   // ?ticket= opens the full ticket page, whatever the report's status
+  if (runId) q.push("fromRun=" + encodeURIComponent(runId));
+  return "/dashboard?" + q.join("&");
 }
 
 $("logout").onclick = async function(){ await fetch("/api/auth/logout", { method:"POST" }); location.href = "/" };
@@ -770,7 +777,10 @@ function renderRuns() {
   });
 
   if (!state.selectedRunId && state.runs.length > 0) {
-    selectRun(state.runs[0].id);
+    // Coming back from a report ("Back to Sim run") lands on the run you were looking at.
+    let wanted = null; try { wanted = new URLSearchParams(location.search).get("run"); } catch (e) { }
+    const pre = wanted && state.runs.find(r => r.id === wanted);
+    selectRun(pre ? pre.id : state.runs[0].id);
   } else {
     const activeRun = state.runs.find(r => r.id === state.selectedRunId);
     renderDetails(activeRun || null);
@@ -838,7 +848,7 @@ function renderDetails(run) {
           }
           // Deep-link the observation to the feedback row it created / bumped in New reports.
           const linkHtml = obs.feedbackId
-            ? `<a class="obs-link" href="${esc(feedbackLink(obs.feedbackId))}">${window.kicon('link', {size: 11})} View in New reports</a>`
+            ? `<a class="obs-link" href="${esc(feedbackLink(obs.feedbackId, run.id))}">${window.kicon('link', {size: 11})} Open report</a>`
             : "";
 
           obsHtml += `
