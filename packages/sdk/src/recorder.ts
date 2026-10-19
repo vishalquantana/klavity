@@ -199,8 +199,24 @@ export async function startRecording(
   const id = newRecordingId()
   const canvas = deps.createElement('canvas')
   const ctx = canvas.getContext ? canvas.getContext('2d') : null
-  const screenVid = deps.createElement('video'); screenVid.muted = true; ;(screenVid as any).playsInline = true
-  const camVid = deps.createElement('video'); camVid.muted = true; ;(camVid as any).playsInline = true
+  const screenVid = deps.createElement('video')
+  screenVid.muted = true
+  ;(screenVid as any).playsInline = true
+  ;(screenVid as any).autoplay = true
+  try {
+    screenVid.setAttribute?.('playsinline', '')
+    screenVid.setAttribute?.('autoplay', '')
+    screenVid.setAttribute?.('muted', '')
+  } catch { /* no-op */ }
+  const camVid = deps.createElement('video')
+  camVid.muted = true
+  ;(camVid as any).playsInline = true
+  ;(camVid as any).autoplay = true
+  try {
+    camVid.setAttribute?.('playsinline', '')
+    camVid.setAttribute?.('autoplay', '')
+    camVid.setAttribute?.('muted', '')
+  } catch { /* no-op */ }
 
   let state: RecorderState = 'idle'
   const setState = (s: RecorderState) => { state = s; try { opts.onState?.(s) } catch { /* listener errors never break capture */ } }
@@ -248,7 +264,6 @@ export async function startRecording(
   // KLA-831: cap the composited width so the encode stays cheap regardless of the shared monitor's size.
   canvas.width = RECORDING_MAX_WIDTH
   canvas.height = Math.round(RECORDING_MAX_WIDTH / aspect)
-  try { screenVid.srcObject = screenStream; await (screenVid.play?.() ?? Promise.resolve()) } catch { /* jsdom/headless: no real playback */ }
 
   // 2) Camera + mic — best-effort. A rejection → audio-only retry (mic kept) → screen-only fallback.
   let micTrack: any = null
@@ -287,17 +302,35 @@ export async function startRecording(
   }
   const hadAudio = !!micTrack
 
-  // 3) Compositor: screen letterboxed full-frame + camera PiP inset (22% width, bottom-right).
+  if (hadCamera) {
+    try { screenVid.srcObject = screenStream; await (screenVid.play?.() ?? Promise.resolve()) } catch { /* jsdom/headless: no real playback */ }
+  }
+
+  // 3) Compositor & Stream Source:
+  // When recording screen-only (camera OFF or blocked, which is the standard walkthrough mode), pass the
+  // native screenTrack directly from getDisplayMedia to MediaRecorder.
+  // Crucial: browsers throttle/suspend requestAnimationFrame and unattached <video> playback to 0 FPS in
+  // background tabs when the user switches to other browser tabs or desktop applications.
+  // Passing the native screenTrack directly into MediaRecorder bypasses intermediate canvas/video overhead and
+  // allows the browser/OS display capture engine to pipe hardware-accelerated frames across all tab and app
+  // switches continuously without freezing on the initial content or showing blank frames.
+  // When camera PiP is opted-in and granted, we composite screen + camera via canvas, reinforced with an
+  // interval watchdog timer so rendering continues reliably even if the tab is backgrounded.
   let rafId = 0
+  let compTimerId: any = 0
   const drawFrame = () => {
-    rafId = deps.raf(drawFrame)
     if (!ctx) return
     const W = canvas.width, H = canvas.height
     if ((screenVid as any).videoWidth) {
-      const sr = (screenVid as any).videoWidth / (screenVid as any).videoHeight, cr = W / H
+      const sw = (screenVid as any).videoWidth
+      const sh = (screenVid as any).videoHeight
+      const sr = sw / sh, cr = W / H
       let dw = W, dh = H, dx = 0, dy = 0
       if (sr > cr) { dh = W / sr; dy = (H - dh) / 2 } else { dw = H * sr; dx = (W - dw) / 2 }
-      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H)
+      if (dx > 0 || dy > 0) {
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, W, H)
+      }
       ctx.drawImage(screenVid, dx, dy, dw, dh)
     }
     if (hadCamera && (camVid as any).videoWidth) {
@@ -308,13 +341,79 @@ export async function startRecording(
     }
     if (state === 'recording') { ctx.fillStyle = '#e11'; ctx.beginPath(); ctx.arc(24, 24, 7, 0, Math.PI * 2); ctx.fill() }
   }
-  drawFrame()
 
-  // 4) Combined output stream: composited canvas video track + mic audio track → one MediaRecorder.
-  const canvasStream = canvas.captureStream(fps)
-  const outTracks: any[] = [canvasStream.getVideoTracks?.()[0]].filter(Boolean)
+  if (hadCamera) {
+    let lastDraw = 0
+    const frameIntervalMs = Math.floor(1000 / fps)
+    const render = () => {
+      lastDraw = deps.now()
+      drawFrame()
+    }
+    const rafLoop = () => {
+      rafId = deps.raf(rafLoop)
+      render()
+    }
+    rafLoop()
+
+    // Background watchdog: requestAnimationFrame is suspended in background tabs. This timer ensures
+    // frame updates continue during tab or app switching.
+    compTimerId = deps.setInterval(() => {
+      if (screenVid.paused && !(screenTrack as any)?.muted) {
+        try { screenVid.play?.() } catch { /* no-op */ }
+      }
+      if (deps.now() - lastDraw >= frameIntervalMs) {
+        render()
+      }
+    }, Math.max(16, frameIntervalMs))
+  }
+
+  // 4) Combined output stream: composited canvas video track (if PiP) or native screenTrack + mic audio track
+  const outTracks: any[] = []
+  let canvasStream: any = null
+  if (hadCamera) {
+    try {
+      canvasStream = canvas.captureStream ? canvas.captureStream(fps) : null
+    } catch { /* no-op */ }
+    const canvasTrack = canvasStream?.getVideoTracks?.()[0]
+    if (canvasTrack) {
+      outTracks.push(canvasTrack)
+    } else if (screenTrack) {
+      outTracks.push(screenTrack)
+    }
+  } else if (screenTrack) {
+    outTracks.push(screenTrack)
+  }
   if (micTrack) outTracks.push(micTrack)
   const out = new deps.MediaStream(outTracks)
+
+  // Track event handlers:
+  // - 'ended': user explicitly stopped sharing via browser bar ("Stop sharing") -> end recording cleanly.
+  // - 'mute' / 'unmute': fired when switching tabs or occluded -> DO NOT stop or disconnect recording.
+  try {
+    screenTrack?.addEventListener?.('ended', () => stop())
+    screenTrack?.addEventListener?.('mute', () => {
+      // Tab switched or capture surface temporarily unavailable: keep recording stable.
+    })
+    screenTrack?.addEventListener?.('unmute', () => {
+      if (hadCamera) {
+        try { screenVid.play?.() } catch { /* no-op */ }
+        drawFrame()
+      }
+    })
+  } catch { /* no-op */ }
+
+  const onVisibilityChange = () => {
+    if (hadCamera && typeof document !== 'undefined' && !document.hidden) {
+      try { screenVid.play?.() } catch { /* no-op */ }
+      try { camVid.play?.() } catch { /* no-op */ }
+      drawFrame()
+    }
+  }
+  try {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
+  } catch { /* no-op */ }
 
   // KLA-831: apply the compact bitrate caps so a few-second clip is a few hundred KB, not many MB.
   const videoBps = Math.max(150_000, Math.floor(opts.videoBitsPerSecond ?? DEFAULT_VIDEO_BITS_PER_SECOND))
@@ -345,10 +444,18 @@ export async function startRecording(
   const cleanupStreams = stopAllTracks
 
   recorder.onstop = async () => {
-    deps.caf(rafId)
+    if (rafId) deps.caf(rafId)
+    if (compTimerId) { deps.clearInterval(compTimerId); compTimerId = 0 }
     if (tickId) { deps.clearInterval(tickId); tickId = 0 }
+    try {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
+    } catch { /* no-op */ }
     const durationMs = elapsedMs()
     cleanupStreams()
+    try { screenVid.srcObject = null } catch { /* no-op */ }
+    try { camVid.srcObject = null } catch { /* no-op */ }
     setState('stopped')
     const rawBlob = new Blob(chunks, { type: mime.split(';')[0] })
     let blob = rawBlob
@@ -359,9 +466,13 @@ export async function startRecording(
         blob = rawBlob
       }
     }
+    const finalWidth = (st.width && st.width > 0) ? st.width : canvas.width
+    const finalHeight = (st.height && st.height > 0) ? st.height : canvas.height
     resolveDone({
       id, blob, mime: blob.type || mime, durationMs, bytes: blob.size || totalBytes,
-      width: canvas.width, height: canvas.height, screenOnly, hadCamera, hadAudio,
+      width: hadCamera ? canvas.width : finalWidth,
+      height: hadCamera ? canvas.height : finalHeight,
+      screenOnly, hadCamera, hadAudio,
     })
   }
 
@@ -370,9 +481,6 @@ export async function startRecording(
     stopping = true
     try { if (recorder.state !== 'inactive') recorder.stop() } catch { /* already stopped */ }
   }
-
-  // Native "stop sharing" from the browser bar ends the recording cleanly.
-  try { screenTrack?.addEventListener?.('ended', () => stop()) } catch { /* no-op */ }
 
   // Emit a chunk every 1s so live size/elapsed readouts update; length-cap auto-stop is checked here.
   recorder.start(1000)
