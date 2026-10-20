@@ -3,7 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
-
+- [AI Cross-Browser Testing: Catch Safari Bugs Pre-Launch](https://klavity.in/blog/ai-cross-browser-testing) — AI cross-browser testing uses AI agents to run the same flows across Blink, WebKit and Gecko, then reports where behaviour diverges.
 - [AI Code Hallucinations: How to Catch Them Pre-Launch](https://klavity.in/blog/ai-code-hallucinations) — AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them.
 - [AI Website Testing: How Agencies Catch Bugs Pre-Launch](https://klavity.in/blog/ai-website-testing) — AI website testing uses models to walk a site like a user, find defects, and attach reproducible evidence. Here is what it catches and what it misses.
 - [v0 App Testing: How to QA the UI That v0 Generated](https://klavity.in/blog/v0-app-testing) — v0 app testing means verifying the generated UI is wired to real data, not just that it renders. Test the deployed build with a second account.
@@ -133,7 +133,6 @@
 - [How to write a bug report developers will actually act on](https://klavity.in/blog/how-to-write-a-bug-report-developers-act-on) — A bug report gets fixed fast when it carries three things: exact steps, the environment, and evidence (screenshot + console + network). Here's the format.
 
 ## Product
-
 - [Snap — in-app bug reporting](https://klavity.in/snap)
 - [Sims — AI persona testing](https://klavity.in/sims)
 - [AutoSim — self-healing E2E tests](https://klavity.in/autosim)

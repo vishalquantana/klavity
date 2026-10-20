@@ -887,5 +887,12 @@
     "excerpt": "AI code hallucinations are generated references to things that don't exist — phantom APIs, packages, config keys. Here's how to catch them.",
     "category": "Insights",
     "date": "2026-10-19"
+  },
+  {
+    "slug": "ai-cross-browser-testing",
+    "title": "AI Cross-Browser Testing: Catch Safari Bugs Pre-Launch",
+    "excerpt": "AI cross-browser testing uses AI agents to run the same flows across Blink, WebKit and Gecko, then reports where behaviour diverges.",
+    "category": "Guides",
+    "date": "2026-10-20"
   }
 ]
