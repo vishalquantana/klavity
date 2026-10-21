@@ -25998,7 +25998,65 @@
         else state.tickets.push(fresh)
         // Only re-render if this ticket is still the one being viewed.
         const single = $("ticketSingle")
-        if (single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
+        if (single && !single.classList.contains("hide")) {
+          // KD-239: this cache→fresh re-render lands 2–3s after open on the hosted DB — often after the user has
+          // scrolled down and started a comment. It rebuilt the detail (wiping the half-typed comment) and
+          // scrolled to the top. Skip it while the user is mid-edit; otherwise keep scroll/tab/composer.
+          const keep = captureTktDetailState(single)
+          if (keep.busy) return
+          tktRenderReusing(() => _renderSingleTicket(id, { keepScroll: true }))   // reuse render 1's reads
+          restoreTktDetailState(single, keep)
+        }
+      } catch (e) { }
+    }
+    // KD-239: what the user is doing in the open ticket detail, so a background re-render can put it back.
+    // busy = editing something a rebuild can't restore (another field, or comment attachments queued).
+    function captureTktDetailState(single) {
+      const ae = document.activeElement
+      const ta = single.querySelector(".tkt-comment-ta")
+      const chips = single.querySelector(".tkt-cmt-chips")
+      const inSingle = !!(ae && single.contains(ae))
+      const isField = inSingle && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable)
+      const tab = single.querySelector('.t3-tab[aria-selected="true"]')
+      return {
+        busy: (isField && ae !== ta) || !!(chips && !chips.classList.contains("hide") && chips.children.length),
+        winY: window.scrollY || window.pageYOffset || 0,
+        panelY: single.scrollTop || 0,
+        tab: tab ? tab.getAttribute("data-tab") : null,
+        text: ta ? ta.value : "",
+        focused: !!(ta && ae === ta),
+        selStart: ta && ae === ta ? ta.selectionStart : null,
+        selEnd: ta && ae === ta ? ta.selectionEnd : null,
+      }
+    }
+    function restoreTktDetailState(single, keep) {
+      try {
+        if (keep.tab) {
+          const tab = single.querySelector('.t3-tab[data-tab="' + keep.tab + '"]')
+          if (tab && tab.getAttribute("aria-selected") !== "true") tab.click()
+        }
+        const ta = single.querySelector(".tkt-comment-ta")
+        if (ta && keep.text) {
+          ta.value = keep.text
+          ta.dispatchEvent(new Event("input", { bubbles: true }))   // re-run auto-grow / mention sync
+          const form = ta.closest(".tkt-comment-form"); if (form) form.classList.remove("collapsed")
+        }
+        if (ta && keep.focused) {
+          ta.focus({ preventScroll: true })
+          if (keep.selStart != null) ta.setSelectionRange(keep.selStart, keep.selEnd)
+        }
+        // The timeline/comments repaint a beat after the rebuild, so the detail can be too short to reach the old
+        // offset yet. Re-apply as content lands, and stop the moment the user scrolls themselves.
+        const isPanel = single.classList.contains("tkt-panel")
+        const want = isPanel ? keep.panelY : keep.winY
+        const get = () => isPanel ? single.scrollTop : (window.scrollY || window.pageYOffset || 0)
+        const set = () => { if (isPanel) single.scrollTop = want; else window.scrollTo(0, want); return get() }
+        let last = set()
+        ;[50, 150, 400, 800, 1500].forEach(ms => setTimeout(() => {
+          const now = get()
+          if (Math.abs(now - last) > 2 || Math.abs(now - want) <= 2) return   // user moved, or already there
+          last = set()
+        }, ms))
       } catch (e) { }
     }
     // KLA-563: the human ticket key shown in the breadcrumb / dedicated-page header. Prefers the sequence
@@ -26120,7 +26178,7 @@
         if (single && !single.classList.contains("hide") && single.children.length) closeSingleTicket()
       })
     }
-    function _renderSingleTicket(id) {
+    function _renderSingleTicket(id, opts) {
       const t = (state.tickets || []).find(x => String(x.id) === String(id))
       if (!t) return
       const single = $("ticketSingle"); if (!single) return
@@ -26441,9 +26499,12 @@
       } catch (e) { }
       // Move focus into the surface for keyboard users (a11y §10). Panel = Close; page = Back.
       try { if (single.__focusTarget) single.__focusTarget.focus({ preventScroll: true }) } catch (e) { }
-      // Panel scrolls itself to top; the dedicated page scrolls the window.
-      if (panel) { try { single.scrollTop = 0 } catch (e) { } }
-      else { try { window.scrollTo(0, 0) } catch (e) { } }
+      // Panel scrolls itself to top; the dedicated page scrolls the window. KD-239: not on a same-ticket
+      // background re-render (keepScroll) — the caller restores where the user was.
+      if (!(opts && opts.keepScroll)) {
+        if (panel) { try { single.scrollTop = 0 } catch (e) { } }
+        else { try { window.scrollTo(0, 0) } catch (e) { } }
+      }
     }
     // KLA-562 Stage 2: lazily create the panel scrim (click-to-close) once, and a single Esc handler.
     function ensurePanelScrim() {
