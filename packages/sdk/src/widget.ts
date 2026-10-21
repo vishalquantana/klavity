@@ -1,6 +1,6 @@
 // packages/sdk/src/widget.ts
 import { injectSimStyles } from "@klavity/core/sim"
-import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize } from "./capture"
+import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage, safeToPngViewport, hasUncapturableEmbeds, fullPageCaptureSize, MAX_SIM_REVIEW_CAPTURE_HEIGHT } from "./capture"
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
@@ -2368,8 +2368,8 @@ async function mount() {
       projectId: cfg.projectId,
       simIds: simIds === 'all' ? undefined : simIds,
       // Live-review captures the FULL page (whole scrollHeight), not just the above-the-fold viewport,
-      // so the Sim reviews the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
-      captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
+      // so the Sim reviews the entire page — bounded by MAX_SIM_REVIEW_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+      captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome, maxHeight: MAX_SIM_REVIEW_CAPTURE_HEIGHT }),
       bearerToken: getToken() || undefined,
     })
     // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
@@ -2390,8 +2390,8 @@ async function mount() {
       }
       const shot = await Promise.race([
         // Boot review captures the FULL page (whole scrollHeight), not just the viewport, so the Sim's
-        // first reaction covers the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
-        safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
+        // first reaction covers the entire page — bounded by MAX_SIM_REVIEW_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+        safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome, maxHeight: MAX_SIM_REVIEW_CAPTURE_HEIGHT }),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error("capture timeout")), 10_000)),
       ])
       const captureMs = benchNow() - captureStart

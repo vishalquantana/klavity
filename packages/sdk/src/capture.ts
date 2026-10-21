@@ -805,19 +805,21 @@ export async function safeToPngWithQuality(
   return { dataUrl, quality, blank, partial }
 }
 
-// Upper bound (CSS px) on a full-page live-review capture's height. Very tall / infinite-scroll pages are
-// clamped here so a single capture can't OOM the tab or POST a multi-MB data URL to /api/sim/review.
-// ~6 desktop viewports — enough to cover the whole page on all but pathological feeds, where the top
-// portion is still the highest-signal content for a Sim review.
-export const MAX_FULLPAGE_CAPTURE_HEIGHT = 6_000
+// Upper bound (CSS px) on a full-page capture's height. Very tall / infinite-scroll pages are
+// clamped here so a single capture can't OOM the tab or exceed the browser's maximum canvas dimension.
+// 16,000px safely fits within modern browser canvas limits (16,384px) while capturing the entire page
+// for full-page bug reports without unintended cropping or vertical truncation.
+export const MAX_FULLPAGE_CAPTURE_HEIGHT = 16_000
+// Conservative clamp (~6 viewports) for continuous background Sim live-review polling.
+export const MAX_SIM_REVIEW_CAPTURE_HEIGHT = 6_000
 
 /**
  * The full scrollable document size (CSS px) for a full-page capture — the WHOLE page, not just the
  * visible viewport. Height is the max scrollHeight across <html>/<body> (robust to app-shell / height:100vh
- * layouts where document.body's own box is only viewport-tall), clamped to {@link MAX_FULLPAGE_CAPTURE_HEIGHT}.
+ * layouts where document.body's own box is only viewport-tall), clamped to {@link MAX_FULLPAGE_CAPTURE_HEIGHT} (or custom maxHeight).
  * Width is the viewport width. Exported so tests can assert the requested dimensions.
  */
-export function fullPageCaptureSize(): { width: number; height: number } {
+export function fullPageCaptureSize(maxHeight = MAX_FULLPAGE_CAPTURE_HEIGHT): { width: number; height: number } {
   const doc = typeof document !== "undefined" ? document.documentElement : null
   const body = typeof document !== "undefined" ? document.body : null
   const viewportW = typeof window !== "undefined" ? (window.innerWidth || 0) : 0
@@ -838,22 +840,22 @@ export function fullPageCaptureSize(): { width: number; height: number } {
     viewportH,
     1,
   )
-  return { width, height: Math.min(rawHeight, MAX_FULLPAGE_CAPTURE_HEIGHT) }
+  return { width, height: Math.min(rawHeight, maxHeight) }
 }
 
 /**
- * Full-page capture for the Sim LIVE-REVIEW path (Manual Sim Trigger): renders the ENTIRE scrollable
- * document (full scrollHeight), not just the above-the-fold viewport, so a Sim reviews the whole page.
+ * Full-page capture for the Sim LIVE-REVIEW path or report composer: renders the ENTIRE scrollable
+ * document (full scrollHeight), not just the above-the-fold viewport, so reports capture the whole page.
  * Bounded by {@link MAX_FULLPAGE_CAPTURE_HEIGHT}. This is distinct from `safeToPng(document.body)`, whose
  * render box is document.body's bounding rect — which collapses to viewport height under common
  * app-shell / height:100vh layouts, causing the "captures only above-the-fold" bug (KLAVITYKLA-404).
  * Captures <html> (document.documentElement) so an inner-scroller layout's content is still included.
  */
 export async function safeToPngFullPage(
-  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean } = {},
+  opts: { filter?: (n: HTMLElement) => boolean; pixelRatio?: number; skipFonts?: boolean; maxHeight?: number } = {},
 ): Promise<string> {
   const node = (typeof document !== "undefined" ? (document.documentElement ?? document.body) : null) as HTMLElement
-  const { width, height } = fullPageCaptureSize()
+  const { width, height } = fullPageCaptureSize(opts.maxHeight)
   return (await safeToPngWithScale(node, { ...opts, width, height })).dataUrl
 }
 
