@@ -15068,14 +15068,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // GET /api/projects/:id/tickets — paginated, filterable ticket list (any project member, KLA-169)
       if (req.method === "GET" && sub === "/tickets") {
         const sp = url.searchParams
-        const statuses = sp.get("status") ? sp.get("status")!.split(",").filter(Boolean) : []
-        const priorities = sp.get("priority") ? sp.get("priority")!.split(",").filter(Boolean) : []
-        const rawAssignee = sp.has("assignee") ? (sp.get("assignee") ?? "") : undefined
-        const assignees = rawAssignee !== undefined ? rawAssignee.split(",").map(s => s.trim()) : undefined
-        const rawSource = sp.get("source") ?? ""
-        const sources = rawSource ? rawSource.split(",").map(s => s.trim()).filter(Boolean) : []
-        const rawLabel = sp.get("label")?.trim() || undefined
-        const labels = rawLabel ? rawLabel.split(",").map(s => s.trim()).filter(Boolean) : []
+        const statuses = sp.getAll("status")
+          .flatMap(s => s.split(","))
+          .map(s => s.trim().toLowerCase().replace(/[-\s]+/g, "_"))
+          .map(s => (s === "todo" || s === "to_do") ? "new" : s)
+          .filter(Boolean)
+        const priorities = sp.getAll("priority")
+          .flatMap(p => p.split(","))
+          .map(p => p.trim().toLowerCase())
+          .filter(Boolean)
+        const rawAssignees = sp.getAll("assignee")
+        const assignees = rawAssignees.length > 0
+          ? rawAssignees.flatMap(a => a.split(",")).map(s => s.trim())
+          : undefined
+        const sources = sp.getAll("source")
+          .flatMap(s => s.split(","))
+          .map(s => s.trim().toLowerCase())
+          .filter(Boolean)
+        const labels = sp.getAll("label")
+          .flatMap(l => l.split(","))
+          .map(l => l.trim())
+          .filter(Boolean)
         // `q` performs project-scoped, paginated server-side text search. Keep the bound
         // modest to avoid unexpectedly expensive broad LIKE queries.
         const search = (sp.get("q") ?? "").trim().slice(0, 500) || undefined
