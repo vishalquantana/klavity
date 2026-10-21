@@ -1,0 +1,234 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to Review AI-Generated Code Before You Merge It · Klavity</title>
+<meta name="description" content="How to review AI-generated code: check it against your real intent, verify every API it references exists, and run the paths the diff touches.">
+<link rel="canonical" href="https://klavity.in/blog/how-to-review-ai-generated-code">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="How to Review AI-Generated Code Before You Merge It"><meta property="og:description" content="How to review AI-generated code: check it against your real intent, verify every API it references exists, and run the paths the diff touches.">
+<meta property="og:url" content="https://klavity.in/blog/how-to-review-ai-generated-code"><meta property="og:image" content="https://klavity.in/blog/how-to-review-ai-generated-code.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="How to Review AI-Generated Code Before You Merge It"><meta name="twitter:description" content="How to review AI-generated code: check it against your real intent, verify every API it references exists, and run the paths the diff touches."><meta name="twitter:image" content="https://klavity.in/blog/how-to-review-ai-generated-code.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Review AI-Generated Code Before You Merge It","description":"How to review AI-generated code: check it against your real intent, verify every API it references exists, and run the paths the diff touches.","datePublished":"2026-10-21","dateModified":"2026-10-21","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/how-to-review-ai-generated-code.svg"}},"mainEntityOfPage":"https://klavity.in/blog/how-to-review-ai-generated-code","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"How to Review AI-Generated Code Before You Merge It","item":"https://klavity.in/blog/how-to-review-ai-generated-code"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/how-to-review-ai-generated-code"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How is reviewing AI-generated code different from normal code review?","acceptedAnswer":{"@type":"Answer","text":"AI-generated code is uniformly tidy, so the usual signal — messy code marks risky code — disappears. Review has to target scope creep, invented APIs, silently swallowed errors and tests written from the implementation rather than the requirement."}},{"@type":"Question","name":"What should you check first in an AI-generated pull request?","acceptedAnswer":{"@type":"Answer","text":"The file list, before the line diff. Models often change more than they were asked to, and unrelated reformatting or renames hide the few lines that actually matter."}},{"@type":"Question","name":"Can AI-generated tests be trusted?","acceptedAnswer":{"@type":"Answer","text":"Not on their own. Tests generated alongside the code are derived from that code, so they can pass while the feature is wrong. Read each assertion and ask what user-visible behaviour would have to break for it to fail."}},{"@type":"Question","name":"How do you review AI-generated code when you are building solo?","acceptedAnswer":{"@type":"Answer","text":"Keep each change small enough to read, ask the model what could break and verify two or three of those claims against the code, and click the flow — including the error path — before merging."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-21</div>
+    <h1>How to Review AI-Generated Code Before You Merge It</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Reviewing an AI-generated code diff: added and removed lines under inspection, with issues flagged and checks passed">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="665" cy="70" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="110" cy="370" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="58" width="420" height="304" rx="14" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="56" y="58" width="420" height="304" rx="14" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="56" y1="92" x2="476" y2="92" stroke="#f5f0e8" stroke-width="1" opacity="0.18"/>
+  <circle cx="76" cy="75" r="4" fill="#f87171" opacity="0.7"/>
+  <circle cx="92" cy="75" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="108" cy="75" r="4" fill="#4ade80" opacity="0.6"/>
+  <rect x="330" y="68" width="128" height="15" rx="7" fill="#6366f1" opacity="0.35"/>
+
+  <rect x="78" y="112" width="60" height="9" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="78" y="136" width="300" height="9" rx="4" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="70" y="158" width="392" height="20" rx="5" fill="#4ade80" opacity="0.12"/>
+  <rect x="78" y="164" width="9" height="9" rx="2" fill="#4ade80"/>
+  <rect x="98" y="164" width="236" height="9" rx="4" fill="#4ade80" opacity="0.55"/>
+
+  <rect x="70" y="184" width="392" height="20" rx="5" fill="#4ade80" opacity="0.12"/>
+  <rect x="78" y="190" width="9" height="9" rx="2" fill="#4ade80"/>
+  <rect x="98" y="190" width="180" height="9" rx="4" fill="#4ade80" opacity="0.45"/>
+
+  <rect x="70" y="210" width="392" height="20" rx="5" fill="#f87171" opacity="0.16"/>
+  <rect x="78" y="216" width="9" height="3" rx="1.5" fill="#f87171"/>
+  <rect x="98" y="216" width="262" height="9" rx="4" fill="#f87171" opacity="0.55"/>
+
+  <rect x="78" y="244" width="214" height="9" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="78" y="268" width="286" height="9" rx="4" fill="#f5f0e8" opacity="0.13"/>
+  <rect x="78" y="292" width="150" height="9" rx="4" fill="#f5f0e8" opacity="0.1"/>
+  <rect x="78" y="316" width="248" height="9" rx="4" fill="#f5f0e8" opacity="0.08"/>
+
+  <circle cx="392" cy="252" r="46" fill="none" stroke="#6366f1" stroke-width="5"/>
+  <line x1="425" y1="285" x2="458" y2="318" stroke="#6366f1" stroke-width="7" stroke-linecap="round"/>
+  <path d="M372 252 l14 14 l26 -30" fill="none" stroke="#4ade80" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M484 170 L540 170" stroke="#6366f1" stroke-width="2" stroke-dasharray="6 5" opacity="0.7"/>
+  <path d="M484 240 L540 240" stroke="#6366f1" stroke-width="2" stroke-dasharray="6 5" opacity="0.7"/>
+  <path d="M484 310 L540 310" stroke="#6366f1" stroke-width="2" stroke-dasharray="6 5" opacity="0.7"/>
+
+  <rect x="548" y="150" width="200" height="42" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#4ade80" stroke-width="1.5"/>
+  <path d="M566 171 l9 9 l17 -19" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="606" y="166" width="118" height="9" rx="4" fill="#4ade80" opacity="0.45"/>
+
+  <rect x="548" y="220" width="200" height="42" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#f87171" stroke-width="1.5"/>
+  <circle cx="575" cy="241" r="11" fill="none" stroke="#f87171" stroke-width="3"/>
+  <line x1="575" y1="235" x2="575" y2="243" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="575" cy="248" r="1.8" fill="#f87171"/>
+  <rect x="606" y="236" width="94" height="9" rx="4" fill="#f87171" opacity="0.45"/>
+
+  <rect x="548" y="290" width="200" height="42" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="575" cy="311" r="11" fill="none" stroke="#6366f1" stroke-width="3"/>
+  <line x1="575" y1="305" x2="575" y2="313" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="575" cy="318" r="1.8" fill="#6366f1"/>
+  <rect x="606" y="306" width="134" height="9" rx="4" fill="#6366f1" opacity="0.5"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Reviewing AI-generated code means checking the diff against the intent you actually had, not the prompt the model answered. Verify every import and API really exists, walk the unhappy paths, and read tests as evidence rather than a checkbox — generated tests are written from the code, so they can pass while the requirement fails.</div>
+    <div class="prose"><p>To review AI-generated code, check it against the intent you actually had rather than the prompt the model answered, verify that every import, API and dependency it references really exists, and execute the paths the diff touches before you trust them. AI-generated code is usually well-formatted, confidently commented and syntactically clean, which is exactly why review habits tuned to catching sloppy human code miss its failure modes: silent behaviour changes in untouched paths, invented APIs, swallowed errors and edge cases nobody ever ran.</p>
+
+<h2>Why does AI-generated code need a different review checklist?</h2>
+
+<p>Human-written code tends to fail where the author was tired, rushed or unfamiliar with the codebase — and it usually looks the part. Reviewers learn to slow down around messy diffs. AI-generated code inverts that signal. It arrives uniformly tidy, with docstrings and sensible variable names, whether the logic underneath is correct or invented.</p>
+
+<p>The second difference is scope. Ask a model to "fix the checkout bug" and it may also reformat a utility file, rename a parameter three call sites away, or quietly change a default. The diff is larger than the intent, and the extra lines are the ones nobody reads carefully.</p>
+
+<p>The third is confidence. A model does not signal uncertainty the way a colleague does. There is no "I wasn't sure about this bit" comment on the pull request, so the reviewer has no map of where the risk is concentrated.</p>
+
+<table>
+  <thead>
+    <tr><th>Review focus</th><th>Human-written diff</th><th>AI-generated diff</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Where bugs cluster</td><td>Complex or rushed sections</td><td>Anywhere — surface quality is uniform</td></tr>
+    <tr><td>Scope</td><td>Usually matches the ticket</td><td>Often wider than asked; check untouched-looking files</td></tr>
+    <tr><td>Dependencies</td><td>Author knows what's installed</td><td>May reference packages or methods that don't exist</td></tr>
+    <tr><td>Error handling</td><td>Omitted visibly</td><td>Present but may swallow failures silently</td></tr>
+    <tr><td>Tests</td><td>Written for real behaviour</td><td>May be written to match the code, not the requirement</td></tr>
+  </tbody>
+</table>
+
+<h2>How to review AI-generated code in six passes</h2>
+
+<h3>1. Re-read the requirement before you read the diff</h3>
+<p>Write down, in one sentence, what the change is supposed to do. Then read the diff and ask whether it does that and only that. This ordering matters: if you read the code first, you will start evaluating whether it is good code instead of whether it is the right code. Most AI review misses happen here — the implementation is competent and solves a slightly different problem.</p>
+
+<h3>2. Check the scope of the diff</h3>
+<p>List the files touched. For each one, ask why it is in this change. Formatting churn, renamed internals and "while I was here" refactors should be split out or reverted — not because they are wrong, but because they hide the three lines that matter.</p>
+
+<h3>3. Verify every external reference</h3>
+<p>Open the docs for each unfamiliar import, method signature and config key. Models can generate plausible names for things that do not exist, or use an API shape from a different major version — a failure mode worth understanding in detail in our write-up on <a href="/blog/ai-code-hallucinations">AI code hallucinations</a>. A fabricated package name that nobody notices is also a supply-chain risk, because the name can be registered later by someone else.</p>
+
+<h3>4. Walk the unhappy paths</h3>
+<p>AI-generated code reliably handles the case described in the prompt. Ask what happens on an empty list, a null user, a 500 from the API, a duplicate submit, a slow network, an expired token. Then look for the opposite problem: a <em>try/except</em> or <em>catch</em> that logs nothing and returns a default, turning a loud failure into a silent wrong answer.</p>
+
+<h3>5. Check the data and security boundary</h3>
+<p>Three questions catch most of it. Does this change touch authentication, authorisation or a permission check? Does it move user data anywhere new — a log line, a third-party call, a client-side bundle? Does any user input reach a query, a file path, a shell command or a template without validation? Generated code frequently assumes the caller already validated the input.</p>
+
+<h3>6. Read the tests as evidence, not as a checkbox</h3>
+<p>Tests generated alongside the code are written from the code, which means they can pass while the requirement fails. Read each assertion and ask what behaviour would have to break for it to fail. If the answer is "nothing a user would notice", the test is decorative. Our guide on <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> covers how to build a suite that actually constrains behaviour.</p>
+
+<h2>What failure modes slip past a normal review?</h2>
+
+<table>
+  <thead>
+    <tr><th>Failure mode</th><th>What it looks like in the diff</th><th>How to catch it</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Invented API or package</td><td>A clean, readable call to something that doesn't exist</td><td>Open the docs; run the install and the code path</td></tr>
+    <tr><td>Silent error swallowing</td><td>A catch block returning a default or empty array</td><td>Grep the diff for empty catch bodies and bare defaults</td></tr>
+    <tr><td>Scope creep</td><td>Unrelated files reformatted or renamed</td><td>Review the file list before the line diff</td></tr>
+    <tr><td>Behaviour change in an untouched path</td><td>A shared helper or default value quietly altered</td><td>Find the callers of anything the diff modifies</td></tr>
+    <tr><td>Tautological tests</td><td>Assertions that restate the implementation</td><td>Mutate the code and confirm the test fails</td></tr>
+    <tr><td>Missing state transitions</td><td>Happy path only; no loading, empty or error UI</td><td>Click the flow in a browser, not just read it</td></tr>
+  </tbody>
+</table>
+
+<h2>How much of the review can you automate?</h2>
+
+<p>Static analysis, type checking, linting and a dependency audit should run before a human ever opens the pull request — they catch the mechanical half cheaply and consistently. What they cannot tell you is whether the feature behaves correctly for a real person, which is where most AI-generated bugs actually live.</p>
+
+<p>That second half is what <a href="/sims">Klavity Sims</a> is for: AI personas exercise the flows your change touches the way a user would — including the empty, slow and error states a generated test suite usually skips — and report what broke with the evidence attached. <a href="/autosim">AutoSim</a> turns the flows that matter into self-healing end-to-end tests, so the same paths are re-verified on every subsequent AI-written change instead of being reviewed from scratch each time. For the wider picture of where automated QA fits around human review, see our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>What does this look like for a vibe-coded app with no reviewer?</h2>
+
+<p>If you are building solo with Cursor, Bolt, Lovable, v0 or Replit, there is no second pair of eyes — so the review has to become a routine you run against yourself. Three habits carry most of the weight:</p>
+
+<ul>
+  <li><strong>Keep changes small enough to read.</strong> One feature per prompt, one prompt per commit. A 600-line generated diff will not get reviewed, by you or anyone.</li>
+  <li><strong>Make the model explain, then verify the explanation.</strong> Ask what the change does and what could break. Then check two or three of those claims against the actual code. Disagreements are where the bugs are.</li>
+  <li><strong>Click the flow before you merge.</strong> Reading generated code gives a false sense of coverage. Running it — including the error path — is the only pass that tests reality.</li>
+</ul>
+
+<p>Pair that with a way to capture what you find. When a bug does surface, <a href="/snap">Snap</a> turns a right-click into a report carrying the console errors, network calls and the exact state of the page, so the fix prompt you write next has the context the model needs instead of a vague description.</p>
+
+<h2>What should you confirm before you merge?</h2>
+
+<ol>
+  <li>The change does what the requirement says, and nothing else.</li>
+  <li>Every import, API and config key has been verified against real documentation.</li>
+  <li>The unhappy paths were executed, not just read.</li>
+  <li>No error is caught and silently discarded.</li>
+  <li>Nothing crossed the auth, permissions or user-data boundary without being looked at directly.</li>
+  <li>At least one test would fail if the feature regressed.</li>
+</ol>
+
+<p>Review is the cheapest place to catch an AI-generated bug — cheaper than QA, far cheaper than a client finding it. But review alone cannot cover behaviour, which is why the fastest teams pair a short, disciplined reading of the diff with automated verification of the flows it touches.</p>
+
+<p><a href="/onboarding"><strong>Try Klavity free</strong></a> — point it at your next AI-generated change and see what the review missed.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read the requirement before the diff, then check scope file by file</li><li>Verify every import, API and config key against real documentation</li><li>Execute the unhappy paths — empty, slow, unauthorised, failed</li><li>Treat generated tests as claims to verify, not as coverage</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>How is reviewing AI-generated code different from normal code review?</summary><p>AI-generated code is uniformly tidy, so the usual signal — messy code marks risky code — disappears. Review has to target scope creep, invented APIs, silently swallowed errors and tests written from the implementation rather than the requirement.</p></details><details><summary>What should you check first in an AI-generated pull request?</summary><p>The file list, before the line diff. Models often change more than they were asked to, and unrelated reformatting or renames hide the few lines that actually matter.</p></details><details><summary>Can AI-generated tests be trusted?</summary><p>Not on their own. Tests generated alongside the code are derived from that code, so they can pass while the feature is wrong. Read each assertion and ask what user-visible behaviour would have to break for it to fail.</p></details><details><summary>How do you review AI-generated code when you are building solo?</summary><p>Keep each change small enough to read, ask the model what could break and verify two or three of those claims against the code, and click the flow — including the error path — before merging.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

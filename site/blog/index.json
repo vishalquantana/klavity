@@ -894,5 +894,12 @@
     "excerpt": "AI cross-browser testing uses AI agents to run the same flows across Blink, WebKit and Gecko, then reports where behaviour diverges.",
     "category": "Guides",
     "date": "2026-10-20"
+  },
+  {
+    "slug": "how-to-review-ai-generated-code",
+    "title": "How to Review AI-Generated Code Before You Merge It",
+    "excerpt": "How to review AI-generated code: check it against your real intent, verify every API it references exists, and run the paths the diff touches.",
+    "category": "Guides",
+    "date": "2026-10-21"
   }
 ]
