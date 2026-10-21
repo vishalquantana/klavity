@@ -1832,6 +1832,284 @@
       color: var(--paper)
     }
 
+    /* ===== Custom in-app Confirmation & Prompt Popup Modal ===== */
+    .klav-confirm-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(10, 8, 14, 0.62);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .klav-confirm-bg.open {
+      display: flex;
+      opacity: 1;
+    }
+
+    .klav-confirm-card {
+      position: relative;
+      background: var(--ink-2, #ffffff);
+      border: 1px solid var(--line, rgba(25, 20, 15, 0.12));
+      border-radius: 20px;
+      width: 100%;
+      max-width: 430px;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 20px 48px -10px rgba(0, 0, 0, 0.28), 0 35px 80px -15px rgba(0, 0, 0, 0.35);
+      padding: 24px 24px 0 24px;
+      box-sizing: border-box;
+      color: var(--paper, #19140f);
+      transform: scale(0.95) translateY(10px);
+      opacity: 0;
+      transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease-out;
+      overflow: hidden;
+    }
+
+    .klav-confirm-bg.open .klav-confirm-card {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+
+    [data-theme="dark"] .klav-confirm-card {
+      background: var(--ink-2, #15110d);
+      border-color: rgba(243, 236, 225, 0.14);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 25px 60px -15px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .klav-confirm-header {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      margin-bottom: 14px;
+    }
+
+    .klav-confirm-icon-chip {
+      flex-shrink: 0;
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(244, 63, 94, 0.14) 0%, rgba(225, 29, 72, 0.06) 100%);
+      color: #f43f5e;
+      border: 1px solid rgba(244, 63, 94, 0.25);
+      box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.08), 0 2px 6px -1px rgba(225, 29, 72, 0.2);
+    }
+
+    .klav-confirm-icon-chip.info {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.16) 0%, rgba(79, 70, 229, 0.06) 100%);
+      color: var(--indigo, #6366f1);
+      border: 1px solid rgba(99, 102, 241, 0.26);
+      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.08), 0 2px 6px -1px rgba(99, 102, 241, 0.2);
+    }
+
+    .klav-confirm-title-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .klav-confirm-title {
+      font-family: var(--body, system-ui, sans-serif);
+      font-size: 17.5px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.3;
+      color: var(--paper, #19140f);
+      margin: 0;
+    }
+
+    .klav-confirm-close {
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--paper-faint, #706560);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.15s ease;
+      padding: 0;
+    }
+
+    .klav-confirm-close:hover {
+      background: var(--ink-3, rgba(0, 0, 0, 0.06));
+      color: var(--paper, #19140f);
+      border-color: var(--line, rgba(25, 20, 15, 0.12));
+    }
+
+    [data-theme="dark"] .klav-confirm-close:hover {
+      background: var(--ink-3, #1e1813);
+      border-color: rgba(243, 236, 225, 0.15);
+    }
+
+    .klav-confirm-body {
+      margin-left: 55px;
+      margin-bottom: 20px;
+    }
+
+    .klav-confirm-desc {
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: var(--paper-dim, #574f45);
+      margin: 0;
+    }
+
+    .klav-confirm-warning-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 10px;
+      padding: 7px 11px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      box-sizing: border-box;
+    }
+
+    .klav-confirm-warning-pill.danger {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #dc2626;
+    }
+
+    [data-theme="dark"] .klav-confirm-warning-pill.danger {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+    }
+
+    .klav-confirm-warning-pill.info {
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      color: var(--indigo, #6366f1);
+    }
+
+    .klav-confirm-input {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 10px;
+      background: var(--ink, #f5f3ee);
+      border: 1px solid var(--line, rgba(25, 20, 15, 0.14));
+      border-radius: 9px;
+      padding: 9px 12px;
+      color: var(--paper, #19140f);
+      font-family: var(--body, system-ui, sans-serif);
+      font-size: 13.5px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+
+    .klav-confirm-input:focus {
+      border-color: var(--indigo, #6366f1);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+      background: var(--ink-2, #ffffff);
+    }
+
+    [data-theme="dark"] .klav-confirm-input {
+      background: var(--ink-3, #1e1813);
+      border-color: rgba(243, 236, 225, 0.14);
+      color: var(--paper, #f3ece1);
+    }
+
+    [data-theme="dark"] .klav-confirm-input:focus {
+      background: var(--ink-2, #15110d);
+      border-color: var(--indigo, #8b8bf5);
+      box-shadow: 0 0 0 3px rgba(139, 139, 245, 0.22);
+    }
+
+    .klav-confirm-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      margin: 20px -24px 0 -24px;
+      padding: 13px 24px;
+      border-top: 1px solid var(--line, rgba(25, 20, 15, 0.08));
+      background: color-mix(in srgb, var(--ink-3) 40%, var(--ink-2));
+    }
+
+    [data-theme="dark"] .klav-confirm-footer {
+      background: color-mix(in srgb, var(--ink-3) 60%, var(--ink-2));
+      border-top-color: rgba(243, 236, 225, 0.08);
+    }
+
+    .klav-confirm-btn {
+      font-family: var(--body, system-ui, sans-serif);
+      font-size: 13.5px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 9px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+      border: 1px solid transparent;
+      outline: none;
+      line-height: 1.3;
+    }
+
+    .klav-confirm-btn:active {
+      transform: scale(0.97);
+    }
+
+    .klav-confirm-cancel {
+      background: var(--ink-2, #ffffff);
+      border-color: var(--line, rgba(25, 20, 15, 0.15));
+      color: var(--paper, #19140f);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    .klav-confirm-cancel:hover {
+      background: var(--ink, #f5f3ee);
+      border-color: rgba(25, 20, 15, 0.28);
+      color: var(--paper, #19140f);
+    }
+
+    [data-theme="dark"] .klav-confirm-cancel {
+      background: var(--ink-3, #1e1813);
+      border-color: rgba(243, 236, 225, 0.15);
+      color: var(--paper, #f3ece1);
+    }
+
+    [data-theme="dark"] .klav-confirm-cancel:hover {
+      background: var(--ink, #0c0a08);
+      border-color: rgba(243, 236, 225, 0.3);
+    }
+
+    .klav-confirm-btn.danger {
+      background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+      color: #ffffff;
+      border: 1px solid #b91c1c;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 4px 14px -2px rgba(220, 38, 38, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .klav-confirm-btn.danger:hover {
+      background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12), 0 6px 18px -2px rgba(220, 38, 38, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+    }
+
+    .klav-confirm-btn.primary {
+      background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+      color: #ffffff;
+      border: 1px solid #4338ca;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 4px 14px -2px rgba(99, 102, 241, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .klav-confirm-btn.primary:hover {
+      background: linear-gradient(180deg, #4f46e5 0%, #3730a3 100%);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12), 0 6px 18px -2px rgba(99, 102, 241, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.26);
+    }
+
     /* New-project modal inputs — match the app's standard input style (padding/radius/focus ring). Without
    this they fell back to the thin browser base and looked cramped next to every other input. */
     #npBg input {
@@ -7824,28 +8102,7 @@
    (height set to scrollHeight on input): height:auto + overflow:hidden + resize:none, with NO fixed
    min/max-height that could shrink long text into a scroll box. A subtle focus ring (box-shadow, which
    doesn't take layout space) marks edit mode without pushing the text around. */
-    .tkt-desc-ta {
-      display: block;
-      width: 100%;
-      box-sizing: border-box;
-      background: transparent;
-      border: none;
-      border-radius: 7px;
-      padding: 0;
-      margin: 0;
-      color: var(--paper);
-      font-family: var(--body);
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      outline: none;
-      resize: none;
-      min-height: 0;
-      height: auto;
-      overflow: hidden;
-      box-shadow: 0 0 0 4px rgba(139, 139, 245, .08)
-    }
-
+    .tkt-desc-ta{display:block;width:100%;box-sizing:border-box;background:transparent;border:none;border-radius:7px;padding:0;margin:0;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;white-space:pre-wrap;outline:none;resize:none;min-height:0;height:auto;overflow:hidden;box-shadow:0 0 0 4px rgba(139, 139, 245, .08)}
     .tkt-desc-ta:focus {
       box-shadow: 0 0 0 4px rgba(139, 139, 245, .16)
     }
@@ -7922,17 +8179,7 @@
    instead of every column squishing when many statuses are present. */
     /* KLA-776: align-items:stretch makes every column the height of the tallest one, so a short/empty
    column's swim lane is still a full-height drop target (paired with .kb-list{flex:1}). */
-    .kanban {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 14px;
-      align-items: stretch;
-      overflow-x: auto;
-      overflow-y: visible;
-      padding-bottom: 8px;
-      scroll-snap-type: x proximity;
-      -webkit-overflow-scrolling: touch
-    }
+    .kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:stretch;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 
     /* KD-297: the board's own horizontal scrollbar sat under the TALLEST column — i.e. at the very end of the
        page. .kb-hscroll is a mirror scrollbar (wireKanbanHScroll) that sticks to the bottom of the viewport
@@ -8009,21 +8256,7 @@
    to the 300px default, same as before. This trades away #676's "no dead space with few columns" — a
    short board now leaves empty space to the right, same as a real Jira board — in exchange for widths
    that mean something (and stay put) once you resize one. */
-    .kb-col {
-      flex: 0 0 var(--kb-w, 300px);
-      width: var(--kb-w, 300px);
-      min-width: 220px;
-      max-width: 640px;
-      scroll-snap-align: start;
-      background: var(--ink);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      position: relative
-    }
+    .kb-col{flex:0 0 var(--kb-w,300px);width:var(--kb-w,300px);min-width:220px;max-width:640px;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;position:relative}
 
     .kb-col.drag-over {
       border-color: var(--indigo);
@@ -8194,13 +8427,8 @@
       background: #0d9488
     }
 
-    .kb-dot-done {
-      background: var(--green)
-    }
-
-    .kb-dot-dismissed {
-      background: var(--paper-faint)
-    }
+    .kb-dot-done{background:var(--green)}
+    .kb-dot-dismissed{background:var(--paper-faint)}
 
     /* KLA-776: flex:1 lets the card list fill the column's stretched height so the empty area below the
    last card is part of the swim lane and accepts drops. */
@@ -18635,6 +18863,219 @@
     const col = (s) => COLORS[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length]
     const initials = (e) => String(e || "").slice(0, 2).toUpperCase()
     const esc = (s) => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+    // In-app custom confirmation popup modal (replaces native window.confirm alert dialogs)
+    function klavConfirm(opts) {
+      if (typeof opts === "string") {
+        opts = { message: opts }
+      }
+      opts = opts || {}
+      const isDanger = opts.danger !== false
+      const title = opts.title || (isDanger ? "Confirm deletion" : "Confirmation")
+      const message = opts.message || "Are you sure you want to proceed?"
+      const confirmText = opts.confirmText || (isDanger ? "Delete" : "Confirm")
+      const cancelText = opts.cancelText || "Cancel"
+
+      return new Promise((resolve) => {
+        let modal = document.getElementById("klavConfirmModal")
+        if (!modal) {
+          modal = document.createElement("div")
+          modal.id = "klavConfirmModal"
+          modal.className = "klav-confirm-bg"
+          modal.setAttribute("role", "dialog")
+          modal.setAttribute("aria-modal", "true")
+          modal.setAttribute("aria-labelledby", "klavConfirmTitle")
+          document.body.appendChild(modal)
+        }
+
+        const iconSvg = isDanger
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`
+          : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`
+
+        const btnIconSvg = isDanger
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="margin-right:6px"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`
+          : ""
+
+        let mainMsg = message
+        let warningMsg = ""
+        const undoIdx = message.indexOf("This action cannot be undone")
+        if (undoIdx !== -1) {
+          mainMsg = message.slice(0, undoIdx).trim()
+          warningMsg = message.slice(undoIdx).trim()
+        } else if (message.includes("\n\n")) {
+          const parts = message.split("\n\n")
+          mainMsg = parts[0]
+          warningMsg = parts.slice(1).join("\n\n")
+        }
+
+        modal.innerHTML = `
+          <div class="klav-confirm-card">
+            <div class="klav-confirm-header">
+              <div class="klav-confirm-icon-chip ${isDanger ? 'danger' : 'info'}">
+                ${iconSvg}
+              </div>
+              <div class="klav-confirm-title-wrap">
+                <h3 id="klavConfirmTitle" class="klav-confirm-title">${esc(title)}</h3>
+              </div>
+              <button type="button" class="klav-confirm-close" id="klavConfirmCloseBtn" aria-label="Close" title="Close (Esc)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div class="klav-confirm-body">
+              <p id="klavConfirmMsg" class="klav-confirm-desc">${esc(mainMsg)}</p>
+              ${warningMsg ? `
+                <div class="klav-confirm-warning-pill ${isDanger ? 'danger' : 'info'}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13" style="flex-shrink:0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <span>${esc(warningMsg)}</span>
+                </div>
+              ` : ""}
+            </div>
+            <div class="klav-confirm-footer">
+              <button type="button" class="klav-confirm-btn klav-confirm-cancel" id="klavConfirmCancelBtn">${esc(cancelText)}</button>
+              <button type="button" class="klav-confirm-btn ${isDanger ? 'danger' : 'primary'}" id="klavConfirmOkBtn">${btnIconSvg}${esc(confirmText)}</button>
+            </div>
+          </div>
+        `
+
+        modal.classList.add("open")
+
+        const cancelBtn = modal.querySelector("#klavConfirmCancelBtn")
+        const okBtn = modal.querySelector("#klavConfirmOkBtn")
+        const closeBtn = modal.querySelector("#klavConfirmCloseBtn")
+
+        if (cancelBtn) cancelBtn.focus()
+
+        let settled = false
+        const cleanup = (val) => {
+          if (settled) return
+          settled = true
+          document.removeEventListener("keydown", onKeyDown, true)
+          modal.removeEventListener("click", onBackdropClick)
+          modal.classList.remove("open")
+          resolve(val)
+        }
+
+        const onKeyDown = (e) => {
+          if (e.key === "Escape") {
+            e.preventDefault()
+            e.stopPropagation()
+            cleanup(false)
+          } else if (e.key === "Enter" && (document.activeElement === okBtn || document.activeElement === cancelBtn)) {
+            // let native button click handle it
+          }
+        }
+
+        const onBackdropClick = (e) => {
+          if (e.target === modal) {
+            cleanup(false)
+          }
+        }
+
+        document.addEventListener("keydown", onKeyDown, true)
+        modal.addEventListener("click", onBackdropClick)
+        if (cancelBtn) cancelBtn.onclick = () => cleanup(false)
+        if (closeBtn) closeBtn.onclick = () => cleanup(false)
+        if (okBtn) okBtn.onclick = () => cleanup(true)
+      })
+    }
+    window.klavConfirm = klavConfirm
+
+    // In-app custom prompt modal (replaces native window.prompt dialogs)
+    function klavPrompt(opts) {
+      if (typeof opts === "string") {
+        opts = { message: opts }
+      }
+      opts = opts || {}
+      const title = opts.title || "Input Required"
+      const message = opts.message || ""
+      const defaultValue = opts.defaultValue || ""
+      const placeholder = opts.placeholder || ""
+      const confirmText = opts.confirmText || "Submit"
+      const cancelText = opts.cancelText || "Cancel"
+      const inputType = opts.type || "text"
+
+      return new Promise((resolve) => {
+        let modal = document.getElementById("klavPromptModal")
+        if (!modal) {
+          modal = document.createElement("div")
+          modal.id = "klavPromptModal"
+          modal.className = "klav-confirm-bg"
+          modal.setAttribute("role", "dialog")
+          modal.setAttribute("aria-modal", "true")
+          modal.setAttribute("aria-labelledby", "klavPromptTitle")
+          document.body.appendChild(modal)
+        }
+
+        const iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`
+
+        modal.innerHTML = `
+          <div class="klav-confirm-card">
+            <div class="klav-confirm-header">
+              <div class="klav-confirm-icon-chip info">
+                ${iconSvg}
+              </div>
+              <div class="klav-confirm-title-wrap">
+                <h3 id="klavPromptTitle" class="klav-confirm-title">${esc(title)}</h3>
+              </div>
+              <button type="button" class="klav-confirm-close" id="klavPromptCloseBtn" aria-label="Close" title="Close (Esc)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div class="klav-confirm-body">
+              ${message ? `<p class="klav-confirm-desc">${esc(message)}</p>` : ""}
+              <input type="${esc(inputType)}" id="klavPromptInput" class="klav-confirm-input" placeholder="${esc(placeholder)}" value="${esc(defaultValue)}" autocomplete="off" />
+            </div>
+            <div class="klav-confirm-footer">
+              <button type="button" class="klav-confirm-btn klav-confirm-cancel" id="klavPromptCancelBtn">${esc(cancelText)}</button>
+              <button type="button" class="klav-confirm-btn primary" id="klavPromptOkBtn">${esc(confirmText)}</button>
+            </div>
+          </div>
+        `
+
+        modal.classList.add("open")
+
+        const input = modal.querySelector("#klavPromptInput")
+        const cancelBtn = modal.querySelector("#klavPromptCancelBtn")
+        const okBtn = modal.querySelector("#klavPromptOkBtn")
+        const closeBtn = modal.querySelector("#klavPromptCloseBtn")
+
+        if (input) {
+          setTimeout(() => { input.focus(); input.select() }, 50)
+        }
+
+        let settled = false
+        const cleanup = (val) => {
+          if (settled) return
+          settled = true
+          document.removeEventListener("keydown", onKeyDown, true)
+          modal.removeEventListener("click", onBackdropClick)
+          modal.classList.remove("open")
+          resolve(val)
+        }
+
+        const onKeyDown = (e) => {
+          if (e.key === "Escape") {
+            e.preventDefault()
+            e.stopPropagation()
+            cleanup(null)
+          } else if (e.key === "Enter" && document.activeElement === input) {
+            e.preventDefault()
+            e.stopPropagation()
+            cleanup(input.value)
+          }
+        }
+
+        const onBackdropClick = (e) => {
+          if (e.target === modal) cleanup(null)
+        }
+
+        document.addEventListener("keydown", onKeyDown, true)
+        modal.addEventListener("click", onBackdropClick)
+        if (cancelBtn) cancelBtn.onclick = () => cleanup(null)
+        if (closeBtn) closeBtn.onclick = () => cleanup(null)
+        if (okBtn) okBtn.onclick = () => cleanup(input ? input.value : "")
+      })
+    }
+    window.klavPrompt = klavPrompt
     // Only ever emit a strict #rrggbb/#rgb hex into a style attribute. Model-generated `accent` is
     // untrusted (LLM05) — without this, a value like `#fff" onmouseover=…` would break out of the attr.
     const safeAccent = (v, fallback) => /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(String(v || "")) ? String(v) : fallback
@@ -19933,7 +20374,13 @@
       if (bulkDelete) bulkDelete.addEventListener("click", async (ev) => {
         const ids = [..._tgSelected]
         if (!ids.length) return
-        if (!confirm(`Are you sure you want to permanently delete ${ids.length} report${ids.length === 1 ? "" : "s"}? This action cannot be undone.`)) return
+        const confirmed = await klavConfirm({
+          title: `Delete ${ids.length} report${ids.length === 1 ? "" : "s"}?`,
+          message: `Are you sure you want to permanently delete ${ids.length} report${ids.length === 1 ? "" : "s"}? This action cannot be undone.`,
+          confirmText: `Delete ${ids.length === 1 ? "report" : "reports"}`,
+          danger: true
+        })
+        if (!confirmed) return
         const pid = curProjId(); if (!pid) return
         const restoreBtn = tgBtnPending(ev.currentTarget)
         const removed = tgRemoveLocal(ids)
@@ -22311,7 +22758,13 @@
     async function removeMemberClick(btn) {
       const email = btn.getAttribute("data-email")
       if (!email) return
-      if (!confirm(`Remove ${email} from this project?`)) return
+      const confirmed = await klavConfirm({
+        title: "Remove team member?",
+        message: `Remove ${email} from this project?`,
+        confirmText: "Remove member",
+        danger: true
+      })
+      if (!confirmed) return
       const projId = state.active && state.active.id
       btn.disabled = true
       try {
@@ -24616,12 +25069,26 @@
         if (r && r.status === 409 && d.alreadyExported) {
           const a = d.alreadyExported
           const where = a.connectorName || a.type
-          const key = a.externalKey ? (" as " + a.externalKey) : ""
-          if (a.externalUrl && window.confirm("Already in " + where + key + ".\n\nOK to open it, or Cancel to choose again.")) {
-            window.open(a.externalUrl, "_blank", "noopener")
-            return
+          if (a.externalUrl) {
+            const openExisting = await klavConfirm({
+              title: "Already in " + where + key,
+              message: "This ticket is already exported. Would you like to open it in " + where + "?",
+              confirmText: "Open in " + where,
+              cancelText: "Choose again",
+              danger: false
+            })
+            if (openExisting) {
+              window.open(a.externalUrl, "_blank", "noopener")
+              return
+            }
           }
-          if (!window.confirm("Export anyway? This creates a SECOND issue in " + where + ".")) return
+          const exportAnyway = await klavConfirm({
+            title: "Export anyway?",
+            message: "This creates a SECOND issue in " + where + ".",
+            confirmText: "Export second issue",
+            danger: false
+          })
+          if (!exportAnyway) return
           return runExport(connectorId, { force: true, replaceEl: o.replaceEl })
         }
         if (d.ok && d.export) {
@@ -26229,7 +26696,13 @@
 
       const doDeleteSingleTicket = async () => {
         const pid = (state.active && state.active.id) || t.projectId || (typeof curProjId === "function" ? curProjId() : null)
-        if (!confirm(`Are you sure you want to permanently delete ticket ${key}? This action cannot be undone.`)) return
+        const confirmed = await klavConfirm({
+          title: `Delete ticket ${key}?`,
+          message: `Are you sure you want to permanently delete ticket ${key}? This action cannot be undone.`,
+          confirmText: "Delete ticket",
+          danger: true
+        })
+        if (!confirmed) return
         window.__klavMutating++
         try {
           const r = await fetch(`/api/projects/${encodeURIComponent(pid)}/tickets/bulk`, {
@@ -27955,7 +28428,14 @@
         const isLabelOp = body.addLabelId !== undefined || body.removeLabelId !== undefined
         if (isLabelOp) {
           const n = _bulkSelected.size
-          if (!confirm(`${bulkActionLabel(body)} on ${n} ticket${n === 1 ? "" : "s"}?`)) return
+          const confirmed = typeof klavConfirm === "function" ? await klavConfirm({
+            title: `${bulkActionLabel(body)}?`,
+            message: `Apply ${bulkActionLabel(body).toLowerCase()} on ${n} ticket${n === 1 ? "" : "s"}?`,
+            confirmText: "Apply",
+            danger: false
+          }) : (typeof confirm === "function" ? confirm(`Apply ${bulkActionLabel(body).toLowerCase()} on ${n} ticket${n === 1 ? "" : "s"}?`) : true)
+          // if (!confirm(`${bulkActionLabel(body)} on ${n} ticket${n === 1 ? "" : "s"}?`)) return
+          if (!confirmed) return
         }
         // #704: label ops always take the blocking path (boardBulkOptimistic returns null for them).
         await applyBulkAction(projId, body, onDone, opts && opts.optimistic)
@@ -27998,7 +28478,13 @@
         const ids = [..._bulkSelected]
         if (!ids.length) return
         const n = ids.length
-        if (!confirm(`Are you sure you want to permanently delete ${n} ticket${n === 1 ? "" : "s"}? This action cannot be undone.`)) return
+        const confirmed = await klavConfirm({
+          title: `Delete ${n} ticket${n === 1 ? "" : "s"}?`,
+          message: `Are you sure you want to permanently delete ${n} ticket${n === 1 ? "" : "s"}? This action cannot be undone.`,
+          confirmText: `Delete ${n === 1 ? "ticket" : "tickets"}`,
+          danger: true
+        })
+        if (!confirmed) return
         window.__klavMutating++
         try {
           const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
@@ -29846,7 +30332,15 @@
             const field = btn.getAttribute("data-field")
             const curVal = btn.getAttribute("data-val") === "1"
             const newVal = !curVal
-            if (field === "autoCopy" && newVal && !confirm("Turn on auto-copy? Every new ticket will be pushed to this destination automatically.")) return
+            if (field === "autoCopy" && newVal) {
+              const confirmed = await klavConfirm({
+                title: "Turn on auto-copy?",
+                message: "Every new ticket will be pushed to this destination automatically.",
+                confirmText: "Turn on",
+                danger: false
+              })
+              if (!confirmed) return
+            }
             const patch = {}
             patch[field] = newVal
             const r = await fetch(projPath("/connectors/" + encodeURIComponent(cid)), {
@@ -29902,7 +30396,13 @@
         // Wire deletes
         listEl.querySelectorAll("button[data-del]").forEach(btn => {
           btn.addEventListener("click", async () => {
-            if (!confirm("Delete this connector?")) return
+            const confirmed = await klavConfirm({
+              title: "Delete connector?",
+              message: "Are you sure you want to delete this connector?",
+              confirmText: "Delete",
+              danger: true
+            })
+            if (!confirmed) return
             const cid = btn.getAttribute("data-del")
             const r = await fetch(projPath("/connectors/" + encodeURIComponent(cid)), { method: "DELETE" }).catch(() => null)
             const d = r ? await r.json().catch(() => ({})) : {}
@@ -31067,7 +31567,15 @@
           mkRotate.dataset.bound = "1"
           mkRotate.addEventListener("click", async () => {
             const msg = $("kl-mobilekey-msg")
-            if (mkRotate.textContent === "Rotate" && !confirm("Rotate the mobile key? Apps using the old key will stop filing reports until updated.")) return
+            if (mkRotate.textContent === "Rotate") {
+              const confirmed = await klavConfirm({
+                title: "Rotate mobile key?",
+                message: "Apps using the old key will stop filing reports until updated.",
+                confirmText: "Rotate key",
+                danger: true
+              })
+              if (!confirmed) return
+            }
             mkRotate.disabled = true; if (msg) msg.textContent = "Generating…"
             try {
               const r = await fetch(projPath("/config"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rotatePublishableKey: true }) })
@@ -31217,7 +31725,13 @@
         var rotBtn = e.target.closest("[data-tacc-rot]")
         if (rotBtn) {
           var pid = curProjId(); if (!pid) return
-          var newPw = prompt("Enter new password/token for \"" + (rotBtn.dataset.taccRotName || "this account") + "\":")
+          var newPw = await klavPrompt({
+            title: "Rotate Account Secret",
+            message: "Enter new password or API token for \"" + (rotBtn.dataset.taccRotName || "this account") + "\":",
+            placeholder: "New password or token",
+            confirmText: "Rotate Secret",
+            type: "password"
+          })
           if (!newPw) return
           var msg = $("taccMsg"); if (msg) msg.textContent = ""
           var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts/" + encodeURIComponent(rotBtn.dataset.taccRot),
@@ -31232,7 +31746,13 @@
         }
         var b = e.target.closest("[data-tacc-del]"); if (!b) return
         var accName = b.dataset.taccDelName || "this account"
-        if (!confirm("Delete test account \"" + accName + "\"?\n\nAny AutoSim steps using {{cred:" + accName + ":…}} will fail.")) return
+        const confirmed = await klavConfirm({
+          title: "Delete test account?",
+          message: "Delete test account \"" + accName + "\"? Any AutoSim steps using {{cred:" + accName + ":…}} will fail.",
+          confirmText: "Delete account",
+          danger: true
+        })
+        if (!confirmed) return
         var pid = curProjId(); if (!pid) return
         var msg = $("taccMsg"); if (msg) msg.textContent = ""
         var r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/test-accounts/" + encodeURIComponent(b.dataset.taccDel), { method: "DELETE" })
@@ -34262,7 +34782,7 @@
             try {
               var r = await fetch("/api/trails/" + encodeURIComponent(id) + projQ(), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus }) })
               if (r.ok) { var d2 = await loadData(); if (d2) render(d2) }
-              else { var d3 = await r.json().catch(function () { return {} }); alert(d3.error || "Could not update AutoSim status") }
+              else { var d3 = await r.json().catch(function () { return {} }); if (typeof klavToast === "function") klavToast(d3.error || "Could not update AutoSim status", "error") }
             } catch (e) { }
           }
         })
@@ -34279,7 +34799,13 @@
           btn.onclick = async function () {
             var id = btn.getAttribute("data-archive")
             var menu = document.getElementById("km-" + id); if (menu) menu.classList.remove("open")
-            if (!confirm("Archive this AutoSim? It will be hidden from your main list, but you can find and restore it from the Archived view at any time.")) return
+            var confirmed = await klavConfirm({
+              title: "Archive this AutoSim?",
+              message: "It will be hidden from your main list, but you can find and restore it from the Archived view at any time.",
+              confirmText: "Archive AutoSim",
+              danger: true
+            })
+            if (!confirmed) return
             try {
               var r = await fetch("/api/trails/" + encodeURIComponent(id) + projQ(), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "archived" }) })
               if (r.ok) {
@@ -34517,7 +35043,13 @@
       async function shmRevoke(tid, btn) {
         var row = shmRowOf(tid); if (!row) return
         var runId = row.getAttribute("data-run")
-        if (!window.confirm("Revoke this link? Anyone holding it will immediately lose access.")) return
+        var confirmed = await klavConfirm({
+          title: "Revoke share link?",
+          message: "Anyone holding this link will immediately lose access.",
+          confirmText: "Revoke link",
+          danger: true
+        })
+        if (!confirmed) return
         btn.disabled = true; shmMsg(tid, "Revoking…", false)
         try {
           var r = await fetch("/api/trails/walks/" + encodeURIComponent(runId) + "/share/" + encodeURIComponent(tid) + projQ(), { method: "DELETE" })
@@ -34995,7 +35527,13 @@
       // so we confirm first. Works from any column (validated or enforced) via the shared route.
       async function retireExpectation(expId, card) {
         var msgEl = card.querySelector(".ec-msg")
-        if (!window.confirm("Retire this guard? It keeps its history but the AutoSim check is removed. A fresh signal can resurrect it later.")) return
+        var confirmed = await klavConfirm({
+          title: "Retire this guard?",
+          message: "It keeps its history but the AutoSim check is removed. A fresh signal can resurrect it later.",
+          confirmText: "Retire guard",
+          danger: true
+        })
+        if (!confirmed) return
         var pid = projParam(); var qs = pid ? "?project=" + encodeURIComponent(pid) : ""
         var btn = card.querySelector("[data-retire]"); if (btn) { btn.disabled = true; btn.textContent = "retiring…" }
         if (msgEl) msgEl.textContent = ""
