@@ -8733,10 +8733,10 @@ export async function listTicketsPaginated(
   // Exclude 'new' (un-triaged) by default
   const statuses = (opts.statuses ?? []).filter(Boolean)
   if (statuses.length) {
-    conditions.push(`f.status IN (${statuses.map(() => "?").join(",")})`)
+    conditions.push(`COALESCE(NULLIF(f.status, ''), 'open') IN (${statuses.map(() => "?").join(",")})`)
     args.push(...statuses)
   } else {
-    conditions.push("f.status != 'new'")
+    conditions.push("COALESCE(NULLIF(f.status, ''), 'open') != 'new'")
   }
 
   if (opts.priorities && opts.priorities.length) {

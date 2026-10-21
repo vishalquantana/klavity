@@ -7824,27 +7824,7 @@
    (height set to scrollHeight on input): height:auto + overflow:hidden + resize:none, with NO fixed
    min/max-height that could shrink long text into a scroll box. A subtle focus ring (box-shadow, which
    doesn't take layout space) marks edit mode without pushing the text around. */
-    .tkt-desc-ta {
-      display: block;
-      width: 100%;
-      box-sizing: border-box;
-      background: transparent;
-      border: none;
-      border-radius: 7px;
-      padding: 0;
-      margin: 0;
-      color: var(--paper);
-      font-family: var(--body);
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      outline: none;
-      resize: none;
-      min-height: 0;
-      height: auto;
-      overflow: hidden;
-      box-shadow: 0 0 0 4px rgba(139, 139, 245, .08)
-    }
+    .tkt-desc-ta{display:block;width:100%;box-sizing:border-box;background:transparent;border:none;border-radius:7px;padding:0;margin:0;color:var(--paper);font-family:var(--body);font-size:14px;line-height:1.5;white-space:pre-wrap;outline:none;resize:none;min-height:0;height:auto;overflow:hidden;box-shadow:0 0 0 4px rgba(139, 139, 245, .08)}
 
     .tkt-desc-ta:focus {
       box-shadow: 0 0 0 4px rgba(139, 139, 245, .16)
@@ -7922,17 +7902,7 @@
    instead of every column squishing when many statuses are present. */
     /* KLA-776: align-items:stretch makes every column the height of the tallest one, so a short/empty
    column's swim lane is still a full-height drop target (paired with .kb-list{flex:1}). */
-    .kanban {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 14px;
-      align-items: stretch;
-      overflow-x: auto;
-      overflow-y: visible;
-      padding-bottom: 8px;
-      scroll-snap-type: x proximity;
-      -webkit-overflow-scrolling: touch
-    }
+    .kanban{display:flex;flex-wrap:nowrap;gap:14px;align-items:stretch;overflow-x:auto;overflow-y:visible;padding-bottom:8px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
 
     /* KD-297: the board's own horizontal scrollbar sat under the TALLEST column — i.e. at the very end of the
        page. .kb-hscroll is a mirror scrollbar (wireKanbanHScroll) that sticks to the bottom of the viewport
@@ -8009,21 +7979,7 @@
    to the 300px default, same as before. This trades away #676's "no dead space with few columns" — a
    short board now leaves empty space to the right, same as a real Jira board — in exchange for widths
    that mean something (and stay put) once you resize one. */
-    .kb-col {
-      flex: 0 0 var(--kb-w, 300px);
-      width: var(--kb-w, 300px);
-      min-width: 220px;
-      max-width: 640px;
-      scroll-snap-align: start;
-      background: var(--ink);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      position: relative
-    }
+    .kb-col{flex:0 0 var(--kb-w,300px);width:var(--kb-w,300px);min-width:220px;max-width:640px;scroll-snap-align:start;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px;position:relative}
 
     .kb-col.drag-over {
       border-color: var(--indigo);
@@ -8194,13 +8150,8 @@
       background: #0d9488
     }
 
-    .kb-dot-done {
-      background: var(--green)
-    }
-
-    .kb-dot-dismissed {
-      background: var(--paper-faint)
-    }
+    .kb-dot-done{background:var(--green)}
+    .kb-dot-dismissed{background:var(--paper-faint)}
 
     /* KLA-776: flex:1 lets the card list fill the column's stretched height so the empty area below the
    last card is part of the swim lane and accepts drops. */
@@ -18822,11 +18773,16 @@
         const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets?" + sp.toString(), { signal })
         if (!r || !r.ok) return true
         const d = await r.json()
-        if (curProjId() !== pid) return true                                  // project switched mid-flight → drop
-        _tktBoardTickets = (d && d.tickets) || []                             // warm the in-memory board cache
-        _tktBoardProjId = pid
+        const tkts = (d && d.tickets) || []
+        _tktBoardAllTickets = tkts
+        _tktBoardAllTotal = (d && typeof d.total === "number") ? d.total : tkts.length
+        _tktBoardAllPid = pid
+        if (typeof hasActiveTicketFilters !== "function" || !hasActiveTicketFilters()) {
+          _tktBoardTickets = tkts
+          _tktBoardProjId = pid
+        }
         if (d && d.rev != null) { _tktBoardRev = d.rev; _tktBoardRevPid = pid } // QA C2.2: authoritative live-poll baseline
-        swrWrite("tickets:" + pid, _tktBoardTickets)                          // freshness marker for the next idle pass
+        swrWrite("tickets:" + pid, tkts)                          // freshness marker for the next idle pass
         return true
       }
       return false
@@ -19113,9 +19069,7 @@
             stamp(); const r = await fetchWithTimeout(dashUrl)
             if (r.status === 401) { location.href = "/login"; redirected = true; break }
             data = await r.json().catch(() => null)
-            // KLA-829: recover from ANY errored project hint — stale/inaccessible id, dead bookmark, or an
-            // EXPLICIT ?project= switch the old guard (pid !== activeProjectParam()) skipped → blank dead page.
-            // Clear the pointer + strip the bad ?project=, then retry bare → first accessible project.
+            // KLA-829: recover from errored project hint; retry bare on first accessible project
             if (data && data.error && pid) {
               dashForgetProject(pid, r.status === 403)
               if (activeProjectParam()) {
@@ -24348,10 +24302,7 @@
           if (d.ok) {
             const tkt = (state.tickets || []).find(x => String(x.id) === String(ticketId))
             if (tkt) tkt.priority = newPri
-            // KLA-777: also patch the board's warm cache (_tktBoardTickets) — the Kanban renders from it,
-            // NOT state.tickets. Mirrors the status handler above so onChange's renderTicketsKanban()
-            // re-buckets the card (priority columns / High-priority filter), recolors its severity rail
-            // and re-sorts immediately, instead of waiting up to 15s for the next boardRevTick poll.
+            // KLA-777: patch _tktBoardTickets so board immediately re-buckets and recolors
             const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
             if (bt) bt.priority = newPri
             recordLocalEdit(ticketId, { priority: newPri })   // #532
@@ -25943,6 +25894,21 @@
         } else if (document.body.classList.contains("tkt-page-open")) {
           // Back navigated off the ticket page (URL is already the board URL) → close, restore the board.
           try { closeSingleTicket() } catch (e) { }
+        } else {
+          const isTicketsView = (location.hash === "#tickets" || (typeof currentView === "function" && currentView() === "tickets") || document.body.getAttribute("data-view") === "tickets")
+          if (isTicketsView) {
+            try {
+              loadTicketFiltersFromUrl()
+              if (typeof updateAllTktMultiSelects === "function") updateAllTktMultiSelects()
+              const si = document.getElementById("kanbanSearch")
+              if (si) si.value = _tktFilters.search || ""
+              _tktQuick = deriveQuickFromFilters()
+              if (typeof renderQuickChips === "function") renderQuickChips()
+              const fbClear = document.getElementById("fbClearBtn")
+              if (fbClear) fbClear.classList.toggle("hide", !hasActiveTicketFilters())
+              renderTicketsView()
+            } catch (e) { }
+          }
         }
       })
     }
@@ -27130,11 +27096,24 @@
     let _tktBoardState = { loading: false }
     let _tktBoardTickets = []
     let _tktBoardTotal = null
+    let _tktBoardAllTickets = null
+    let _tktBoardAllTotal = null
+    let _tktBoardAllPid = null
     let _tktBoardLoadedPid = null // KLA-779: pid the board was actually FETCHED for (even if the result is empty), so an empty project isn't re-fetched on every render/poll
-    // #536: the board caches the FULL, unfiltered project set here; status/priority/label/assignee/
-    // source/search are applied client-side (tktMatchesSelectFilters) so filter + Clear are instant
-    // (no 'Loading…' wipe, no round-trip). This tracks which project the cache belongs to.
+    let _tktBoardLoadedQuery = null // Query signature (projId + searchParams) the board was last fetched for
     let _tktBoardProjId = null
+
+    function hasActiveTicketFilters() {
+      const f = _tktFilters || {}
+      return Boolean(
+        (Array.isArray(f.status) ? f.status.length > 0 : f.status) ||
+        (Array.isArray(f.priority) ? f.priority.length > 0 : f.priority) ||
+        (Array.isArray(f.label) ? f.label.length > 0 : f.label) ||
+        (Array.isArray(f.assignee) ? f.assignee.length > 0 : f.assignee) ||
+        (Array.isArray(f.source) ? f.source.length > 0 : f.source) ||
+        f.search
+      )
+    }
     // KLA live-board: last board change-token seen from GET /tickets/rev, plus the project it belongs to.
     // The ~15s poll compares the server's cheap signature to this; a mismatch means a ticket was filed or
     // edited elsewhere (e.g. from the embedded widget), so we silently revalidate the board WITHOUT a reload.
@@ -27167,10 +27146,19 @@
     function loadTicketFiltersFromUrl() {
       try {
         const sp = new URL(location.href).searchParams
-          ;["status", "priority", "label", "assignee", "source"].forEach(key => {
-            const val = sp.get(key)
-            _tktFilters[key] = val ? val.split(",").map(s => s.trim()).filter(Boolean) : []
+        ;["status", "priority", "label", "assignee", "source"].forEach(key => {
+          const allVals = sp.getAll(key)
+          const splitVals = allVals.flatMap(v => v ? v.split(",") : []).map(s => s.trim()).filter(Boolean)
+          const normalized = splitVals.map(s => {
+            if (key === "status" || key === "priority" || key === "source") {
+              const norm = s.toLowerCase().replace(/[-\s]+/g, "_")
+              if (key === "status" && (norm === "todo" || norm === "to_do")) return "new"
+              return norm
+            }
+            return s
           })
+          _tktFilters[key] = [...new Set(normalized)]
+        })
         _tktFilters.search = sp.get("q") || ""
         // KD-223: "Closed" (= Done + Dismissed) was dropped from the Status filter — it isn't a real status.
         // An old link carrying ?status=closed falls back to All statuses instead of matching nothing.
@@ -27322,14 +27310,7 @@
 
     function onTktFilterUpdated() {
       const fbClear = document.getElementById("fbClearBtn")
-      const hasFilter = (
-        (_tktFilters.status && _tktFilters.status.length > 0) ||
-        (_tktFilters.priority && _tktFilters.priority.length > 0) ||
-        (_tktFilters.label && _tktFilters.label.length > 0) ||
-        (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
-        (_tktFilters.source && _tktFilters.source.length > 0) ||
-        !!_tktFilters.search
-      )
+      const hasFilter = hasActiveTicketFilters()
       if (fbClear) fbClear.classList.toggle("hide", !hasFilter)
       _tktListState.page = 1
       _tktQuick = deriveQuickFromFilters()
@@ -27497,9 +27478,16 @@
         // client-side and re-render synchronously — no network round-trip, no 'Loading…' flash.
         // Only fetch when the cache is empty or belongs to a different project.
         const projId = state && state.active && state.active.id
-        if (projId && _tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets)) {
-          // KLA-779: loaded-for-this-project (even an EMPTY result) counts as cached — render client-side, no
-          // network. Requiring _tktBoardTickets.length here re-fetched an empty project on every filter/toggle.
+        const sp = ticketQueryParams("board", 1, 200)
+        const qKey = projId ? (projId + ":" + sp.toString()) : null
+        // Complete project dataset is cached only when an unfiltered fetch exists and wasn't paginated/truncated
+        const isFullSet = Boolean(projId && _tktBoardAllPid === projId && Array.isArray(_tktBoardAllTickets) && typeof _tktBoardAllTotal === "number" && _tktBoardAllTotal <= _tktBoardAllTickets.length)
+        if (projId && isFullSet) {
+          _tktBoardTickets = _tktBoardAllTickets.filter(t => tktMatchesSelectFilters(t))
+          _tktBoardLoadedPid = projId
+          _tktBoardLoadedQuery = qKey
+          renderTicketsKanban(_tktBoardTickets)
+        } else if (projId && _tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets) && _tktBoardLoadedQuery === qKey) {
           renderTicketsKanban(_tktBoardTickets)
         } else {
           fetchAndRenderTktBoard()
@@ -27512,16 +27500,22 @@
       const f = _tktFilters || {}
       if (f.status && f.status.length) {
         const statuses = Array.isArray(f.status) ? f.status : String(f.status).split(",").filter(Boolean)
-        if (statuses.length && !statuses.includes(t.status || "open")) return false
+        const normSt = s => String(s || "").trim().toLowerCase().replace(/[-\s]+/g, "_")
+        const tStatus = normSt(t.status || "open")
+        const normStatuses = statuses.map(normSt)
+        if (normStatuses.length && !normStatuses.includes(tStatus)) return false
       }
       if (f.priority) {
         const wantP = Array.isArray(f.priority) ? f.priority : String(f.priority).split(",").filter(Boolean)
-        if (wantP.length && !wantP.includes(t.priority || "medium")) return false   // KD-236: unset = medium
+        const tPri = String(t.priority || "medium").trim().toLowerCase()
+        const normP = wantP.map(p => String(p).trim().toLowerCase())
+        if (normP.length && !normP.includes(tPri)) return false   // KD-236: unset = medium
       }
       if (f.assignee && f.assignee.length) {
         const wantA = Array.isArray(f.assignee) ? f.assignee : [f.assignee]
         if (wantA.length) {
-          const match = wantA.some(a => a === "__unassigned__" ? (!t.assignee || t.assignee === "") : (t.assignee || "") === a)
+          const tAss = String(t.assignee || "").trim().toLowerCase()
+          const match = wantA.some(a => a === "__unassigned__" ? (!t.assignee || t.assignee === "") : tAss === String(a || "").trim().toLowerCase())
           if (!match) return false
         }
       }
@@ -27545,14 +27539,18 @@
         const q = String(f.search).toLowerCase()
         let bug = ""
         try { bug = t.suggestedBug ? JSON.stringify(t.suggestedBug) : "" } catch { bug = "" }
-        const hay = [t.title, t.observation, t.notes, bug].filter(Boolean).join(" \n ").toLowerCase()
+        const labNames = Array.isArray(t.labels) ? t.labels.map(l => (typeof l === "object" && l ? (l.name || l.label || "") : String(l))).join(" ") : ""
+        const hay = [t.title, t.key, t.id, t.assignee, t.observation, t.notes, bug, labNames].filter(Boolean).join(" \n ").toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
     }
 
     function ticketStatusParamFor(view) {
-      if (_tktFilters.status) return _tktFilters.status
+      const st = _tktFilters && _tktFilters.status
+      if (Array.isArray(st) ? st.length > 0 : !!st) {
+        return Array.isArray(st) ? st.join(",") : String(st)
+      }
       return ALL_STATUSES
     }
 
@@ -27634,27 +27632,34 @@
       // project). Re-fetches that back a filter/Clear/drag reconcile keep the current board in place.
       const projId = state && state.active && state.active.id
       const warmCache = projId && _tktBoardLoadedPid === projId && Array.isArray(_tktBoardTickets) // KLA-779: loaded-empty is warm too
+      const sp = ticketQueryParams("board", 1, 200)
+      if (!sp.get("status")) sp.set("status", ALL_STATUSES)
+      const qKey = projId ? (projId + ":" + sp.toString()) : ""
+      const cacheKey = "tktboard:" + qKey
       // #660: SWR cold-load paint — on a reload / first entry the in-memory board cache is empty, which
       // used to flash 'Loading…'. Paint the last-cached board from localStorage instantly (same
       // "tickets:"+pid key the #652 prefetch writes) so it never flashes, then revalidate below.
       let paintedFromCache = false
-      if (!warmCache && projId) {
-        const cached = swrRead("tickets:" + projId)
-        if (Array.isArray(cached) && cached.length) {
-          _tktBoardTickets = cached; _tktBoardProjId = projId
+      if (projId) {
+        const cached = swrRead(cacheKey)
+        if (cached && Array.isArray(cached.tickets)) {
+          _tktBoardTickets = cached.tickets
+          _tktBoardTotal = typeof cached.total === "number" ? cached.total : cached.tickets.length
+          _tktBoardProjId = projId
+          _tktBoardLoadedQuery = qKey
           renderTicketsKanban(_tktBoardTickets); paintedFromCache = true
+        } else if (!hasActiveTicketFilters()) {
+          const legacy = swrRead("tickets:" + projId)
+          if (Array.isArray(legacy) && legacy.length) {
+            _tktBoardTickets = legacy; _tktBoardProjId = projId
+            _tktBoardAllTickets = legacy; _tktBoardAllTotal = legacy.length; _tktBoardAllPid = projId
+            renderTicketsKanban(_tktBoardTickets); paintedFromCache = true
+          }
         }
       }
       if (!warmCache && !paintedFromCache) board.innerHTML = '<div class="tkt-list-empty">Loading…</div>'
 
       if (!projId) { board.innerHTML = '<div class="tkt-list-empty">No project selected.</div>'; _tktBoardState.loading = false; return }
-
-      // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
-      // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
-      const sp = new URLSearchParams()
-      sp.set("status", ALL_STATUSES)
-      sp.set("page", "1")
-      sp.set("limit", "200")
 
       const _fetchStart = Date.now()
       try {
@@ -27669,9 +27674,17 @@
         _tktBoardTotal = (typeof data.total === "number") ? data.total : (data.tickets ? data.tickets.length : 0)
         _tktBoardProjId = projId
         _tktBoardLoadedPid = projId // KLA-779: mark this project's board as loaded (even when empty) — no re-fetch spin
+        _tktBoardLoadedQuery = qKey
+        if (!hasActiveTicketFilters()) {
+          _tktBoardAllTickets = _tktBoardTickets
+          _tktBoardAllTotal = _tktBoardTotal
+          _tktBoardAllPid = projId
+          swrWrite("tickets:" + projId, _tktBoardTickets)   // #660: keep the SWR snapshot (+ #652 marker) fresh
+        }
         if (data.rev != null) { _tktBoardRev = data.rev; _tktBoardRevPid = projId } // QA C2.2: authoritative live-poll baseline
+        swrWrite(cacheKey, { tickets: _tktBoardTickets, total: _tktBoardTotal })
+        if (window.__klavMutating > 0 && paintedFromCache) return
         renderTicketsKanban(_tktBoardTickets)
-        swrWrite("tickets:" + projId, _tktBoardTickets)   // #660: keep the SWR snapshot (+ #652 marker) fresh
       } catch (e) {
         // KLA-837 — don't dead-end: offer an inline Retry that re-runs this exact fetch (swrSection spirit).
         if (!warmCache && !paintedFromCache) board.innerHTML = '<div class="tkt-list-empty">Failed to load tickets. <button class="btn btn-sm" type="button" onclick="fetchAndRenderTktBoard()">Retry</button></div>'
@@ -28255,6 +28268,9 @@
       if (board) board.scrollIntoView({ behavior: "smooth", block: "start" })
     }
     function kanbanKeyForStatus(status) {
+      if (!status) return "open"
+      const s = String(status).trim().toLowerCase().replace(/[-\s]+/g, "_")
+      status = (s === "todo" || s === "to_do") ? "new" : s
       return STATUS_ORDER.includes(status) ? status : "open"
     }
     function ticketStatusLabel(status) {
@@ -28584,7 +28600,9 @@
       const tickets = sourceTickets.filter(t => kbMatchesFilter(t) && tktMatchesSelectFilters(t))
       $("ticketKanbanCount").textContent = tickets.length ? tickets.length : ""
       if (!tickets.length) {
-        board.innerHTML = emptyState(kicon('bug', { size: 32 }), "No tickets match these filters.", "")
+        const filterActive = hasActiveTicketFilters()
+        const msg = filterActive ? "No tickets match these filters." : "No tickets yet."
+        board.innerHTML = emptyState(kicon('bug', { size: 32 }), msg, "")
         return
       }
       const groups = {}
