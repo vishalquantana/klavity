@@ -113,6 +113,26 @@ function isTransparent(color: string): boolean {
 }
 
 /**
+ * KD-232: the opaque colour the browser actually paints behind the page. The DOM renderer only paints
+ * backgrounds that CSS sets, so a page that leaves <html>/<body> unstyled (the browser's default white
+ * canvas is not a CSS background) rendered as a TRANSPARENT PNG — page text over nothing. On the
+ * composer's dark editor backdrop (and in any JPEG re-encode) that read as a black screen with black text,
+ * and it varied with which node (<html> vs <body>) the capture cloned. Mirrors CSS canvas propagation:
+ * <html>'s background first, else <body>'s, else the browser default white.
+ */
+export function pageBackgroundColor(): string {
+  if (typeof document === "undefined" || typeof getComputedStyle !== "function") return "#ffffff"
+  for (const el of [document.documentElement, document.body]) {
+    if (!el) continue
+    try {
+      const bg = getComputedStyle(el).backgroundColor
+      if (!isTransparent(bg)) return bg
+    } catch { /* best-effort — fall through to the default */ }
+  }
+  return "#ffffff"
+}
+
+/**
  * Last-resort renderer used when html-to-image rejects or stalls. It deliberately never reads image
  * bytes, so a customer page's CORS/CSP cannot taint or block the canvas. The result is less detailed than
  * html-to-image, but retains the page's layout, backgrounds, borders and text for a usable Sim review.
@@ -728,6 +748,8 @@ export async function safeToPngWithScale(
     const out = await withTimeout(domToPng(node, {
       scale: pixelRatio,
       ...(explicitSize ?? {}),
+      // KD-232: opaque page background so unstyled areas never come out transparent (→ black).
+      backgroundColor: pageBackgroundColor(),
       font: fontOption,
       onCloneEachNode: (cloned: Node) => blankUnrenderableIconGlyphs(cloned, fontEmbed.embeddedFamilies),
       maximumCanvasSize: MAX_CAPTURE_CANVAS_EDGE,
