@@ -27411,15 +27411,35 @@
       TKT_MS_CONFIGS.forEach(initTktMultiSelect)
 
       const searchEl = document.getElementById("kanbanSearch")
-      if (searchEl) searchEl.value = _tktFilters.search
-      const hasFilter = (
-        (_tktFilters.status && _tktFilters.status.length > 0) ||
-        (_tktFilters.priority && _tktFilters.priority.length > 0) ||
-        (_tktFilters.label && _tktFilters.label.length > 0) ||
-        (_tktFilters.assignee && _tktFilters.assignee.length > 0) ||
-        (_tktFilters.source && _tktFilters.source.length > 0) ||
-        !!_tktFilters.search
-      )
+      if (searchEl) {
+        searchEl.value = _tktFilters.search || ""
+        if (!_kbSearchBound) {
+          searchEl.addEventListener("input", () => {
+            _tktFilters.search = searchEl.value.trim()
+            _tktListState.page = 1
+            syncTicketFiltersToUrl()
+            clearTimeout(_tktSearchTimer)
+            _tktSearchTimer = setTimeout(() => renderTicketsView(), 180)
+          })
+          searchEl.addEventListener("keydown", e => {
+            if (e.key === "Enter") {
+              clearTimeout(_tktSearchTimer)
+              _tktFilters.search = searchEl.value.trim()
+              _tktListState.page = 1
+              syncTicketFiltersToUrl()
+              renderTicketsView()
+            } else if (e.key === "Escape") {
+              searchEl.value = ""
+              _tktFilters.search = ""
+              _tktListState.page = 1
+              syncTicketFiltersToUrl()
+              renderTicketsView()
+            }
+          })
+          _kbSearchBound = true
+        }
+      }
+      const hasFilter = hasActiveTicketFilters()
       fbClear.classList.toggle("hide", !hasFilter)
 
       // View toggle
@@ -27536,12 +27556,42 @@
         }
       }
       if (f.search) {
-        const q = String(f.search).toLowerCase()
-        let bug = ""
-        try { bug = t.suggestedBug ? JSON.stringify(t.suggestedBug) : "" } catch { bug = "" }
-        const labNames = Array.isArray(t.labels) ? t.labels.map(l => (typeof l === "object" && l ? (l.name || l.label || "") : String(l))).join(" ") : ""
-        const hay = [t.title, t.key, t.id, t.assignee, t.observation, t.notes, bug, labNames].filter(Boolean).join(" \n ").toLowerCase()
-        if (!hay.includes(q)) return false
+        const rawQ = String(f.search).trim().toLowerCase()
+        if (rawQ) {
+          const numMatch = rawQ.match(/^(?:[a-z0-9_-]+[-_#\s]+)?#?(\d+)$/)
+          const numOnly = numMatch ? numMatch[1] : ""
+          let bug = ""
+          try { bug = t.suggestedBug ? (typeof t.suggestedBug === "string" ? t.suggestedBug : JSON.stringify(t.suggestedBug)) : "" } catch { bug = "" }
+          const labNames = Array.isArray(t.labels) ? t.labels.map(l => (typeof l === "object" && l ? (l.name || l.label || "") : String(l))).join(" ") : ""
+          const seqStr = t.seqNum != null ? String(t.seqNum) : ""
+          const hashSeq = seqStr ? ("#" + seqStr) : ""
+          const tktKey = t.ticketKey || (state && state.active && (state.active.ticketKey || state.active.key)) || ""
+          const displayKey = (tktKey && seqStr) ? (tktKey + "-" + seqStr) : hashSeq
+          const isInternalId = rawQ.startsWith("fb_") || rawQ.startsWith("fb-") || /^[0-9a-f]{8,}(?:-[0-9a-f]{4,})*$/i.test(rawQ)
+          const exactIdMatch = t.id && String(t.id).toLowerCase() === rawQ
+          const partialIdMatch = Boolean(isInternalId && t.id && String(t.id).toLowerCase().includes(rawQ))
+
+          const hay = [
+            t.title,
+            t.key,
+            displayKey,
+            hashSeq,
+            seqStr,
+            t.planeIssueKey,
+            t.assignee,
+            t.reporterEmail,
+            t.actorEmail,
+            t.contactEmail,
+            t.observation,
+            t.notes,
+            bug,
+            labNames
+          ].filter(Boolean).join(" \n ").toLowerCase()
+
+          const matchesHay = hay.includes(rawQ)
+          const matchesNum = Boolean(numOnly && seqStr && (seqStr === numOnly || seqStr.includes(numOnly)))
+          if (!matchesHay && !matchesNum && !exactIdMatch && !partialIdMatch) return false
+        }
       }
       return true
     }
@@ -28043,6 +28093,8 @@
 
     function renderTktList(listEl, tickets, total) {
       const filtered = tickets
+      const countEl = $("ticketKanbanCount")
+      if (countEl) countEl.textContent = (typeof total === "number" && total > 0) ? total : (filtered.length ? filtered.length : "")
 
       const wrap = document.createElement("div")
       const projId = state.active && state.active.id
