@@ -22522,14 +22522,14 @@
     function descriptionBlockHtml(text) {
       const raw = String(text == null ? "" : text)
       const label = "Description"
-      // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
+      // #653: editable description — a pencil button (or clicking empty prompt) swaps in a textarea + Save/Cancel.
       // #717: the read view is auto-linkified (display-only); editing still shows the RAW url text.
       return `<div class="tkt-desc${raw.trim() ? "" : " tkt-desc-empty"}">
     <div class="tkt-desc-head">
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs" title="Click to edit">${descObsInner(raw)}</div>
+    <div class="tkt-obs"${raw.trim() ? "" : ' title="Click to add description"'}>${descObsInner(raw)}</div>
   </div>`
     }
     // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -24509,8 +24509,18 @@
           saveB.addEventListener("mousedown", ev => { ev.preventDefault(); ev.stopPropagation(); commit() })
         }
         if (descEditBtn) descEditBtn.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
-        // #717: clicking a smart-link opens the link (don't hijack it into edit mode); clicking the text edits.
-        if (obsEl) obsEl.addEventListener("click", ev => { if (ev.target.closest("a.tkt-smartlink")) return; ev.stopPropagation(); enterDescEdit() })
+        // Prevent text selection inside the description from triggering edit mode.
+        // Users can select, highlight, and copy description text without interruption.
+        // Edit mode opens via the pencil icon, or when clicking the empty-state placeholder prompt.
+        if (obsEl) obsEl.addEventListener("click", ev => {
+          if (ev.target.closest("a.tkt-smartlink")) return
+          const hasSelection = window.getSelection ? window.getSelection().toString().trim().length > 0 : false
+          if (hasSelection) return
+          if (ev.target.closest(".tkt-desc-placeholder") || descEl.classList.contains("tkt-desc-empty")) {
+            ev.stopPropagation()
+            enterDescEdit()
+          }
+        })
       }
 
       // KLA-242: Wire up "Guard this fix" — creates an expectation from the resolved ticket.
