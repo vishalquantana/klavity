@@ -901,5 +901,12 @@
     "excerpt": "How to review AI-generated code: check it against your real intent, verify every API it references exists, and run the paths the diff touches.",
     "category": "Guides",
     "date": "2026-10-21"
+  },
+  {
+    "slug": "ai-visual-regression-testing",
+    "title": "AI Visual Regression Testing: Catch Layout Breaks Early",
+    "excerpt": "AI visual regression testing compares renders before and after a change and flags only the differences that actually break the page.",
+    "category": "Guides",
+    "date": "2026-10-22"
   }
 ]
