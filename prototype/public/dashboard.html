@@ -4317,6 +4317,12 @@
       color: var(--indigo)
     }
 
+    .src-chip.src-autosim {
+      background: rgba(14, 165, 233, .14);
+      color: #0284c7;
+      border: 1px solid rgba(14, 165, 233, .28);
+    }
+
     .src-chip.src-human {
       background: rgba(217, 131, 36, .16);
       color: var(--amber)
@@ -4330,6 +4336,70 @@
     .src-chip.src-jira {
       background: rgba(15, 157, 107, .15);
       color: var(--green)
+    }
+
+    /* Sim Reports source badges */
+    .tg-src-badge {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      line-height: 1.35;
+      vertical-align: middle;
+      border: 1px solid transparent;
+      user-select: none;
+    }
+
+    .tg-src-badge svg,
+    .tg-src-badge .icon {
+      width: 11px;
+      height: 11px;
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    .tg-src-badge.tg-src-sim {
+      background: rgba(99, 102, 241, .14);
+      color: var(--indigo);
+      border-color: rgba(99, 102, 241, .25);
+    }
+
+    .tg-src-badge.tg-src-autosim {
+      background: rgba(14, 165, 233, .14);
+      color: #0284c7;
+      border-color: rgba(14, 165, 233, .28);
+    }
+
+    [data-theme="dark"] .tg-src-badge.tg-src-sim {
+      background: rgba(139, 139, 245, .18);
+      color: #a5b4fc;
+      border-color: rgba(139, 139, 245, .32);
+    }
+
+    [data-theme="dark"] .tg-src-badge.tg-src-autosim {
+      background: rgba(56, 189, 248, .18);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, .32);
+    }
+
+    [data-theme="dark"] .src-chip.src-autosim {
+      background: rgba(56, 189, 248, .18);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, .32);
+    }
+
+    [data-theme="dark"] .src-chip.src-sim {
+      background: rgba(139, 139, 245, .18);
+      color: #a5b4fc;
     }
 
     /* KLA-169: list view */
@@ -20058,24 +20128,49 @@
       else state.tickets.push({ ...t })
       openSingleTicket(String(id), "panel")
     }
+    // Sim Reports source helper: distinguish Sim vs AutoSim origins safely
+    function tgSourceKind(t) {
+      if (!t) return null
+      const src = String(t.source || "").trim().toLowerCase()
+      if (src === "autosim" || src === "auto-sim" || src === "trail" || src === "trails" || src === "walk" || src.startsWith("autosim")) {
+        return "autosim"
+      }
+      if (src === "sim" || src === "sims" || src === "sim-review" || src === "adhoc" || src === "ad-hoc") {
+        return "sim"
+      }
+      if ((t.simId || t.simName) && !["manual", "widget", "human", "extension", "api", "snap"].includes(src)) {
+        return "sim"
+      }
+      return null
+    }
+    function tgSourceBadgeHtml(t) {
+      const k = tgSourceKind(t)
+      if (!k) return ""
+      const isAuto = k === "autosim"
+      const label = isAuto ? "AutoSim" : "Sim"
+      const icon = isAuto ? kicon('zap', { size: 11 }) : kicon('bot', { size: 11 })
+      return `<span class="tg-src-badge tg-src-${k}" data-source="${k}" title="Source: ${label}">${icon}<span>${label}</span></span>`
+    }
     // #739: the row List (kept for parity's List/Board toggle) — same data as before minus the inline
     // Evidence expand, which is replaced by opening the full cockpit on click.
     function renderTriageList(host, items) {
       host.innerHTML = items.map(t => {
         const id = String(t.id)
         const sel = _tgSelected.has(id)
+        const srcKind = tgSourceKind(t)
+        const srcBadge = tgSourceBadgeHtml(t)
         return `
-    <div class="tg-row tg-item ${sevRailClass(t.priority)}${sel ? " tg-selected" : ""}${_tgFocus === id ? " tg-focus" : ""}" data-id="${esc(id)}" tabindex="-1">
+    <div class="tg-row tg-item ${sevRailClass(t.priority)}${sel ? " tg-selected" : ""}${_tgFocus === id ? " tg-focus" : ""}" data-id="${esc(id)}"${srcKind ? ` data-source="${esc(srcKind)}"` : ""} tabindex="-1">
       <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
       ${t.screenshotId ? `<div class="tg-shot" data-shot="${esc(String(t.screenshotId))}" title="Open screenshot"><div class="tg-shot-ph">${kicon('image', { size: 16 })}</div></div>` : ""}
       <div class="tg-b">
         <div class="fx-t">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}</div>
         ${t.sourceQuote ? `<div class="fx-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="fx-q">${esc(t.observation)}</div>` : "")}
-        <div class="fx-m">${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot', { size: 14 })} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, { badge: true })}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
+        <div class="fx-m">${srcBadge}${t.urlPath ? `<span class="fx-area">${esc(t.urlPath)}</span>` : ""}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${t.simName ? `<span>${kicon('bot', { size: 14 })} ${esc(t.simName)}</span>` : ""}${dupAckHtml(t, { badge: true })}${t.createdAt ? `<span class="muted" data-ago="${Number(t.createdAt)}">${esc(ago(t.createdAt))}</span>` : ""}</div>
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
-        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -20093,13 +20188,16 @@
     function buildReportCard(t) {
       const id = String(t.id)
       const sel = _tgSelected.has(id)
+      const srcKind = tgSourceKind(t)
       const card = document.createElement("div")
       card.className = "kb-card tg-item has-cb " + sevRailClass(t.priority) + (sel ? " tg-selected" : "")
       card.setAttribute("data-id", id)
+      if (srcKind) card.setAttribute("data-source", srcKind)
       card.setAttribute("tabindex", "-1")
       const sub = [t.simName ? ("by " + t.simName) : "", t.urlPath ? t.urlPath : "", ago(t.createdAt)].filter(Boolean).map(esc).join(" · ")
       const quote = t.sourceQuote ? `<div class="kb-card-q">"${esc(t.sourceQuote)}"</div>` : (t.observation ? `<div class="kb-card-q">${esc(t.observation)}</div>` : "")
-      const meta = `${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${dupAckHtml(t, { badge: true })}${tgRoutingAffordance(t)}`
+      const srcBadge = tgSourceBadgeHtml(t)
+      const meta = `${srcBadge}${t.sentiment ? `<span class="chip s-${esc(t.sentiment)}">${esc(t.sentiment)}</span>` : ""}${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${dupAckHtml(t, { badge: true })}${tgRoutingAffordance(t)}`
       card.innerHTML = `
     <label class="tg-cb-wrap" title="Select for bulk action"><input type="checkbox" class="tg-cb"${sel ? " checked" : ""} aria-label="Select report"></label>
     <div class="kb-card-t">${kicon('bug')} ${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
@@ -20108,7 +20206,7 @@
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
-      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
       <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
       <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
     </div>`
@@ -27227,15 +27325,18 @@
     }
 
     // KLA-562: colored source chip (widget/auto/jira/manual in the prototype). Source values from the
-    // server: sim (sim_id present → AutoSim/AI), manual (source='manual'), human (widget / person).
+    // server: autosim, sim (sim_id present → AI), manual (source='manual'), human (widget / person).
     function ticketSourceKind(t) {
+      if (!t) return "human"
+      const src = String(t.source || "").trim().toLowerCase()
+      if (src === "autosim" || src === "auto-sim" || src === "trail" || src === "trails" || src === "walk" || src.startsWith("autosim")) return "autosim"
       if (t.source === "manual") return "manual"
       if (t.simName || t.source === "sim" || t.simId) return "sim"
       return "human"
     }
     function srcChipHtml(t) {
       const k = ticketSourceKind(t)
-      const label = k === "sim" ? "AutoSim" : k === "manual" ? "Manual" : "Widget"
+      const label = k === "autosim" ? "AutoSim" : (k === "sim" ? "Sim" : (k === "manual" ? "Manual" : "Widget"))
       return `<span class="src-chip src-${k}">${label}</span>`
     }
 
