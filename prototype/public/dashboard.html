@@ -8962,6 +8962,8 @@
     body.tkt-page-open .kb-toolbar,
     body.tkt-page-open #tktQuickChips,
     body.tkt-page-open #tktFilterBar,
+    body.tkt-page-open .card[data-view="tickets"],
+    body.tkt-page-open .card[data-view="triage"],
     /* #681: the board's page heading ("Tickets" + tagline) must not leak above the single ticket —
    the dedicated page shows ONLY the ticket, with its own compact header row. */
     body.tkt-page-open .content>.head,
@@ -8975,7 +8977,8 @@
    the 3-col paper card fills the available width; the .wrap side padding stays as a modest gutter. */
     #ticketSingle.tkt-page {
       max-width: none;
-      margin: 0
+      margin: 0;
+      grid-column: 1 / -1
     }
 
     body.tkt-page-open .wrap {
@@ -15183,6 +15186,218 @@
       text-transform: none
     }
 
+    /* ── Sim Reports Priority Dropdown Component (.tg-pri-kdd) ── */
+    .tg-pri-kdd {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .tg-pri-kdd .kdd-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      height: 26px;
+      min-width: 90px;
+      font-family: var(--body);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper);
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease);
+    }
+
+    .tg-pri-kdd .kdd-btn:hover {
+      background: var(--ink-3);
+      border-color: var(--indigo);
+    }
+
+    .tg-pri-kdd .kdd-btn:focus-visible {
+      outline: none;
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .2);
+    }
+
+    .tg-pri-kdd .kdd-btn[aria-expanded="true"] {
+      background: var(--ink-2);
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .2);
+    }
+
+    .tg-pri-kdd .kdd-caret {
+      margin-left: auto;
+      color: var(--paper-dim);
+      transition: transform var(--mi-dur) var(--mi-ease);
+    }
+
+    .tg-pri-kdd .kdd-btn[aria-expanded="true"] .kdd-caret {
+      transform: rotate(180deg);
+    }
+
+    .tg-pri-kdd .kdd-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 100;
+      min-width: 136px;
+      padding: 4px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, .3), 0 8px 10px -6px rgba(0, 0, 0, .2);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .tg-pri-kdd .kdd-menu.hide {
+      display: none;
+    }
+
+    .tg-pri-kdd .kdd-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 12px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), color var(--mi-dur) var(--mi-ease);
+    }
+
+    .tg-pri-kdd .kdd-item:focus-visible {
+      outline: none;
+    }
+
+    .tg-pri-kdd .kdd-txt {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Distinct Priority Option Styling: Urgent (Red), High (Orange), Medium (Amber), Low (Blue) */
+    .tg-pri-kdd .kdd-pri-urgent .prop-sq {
+      background: #dc2626;
+      box-shadow: 0 0 0 1px rgba(220, 38, 38, .3);
+    }
+
+    .tg-pri-kdd .kdd-pri-urgent:hover,
+    .tg-pri-kdd .kdd-pri-urgent:focus-visible {
+      background: rgba(220, 38, 38, .1);
+      border-color: rgba(220, 38, 38, .25);
+      color: #dc2626;
+    }
+
+    .tg-pri-kdd .kdd-pri-urgent[aria-checked="true"] {
+      background: rgba(220, 38, 38, .15);
+      border-color: rgba(220, 38, 38, .35);
+      color: #dc2626;
+      font-weight: 700;
+    }
+
+    .tg-pri-kdd .kdd-pri-high .prop-sq {
+      background: #f97316;
+      box-shadow: 0 0 0 1px rgba(249, 115, 22, .3);
+    }
+
+    .tg-pri-kdd .kdd-pri-high:hover,
+    .tg-pri-kdd .kdd-pri-high:focus-visible {
+      background: rgba(249, 115, 22, .1);
+      border-color: rgba(249, 115, 22, .25);
+      color: #ea580c;
+    }
+
+    .tg-pri-kdd .kdd-pri-high[aria-checked="true"] {
+      background: rgba(249, 115, 22, .15);
+      border-color: rgba(249, 115, 22, .35);
+      color: #ea580c;
+      font-weight: 700;
+    }
+
+    .tg-pri-kdd .kdd-pri-medium .prop-sq {
+      background: #eab308;
+      box-shadow: 0 0 0 1px rgba(234, 179, 8, .3);
+    }
+
+    .tg-pri-kdd .kdd-pri-medium:hover,
+    .tg-pri-kdd .kdd-pri-medium:focus-visible {
+      background: rgba(234, 179, 8, .1);
+      border-color: rgba(234, 179, 8, .25);
+      color: #ca8a04;
+    }
+
+    .tg-pri-kdd .kdd-pri-medium[aria-checked="true"] {
+      background: rgba(234, 179, 8, .15);
+      border-color: rgba(234, 179, 8, .35);
+      color: #ca8a04;
+      font-weight: 700;
+    }
+
+    .tg-pri-kdd .kdd-pri-low .prop-sq {
+      background: #3b82f6;
+      box-shadow: 0 0 0 1px rgba(59, 130, 246, .3);
+    }
+
+    .tg-pri-kdd .kdd-pri-low:hover,
+    .tg-pri-kdd .kdd-pri-low:focus-visible {
+      background: rgba(59, 130, 246, .1);
+      border-color: rgba(59, 130, 246, .25);
+      color: #2563eb;
+    }
+
+    .tg-pri-kdd .kdd-pri-low[aria-checked="true"] {
+      background: rgba(59, 130, 246, .15);
+      border-color: rgba(59, 130, 246, .35);
+      color: #2563eb;
+      font-weight: 700;
+    }
+
+    /* Dark theme text contrast adjustments */
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent[aria-checked="true"] {
+      color: #f87171;
+    }
+
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-high:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-high:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-high[aria-checked="true"] {
+      color: #fb923c;
+    }
+
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-medium:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-medium:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-medium[aria-checked="true"] {
+      color: #facc15;
+    }
+
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-low:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-low:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-low[aria-checked="true"] {
+      color: #60a5fa;
+    }
+
+    /* Elevated z-index when dropdown is open so it renders above surrounding cards */
+    .kb-card.tg-dropdown-open,
+    .tg-row.tg-dropdown-open,
+    .kb-card:has(.tg-pri-kdd .kdd-menu:not(.hide)),
+    .tg-row:has(.tg-pri-kdd .kdd-menu:not(.hide)) {
+      z-index: 50;
+      position: relative;
+    }
+
     .tkt-lbl-kdd .tkt-lbl-add-item {
       color: var(--indigo);
       font-weight: 600
@@ -17236,8 +17451,8 @@
                   style="width:40%"></span></div><span class="sk sk-pill"></span>
             </div>
           </div>
-          <div id="ticketSingle" class="hide"></div>
         </div>
+        <div id="ticketSingle" class="hide"></div>
 
         <!-- Live activity -->
         <div class="card" data-view="overview">
@@ -19517,11 +19732,14 @@
         }
         try { const _fr = new URLSearchParams(location.search).get("fromRun"); if (_fr && ticketId) _fromSimRun = { run: _fr, ticket: ticketId } } catch (e) { }
         if (!ticketId) return
+        const isTriage = (location.hash || "").indexOf("triage") >= 0 || (document.body && document.body.getAttribute("data-view") === "triage")
+        const targetMode = isTriage ? "panel" : "full"
+        const targetCtx = isTriage ? "triage" : "tickets"
         // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
         const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
         if (t) {
           _deepLinkTicketConsumed = true      // commit BEFORE opening so a concurrent poll can't double-open
-          openSingleTicket(ticketId, "full")  // KLA-562: a shared ?ticket= deep link opens the full-page route
+          openSingleTicket(ticketId, targetMode, targetCtx)  // KLA-562: a shared ?ticket= deep link opens the route
         } else {
           // Ticket not in state.tickets (may be loaded via separate /api/projects/:id/tickets call)
           // Fetch it and inject into state so openSingleTicket can find it
@@ -19540,7 +19758,7 @@
               const report = d.report
               if (!state.tickets) state.tickets = []
               if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
-              openSingleTicket(ticketId, "full")   // KLA-562: shared deep link → full-page route
+              openSingleTicket(ticketId, targetMode, targetCtx)   // KLA-562: shared deep link → route
             }).catch(_bootFail)
         }
       } catch (e) { }
@@ -20090,6 +20308,89 @@
       if (sendBtn) sendBtn.addEventListener("click", (ev) => { ev.stopPropagation(); tgSendToTracker([id]) })
       const pri = el.querySelector(".tg-pri")
       if (pri) pri.addEventListener("click", (ev) => ev.stopPropagation())
+      const kdd = el.querySelector(".tg-pri-kdd")
+      if (kdd) {
+        const btn = kdd.querySelector(".kdd-btn")
+        const menu = kdd.querySelector(".kdd-menu")
+        const sel = kdd.querySelector(".kdd-native")
+        if (btn && menu && sel) {
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation()
+            const willOpen = menu.classList.contains("hide")
+            document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
+              if (m !== menu) {
+                m.classList.add("hide")
+                const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
+                if (b) b.setAttribute("aria-expanded", "false")
+                const card = m.closest(".tg-item")
+                if (card) card.classList.remove("tg-dropdown-open")
+              }
+            })
+            menu.classList.toggle("hide", !willOpen)
+            btn.setAttribute("aria-expanded", String(willOpen))
+            el.classList.toggle("tg-dropdown-open", willOpen)
+          })
+          menu.addEventListener("click", (ev) => {
+            const it = ev.target.closest(".kdd-item")
+            if (!it) return
+            ev.stopPropagation()
+            menu.classList.add("hide")
+            btn.setAttribute("aria-expanded", "false")
+            el.classList.remove("tg-dropdown-open")
+            const v = it.getAttribute("data-val")
+            if (v === sel.value) return
+            sel.value = v
+            sel.dispatchEvent(new Event("change", { bubbles: true }))
+          })
+          sel.addEventListener("change", async (ev) => {
+            ev.stopPropagation()
+            const v = sel.value
+            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
+            const txt = btn.querySelector(".kdd-txt")
+            if (txt) txt.textContent = priLabels[v] || v
+            const swatch = btn.querySelector(".prop-sq")
+            if (swatch) swatch.className = "prop-sq dp-" + v
+            menu.querySelectorAll(".kdd-item").forEach(i => i.setAttribute("aria-checked", String(i.getAttribute("data-val") === v)))
+            t.priority = v
+            el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
+            const newRail = sevRailClass(v)
+            if (newRail) el.classList.add(newRail)
+            await fetch("/api/feedback/" + encodeURIComponent(id), {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ priority: v })
+            }).catch(() => { })
+          })
+        }
+      }
+      if (!window._kddTriageDocBound) {
+        window._kddTriageDocBound = true
+        document.addEventListener("click", (ev) => {
+          if (ev.target instanceof Element && ev.target.closest(".tg-pri-kdd")) return
+          document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
+            if (!m.classList.contains("hide")) {
+              m.classList.add("hide")
+              const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
+              if (b) b.setAttribute("aria-expanded", "false")
+              const card = m.closest(".tg-item")
+              if (card) card.classList.remove("tg-dropdown-open")
+            }
+          })
+        }, true)
+        document.addEventListener("keydown", (ev) => {
+          if (ev.key === "Escape") {
+            document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
+              if (!m.classList.contains("hide")) {
+                m.classList.add("hide")
+                const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
+                if (b) b.setAttribute("aria-expanded", "false")
+                const card = m.closest(".tg-item")
+                if (card) card.classList.remove("tg-dropdown-open")
+              }
+            })
+          }
+        })
+      }
       const cb = el.querySelector(".tg-cb")
       if (cb) {
         cb.addEventListener("click", (ev) => ev.stopPropagation())
@@ -20101,7 +20402,7 @@
       }
       el.addEventListener("click", (ev) => {
         // Clicking the body (but never a control/thumbnail) opens the single-report cockpit.
-        if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) return
+        if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input, .kdd")) return
         if (ev.ctrlKey || ev.metaKey) {
           window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
           return
@@ -20109,7 +20410,7 @@
         openReportCockpit(id, t)
       })
       el.addEventListener("auxclick", (ev) => {
-        if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) {
+        if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input, .kdd")) {
           window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
         }
       })
@@ -20126,7 +20427,18 @@
       const ix = state.tickets.findIndex(x => String(x.id) === String(id))
       if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...t }
       else state.tickets.push({ ...t })
-      openSingleTicket(String(id), "panel")
+      openSingleTicket(String(id), "panel", "triage")
+    }
+    // Shared priority dropdown generator for Sim Reports cards and rows
+    function tgPriorityDropdownHtml(t) {
+      const curPri = (["urgent", "high", "medium", "low"].includes(t.priority) ? t.priority : "medium")
+      const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
+      const opts = ["urgent", "high", "medium", "low"]
+      return `<div class="kdd tg-pri-kdd" data-kdd="priority">
+        <button type="button" class="kdd-btn tg-pri-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(priLabels[curPri] || curPri)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="kdd-menu hide" role="menu" aria-label="Priority">${opts.map(s => `<button type="button" class="kdd-item kdd-pri-${s}" role="menuitemradio" aria-checked="${s === curPri}" data-val="${s}"><span class="prop-sq dp-${s}"></span><span class="kdd-txt">${priLabels[s]}</span></button>`).join("")}</div>
+        <select class="tg-pri kdd-native" aria-label="Priority" tabindex="-1">${opts.map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${priLabels[s]}</option>`).join("")}</select>
+      </div>`
     }
     // Sim Reports source helper: distinguish Sim vs AutoSim origins safely
     function tgSourceKind(t) {
@@ -20170,7 +20482,7 @@
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
-        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -20206,7 +20518,7 @@
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
-      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
       <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
       <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
     </div>`
@@ -22620,14 +22932,14 @@
     function descriptionBlockHtml(text) {
       const raw = String(text == null ? "" : text)
       const label = "Description"
-      // #653: click-to-edit description — a pencil (and clicking the text) swaps in a textarea + Save/Cancel.
+      // #653: editable description — a pencil button (or clicking empty prompt) swaps in a textarea + Save/Cancel.
       // #717: the read view is auto-linkified (display-only); editing still shows the RAW url text.
       return `<div class="tkt-desc${raw.trim() ? "" : " tkt-desc-empty"}">
     <div class="tkt-desc-head">
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs" title="Click to edit">${descObsInner(raw)}</div>
+    <div class="tkt-obs"${raw.trim() ? "" : ' title="Click to add description"'}>${descObsInner(raw)}</div>
   </div>`
     }
     // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -24607,8 +24919,18 @@
           saveB.addEventListener("mousedown", ev => { ev.preventDefault(); ev.stopPropagation(); commit() })
         }
         if (descEditBtn) descEditBtn.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
-        // #717: clicking a smart-link opens the link (don't hijack it into edit mode); clicking the text edits.
-        if (obsEl) obsEl.addEventListener("click", ev => { if (ev.target.closest("a.tkt-smartlink")) return; ev.stopPropagation(); enterDescEdit() })
+        // Prevent text selection inside the description from triggering edit mode.
+        // Users can select, highlight, and copy description text without interruption.
+        // Edit mode opens via the pencil icon, or when clicking the empty-state placeholder prompt.
+        if (obsEl) obsEl.addEventListener("click", ev => {
+          if (ev.target.closest("a.tkt-smartlink")) return
+          const hasSelection = window.getSelection ? window.getSelection().toString().trim().length > 0 : false
+          if (hasSelection) return
+          if (ev.target.closest(".tkt-desc-placeholder") || descEl.classList.contains("tkt-desc-empty")) {
+            ev.stopPropagation()
+            enterDescEdit()
+          }
+        })
       }
 
       // KLA-242: Wire up "Guard this fix" — creates an expectation from the resolved ticket.
@@ -26021,6 +26343,7 @@
     let _tktBoardReturnUrl = null
     let _fromSimRun = null   // { run, ticket }: set when a report is opened from a Sim run (?fromRun=<id>); that ticket's page then offers "Back to Sim run"
     let _tktBoardScrollY = 0
+    let _tktOriginContext = "tickets"
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
     // the in-app history story — a FRESH load of /t/<id> is still served by the server route (ticket.html).
@@ -26041,6 +26364,17 @@
         } else if (document.body.classList.contains("tkt-page-open")) {
           // Back navigated off the ticket page (URL is already the board URL) → close, restore the board.
           try { closeSingleTicket() } catch (e) { }
+        } else if (document.body.classList.contains("tkt-panel-open")) {
+          const tktParam = new URLSearchParams(location.search).get("ticket")
+          if (!tktParam) {
+            try { closeSingleTicket() } catch (e) { }
+          }
+        } else {
+          const tktParam = new URLSearchParams(location.search).get("ticket")
+          if (tktParam) {
+            const isTriage = (location.hash || "").indexOf("triage") >= 0 || (document.body && document.body.getAttribute("data-view") === "triage")
+            try { openSingleTicket(tktParam, "panel", isTriage ? "triage" : "tickets") } catch (e) { }
+          }
         }
       })
     }
@@ -26063,7 +26397,8 @@
       p.catch(() => { if (_tktReads.get(key) === p) _tktReads.delete(key) })
       return p
     }
-    async function openSingleTicket(id, mode) {
+    async function openSingleTicket(id, mode, context) {
+      _tktOriginContext = context || (document.body && document.body.getAttribute("data-view") === "triage" ? "triage" : "tickets")
       // KD-239: any ticket opened in this page load means the boot deep link (if any) is done with. Opening one from
       // the board writes ?ticket=<id> into the URL; without this, the next poll/refresh ran maybeOpenDeepLinkTicket(),
       // took that for a fresh shared link and re-opened the ticket full-page — rebuilding it mid-comment (the
@@ -26074,6 +26409,7 @@
       }
       if (mode === "panel" || mode === "full") _tktSingleMode = mode
       tktReadsReset()   // a fresh open never inherits reads from a previous ticket
+      ensureTktCleanUrlPopstate()
       // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
       // capture on the FIRST open (not on prev/next re-entry or the cache→fresh re-render for same id).
       try {
@@ -26231,7 +26567,7 @@
       if (panel) {
         // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
         document.body.classList.remove("tkt-page-open")
-        if (document.body.getAttribute("data-view") !== "tickets") {
+        if (_tktOriginContext !== "triage" && document.body.getAttribute("data-view") !== "tickets") {
           const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
         }
       } else {
@@ -26243,7 +26579,7 @@
         // Only switch views on the FIRST render (not the cache→fresh re-render for the same open): setView
         // resets the hash to #tickets, which would otherwise clobber our #tickets/<id> and push a duplicate
         // history entry each render. Once data-view is 'tickets' the chrome is already correct.
-        if (document.body.getAttribute("data-view") !== "tickets") {
+        if (_tktOriginContext !== "triage" && document.body.getAttribute("data-view") !== "tickets") {
           if (typeof window.setView === "function") window.setView("tickets")
           else document.body.setAttribute("data-view", "tickets")
         }
@@ -26256,9 +26592,9 @@
         single.setAttribute("aria-label", "Ticket " + key + (t.title ? " — " + t.title : ""))
         ensurePanelScrim()
         document.body.classList.add("tkt-panel-open")
-        if (board) board.classList.remove("hide")
-        if (listView && _tktView === "list") listView.classList.remove("hide")
-        if (toolbar) toolbar.classList.remove("hide")
+        if (board && _tktOriginContext !== "triage") board.classList.remove("hide")
+        if (listView && _tktView === "list" && _tktOriginContext !== "triage") listView.classList.remove("hide")
+        if (toolbar && _tktOriginContext !== "triage") toolbar.classList.remove("hide")
         const ph = document.createElement("div"); ph.className = "tkt-panel-head"
         ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x', { size: 13 })} Close</button>`
           + `<span class="tph-sp"></span>`
@@ -26266,7 +26602,7 @@
           + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Permanently delete ticket" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
         ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
         // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
-        ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full"))
+        ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full", _tktOriginContext))
         const pDelBtn = ph.querySelector('[data-act="delete"]')
         if (pDelBtn) pDelBtn.addEventListener("click", () => doDeleteSingleTicket())
         single.appendChild(ph)
@@ -26289,7 +26625,9 @@
         const cur = ids.indexOf(String(id))
         const hasPrev = cur > 0, hasNext = cur >= 0 && cur < ids.length - 1
         const ph = document.createElement("div"); ph.className = "tkt-page-head"
-        ph.innerHTML = `<button class="tkt-back-link" data-act="back" type="button" aria-label="Back to all tickets (Esc)">${kicon('chevron-left', { size: 14 })} All Tickets</button>`
+        const backLabel = _tktOriginContext === "triage" ? "Sim Reports" : "All Tickets"
+        const backAria = _tktOriginContext === "triage" ? "Back to Sim Reports (Esc)" : "Back to all tickets (Esc)"
+        ph.innerHTML = `<button class="tkt-back-link" data-act="back" type="button" aria-label="${backAria}">${kicon('chevron-left', { size: 14 })} ${backLabel}</button>`
           + `<span class="tkt-page-proj">${esc(projName)}</span>`
           + `<span class="tkt-page-sep" aria-hidden="true">›</span>`
           + `<span class="tkt-page-key">${esc(key)}</span>`
@@ -26587,7 +26925,9 @@
         } else {
           const u = new URL(location.href)
           u.searchParams.delete("ticket")
-          if (/^#?tickets\//.test(u.hash || "")) u.hash = "tickets"   // back to the board hash, not a ticket
+          if (/^#?tickets\//.test(u.hash || "")) {
+            u.hash = _tktOriginContext === "triage" ? "triage" : "tickets"
+          }
           history.replaceState(null, "", u.toString())
         }
         _tktBoardReturnUrl = null
@@ -26597,7 +26937,12 @@
       // so it was never nuked — only re-render the view when the dedicated page had replaced it.
       _tktSingleMode = "panel"
       if (!wasPanel) {
-        renderTicketsView()
+        if (_tktOriginContext === "triage") {
+          if (typeof setView === "function") setView("triage")
+          else if (typeof renderTriage === "function") renderTriage()
+        } else {
+          renderTicketsView()
+        }
         if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
           try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
           catch (e) { window.scrollTo(0, _tktBoardScrollY) }
@@ -26607,6 +26952,7 @@
       // a11y §10: return focus to the card / control that opened the detail.
       try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus({ preventScroll: true }) } catch (e) { }
       window.__klavTktInvoker = null
+      _tktOriginContext = "tickets"
     }
 
     // ── KD-100: attachments on the New ticket dialog ─────────────────────────────────────────────────
@@ -32439,6 +32785,9 @@
             document.body.classList.remove('tkt-page-open');
             var _ts = document.getElementById('ticketSingle');
             if (_ts) { _ts.classList.add('hide'); _ts.classList.remove('tkt-page'); _ts.innerHTML = ''; _ts.removeAttribute('role'); _ts.removeAttribute('aria-label'); }
+          }
+          if (document.body.classList.contains('tkt-panel-open')) {
+            if (typeof closeSingleTicket === 'function') closeSingleTicket();
           }
           normalizeSidebar();
           document.body.setAttribute('data-view', v);
