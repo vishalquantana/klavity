@@ -15113,6 +15113,207 @@
       text-transform: none
     }
 
+    /* ── Sim Reports Priority Dropdown Component (.tg-pri-kdd) ── */
+    .tg-pri-kdd {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .tg-pri-kdd .kdd-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      height: 26px;
+      min-width: 90px;
+      font-family: var(--body);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper);
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease);
+    }
+
+    .tg-pri-kdd .kdd-btn:hover {
+      background: var(--ink-3);
+      border-color: var(--indigo);
+    }
+
+    .tg-pri-kdd .kdd-btn:focus-visible {
+      outline: none;
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .2);
+    }
+
+    .tg-pri-kdd .kdd-btn[aria-expanded="true"] {
+      background: var(--ink-2);
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .2);
+    }
+
+    .tg-pri-kdd .kdd-caret {
+      margin-left: auto;
+      color: var(--paper-dim);
+      transition: transform var(--mi-dur) var(--mi-ease);
+    }
+
+    .tg-pri-kdd .kdd-btn[aria-expanded="true"] .kdd-caret {
+      transform: rotate(180deg);
+    }
+
+    .tg-pri-kdd .kdd-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 100;
+      min-width: 136px;
+      padding: 4px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, .3), 0 8px 10px -6px rgba(0, 0, 0, .2);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .tg-pri-kdd .kdd-menu.hide {
+      display: none;
+    }
+
+    .tg-pri-kdd .kdd-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 12px;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), color var(--mi-dur) var(--mi-ease);
+    }
+
+    .tg-pri-kdd .kdd-item:focus-visible {
+      outline: none;
+    }
+
+    .tg-pri-kdd .kdd-txt {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Distinct Priority Option Styling: Urgent (Red), High (Orange), Medium (Amber), Low (Blue) */
+    .tg-pri-kdd .kdd-pri-urgent .prop-sq {
+      background: #dc2626;
+      box-shadow: 0 0 0 1px rgba(220, 38, 38, .3);
+    }
+    .tg-pri-kdd .kdd-pri-urgent:hover,
+    .tg-pri-kdd .kdd-pri-urgent:focus-visible {
+      background: rgba(220, 38, 38, .1);
+      border-color: rgba(220, 38, 38, .25);
+      color: #dc2626;
+    }
+    .tg-pri-kdd .kdd-pri-urgent[aria-checked="true"] {
+      background: rgba(220, 38, 38, .15);
+      border-color: rgba(220, 38, 38, .35);
+      color: #dc2626;
+      font-weight: 700;
+    }
+
+    .tg-pri-kdd .kdd-pri-high .prop-sq {
+      background: #f97316;
+      box-shadow: 0 0 0 1px rgba(249, 115, 22, .3);
+    }
+    .tg-pri-kdd .kdd-pri-high:hover,
+    .tg-pri-kdd .kdd-pri-high:focus-visible {
+      background: rgba(249, 115, 22, .1);
+      border-color: rgba(249, 115, 22, .25);
+      color: #ea580c;
+    }
+    .tg-pri-kdd .kdd-pri-high[aria-checked="true"] {
+      background: rgba(249, 115, 22, .15);
+      border-color: rgba(249, 115, 22, .35);
+      color: #ea580c;
+      font-weight: 700;
+    }
+
+    .tg-pri-kdd .kdd-pri-medium .prop-sq {
+      background: #eab308;
+      box-shadow: 0 0 0 1px rgba(234, 179, 8, .3);
+    }
+    .tg-pri-kdd .kdd-pri-medium:hover,
+    .tg-pri-kdd .kdd-pri-medium:focus-visible {
+      background: rgba(234, 179, 8, .1);
+      border-color: rgba(234, 179, 8, .25);
+      color: #ca8a04;
+    }
+    .tg-pri-kdd .kdd-pri-medium[aria-checked="true"] {
+      background: rgba(234, 179, 8, .15);
+      border-color: rgba(234, 179, 8, .35);
+      color: #ca8a04;
+      font-weight: 700;
+    }
+
+    .tg-pri-kdd .kdd-pri-low .prop-sq {
+      background: #3b82f6;
+      box-shadow: 0 0 0 1px rgba(59, 130, 246, .3);
+    }
+    .tg-pri-kdd .kdd-pri-low:hover,
+    .tg-pri-kdd .kdd-pri-low:focus-visible {
+      background: rgba(59, 130, 246, .1);
+      border-color: rgba(59, 130, 246, .25);
+      color: #2563eb;
+    }
+    .tg-pri-kdd .kdd-pri-low[aria-checked="true"] {
+      background: rgba(59, 130, 246, .15);
+      border-color: rgba(59, 130, 246, .35);
+      color: #2563eb;
+      font-weight: 700;
+    }
+
+    /* Dark theme text contrast adjustments */
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent[aria-checked="true"] {
+      color: #f87171;
+    }
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-high:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-high:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-high[aria-checked="true"] {
+      color: #fb923c;
+    }
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-medium:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-medium:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-medium[aria-checked="true"] {
+      color: #facc15;
+    }
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-low:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-low:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-low[aria-checked="true"] {
+      color: #60a5fa;
+    }
+
+    /* Elevated z-index when dropdown is open so it renders above surrounding cards */
+    .kb-card.tg-dropdown-open,
+    .tg-row.tg-dropdown-open,
+    .kb-card:has(.tg-pri-kdd .kdd-menu:not(.hide)),
+    .tg-row:has(.tg-pri-kdd .kdd-menu:not(.hide)) {
+      z-index: 50;
+      position: relative;
+    }
+
     .tkt-lbl-kdd .tkt-lbl-add-item {
       color: var(--indigo);
       font-weight: 600
@@ -20020,6 +20221,89 @@
       if (sendBtn) sendBtn.addEventListener("click", (ev) => { ev.stopPropagation(); tgSendToTracker([id]) })
       const pri = el.querySelector(".tg-pri")
       if (pri) pri.addEventListener("click", (ev) => ev.stopPropagation())
+      const kdd = el.querySelector(".tg-pri-kdd")
+      if (kdd) {
+        const btn = kdd.querySelector(".kdd-btn")
+        const menu = kdd.querySelector(".kdd-menu")
+        const sel = kdd.querySelector(".kdd-native")
+        if (btn && menu && sel) {
+          btn.addEventListener("click", (ev) => {
+            ev.stopPropagation()
+            const willOpen = menu.classList.contains("hide")
+            document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
+              if (m !== menu) {
+                m.classList.add("hide")
+                const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
+                if (b) b.setAttribute("aria-expanded", "false")
+                const card = m.closest(".tg-item")
+                if (card) card.classList.remove("tg-dropdown-open")
+              }
+            })
+            menu.classList.toggle("hide", !willOpen)
+            btn.setAttribute("aria-expanded", String(willOpen))
+            el.classList.toggle("tg-dropdown-open", willOpen)
+          })
+          menu.addEventListener("click", (ev) => {
+            const it = ev.target.closest(".kdd-item")
+            if (!it) return
+            ev.stopPropagation()
+            menu.classList.add("hide")
+            btn.setAttribute("aria-expanded", "false")
+            el.classList.remove("tg-dropdown-open")
+            const v = it.getAttribute("data-val")
+            if (v === sel.value) return
+            sel.value = v
+            sel.dispatchEvent(new Event("change", { bubbles: true }))
+          })
+          sel.addEventListener("change", async (ev) => {
+            ev.stopPropagation()
+            const v = sel.value
+            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
+            const txt = btn.querySelector(".kdd-txt")
+            if (txt) txt.textContent = priLabels[v] || v
+            const swatch = btn.querySelector(".prop-sq")
+            if (swatch) swatch.className = "prop-sq dp-" + v
+            menu.querySelectorAll(".kdd-item").forEach(i => i.setAttribute("aria-checked", String(i.getAttribute("data-val") === v)))
+            t.priority = v
+            el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
+            const newRail = sevRailClass(v)
+            if (newRail) el.classList.add(newRail)
+            await fetch("/api/feedback/" + encodeURIComponent(id), {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ priority: v })
+            }).catch(() => {})
+          })
+        }
+      }
+      if (!window._kddTriageDocBound) {
+        window._kddTriageDocBound = true
+        document.addEventListener("click", (ev) => {
+          if (ev.target instanceof Element && ev.target.closest(".tg-pri-kdd")) return
+          document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
+            if (!m.classList.contains("hide")) {
+              m.classList.add("hide")
+              const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
+              if (b) b.setAttribute("aria-expanded", "false")
+              const card = m.closest(".tg-item")
+              if (card) card.classList.remove("tg-dropdown-open")
+            }
+          })
+        }, true)
+        document.addEventListener("keydown", (ev) => {
+          if (ev.key === "Escape") {
+            document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
+              if (!m.classList.contains("hide")) {
+                m.classList.add("hide")
+                const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
+                if (b) b.setAttribute("aria-expanded", "false")
+                const card = m.closest(".tg-item")
+                if (card) card.classList.remove("tg-dropdown-open")
+              }
+            })
+          }
+        })
+      }
       const cb = el.querySelector(".tg-cb")
       if (cb) {
         cb.addEventListener("click", (ev) => ev.stopPropagation())
@@ -20031,7 +20315,7 @@
       }
       el.addEventListener("click", (ev) => {
         // Clicking the body (but never a control/thumbnail) opens the single-report cockpit.
-        if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) return
+        if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input, .kdd")) return
         if (ev.ctrlKey || ev.metaKey) {
           window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
           return
@@ -20039,7 +20323,7 @@
         openReportCockpit(id, t)
       })
       el.addEventListener("auxclick", (ev) => {
-        if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) {
+        if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input, .kdd")) {
           window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
         }
       })
@@ -20058,6 +20342,17 @@
       else state.tickets.push({ ...t })
       openSingleTicket(String(id), "panel")
     }
+    // Shared priority dropdown generator for Sim Reports cards and rows
+    function tgPriorityDropdownHtml(t) {
+      const curPri = (["urgent", "high", "medium", "low"].includes(t.priority) ? t.priority : "medium")
+      const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
+      const opts = ["urgent", "high", "medium", "low"]
+      return `<div class="kdd tg-pri-kdd" data-kdd="priority">
+        <button type="button" class="kdd-btn tg-pri-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(priLabels[curPri] || curPri)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+        <div class="kdd-menu hide" role="menu" aria-label="Priority">${opts.map(s => `<button type="button" class="kdd-item kdd-pri-${s}" role="menuitemradio" aria-checked="${s === curPri}" data-val="${s}"><span class="prop-sq dp-${s}"></span><span class="kdd-txt">${priLabels[s]}</span></button>`).join("")}</div>
+        <select class="tg-pri kdd-native" aria-label="Priority" tabindex="-1">${opts.map(s => `<option value="${s}"${s===(t.priority||"medium")?" selected":""}>${priLabels[s]}</option>`).join("")}</select>
+      </div>`
+    }
     // #739: the row List (kept for parity's List/Board toggle) — same data as before minus the inline
     // Evidence expand, which is replaced by opening the full cockpit on click.
     function renderTriageList(host, items) {
@@ -20075,7 +20370,7 @@
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
-        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+        ${tgPriorityDropdownHtml(t)}
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -20108,7 +20403,7 @@
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
-      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+      ${tgPriorityDropdownHtml(t)}
       <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
       <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
     </div>`
