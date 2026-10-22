@@ -8892,6 +8892,8 @@
     body.tkt-page-open .kb-toolbar,
     body.tkt-page-open #tktQuickChips,
     body.tkt-page-open #tktFilterBar,
+    body.tkt-page-open .card[data-view="tickets"],
+    body.tkt-page-open .card[data-view="triage"],
     /* #681: the board's page heading ("Tickets" + tagline) must not leak above the single ticket —
    the dedicated page shows ONLY the ticket, with its own compact header row. */
     body.tkt-page-open .content>.head,
@@ -8905,7 +8907,8 @@
    the 3-col paper card fills the available width; the .wrap side padding stays as a modest gutter. */
     #ticketSingle.tkt-page {
       max-width: none;
-      margin: 0
+      margin: 0;
+      grid-column: 1 / -1
     }
 
     body.tkt-page-open .wrap {
@@ -17166,8 +17169,8 @@
                   style="width:40%"></span></div><span class="sk sk-pill"></span>
             </div>
           </div>
-          <div id="ticketSingle" class="hide"></div>
         </div>
+        <div id="ticketSingle" class="hide"></div>
 
         <!-- Live activity -->
         <div class="card" data-view="overview">
@@ -19447,11 +19450,14 @@
         }
         try { const _fr = new URLSearchParams(location.search).get("fromRun"); if (_fr && ticketId) _fromSimRun = { run: _fr, ticket: ticketId } } catch (e) { }
         if (!ticketId) return
+        const isTriage = (location.hash || "").indexOf("triage") >= 0 || (document.body && document.body.getAttribute("data-view") === "triage")
+        const targetMode = isTriage ? "panel" : "full"
+        const targetCtx = isTriage ? "triage" : "tickets"
         // Find the ticket in loaded state; if the list hasn't loaded the individual ticket yet, try fetching it
         const t = (state.tickets || []).find(x => String(x.id) === String(ticketId))
         if (t) {
           _deepLinkTicketConsumed = true      // commit BEFORE opening so a concurrent poll can't double-open
-          openSingleTicket(ticketId, "full")  // KLA-562: a shared ?ticket= deep link opens the full-page route
+          openSingleTicket(ticketId, targetMode, targetCtx)  // KLA-562: a shared ?ticket= deep link opens the route
         } else {
           // Ticket not in state.tickets (may be loaded via separate /api/projects/:id/tickets call)
           // Fetch it and inject into state so openSingleTicket can find it
@@ -19470,7 +19476,7 @@
               const report = d.report
               if (!state.tickets) state.tickets = []
               if (!state.tickets.find(x => x.id === report.id)) state.tickets.push(report)
-              openSingleTicket(ticketId, "full")   // KLA-562: shared deep link → full-page route
+              openSingleTicket(ticketId, targetMode, targetCtx)   // KLA-562: shared deep link → route
             }).catch(_bootFail)
         }
       } catch (e) { }
@@ -20056,7 +20062,7 @@
       const ix = state.tickets.findIndex(x => String(x.id) === String(id))
       if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], ...t }
       else state.tickets.push({ ...t })
-      openSingleTicket(String(id), "panel")
+      openSingleTicket(String(id), "panel", "triage")
     }
     // #739: the row List (kept for parity's List/Board toggle) — same data as before minus the inline
     // Evidence expand, which is replaced by opening the full cockpit on click.
@@ -25923,6 +25929,7 @@
     let _tktBoardReturnUrl = null
     let _fromSimRun = null   // { run, ticket }: set when a report is opened from a Sim run (?fromRun=<id>); that ticket's page then offers "Back to Sim run"
     let _tktBoardScrollY = 0
+    let _tktOriginContext = "tickets"
     // #736: keep the browser Back/Forward buttons honest across the clean /t/<id> URL. Popping OFF a ticket
     // path closes the ticket (the board URL is already restored); popping ONTO a /t/<id> re-opens it. This is
     // the in-app history story — a FRESH load of /t/<id> is still served by the server route (ticket.html).
@@ -25943,6 +25950,17 @@
         } else if (document.body.classList.contains("tkt-page-open")) {
           // Back navigated off the ticket page (URL is already the board URL) → close, restore the board.
           try { closeSingleTicket() } catch (e) { }
+        } else if (document.body.classList.contains("tkt-panel-open")) {
+          const tktParam = new URLSearchParams(location.search).get("ticket")
+          if (!tktParam) {
+            try { closeSingleTicket() } catch (e) { }
+          }
+        } else {
+          const tktParam = new URLSearchParams(location.search).get("ticket")
+          if (tktParam) {
+            const isTriage = (location.hash || "").indexOf("triage") >= 0 || (document.body && document.body.getAttribute("data-view") === "triage")
+            try { openSingleTicket(tktParam, "panel", isTriage ? "triage" : "tickets") } catch (e) { }
+          }
         }
       })
     }
@@ -25965,7 +25983,8 @@
       p.catch(() => { if (_tktReads.get(key) === p) _tktReads.delete(key) })
       return p
     }
-    async function openSingleTicket(id, mode) {
+    async function openSingleTicket(id, mode, context) {
+      _tktOriginContext = context || (document.body && document.body.getAttribute("data-view") === "triage" ? "triage" : "tickets")
       // KD-239: any ticket opened in this page load means the boot deep link (if any) is done with. Opening one from
       // the board writes ?ticket=<id> into the URL; without this, the next poll/refresh ran maybeOpenDeepLinkTicket(),
       // took that for a fresh shared link and re-opened the ticket full-page — rebuilding it mid-comment (the
@@ -25976,6 +25995,7 @@
       }
       if (mode === "panel" || mode === "full") _tktSingleMode = mode
       tktReadsReset()   // a fresh open never inherits reads from a previous ticket
+      ensureTktCleanUrlPopstate()
       // a11y §10: remember the element that invoked the detail so focus returns to it on close. Only
       // capture on the FIRST open (not on prev/next re-entry or the cache→fresh re-render for same id).
       try {
@@ -26133,7 +26153,7 @@
       if (panel) {
         // Panel mode: the tickets board must be mounted behind the overlay, so activate it the normal way.
         document.body.classList.remove("tkt-page-open")
-        if (document.body.getAttribute("data-view") !== "tickets") {
+        if (_tktOriginContext !== "triage" && document.body.getAttribute("data-view") !== "tickets") {
           const nv = document.querySelector('.side .nv[data-go="tickets"]'); if (nv) nv.click()
         }
       } else {
@@ -26145,7 +26165,7 @@
         // Only switch views on the FIRST render (not the cache→fresh re-render for the same open): setView
         // resets the hash to #tickets, which would otherwise clobber our #tickets/<id> and push a duplicate
         // history entry each render. Once data-view is 'tickets' the chrome is already correct.
-        if (document.body.getAttribute("data-view") !== "tickets") {
+        if (_tktOriginContext !== "triage" && document.body.getAttribute("data-view") !== "tickets") {
           if (typeof window.setView === "function") window.setView("tickets")
           else document.body.setAttribute("data-view", "tickets")
         }
@@ -26158,9 +26178,9 @@
         single.setAttribute("aria-label", "Ticket " + key + (t.title ? " — " + t.title : ""))
         ensurePanelScrim()
         document.body.classList.add("tkt-panel-open")
-        if (board) board.classList.remove("hide")
-        if (listView && _tktView === "list") listView.classList.remove("hide")
-        if (toolbar) toolbar.classList.remove("hide")
+        if (board && _tktOriginContext !== "triage") board.classList.remove("hide")
+        if (listView && _tktView === "list" && _tktOriginContext !== "triage") listView.classList.remove("hide")
+        if (toolbar && _tktOriginContext !== "triage") toolbar.classList.remove("hide")
         const ph = document.createElement("div"); ph.className = "tkt-panel-head"
         ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x', { size: 13 })} Close</button>`
           + `<span class="tph-sp"></span>`
@@ -26168,7 +26188,7 @@
           + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Permanently delete ticket" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
         ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
         // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
-        ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full"))
+        ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full", _tktOriginContext))
         const pDelBtn = ph.querySelector('[data-act="delete"]')
         if (pDelBtn) pDelBtn.addEventListener("click", () => doDeleteSingleTicket())
         single.appendChild(ph)
@@ -26191,7 +26211,9 @@
         const cur = ids.indexOf(String(id))
         const hasPrev = cur > 0, hasNext = cur >= 0 && cur < ids.length - 1
         const ph = document.createElement("div"); ph.className = "tkt-page-head"
-        ph.innerHTML = `<button class="tkt-back-link" data-act="back" type="button" aria-label="Back to all tickets (Esc)">${kicon('chevron-left', { size: 14 })} All Tickets</button>`
+        const backLabel = _tktOriginContext === "triage" ? "Sim Reports" : "All Tickets"
+        const backAria = _tktOriginContext === "triage" ? "Back to Sim Reports (Esc)" : "Back to all tickets (Esc)"
+        ph.innerHTML = `<button class="tkt-back-link" data-act="back" type="button" aria-label="${backAria}">${kicon('chevron-left', { size: 14 })} ${backLabel}</button>`
           + `<span class="tkt-page-proj">${esc(projName)}</span>`
           + `<span class="tkt-page-sep" aria-hidden="true">›</span>`
           + `<span class="tkt-page-key">${esc(key)}</span>`
@@ -26489,7 +26511,9 @@
         } else {
           const u = new URL(location.href)
           u.searchParams.delete("ticket")
-          if (/^#?tickets\//.test(u.hash || "")) u.hash = "tickets"   // back to the board hash, not a ticket
+          if (/^#?tickets\//.test(u.hash || "")) {
+            u.hash = _tktOriginContext === "triage" ? "triage" : "tickets"
+          }
           history.replaceState(null, "", u.toString())
         }
         _tktBoardReturnUrl = null
@@ -26499,7 +26523,12 @@
       // so it was never nuked — only re-render the view when the dedicated page had replaced it.
       _tktSingleMode = "panel"
       if (!wasPanel) {
-        renderTicketsView()
+        if (_tktOriginContext === "triage") {
+          if (typeof setView === "function") setView("triage")
+          else if (typeof renderTriage === "function") renderTriage()
+        } else {
+          renderTicketsView()
+        }
         if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
           try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
           catch (e) { window.scrollTo(0, _tktBoardScrollY) }
@@ -26509,6 +26538,7 @@
       // a11y §10: return focus to the card / control that opened the detail.
       try { if (invoker && typeof invoker.focus === "function" && document.contains(invoker)) invoker.focus({ preventScroll: true }) } catch (e) { }
       window.__klavTktInvoker = null
+      _tktOriginContext = "tickets"
     }
 
     // ── KD-100: attachments on the New ticket dialog ─────────────────────────────────────────────────
@@ -32338,6 +32368,9 @@
             document.body.classList.remove('tkt-page-open');
             var _ts = document.getElementById('ticketSingle');
             if (_ts) { _ts.classList.add('hide'); _ts.classList.remove('tkt-page'); _ts.innerHTML = ''; _ts.removeAttribute('role'); _ts.removeAttribute('aria-label'); }
+          }
+          if (document.body.classList.contains('tkt-panel-open')) {
+            if (typeof closeSingleTicket === 'function') closeSingleTicket();
           }
           normalizeSidebar();
           document.body.setAttribute('data-view', v);
