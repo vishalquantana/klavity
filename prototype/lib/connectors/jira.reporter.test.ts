@@ -1,7 +1,8 @@
 // KD-983: a Jira issue filed by Klavity names the Klavity reporter when that email belongs to a Jira
 // user in the project — always as a "Reported by @Name" mention in the description, and in the Reporter
 // field too when the integration account holds "Modify Reporter". Otherwise the integration user stays
-// the reporter (Jira's default). A reporter Jira refuses must never cost the issue.
+// the reporter (Jira's default), and "Reported by" @mentions that same integration user — never the
+// email as plain text. A reporter Jira refuses must never cost the issue.
 import { test, expect, beforeAll, afterAll, beforeEach } from "bun:test"
 import { jiraConnector } from "./jira"
 process.env.KLAV_TEST_ALLOW_LOOPBACK = "1"
@@ -12,6 +13,8 @@ let users: any[] = []          // what /user/assignable/search returns
 let searchStatus = 200
 let canModifyReporter = true   // what /mypermissions reports for MODIFY_REPORTER
 let rejectReporter = false     // 400 {errors:{reporter}} when the create carries a reporter
+let myselfStatus = 200         // what /myself answers (the integration account)
+let myselfCalls = 0
 let searches: URL[] = []
 let creates: any[] = []
 
@@ -21,6 +24,12 @@ beforeAll(() => {
     if (u.pathname.endsWith("/user/assignable/search")) {
       searches.push(u)
       return searchStatus === 200 ? Response.json(users) : new Response("forbidden", { status: searchStatus })
+    }
+    if (u.pathname.endsWith("/myself")) {
+      myselfCalls++
+      return myselfStatus === 200
+        ? Response.json({ accountId: "acc-bot", accountType: "atlassian", displayName: "Klavity Bot", emailAddress: "bot@x.co" })
+        : new Response("nope", { status: myselfStatus })
     }
     if (u.pathname.endsWith("/mypermissions")) {
       return Response.json({ permissions: { MODIFY_REPORTER: { key: "MODIFY_REPORTER", havePermission: canModifyReporter } } })
@@ -38,7 +47,7 @@ beforeAll(() => {
   base = `http://127.0.0.1:${server.port}`
 })
 afterAll(() => server.stop(true))
-beforeEach(() => { users = []; searchStatus = 200; canModifyReporter = true; rejectReporter = false; searches = []; creates = [] })
+beforeEach(() => { users = []; searchStatus = 200; canModifyReporter = true; rejectReporter = false; myselfStatus = 200; myselfCalls = 0; searches = []; creates = [] })
 
 const cfg = () => ({ host: base, email: "bot@x.co", token: "t", project_key: "PROJ" })
 const ticket = (reporterEmail: string | null) =>
@@ -73,10 +82,20 @@ test("without Modify Reporter: the reporter is @mentioned, the Reporter field is
   expect(creates[0].fields.description.content[1].content[0].text).toBe("b")
 })
 
-test("an email with no matching Jira user leaves the default reporter and no mention", async () => {
+test("an email with no matching Jira user: Reported by @mentions the issue's Reporter (the integration user)", async () => {
   users = []
   await jiraConnector.createIssue(ticket("stranger@elsewhere.com"), cfg())
-  expect(creates[0].fields.reporter).toBeUndefined()
+  expect(creates[0].fields.reporter).toBeUndefined()   // Jira defaults the Reporter to the integration user
+  expect(mentionOf(creates[0])).toEqual({ id: "acc-bot", text: "@Klavity Bot" })
+  // never the unknown email as plain text
+  expect(JSON.stringify(creates[0].fields.description)).not.toContain("stranger@elsewhere.com")
+})
+
+test("if the integration user can't be read either, there is no Reported by line (and the issue still files)", async () => {
+  users = []
+  myselfStatus = 403
+  const r = await jiraConnector.createIssue(ticket("stranger@elsewhere.com"), cfg())
+  expect(r.externalKey).toBe("PROJ-1")
   expect(mentionOf(creates[0])).toBeNull()
   expect(creates[0].fields.description.content).toHaveLength(1)
 })
@@ -85,7 +104,8 @@ test("a different user's email in the results is not taken as a match", async ()
   users = [jiraUser("acc-other", "someone.else@quantana.in"), jiraUser("acc-third", "third@quantana.in")]
   await jiraConnector.createIssue(ticket("balaji.genji@quantana.in"), cfg())
   expect(creates[0].fields.reporter).toBeUndefined()
-  expect(mentionOf(creates[0])).toBeNull()
+  // no match → the mention names the issue's Reporter (integration user), never the other users
+  expect(mentionOf(creates[0])).toEqual({ id: "acc-bot", text: "@Klavity Bot" })
 })
 
 test("a single hit with a privacy-hidden email is accepted for the full address", async () => {
@@ -101,14 +121,17 @@ test("app / inactive accounts are never used as the reporter", async () => {
   ]
   await jiraConnector.createIssue(ticket("balaji.genji@quantana.in"), cfg())
   expect(creates[0].fields.reporter).toBeUndefined()
-  expect(mentionOf(creates[0])).toBeNull()
+  expect(mentionOf(creates[0])).toEqual({ id: "acc-bot", text: "@Klavity Bot" })
 })
 
 test("an anonymous report skips the lookup entirely", async () => {
   await jiraConnector.createIssue(ticket(null), cfg())
   expect(searches).toHaveLength(0)
+  expect(myselfCalls).toBe(0)
   expect(creates[0].fields.reporter).toBeUndefined()
   expect(mentionOf(creates[0])).toBeNull()
+  // no "Reported by" line at all for an anonymous report
+  expect(creates[0].fields.description.content).toHaveLength(1)
 })
 
 test("a failed user lookup falls back to the default reporter and still files the issue", async () => {
@@ -116,6 +139,7 @@ test("a failed user lookup falls back to the default reporter and still files th
   const r = await jiraConnector.createIssue(ticket("balaji.genji@quantana.in"), cfg())
   expect(r.externalKey).toBe("PROJ-1")
   expect(creates[0].fields.reporter).toBeUndefined()
+  expect(mentionOf(creates[0])).toEqual({ id: "acc-bot", text: "@Klavity Bot" })
 })
 
 test("if Jira refuses the reporter field anyway, the issue is re-filed once without it (mention kept)", async () => {

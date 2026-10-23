@@ -195,6 +195,24 @@ async function jiraFindReporter(
   }
 }
 
+// KD-983: the integration account itself — the user Jira records as the issue's Reporter by default.
+// When the Klavity reporter's email has no Jira account, the "Reported by" mention names this user, so
+// the description agrees with the Reporter field. NEVER throws — any failure returns null (no line).
+//   GET {host}/rest/api/3/myself
+async function jiraIntegrationUser(host: string, credentials: string): Promise<JiraReporter | null> {
+  try {
+    const res = await safeFetch(
+      `${host.replace(/\/$/, "")}/rest/api/3/myself`,
+      { method: "GET", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
+      JIRA_FETCH_OPTS,
+    )
+    if (!res.ok) return null
+    const me = await res.json().catch(() => null)
+    if (!me || !me.accountId) return null
+    return { accountId: String(me.accountId), displayName: String(me.displayName || "Jira user") }
+  } catch { return null }
+}
+
 // KD-983: may the integration account set the Reporter field in this project? Jira only accepts a
 // reporter other than the caller with "Modify Reporter" — without it the create 400s. Checking first
 // keeps every create to ONE request on projects (like PX4) that don't grant it, and starts setting the
@@ -274,9 +292,9 @@ function jiraErrorReason(body: string | undefined | null): string {
   return body.slice(0, 200)
 }
 
-// Build an Atlassian Document Format (ADF) doc wrapping plain text. KD-983: when the Klavity reporter
-// is a known Jira user, the doc opens with "Reported by @Name" — a real mention node, so the reporter
-// is linked + notified in Jira even when the Reporter field has to stay the integration account.
+// Build an Atlassian Document Format (ADF) doc wrapping plain text. KD-983: the doc opens with
+// "Reported by @Name" — a real mention node, so the person is linked + notified in Jira. The caller passes
+// the Klavity reporter when they're a Jira user, else the integration account (the issue's Reporter).
 function toAdf(text: string, reportedBy?: JiraReporter | null): object {
   return {
     version: 1,
@@ -347,6 +365,9 @@ export const jiraConnector: Connector = {
     const reporterAccountId = reporter && await jiraCanModifyReporter(host, credentials, project_key)
       ? reporter.accountId
       : null
+    // KD-983: an email with no Jira account can't be @mentioned, so "Reported by" names the issue's actual
+    // Reporter instead — the integration account — rather than printing the email as plain text.
+    const reportedBy = reporter ?? (ticket.reporterEmail ? await jiraIntegrationUser(host, credentials) : null)
 
     // SSRF guard (H3): `host` is user-supplied. safeFetch validates the constructed URL and
     // every redirect hop (loopback / private / link-local / metadata blocked, https required,
@@ -365,7 +386,7 @@ export const jiraConnector: Connector = {
             project: { key: project_key },
             issuetype: { name: issueType },
             summary: ticket.title,
-            description: toAdf(ticket.body, reporter),
+            description: toAdf(ticket.body, reportedBy),
             // JTBD 2.16: Jira supports a native `labels` field (array of strings, no whitespace).
             // Omit the field entirely when there are no labels.
             ...(mappedLabels.length ? { labels: mappedLabels } : {}),
