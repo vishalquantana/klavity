@@ -170,7 +170,7 @@ const REPORTER_LABELS: Record<string, string> = {
 export function reporterLines(reporter: any): string[] {
   if (!reporter || typeof reporter !== 'object') return []
   const entries = REPORTER_KEYS.filter((k) => reporter[k]).map((k) => `  ${REPORTER_LABELS[k] || k}: ${capStr(reporter[k], 500)}`)
-  return entries.length ? ['Reporter:', ...entries] : []
+  return entries.length ? ['Customer details:', ...entries] : []
 }
 
 // Render the captured client/browser info as a compact plain-text line. Empty array when absent.
@@ -192,7 +192,7 @@ export function reporterClientInfoHtml(reporter: any, ci: any): string {
   const rl = reporterLines(reporter)
   if (rl.length) {
     const rows = REPORTER_KEYS.filter((k) => reporter[k]).map((k) => `<li>${escapeHtml(REPORTER_LABELS[k] || k)}: ${escapeHtml(capStr(reporter[k], 500))}</li>`).join('')
-    parts.push(`<p><strong>Reporter:</strong></p><ul>${rows}</ul>`)
+    parts.push(`<p><strong>Customer details:</strong></p><ul>${rows}</ul>`)
   }
   const cl = clientInfoLines(ci)
   if (cl.length) parts.push(`<p><strong>${escapeHtml(cl[0])}</strong></p>`)

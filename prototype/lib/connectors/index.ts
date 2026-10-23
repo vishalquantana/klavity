@@ -39,6 +39,9 @@ export type TicketPayload = {
   // external issue type per-connector (see issue_type_map on cfg). PX4 #411 widened this to add "task"/
   // "query" (both default to the tracker's default issue type unless the admin maps them in issue_type_map).
   kind?: IssueKind
+  // KD-983: the email Klavity shows as the ticket's Reporter (contactEmail || actorEmail). Connectors
+  // that can attribute an issue to a tracker user (Jira) map it to that user; null = anonymous report.
+  reporterEmail?: string | null
 }
 
 export type ExportResult = {
