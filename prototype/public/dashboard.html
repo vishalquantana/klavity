@@ -14954,18 +14954,7 @@
     }
 
     .tg-pri:hover {
-      border-color: var(--indigo);
-    }
-
-    .tg-pri:focus-visible {
-      outline: 2px solid var(--indigo);
-      outline-offset: 1px;
-    }
-
-    .tg-pri[aria-busy="true"],
-    .tg-pri:disabled {
-      opacity: 0.6;
-      cursor: wait;
+      border-color: var(--indigo)
     }
 
     /* KLA-200: human-readable sequential ticket number badge */
@@ -20586,20 +20575,9 @@
       const pri = el.querySelector(".tg-pri")
       if (pri) {
         pri.addEventListener("click", (ev) => ev.stopPropagation())
-<<<<<<< HEAD
-        pri.addEventListener("mousedown", (ev) => ev.stopPropagation())
-        pri.addEventListener("change", async (ev) => {
-          ev.stopPropagation()
-          const newPri = pri.value
-          const oldPri = t.priority || "medium"
-          if (newPri === oldPri) return
-
-          // Optimistically update local ticket object and in-memory caches
-=======
         pri.addEventListener("change", (ev) => {
           ev.stopPropagation()
           const newPri = pri.value
->>>>>>> da528116cb490e8783759f2ffe74f33a6c48ecf0
           t.priority = newPri
           const item = (_triageItems || []).find(x => String(x.id) === String(id))
           if (item) item.priority = newPri
@@ -20607,64 +20585,6 @@
             const st = state.tickets.find(x => String(x.id) === String(id))
             if (st) st.priority = newPri
           }
-<<<<<<< HEAD
-          if (Array.isArray(_tktBoardTickets)) {
-            const bt = _tktBoardTickets.find(x => String(x.id) === String(id))
-            if (bt) bt.priority = newPri
-          }
-          if (typeof recordLocalEdit === "function") recordLocalEdit(id, { priority: newPri })
-
-          // Update severity rail visual styling on card/row
-          el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
-          el.classList.add(sevRailClass(newPri))
-
-          // If on Board view, re-bucket the card into the target column
-          if (_tgView === "board") {
-            const host = $("triageList")
-            if (host && typeof renderTriageItems === "function" && typeof tgVisibleItems === "function") {
-              renderTriageItems(tgVisibleItems())
-            }
-          }
-
-          window.__klavMutating++
-          pri.disabled = true
-          pri.setAttribute("aria-busy", "true")
-          try {
-            const r = await fetch("/api/feedback/" + encodeURIComponent(id), {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ priority: newPri }),
-              credentials: "include"
-            }).catch(() => null)
-            const d = r ? await r.json().catch(() => ({})) : {}
-            if (!r || !r.ok || d.ok === false) {
-              throw new Error((d && d.error) || "Failed to update priority")
-            }
-          } catch (err) {
-            // Revert changes on error
-            t.priority = oldPri
-            if (item) item.priority = oldPri
-            if (Array.isArray(state.tickets)) {
-              const st = state.tickets.find(x => String(x.id) === String(id))
-              if (st) st.priority = oldPri
-            }
-            pri.value = oldPri
-            el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
-            el.classList.add(sevRailClass(oldPri))
-            if (_tgView === "board") {
-              const host = $("triageList")
-              if (host && typeof renderTriageItems === "function" && typeof tgVisibleItems === "function") {
-                renderTriageItems(tgVisibleItems())
-              }
-            }
-            if (typeof klavToast === "function") {
-              klavToast("Couldn't update priority — please try again.", true)
-            }
-          } finally {
-            window.__klavMutating--
-            pri.disabled = false
-            pri.removeAttribute("aria-busy")
-=======
           el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
           el.classList.add(sevRailClass(newPri))
           fetch("/api/feedback/" + encodeURIComponent(id), {
@@ -20680,7 +20600,6 @@
             renderTriageFilters()
           } else if (_tgView === "board") {
             renderTriageItems(tgVisibleItems())
->>>>>>> da528116cb490e8783759f2ffe74f33a6c48ecf0
           }
         })
       }
@@ -20750,7 +20669,7 @@
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
-        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low", "neutral"].map(s => `<option value="${s}"${(t.priority || "medium") === s ? " selected" : ""}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join("")}</select>
+        ${tgPriorityDropdownHtml(t)}
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -20783,7 +20702,7 @@
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
-      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low", "neutral"].map(s => `<option value="${s}"${(t.priority || "medium") === s ? " selected" : ""}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join("")}</select>
+      ${tgPriorityDropdownHtml(t)}
       <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
       <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
     </div>`
@@ -25036,8 +24955,6 @@
             // and re-sorts immediately, instead of waiting up to 15s for the next boardRevTick poll.
             const bt = (_tktBoardTickets || []).find(x => String(x.id) === String(ticketId))
             if (bt) bt.priority = newPri
-            const tgItem = (_triageItems || []).find(x => String(x.id) === String(ticketId))
-            if (tgItem) tgItem.priority = newPri
             recordLocalEdit(ticketId, { priority: newPri })   // #532
             // #653: repaint the priority severity square.
             const _sq = detailEl.querySelector(".prop-sq")

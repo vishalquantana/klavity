@@ -13328,13 +13328,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (body.status !== undefined && !VALID_STATUS.includes(body.status)) {
           return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
         }
-        let rawPri = body.priority
-        if (typeof rawPri === "string") {
-          rawPri = rawPri.toLowerCase().trim()
-          if (rawPri === "none" || rawPri === "") rawPri = null
-        }
-        const VALID_PRI = ["urgent", "high", "medium", "low", "neutral"]
-        if (rawPri !== undefined && rawPri !== null && !VALID_PRI.includes(rawPri)) {
+        const VALID_PRI = ["urgent", "high", "medium", "low"]
+        if (body.priority !== undefined && body.priority !== null && !VALID_PRI.includes(body.priority)) {
           return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
         }
         // KD-158: editable title — reject a blank rename (use Description/notes to clear content
@@ -13365,7 +13360,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           meta.assignee = assignee
         }
         if (body.notes !== undefined) meta.notes = body.notes ?? null
-        if (body.priority !== undefined) meta.priority = rawPri ?? null
+        if (body.priority !== undefined) meta.priority = body.priority ?? null
         const updated = await updateFeedbackMeta(fbRow.projectId, fid, meta)
         if (!updated) return json({ error: "Update failed." }, 500)
         const activityWrites: Promise<any>[] = []
@@ -15211,12 +15206,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!ticketIds.length) return json({ error: "ticketIds must be a non-empty array." }, 400)
 
         const VALID_STATUS = ["open", "new", "in_progress", "blocked", "ready_for_deployment", "deployed", "qa_review", "done", "dismissed"]
-        let rawBulkPri = body.priority
-        if (typeof rawBulkPri === "string") {
-          rawBulkPri = rawBulkPri.toLowerCase().trim()
-          if (rawBulkPri === "none" || rawBulkPri === "") rawBulkPri = null
-        }
-        const VALID_PRI = ["urgent", "high", "medium", "low", "neutral"]
+        const VALID_PRI = ["urgent", "high", "medium", "low"]
 
         const hasStatus = body.status !== undefined
         const hasPriority = body.priority !== undefined
@@ -15230,7 +15220,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (hasStatus && !VALID_STATUS.includes(body.status)) {
           return json({ error: `status must be one of: ${VALID_STATUS.join(", ")}` }, 400)
         }
-        if (hasPriority && rawBulkPri !== null && !VALID_PRI.includes(rawBulkPri)) {
+        if (hasPriority && body.priority !== null && !VALID_PRI.includes(body.priority)) {
           return json({ error: `priority must be one of: ${VALID_PRI.join(", ")}` }, 400)
         }
 
@@ -15268,7 +15258,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!row) continue  // skip tickets not in this project
           const meta: Partial<{ status: string; priority: string | null; assignee: string | null }> = {}
           if (hasStatus) meta.status = body.status
-          if (hasPriority) meta.priority = rawBulkPri ?? null
+          if (hasPriority) meta.priority = body.priority ?? null
           if (hasAssignee) meta.assignee = assigneeVal ?? null
           if (Object.keys(meta).length) {
             const changed = await updateFeedbackMeta(proj.id, tid, meta).catch(() => false)
