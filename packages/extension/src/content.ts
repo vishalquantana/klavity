@@ -478,6 +478,12 @@ async function openComposer(
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
     // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
     onRetakeSharp: onCaptureFull,
+    // KD-988 (ext↔widget parity): the primary "Snap" button, like the widget's. The widget's Snap needs a
+    // getDisplayMedia tab-share to reach real pixels; captureVisibleTab already IS real-pixel, so Snap here is
+    // the full-page scroll-stitch with NO share prompt — the tooltip copy says so via snapWithoutSharePrompt.
+    // screenCaptureDefault stays unset → the on-open default capture (viewport) is unchanged.
+    onCaptureSharp: onCaptureFull,
+    snapWithoutSharePrompt: true,
     // Safely pre-compress high-res captures (especially full-page scroll-stitches) into high-quality JPEG
     // so they stay under the server's 8MB limit and prevent upload rejection / evidence loss.
     compressImage: compressExtScreenshot,
