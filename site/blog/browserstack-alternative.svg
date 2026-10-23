@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Choosing a BrowserStack alternative: a device-browser grid on the left, a decision fork, and self-healing tests on the right">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <line x1="0" y1="105" x2="800" y2="105" stroke="#f5f0e8" stroke-opacity="0.05"/>
+  <line x1="0" y1="315" x2="800" y2="315" stroke="#f5f0e8" stroke-opacity="0.05"/>
+
+  <!-- left: browser/device grid (the cloud you rent) -->
+  <rect x="48" y="96" width="112" height="76" rx="8" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55"/>
+  <line x1="48" y1="114" x2="160" y2="114" stroke="#6366f1" stroke-opacity="0.55"/>
+  <circle cx="58" cy="105" r="3" fill="#6366f1"/>
+  <rect x="62" y="130" width="60" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.18"/>
+
+  <rect x="48" y="188" width="112" height="76" rx="8" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55"/>
+  <line x1="48" y1="206" x2="160" y2="206" stroke="#6366f1" stroke-opacity="0.55"/>
+  <circle cx="58" cy="197" r="3" fill="#6366f1"/>
+  <rect x="62" y="222" width="44" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.18"/>
+
+  <rect x="176" y="96" width="60" height="100" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.45"/>
+  <line x1="190" y1="104" x2="222" y2="104" stroke="#6366f1" stroke-opacity="0.45" stroke-width="3"/>
+  <rect x="176" y="212" width="60" height="52" rx="8" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.3" stroke-dasharray="4 4"/>
+
+  <!-- decision fork -->
+  <circle cx="330" cy="210" r="26" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <path d="M322 210l7 8 14-16" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="248,180 300,180 300,196" fill="none" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="2"/>
+  <polyline points="248,240 300,240 300,224" fill="none" stroke="#f5f0e8" stroke-opacity="0.28" stroke-width="2"/>
+  <path d="M362 196 L470 140" fill="none" stroke="#4ade80" stroke-opacity="0.65" stroke-width="2"/>
+  <path d="M462 134 l12 6 -11 7" fill="none" stroke="#4ade80" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M362 226 L470 288" fill="none" stroke="#f87171" stroke-opacity="0.6" stroke-width="2"/>
+  <path d="M462 294 l12 -6 -1 13" fill="none" stroke="#f87171" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- right top: flow test that passes / heals -->
+  <rect x="486" y="92" width="266" height="104" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#4ade80" stroke-opacity="0.5"/>
+  <circle cx="516" cy="126" r="9" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M511 126l4 4 7-8" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+  <rect x="534" y="121" width="92" height="9" rx="4.5" fill="#4ade80" fill-opacity="0.25"/>
+  <circle cx="516" cy="162" r="9" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <path d="M511 162l4 4 7-8" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+  <rect x="534" y="157" width="140" height="9" rx="4.5" fill="#4ade80" fill-opacity="0.25"/>
+  <path d="M694 140 a22 22 0 1 1 -8 -17" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <path d="M686 118 l2 12 -12 -2" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- right bottom: real-device-only bug -->
+  <rect x="486" y="236" width="266" height="96" rx="10" fill="#f5f0e8" fill-opacity="0.04" stroke="#f87171" stroke-opacity="0.45"/>
+  <rect x="508" y="254" width="48" height="60" rx="7" fill="none" stroke="#f87171" stroke-opacity="0.7" stroke-width="2"/>
+  <line x1="522" y1="262" x2="542" y2="262" stroke="#f87171" stroke-opacity="0.7" stroke-width="3"/>
+  <circle cx="588" cy="284" r="12" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="588" y1="278" x2="588" y2="290" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="576" y1="272" x2="570" y2="266" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="600" y1="272" x2="606" y2="266" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <rect x="620" y="279" width="104" height="9" rx="4.5" fill="#f87171" fill-opacity="0.25"/>
+</svg>
