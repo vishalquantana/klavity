@@ -15027,17 +15027,6 @@
       border-color: var(--indigo);
     }
 
-    .tg-pri:focus-visible {
-      outline: 2px solid var(--indigo);
-      outline-offset: 1px;
-    }
-
-    .tg-pri[aria-busy="true"],
-    .tg-pri:disabled {
-      opacity: 0.6;
-      cursor: wait;
-    }
-
     /* KLA-200: human-readable sequential ticket number badge */
     .tkt-seq {
       font-family: var(--mono);
@@ -20076,16 +20065,16 @@
       const body = { status: "open" }
       if (priority) body.priority = priority
       const restore = tgBtnPending(btn)   // #537: pending immediately on click
-      // #649: OPTIMISTIC — the accepted rows move to Tickets, so remove them from New reports IMMEDIATELY
-      // (no refreshAll, no thumbnail reload). Fire the PATCH in the background and restore only on failure.
-      const removed = tgRemoveLocal(ids)
-      openCountOnStatusChange("new", "open", removed.length || ids.length)   // KD-265: accepted tickets join the open count
       // KLAVITYKLA-512: confirm the move + offer a deep link into the ticket in the Tickets view.
       const one = ids.length === 1 ? String(ids[0]) : null
       const link = one
         ? ` — <a href="#tickets" style="color:var(--indigo)" onclick="try{setView('tickets');openSingleTicket('${esc(one)}')}catch(e){};return false">view in Tickets</a>`
         : ""
       klavToast((one ? "Accepted" : ids.length + " accepted") + " &rarr; moved to Open in Tickets" + link)
+      // #649: OPTIMISTIC — the accepted rows move to Tickets, so remove them from New reports IMMEDIATELY
+      // (no refreshAll, no thumbnail reload). Fire the PATCH in the background and restore only on failure.
+      const removed = tgRemoveLocal(ids)
+      openCountOnStatusChange("new", "open", removed.length || ids.length)   // KD-265: accepted tickets join the open count
       // tgBulkPatch keeps the __klavMutating liveness-poll guard (#510) around the in-flight PATCH.
       const res = await tgBulkPatch(ids, body)
       restore()
@@ -20655,186 +20644,30 @@
       if (sendBtn) sendBtn.addEventListener("click", (ev) => { ev.stopPropagation(); tgSendToTracker([id]) })
       const pri = el.querySelector(".tg-pri")
       if (pri) pri.addEventListener("click", (ev) => ev.stopPropagation())
-      const kdd = el.querySelector(".tg-pri-kdd")
-      if (kdd) {
-        const btn = kdd.querySelector(".kdd-btn")
-        const menu = kdd.querySelector(".kdd-menu")
-        const sel = kdd.querySelector(".kdd-native")
-        if (btn && menu && sel) {
-          btn.addEventListener("click", (ev) => {
-            ev.stopPropagation()
-            const willOpen = menu.classList.contains("hide")
-            document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
-              if (m !== menu) {
-                m.classList.add("hide")
-                const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
-                if (b) b.setAttribute("aria-expanded", "false")
-                const card = m.closest(".tg-item")
-                if (card) card.classList.remove("tg-dropdown-open")
-              }
-            })
-            menu.classList.toggle("hide", !willOpen)
-            btn.setAttribute("aria-expanded", String(willOpen))
-            el.classList.toggle("tg-dropdown-open", willOpen)
-          })
-          menu.addEventListener("click", (ev) => {
-            const it = ev.target.closest(".kdd-item")
-            if (!it) return
-            ev.stopPropagation()
-            menu.classList.add("hide")
-            btn.setAttribute("aria-expanded", "false")
-            el.classList.remove("tg-dropdown-open")
-            const v = it.getAttribute("data-val")
-            if (v === sel.value) return
-            sel.value = v
-            sel.dispatchEvent(new Event("change", { bubbles: true }))
-          })
-          sel.addEventListener("change", async (ev) => {
-            ev.stopPropagation()
-            const v = sel.value
-            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
-            const txt = btn.querySelector(".kdd-txt")
-            if (txt) txt.textContent = priLabels[v] || v
-            const swatch = btn.querySelector(".prop-sq")
-            if (swatch) swatch.className = "prop-sq dp-" + v
-            menu.querySelectorAll(".kdd-item").forEach(i => i.setAttribute("aria-checked", String(i.getAttribute("data-val") === v)))
-            t.priority = v
-            el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
-            const newRail = sevRailClass(v)
-            if (newRail) el.classList.add(newRail)
-            await fetch("/api/feedback/" + encodeURIComponent(id), {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ priority: v })
-            }).catch(() => { })
-          })
-        }
+      const cb = el.querySelector(".tg-cb")
+      if (cb) {
+        cb.addEventListener("click", (ev) => ev.stopPropagation())
+        cb.addEventListener("change", () => {
+          if (cb.checked) _tgSelected.add(id); else _tgSelected.delete(id)
+          el.classList.toggle("tg-selected", cb.checked)
+          renderTriageBulkBar()
+        })
       }
-      if (!window._kddTriageDocBound) {
-        window._kddTriageDocBound = true
-        document.addEventListener("click", (ev) => {
-          if (ev.target instanceof Element && ev.target.closest(".tg-pri-kdd")) return
-          document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
-            if (!m.classList.contains("hide")) {
-              m.classList.add("hide")
-              const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
-              if (b) b.setAttribute("aria-expanded", "false")
-              const card = m.closest(".tg-item")
-              if (card) card.classList.remove("tg-dropdown-open")
-            }
-          })
-        }, true)
-        document.addEventListener("keydown", (ev) => {
-          if (ev.key === "Escape") {
-            document.querySelectorAll(".tg-item .kdd-menu").forEach(m => {
-              if (!m.classList.contains("hide")) {
-                m.classList.add("hide")
-                const b = m.parentElement ? m.parentElement.querySelector(".kdd-btn") : null
-                if (b) b.setAttribute("aria-expanded", "false")
-                const card = m.closest(".tg-item")
-                if (card) card.classList.remove("tg-dropdown-open")
-              }
-            })
-            if (pri) {
-              pri.addEventListener("click", (ev) => ev.stopPropagation())
-              pri.addEventListener("mousedown", (ev) => ev.stopPropagation())
-              pri.addEventListener("change", async (ev) => {
-                ev.stopPropagation()
-                const newPri = pri.value
-                const oldPri = t.priority || "medium"
-                if (newPri === oldPri) return
-
-                // Optimistically update local ticket object and in-memory caches
-                t.priority = newPri
-                const item = (_triageItems || []).find(x => String(x.id) === String(id))
-                if (item) item.priority = newPri
-                if (Array.isArray(state.tickets)) {
-                  const st = state.tickets.find(x => String(x.id) === String(id))
-                  if (st) st.priority = newPri
-                }
-                if (Array.isArray(_tktBoardTickets)) {
-                  const bt = _tktBoardTickets.find(x => String(x.id) === String(id))
-                  if (bt) bt.priority = newPri
-                }
-                if (typeof recordLocalEdit === "function") recordLocalEdit(id, { priority: newPri })
-
-                // Update severity rail visual styling on card/row
-                el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
-                el.classList.add(sevRailClass(newPri))
-
-                // If on Board view, re-bucket the card into the target column
-                if (_tgView === "board") {
-                  const host = $("triageList")
-                  if (host && typeof renderTriageItems === "function" && typeof tgVisibleItems === "function") {
-                    renderTriageItems(tgVisibleItems())
-                  }
-                }
-
-                window.__klavMutating++
-                pri.disabled = true
-                pri.setAttribute("aria-busy", "true")
-                try {
-                  const r = await fetch("/api/feedback/" + encodeURIComponent(id), {
-                    method: "PATCH",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ priority: newPri }),
-                    credentials: "include"
-                  }).catch(() => null)
-                  const d = r ? await r.json().catch(() => ({})) : {}
-                  if (!r || !r.ok || d.ok === false) {
-                    throw new Error((d && d.error) || "Failed to update priority")
-                  }
-                } catch (err) {
-                  // Revert changes on error
-                  t.priority = oldPri
-                  if (item) item.priority = oldPri
-                  if (Array.isArray(state.tickets)) {
-                    const st = state.tickets.find(x => String(x.id) === String(id))
-                    if (st) st.priority = oldPri
-                  }
-                  pri.value = oldPri
-                  el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
-                  el.classList.add(sevRailClass(oldPri))
-                  if (_tgView === "board") {
-                    const host = $("triageList")
-                    if (host && typeof renderTriageItems === "function" && typeof tgVisibleItems === "function") {
-                      renderTriageItems(tgVisibleItems())
-                    }
-                  }
-                  if (typeof klavToast === "function") {
-                    klavToast("Couldn't update priority — please try again.", true)
-                  }
-                } finally {
-                  window.__klavMutating--
-                  pri.disabled = false
-                  pri.removeAttribute("aria-busy")
-                }
-              })
-            }
-            const cb = el.querySelector(".tg-cb")
-            if (cb) {
-              cb.addEventListener("click", (ev) => ev.stopPropagation())
-              cb.addEventListener("change", () => {
-                if (cb.checked) _tgSelected.add(id); else _tgSelected.delete(id)
-                el.classList.toggle("tg-selected", cb.checked)
-                renderTriageBulkBar()
-              })
-            }
-            el.addEventListener("click", (ev) => {
-              // Clicking the body (but never a control/thumbnail) opens the single-report cockpit.
-              if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input, .kdd")) return
-              if (ev.ctrlKey || ev.metaKey) {
-                window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
-                return
-              }
-              openReportCockpit(id, t)
-            })
-            el.addEventListener("auxclick", (ev) => {
-              if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input, .kdd")) {
-                window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
-              }
-            })
-          }
+      el.addEventListener("click", (ev) => {
+        // Clicking the body (but never a control/thumbnail) opens the single-report cockpit.
+        if (ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) return
+        if (ev.ctrlKey || ev.metaKey) {
+          window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
+          return
+        }
+        openReportCockpit(id, t)
+      })
+      el.addEventListener("auxclick", (ev) => {
+        if (ev.button === 1 && !ev.target.closest(".tg-actions, .tg-cb-wrap, .tg-shot, button, select, a, input")) {
+          window.open(prettyTicketUrl(t || { id: id }), "_blank", "noopener")
+        }
+      })
+    }
           // #739: a report IS a feedback row, so it renders in the exact single-ticket cockpit. openSingleTicket
           // looks the record up in state.tickets (and _renderSingleTicket early-returns if it's missing, since the
           // post-fetch re-render is skipped while the panel is still hidden) — so seed the report first, then open.
@@ -20902,7 +20735,7 @@
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
-        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -20938,7 +20771,7 @@
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
-      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
       <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
       <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
     </div>`
@@ -33234,7 +33067,7 @@
                 normalizeSidebar();
                 document.body.setAttribute('data-view', v);
                 sidebarNavs().forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-go') === v); });
-                if (typeof applyViewHeader === 'function') applyViewHeader(v);   // KLAVITYKLA-514: per-view page title
+                if(typeof applyViewHeader==='function')applyViewHeader(v);   // KLAVITYKLA-514: per-view page title
                 if (typeof applyUpgradeWall === 'function') applyUpgradeWall();
                 // P1 deep-link loop fix: strip the ?ticket= deep-link param whenever the user leaves the tickets
                 // view. openSingleTicket() keeps re-writing ?ticket= into the URL, so without this a later reload
