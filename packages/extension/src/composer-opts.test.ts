@@ -8,8 +8,15 @@ describe('parseComposerOpts (ext↔widget composer parity)', () => {
     // video-upload: allowFileAttachments is DEFAULT-ON now (opt-out), so the "Attach file" button (incl.
     // video) shows on every project unless it explicitly opts out.
     for (const c of [undefined, null, {}, { composer: null }, { composer: 'nope' }, { composer: 42 }]) {
-      expect(parseComposerOpts(c as any)).toEqual({ showTitleField: false, allowFileAttachments: true })
+      expect(parseComposerOpts(c as any)).toEqual({ showTitleField: false, allowFileAttachments: true, record: true })
     }
+  })
+
+  it('KD-988: keeps "Record me" ON by default and only an EXPLICIT false disables it (widget parity)', () => {
+    expect(parseComposerOpts({ composer: {} }).record).toBe(true)
+    expect(parseComposerOpts({ composer: { record: true } }).record).toBe(true)
+    expect(parseComposerOpts({ composer: { record: false } }).record).toBe(false)
+    expect(parseComposerOpts({ composer: { allowRecording: false } }).record).toBe(false)
   })
 
   it('enables the Title field via either alias (title / showTitleField)', () => {

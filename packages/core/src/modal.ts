@@ -320,6 +320,10 @@ export interface ModalCallbacks {
   // (what the reporter actually sees). The manual "Screen" button still uses the full-page onCaptureSharp,
   // and "Full Page" stays an explicit opt-in. Absent → the default falls back to onCaptureSharp (unchanged).
   onCaptureSharpViewport?: () => Promise<CaptureResult>
+  // KD-988 (ext↔widget parity): true when the host's onCaptureSharp needs NO screen-share prompt (the extension
+  // grabs real tab pixels via captureVisibleTab). The Snap tooltip then drops the "share this tab" copy and the
+  // hover never shows the "click Allow" share-picker hint. Default false → the widget's getDisplayMedia copy.
+  snapWithoutSharePrompt?: boolean
   // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
   // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
@@ -1564,7 +1568,7 @@ export function buildModal(
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
-        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b>${callbacks.snapWithoutSharePrompt ? '.' : ` using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.`}</span></button>` : ''}
         <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
              image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
@@ -1704,7 +1708,8 @@ export function buildModal(
     const showTip = () => {
       // Prefer the actionable "click Allow" share hint; fall back to the plain "what Snap does" tip once a
       // share has been granted this session or the browser reports display-capture already granted.
-      if (!shareCaptureSucceeded && !shareGranted) {
+      // KD-988: a prompt-less Snap (the extension) has no share dialog to explain → always the plain tip.
+      if (!callbacks.snapWithoutSharePrompt && !shareCaptureSucceeded && !shareGranted) {
         ft.classList.remove('kl-show')
         placeUnderSharp(shp, 288)
         shp.classList.add('kl-show')
@@ -2112,6 +2117,9 @@ export function buildModal(
   // neutral "capture or upload" prompt.
   function emptyStateText(): string {
     if (blankCaptureHint) {
+      if (callbacks.onCaptureSharp && callbacks.snapWithoutSharePrompt) {
+        return "Couldn't grab this page automatically — click Snap for a pixel-perfect shot, or attach an image."
+      }
       return callbacks.onCaptureSharp
         ? "Couldn't grab this page automatically — click Snap to share your tab for a pixel-perfect shot, or attach an image."
         : "Couldn't grab this page automatically — try Full Page, or attach an image."
