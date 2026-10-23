@@ -15407,6 +15407,127 @@
       gap: 8px
     }
 
+    .tg-pri-filter {
+      min-width: 124px;
+      transition: border-color .15s, background-color .15s, color .15s;
+    }
+
+    .tg-pri-filter.active {
+      border-color: var(--indigo);
+      background-color: rgba(99, 102, 241, .08);
+      font-weight: 600;
+    }
+
+    .tg-pri-filter.pri-urgent {
+      border-color: var(--red, #e05252);
+      color: var(--red, #e05252);
+      background-color: rgba(224, 82, 82, .08);
+    }
+
+    .tg-pri-filter.pri-high {
+      border-color: #f97316;
+      color: #f97316;
+      background-color: rgba(249, 115, 22, .08);
+    }
+
+    .tg-pri-filter.pri-medium {
+      border-color: #eab308;
+      color: #ca8a04;
+      background-color: rgba(234, 179, 8, .08);
+    }
+
+    .tg-pri-filter.pri-low {
+      border-color: #3b82f6;
+      color: #3b82f6;
+      background-color: rgba(59, 130, 246, .08);
+    }
+
+    [data-theme="dark"] .tg-pri-filter.pri-medium {
+      color: #facc15;
+    }
+
+    .tg-pri-filter option {
+      background: var(--ink-2);
+      color: var(--paper);
+    }
+
+    .tg-pri-ms-wrap {
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .tg-pri-ms-btn {
+      min-width: 120px;
+    }
+
+    .tg-pri-ms-btn.pri-urgent {
+      border-color: var(--red, #e05252);
+      color: var(--red, #e05252);
+      background-color: rgba(224, 82, 82, .08);
+    }
+
+    .tg-pri-ms-btn.pri-high {
+      border-color: #f97316;
+      color: #f97316;
+      background-color: rgba(249, 115, 22, .08);
+    }
+
+    .tg-pri-ms-btn.pri-medium {
+      border-color: #eab308;
+      color: #ca8a04;
+      background-color: rgba(234, 179, 8, .08);
+    }
+
+    [data-theme="dark"] .tg-pri-ms-btn.pri-medium {
+      color: #facc15;
+    }
+
+    .tg-pri-ms-btn.pri-low {
+      border-color: #3b82f6;
+      color: #3b82f6;
+      background-color: rgba(59, 130, 246, .08);
+    }
+
+    .tg-clear-filters:hover {
+      color: var(--paper) !important;
+      text-decoration: underline;
+    }
+
+    .kb-card.kb-card-empty {
+      background: var(--ink-2);
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      padding: 24px 14px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-height: 84px;
+      cursor: default;
+      user-select: none;
+      box-shadow: none !important;
+      transform: none !important;
+    }
+
+    .kb-card.kb-card-empty:hover {
+      border-color: var(--line);
+      box-shadow: none !important;
+      transform: none !important;
+    }
+
+    .kb-empty-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--paper-muted);
+    }
+
+    .kb-empty-desc {
+      font-size: 11.5px;
+      color: var(--paper-dim);
+    }
+
     .tg-chip {
       display: inline-flex;
       align-items: center;
@@ -19711,6 +19832,8 @@
     let _triageItems = []
     let _triageSentiment = "all"
     let _triageSim = "all"   // JTBD 3.10: filter New reports by originating Sim ("all" | sim name | "__direct__")
+    let _triagePriority = "all" // Global priority filter: "all" | "urgent" | "high" | "medium" | "low"
+    let _triageSearch = ""
     // #739: Sim Reports parity — "board" (kanban card look, default, mirrors Tickets) | "list" (the row list).
     let _tgView = "board"
     const TG_SENTIMENTS = [["all", "All"], ["frustrated", "Frustrated"], ["confused", "Confused"], ["satisfied", "Satisfied"], ["neutral", "Neutral"]]
@@ -19733,6 +19856,21 @@
       if (_triageSentiment === "all") return true
       const grp = TG_SENTIMENT_GROUPS[_triageSentiment]
       return grp ? grp.includes(tgSent(t)) : tgSent(t) === _triageSentiment
+    }
+    function tgPriorityPass(t) {
+      const cur = Array.isArray(_triagePriority)
+        ? _triagePriority
+        : (_triagePriority && _triagePriority !== "all" ? [_triagePriority] : [])
+      if (cur.length === 0 || cur.includes("all")) return true
+      const p = (t && t.priority ? String(t.priority) : "medium").toLowerCase()
+      return cur.map(x => x.toLowerCase()).includes(p)
+    }
+    function tgPriorityColVisible(key) {
+      const cur = Array.isArray(_triagePriority)
+        ? _triagePriority
+        : (_triagePriority && _triagePriority !== "all" ? [_triagePriority] : [])
+      if (cur.length === 0 || cur.includes("all")) return true
+      return cur.map(x => x.toLowerCase()).includes(key.toLowerCase())
     }
     // Lazily ensure the per-project Snap routing mode + connectors are known so New reports can render the
     // right per-row affordance (Send to Jira vs tracker key) even when the Settings tab hasn't loaded yet.
@@ -19783,10 +19921,23 @@
     let _tgFocus = null           // id of the keyboard-focused row
     let _tgKeysBound = false
     function tgRowById(id) { const h = $("triageList"); return h ? h.querySelector('.tg-row[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]') : null }
-    // JTBD 3.10: the rows the reviewer currently sees — after both the sentiment and originating-Sim
-    // filters. Every renderer/keyboard-nav path funnels through this so the two filters stay consistent.
+    // JTBD 3.10: the rows the reviewer currently sees — after sentiment, originating-Sim, and priority
+    // filters. Every renderer/keyboard-nav path funnels through this so all filters stay consistent.
     function tgVisibleItems() {
-      return (_triageItems || []).filter(t => tgSentPass(t) && (_triageSim === "all" || tgSimKey(t) === _triageSim))
+      return (_triageItems || []).filter(t => {
+        if (!tgSentPass(t)) return false
+        if (_triageSim !== "all" && tgSimKey(t) !== _triageSim) return false
+        if (!tgPriorityPass(t)) return false
+        if (_triageSearch) {
+          const q = _triageSearch.toLowerCase().trim()
+          const title = (t.title || "").toLowerCase()
+          const obs = (t.observation || "").toLowerCase()
+          const quote = (t.sourceQuote || "").toLowerCase()
+          const seq = (t.seqNum ? String(t.seqNum) : "")
+          if (!title.includes(q) && !obs.includes(q) && !quote.includes(q) && !seq.includes(q)) return false
+        }
+        return true
+      })
     }
 
     async function tgBulkPatch(ids, body) {
@@ -20086,6 +20237,60 @@
         const cls = "tg-chip" + (key === "frustrated" || key === "critical" ? " s-frustrated" : key === "satisfied" ? " s-satisfied" : "") + (_triageSentiment === key ? " on" : "")
         return `<button type="button" class="${cls}" data-tg-sent="${esc(key)}">${esc(label)}<span class="tg-chip-n">${n}</span></button>`
       }).join("")
+
+      // Multi-select Priority filter
+      const curPriArr = Array.isArray(_triagePriority)
+        ? _triagePriority
+        : (_triagePriority && _triagePriority !== "all" ? [_triagePriority] : [])
+      const isAllPri = curPriArr.length === 0 || curPriArr.includes("all")
+
+      let priBtnText = "All Priorities"
+      if (!isAllPri) {
+        if (curPriArr.length === 1) {
+          const cap = curPriArr[0].charAt(0).toUpperCase() + curPriArr[0].slice(1).toLowerCase()
+          priBtnText = cap
+        } else {
+          priBtnText = `Priority (${curPriArr.length})`
+        }
+      }
+
+      const priOpts = [
+        ["all", "All Priorities"],
+        ["urgent", "Urgent"],
+        ["high", "High"],
+        ["medium", "Medium"],
+        ["low", "Low"]
+      ]
+
+      let priMenuItemsHtml = `<div class="tkt-ms-item${isAllPri ? " selected" : ""}" data-val="all" role="option" aria-selected="${isAllPri}">`
+        + `<input type="checkbox" ${isAllPri ? "checked" : ""} />`
+        + `<span class="tkt-ms-txt">All Priorities</span>`
+        + `</div>`
+
+      const PRI_COLORS = { urgent: "#dc2626", high: "#f97316", medium: "#eab308", low: "#3b82f6" }
+      priOpts.slice(1).forEach(([val, label]) => {
+        const checked = !isAllPri && curPriArr.includes(val)
+        priMenuItemsHtml += `<div class="tkt-ms-item${checked ? " selected" : ""}" data-val="${val}" role="option" aria-selected="${checked}">`
+          + `<input type="checkbox" ${checked ? "checked" : ""} />`
+          + `<span class="prop-sq dp-${val}" style="width:8px;height:8px;border-radius:2px;display:inline-block;flex-shrink:0;background:${PRI_COLORS[val]}"></span>`
+          + `<span class="tkt-ms-txt">${label}</span>`
+          + `</div>`
+      })
+
+      const priSelectOptions = priOpts.map(([v, l]) => {
+        const isSel = (v === "all" && isAllPri) || (!isAllPri && curPriArr.includes(v))
+        return `<option value="${v}"${isSel ? " selected" : ""}>${l}</option>`
+      }).join("")
+
+      const priActiveCls = !isAllPri ? (" active" + (curPriArr.length === 1 ? " pri-" + curPriArr[0] : "")) : ""
+      const priHtml = `<div class="tkt-ms-wrap tg-pri-ms-wrap" id="tgPriMsWrap" data-for="tgPriorityFilter">` +
+        `<button class="tkt-ms-btn tg-pri-ms-btn${priActiveCls}" id="tgPriMsBtn" type="button" aria-haspopup="listbox" aria-expanded="false" title="Filter by priority">` +
+        `<span class="tkt-ms-btn-text" id="tgPriMsBtnText">${esc(priBtnText)}</span>` +
+        `</button>` +
+        `<div class="tkt-ms-menu hide" id="tgPriMsMenu" role="listbox">${priMenuItemsHtml}</div>` +
+        `<select class="hide" id="tgPriorityFilter" aria-label="Filter by priority">${priSelectOptions}</select>` +
+        `</div>`
+
       // Originating-Sim select for bulk-dismiss-by-Sim. Options = distinct Sims (+ Direct reports) present.
       const simKeys = []
       const seen = new Set()
@@ -20100,20 +20305,131 @@
       const simDismissBtn = canDismissSim
         ? `<button type="button" class="btn btn-ghost btn-sm" id="tgSimDismiss" title="Dismiss every new report from this Sim">Dismiss all ${simCount(_triageSim)} from ${esc(simLabel(_triageSim))}</button>`
         : ""
+      const hasActiveFilters = (!isAllPri) || _triageSentiment !== "all" || _triageSim !== "all"
+      const clearBtnHtml = hasActiveFilters
+        ? `<button type="button" class="btn btn-ghost btn-sm tg-clear-filters" id="tgClearFilters" title="Clear all filters" style="font-size:11.5px;padding:3px 8px;margin-left:auto;color:var(--paper-dim)">✕ Clear filters</button>`
+        : ""
       host.innerHTML =
         `<div class="tg-filter-row">${sentHtml}</div>` +
-        `<div class="tg-filter-row tg-sim-row"><span class="bulk-lbl">Sim:</span>` +
+        `<div class="tg-filter-row tg-sim-row">` +
+        `<span class="bulk-lbl">Priority:</span>` +
+        priHtml +
+        `<span class="bulk-lbl" style="margin-left:4px">Sim:</span>` +
         `<select class="bulk-sel" id="tgSimFilter" aria-label="Filter by originating Sim">${simOpts}</select>` +
-        simDismissBtn + `</div>`
+        simDismissBtn +
+        clearBtnHtml +
+        `</div>`
       host.querySelectorAll("[data-tg-sent]").forEach(b => b.addEventListener("click", () => {
         _triageSentiment = b.getAttribute("data-tg-sent"); _tgSelected.clear(); renderTriageView()
       }))
+
+      const msBtn = host.querySelector("#tgPriMsBtn")
+      const msMenu = host.querySelector("#tgPriMsMenu")
+      if (msBtn && msMenu) {
+        msBtn.addEventListener("click", (e) => {
+          e.stopPropagation()
+          const isOpen = !msMenu.classList.contains("hide")
+          document.querySelectorAll(".tkt-ms-menu").forEach(m => {
+            if (m !== msMenu) {
+              m.classList.add("hide")
+              const pb = m.parentElement?.querySelector(".tkt-ms-btn")
+              if (pb) pb.setAttribute("aria-expanded", "false")
+            }
+          })
+          msMenu.classList.toggle("hide", isOpen)
+          msBtn.setAttribute("aria-expanded", String(!isOpen))
+        })
+      }
+
+      if (msMenu) {
+        msMenu.querySelectorAll(".tkt-ms-item").forEach(item => {
+          item.addEventListener("click", (e) => {
+            e.stopPropagation()
+            const val = item.getAttribute("data-val")
+            const cb = item.querySelector('input[type="checkbox"]')
+            if (e.target !== cb) {
+              e.preventDefault()
+              cb.checked = !cb.checked
+            }
+            const isNowChecked = cb.checked
+
+            let arr = Array.isArray(_triagePriority)
+              ? [..._triagePriority]
+              : (_triagePriority && _triagePriority !== "all" ? [_triagePriority] : [])
+
+            if (val === "all") {
+              _triagePriority = []
+            } else {
+              if (isNowChecked) {
+                if (!arr.includes(val)) arr.push(val)
+              } else {
+                arr = arr.filter(x => x !== val)
+              }
+              _triagePriority = arr
+            }
+
+            _tgSelected.clear()
+            renderTriageView()
+            const nuMenu = host.querySelector("#tgPriMsMenu")
+            const nuBtn = host.querySelector("#tgPriMsBtn")
+            if (nuMenu && nuBtn) {
+              nuMenu.classList.remove("hide")
+              nuBtn.setAttribute("aria-expanded", "true")
+            }
+          })
+        })
+      }
+
+      const priSel = host.querySelector("#tgPriorityFilter")
+      if (priSel) {
+        priSel.addEventListener("change", () => {
+          const val = priSel.value
+          if (!val || val === "all") _triagePriority = []
+          else _triagePriority = [val]
+          _tgSelected.clear()
+          renderTriageView()
+        })
+      }
+
+      if (!window._tgPriMsDocBound) {
+        window._tgPriMsDocBound = true
+        document.addEventListener("click", (e) => {
+          if (!e.target.closest("#tgPriMsWrap")) {
+            const m = document.getElementById("tgPriMsMenu")
+            const b = document.getElementById("tgPriMsBtn")
+            if (m && !m.classList.contains("hide")) {
+              m.classList.add("hide")
+              if (b) b.setAttribute("aria-expanded", "false")
+            }
+          }
+        })
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            const m = document.getElementById("tgPriMsMenu")
+            const b = document.getElementById("tgPriMsBtn")
+            if (m && !m.classList.contains("hide")) {
+              m.classList.add("hide")
+              if (b) b.setAttribute("aria-expanded", "false")
+            }
+          }
+        })
+      }
+
       const simSel = host.querySelector("#tgSimFilter")
       if (simSel) simSel.addEventListener("change", () => { _triageSim = simSel.value; _tgSelected.clear(); renderTriageView() })
       const simDis = host.querySelector("#tgSimDismiss")
       if (simDis) simDis.addEventListener("click", (ev) => {
         const ids = (_triageItems || []).filter(t => tgSimKey(t) === _triageSim).map(t => String(t.id))
         if (ids.length) tgDismiss(ids, ev.currentTarget)
+      })
+      const clearBtn = host.querySelector("#tgClearFilters")
+      if (clearBtn) clearBtn.addEventListener("click", () => {
+        _triagePriority = []
+        _triageSentiment = "all"
+        _triageSim = "all"
+        _triageSearch = ""
+        _tgSelected.clear()
+        renderTriageView()
       })
     }
     // KLAVITYKLA-384: restore the bulk-action bar for the New-reports triage inbox. The
@@ -20209,24 +20525,44 @@
     }
     function renderTriageItems(items) {
       const host = $("triageList"); if (!host) return
-      if (!items.length) {
-        _tgSelected.clear(); _tgFocus = null; renderTriageBulkBar()
-        // Distinguish "nothing at all" from "nothing matches the active filter" so a filtered-empty
-        // list doesn't read as "all caught up".
-        const filtered = (_triageItems || []).length > 0
-        host.innerHTML = filtered
-          ? emptyState(kicon('search', { size: 32 }), "No reports match this filter.", `<p class="muted" style="margin-top:2px">Clear the sentiment or Sim filter to see the rest.</p>`)
-          : emptyState(kicon('check-circle', { size: 32 }), "No new reports — you're all caught up.", "")
-        return
-      }
       // Drop stale selections/focus for rows that no longer exist.
       const present = new Set(items.map(t => String(t.id)))
       _tgSelected = new Set([..._tgSelected].filter(id => present.has(id)))
       if (_tgFocus && !present.has(_tgFocus)) _tgFocus = null
-      // #739: parity with Tickets — a Board of kanban-style report cards (default) or the row List. Both open
-      // a report in the SAME single-ticket cockpit (openReportCockpit → openSingleTicket → buildTktDetail).
-      if (_tgView === "board") renderTriageBoard(host, items)
-      else renderTriageList(host, items)
+
+      const totalReports = (_triageItems || []).length
+      const curPri = Array.isArray(_triagePriority)
+        ? _triagePriority
+        : (_triagePriority && _triagePriority !== "all" ? [_triagePriority] : [])
+      const hasPriFilter = curPri.length > 0 && !curPri.includes("all")
+
+      if (!totalReports && !hasPriFilter) {
+        _tgSelected.clear(); _tgFocus = null; renderTriageBulkBar()
+        host.innerHTML = emptyState(kicon('check-circle', { size: 32 }), "No new reports — you're all caught up.", "")
+        return
+      }
+
+      // If in Board view, always render the board columns (empty columns show an empty card).
+      if (_tgView === "board") {
+        renderTriageBoard(host, items)
+      } else {
+        if (!items.length) {
+          _tgSelected.clear(); _tgFocus = null; renderTriageBulkBar()
+          host.innerHTML = emptyState(kicon('search', { size: 32 }), "No reports match this filter.", `<p class="muted" style="margin-top:2px">Clear the priority, sentiment, or Sim filter to see the rest.</p><button type="button" class="btn btn-ghost btn-sm" id="tgEmptyClearFilters" style="margin-top:10px">${kicon('x', { size: 12 })} Clear filters</button>`)
+          const emptyClear = host.querySelector("#tgEmptyClearFilters")
+          if (emptyClear) {
+            emptyClear.addEventListener("click", () => {
+              _triagePriority = []
+              _triageSentiment = "all"
+              _triageSim = "all"
+              _triageSearch = ""
+              renderTriageView()
+            })
+          }
+          return
+        }
+        renderTriageList(host, items)
+      }
       loadTriageShots(host)
       // JTBD 3.8: deep-link from a Sim-run observation → open that report in the cockpit (falls back to
       // scroll+highlight if the row/card is present but the ticket surface isn't reachable).
@@ -20250,6 +20586,7 @@
       const pri = el.querySelector(".tg-pri")
       if (pri) {
         pri.addEventListener("click", (ev) => ev.stopPropagation())
+<<<<<<< HEAD
         pri.addEventListener("mousedown", (ev) => ev.stopPropagation())
         pri.addEventListener("change", async (ev) => {
           ev.stopPropagation()
@@ -20258,6 +20595,11 @@
           if (newPri === oldPri) return
 
           // Optimistically update local ticket object and in-memory caches
+=======
+        pri.addEventListener("change", (ev) => {
+          ev.stopPropagation()
+          const newPri = pri.value
+>>>>>>> da528116cb490e8783759f2ffe74f33a6c48ecf0
           t.priority = newPri
           const item = (_triageItems || []).find(x => String(x.id) === String(id))
           if (item) item.priority = newPri
@@ -20265,6 +20607,7 @@
             const st = state.tickets.find(x => String(x.id) === String(id))
             if (st) st.priority = newPri
           }
+<<<<<<< HEAD
           if (Array.isArray(_tktBoardTickets)) {
             const bt = _tktBoardTickets.find(x => String(x.id) === String(id))
             if (bt) bt.priority = newPri
@@ -20321,6 +20664,23 @@
             window.__klavMutating--
             pri.disabled = false
             pri.removeAttribute("aria-busy")
+=======
+          el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\s+/g, " ").trim()
+          el.classList.add(sevRailClass(newPri))
+          fetch("/api/feedback/" + encodeURIComponent(id), {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ priority: newPri })
+          }).catch(() => null)
+          const isPriFiltered = Array.isArray(_triagePriority)
+            ? (_triagePriority.length > 0 && !_triagePriority.includes("all"))
+            : (_triagePriority && _triagePriority !== "all")
+          if (isPriFiltered) {
+            renderTriageItems(tgVisibleItems())
+            renderTriageFilters()
+          } else if (_tgView === "board") {
+            renderTriageItems(tgVisibleItems())
+>>>>>>> da528116cb490e8783759f2ffe74f33a6c48ecf0
           }
         })
       }
@@ -20435,7 +20795,8 @@
       items.forEach(t => { const p = ["urgent", "high", "medium", "low"].includes(t.priority) ? t.priority : "medium"; groups[p].push(t) })
       const board = document.createElement("div")
       board.className = "kanban"
-      TG_PRI_COLS.forEach(([key, label]) => {
+      const colsToRender = TG_PRI_COLS.filter(([key]) => tgPriorityColVisible(key))
+      colsToRender.forEach(([key, label]) => {
         const list = groups[key]
         const col = document.createElement("div")
         col.className = "kb-col"
@@ -20446,8 +20807,14 @@
         col.appendChild(head)
         const listEl = document.createElement("div")
         listEl.className = "kb-list"
-        if (!list.length) { const e = document.createElement("div"); e.className = "kb-empty muted"; e.textContent = "—"; listEl.appendChild(e) }
-        list.forEach(t => listEl.appendChild(buildReportCard(t)))
+        if (!list.length) {
+          const e = document.createElement("div")
+          e.className = "kb-card kb-card-empty"
+          e.innerHTML = `<div class="kb-empty-title">No ${esc(label.toLowerCase())} reports</div><div class="kb-empty-desc">No reports in this column</div>`
+          listEl.appendChild(e)
+        } else {
+          list.forEach(t => listEl.appendChild(buildReportCard(t)))
+        }
         col.appendChild(listEl)
         board.appendChild(col)
       })
@@ -26686,7 +27053,20 @@
         const pill = single.querySelector(".tkt-page-head .tkt-pill")
         if (pill) pill.outerHTML = statusPillHtml(t.status)
       }
-      const detailEl = buildTktDetail(t, admin, () => { renderHead(); repaintPageStatusPill(); renderTicketsKanban() }, true)
+      const detailEl = buildTktDetail(t, admin, (field, val) => {
+        renderHead()
+        repaintPageStatusPill()
+        renderTicketsKanban()
+        const tgItem = (_triageItems || []).find(x => String(x.id) === String(t.id))
+        if (tgItem) {
+          if (field && val !== undefined) tgItem[field] = val
+          else Object.assign(tgItem, t)
+          if (typeof renderTriageView === "function" && document.body.getAttribute("data-view") === "triage") {
+            renderTriageItems(tgVisibleItems())
+            renderTriageFilters()
+          }
+        }
+      }, true)
       detailEl.classList.add("show")
       // #707: the dedicated PAGE renders the 3-col grid INSIDE detailEl and wraps the title + grid in a
       // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
