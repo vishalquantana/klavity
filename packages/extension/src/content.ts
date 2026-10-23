@@ -8,6 +8,9 @@ import { safeRemove } from '@klavity/core'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { cropDataUrl } from '@klavity/core/crop'
+// KD-988 (ext↔widget parity): the SAME "Pick element" picker and "Record me" recorder the widget uses.
+import { pickElementOnPage } from '@klavity/core/element-picker'
+import { recordMe, recordingSupported } from '@klavity/core/recorder'
 import { captureFullPage } from './fullpage'
 import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, DEBOUNCE_MAX_WAIT_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE, CAPTURE_BACKOFF_MS, CAPTURE_MAX_RETRIES } from './feedback-trigger'
 import { widgetPresent } from './coexist'
@@ -291,19 +294,23 @@ let _composerOpening = false
 // the widget + extension for any project that opted in.
 // video-upload: file attachments DEFAULT-ON (opt-out) even when config is missing/unreachable — mirrors
 // parseComposerOpts + the widget so the "Attach file" button shows on every project by default.
-const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
-// KLA-728 (ext↔widget parity): when a matched project is reachable we also return an `assist` scope
+const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true, record: true }
+// KLA-728 (ext↔widget parity): when a project is resolved + reachable we also return an `assist` scope
 // (resolved backend base + project id) so openComposer can wire the composer AI-assist callbacks
 // (Enhance / clarity-tip / voice) against the SAME per-project widget API the widget uses. Null when no
-// project matches / config is unreachable → classic composer with no assist (unchanged behavior).
+// project resolves / config is unreachable → classic composer with no assist (unchanged behavior).
+// KD-988: resolve the project like the rest of the extension (klavQaResolveProjectId: URL-allowlist match →
+// server match → popup selection → first project) instead of the URL allowlist ONLY. A report filed from a
+// page outside every project's monitored URLs still lands in a project, but its composer used to open with
+// no config → no "Enhance with AI" (nor the project's theme / composer opts).
 type AssistScope = { backendUrl: string; projectId: string } | null
 async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts; assist: AssistScope }> {
   try {
-    const proj = klavMatchProject(location.href)
+    const projectId = await klavQaResolveProjectId()
     const backendUrl = klavConfig?.backendUrl
-    if (proj?.id && backendUrl) {
+    if (projectId && backendUrl) {
       const base = backendUrl.replace(/\/+$/, '')
-      const r = await fetch(`${base}/api/projects/${encodeURIComponent(proj.id)}/config`)
+      const r = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/config`)
       if (r.ok) {
         const j = await r.json()
         const modalConfig = j.modalConfig || {}
@@ -311,7 +318,7 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
         // Klavity" badge carries UTM (utm_medium=extension, utm_content=<projectId>, utm_source=host).
         if (modalConfig && typeof modalConfig === 'object') {
           ;(modalConfig as any).attributionMedium = 'extension'
-          ;(modalConfig as any).projectId = proj.id
+          ;(modalConfig as any).projectId = projectId
           // KLA-728 (ext↔widget parity): the report-clarity toggle rides at the TOP LEVEL of the config
           // response (sibling of modalConfig), NOT inside it — exactly how the widget reads it (widget.ts
           // `reportClarity = j.reportClarity !== false`). Default ON: only an explicit false disables it.
@@ -319,7 +326,7 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
           // (cfg.reportClarity) and the composer renders the clarity meter/tip when enabled.
           ;(modalConfig as any).reportClarity = j.reportClarity !== false
         }
-        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId: proj.id } }
+        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId } }
       }
     }
   } catch { /* default theme + classic composer */ }
@@ -455,6 +462,19 @@ async function openComposer(
     onCaptureViewport,
     onCaptureFull,
     onRegionCapture,
+    // KD-988 (ext↔widget parity): "Pick element" — the shared core picker. The extension's own UI roots are
+    // never pickable, and the picked element's screenshot is a real-pixel crop of its box (same path as Region).
+    onPickElement: () => pickElementOnPage({
+      hostIds: ['klavity-host', 'klavity-evdock-host', 'klavity-sims-host', 'klavity-qa-host', 'klavity-toast'],
+      captureRect: onRegionCapture,
+    }),
+    // KD-988 (ext↔widget parity): "Record me" — the shared core recorder (screen + optional camera + narration),
+    // DEFAULT-ON wherever the browser can screen-record unless the project set composer.record:false. The
+    // recording threads through onSubmit as `recordings` → submitViaSW already forwards it (KLA-727).
+    allowRecording: composer.record && recordingSupported(),
+    onRecord: (composer.record && recordingSupported())
+      ? (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })
+      : undefined,
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
     // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
     onRetakeSharp: onCaptureFull,
