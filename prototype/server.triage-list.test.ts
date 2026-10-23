@@ -43,3 +43,40 @@ test("listTriageFeedback surfaces hasReplay + clientContext for inline evidence"
   expect(byId[plain].hasReplay).toBe(false)
   expect(byId[plain].clientContext).toBeNull()
 })
+
+test("listTriageFeedback surfaces source for Sim and AutoSim tickets", async () => {
+  const P3 = `proj_tl_src_${Date.now()}`
+  const simTicket = await insertFeedback({
+    projectId: P3,
+    priority: "low",
+    observation: "sim report",
+    source: "sim",
+    simId: "sim_123",
+  })
+  const autoSimTicket = await insertFeedback({
+    projectId: P3,
+    priority: "low",
+    observation: "autosim report",
+    source: "autosim",
+  })
+  const manualTicket = await insertFeedback({
+    projectId: P3,
+    priority: "low",
+    observation: "manual report",
+    source: "manual",
+  })
+  const legacySimTicket = await insertFeedback({
+    projectId: P3,
+    priority: "low",
+    observation: "legacy sim report with simId but null source",
+    simId: "sim_456",
+  })
+
+  const list = await listTriageFeedback(P3)
+  const byId = Object.fromEntries(list.map((r: any) => [r.id, r]))
+  expect(byId[simTicket].source).toBe("sim")
+  expect(byId[autoSimTicket].source).toBe("autosim")
+  expect(byId[manualTicket].source).toBe("manual")
+  expect(byId[legacySimTicket].source).toBe("sim")
+})
+

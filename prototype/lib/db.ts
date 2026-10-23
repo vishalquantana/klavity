@@ -8528,6 +8528,7 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       // JTBD 2.8: inline-evidence fields for the expandable triage row.
       hasReplay: replaySet.has(String(x.id)),
       clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+      source: x.source != null ? String(x.source) : (x.sim_id != null ? "sim" : null),
     }
   })
 }
@@ -8855,7 +8856,7 @@ export async function listTicketsPaginated(
       createdAt: Number(x.created_at),
       updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
-      source: x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human"),
+      source: x.source === "autosim" ? "autosim" : (x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human")),
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
     }
