@@ -7530,17 +7530,6 @@
       font-weight: 600
     }
 
-    /* QPQ-31: a contact's name leads, with the address beneath it, plus a quiet tag so a reporter is never
-   mistaken for a teammate who can open the dashboard. */
-    .tkt-reporter-sub {
-      color: var(--muted);
-      font-size: 11.5px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      min-width: 0
-    }
-
     .contacts-head {
       display: flex;
       align-items: center;
@@ -7565,18 +7554,6 @@
     .rolepill.r-contact {
       background: var(--ink-3);
       color: var(--muted)
-    }
-
-    .tkt-contact-tag {
-      flex: none;
-      font-size: 10.5px;
-      line-height: 1;
-      padding: 3px 6px;
-      border-radius: 999px;
-      background: var(--ink-3);
-      color: var(--muted);
-      text-transform: lowercase;
-      letter-spacing: .02em
     }
 
     /* #679a: force a perfect circle — equal w/h + aspect-ratio + flex:none so no flex context can
@@ -9827,6 +9804,19 @@
 
     .exp-badge .exp-err {
       color: var(--rose)
+    }
+
+    /* KD-983: shown while the background auto-file is still creating the tracker issue. */
+    .exp-badge.exp-pending {
+      font-style: italic;
+      cursor: default
+    }
+
+    .exp-badge.exp-pending:hover {
+      border-color: var(--line);
+      color: var(--paper-faint);
+      transform: none;
+      box-shadow: none
     }
 
     .exp-retry {
@@ -23023,19 +23013,6 @@
             const fromContacts = ((state && state.contacts) || []).map(c => c.email)
             return [...new Set([...fromMembers, ...fromTickets, ...fromContacts].filter(Boolean).map(e => String(e).trim().toLowerCase()).filter(Boolean))].sort()
           }
-          // QPQ-31: a contact's display name when we learned one at report time, else null.
-          function contactNameFor(email) {
-            const e = String(email || "").trim().toLowerCase()
-            const hit = ((state && state.contacts) || []).find(c => String(c.email || "").toLowerCase() === e)
-            return (hit && hit.name) ? hit.name : null
-          }
-          // QPQ-31: true when this address is a contact rather than a teammate — the pickers label it so nobody
-          // mistakes a reporter for someone who can open the dashboard.
-          function isProjectContact(email) {
-            const e = String(email || "").trim().toLowerCase()
-            if (((state && state.members) || []).some(m => String(m.email || "").toLowerCase() === e)) return false
-            return ((state && state.contacts) || []).some(c => String(c.email || "").toLowerCase() === e)
-          }
           function refreshAssigneeOptions() {
             const emails = projectMemberEmails()
             const dl = document.getElementById("tktAssigneeOptions")
@@ -24475,9 +24452,6 @@
           function buildTktDetail(t, admin, onChange, isSingle = false) {
             const ticketId = t.id
             const exports = t.exports || []
-            const legacyBadge = (!exports.length && t.planeIssueUrl)
-              ? `<a class="exp-badge" href="${esc(t.planeIssueUrl)}" target="_blank" rel="noopener">plane · ${esc(t.planeIssueKey || "View")} ↗</a>`
-              : ""
 
             const detailEl = document.createElement("div")
             detailEl.className = "tkt-detail"
@@ -24497,12 +24471,23 @@
             // Export badges HTML. A failed export (KLA-283) gets an inline Retry control instead of a dead
             // "failed" badge — it re-runs the export against the same connector and swaps itself for the
             // normal success badge in place.
-            let badgesHtml = exports.map(exp =>
-              exp.externalUrl
-                ? `<a class="exp-badge" href="${esc(exp.externalUrl)}" target="_blank" rel="noopener">${esc(exp.type)} · ${esc(exp.externalKey || "View")} ↗</a>`
-                : `<span class="exp-badge"><span class="exp-err">${esc(exp.type)} failed</span>${admin && exp.connectorId ? `<button class="exp-retry" type="button" data-connector="${esc(exp.connectorId)}" title="Retry this export">Retry</button>` : ""
-                }</span>`
-            ).join("") + legacyBadge
+            // KD-983: one renderer for the strip, so a background auto-file that lands after the ticket opened
+            // can redraw just the badges (detailEl.__setExports) without rebuilding the ticket mid-edit.
+            const exportBadgesHtml = (list, pending) => {
+              const legacyBadge = (!list.length && t.planeIssueUrl)
+                ? `<a class="exp-badge" href="${esc(t.planeIssueUrl)}" target="_blank" rel="noopener">plane · ${esc(t.planeIssueKey || "View")} ↗</a>`
+                : ""
+              const pendingBadge = (pending && !list.some(exp => exp.status === "ok"))
+                ? `<span class="exp-badge exp-pending" title="Filing this ticket to your tracker. The link appears here when it is ready.">Filing to tracker…</span>`
+                : ""
+              return list.map(exp =>
+                exp.externalUrl
+                  ? `<a class="exp-badge" href="${esc(exp.externalUrl)}" target="_blank" rel="noopener">${esc(exp.type)} · ${esc(exp.externalKey || "View")} ↗</a>`
+                  : `<span class="exp-badge"><span class="exp-err">${esc(exp.type)} failed</span>${admin && exp.connectorId ? `<button class="exp-retry" type="button" data-connector="${esc(exp.connectorId)}" title="Retry this export">Retry</button>` : ""
+                  }</span>`
+              ).join("") + legacyBadge + pendingBadge
+            }
+            let badgesHtml = exportBadgesHtml(exports, !!t.exportPending)
 
             // Copy-to dropdown — KLAVITYKLA-287 (JTBD 5.8): gated by the per-project export policy.
             //   admin OR members_export → export directly ("Copy to…")
@@ -24602,10 +24587,10 @@
         <span class="tkt-prop-vv">${assigneePickerHtml(t)}</span>
         ${/* QPQ-31: who reported it — the email typed into the composer's Email field (server sends it as
              reporterEmail: actorEmail || contactEmail). Read-only: unlike Assignee this is a fact about the
-             report, not something a triager sets. The whole pair is omitted when the reporter stayed
-             anonymous, so the grid never shows a dangling empty label. */''}
+             report, not something a triager sets. Only the email is shown (no contact name or tag). The whole pair is
+             omitted when the reporter stayed anonymous, so the grid never shows a dangling empty label. */''}
         ${t.reporterEmail ? `<span class="tkt-prop-lb">Reporter</span>
-        <span class="tkt-prop-vv"><span class="tkt-reporter" title="${esc(t.reporterEmail)}">${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</span>${contactNameFor(t.reporterEmail) ? `<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>` : ""}${isProjectContact(t.reporterEmail) ? `<span class="tkt-contact-tag" title="A contact: known to this project, with no access to it">contact</span>` : ""}</span>` : ""}
+        <span class="tkt-prop-vv"><span class="tkt-reporter" title="${esc(t.reporterEmail)}">${esc(t.reporterEmail)}</span></span>` : ""}
         <span class="tkt-prop-lb">Labels</span>
         <span class="tkt-prop-vv">
           <div class="tkt-lbl-row" id="tkt-lbl-${esc(ticketId)}">
@@ -25378,7 +25363,9 @@
               })
             })
 
-            detailEl.querySelectorAll(".exp-retry").forEach(btn => {
+            const wireExportRetries = () => detailEl.querySelectorAll(".exp-retry").forEach(btn => {
+              if (btn.__retryWired) return
+              btn.__retryWired = true
               btn.addEventListener("click", async (ev) => {
                 ev.stopPropagation()
                 const connectorId = btn.getAttribute("data-connector")
@@ -25395,6 +25382,14 @@
                 }
               })
             })
+            wireExportRetries()
+            // KD-983: swap in fresh export badges (e.g. the Jira link from a background auto-file) in place.
+            detailEl.__setExports = (list, pending) => {
+              const box = detailEl.querySelector(".tkt-badges")
+              if (!box) return
+              box.innerHTML = exportBadgesHtml(list || [], !!pending)
+              wireExportRetries()
+            }
 
             // KLA-174: wire up label row
             const lblRow = detailEl.querySelector(".tkt-lbl-row")
@@ -26695,7 +26690,42 @@
               // Only re-render if this ticket is still the one being viewed.
               const single = $("ticketSingle")
               if (single && !single.classList.contains("hide")) tktRenderReusing(() => _renderSingleTicket(id))   // reuse render 1's reads
+              if (fresh.exportPending) pollTicketExports(id)
             } catch (e) { }
+          }
+          // KD-983: a ticket opened while its background auto-file is still running (AI title → Jira create) used
+          // to show no tracker link until a page refresh. While the server reports exportPending, re-check every
+          // couple of seconds and swap in just the badge strip, so nothing else on the open ticket (a half-typed
+          // comment, unsaved notes) is rebuilt. Stops when the export settles, the ticket closes or another opens.
+          let _tktExportPoll = null
+          const TKT_EXPORT_POLL_MS = 2000
+          const TKT_EXPORT_POLL_MAX = 45   // ~90s, matching the server-side pending TTL
+          function pollTicketExports(id, attempt = 0) {
+            clearTimeout(_tktExportPoll)
+            if (attempt >= TKT_EXPORT_POLL_MAX) return
+            _tktExportPoll = setTimeout(async () => {
+              const openDetail = () => {
+                const single = $("ticketSingle")
+                if (!single || single.classList.contains("hide")) return null
+                return Array.from(single.querySelectorAll(".tkt-detail")).find(el => el.getAttribute("data-id") === String(id)) || null
+              }
+              if (!openDetail()) return
+              let pending = true
+              try {
+                const r = await fetch("/api/feedback/" + encodeURIComponent(id))
+                const d = r.ok ? await r.json().catch(() => null) : null
+                const fresh = d && d.report
+                if (fresh) {
+                  pending = !!fresh.exportPending
+                  const exportsNow = fresh.exports || []
+                  const ix = Array.isArray(state.tickets) ? state.tickets.findIndex(x => String(x.id) === String(id)) : -1
+                  if (ix >= 0) state.tickets[ix] = { ...state.tickets[ix], exports: exportsNow, exportPending: pending }
+                  const el = openDetail()   // re-resolve: the ticket may have been re-rendered or closed meanwhile
+                  if (el && typeof el.__setExports === "function") el.__setExports(exportsNow, pending)
+                }
+              } catch (e) { }
+              if (pending) pollTicketExports(id, attempt + 1)
+            }, TKT_EXPORT_POLL_MS)
           }
           // KLA-563: the human ticket key shown in the breadcrumb / dedicated-page header. Prefers the sequence
           // number (#123), falls back to the short quotable ref, then the id prefix. Status stays color+text.
