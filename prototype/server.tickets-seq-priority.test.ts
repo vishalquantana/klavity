@@ -156,8 +156,8 @@ test("KLA-199: PATCH rejects unknown priority value", async () => {
   expect(r.status).toBe(400)
 })
 
-test("KLA-199: PATCH accepts all valid priority values", async () => {
-  for (const pri of ["urgent", "high", "medium", "low"]) {
+test("KLA-199: PATCH accepts all valid priority values including neutral", async () => {
+  for (const pri of ["urgent", "high", "medium", "low", "neutral"]) {
     const r = await fetch(`${BASE}/api/feedback/${FB_OPEN}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Cookie: auth() },
@@ -166,8 +166,29 @@ test("KLA-199: PATCH accepts all valid priority values", async () => {
     expect(r.status).toBe(200)
     const d = await r.json()
     expect(d.ok).toBe(true)
+
+    const gr = await fetch(`${BASE}/api/feedback/${FB_OPEN}`, { headers: { Cookie: auth() } })
+    const gd = await gr.json()
+    expect(gd.report.priority).toBe(pri)
   }
 })
+
+test("KLA-199: PATCH normalizes case-insensitive priority inputs and persists", async () => {
+  for (const [input, expected] of [["High", "high"], ["URGENT", "urgent"], ["Neutral", "neutral"], ["Low", "low"]]) {
+    const r = await fetch(`${BASE}/api/feedback/${FB_NEW}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: auth() },
+      body: JSON.stringify({ priority: input }),
+    })
+    expect(r.status).toBe(200)
+    expect((await r.json()).ok).toBe(true)
+
+    const gr = await fetch(`${BASE}/api/feedback/${FB_NEW}`, { headers: { Cookie: auth() } })
+    const gd = await gr.json()
+    expect(gd.report.priority).toBe(expected)
+  }
+})
+
 
 // ── KLA-200: seq_num in GET /api/feedback/:id ────────────────────────────────
 
