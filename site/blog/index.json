@@ -915,5 +915,12 @@
     "excerpt": "The best BrowserStack alternative depends on your bug: LambdaTest or Sauce Labs for real devices, Playwright for engines, AutoSim for coverage.",
     "category": "Compare",
     "date": "2026-10-23"
+  },
+  {
+    "slug": "ai-technical-debt",
+    "title": "AI Technical Debt: What It Is and How to Pay It Down",
+    "excerpt": "AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down.",
+    "category": "Learn",
+    "date": "2026-10-24"
   }
 ]

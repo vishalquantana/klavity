@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI-generated code volume rising far above the level that has been verified, leaving a debt gap, with a ledger of unexplained, untested and duplicated code">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="700" cy="52" r="156" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="400" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="46" y="60" width="252" height="206" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="46" y="60" width="252" height="32" rx="12" fill="#6366f1" opacity="0.16"/>
+  <circle cx="68" cy="76" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="86" cy="76" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="104" cy="76" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="68" y="112" width="186" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="134" width="134" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="156" width="208" height="8" rx="4" fill="#6366f1" opacity="0.6"/>
+  <rect x="68" y="178" width="152" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="200" width="196" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="222" width="118" height="8" rx="4" fill="#f87171" opacity="0.8"/>
+  <rect x="68" y="244" width="164" height="8" rx="4" fill="#f5f0e8" opacity="0.14"/>
+
+  <path d="M308 162 L346 162" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M338 155 L346 162 L338 169" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <line x1="366" y1="338" x2="536" y2="338" stroke="#f5f0e8" stroke-width="1.5" opacity="0.28"/>
+  <rect x="386" y="96" width="54" height="242" rx="5" fill="#6366f1" opacity="0.85"/>
+  <rect x="464" y="96" width="54" height="146" rx="5" fill="#f87171" opacity="0.14"/>
+  <rect x="464" y="242" width="54" height="96" rx="5" fill="#4ade80" opacity="0.8"/>
+  <line x1="378" y1="96" x2="528" y2="96" stroke="#f87171" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.75"/>
+  <path d="M491 232 L491 112" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  <path d="M484 119 L491 112 L498 119" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+
+  <rect x="568" y="92" width="190" height="36" rx="8" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="590" cy="110" r="6" fill="#f87171" opacity="0.85"/>
+  <rect x="608" y="106" width="118" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="568" y="140" width="190" height="36" rx="8" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="590" cy="158" r="6" fill="#f87171" opacity="0.85"/>
+  <rect x="608" y="154" width="94" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="568" y="188" width="190" height="36" rx="8" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="590" cy="206" r="6" fill="#f87171" opacity="0.85"/>
+  <rect x="608" y="202" width="134" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+
+  <path d="M663 236 L663 282" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M656 275 L663 282 L670 275" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+
+  <rect x="568" y="294" width="190" height="44" rx="10" fill="#4ade80" opacity="0.1"/>
+  <circle cx="594" cy="316" r="13" fill="none" stroke="#4ade80" stroke-width="2.2" opacity="0.9"/>
+  <path d="M588 316 L593 321 L601 311" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="618" y="312" width="112" height="8" rx="4" fill="#4ade80" opacity="0.45"/>
+</svg>

@@ -1,0 +1,200 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Technical Debt: What It Is and How to Pay It Down · Klavity</title>
+<meta name="description" content="AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down.">
+<link rel="canonical" href="https://klavity.in/blog/ai-technical-debt">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Technical Debt: What It Is and How to Pay It Down"><meta property="og:description" content="AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down.">
+<meta property="og:url" content="https://klavity.in/blog/ai-technical-debt"><meta property="og:image" content="https://klavity.in/blog/ai-technical-debt.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Technical Debt: What It Is and How to Pay It Down"><meta name="twitter:description" content="AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down."><meta name="twitter:image" content="https://klavity.in/blog/ai-technical-debt.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Technical Debt: What It Is and How to Pay It Down","description":"AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down.","datePublished":"2026-10-24","dateModified":"2026-10-24","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-technical-debt.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-technical-debt","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Technical Debt: What It Is and How to Pay It Down","item":"https://klavity.in/blog/ai-technical-debt"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-technical-debt"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is AI technical debt?","acceptedAnswer":{"@type":"Answer","text":"AI technical debt is the accumulated cost of code that was generated faster than it could be verified or understood. It differs from classic technical debt because it is not a deliberate shortcut: the code is well-formatted and looks complete, so no one marks it as debt. It takes three forms — comprehension debt (code nobody can explain), verification debt (paths nobody has executed) and duplication debt (the same logic generated repeatedly in isolation)."}},{"@type":"Question","name":"Is AI-generated code worse than human code?","acceptedAnswer":{"@type":"Answer","text":"Not inherently worse line by line — it is usually cleaner on the surface. The problem is its failure modes differ from human code: invented APIs, silent behaviour changes in untouched paths, swallowed errors and untested branches, all wrapped in confident formatting that defeats the signals reviewers normally use to judge care."}},{"@type":"Question","name":"How do you measure AI technical debt?","acceptedAnswer":{"@type":"Answer","text":"There is no single credible metric. Practical proxies: whether someone on the team can explain a randomly chosen generated file block by block, the gap between your most-changed files and your test coverage, how much longer small changes take in AI-authored areas than hand-written ones, and how many near-identical implementations of the same logic exist in the repo."}},{"@type":"Question","name":"Can you pay down AI technical debt without rewriting everything?","acceptedAnswer":{"@type":"Answer","text":"Yes, and rewriting is usually the wrong move. Prioritise code that users touch and that writes to a database, pin current behaviour down with tests before refactoring, delete generated code that handles cases which never occur, and put automated verification on the paths nobody has executed. The goal is scaling verification to match generation, not reading every line."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-10-24</div>
+    <h1>AI Technical Debt: What It Is and How to Pay It Down</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI-generated code volume rising far above the level that has been verified, leaving a debt gap, with a ledger of unexplained, untested and duplicated code">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="700" cy="52" r="156" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="400" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="46" y="60" width="252" height="206" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="46" y="60" width="252" height="32" rx="12" fill="#6366f1" opacity="0.16"/>
+  <circle cx="68" cy="76" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="86" cy="76" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="104" cy="76" r="5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="68" y="112" width="186" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="134" width="134" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="156" width="208" height="8" rx="4" fill="#6366f1" opacity="0.6"/>
+  <rect x="68" y="178" width="152" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="200" width="196" height="8" rx="4" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="68" y="222" width="118" height="8" rx="4" fill="#f87171" opacity="0.8"/>
+  <rect x="68" y="244" width="164" height="8" rx="4" fill="#f5f0e8" opacity="0.14"/>
+
+  <path d="M308 162 L346 162" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M338 155 L346 162 L338 169" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+
+  <line x1="366" y1="338" x2="536" y2="338" stroke="#f5f0e8" stroke-width="1.5" opacity="0.28"/>
+  <rect x="386" y="96" width="54" height="242" rx="5" fill="#6366f1" opacity="0.85"/>
+  <rect x="464" y="96" width="54" height="146" rx="5" fill="#f87171" opacity="0.14"/>
+  <rect x="464" y="242" width="54" height="96" rx="5" fill="#4ade80" opacity="0.8"/>
+  <line x1="378" y1="96" x2="528" y2="96" stroke="#f87171" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.75"/>
+  <path d="M491 232 L491 112" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+  <path d="M484 119 L491 112 L498 119" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" opacity="0.9"/>
+
+  <rect x="568" y="92" width="190" height="36" rx="8" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="590" cy="110" r="6" fill="#f87171" opacity="0.85"/>
+  <rect x="608" y="106" width="118" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="568" y="140" width="190" height="36" rx="8" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="590" cy="158" r="6" fill="#f87171" opacity="0.85"/>
+  <rect x="608" y="154" width="94" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+  <rect x="568" y="188" width="190" height="36" rx="8" fill="#f5f0e8" opacity="0.05"/>
+  <circle cx="590" cy="206" r="6" fill="#f87171" opacity="0.85"/>
+  <rect x="608" y="202" width="134" height="8" rx="4" fill="#f5f0e8" opacity="0.2"/>
+
+  <path d="M663 236 L663 282" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M656 275 L663 282 L670 275" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+
+  <rect x="568" y="294" width="190" height="44" rx="10" fill="#4ade80" opacity="0.1"/>
+  <circle cx="594" cy="316" r="13" fill="none" stroke="#4ade80" stroke-width="2.2" opacity="0.9"/>
+  <path d="M588 316 L593 321 L601 311" fill="none" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="618" y="312" width="112" height="8" rx="4" fill="#4ade80" opacity="0.45"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI technical debt is the accumulated cost of code written faster than anyone could verify or understand it. Unlike classic technical debt, nobody chose the tradeoff — the code looks finished, so the debt stays invisible until something breaks. It shows up as comprehension debt, verification debt and duplication debt, and it is cheapest to clear before merge.</div>
+    <div class="prose"><p><strong>AI technical debt</strong> is the accumulated cost of code that was generated faster than anyone could verify or understand it. Like ordinary technical debt, it bills you later — in slower changes, harder debugging and bugs that surface in production. Unlike ordinary technical debt, nobody consciously chose the tradeoff: the code looks finished, reads cleanly and passes review, so the debt is invisible until the first time someone has to change it.</p>
+
+<h2>What is AI technical debt, exactly?</h2>
+
+<p>Classic technical debt comes from a decision. Someone hardcodes a value to hit a deadline, skips a test, copies a function instead of extracting it — and usually leaves a <code>TODO</code> behind. The debt is deliberate, and the person who took it on knows roughly where it is.</p>
+
+<p>AI technical debt comes from volume. When a model writes a 400-line feature in a minute, it produces code with the surface qualities of careful work: consistent naming, sensible structure, docstrings on every function. What it does not produce is the understanding that normally accompanies that code. Three distinct debts build up underneath:</p>
+
+<ul>
+<li><strong>Comprehension debt</strong> — code in the repo that nobody on the team could explain line by line. When it breaks, debugging starts from zero, as if the code were inherited from a contractor who left.</li>
+<li><strong>Verification debt</strong> — paths that have never been executed by a human or a test. Generated code often handles cases nobody asked about and skips cases nobody mentioned, and the difference is invisible in a diff.</li>
+<li><strong>Duplication debt</strong> — the same logic generated three times in three places, because each prompt was answered in isolation. Fixing a bug in one copy leaves the other two intact.</li>
+</ul>
+
+<h2>Why doesn't code review catch AI technical debt?</h2>
+
+<p>Because most review instincts are tuned to spot carelessness, and generated code is not careless-looking. Reviewers read naming, formatting, comment quality and structure as proxies for how much thought went into a change. A model gives you all four for free, which breaks the proxy. A diff can be beautifully organised and still invent an API that does not exist, swallow an error, or quietly change behaviour in a function it did not need to touch.</p>
+
+<p>Review volume compounds the problem. Reviewing AI output properly takes roughly as long as reviewing human code of the same size — but it arrives far faster, so the realistic choice becomes skimming or becoming the bottleneck. Skimming is how verification debt gets booked. Our guide on <a href="/blog/how-to-review-ai-generated-code">reviewing AI-generated code before you merge it</a> covers the specific checks that survive this, and <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> covers what to do once it is already in.</p>
+
+<h2>How is AI technical debt different from ordinary technical debt?</h2>
+
+<table>
+<thead><tr><th>Dimension</th><th>Classic technical debt</th><th>AI technical debt</th></tr></thead>
+<tbody>
+<tr><td>Origin</td><td>A deliberate shortcut under deadline pressure</td><td>Unverified volume; no decision was made</td></tr>
+<tr><td>Visibility</td><td>Often marked — <code>TODO</code>, <code>HACK</code>, a known ugly module</td><td>Unmarked; the code looks finished</td></tr>
+<tr><td>Who understands it</td><td>At least the author did, once</td><td>Possibly nobody, including at merge time</td></tr>
+<tr><td>Typical shape</td><td>Missing abstraction, tangled module</td><td>Duplicated logic, untested branches, invented APIs</td></tr>
+<tr><td>How it surfaces</td><td>Changes in that module get slow</td><td>A user hits a path nobody ran</td></tr>
+<tr><td>Cheapest fix point</td><td>During the next refactor</td><td>Before merge, while intent is still fresh</td></tr>
+</tbody>
+</table>
+
+<h2>How do you tell how much AI technical debt you already have?</h2>
+
+<p>There is no credible single metric, and anyone selling you a debt score is guessing. What works is a set of questions you can actually answer about your own repo:</p>
+
+<ol>
+<li><strong>The explanation test.</strong> Pick a generated file at random. Can someone on the team explain why each block is there and what breaks if it is deleted? Files that fail this are your debt ledger.</li>
+<li><strong>The coverage gap.</strong> Compare which files changed most in the last few months against which files your tests actually execute. AI-heavy areas with thin coverage are where the interest is compounding.</li>
+<li><strong>Cost per change.</strong> Debt bills at change time, so track how long small changes take in AI-authored areas versus hand-written ones. A widening gap is the clearest signal you have.</li>
+<li><strong>Duplication search.</strong> Grep for the same validation rule, date formatter or auth check across the codebase. Multiple near-identical implementations are a direct count of prompts answered in isolation.</li>
+</ol>
+
+<h2>How do you pay down AI technical debt?</h2>
+
+<p>You cannot read your way out of it — the volume is the problem, so the fix has to scale the same way the code did. In rough order of return:</p>
+
+<p><strong>Start with what users touch.</strong> Signup, checkout, auth, anything that writes to a database. Debt in a rarely-used admin screen is cheap; debt on the payment path is not. Work outward from the money.</p>
+
+<p><strong>Turn behaviour into tests before you refactor.</strong> For generated code you do not fully understand, write tests that pin down what it currently does, including the parts that look wrong. That converts comprehension debt into something you can safely change. <a href="/autosim">AutoSim</a> exists for this step: it builds end-to-end tests that heal themselves when selectors shift, so the suite does not rot the moment the next AI-generated change lands.</p>
+
+<p><strong>Exercise the paths nobody ran.</strong> Verification debt only clears when something actually walks the flow. <a href="/sims">Sims</a> drives AI personas through your app the way different kinds of users would — the impatient one, the one who refreshes mid-payment, the one on a slow phone — which surfaces the branches a prompt never considered.</p>
+
+<p><strong>Delete before you fix.</strong> A meaningful share of generated code handles cases that never occur: defensive branches for impossible inputs, config that is read nowhere. Deleting it is faster than understanding it and reduces the surface you owe maintenance on.</p>
+
+<p><strong>Close the loop on what reaches users.</strong> When a bug does escape, the gap between "something is broken" and a reproducible report is where fixes stall. <a href="/snap">Snap</a> turns a right-click into a bug report carrying console errors, network calls and the exact state, so the debt gets paid where it actually surfaced instead of being re-litigated over email.</p>
+
+<h2>How do you stop accumulating it in the first place?</h2>
+
+<p>The structural fix is to put verification on the same clock as generation. If code can be written in a minute and only checked in an hour, debt accrues by arithmetic. Practically, that means a small number of rules that hold regardless of who or what wrote the code: nothing merges without a test that executes the path it changed; generated code gets read for intent, not formatting; duplicated logic gets extracted the second time it appears, not the fourth.</p>
+
+<p>This is the same shift described in <a href="/blog/ai-qa-complete-guide">our complete guide to AI QA</a> — when writing code stops being the bottleneck, checking it becomes the bottleneck, and that is where the tooling has to go. The teams that stay fast with AI are not the ones generating the most code. They are the ones whose verification scales at the same rate.</p>
+
+<h2>Ready to find the debt before your client does?</h2>
+
+<p>Klavity finds the bugs hiding in AI-generated code before clients or real users do — persona-driven testing, self-healing E2E coverage and one-click bug reports in a single platform. <strong><a href="/onboarding">Try Klavity free</a></strong> and scan your next client site before it ships.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Audit generated files with the explanation test — unexplainable code is your debt ledger</li><li>Pay down debt on user-facing and database-writing paths first</li><li>Pin current behaviour with tests before refactoring code you do not fully understand</li><li>Require a test that executes the changed path before anything merges</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is AI technical debt?</summary><p>AI technical debt is the accumulated cost of code that was generated faster than it could be verified or understood. It differs from classic technical debt because it is not a deliberate shortcut: the code is well-formatted and looks complete, so no one marks it as debt. It takes three forms — comprehension debt (code nobody can explain), verification debt (paths nobody has executed) and duplication debt (the same logic generated repeatedly in isolation).</p></details><details><summary>Is AI-generated code worse than human code?</summary><p>Not inherently worse line by line — it is usually cleaner on the surface. The problem is its failure modes differ from human code: invented APIs, silent behaviour changes in untouched paths, swallowed errors and untested branches, all wrapped in confident formatting that defeats the signals reviewers normally use to judge care.</p></details><details><summary>How do you measure AI technical debt?</summary><p>There is no single credible metric. Practical proxies: whether someone on the team can explain a randomly chosen generated file block by block, the gap between your most-changed files and your test coverage, how much longer small changes take in AI-authored areas than hand-written ones, and how many near-identical implementations of the same logic exist in the repo.</p></details><details><summary>Can you pay down AI technical debt without rewriting everything?</summary><p>Yes, and rewriting is usually the wrong move. Prioritise code that users touch and that writes to a database, pin current behaviour down with tests before refactoring, delete generated code that handles cases which never occur, and put automated verification on the paths nobody has executed. The goal is scaling verification to match generation, not reading every line.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
