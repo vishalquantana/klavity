@@ -3,6 +3,8 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+
+- [AI QA in Your CI/CD Pipeline: Where It Fits and What to Run](https://klavity.in/blog/ai-qa-in-ci-cd-pipeline) — AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks.
 - [AI Technical Debt: What It Is and How to Pay It Down](https://klavity.in/blog/ai-technical-debt) — AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down.
 - [BrowserStack Alternative: 6 Options for Web Agencies](https://klavity.in/blog/browserstack-alternative) — The best BrowserStack alternative depends on your bug: LambdaTest or Sauce Labs for real devices, Playwright for engines, AutoSim for coverage.
 - [AI Visual Regression Testing: Catch Layout Breaks Early](https://klavity.in/blog/ai-visual-regression-testing) — AI visual regression testing compares renders before and after a change and flags only the differences that actually break the page.
@@ -137,6 +139,7 @@
 - [How to write a bug report developers will actually act on](https://klavity.in/blog/how-to-write-a-bug-report-developers-act-on) — A bug report gets fixed fast when it carries three things: exact steps, the environment, and evidence (screenshot + console + network). Here's the format.
 
 ## Product
+
 - [Snap — in-app bug reporting](https://klavity.in/snap)
 - [Sims — AI persona testing](https://klavity.in/sims)
 - [AutoSim — self-healing E2E tests](https://klavity.in/autosim)

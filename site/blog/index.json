@@ -922,5 +922,12 @@
     "excerpt": "AI technical debt is the cost of code generated faster than anyone could verify or understand it. Here is how to spot, measure and pay it down.",
     "category": "Learn",
     "date": "2026-10-24"
+  },
+  {
+    "slug": "ai-qa-in-ci-cd-pipeline",
+    "title": "AI QA in Your CI/CD Pipeline: Where It Fits and What to Run",
+    "excerpt": "AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks.",
+    "category": "Guides",
+    "date": "2026-10-25"
   }
 ]

@@ -1,0 +1,190 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA in Your CI/CD Pipeline: Where It Fits and What to Run · Klavity</title>
+<meta name="description" content="AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-in-ci-cd-pipeline">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA in Your CI/CD Pipeline: Where It Fits and What to Run"><meta property="og:description" content="AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-in-ci-cd-pipeline"><meta property="og:image" content="https://klavity.in/blog/ai-qa-in-ci-cd-pipeline.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA in Your CI/CD Pipeline: Where It Fits and What to Run"><meta name="twitter:description" content="AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-in-ci-cd-pipeline.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA in Your CI/CD Pipeline: Where It Fits and What to Run","description":"AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks.","datePublished":"2026-10-25","dateModified":"2026-10-25","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-in-ci-cd-pipeline.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-in-ci-cd-pipeline","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA in Your CI/CD Pipeline: Where It Fits and What to Run","item":"https://klavity.in/blog/ai-qa-in-ci-cd-pipeline"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-in-ci-cd-pipeline"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Should AI QA block a merge in CI/CD?","acceptedAnswer":{"@type":"Answer","text":"Only the fast, deterministic part of it. An AI review of the diff plus a three-to-five-test critical-path smoke suite can reasonably block a pull request. Model-judged results — visual comparisons, exploratory findings, accessibility judgement calls — should post a report against the preview deploy instead of setting the exit code, because a check that is occasionally wrong will get disabled if it can hold up a teammate's merge."}},{"@type":"Question","name":"How long should the blocking QA stage take?","acceptedAnswer":{"@type":"Answer","text":"Budget it in minutes, not tens of minutes. The pull-request gate should cover lint, typecheck, unit tests, a diff review and a smoke suite narrow enough that you can name every test in it out loud. Everything slower or broader moves to the preview deploy, where nobody is waiting on a spinner."}},{"@type":"Question","name":"Can I run AI QA without a CI/CD pipeline?","acceptedAnswer":{"@type":"Answer","text":"Yes. The three stages map onto what small teams already do: review the diff before merging your own work, run the exploratory pass against the preview URL your host generates, and schedule a critical-path run against production after deploy. Adding a pipeline later formalises stages you were already using informally."}},{"@type":"Question","name":"What should a failing pipeline test produce?","acceptedAnswer":{"@type":"Answer","text":"The same evidence bundle you would demand in a bug report: a screenshot or video at the point of failure, console errors, failed network requests with status codes, the URL and viewport, and the branch and commit. A failure that emits only a stack trace and a job URL turns into an hour of local guessing."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-25</div>
+    <h1>AI QA in Your CI/CD Pipeline: Where It Fits and What to Run</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI QA stages across a CI/CD pipeline: a blocking pull-request gate, a non-blocking preview pass, and post-deploy monitoring">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+
+  <line x1="80" y1="210" x2="720" y2="210" stroke="#f5f0e8" stroke-opacity="0.12" stroke-width="6" stroke-linecap="round"/>
+  <line x1="80" y1="210" x2="470" y2="210" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+
+  <circle cx="110" cy="210" r="13" fill="#1e1b2e" stroke="#6366f1" stroke-width="3"/>
+  <circle cx="110" cy="210" r="5" fill="#6366f1"/>
+  <rect x="60" y="248" width="100" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="60" y="264" width="62" height="7" rx="3.5" fill="#f5f0e8" opacity="0.12"/>
+
+  <rect x="238" y="156" width="112" height="108" rx="12" fill="#6366f1" fill-opacity="0.16" stroke="#6366f1" stroke-width="2.5"/>
+  <rect x="258" y="196" width="72" height="44" rx="7" fill="#1e1b2e" stroke="#6366f1" stroke-width="2.5"/>
+  <path d="M277 196v-13a17 17 0 0 1 34 0v13" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+  <polyline points="275,218 288,230 313,205" fill="none" stroke="#4ade80" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="238" y="284" width="112" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="238" y="300" width="74" height="7" rx="3.5" fill="#f5f0e8" opacity="0.12"/>
+
+  <rect x="430" y="148" width="130" height="124" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="2" stroke-dasharray="7 6"/>
+  <rect x="450" y="166" width="90" height="62" rx="6" fill="#1e1b2e" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2"/>
+  <line x1="450" y1="180" x2="540" y2="180" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2"/>
+  <circle cx="459" cy="173" r="2.6" fill="#f87171"/>
+  <rect x="459" y="190" width="48" height="6" rx="3" fill="#6366f1" opacity="0.7"/>
+  <rect x="459" y="203" width="66" height="6" rx="3" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="459" y="214" width="34" height="6" rx="3" fill="#f5f0e8" opacity="0.16"/>
+  <circle cx="531" cy="217" r="12" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="531" y1="211" x2="531" y2="218" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="531" cy="222.5" r="1.6" fill="#f87171"/>
+  <rect x="430" y="290" width="112" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="430" y="306" width="66" height="7" rx="3.5" fill="#f5f0e8" opacity="0.12"/>
+
+  <circle cx="660" cy="210" r="30" fill="#1e1b2e" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="2"/>
+  <path d="M660 186a24 24 0 1 1-21 35" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="648,210 657,219 673,201" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="612" y="262" width="96" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="612" y="278" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.12"/>
+
+  <path d="M168 210h54" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M214 204l8 6-8 6" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M358 210h56" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M406 204l8 6-8 6" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M568 210h50" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M610 204l8 6-8 6" fill="none" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <path d="M495 134V98h120" fill="none" stroke="#f87171" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+  <rect x="620" y="82" width="104" height="32" rx="8" fill="#f87171" fill-opacity="0.12" stroke="#f87171" stroke-opacity="0.55" stroke-width="2"/>
+  <line x1="636" y1="92" x2="708" y2="92" stroke="#f87171" stroke-opacity="0.6" stroke-width="4" stroke-linecap="round"/>
+  <line x1="636" y1="103" x2="684" y2="103" stroke="#f87171" stroke-opacity="0.35" stroke-width="4" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA in a CI/CD pipeline works best split across three stages rather than wired in as one blocking step: a fast deterministic gate on pull requests, a broader AI-driven exploration pass against the preview deploy that reports instead of blocks, and scheduled checks against production. Blocking authority is the scarce resource — only fast, deterministic, almost-never-wrong checks should hold a merge.</div>
+    <div class="prose"><p><strong>AI QA in a CI/CD pipeline</strong> belongs in three distinct places, not one: a fast deterministic gate that blocks the merge, a broader AI-driven exploration pass that runs against a preview deploy without blocking it, and a continuous check against production that catches what no pre-deploy test could. The mistake most teams make is wiring an AI testing tool in as a single blocking step — it either slows every pull request to a crawl or gets disabled the first week it flags something cosmetic. Split by stage and by blocking authority, and AI QA becomes a safety net instead of a tax.</p>
+
+<h2>Where does AI QA actually fit in a CI/CD pipeline?</h2>
+<p>A pipeline already has natural gates. The job is to match each kind of check to the gate where it is cheap enough to run and consequential enough to matter.</p>
+<table>
+<tr><th>Pipeline stage</th><th>What AI QA does here</th><th>Blocks?</th></tr>
+<tr><td>Pre-commit / local</td><td>Review the diff for logic the author did not intend — unhandled states, missing error paths, auth checks dropped from a copied handler</td><td>No (advisory)</td></tr>
+<tr><td>Pull request</td><td>Static review of the diff, plus a small smoke suite on the critical path (load, log in, one core action)</td><td>Yes — keep it minutes, not tens of minutes</td></tr>
+<tr><td>Preview / staging deploy</td><td>Persona-driven exploration of real flows, cross-browser rendering, forms and checkout, accessibility regressions</td><td>No — report, don't gate</td></tr>
+<tr><td>Post-deploy (production)</td><td>Scheduled runs of the same critical-path suite, plus in-app bug capture from real users and clients</td><td>Alerts, not gates</td></tr>
+</table>
+<p>The column that matters most is the third one. Blocking authority is the scarce resource in a pipeline: every check that can hold a merge needs to be fast, deterministic, and almost never wrong. Checks that are valuable but occasionally noisy — anything model-judged, anything visual, anything exploratory — still earn their place, just not with a veto.</p>
+
+<h2>What should run on every pull request, and what should wait?</h2>
+<p>Put two things on the pull request and resist adding a third. First, a review pass over the diff itself: it needs no environment, finishes in seconds, and catches the category of defect that AI-assisted code produces most — plausible-looking code with a missing branch. Second, a smoke suite narrow enough that you can name every test in it out loud. If the app does not load, a user cannot log in, or the one action the product exists for fails, the merge should stop.</p>
+<p>Everything else waits for the preview deploy, where you have a real URL and no one is watching a spinner. That is the right place for breadth: multiple browsers and viewports, long multi-step journeys, the half of your app that nobody wrote tests for. These runs take longer and sometimes surface a judgement call rather than a clear bug, which is exactly why they should produce a report a human skims rather than a red X that blocks a teammate.</p>
+<p>A useful ordering rule: a check graduates to blocking only after it has run non-blocking for a while and been right every time it complained. Promote checks into the gate; don't start them there. Our <a href="/blog/ai-qa-workflow">AI QA workflow guide</a> walks through the same split as a day-to-day loop rather than a pipeline config.</p>
+
+<h2>How do you stop AI QA from blocking the pipeline?</h2>
+<p>Three failure modes account for nearly all abandoned AI testing setups, and each has a concrete fix.</p>
+<h3>Noise from model-judged results</h3>
+<p>If a check can flag "this looks wrong" rather than "this assertion failed", it will occasionally be wrong. Route those results to a report or a review comment with evidence attached, and keep them out of the exit code. A finding a developer can dismiss in five seconds costs almost nothing; a finding that blocks their merge costs a context switch and a grudge.</p>
+<h3>Flaky tests treated as real failures</h3>
+<p>Nothing erodes trust in a pipeline faster than a suite that fails for reasons unrelated to the change. Fix the flake or quarantine the test explicitly — never leave a known-flaky test in the blocking gate, and never let "just re-run it" become the team's reflex. Self-healing selectors help with the specific flake caused by markup churn, but they do not fix a race condition or a test that depends on yesterday's seed data. We go deeper on telling those apart in <a href="/blog/fix-flaky-end-to-end-tests">fixing flaky end-to-end tests</a>.</p>
+<h3>Failures you cannot reproduce</h3>
+<p>A pipeline failure that produces only a stack trace and a job URL turns into an hour of local guessing. Make every failing run emit the same evidence bundle you would demand in a bug report: screenshot or video at the point of failure, console errors, failed network requests with status codes, the URL and viewport, and the branch and commit. When the artifact is complete, the fix starts at the cause instead of at the reproduction.</p>
+
+<h2>What if you don't have a CI/CD pipeline at all?</h2>
+<p>Plenty of teams shipping real products — especially those building with Cursor, Lovable, v0, Bolt or Replit — deploy straight from a push or a button in a hosting dashboard. The stage model still applies; the stages are just not YAML files.</p>
+<ul>
+<li><strong>Before you merge your own work:</strong> read the diff with an AI reviewer. This is the pull-request gate, minus the pull request.</li>
+<li><strong>On the preview URL your host generates:</strong> run the exploration pass. Preview deploys are the single most underused QA surface available to small teams — a real environment, a real URL, and no consequence to breaking it.</li>
+<li><strong>After deploy:</strong> schedule the critical-path run against production and make it easy for a client or user to file a bug with evidence attached, rather than by sending a screenshot in a chat.</li>
+</ul>
+<p>Adding a pipeline later does not change the thinking. You are formalising stages you were already using informally, which is a much smaller job than designing a QA strategy and a pipeline at the same time.</p>
+
+<h2>How does this map to Klavity's three pieces?</h2>
+<p>Klavity is built around this split rather than around a single blocking step.</p>
+<ul>
+<li><a href="/autosim">AutoSim</a> covers the deterministic layer — end-to-end tests that repair their own selectors when markup changes, so the suite you put in the blocking gate stays trustworthy instead of decaying into re-runs.</li>
+<li><a href="/sims">Sims</a> covers the exploratory layer against a preview deploy — AI personas work through real flows the way different kinds of users would, including the paths your written tests never cover.</li>
+<li><a href="/snap">Snap</a> covers what escapes anyway — a right-click bug report from the page itself, with console, network and environment captured automatically, filed to your tracker.</li>
+</ul>
+<p>For the full picture of how these fit together, including where human review still belongs, start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>, or read <a href="/blog/continuous-qa">continuous QA</a> for the cadence side of the same idea.</p>
+
+<h2>A minimal setup worth copying</h2>
+<ol>
+<li><strong>On every pull request:</strong> lint, typecheck, unit tests, an AI review of the diff, and a smoke suite of three to five critical-path tests. Blocking. Budget it in minutes.</li>
+<li><strong>On every preview deploy:</strong> the full end-to-end suite plus an exploratory persona pass across your two or three real browser/viewport combinations. Non-blocking, posts a report.</li>
+<li><strong>On a schedule against production:</strong> the critical-path suite, hourly or daily depending on traffic. Alerts a human; does not gate anything.</li>
+<li><strong>Always on:</strong> in-app bug capture, so a bug a client finds arrives with evidence instead of as "the site is broken".</li>
+</ol>
+<p>That is four lanes, one of which can stop a merge. Review the boundary every few months: a non-blocking check that has been reliably right is a candidate for promotion, and a blocking check that cried wolf twice should be demoted the same day.</p>
+
+<p><strong>Ready to wire this up?</strong> <a href="/onboarding">Try Klavity free</a> — point it at a preview URL and see what the exploratory pass finds before your next deploy goes out.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Split AI QA across three pipeline stages instead of one blocking step</li><li>Give blocking authority only to fast, deterministic, almost-never-wrong checks</li><li>Run exploratory and visual passes against the preview deploy as reports, not gates</li><li>Make every failing run emit a full evidence bundle so fixes start at the cause</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Should AI QA block a merge in CI/CD?</summary><p>Only the fast, deterministic part of it. An AI review of the diff plus a three-to-five-test critical-path smoke suite can reasonably block a pull request. Model-judged results — visual comparisons, exploratory findings, accessibility judgement calls — should post a report against the preview deploy instead of setting the exit code, because a check that is occasionally wrong will get disabled if it can hold up a teammate's merge.</p></details><details><summary>How long should the blocking QA stage take?</summary><p>Budget it in minutes, not tens of minutes. The pull-request gate should cover lint, typecheck, unit tests, a diff review and a smoke suite narrow enough that you can name every test in it out loud. Everything slower or broader moves to the preview deploy, where nobody is waiting on a spinner.</p></details><details><summary>Can I run AI QA without a CI/CD pipeline?</summary><p>Yes. The three stages map onto what small teams already do: review the diff before merging your own work, run the exploratory pass against the preview URL your host generates, and schedule a critical-path run against production after deploy. Adding a pipeline later formalises stages you were already using informally.</p></details><details><summary>What should a failing pipeline test produce?</summary><p>The same evidence bundle you would demand in a bug report: a screenshot or video at the point of failure, console errors, failed network requests with status codes, the URL and viewport, and the branch and commit. A failure that emits only a stack trace and a job URL turns into an hour of local guessing.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
