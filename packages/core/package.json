@@ -20,7 +20,11 @@
     "./modal-theme": "./src/modal-theme.ts",
     "./otp-input": "./src/otp-input.ts",
     "./context-menu": "./src/context-menu.ts",
-    "./icons": "./src/icons.ts"
+    "./icons": "./src/icons.ts",
+    "./recorder": "./src/recorder.ts",
+    "./webm-duration": "./src/webm-duration.ts",
+    "./element-selector": "./src/element-selector.ts",
+    "./element-picker": "./src/element-picker.ts"
   },
   "scripts": {
     "test": "vitest run --passWithNoTests",

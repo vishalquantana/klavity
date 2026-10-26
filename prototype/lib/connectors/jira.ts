@@ -152,6 +152,96 @@ async function jiraTransitionIssue(
   }
 }
 
+// KD-983: resolve the Klavity reporter's email to a Jira user in this project, so the issue is
+// attributed to them (an @mention in the description, plus the Reporter field when the integration
+// account may set it) instead of only the integration account. Uses the project-scoped ASSIGNABLE user
+// search: it needs only Browse Projects on the project (the permission-scoped /user/permission/search
+// 403s for a normal integration account — seen on PX4), and a Jira user outside the project is
+// treated as "not found". Matches the email exactly; when the user's email is hidden by their
+// Atlassian privacy settings (emailAddress omitted) a SINGLE hit for the full address is accepted,
+// since Jira only returns it for that exact email. NEVER throws — any failure (no permission, network,
+// unexpected shape) returns null → the default reporter.
+//   GET {host}/rest/api/3/user/assignable/search?project={key}&query={email}
+type JiraReporter = { accountId: string; displayName: string }
+async function jiraFindReporter(
+  host: string,
+  credentials: string,
+  projectKey: string,
+  email: string,
+): Promise<JiraReporter | null> {
+  const want = email.trim().toLowerCase()
+  if (!want || !want.includes("@")) return null
+  try {
+    const qs = new URLSearchParams({ project: projectKey, query: want, maxResults: "10" })
+    const res = await safeFetch(
+      `${host.replace(/\/$/, "")}/rest/api/3/user/assignable/search?${qs.toString()}`,
+      { method: "GET", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
+      JIRA_FETCH_OPTS,
+    )
+    if (!res.ok) {
+      console.warn(`jira reporter lookup skipped (HTTP ${res.status}) — using the integration user`)
+      return null
+    }
+    const users = await res.json().catch(() => null)
+    if (!Array.isArray(users)) return null
+    const humans = users.filter((u: any) => u && u.accountId && u.accountType === "atlassian" && u.active !== false)
+    const exact = humans.find((u: any) => typeof u.emailAddress === "string" && u.emailAddress.toLowerCase() === want)
+    const hit = exact ?? (humans.length === 1 && !humans[0].emailAddress ? humans[0] : null)
+    if (!hit) return null
+    return { accountId: String(hit.accountId), displayName: String(hit.displayName || want) }
+  } catch (e) {
+    console.warn(`jira reporter lookup failed — using the integration user: ${redactSecrets(e instanceof Error ? e.message : String(e))}`)
+    return null
+  }
+}
+
+// KD-983: the integration account itself — the user Jira records as the issue's Reporter by default.
+// When the Klavity reporter's email has no Jira account, the "Reported by" mention names this user, so
+// the description agrees with the Reporter field. NEVER throws — any failure returns null (no line).
+//   GET {host}/rest/api/3/myself
+async function jiraIntegrationUser(host: string, credentials: string): Promise<JiraReporter | null> {
+  try {
+    const res = await safeFetch(
+      `${host.replace(/\/$/, "")}/rest/api/3/myself`,
+      { method: "GET", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
+      JIRA_FETCH_OPTS,
+    )
+    if (!res.ok) return null
+    const me = await res.json().catch(() => null)
+    if (!me || !me.accountId) return null
+    return { accountId: String(me.accountId), displayName: String(me.displayName || "Jira user") }
+  } catch { return null }
+}
+
+// KD-983: may the integration account set the Reporter field in this project? Jira only accepts a
+// reporter other than the caller with "Modify Reporter" — without it the create 400s. Checking first
+// keeps every create to ONE request on projects (like PX4) that don't grant it, and starts setting the
+// field by itself the day an admin does. Fails closed (false) — the @mention still names the reporter.
+//   GET {host}/rest/api/3/mypermissions?projectKey={key}&permissions=MODIFY_REPORTER
+async function jiraCanModifyReporter(host: string, credentials: string, projectKey: string): Promise<boolean> {
+  try {
+    const qs = new URLSearchParams({ projectKey, permissions: "MODIFY_REPORTER" })
+    const res = await safeFetch(
+      `${host.replace(/\/$/, "")}/rest/api/3/mypermissions?${qs.toString()}`,
+      { method: "GET", headers: { "Authorization": `Basic ${credentials}`, "Accept": "application/json" } },
+      JIRA_FETCH_OPTS,
+    )
+    if (!res.ok) return false
+    const json = await res.json().catch(() => null)
+    return json?.permissions?.MODIFY_REPORTER?.havePermission === true
+  } catch { return false }
+}
+
+// KD-983: did Jira reject the create because of the reporter field (not on the create screen, or the
+// integration user lacks "Modify Reporter")? Then the caller retries once without it.
+function isReporterRejection(status: number, body: string): boolean {
+  if (status !== 400 || !body) return false
+  try {
+    const parsed = JSON.parse(body)
+    return !!(parsed && parsed.errors && typeof parsed.errors === "object" && "reporter" in parsed.errors)
+  } catch { return false }
+}
+
 // JTBD 5.7: map Klavity priority (urgent/high/medium/low) onto Jira's default priority scheme
 // names (Highest/High/Medium/Low/Lowest). Jira's create/edit APIs set priority by name. Returns
 // null when there's no priority or no mapping, so the caller omits the field entirely.
@@ -202,12 +292,23 @@ function jiraErrorReason(body: string | undefined | null): string {
   return body.slice(0, 200)
 }
 
-// Build an Atlassian Document Format (ADF) doc wrapping plain text.
-function toAdf(text: string): object {
+// Build an Atlassian Document Format (ADF) doc wrapping plain text. KD-983: the doc opens with
+// "Reported by @Name" — a real mention node, so the person is linked + notified in Jira. The caller passes
+// the Klavity reporter when they're a Jira user, else the integration account (the issue's Reporter).
+function toAdf(text: string, reportedBy?: JiraReporter | null): object {
   return {
     version: 1,
     type: "doc",
     content: [
+      ...(reportedBy
+        ? [{
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Reported by " },
+            { type: "mention", attrs: { id: reportedBy.accountId, text: `@${reportedBy.displayName}` } },
+          ],
+        }]
+        : []),
       {
         type: "paragraph",
         content: [{ type: "text", text }],
@@ -254,10 +355,24 @@ export const jiraConnector: Connector = {
 
     const credentials = Buffer.from(`${email}:${token}`).toString("base64")
 
+    // KD-983: attribute the issue to the Klavity reporter when they're a Jira user in this project —
+    // always as an @mention in the description, and in the Reporter field too when the integration
+    // account holds "Modify Reporter". Otherwise (anonymous report, unknown email, lookup failure) the
+    // issue is filed exactly as before, with Jira's default reporter: the integration account.
+    const reporter = ticket.reporterEmail
+      ? await jiraFindReporter(host, credentials, project_key, ticket.reporterEmail)
+      : null
+    const reporterAccountId = reporter && await jiraCanModifyReporter(host, credentials, project_key)
+      ? reporter.accountId
+      : null
+    // KD-983: an email with no Jira account can't be @mentioned, so "Reported by" names the issue's actual
+    // Reporter instead — the integration account — rather than printing the email as plain text.
+    const reportedBy = reporter ?? (ticket.reporterEmail ? await jiraIntegrationUser(host, credentials) : null)
+
     // SSRF guard (H3): `host` is user-supplied. safeFetch validates the constructed URL and
     // every redirect hop (loopback / private / link-local / metadata blocked, https required,
     // no auto-redirect to an unchecked host) before credentials are ever sent.
-    const res = await safeFetch(
+    const postIssue = (withReporter: boolean) => safeFetch(
       url,
       {
         method: "POST",
@@ -271,7 +386,7 @@ export const jiraConnector: Connector = {
             project: { key: project_key },
             issuetype: { name: issueType },
             summary: ticket.title,
-            description: toAdf(ticket.body),
+            description: toAdf(ticket.body, reportedBy),
             // JTBD 2.16: Jira supports a native `labels` field (array of strings, no whitespace).
             // Omit the field entirely when there are no labels.
             ...(mappedLabels.length ? { labels: mappedLabels } : {}),
@@ -280,11 +395,23 @@ export const jiraConnector: Connector = {
             ...(jiraPriorityName(ticket.priority)
               ? { priority: { name: jiraPriorityName(ticket.priority) } }
               : {}),
+            ...(withReporter && reporterAccountId ? { reporter: { accountId: reporterAccountId } } : {}),
           },
         }),
       },
       JIRA_FETCH_OPTS,
     )
+
+    let res = await postIssue(true)
+    if (!res.ok && reporterAccountId) {
+      // KD-983: a reporter Jira won't accept must never cost the issue — retry once without it, so
+      // the integration user stays the reporter (the pre-KD-983 behaviour).
+      const text = (await res.clone().text().catch(() => "")).slice(0, 500)
+      if (isReporterRejection(res.status, text)) {
+        console.warn(`jira rejected the reporter field (${redactSecrets(jiraErrorReason(text))}) — filing with the integration user. The integration account needs the "Modify Reporter" permission in ${project_key} and Reporter on the create screen.`)
+        res = await postIssue(false)
+      }
+    }
 
     if (!res.ok) {
       // Capture Jira's error body (it names the exact offending field, e.g. an invalid issuetype)

@@ -2,6 +2,7 @@
 import { insertSimRun, getSimRun, listSimRuns } from "./lib/db"
 import { reserveCredits, runMonthlyGrantReset } from "./lib/credits"
 import { setProjectPlanOverride } from "./lib/db"
+import type { TicketExportRow } from "./lib/db"
 import { listAccessibleProjects } from "./lib/db" // KLA-829: switcher lists only projects the user can open
 import { projectEntitlement } from "./lib/entitlement"
 // NOTE: re-added after a theirs-wins merge ate this import (KLAVITYKLA-352). Without it
@@ -2483,6 +2484,8 @@ async function feedbackToTicketPayload(fb: any, project: { id: string; name?: st
       : fb.report_type === "task" ? "task"
         : fb.report_type === "query" ? "query"
           : fb.report_type === "bug" ? "bug" : undefined),
+    // KD-983: same reporter the Klavity ticket shows, so Jira can attribute the issue to that user.
+    reporterEmail: fb.contactEmail || fb.actorEmail || null,
   }
 }
 
@@ -2789,7 +2792,23 @@ function syncTicketFields(feedbackId: string, projectId: string, actor: string |
 // in the Tickets list. Only the autofile-on-submit path (autoFileHumanSnap, autofile-mode only) passes
 // it; the triage-accept path does NOT (the row is already 'open' there). The advance is guarded on real
 // create success AND on WHERE status='new', so a no-connector / failed autofile keeps status='new'.
+// KD-983: tickets whose background tracker export is still running (autofile: AI title → create issue).
+// GET /api/feedback/:id reports it as `exportPending` so an already-open ticket keeps checking for its Jira
+// link instead of needing a page refresh. In-memory per process; entries self-expire as a backstop so a
+// missed clear can never leave a ticket "pending" forever.
+const EXPORT_INFLIGHT_TTL_MS = 90_000
+const exportInflight = new Map<string, number>()   // feedbackId → expiresAt
+function markExportInflight(feedbackId: string): void { exportInflight.set(feedbackId, Date.now() + EXPORT_INFLIGHT_TTL_MS) }
+function clearExportInflight(feedbackId: string): void { exportInflight.delete(feedbackId) }
+function isExportInflight(feedbackId: string): boolean {
+  const exp = exportInflight.get(feedbackId)
+  if (exp === undefined) return false
+  if (exp < Date.now()) { exportInflight.delete(feedbackId); return false }
+  return true
+}
+
 function autoCopyFeedback(feedbackId: string, projectId: string, actor: string | null, effectivePriority?: string | null, opts?: { advanceStatusOnSuccess?: boolean; trustedProvenance?: boolean }): void {
+  markExportInflight(feedbackId)
   void (async () => {
     try {
       const connectors = await listAutoCopyConnectors(projectId)
@@ -2917,6 +2936,8 @@ function autoCopyFeedback(feedbackId: string, projectId: string, actor: string |
       }
     } catch (err: any) {
       console.error("auto-copy hook (non-fatal):", err?.message || err)
+    } finally {
+      clearExportInflight(feedbackId)
     }
   })().catch((err: any) => console.error("auto-copy hook outer (non-fatal):", err?.message || err))
 }
@@ -2948,11 +2969,11 @@ function autoFileHumanSnap(
   feedbackId: string, projectId: string, simId: string | null | undefined,
   actor: string | null, effectivePriority?: string | null, trusted?: boolean,
 ): void {
-  if (simId) return   // Sim/AutoSim report — not a human Snap; leave its behavior untouched.
+  if (simId) { clearExportInflight(feedbackId); return }   // Sim/AutoSim report — not a human Snap; leave its behavior untouched.
   void (async () => {
     try {
       const mode = await getSnapRouting(projectId)
-      if (mode !== "autofile") return   // 'review' mode: hold for manual transfer.
+      if (mode !== "autofile") { clearExportInflight(feedbackId); return }   // 'review' mode: hold for manual transfer.
       // KLAVITYKLA-524: autofile mode only — advance new→open on a successful file so the report
       // appears in Tickets instead of sitting in New Reports looking untriaged.
       // #534 hardening: `trusted` (authenticated workspace member) gates ONLY the connector-less
@@ -2960,6 +2981,7 @@ function autoFileHumanSnap(
       // skips triage onto the board without a real external ticket.
       autoCopyFeedback(feedbackId, projectId, actor, effectivePriority, { advanceStatusOnSuccess: true, trustedProvenance: !!trusted })
     } catch (e: any) {
+      clearExportInflight(feedbackId)
       console.warn("[snap-routing] autofile hook (non-fatal):", e?.message || e)
     }
   })().catch((e: any) => console.warn("[snap-routing] autofile hook outer (non-fatal):", e?.message || e))
@@ -3193,6 +3215,25 @@ async function runExportOutboxSweep(): Promise<void> {
 // sane "Done" fallback. STRICTLY best-effort: mirrors the export path's decrypt→call shape but NEVER
 // throws into the caller — a tracker that is unreachable, lacks the capability (webhook/GitHub), or
 // has no matching transition just yields a warning string. Returns a small summary the route relays.
+// The ticket's export badges: latest attempt per connector (rows arrive newest-first). A success
+// always wins over an older failure for the same connector; a connector whose LATEST attempt failed
+// and never succeeded surfaces as a failed badge so the UI can offer Retry (KLA-283). connectorId +
+// status ride along for that retry call. Shared by /api/dashboard and GET /api/feedback/:id (KD-983).
+function ticketExportBadges(rawExports: TicketExportRow[]): { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] {
+  const okConnectors = new Set<string>()
+  const seenConnector = new Set<string>()
+  const exports: { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] = []
+  for (const exp of rawExports) if (exp.status === "ok") okConnectors.add(exp.connectorId)
+  for (const exp of rawExports) {
+    // A later failed retry must not hide an issue that already exists in the tracker.
+    if (exp.status !== "ok" && okConnectors.has(exp.connectorId)) continue
+    if (seenConnector.has(exp.connectorId)) continue
+    seenConnector.add(exp.connectorId)
+    exports.push({ type: exp.type, externalKey: exp.externalKey, externalUrl: exp.externalUrl, connectorId: exp.connectorId, status: exp.status })
+  }
+  return exports
+}
+
 async function transitionLinkedIssuesOnQaClose(
   fbRow: any,
 ): Promise<{ attempted: number; applied: number; warnings: string[] }> {
@@ -4123,7 +4164,57 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     const rel = decodeURIComponent(path.slice(9))
     if (!rel.includes("..")) {
       const f = Bun.file(PUB + "/uploads/" + rel)
-      if (await f.exists()) return new Response(f)
+      if (await f.exists()) {
+        const ct = videoMimeFromName(rel) || f.type || "application/octet-stream"
+        const total = f.size
+        const rangeHeader = req.headers.get("range")
+        if (rangeHeader && /^bytes=/i.test(rangeHeader) && total > 0) {
+          const matches = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim())
+          if (matches) {
+            let start = 0
+            let end = total - 1
+            if (!matches[1] && matches[2]) {
+              start = Math.max(0, total - parseInt(matches[2], 10))
+            } else {
+              start = matches[1] ? parseInt(matches[1], 10) : 0
+              end = matches[2] ? parseInt(matches[2], 10) : (total - 1)
+            }
+            if (start >= total || start > end) {
+              return new Response(null, {
+                status: 416,
+                headers: {
+                  "content-range": `bytes */${total}`,
+                  "accept-ranges": "bytes",
+                },
+              })
+            }
+            end = Math.min(end, total - 1)
+            const chunkLen = end - start + 1
+            const slice = f.slice(start, end + 1)
+            return new Response(slice, {
+              status: 206,
+              headers: {
+                "content-type": ct,
+                "content-range": `bytes ${start}-${end}/${total}`,
+                "content-length": String(chunkLen),
+                "accept-ranges": "bytes",
+                "access-control-allow-origin": "*",
+                "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+                "cache-control": "public, max-age=3600",
+              },
+            })
+          }
+        }
+        return new Response(f, {
+          headers: {
+            "content-type": ct,
+            "content-length": String(total),
+            "access-control-allow-origin": "*",
+            "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+            "accept-ranges": "bytes",
+          },
+        })
+      }
     }
   }
   // ── permanent signed screenshot link (for external tracker tickets, never expires, revocable) ──
@@ -6704,12 +6795,15 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
               // persists in the origin project (with the reroute note) for manual handling.
               const willAutofile = isHumanSnap && !feedbackSourceTag && !klavityFailsafeToOrigin
 
+              // KD-983: pending from the moment the ticket exists — the AI title runs BEFORE the export, so a
+              // ticket opened in those seconds must already know its Jira link is on the way.
+              if (willAutofile) markExportInflight(fbEnrichId)
               void (async () => {
                 // Title FIRST (bounded) so the export below re-reads the AI title, not the fallback.
                 if (titleJob) await awaitTitleWithTimeout(titleJob)
                 // THEN export. autoFileHumanSnap no-ops for Sim rows / 'review' mode / no connector.
                 if (willAutofile) autoFileHumanSnap(fbEnrichId, projectId, rawSimId, actor, priority, trustedProvenance)
-              })().catch((err: any) => console.warn("[title→export] non-fatal:", err?.message || err))
+              })().catch((err: any) => { clearExportInflight(fbEnrichId); console.warn("[title→export] non-fatal:", err?.message || err) })
 
               // KD-162: append an AI screenshot caption to the fallback description. Independent of the
               // title→export chain above (draftTitleForFeedback now stamps `title`, never `observation` —
@@ -11951,18 +12045,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // always wins over an older failure for the same connector; a connector whose LATEST
           // attempt failed and never succeeded surfaces as a failed badge so the UI can offer
           // Retry (KLA-283). connectorId + status ride along for that retry call.
-          const rawExports = ticketExportsMap[f.id] ?? []
-          const okConnectors = new Set<string>()
-          const seenConnector = new Set<string>()
-          const exports: { type: string; externalKey: string | null; externalUrl: string | null; connectorId: string; status: string }[] = []
-          for (const exp of rawExports) if (exp.status === "ok") okConnectors.add(exp.connectorId)
-          for (const exp of rawExports) {
-            // A later failed retry must not hide an issue that already exists in the tracker.
-            if (exp.status !== "ok" && okConnectors.has(exp.connectorId)) continue
-            if (seenConnector.has(exp.connectorId)) continue
-            seenConnector.add(exp.connectorId)
-            exports.push({ type: exp.type, externalKey: exp.externalKey, externalUrl: exp.externalUrl, connectorId: exp.connectorId, status: exp.status })
-          }
+          const exports = ticketExportBadges(ticketExportsMap[f.id] ?? [])
           return {
             id: f.id, simName: p?.name ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
@@ -12916,23 +12999,82 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!fbAccess) return json({ error: "Only project members can view attachments." }, 403)
         const attKeyParam = String(url.searchParams.get("key") || "")
         if (!attKeyParam) return json({ error: "key is required." }, 400)
-        const atts = Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []
-        const found = atts.find((a: any) => String(a?.key) === attKeyParam || String(a?.filename) === attKeyParam)
+        const allItems = [
+          ...(Array.isArray((fbRow as any).attachments) ? (fbRow as any).attachments : []),
+          ...(Array.isArray((fbRow as any).recordings) ? (fbRow as any).recordings : []),
+        ]
+        const found = allItems.find((a: any) => String(a?.key) === attKeyParam || String(a?.filename) === attKeyParam || String(a?.id) === attKeyParam)
         if (!found) return json({ error: "Attachment not found." }, 404)
         const filename = String(found.filename || "attachment")
-        const ct = String(found.contentType || "application/octet-stream")
+        let ct = String(found.contentType || "application/octet-stream")
+        if ((!ct || ct === "application/octet-stream") && videoMimeFromName(filename)) {
+          ct = videoMimeFromName(filename)
+        }
         const isDownload = url.searchParams.get("download") === "1"
         const cd = isDownload
           ? `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
           : `inline; filename="${encodeURIComponent(filename)}"`
+
+        const rangeHeader = req.headers.get("range")
         try {
-          const { stream, contentType } = await getObjectStream(found.key)
+          if (rangeHeader && /^bytes=/i.test(rangeHeader)) {
+            const probe = await getObjectStream(found.key)
+            const total = probe.size
+            if (total && Number.isFinite(total) && total > 0) {
+              const matches = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim())
+              if (matches) {
+                let start = 0
+                let end = total - 1
+                if (!matches[1] && matches[2]) {
+                  start = Math.max(0, total - parseInt(matches[2], 10))
+                } else {
+                  start = matches[1] ? parseInt(matches[1], 10) : 0
+                  end = matches[2] ? parseInt(matches[2], 10) : (total - 1)
+                }
+                if (start >= total || start > end) {
+                  return new Response(null, {
+                    status: 416,
+                    headers: {
+                      "content-range": `bytes */${total}`,
+                      "accept-ranges": "bytes",
+                    },
+                  })
+                }
+                end = Math.min(end, total - 1)
+                const chunkLen = end - start + 1
+                const { stream, contentType } = await getObjectStream(found.key, { start, end })
+                return new Response(stream, {
+                  status: 206,
+                  headers: {
+                    "content-type": ct || contentType || "application/octet-stream",
+                    "content-range": `bytes ${start}-${end}/${total}`,
+                    "content-length": String(chunkLen),
+                    "accept-ranges": "bytes",
+                    "content-disposition": cd,
+                    "cache-control": "private, max-age=3600",
+                    "access-control-allow-origin": "*",
+                    "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+                  },
+                })
+              }
+            }
+          }
+
+          const { stream, contentType, size } = await getObjectStream(found.key)
+          const headers: Record<string, string> = {
+            "content-type": ct || contentType || "application/octet-stream",
+            "content-disposition": cd,
+            "cache-control": "private, max-age=3600",
+            "accept-ranges": "bytes",
+            "access-control-allow-origin": "*",
+            "access-control-expose-headers": "Content-Range, Accept-Ranges, Content-Length",
+          }
+          if (size && Number.isFinite(size) && size >= 0) {
+            headers["content-length"] = String(size)
+          }
           return new Response(stream, {
-            headers: {
-              "content-type": ct || contentType || "application/octet-stream",
-              "content-disposition": cd,
-              "cache-control": "private, max-age=300",
-            },
+            status: 200,
+            headers,
           })
         } catch (e: any) {
           try {
@@ -13182,6 +13324,12 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           planeIssueKey: fbRow.planeIssueKey,
           planeIssueUrl: fbRow.planeIssueUrl,
           issueKey: fbRow.issueKey,
+          // KD-983: tracker links (Jira/Linear/GitHub/…) — same badges as /api/dashboard. Without them a
+          // ticket opened before its auto-file finished (or outside the dashboard's cached list) never
+          // showed its Jira link, because the open-ticket refresh carried no exports.
+          exports: ticketExportBadges(await listTicketExports(fid).catch(() => [])),
+          // KD-983: true while the background export is still running, so the open ticket re-checks.
+          exportPending: isExportInflight(fid),
           createdAt: fbRow.createdAt,
           updatedAt: fbRow.updatedAt,
           // KLA-2 recurrence-memory fields (same names consumed by the dashboard UI)

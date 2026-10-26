@@ -36,7 +36,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/content.ts-loader-8sMadSqh.js"
+        "assets/content.ts-loader-DMuwDiMo.js"
       ],
       "matches": [
         "http://localhost/*"
@@ -82,10 +82,10 @@
       ],
       "resources": [
         "assets/icons-CiC9ZF46.js",
-        "assets/voice-input-BGxVGr6U.js",
+        "assets/voice-input-XnM204U9.js",
         "assets/evidence-store-D0asDR0_.js",
         "assets/heic2any-DQxJzxPi.js",
-        "assets/content.ts-B-4ISdK3.js"
+        "assets/content.ts-vFTS29HJ.js"
       ],
       "use_dynamic_url": false
     },
