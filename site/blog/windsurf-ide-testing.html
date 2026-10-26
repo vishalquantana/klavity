@@ -1,0 +1,184 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Windsurf IDE Testing: How to QA the Code Cascade Writes · Klavity</title>
+<meta name="description" content="Windsurf IDE testing means verifying Cascade-written code outside the editor: a green terminal proves it compiles, not that it behaves.">
+<link rel="canonical" href="https://klavity.in/blog/windsurf-ide-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Windsurf IDE Testing: How to QA the Code Cascade Writes"><meta property="og:description" content="Windsurf IDE testing means verifying Cascade-written code outside the editor: a green terminal proves it compiles, not that it behaves.">
+<meta property="og:url" content="https://klavity.in/blog/windsurf-ide-testing"><meta property="og:image" content="https://klavity.in/blog/windsurf-ide-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Windsurf IDE Testing: How to QA the Code Cascade Writes"><meta name="twitter:description" content="Windsurf IDE testing means verifying Cascade-written code outside the editor: a green terminal proves it compiles, not that it behaves."><meta name="twitter:image" content="https://klavity.in/blog/windsurf-ide-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Windsurf IDE Testing: How to QA the Code Cascade Writes","description":"Windsurf IDE testing means verifying Cascade-written code outside the editor: a green terminal proves it compiles, not that it behaves.","datePublished":"2026-10-26","dateModified":"2026-10-26","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/windsurf-ide-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/windsurf-ide-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Windsurf IDE Testing: How to QA the Code Cascade Writes","item":"https://klavity.in/blog/windsurf-ide-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/windsurf-ide-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can Windsurf test its own code?","acceptedAnswer":{"@type":"Answer","text":"Partly. Cascade can run your build, type-checker, linter and existing test suite in the integrated terminal, read the output and iterate until they pass. It cannot verify that the behaviour matches what you asked for, because the implementation and any tests it writes both come from the same interpretation of your prompt."}},{"@type":"Question","name":"Should I trust tests Cascade writes?","acceptedAnswer":{"@type":"Answer","text":"Treat them as scaffolding, not verification. Generated tests assert the behaviour the model implemented, so they pass by construction. Read each assertion against the original requirement; the ones worth keeping are the ones you would have written yourself."}},{"@type":"Question","name":"Is the Windsurf preview enough to QA a web app?","acceptedAnswer":{"@type":"Answer","text":"No. The preview is useful for fast visual feedback and for handing an element back to Cascade as context, but it will not surface Safari and iOS differences, real-data edge cases, multi-session journeys or keyboard and screen-reader paths. Those need a real browser, a real device and real data."}},{"@type":"Question","name":"What is the single highest-value check after an agentic edit?","acceptedAnswer":{"@type":"Answer","text":"Open the diff and look for files you did not expect to be there. Agentic flows that span several files often modify shared utilities, types or config defaults, and that is where regressions land in features you never thought to retest."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-26</div>
+    <h1>Windsurf IDE Testing: How to QA the Code Cascade Writes</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Editor-generated code passing mechanical checks but needing behavioural verification outside the editor">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <rect x="48" y="60" width="300" height="300" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.55"/>
+  <line x1="48" y1="92" x2="348" y2="92" stroke="#6366f1" stroke-opacity="0.45"/>
+  <circle cx="68" cy="76" r="4" fill="#f87171" fill-opacity="0.7"/>
+  <circle cx="84" cy="76" r="4" fill="#f5f0e8" fill-opacity="0.3"/>
+  <circle cx="100" cy="76" r="4" fill="#4ade80" fill-opacity="0.6"/>
+  <rect x="68" y="112" width="150" height="9" rx="4.5" fill="#6366f1" fill-opacity="0.75"/>
+  <rect x="68" y="132" width="210" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="88" y="152" width="170" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="88" y="172" width="120" height="9" rx="4.5" fill="#6366f1" fill-opacity="0.5"/>
+  <rect x="68" y="192" width="190" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.16"/>
+  <rect x="68" y="232" width="260" height="104" rx="8" fill="#1e1b2e" stroke="#4ade80" stroke-opacity="0.45"/>
+  <polyline points="82,256 89,263 102,250" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="114" y="252" width="110" height="8" rx="4" fill="#4ade80" fill-opacity="0.45"/>
+  <polyline points="82,284 89,291 102,278" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="114" y="280" width="140" height="8" rx="4" fill="#4ade80" fill-opacity="0.45"/>
+  <polyline points="82,312 89,319 102,306" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="114" y="308" width="92" height="8" rx="4" fill="#4ade80" fill-opacity="0.45"/>
+  <path d="M368 210 L436 210" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M424 200 L438 210 L424 220" fill="none" stroke="#6366f1" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="402" y1="78" x2="402" y2="342" stroke="#f5f0e8" stroke-opacity="0.14" stroke-dasharray="5 7"/>
+  <rect x="456" y="60" width="296" height="128" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.22"/>
+  <line x1="456" y1="90" x2="752" y2="90" stroke="#f5f0e8" stroke-opacity="0.18"/>
+  <rect x="476" y="112" width="140" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.2"/>
+  <rect x="476" y="134" width="196" height="9" rx="4.5" fill="#f5f0e8" fill-opacity="0.12"/>
+  <circle cx="700" cy="140" r="21" fill="#f87171" fill-opacity="0.16" stroke="#f87171" stroke-opacity="0.8"/>
+  <circle cx="694" cy="136" r="2.6" fill="#f87171"/>
+  <circle cx="706" cy="136" r="2.6" fill="#f87171"/>
+  <path d="M691 148 Q700 141 709 148" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <path d="M679 128 L686 133 M721 128 L714 133 M700 117 L700 124" stroke="#f87171" stroke-opacity="0.75" stroke-width="1.8" stroke-linecap="round"/>
+  <rect x="456" y="212" width="140" height="148" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.22"/>
+  <rect x="476" y="236" width="100" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.18"/>
+  <circle cx="526" cy="310" r="24" fill="#f87171" fill-opacity="0.14" stroke="#f87171" stroke-opacity="0.7"/>
+  <path d="M516 310 L536 310 M526 300 L526 320" stroke="#f87171" stroke-width="2.2" stroke-linecap="round"/>
+  <rect x="624" y="212" width="128" height="148" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.22"/>
+  <rect x="660" y="232" width="56" height="96" rx="7" fill="#1e1b2e" stroke="#6366f1" stroke-opacity="0.5"/>
+  <rect x="670" y="246" width="36" height="7" rx="3.5" fill="#6366f1" fill-opacity="0.55"/>
+  <rect x="670" y="262" width="24" height="7" rx="3.5" fill="#f5f0e8" fill-opacity="0.14"/>
+  <circle cx="688" cy="300" r="14" fill="#f87171" fill-opacity="0.14" stroke="#f87171" stroke-opacity="0.7"/>
+  <path d="M683 295 L693 305 M693 295 L683 305" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Windsurf IDE testing splits into two layers. Cascade can own the mechanical layer — lint, type-checks, the existing suite — because it can run commands and read its own output. It cannot own the behavioural layer, because a test suite written by the model that wrote the code can only lock in the model's reading of your prompt.</div>
+    <div class="prose"><p><strong>Windsurf IDE testing</strong> means verifying the code Cascade wrote for you before it reaches a branch, a client site, or production. Windsurf can run your linters, type-checks and existing test suite in its own terminal and keep iterating until they go green — but that only proves the code compiles and agrees with the assumptions the model made while writing it. The verification that actually decides whether you ship is behavioural: open the feature in a real browser, use it wrong on purpose, and confirm that the parts of the app nobody asked Cascade to touch still work.</p>
+
+<h2>What does Windsurf IDE testing actually mean?</h2>
+<p>It means deliberately splitting verification into two layers, because the editor genuinely covers one of them and genuinely cannot cover the other.</p>
+<p>Windsurf is an AI-native editor built on the VS Code lineage. Its agentic flows — Cascade — can read across your repository, write a change that spans several files, run commands in the integrated terminal, read the resulting output, and correct themselves without you re-prompting. Rules files let you encode project conventions the model should respect. An in-editor preview lets you look at a running local app and hand an element back to Cascade as context. That is a real productivity gain, and it means the mechanical layer of testing can largely be delegated.</p>
+<p>What cannot be delegated is the behavioural layer. The implementation came from an interpretation of your prompt. If that interpretation was subtly wrong, everything downstream of it inherits the same error: the code, the tests Cascade wrote for the code, and the confident summary it gave you at the end. Done properly, Windsurf IDE testing is a division of labour — let the editor own the checks a machine can run, and spend your own attention entirely on behaviour, edges, and the blast radius of the change.</p>
+
+<h2>Why does Cascade-generated code fail differently?</h2>
+<p>AI-written code fails in a distinctive way. A developer who does not understand an API usually writes something that breaks loudly and early. A model that does not understand an API writes something that looks exactly like code written by someone who does. Three failure modes are worth watching for specifically:</p>
+<ul>
+<li><strong>Plausible-but-wrong integration.</strong> Correct-looking calls to a library, SDK or internal helper whose actual signature, return shape or error semantics differ from what the model assumed. It type-checks if the types are loose; it fails at runtime against real data.</li>
+<li><strong>Silent scope creep.</strong> An agentic flow that spans several files will sometimes "tidy" code adjacent to the change — a shared util, a type, a config default. The diff is bigger than the request, and the regression lands somewhere you never thought to open.</li>
+<li><strong>Self-confirming tests.</strong> Tests generated alongside the implementation assert the behaviour the model intended, not the behaviour you asked for. They pass permanently and detect nothing.</li>
+</ul>
+<p>The same pattern shows up across every agentic editor; we covered the editor-agnostic version in <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> and the Cursor-specific version in <a href="/blog/cursor-ide-testing">Cursor IDE testing</a>.</p>
+
+<h2>What can Windsurf check itself, and what can it never check?</h2>
+<p>Drawing this line explicitly is the whole trick. Anything in the left column is wasted human effort; anything in the right column is work no editor can do for you.</p>
+<table>
+<thead><tr><th>Layer</th><th>Cascade can own it</th><th>You still own it</th></tr></thead>
+<tbody>
+<tr><td>Build and types</td><td>Runs the build and type-checker, reads errors, iterates</td><td>Deciding that loose or <em>any</em>-typed boundaries are hiding a real mismatch</td></tr>
+<tr><td>Existing test suite</td><td>Runs it, reports failures, proposes fixes</td><td>Noticing when a test was changed to fit the code instead of the reverse</td></tr>
+<tr><td>Lint and formatting</td><td>Fully — enforce it through a rules file</td><td>Nothing</td></tr>
+<tr><td>New tests</td><td>Writes them quickly, in your existing style</td><td>Checking each assertion against the requirement, not the implementation</td></tr>
+<tr><td>Real-browser behaviour</td><td>Preview a running app; limited interaction</td><td>Clicking through the flow, on a real device, with real data</td></tr>
+<tr><td>Requirement correctness</td><td>Cannot — it is the source of the interpretation</td><td>Entirely yours</td></tr>
+<tr><td>Regressions elsewhere</td><td>Only where coverage already exists</td><td>Every uncovered path the diff touched</td></tr>
+</tbody>
+</table>
+
+<h2>What does a practical Windsurf IDE testing workflow look like?</h2>
+<p>Six steps, in order. The first three cost almost nothing once configured; the last three are where bugs are actually caught.</p>
+<ol>
+<li><strong>Put your checks in a rules file.</strong> State that every change must build, type-check and pass the suite before Cascade reports done, and name the exact commands. An agent that can read terminal output will fix its own mistakes — but only if it knows to run the command.</li>
+<li><strong>Keep the task small enough to review.</strong> One behaviour per flow. A 400-line diff across nine files is not reviewable, and "it passed" is not a review.</li>
+<li><strong>Read the diff before the summary.</strong> Read it as a diff — <code>git diff</code>, not the chat transcript. Specifically look for files you did not expect to be in it. That is where silent scope creep hides.</li>
+<li><strong>Exercise the happy path in a real browser.</strong> Not the preview pane alone. Submit the form, reload mid-flow, hit back, open it on a phone-width viewport.</li>
+<li><strong>Attack the edges on purpose.</strong> Empty state, one item, a thousand items, a duplicate submit, an expired session, a 500 from the API, a slow network. These are the cases a model treats as out of scope unless you name them.</li>
+<li><strong>Check the blast radius.</strong> For every shared file in the diff, open one other feature that depends on it. This single habit catches most agentic-editor regressions.</li>
+</ol>
+<p>If you want the broader framework this workflow sits inside — what to automate, what to keep human, and in what order — start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Which bugs escape the editor completely?</h2>
+<p>By construction, the editor can only verify what runs inside it. Four classes of defect live permanently outside that boundary:</p>
+<ul>
+<li><strong>Cross-browser and device behaviour.</strong> Layout, input handling and newer CSS or JS features behave differently in Safari, on iOS, and at real viewport sizes. Nothing in a desktop editor surfaces this.</li>
+<li><strong>Real-data shape.</strong> Production rows have null columns, legacy enum values, unicode names and lengths nobody anticipated. Fixtures written by the model match the model's expectations.</li>
+<li><strong>Multi-step journeys across sessions.</strong> Sign up, verify, log out, return on another device, resume. Each step may pass in isolation and still break as a sequence.</li>
+<li><strong>Accessibility and keyboard paths.</strong> Generated markup is frequently div-based, unlabelled, and unreachable by tab order — and it looks perfectly fine on screen.</li>
+</ul>
+
+<h2>How do you test this fast enough to keep shipping?</h2>
+<p>The honest answer is that manual exploratory testing does not scale to the rate at which an agentic editor produces changes. That mismatch — code shipping faster than it can be verified — is the problem Klavity exists to close, and it is the same for a web agency delivering client sites as for a solo founder building in Windsurf.</p>
+<p><a href="/sims">Sims</a> runs AI personas through your app the way different real users would: the impatient one who double-submits, the careful one who reads every label, the one on a phone with a bad connection. It covers the edge-case pass in step five without you writing the cases. <a href="/autosim">AutoSim</a> turns the journeys that matter into self-healing end-to-end tests, so step six — the blast-radius check — runs automatically on every change instead of depending on your memory. And <a href="/snap">Snap</a> gives clients, teammates or beta users a right-click bug report that arrives with the console, the network trace and the exact element attached, so the bug you did miss comes back reproducible rather than as "the booking page is broken".</p>
+<p>Windsurf makes writing the change the fast part. Make verifying it the fast part too.</p>
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> — point it at the app you are building in Windsurf and see what your editor could not.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Delegate lint, types and the existing suite to Cascade via a rules file</li><li>Review the git diff, not the chat summary, for unexpected files</li><li>Test edge cases and other devices outside the editor, always</li><li>Open one dependent feature for every shared file the diff touched</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can Windsurf test its own code?</summary><p>Partly. Cascade can run your build, type-checker, linter and existing test suite in the integrated terminal, read the output and iterate until they pass. It cannot verify that the behaviour matches what you asked for, because the implementation and any tests it writes both come from the same interpretation of your prompt.</p></details><details><summary>Should I trust tests Cascade writes?</summary><p>Treat them as scaffolding, not verification. Generated tests assert the behaviour the model implemented, so they pass by construction. Read each assertion against the original requirement; the ones worth keeping are the ones you would have written yourself.</p></details><details><summary>Is the Windsurf preview enough to QA a web app?</summary><p>No. The preview is useful for fast visual feedback and for handing an element back to Cascade as context, but it will not surface Safari and iOS differences, real-data edge cases, multi-session journeys or keyboard and screen-reader paths. Those need a real browser, a real device and real data.</p></details><details><summary>What is the single highest-value check after an agentic edit?</summary><p>Open the diff and look for files you did not expect to be there. Agentic flows that span several files often modify shared utilities, types or config defaults, and that is where regressions land in features you never thought to retest.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

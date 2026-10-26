@@ -929,5 +929,12 @@
     "excerpt": "AI QA in a CI/CD pipeline belongs in three places: a fast blocking gate on pull requests, a non-blocking preview pass, and post-deploy checks.",
     "category": "Guides",
     "date": "2026-10-25"
+  },
+  {
+    "slug": "windsurf-ide-testing",
+    "title": "Windsurf IDE Testing: How to QA the Code Cascade Writes",
+    "excerpt": "Windsurf IDE testing means verifying Cascade-written code outside the editor: a green terminal proves it compiles, not that it behaves.",
+    "category": "Guides",
+    "date": "2026-10-26"
   }
 ]
