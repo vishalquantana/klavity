@@ -462,12 +462,8 @@ export interface ModalCallbacks {
   // evidence strip as a removable video chip, threading through onSubmit as `recordings`. Default false →
   // no button, composer identical to today (full back-compat — callers that don't enable it are unchanged).
   allowRecording?: boolean
-  // Host-supplied recorder entry point. Returns the captured recording (or null if the reporter cancelled).
-  // Kept as a callback so the heavy MediaRecorder/getDisplayMedia machinery lives in the sdk, not core.
-  // KLA-555 (walkthrough mode): receives an optional `onPhase` the recorder fires on each overlay phase
-  // ('consent'|'recording'|'preview'). The composer hides itself while phase==='recording' (so the docked
-  // Stop bar sits over the live app, not behind a dimmed composer) and restores on any other phase — plus a
-  // belt-and-suspenders restore in the click handler's finally when onRecord resolves/rejects.
+  // Seed recordings when the composer opens (e.g. from an in-progress session restore).
+  initialRecordings?: ReportRecording[]
   onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
@@ -813,7 +809,7 @@ export function buildModal(
   })
   const voiceSupported = voiceMode !== 'none'
   const MAX_RECORDINGS = 2
-  let recordings: ReportRecording[] = []
+  let recordings: ReportRecording[] = (callbacks.initialRecordings && Array.isArray(callbacks.initialRecordings)) ? [...callbacks.initialRecordings] : []
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
   const issueTypeOpts = (callbacks.issueTypes && callbacks.issueTypes.length) ? callbacks.issueTypes : null
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
@@ -1823,6 +1819,19 @@ export function buildModal(
       if (_closed) return
       try { updateStrip(); renderFiles() } catch { /* progress paint is best-effort */ }
     },
+    addRecording: (rec: ReportRecording) => {
+      if (!rec || _closed) return
+      const existingIdx = recordings.findIndex((r) => (r.id && rec.id && r.id === rec.id) || (r.dataUrl && rec.dataUrl && r.dataUrl === rec.dataUrl))
+      if (existingIdx >= 0) {
+        recordings[existingIdx] = rec
+        activeRecordingIndex = existingIdx
+      } else {
+        recordings.push(rec)
+        activeRecordingIndex = recordings.length - 1
+      }
+      activeVideoIndex = null
+      renderRecordings()
+    },
   }
 
   function updateStrip() {
@@ -1984,7 +1993,11 @@ export function buildModal(
       wrap.className = 'klavity-thumb kl-video-thumb kl-rec-tile'
       if (activeRecordingIndex === ri) wrap.classList.add('kl-thumb-active')
       const vid = document.createElement('video')
-      vid.src = rec.dataUrl
+      let thumbSrc = rec.dataUrl
+      if (rec.blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        thumbSrc = (rec as any)._previewUrl || ((rec as any)._previewUrl = URL.createObjectURL(rec.blob))
+      }
+      vid.src = thumbSrc
       vid.muted = true
       vid.preload = 'metadata'
       vid.setAttribute('playsinline', '')
@@ -2008,7 +2021,10 @@ export function buildModal(
       redo.setAttribute('aria-label', 'Re-record')
       redo.addEventListener('click', (e) => {
         e.stopPropagation()
-        recordings.splice(ri, 1)
+        const removed = recordings.splice(ri, 1)[0]
+        if (removed && (removed as any)._previewUrl) {
+          try { URL.revokeObjectURL((removed as any)._previewUrl) } catch {}
+        }
         if (activeRecordingIndex === ri) activeRecordingIndex = null
         else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
         renderRecordings()
@@ -2022,7 +2038,10 @@ export function buildModal(
       rm.title = 'Remove'
       rm.addEventListener('click', (e) => {
         e.stopPropagation()
-        recordings.splice(ri, 1)
+        const removed = recordings.splice(ri, 1)[0]
+        if (removed && (removed as any)._previewUrl) {
+          try { URL.revokeObjectURL((removed as any)._previewUrl) } catch {}
+        }
         if (activeRecordingIndex === ri) activeRecordingIndex = null
         else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
         renderRecordings()
@@ -2438,6 +2457,15 @@ export function buildModal(
     if (_closed) return
     _closed = true
     for (const f of attachedFiles) revokeAttachmentPreview(f)
+    for (const r of recordings) {
+      if ((r as any)._previewUrl) {
+        try { URL.revokeObjectURL((r as any)._previewUrl) } catch {}
+      }
+    }
+    if (activeHeroObjectUrl) {
+      try { URL.revokeObjectURL(activeHeroObjectUrl) } catch {}
+      activeHeroObjectUrl = null
+    }
     _stopVoice?.()
     if (autodismissTimeout) {
       clearTimeout(autodismissTimeout)
@@ -3782,8 +3810,14 @@ export function buildModal(
         // KLA-602(a): a finished recording drops STRAIGHT into the gallery as a selected, removable video tile
         // (no Preview→Attach modal). Select it as the inline-playable hero, like addCapturedShot does for images.
         if (rec) {
-          recordings.push(rec)
-          activeRecordingIndex = recordings.length - 1
+          const existingIdx = recordings.findIndex((r) => (r.id && rec.id && r.id === rec.id) || (r.dataUrl && rec.dataUrl && r.dataUrl === rec.dataUrl))
+          if (existingIdx >= 0) {
+            recordings[existingIdx] = rec
+            activeRecordingIndex = existingIdx
+          } else {
+            recordings.push(rec)
+            activeRecordingIndex = recordings.length - 1
+          }
           activeVideoIndex = null
           renderRecordings()
           setActiveCapture(recordBtn)
@@ -4014,6 +4048,8 @@ export function buildModal(
     mountHeroAnnotator(activeIndex)
   }
 
+  let activeHeroObjectUrl: string | null = null
+
   // KLA-591/602(a): render an inline, playable video preview in the hero stage (mirrors how an image shot
   // expands). No annotator toolbar for video — just <video controls>. Shared by video attachments AND "Record
   // me" recordings. Browser-only; safe no-op in headless test envs.
@@ -4024,11 +4060,43 @@ export function buildModal(
     detachHeroKeys()
     if (tools) tools.innerHTML = ''
     stage.innerHTML = ''
+
+    if (activeHeroObjectUrl) {
+      try { URL.revokeObjectURL(activeHeroObjectUrl) } catch {}
+      activeHeroObjectUrl = null
+    }
+
+    let playUrl = src
+    const currentRec = (activeRecordingIndex != null && recordings[activeRecordingIndex]) ? recordings[activeRecordingIndex] : null
+    if (currentRec && (currentRec as any).blob instanceof Blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        playUrl = URL.createObjectURL((currentRec as any).blob)
+        activeHeroObjectUrl = playUrl
+      } catch {}
+    } else if (src.startsWith('data:') && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        const parts = src.split(',')
+        if (parts.length >= 2) {
+          const mimeMatch = parts[0].match(/:(.*?);/)
+          const cleanMime = (mimeMatch ? mimeMatch[1] : 'video/webm').split(';')[0]
+          const bstr = atob(parts[1])
+          let n = bstr.length
+          const u8arr = new Uint8Array(n)
+          while (n--) {
+            u8arr[n] = bstr.charCodeAt(n)
+          }
+          const blob = new Blob([u8arr], { type: cleanMime })
+          playUrl = URL.createObjectURL(blob)
+          activeHeroObjectUrl = playUrl
+        }
+      } catch {}
+    }
+
     const wrap = document.createElement('div')
     wrap.className = 'kl-hero-vwrap'
     wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;max-width:100%;max-height:100%;'
     const video = document.createElement('video')
-    video.src = src
+    video.src = playUrl
     video.controls = true
     video.setAttribute('playsinline', '')
     video.preload = 'metadata'
@@ -4040,7 +4108,7 @@ export function buildModal(
     err.className = 'kl-hero-verror'
     err.style.cssText = 'display:none;flex-direction:column;align-items:center;gap:6px;color:#fff;font-size:13px;text-align:center;'
     const dl = document.createElement('a')
-    dl.href = src
+    dl.href = playUrl || src
     dl.setAttribute('download', 'recording.webm')
     dl.setAttribute('target', '_blank')
     dl.setAttribute('rel', 'noopener')
@@ -4062,19 +4130,37 @@ export function buildModal(
   // error reveal the download fallback. Browser-only; guarded for headless/jsdom envs.
   function wireHeroVideoRepair(video: HTMLVideoElement, errEl: HTMLElement | null) {
     let repairing = false
+    let repairTimer: any = null
     video.addEventListener('loadedmetadata', () => {
-      if (!isFinite(video.duration) || video.duration <= 0) {
+      if (!isFinite(video.duration) || isNaN(video.duration) || video.duration <= 0) {
         repairing = true
         try { video.currentTime = 1e101 } catch {}
+        repairTimer = setTimeout(() => {
+          if (repairing) {
+            repairing = false
+            try { video.currentTime = 0 } catch {}
+          }
+        }, 400)
       }
     })
     video.addEventListener('durationchange', () => {
       if (repairing && isFinite(video.duration) && video.duration > 0) {
         repairing = false
+        if (repairTimer) clearTimeout(repairTimer)
         try { video.currentTime = 0 } catch {}
       }
     })
     video.addEventListener('error', () => {
+      if (repairing) {
+        repairing = false
+        if (repairTimer) clearTimeout(repairTimer)
+        try {
+          video.currentTime = 0
+          video.style.display = 'block'
+          if (errEl) errEl.style.display = 'none'
+          return
+        } catch {}
+      }
       try { video.style.display = 'none' } catch {}
       if (errEl) errEl.style.display = 'flex'
     })

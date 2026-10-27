@@ -149,4 +149,34 @@ describe("KLA-602(a) recording auto-adds to the gallery as a selected, removable
     expect(payload.recordings.length).toBe(1)
     expect(payload.recordings[0].id).toBe("rec_1")
   })
+
+  it("deduplicates recordings so identical recording is not added twice ('double time')", async () => {
+    const onRecord = vi.fn().mockResolvedValue(fakeRecording())
+    const ctrl = buildModal("bug", recCbs(onRecord) as any, { theme: "light" } as any)
+    const shadow = modalShadow()
+    ;(shadow.getElementById("klavity-record") as HTMLButtonElement).click()
+    await wait(30)
+    expect(shadow.querySelectorAll(".klavity-strip .kl-rec-tile").length).toBe(1)
+
+    // A second record with same ID updates in place, never duplicates tiles
+    ;(shadow.getElementById("klavity-record") as HTMLButtonElement).click()
+    await wait(30)
+    expect(shadow.querySelectorAll(".klavity-strip .kl-rec-tile").length).toBe(1)
+    ctrl.close()
+  })
+
+  it("mounts hero video cleanly without triggering download error fallback", async () => {
+    const rec = fakeRecording()
+    const onRecord = vi.fn().mockResolvedValue(rec)
+    const ctrl = buildModal("bug", recCbs(onRecord) as any, { theme: "light" } as any)
+    const shadow = modalShadow()
+    ;(shadow.getElementById("klavity-record") as HTMLButtonElement).click()
+    await wait(30)
+    const heroVid = shadow.querySelector("#klavity-hero-stage video") as HTMLVideoElement | null
+    expect(heroVid).not.toBeNull()
+    const errEl = shadow.querySelector("#klavity-hero-stage .kl-hero-verror") as HTMLElement | null
+    expect(errEl).not.toBeNull()
+    expect(errEl!.style.display).toBe("none")
+    ctrl.close()
+  })
 })

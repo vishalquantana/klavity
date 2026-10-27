@@ -7210,6 +7210,10 @@
       background: #dc2626
     }
 
+    .prop-sq.dp-neutral {
+      background: #a1a1aa
+    }
+
     /* compact assignee control (avatar + email) → click opens the assignee picker popover */
     .tkt-assignee-ctrl-wrap {
       position: relative;
@@ -8487,17 +8491,23 @@
       box-shadow: inset 3px 0 0 var(--line)
     }
 
+    .sevrail-neutral {
+      box-shadow: inset 3px 0 0 var(--line)
+    }
+
     .kb-card.sevrail-high,
     .kb-card.sevrail-medium,
     .kb-card.sevrail-low,
-    .kb-card.sevrail-none {
+    .kb-card.sevrail-none,
+    .kb-card.sevrail-neutral {
       padding-left: 14px
     }
 
     .row-tkt.sevrail-high,
     .row-tkt.sevrail-medium,
     .row-tkt.sevrail-low,
-    .row-tkt.sevrail-none {
+    .row-tkt.sevrail-none,
+    .row-tkt.sevrail-neutral {
       padding-left: 17px
     }
 
@@ -15005,18 +15015,40 @@
     }
 
     .tg-pri {
-      font-size: 12px;
-      padding: 4px 6px;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      font-family: var(--body);
+      font-size: 11px;
+      font-weight: 600;
+      height: 26px;
+      padding: 0 22px 0 8px;
       border-radius: 7px;
       border: 1px solid var(--line);
-      background: var(--ink-2);
+      background-color: var(--ink-2);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 6px center;
       color: var(--paper);
       cursor: pointer;
-      transition: border-color var(--mi-dur) var(--mi-ease)
+      outline: none;
+      transition: background var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease);
     }
 
     .tg-pri:hover {
+      background-color: var(--ink-3);
       border-color: var(--indigo);
+    }
+
+    .tg-pri:focus-visible {
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .2);
+    }
+
+    .tg-pri[aria-busy="true"],
+    .tg-pri:disabled {
+      opacity: 0.6;
+      cursor: wait;
     }
 
     /* KLA-200: human-readable sequential ticket number badge */
@@ -15048,12 +15080,17 @@
       align-items: center
     }
 
-    .kdd-native {
-      position: absolute;
-      width: 0;
-      height: 0;
-      opacity: 0;
-      pointer-events: none
+    .kdd-native,
+    select.tg-pri.kdd-native {
+      position: absolute !important;
+      width: 0 !important;
+      height: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      margin: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      overflow: hidden !important;
     }
 
     .kdd-btn {
@@ -15356,6 +15393,25 @@
       font-weight: 700;
     }
 
+    .tg-pri-kdd .kdd-pri-neutral .prop-sq {
+      background: #94a3b8;
+      box-shadow: 0 0 0 1px rgba(148, 163, 184, .3);
+    }
+
+    .tg-pri-kdd .kdd-pri-neutral:hover,
+    .tg-pri-kdd .kdd-pri-neutral:focus-visible {
+      background: rgba(148, 163, 184, .1);
+      border-color: rgba(148, 163, 184, .25);
+      color: #64748b;
+    }
+
+    .tg-pri-kdd .kdd-pri-neutral[aria-checked="true"] {
+      background: rgba(148, 163, 184, .15);
+      border-color: rgba(148, 163, 184, .35);
+      color: #64748b;
+      font-weight: 700;
+    }
+
     /* Dark theme text contrast adjustments */
     [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:hover,
     [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:focus-visible,
@@ -15381,6 +15437,12 @@
       color: #60a5fa;
     }
 
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-neutral:hover,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-neutral:focus-visible,
+    [data-theme="dark"] .tg-pri-kdd .kdd-pri-neutral[aria-checked="true"] {
+      color: #94a3b8;
+    }
+
     /* Elevated z-index when dropdown is open so it renders above surrounding cards */
     .kb-card.tg-dropdown-open,
     .tg-row.tg-dropdown-open,
@@ -15388,6 +15450,63 @@
     .tg-row:has(.tg-pri-kdd .kdd-menu:not(.hide)) {
       z-index: 50;
       position: relative;
+    }
+
+    /* Screen-reader / form-accessible hiding of native select when paired with custom .kdd dropdown */
+    .tg-pri.kdd-native,
+    .kdd-native {
+      position: absolute !important;
+      width: 0 !important;
+      height: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+      margin: 0 !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    /* Fallback styling for native priority and bulk selects if rendered directly */
+    select.tg-pri:not(.kdd-native),
+    select.bulk-sel {
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      background-color: var(--ink);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      background-size: 11px 11px;
+      color: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 3px 24px 3px 8px;
+      font-family: var(--body);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.4;
+      height: 26px;
+      cursor: pointer;
+      outline: none;
+      transition: background-color var(--mi-dur) var(--mi-ease), border-color var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease);
+    }
+
+    select.tg-pri:not(.kdd-native):hover,
+    select.bulk-sel:hover {
+      background-color: var(--ink-3);
+      border-color: var(--indigo);
+    }
+
+    select.tg-pri:not(.kdd-native):focus-visible,
+    select.bulk-sel:focus-visible {
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .25);
+    }
+
+    select.tg-pri:not(.kdd-native) option,
+    select.bulk-sel option {
+      background-color: var(--ink-2);
+      color: var(--paper);
+      padding: 6px 8px;
     }
 
     .tkt-lbl-kdd .tkt-lbl-add-item {
@@ -20453,6 +20572,15 @@
               if (b) b.setAttribute("aria-expanded", "false")
             }
           }
+          if (!e.target.closest(".tg-pri-kdd")) {
+            document.querySelectorAll(".tg-pri-kdd .kdd-menu:not(.hide)").forEach(m => {
+              m.classList.add("hide")
+              const b = m.closest(".tg-pri-kdd")?.querySelector(".kdd-btn")
+              if (b) b.setAttribute("aria-expanded", "false")
+              const card = m.closest(".kb-card, .tg-row")
+              if (card) card.classList.remove("tg-dropdown-open")
+            })
+          }
         })
         document.addEventListener("keydown", (e) => {
           if (e.key === "Escape") {
@@ -20462,6 +20590,13 @@
               m.classList.add("hide")
               if (b) b.setAttribute("aria-expanded", "false")
             }
+            document.querySelectorAll(".tg-pri-kdd .kdd-menu:not(.hide)").forEach(m => {
+              m.classList.add("hide")
+              const b = m.closest(".tg-pri-kdd")?.querySelector(".kdd-btn")
+              if (b) b.setAttribute("aria-expanded", "false")
+              const card = m.closest(".kb-card, .tg-row")
+              if (card) card.classList.remove("tg-dropdown-open")
+            })
           }
         })
       }
@@ -20625,6 +20760,47 @@
         else focusTriageRow(fid)
       }
     }
+    // Sync priority change to open details panel if the same ticket is currently open
+    function syncPriorityToOpenPanel(id, newPri) {
+      const single = $("ticketSingle")
+      if (!single || single.classList.contains("hide")) return
+      const currentPanelId = single.getAttribute("data-ticket-id")
+      const openTkt = (state.tickets || []).find(x => String(x.id) === String(id))
+      if (!currentPanelId && openTkt && String(openTkt.id) !== String(id)) return
+      if (currentPanelId && String(currentPanelId) !== String(id)) return
+
+      if (openTkt) openTkt.priority = newPri
+
+      // Native priority select
+      const priSel = single.querySelector(".tkt-pri-sel")
+      if (priSel) priSel.value = newPri
+
+      // Custom dropdown text & severity square
+      const kddTxt = single.querySelector('.kdd[data-kdd="priority"] .kdd-txt')
+      if (kddTxt) kddTxt.textContent = newPri ? (newPri.charAt(0).toUpperCase() + newPri.slice(1)) : "Medium"
+      const kddSq = single.querySelector('.kdd[data-kdd="priority"] .prop-sq')
+      if (kddSq) kddSq.className = "prop-sq dp-" + (newPri || "medium")
+
+      const kddItems = single.querySelectorAll('.kdd[data-kdd="priority"] .kdd-item')
+      kddItems.forEach(it => {
+        it.setAttribute("aria-checked", it.getAttribute("data-val") === newPri ? "true" : "false")
+      })
+
+      // Severity chip in .tkt-chips if present
+      const chipEl = single.querySelector(".chip[class*='sev-']")
+      if (chipEl && newPri) {
+        chipEl.className = "chip sev-" + newPri
+        chipEl.textContent = newPri
+      }
+
+      // Severity rail
+      const rail = single.querySelector(".single-rail")
+      if (rail) {
+        const sv = ["urgent", "high", "medium", "low"].includes(newPri) ? newPri : (newPri === "neutral" ? "med" : "none")
+        rail.className = "single-rail sv-" + sv
+      }
+    }
+
     // #739: shared per-item wiring for BOTH the list rows and the board cards — accept / dismiss / send /
     // bulk-select checkbox, plus "click the body opens the report in the ticket cockpit".
     function wireTriageItem(el, id, t) {
@@ -20635,7 +20811,161 @@
       const sendBtn = el.querySelector(".tg-send-jira")
       if (sendBtn) sendBtn.addEventListener("click", (ev) => { ev.stopPropagation(); tgSendToTracker([id]) })
       const pri = el.querySelector(".tg-pri")
-      if (pri) pri.addEventListener("click", (ev) => ev.stopPropagation())
+      const priKdd = el.querySelector(".tg-pri-kdd")
+      const kddBtn = priKdd ? priKdd.querySelector(".kdd-btn") : null
+      const kddMenu = priKdd ? priKdd.querySelector(".kdd-menu") : null
+      const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low", neutral: "Neutral" }
+
+      function updateKddDisplay(val) {
+        if (!kddBtn) return
+        const v = val || "medium"
+        const sq = kddBtn.querySelector(".prop-sq")
+        if (sq) sq.className = "prop-sq dp-" + v
+        const txt = kddBtn.querySelector(".kdd-txt")
+        if (txt) txt.textContent = priLabels[v] || (v.charAt(0).toUpperCase() + v.slice(1))
+        if (kddMenu) {
+          kddMenu.querySelectorAll(".kdd-item").forEach(it => {
+            it.setAttribute("aria-checked", it.getAttribute("data-val") === v ? "true" : "false")
+          })
+        }
+      }
+
+      if (kddBtn && kddMenu) {
+        kddBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation()
+          const isOpen = !kddMenu.classList.contains("hide")
+          document.querySelectorAll(".tg-pri-kdd .kdd-menu:not(.hide)").forEach(m => {
+            if (m !== kddMenu) {
+              m.classList.add("hide")
+              const b = m.closest(".tg-pri-kdd")?.querySelector(".kdd-btn")
+              if (b) b.setAttribute("aria-expanded", "false")
+              const card = m.closest(".kb-card, .tg-row")
+              if (card) card.classList.remove("tg-dropdown-open")
+            }
+          })
+          if (isOpen) {
+            kddMenu.classList.add("hide")
+            kddBtn.setAttribute("aria-expanded", "false")
+            el.classList.remove("tg-dropdown-open")
+          } else {
+            kddMenu.classList.remove("hide")
+            kddBtn.setAttribute("aria-expanded", "true")
+            el.classList.add("tg-dropdown-open")
+          }
+        })
+        kddMenu.addEventListener("click", (ev) => {
+          ev.stopPropagation()
+          const item = ev.target.closest(".kdd-item")
+          if (!item) return
+          const val = item.getAttribute("data-val")
+          kddMenu.classList.add("hide")
+          kddBtn.setAttribute("aria-expanded", "false")
+          el.classList.remove("tg-dropdown-open")
+          if (pri && pri.value !== val) {
+            pri.value = val
+            pri.dispatchEvent(new Event("change", { bubbles: true }))
+          }
+        })
+      }
+
+      if (pri) {
+        pri.addEventListener("click", (ev) => ev.stopPropagation())
+        pri.addEventListener("mousedown", (ev) => ev.stopPropagation())
+        pri.addEventListener("change", async (ev) => {
+          ev.stopPropagation()
+          const newPri = pri.value
+          const oldPri = t.priority || "medium"
+          if (newPri === oldPri) return
+
+          updateKddDisplay(newPri)
+
+          // Optimistically update local ticket object and in-memory caches
+          t.priority = newPri
+          const item = (_triageItems || []).find(x => String(x.id) === String(id))
+          if (item) item.priority = newPri
+          if (Array.isArray(state.tickets)) {
+            const st = state.tickets.find(x => String(x.id) === String(id))
+            if (st) st.priority = newPri
+          }
+          if (Array.isArray(_tktBoardTickets)) {
+            const bt = _tktBoardTickets.find(x => String(x.id) === String(id))
+            if (bt) bt.priority = newPri
+          }
+          if (typeof recordLocalEdit === "function") recordLocalEdit(id, { priority: newPri })
+
+          // Update severity rail visual styling on card/row
+          el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\bsv-\w+/g, "").replace(/\s+/g, " ").trim()
+          const railCls = sevRailClass(newPri)
+          if (railCls) el.classList.add(...railCls.split(" ").filter(Boolean))
+
+          // If on Board view or list view, re-bucket into the target column immediately
+          if (typeof renderTriageItems === "function" && typeof tgVisibleItems === "function") {
+            renderTriageItems(tgVisibleItems())
+          }
+          if (typeof renderTriageFilters === "function") {
+            renderTriageFilters()
+          }
+
+          // Reflect in that card's open details panel as well
+          syncPriorityToOpenPanel(id, newPri)
+
+          window.__klavMutating++
+          pri.disabled = true
+          pri.setAttribute("aria-busy", "true")
+          if (kddBtn) {
+            kddBtn.disabled = true
+            kddBtn.setAttribute("aria-busy", "true")
+          }
+          try {
+            const r = await fetch("/api/feedback/" + encodeURIComponent(id), {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ priority: newPri }),
+              credentials: "include"
+            }).catch(() => null)
+            const d = r ? await r.json().catch(() => ({})) : {}
+            if (!r || !r.ok || d.ok === false) {
+              throw new Error((d && d.error) || "Failed to update priority")
+            }
+          } catch (err) {
+            // Revert changes on error
+            t.priority = oldPri
+            if (item) item.priority = oldPri
+            if (Array.isArray(state.tickets)) {
+              const st = state.tickets.find(x => String(x.id) === String(id))
+              if (st) st.priority = oldPri
+            }
+            if (Array.isArray(_tktBoardTickets)) {
+              const bt = _tktBoardTickets.find(x => String(x.id) === String(id))
+              if (bt) bt.priority = oldPri
+            }
+            if (typeof recordLocalEdit === "function") recordLocalEdit(id, { priority: oldPri })
+            pri.value = oldPri
+            updateKddDisplay(oldPri)
+            el.className = el.className.replace(/\bsevrail-\w+/g, "").replace(/\bsv-\w+/g, "").replace(/\s+/g, " ").trim()
+            const oldRail = sevRailClass(oldPri)
+            if (oldRail) el.classList.add(...oldRail.split(" ").filter(Boolean))
+            if (typeof renderTriageItems === "function" && typeof tgVisibleItems === "function") {
+              renderTriageItems(tgVisibleItems())
+            }
+            if (typeof renderTriageFilters === "function") {
+              renderTriageFilters()
+            }
+            syncPriorityToOpenPanel(id, oldPri)
+            if (typeof klavToast === "function") {
+              klavToast("Couldn't update priority — please try again.", true)
+            }
+          } finally {
+            window.__klavMutating--
+            pri.disabled = false
+            pri.removeAttribute("aria-busy")
+            if (kddBtn) {
+              kddBtn.disabled = false
+              kddBtn.removeAttribute("aria-busy")
+            }
+          }
+        })
+      }
       const cb = el.querySelector(".tg-cb")
       if (cb) {
         cb.addEventListener("click", (ev) => ev.stopPropagation())
@@ -20676,13 +21006,13 @@
           }
           // Shared priority dropdown generator for Sim Reports cards and rows
           function tgPriorityDropdownHtml(t) {
-            const curPri = (["urgent", "high", "medium", "low"].includes(t.priority) ? t.priority : "medium")
-            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
-            const opts = ["urgent", "high", "medium", "low"]
+            const curPri = (["urgent", "high", "medium", "low", "neutral"].includes(t.priority) ? t.priority : "medium")
+            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low", neutral: "Neutral" }
+            const opts = ["urgent", "high", "medium", "low", "neutral"]
             return `<div class="kdd tg-pri-kdd" data-kdd="priority">
         <button type="button" class="kdd-btn tg-pri-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(priLabels[curPri] || curPri)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         <div class="kdd-menu hide" role="menu" aria-label="Priority">${opts.map(s => `<button type="button" class="kdd-item kdd-pri-${s}" role="menuitemradio" aria-checked="${s === curPri}" data-val="${s}"><span class="prop-sq dp-${s}"></span><span class="kdd-txt">${priLabels[s]}</span></button>`).join("")}</div>
-        <select class="tg-pri kdd-native" aria-label="Priority" tabindex="-1">${opts.map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${priLabels[s]}</option>`).join("")}</select>
+        <select class="tg-pri kdd-native" aria-label="Priority" tabindex="-1">${opts.map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${priLabels[s]}</option>`).join("")}</select>
       </div>`
           }
           // Sim Reports source helper: distinguish Sim vs AutoSim origins safely
@@ -20727,7 +21057,7 @@
       </div>
       <div class="tg-actions">
         ${tgRoutingAffordance(t)}
-        <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+        ${tgPriorityDropdownHtml(t)}
         <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept as bug</button>
         <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
       </div>
@@ -20763,7 +21093,7 @@
     ${quote}
     ${meta ? `<div class="kb-card-meta">${meta}</div>` : ""}
     <div class="tg-actions kb-card-actions">
-      <select class="tg-pri" aria-label="Priority">${["urgent", "high", "medium", "low"].map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${s}</option>`).join("")}</select>
+      ${tgPriorityDropdownHtml(t)}
       <button class="btn btn-indigo btn-sm tg-accept" type="button">Accept</button>
       <button class="btn btn-ghost btn-sm tg-dismiss" type="button">Dismiss</button>
     </div>`
@@ -24561,8 +24891,8 @@
             // (matching the triage row select), so the <select> marks 'medium' selected instead of falling
             // through to the first option ('urgent') and silently mis-representing an un-triaged report.
             const curPri = t.priority || "medium"
-            const priOpts = ["urgent", "high", "medium", "low"].map(p =>
-              `<option value="${p}"${p === curPri ? " selected" : ""}>${p}</option>`
+            const priOpts = ["urgent", "high", "medium", "low", "neutral"].map(p =>
+              `<option value="${p}"${p === curPri ? " selected" : ""}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
             ).join("")
             // #653: reusable (i) info tooltip for the genuinely-unclear controls. Text is trusted/static; esc anyway.
             const infoTip = (msg) => `<span class="info" tabindex="0" role="note" aria-label="${esc(msg)}">i<span class="tip">${esc(msg)}</span></span>`
@@ -24581,8 +24911,8 @@
         </span></span>
         <span class="tkt-prop-lb">Priority</span>
         <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
-          <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri)}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
-          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2}</button>`).join("")}</span>
+          <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri ? (curPri.charAt(0).toUpperCase() + curPri.slice(1)) : "Medium")}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low", "neutral"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2.charAt(0).toUpperCase() + p2.slice(1)}</button>`).join("")}</span>
           <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
         </span></span>
         <span class="tkt-prop-lb">Assignee</span>
@@ -25014,6 +25344,17 @@
                   const tgItem = (_triageItems || []).find(x => String(x.id) === String(ticketId))
                   if (tgItem) tgItem.priority = newPri
                   recordLocalEdit(ticketId, { priority: newPri })   // #532
+                  // Sync to triage card / row if present on page
+                  try {
+                    const triageEl = document.querySelector(`.tg-item[data-id="${CSS.escape(String(ticketId))}"]`)
+                    if (triageEl) {
+                      const tgPri = triageEl.querySelector(".tg-pri")
+                      if (tgPri) tgPri.value = newPri || "medium"
+                      triageEl.className = triageEl.className.replace(/\bsevrail-\w+/g, "").replace(/\bsv-\w+/g, "").replace(/\s+/g, " ").trim()
+                      const railCls = sevRailClass(newPri)
+                      if (railCls) triageEl.classList.add(...railCls.split(" ").filter(Boolean))
+                    }
+                  } catch (e) {}
                   // #653: repaint the priority severity square.
                   const _sq = detailEl.querySelector(".prop-sq")
                   if (_sq) _sq.className = "prop-sq dp-" + (newPri || "medium")
