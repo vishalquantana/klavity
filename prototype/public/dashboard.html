@@ -7777,7 +7777,8 @@
       cursor: text;
       overflow-wrap: anywhere;
       word-break: break-word;
-      min-width: 0
+      min-width: 0;
+      user-select: text
     }
 
     /* #734: inline markdown-lite in the description read view (WhatsApp-style *bold* _italic_ `code`). */
@@ -8740,7 +8741,8 @@
 
     .single-title-row .single-title {
       cursor: text;
-      min-width: 0
+      min-width: 0;
+      user-select: text
     }
 
     .single-title-edit {
@@ -23176,7 +23178,7 @@
       <div class="tkt-desc-label">${label}</div>
       <button class="tkt-desc-edit" type="button" title="Edit description" aria-label="Edit description">${kicon('pencil', { size: 13 })}</button>
     </div>
-    <div class="tkt-obs"${raw.trim() ? "" : ' title="Click to add description"'}>${descObsInner(raw)}</div>
+    <div class="tkt-obs">${descObsInner(raw)}</div>
   </div>`
           }
           // KLAVITYKLA-438 "Record me" (Phase 2): format seconds → m:ss for a transcript timestamp.
@@ -25166,17 +25168,12 @@
                 saveB.addEventListener("mousedown", ev => { ev.preventDefault(); ev.stopPropagation(); commit() })
               }
               if (descEditBtn) descEditBtn.addEventListener("click", ev => { ev.stopPropagation(); enterDescEdit() })
-              // Prevent text selection inside the description from triggering edit mode.
-              // Users can select, highlight, and copy description text without interruption.
-              // Edit mode opens via the pencil icon, or when clicking the empty-state placeholder prompt.
-              if (obsEl) obsEl.addEventListener("click", ev => {
+              // Jira-like editing: double-click to edit; single-click allows normal text selection and copying.
+              // Clicking smart-link chips navigates without triggering edit mode.
+              if (obsEl) obsEl.addEventListener("dblclick", ev => {
                 if (ev.target.closest("a.tkt-smartlink")) return
-                const hasSelection = window.getSelection ? window.getSelection().toString().trim().length > 0 : false
-                if (hasSelection) return
-                if (ev.target.closest(".tkt-desc-placeholder") || descEl.classList.contains("tkt-desc-empty")) {
-                  ev.stopPropagation()
-                  enterDescEdit()
-                }
+                ev.stopPropagation()
+                enterDescEdit()
               })
             }
 
@@ -26990,7 +26987,7 @@
               head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
         <div class="single-title-row">
-          <div class="single-title" title="Click to edit">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+          <div class="single-title">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
           <button class="single-title-edit" type="button" title="Edit title" aria-label="Edit title">${kicon('pencil', { size: 13 })}</button>
         </div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot', { size: 11 }) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
@@ -27062,7 +27059,9 @@
                 inp.addEventListener("blur", () => { if (!done) commit() })
               }
               if (editBtn) editBtn.addEventListener("click", ev => { ev.stopPropagation(); enterTitleEdit() })
-              if (titleEl) titleEl.addEventListener("click", ev => { if (ev.target.closest(".tkt-seq")) return; ev.stopPropagation(); enterTitleEdit() })
+              // Jira-like editing: double-click to edit title; single-click allows text selection and copying.
+              // Clicking the seq pill copies the permalink.
+              if (titleEl) titleEl.addEventListener("dblclick", ev => { if (ev.target.closest(".tkt-seq")) return; ev.stopPropagation(); enterTitleEdit() })
             }
             renderHead()
             // KD-230: the dedicated-page header's status pill (beside the #key) is built once above, outside
