@@ -458,11 +458,7 @@ function patchTicket(payload, okText) {
     $("obsEditBtn").classList.remove("hide");
   }
   $("obsEditBtn").addEventListener("click", openObsEdit);
-  $("observation").addEventListener("click", function () {
-    var hasSelection = window.getSelection ? window.getSelection().toString().trim().length > 0 : false;
-    if (hasSelection) return;
-    if (!report || !report.observation) openObsEdit();
-  });
+  $("observation").addEventListener("dblclick", openObsEdit);
   $("obsCancelBtn").addEventListener("click", closeObsEdit);
   $("obsSaveBtn").addEventListener("click", function () {
     var next = $("obsInput").value;
