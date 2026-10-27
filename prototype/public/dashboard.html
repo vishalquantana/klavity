@@ -8693,7 +8693,8 @@
 
     .single-title-row .single-title {
       cursor: text;
-      min-width: 0
+      min-width: 0;
+      user-select: text
     }
 
     .single-title-edit {
@@ -26272,7 +26273,7 @@
         head.innerHTML = `<span class="single-rail sv-${sv}"></span>
       <div class="single-h-b">
         <div class="single-title-row">
-          <div class="single-title" title="Click to edit">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
+          <div class="single-title">${t.seqNum ? `<span class="tkt-seq">${esc(seqPillText(t))}</span> ` : ""}${esc(t.title || "Untitled report")}</div>
           <button class="single-title-edit" type="button" title="Edit title" aria-label="Edit title">${kicon('pencil', { size: 13 })}</button>
         </div>
         <div class="single-meta">${(t.recurrence >= 2) ? `<span class="fx-recur">recurring ×${t.recurrence}</span>` : ""}${recurBadgeHtml(t)}<span class="muted" style="font-family:var(--mono);font-size:11px">${t.simName ? (kicon('bot', { size: 11 }) + " " + esc(t.simName) + " · ") : ""}${t.urlPath ? (esc(t.urlPath) + " · ") : ""}${esc(ago(t.createdAt))}</span></div>
@@ -26280,7 +26281,7 @@
       </div>`
         // #735: the "#<seq>" title pill copies the clean /t/<id> permalink (re-wired after every renderHead).
         try { wireTktKeyCopy(head.querySelector(".tkt-seq"), t.id) } catch (e) { }
-        // KD-158: click-to-edit title (pencil, or the text itself — not the seq-pill, which copies the link).
+        // Edit title via dedicated pencil button. Title text remains read-only to allow normal selection and copying.
         // Re-wired after every renderHead, same as wireTktKeyCopy above.
         try { wireSingleTitleEdit() } catch (e) { }
       }
@@ -26344,16 +26345,15 @@
           inp.addEventListener("blur", () => { if (!done) commit() })
         }
         if (editBtn) editBtn.addEventListener("click", ev => { ev.stopPropagation(); enterTitleEdit() })
-        if (titleEl) titleEl.addEventListener("click", ev => { if (ev.target.closest(".tkt-seq")) return; ev.stopPropagation(); enterTitleEdit() })
       }
       renderHead()
+      const detailEl = buildTktDetail(t, admin, () => { renderHead(); repaintPageStatusPill(); renderTicketsKanban() }, true)
       // KD-230: the dedicated-page header's status pill (beside the #key) is built once above, outside
       // renderHead — repaint it in place so a Properties-rail status change shows up immediately.
-      const repaintPageStatusPill = () => {
+      function repaintPageStatusPill() {
         const pill = single.querySelector(".tkt-page-head .tkt-pill")
         if (pill) pill.outerHTML = statusPillHtml(t.status)
       }
-      const detailEl = buildTktDetail(t, admin, () => { renderHead(); repaintPageStatusPill(); renderTicketsKanban() }, true)
       detailEl.classList.add("show")
       // #707: the dedicated PAGE renders the 3-col grid INSIDE detailEl and wraps the title + grid in a
       // contained paper (--ink-2) card so the ticket no longer sits naked on the page bg. The slide-over
