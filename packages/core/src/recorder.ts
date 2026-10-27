@@ -61,6 +61,7 @@ export const RECORDING_MIME_CANDIDATES = [
 export interface RecordingAttachment {
   id: string
   dataUrl: string
+  blob?: Blob
   mime: string
   durationMs: number
   bytes: number
@@ -469,7 +470,7 @@ export async function startRecording(
     const finalWidth = (st.width && st.width > 0) ? st.width : canvas.width
     const finalHeight = (st.height && st.height > 0) ? st.height : canvas.height
     resolveDone({
-      id, blob, mime: blob.type || mime, durationMs, bytes: blob.size || totalBytes,
+      id, blob, mime: (blob.type || mime || 'video/webm').split(';')[0], durationMs, bytes: blob.size || totalBytes,
       width: hadCamera ? canvas.width : finalWidth,
       height: hadCamera ? canvas.height : finalHeight,
       screenOnly, hadCamera, hadAudio,
@@ -535,7 +536,8 @@ export async function recordingResultToAttachment(r: RecordingResult): Promise<R
   return {
     id: r.id,
     dataUrl: await blobToDataUrl(r.blob),
-    mime: r.mime,
+    blob: r.blob,
+    mime: (r.mime || 'video/webm').split(';')[0],
     durationMs: Math.round(r.durationMs),
     bytes: r.bytes,
     width: r.width,

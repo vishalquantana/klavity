@@ -32,6 +32,7 @@ export interface ReportFileAttachment {
 export interface ReportRecording {
   id: string
   dataUrl: string      // data:video/webm;base64,... (or mp4 on Safari)
+  blob?: Blob
   mime: string
   durationMs: number
   bytes: number

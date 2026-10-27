@@ -44,35 +44,34 @@ describe('buildModal "Record me" gating', () => {
 })
 
 describe('buildModal "Record me" attach + submit', () => {
-  it('clicking Record → onRecord resolves → a video chip appears in the recordings strip', async () => {
+  it('clicking Record → onRecord resolves → a video tile appears in the gallery strip', async () => {
     const onRecord = vi.fn(async () => sampleRecording)
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
     await new Promise(r => setTimeout(r, 0))
     expect(onRecord).toHaveBeenCalledTimes(1)
-    const strip = q(ctrl, '#klavity-recordings')!
-    expect(strip.hidden).toBe(false)
-    const chip = strip.querySelector('.kl-rec-chip')
-    expect(chip).not.toBeNull()
-    expect(chip!.textContent).toContain('0:41') // 41s duration rendered
+    const tile = q(ctrl, '.klavity-strip .kl-rec-tile')
+    expect(tile).not.toBeNull()
+    expect(tile!.textContent).toContain('0:41') // 41s duration rendered
     ctrl.close()
   })
 
-  it('a null onRecord result (cancel) adds no chip', async () => {
+  it('a null onRecord result (cancel) adds no tile', async () => {
     const onRecord = vi.fn(async () => null)
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
     await new Promise(r => setTimeout(r, 0))
-    expect(q(ctrl, '#klavity-recordings')!.querySelector('.kl-rec-chip')).toBeNull()
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).toBeNull()
     ctrl.close()
   })
 
-  it('remove button drops the recording chip', async () => {
+  it('remove button drops the recording tile', async () => {
     const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => sampleRecording, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
     ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
     await new Promise(r => setTimeout(r, 0))
-    ;(q(ctrl, '#klavity-recordings')!.querySelector('.kl-file-rm') as HTMLButtonElement).click()
-    expect(q(ctrl, '#klavity-recordings')!.querySelector('.kl-rec-chip')).toBeNull()
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).not.toBeNull()
+    ;(q(ctrl, '.klavity-strip .kl-rec-tile .klavity-rm') as HTMLButtonElement).click()
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).toBeNull()
     ctrl.close()
   })
 
