@@ -139,7 +139,7 @@
         <div class="section-title" style="margin:0">What was reported</div>
         <button id="obsEditBtn" class="btn sm" type="button" title="Edit description">Edit</button>
       </div>
-      <div class="body-text" id="observation"></div>
+      <div class="body-text" id="observation" title="Click to edit"></div>
       <div id="obsEdit" class="hide" style="margin-top:8px">
         <textarea id="obsInput" maxlength="20000" placeholder="Describe what was reported…"></textarea>
         <div class="row" style="margin-top:8px">
@@ -458,11 +458,7 @@ function patchTicket(payload, okText) {
     $("obsEditBtn").classList.remove("hide");
   }
   $("obsEditBtn").addEventListener("click", openObsEdit);
-  $("observation").addEventListener("click", function () {
-    var hasSelection = window.getSelection ? window.getSelection().toString().trim().length > 0 : false;
-    if (hasSelection) return;
-    if (!report || !report.observation) openObsEdit();
-  });
+  $("observation").addEventListener("click", openObsEdit);
   $("obsCancelBtn").addEventListener("click", closeObsEdit);
   $("obsSaveBtn").addEventListener("click", function () {
     var next = $("obsInput").value;
