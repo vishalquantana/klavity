@@ -320,6 +320,10 @@ export interface ModalCallbacks {
   // (what the reporter actually sees). The manual "Screen" button still uses the full-page onCaptureSharp,
   // and "Full Page" stays an explicit opt-in. Absent → the default falls back to onCaptureSharp (unchanged).
   onCaptureSharpViewport?: () => Promise<CaptureResult>
+  // KD-988 (ext↔widget parity): true when the host's onCaptureSharp needs NO screen-share prompt (the extension
+  // grabs real tab pixels via captureVisibleTab). The Snap tooltip then drops the "share this tab" copy and the
+  // hover never shows the "click Allow" share-picker hint. Default false → the widget's getDisplayMedia copy.
+  snapWithoutSharePrompt?: boolean
   // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
   // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
@@ -754,6 +758,9 @@ export function buildModal(
   // and we chose to show the "couldn't capture — Snap" empty state instead of seeding a white image. Cleared
   // the moment any real shot lands so the empty state reverts to its normal copy.
   let blankCaptureHint = false
+  // KD-184: the page was too large for the rendered auto-capture-on-open, so it was skipped — the empty stage
+  // says so (and steers to Snap / Full Page) instead of the neutral "capture or upload" prompt.
+  let largePageHint = false
   // snap-share-hint: set once a real screen-share (getDisplayMedia) capture succeeds — after that the reporter
   // clearly knows the flow, so the "click Allow" hover hint on the Snap button suppresses itself for the session.
   let shareCaptureSucceeded = false
@@ -763,9 +770,12 @@ export function buildModal(
   const sessionMode = !!callbacks.onMinimize
   // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
   const MAX_IMAGES = sessionMode ? 8 : 5
-  // KLAVITYKLA-506: above this element count, auto-capture-on-open is skipped (the html-to-image render
-  // would jank the composer's first paint). The user can still click "Full Page" to capture on demand.
-  const AUTO_CAPTURE_MAX_NODES = 15_000
+  // KLAVITYKLA-506: above this element count, the RENDERED auto-capture-on-open is skipped (the html-to-image
+  // render would jank the composer's first paint). The user can still click "Full Page" to capture on demand.
+  // KD-184: raised from 15k — PX4's Objections list (721 rows) is ~18.4k elements and its viewport render takes
+  // ~2.3s with <=1s main-thread gaps, AFTER the composer has painted; at 15k it silently opened to an empty stage.
+  // The on-open Screen (getDisplayMedia) capture is real pixels, so it is never gated by this count.
+  const AUTO_CAPTURE_MAX_NODES = 30_000
   const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
   // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Kept separate from screenshots[] so the
   // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
@@ -1564,7 +1574,7 @@ export function buildModal(
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
-        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b>${callbacks.snapWithoutSharePrompt ? '.' : ` using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.`}</span></button>` : ''}
         <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
              image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
@@ -1704,7 +1714,8 @@ export function buildModal(
     const showTip = () => {
       // Prefer the actionable "click Allow" share hint; fall back to the plain "what Snap does" tip once a
       // share has been granted this session or the browser reports display-capture already granted.
-      if (!shareCaptureSucceeded && !shareGranted) {
+      // KD-988: a prompt-less Snap (the extension) has no share dialog to explain → always the plain tip.
+      if (!callbacks.snapWithoutSharePrompt && !shareCaptureSucceeded && !shareGranted) {
         ft.classList.remove('kl-show')
         placeUnderSharp(shp, 288)
         shp.classList.add('kl-show')
@@ -2112,9 +2123,17 @@ export function buildModal(
   // neutral "capture or upload" prompt.
   function emptyStateText(): string {
     if (blankCaptureHint) {
+      if (callbacks.onCaptureSharp && callbacks.snapWithoutSharePrompt) {
+        return "Couldn't grab this page automatically — click Snap for a pixel-perfect shot, or attach an image."
+      }
       return callbacks.onCaptureSharp
         ? "Couldn't grab this page automatically — click Snap to share your tab for a pixel-perfect shot, or attach an image."
         : "Couldn't grab this page automatically — try Full Page, or attach an image."
+    }
+    if (largePageHint) {
+      return callbacks.onCaptureSharp
+        ? "This page is too large to capture automatically — click Snap for a pixel-perfect shot, or Full Page."
+        : "This page is too large to capture automatically — click Full Page to capture it, or attach an image."
     }
     return 'Capture or upload a screenshot to start marking it up'
   }
@@ -2137,6 +2156,7 @@ export function buildModal(
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
+    largePageHint = false
     blankCaptureHint = false // a real shot landed → drop the "couldn't capture" empty-state steer
     screenshots.push(dataUrl)
     // KLA-772: re-seed a restored shot's saved overlay so the inline annotator repaints the drawn shapes when
@@ -4980,7 +5000,9 @@ export function buildModal(
     // click "Full Page" themselves — the strip stays empty (no false skeleton) so the choice is obvious.
     let nodeCount = 0
     try { nodeCount = document.getElementsByTagName('*').length } catch { nodeCount = 0 }
-    if (nodeCount <= AUTO_CAPTURE_MAX_NODES) {
+    const renderOk = nodeCount <= AUTO_CAPTURE_MAX_NODES
+    // KD-184: the Screen default (real pixels) runs whatever the DOM size; only the RENDERED path is gated.
+    if (renderOk || defaultCaptureMode(callbacks) === 'screen') {
       // KLAVITYKLA-509: show the skeleton placeholder IMMEDIATELY (before the render), swap in the real shot
       // on resolve so the thumbnail slot is never blank.
       capturing = true
@@ -4999,6 +5021,8 @@ export function buildModal(
           const ok = await runScreenCapture({ viewport: true })
           if (ok) { capturing = false; updateStrip(); return }
           if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
+          // KD-184: too large for the rendered fallback → leave the stage empty with the large-page steer.
+          if (!renderOk) { largePageHint = true; capturing = false; updateStrip(); return }
           // Silent fallback → rendered viewport (or full render where no viewport path is wired).
           capturing = true; updateStrip()
           if (callbacks.onCaptureViewport) { captureViewportOnly(null).catch(() => { capturing = false; updateStrip() }); return }
@@ -5033,6 +5057,9 @@ export function buildModal(
       const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, opts?: { timeout?: number }) => void)
       if (typeof ric === 'function') ric(() => runCapture(), { timeout: 1200 })
       else requestAnimationFrame(() => setTimeout(runCapture, 0))
+    } else {
+      largePageHint = true
+      updateStrip()
     }
   }
 

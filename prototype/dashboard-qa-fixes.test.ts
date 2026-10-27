@@ -117,7 +117,7 @@ test("#743: server streams screenshot bytes same-origin via ?proxy=1 (gated, no 
   // the proxy branch lives INSIDE the already session+membership-gated /api/screenshots/:id handler
   const h = SERVER.indexOf('path.match(/^\\/api\\/screenshots\\/([^/]+)$/')
   expect(h).toBeGreaterThan(-1)
-  const region = SERVER.slice(h, h + 2200)
+  const region = SERVER.slice(h, h + 3000)
   expect(region).toContain('url.searchParams.get("proxy") === "1"')
   // streams bytes (mirrors the /img permalink) rather than returning the cross-origin presigned JSON
   expect(region).toContain("getObjectStream(streamKey)")

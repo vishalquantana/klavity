@@ -143,6 +143,29 @@ async function exportRowCount(feedbackId: string) {
   return Number((r.rows[0] as any).n)
 }
 
+// ── KD-983: the single-ticket read carries the tracker link ──────────────────
+// Opening a ticket refreshes it via GET /api/feedback/:id; without `exports` there, a ticket whose
+// auto-file landed after the dashboard loaded never showed its Jira link.
+
+test("GET /api/feedback/:id returns the export badge with the external key + url", async () => {
+  const r = await api("GET", `/api/feedback/${FID_DUP}`, null)
+  expect(r.status).toBe(200)
+  const { report } = await r.json() as any
+  expect(report.exports).toEqual([
+    { type: "webhook", externalKey: "ACME-42", externalUrl: "https://acme.example/browse/ACME-42", connectorId: CONNECTOR_ID, status: "ok" },
+  ])
+  // nothing is being exported in the background, so the open ticket has no reason to keep re-checking
+  expect(report.exportPending).toBe(false)
+})
+
+test("GET /api/feedback/:id surfaces a failed-only export as a failed badge (so Retry can show)", async () => {
+  const r = await api("GET", `/api/feedback/${FID_FAIL}`, null)
+  expect(r.status).toBe(200)
+  const { report } = await r.json() as any
+  expect(report.exports).toHaveLength(1)
+  expect(report.exports[0]).toMatchObject({ connectorId: CONNECTOR_ID, status: "failed", externalUrl: null })
+})
+
 // ── The regression: a repeat manual export must NOT silently duplicate ────────
 
 test("re-exporting an already-exported ticket is refused with 409 + the prior external key", async () => {

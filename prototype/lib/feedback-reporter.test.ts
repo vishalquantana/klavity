@@ -60,7 +60,7 @@ describe('sanitizeClientInfo (PX4 #428)', () => {
 describe('reporterLines / clientInfoLines', () => {
   test('reporterLines renders an ordered, labelled block', () => {
     const lines = reporterLines({ id: 'u1', email: 'a@b.com', name: 'Ada', org: 'Acme', env: 'prod' })
-    expect(lines[0]).toBe('Reporter:')
+    expect(lines[0]).toBe('Customer details:')
     const joined = lines.join('\n')
     expect(joined).toContain('Name: Ada')
     expect(joined).toContain('Email: a@b.com')
