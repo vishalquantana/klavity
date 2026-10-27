@@ -1,0 +1,196 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Accessibility Testing: What It Catches and What It Misses · Klavity</title>
+<meta name="description" content="AI accessibility testing automates the machine-checkable parts of WCAG — contrast, labels, ARIA, focus order — and leaves the judgment calls to you.">
+<link rel="canonical" href="https://klavity.in/blog/ai-accessibility-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI Accessibility Testing: What It Catches and What It Misses"><meta property="og:description" content="AI accessibility testing automates the machine-checkable parts of WCAG — contrast, labels, ARIA, focus order — and leaves the judgment calls to you.">
+<meta property="og:url" content="https://klavity.in/blog/ai-accessibility-testing"><meta property="og:image" content="https://klavity.in/blog/ai-accessibility-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI Accessibility Testing: What It Catches and What It Misses"><meta name="twitter:description" content="AI accessibility testing automates the machine-checkable parts of WCAG — contrast, labels, ARIA, focus order — and leaves the judgment calls to you."><meta name="twitter:image" content="https://klavity.in/blog/ai-accessibility-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI Accessibility Testing: What It Catches and What It Misses","description":"AI accessibility testing automates the machine-checkable parts of WCAG — contrast, labels, ARIA, focus order — and leaves the judgment calls to you.","datePublished":"2026-10-27","dateModified":"2026-10-27","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-accessibility-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-accessibility-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI Accessibility Testing: What It Catches and What It Misses","item":"https://klavity.in/blog/ai-accessibility-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-accessibility-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can AI accessibility testing make a site WCAG compliant on its own?","acceptedAnswer":{"@type":"Answer","text":"No. Automated engines evaluate the criteria that reduce to measurable DOM, style or geometry properties — contrast ratios, label relationships, ARIA validity, target sizes, focus traversal. Criteria that depend on meaning, such as whether alt text is useful (1.1.1), whether focus order is logical (2.4.3) or whether an error message suggests a correction (3.3.3), require human judgment. Automation plus a short keyboard-only pass on your main conversion path is the realistic combination."}},{"@type":"Question","name":"Why did my automated accessibility scan come back clean on a broken page?","acceptedAnswer":{"@type":"Answer","text":"Almost always because the scan never reached the broken state. Rule engines evaluate the DOM as rendered at the moment they run, so logged-in dashboards, form error states, modals and mobile breakpoints are invisible unless something drives the app into them first. Script the login, open the modal, submit the form empty and set a 375px viewport, then scan — that change usually surfaces more than swapping engines would."}},{"@type":"Question","name":"Do AI coding tools produce less accessible code?","acceptedAnswer":{"@type":"Answer","text":"They produce code that works with a mouse, which is how it gets reviewed. Common patterns include div elements with click handlers instead of buttons, placeholders used in place of labels, icon-only buttons with no accessible name, and generated color palettes that land just under the 4.5:1 contrast threshold. None of these throw errors or look wrong in a screenshot, so they pass review and reach production."}},{"@type":"Question","name":"Is there a compliance deadline agencies should know about?","acceptedAnswer":{"@type":"Answer","text":"Two concrete reference points. The European Accessibility Act's requirements apply to covered products and services from 28 June 2025. In the US, the Department of Justice's 2024 Title II rule adopted WCAG 2.1 Level AA for state and local government web content, which affects agencies doing municipal, transit, library or public university work. Separately, procurement documents increasingly name a WCAG level as an acceptance criterion, which makes it a contractual deliverable regardless of jurisdiction."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-27</div>
+    <h1>AI Accessibility Testing: What It Catches and What It Misses</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Automated accessibility checks on a form: contrast, labels and focus order pass to machine-checkable results, while judgment criteria need review">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="676" cy="56" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="386" r="110" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="48" y="66" width="364" height="290" rx="14" fill="#f5f0e8" opacity="0.035"/>
+  <rect x="48" y="66" width="364" height="290" rx="14" fill="none" stroke="#6366f1" stroke-width="1.6" opacity="0.75"/>
+  <line x1="48" y1="102" x2="412" y2="102" stroke="#6366f1" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="70" cy="84" r="4" fill="#f87171" opacity="0.8"/>
+  <circle cx="86" cy="84" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="102" cy="84" r="4" fill="#f5f0e8" opacity="0.3"/>
+
+  <rect x="74" y="126" width="54" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="74" y="142" width="238" height="24" rx="6" fill="none" stroke="#6366f1" stroke-width="1.4" opacity="0.6"/>
+  <polyline points="340,152 348,160 362,144" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round"/>
+
+  <rect x="74" y="190" width="54" height="8" rx="4" fill="none" stroke="#f87171" stroke-width="1.4" stroke-dasharray="4 4"/>
+  <rect x="74" y="206" width="238" height="24" rx="6" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <line x1="341" y1="210" x2="357" y2="226" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+  <line x1="357" y1="210" x2="341" y2="226" stroke="#f87171" stroke-width="2.6" stroke-linecap="round"/>
+
+  <rect x="74" y="254" width="54" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="68" y="264" width="250" height="36" rx="9" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="6 5"/>
+  <rect x="74" y="270" width="238" height="24" rx="6" fill="#6366f1" opacity="0.14"/>
+  <polyline points="340,280 348,288 362,272" fill="none" stroke="#4ade80" stroke-width="2.6" stroke-linecap="round"/>
+
+  <rect x="74" y="318" width="18" height="18" rx="4" fill="none" stroke="#f87171" stroke-width="1.6"/>
+  <path d="M104 327 h26" stroke="#f5f0e8" stroke-width="2" opacity="0.25" stroke-linecap="round"/>
+
+  <path d="M424 211 h36" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="454,204 464,211 454,218" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round"/>
+
+  <rect x="480" y="96" width="272" height="106" rx="12" fill="#4ade80" opacity="0.07"/>
+  <rect x="480" y="96" width="272" height="106" rx="12" fill="none" stroke="#4ade80" stroke-width="1.6" opacity="0.8"/>
+  <circle cx="506" cy="124" r="10" fill="none" stroke="#4ade80" stroke-width="1.8"/>
+  <path d="M506 114 a10 10 0 0 1 0 20 z" fill="#4ade80"/>
+  <rect x="528" y="120" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="506" y="148" width="196" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="506" y="166" width="168" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="506" y="184" width="124" height="7" rx="3.5" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="480" y="226" width="272" height="106" rx="12" fill="#f87171" opacity="0.06"/>
+  <rect x="480" y="226" width="272" height="106" rx="12" fill="none" stroke="#f87171" stroke-width="1.6" stroke-dasharray="7 5" opacity="0.8"/>
+  <path d="M500 268 a8 8 0 1 1 8 8 v6" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="508" cy="286" r="1.8" fill="#f87171"/>
+  <rect x="528" y="250" width="140" height="8" rx="4" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="528" y="278" width="174" height="7" rx="3.5" fill="#f5f0e8" opacity="0.18"/>
+  <rect x="528" y="296" width="138" height="7" rx="3.5" fill="#f5f0e8" opacity="0.18"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI accessibility testing reliably catches the machine-checkable WCAG criteria — contrast below 4.5:1, form controls with no programmatic label, invalid ARIA, keyboard traps, targets under 24×24 CSS pixels. It cannot judge whether alt text is meaningful, whether focus order makes sense, or whether an error message is actionable. The value of the AI layer is reach: driving the app into logged-in, mid-flow and mobile states where those failures actually live.</div>
+    <div class="prose"><p><strong>AI accessibility testing</strong> uses automated rule engines and AI agents to check a rendered page against WCAG success criteria &mdash; contrast ratios, missing form labels, broken ARIA, unreachable focus targets &mdash; and, crucially, to drive the interface into the states where those failures actually live. It reliably catches the machine-checkable criteria, which cover a meaningful share of what breaks real keyboard and screen-reader use. What it cannot do is judge whether alt text is <em>meaningful</em>, whether focus order makes sense, or whether an error message tells someone what to fix &mdash; those still need a human pass or a persona-driven walkthrough.</p>
+
+<h2>What is AI accessibility testing, exactly?</h2>
+<p>It is two layers that get talked about as one thing. The first is a deterministic rule engine: open-source engines like axe-core, Lighthouse and pa11y walk the rendered DOM and evaluate it against a ruleset derived from WCAG. No model is involved &mdash; a contrast ratio either clears 4.5:1 or it does not. This layer is fast, repeatable and belongs in CI.</p>
+<p>The second layer is where the "AI" earns its name, and it is mostly about <em>reach</em> and <em>judgment</em>. A rule engine only sees what is rendered at the moment it runs: if your checkout error state, cookie banner, logged-in dashboard or 375px breakpoint never render during the scan, nothing inside them is checked and the report comes back clean. An agent that can log in, open the modal and submit the form empty gets the engine in front of the states that matter, and a model can flag what a rule engine must stay silent about &mdash; alt text that exists but says nothing, a heading hierarchy that is visually right and semantically wrong.</p>
+<p>Clean scan, broken page is the normal failure mode here. The engine is not wrong; it was pointed at the wrong three seconds of your app. It is the same reach problem described in <a href="/blog/ai-qa-complete-guide">the complete guide to AI QA</a>: coverage is a function of states visited, not pages crawled.</p>
+
+<h2>What can AI accessibility testing catch reliably?</h2>
+<p>Anything that reduces to a measurable property of the DOM, the computed styles or the geometry of the page. These are worth knowing by name, because they are the ones you should never ship:</p>
+<table>
+  <thead><tr><th>Automated check</th><th>WCAG criterion</th><th>Why it is machine-checkable</th></tr></thead>
+  <tbody>
+    <tr><td>Body text below 4.5:1 contrast (3:1 for large text)</td><td>1.4.3 Contrast (Minimum)</td><td>Computed from resolved foreground/background colors</td></tr>
+    <tr><td>Buttons, inputs, icons below 3:1 contrast</td><td>1.4.11 Non-text Contrast</td><td>Same computation, applied to UI components</td></tr>
+    <tr><td>Form control with no programmatic label</td><td>1.3.1, 4.1.2</td><td>A DOM relationship either exists or it does not</td></tr>
+    <tr><td>Image with no <code>alt</code> attribute at all</td><td>1.1.1 Non-text Content</td><td>Attribute presence check</td></tr>
+    <tr><td>Interactive target smaller than 24&times;24 CSS pixels</td><td>2.5.8 Target Size (Minimum), WCAG 2.2</td><td>Pure geometry</td></tr>
+    <tr><td>Focused element hidden behind a sticky header or footer</td><td>2.4.11 Focus Not Obscured, WCAG 2.2</td><td>Geometry captured during a scripted tab traversal</td></tr>
+    <tr><td>Keyboard trap, or a control that tab order never reaches</td><td>2.1.1, 2.1.2</td><td>Scripted traversal of the focus order</td></tr>
+    <tr><td>ARIA role missing its required attributes, or in an invalid parent</td><td>4.1.2 Name, Role, Value</td><td>Validation against the ARIA specification</td></tr>
+    <tr><td>Missing <code>lang</code>, duplicate IDs, skipped heading levels</td><td>3.1.1, 1.3.1, 4.1.1</td><td>Document structure inspection</td></tr>
+  </tbody>
+</table>
+<p>Note how many of those come from the <em>stack</em>, not from a careless developer: icon-button components that ship without an accessible name, design tokens that produce a muted grey landing just under 4.5:1, a styled <code>div</code> that looks like a button and reports as a generic container.</p>
+
+<h2>What does AI accessibility testing miss?</h2>
+<p>Everything that depends on meaning. These criteria are the reason "we run axe in CI" is not the same sentence as "the site is accessible":</p>
+<ul>
+  <li><strong>Whether alt text is useful.</strong> <code>alt="image"</code> passes the attribute check and fails the user. So does <code>alt="chart.png"</code> on a chart that carries the whole argument of the page.</li>
+  <li><strong>Whether focus order is sensible.</strong> A page can have a complete, trap-free tab order that jumps from the header to the footer to the middle of a form. Nothing is technically broken; the form is unusable without a mouse.</li>
+  <li><strong>Whether an error message is actionable.</strong> Criteria 3.3.1 and 3.3.3 ask that an error be identified and a correction suggested. "Invalid input" satisfies neither, and no engine can tell you so.</li>
+  <li><strong>Whether headings describe structure.</strong> A styled <code>div</code> that looks like a section heading leaves a screen reader user with a page that has no outline.</li>
+  <li><strong>Whether link text makes sense out of context.</strong> Twelve links reading "Learn more" pass every automated rule and defeat navigating a page by its link list.</li>
+  <li><strong>Whether the task can actually be completed.</strong> This is the question clients care about, and it is not a page-level property at all. It is answered by walking the whole flow &mdash; which is what persona-driven runs in <a href="/sims">Sims</a> are for.</li>
+</ul>
+
+<h2>Why do accessibility bugs reach the client before the agency sees them?</h2>
+<p>Three reasons, and they compound.</p>
+<p><strong>They are silent.</strong> An unlabeled input throws no console error, fails no unit test and looks normal in a screenshot. Your pipeline is green, your visual diff is clean, and the defect is in production. It is the blind spot covered in <a href="/blog/ai-visual-regression-testing">AI visual regression testing</a>: a pixel comparison cannot see a missing accessible name, because accessibility lives in the parts of the DOM that never get painted.</p>
+<p><strong>They live in unscanned states.</strong> Most one-off audits scan public, logged-out, desktop pages. Forms in their error state, modals, multi-step flows and the mobile breakpoint are where labels, focus management and target sizes actually fail.</p>
+<p><strong>AI-generated UI code introduces them structurally.</strong> Ask a coding assistant for a dropdown and you may well get <code>div</code> elements with click handlers, a placeholder standing in for a label, and an icon-only close button with no accessible name. It works perfectly with a mouse, which is how it gets reviewed and approved. If you ship from Cursor, Lovable, v0 or Bolt you generate these faster than you can read them &mdash; <a href="/blog/how-to-test-for-accessibility-bugs">how to test for accessibility bugs</a> has the manual checklist that catches the worst of it.</p>
+
+<h2>Is this becoming a contractual problem?</h2>
+<p>It already is, in two concrete ways worth knowing before your next proposal.</p>
+<p>In the EU, the European Accessibility Act's requirements apply to covered products and services from 28 June 2025, pulling many consumer-facing commerce and service sites into scope. In the US, the Department of Justice's 2024 Title II rule adopted WCAG 2.1 Level AA for state and local government web content, so any agency touching municipal, transit, library or public university work now has a named conformance target.</p>
+<p>The practical consequence is simpler than the legal detail: procurement language increasingly names a WCAG level as an acceptance criterion. When "WCAG 2.2 AA" appears in a statement of work, accessibility becomes a deliverable you can be held to &mdash; and an automated check on every build is far cheaper than a remediation sprint after a client's legal review.</p>
+
+<h2>How should a small team run accessibility checks without a QA department?</h2>
+<ol>
+  <li><strong>Put a rule engine in CI and baseline the existing violations.</strong> Fail the build on <em>new</em> violations only. A gate that dumps hundreds of pre-existing issues gets switched off in a week; one that says "this PR added two" gets fixed.</li>
+  <li><strong>Scan states, not URLs.</strong> Script the login, open the modal, submit the form empty, set the viewport to 375px wide &mdash; then run the engine. This single change usually finds more than switching engines ever will.</li>
+  <li><strong>Tab through the primary conversion path once per release.</strong> Hands off the mouse, complete the signup or checkout. Five minutes, and it catches the focus-order problems no engine will phrase as a failure.</li>
+  <li><strong>Check contrast in the palette, not in the build.</strong> It is decided once in your design tokens and inherited everywhere, so fixing it there fixes every page at once.</li>
+  <li><strong>Capture evidence at the moment of discovery</strong> &mdash; the DOM node, page state, computed ratio and viewport. Accessibility bugs are state-dependent, so they are exactly the kind that come back marked "cannot reproduce", which is what right-click capture in <a href="/snap">Snap</a> prevents.</li>
+</ol>
+<p>Run the automated layer on a schedule rather than only before launch, and have <a href="/autosim">AutoSim</a> re-walk the critical flows so a refactor that quietly drops a label is caught on the commit that caused it, not in the client's acceptance review.</p>
+
+<h2>What is the honest summary?</h2>
+<p>AI accessibility testing is a reach-and-triage tool, not a conformance certificate. It will find the contrast failures, unlabeled inputs, invalid ARIA and tab traps across far more of your app than a human audit ever will, on every commit &mdash; but it will not tell you whether someone navigating with a screen reader can finish the job. Automate the measurable layer; spend your scarce human attention on the judgment criteria.</p>
+
+<h2>Scan your next client site free</h2>
+<p>Klavity runs accessibility, visual and functional checks against the states your app is actually in &mdash; logged in, mid-flow, at mobile width &mdash; and files each finding with the evidence a developer needs to fix it without asking you a question. <a href="/onboarding"><strong>Scan your next client site free</strong></a> and see what your current build is shipping.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Baseline existing violations and fail CI only on new ones</li><li>Scan app states — logged in, mid-form, 375px — not just URLs</li><li>Tab through your main conversion path once per release</li><li>Fix contrast in design tokens, not page by page</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Can AI accessibility testing make a site WCAG compliant on its own?</summary><p>No. Automated engines evaluate the criteria that reduce to measurable DOM, style or geometry properties — contrast ratios, label relationships, ARIA validity, target sizes, focus traversal. Criteria that depend on meaning, such as whether alt text is useful (1.1.1), whether focus order is logical (2.4.3) or whether an error message suggests a correction (3.3.3), require human judgment. Automation plus a short keyboard-only pass on your main conversion path is the realistic combination.</p></details><details><summary>Why did my automated accessibility scan come back clean on a broken page?</summary><p>Almost always because the scan never reached the broken state. Rule engines evaluate the DOM as rendered at the moment they run, so logged-in dashboards, form error states, modals and mobile breakpoints are invisible unless something drives the app into them first. Script the login, open the modal, submit the form empty and set a 375px viewport, then scan — that change usually surfaces more than swapping engines would.</p></details><details><summary>Do AI coding tools produce less accessible code?</summary><p>They produce code that works with a mouse, which is how it gets reviewed. Common patterns include div elements with click handlers instead of buttons, placeholders used in place of labels, icon-only buttons with no accessible name, and generated color palettes that land just under the 4.5:1 contrast threshold. None of these throw errors or look wrong in a screenshot, so they pass review and reach production.</p></details><details><summary>Is there a compliance deadline agencies should know about?</summary><p>Two concrete reference points. The European Accessibility Act's requirements apply to covered products and services from 28 June 2025. In the US, the Department of Justice's 2024 Title II rule adopted WCAG 2.1 Level AA for state and local government web content, which affects agencies doing municipal, transit, library or public university work. Separately, procurement documents increasingly name a WCAG level as an acceptance criterion, which makes it a contractual deliverable regardless of jurisdiction.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
