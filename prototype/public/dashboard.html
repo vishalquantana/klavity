@@ -20859,6 +20859,41 @@
         }
       }
 
+      // Flip the priority menu above the button when there isn't room below it — measured against the
+      // viewport and any scrolling/clipping ancestor (board column, list body), whichever is tighter.
+      function positionKddMenu() {
+        priKdd.classList.remove("kdd-open-up")
+        kddMenu.classList.remove("kdd-menu-up")
+        kddMenu.style.maxHeight = ""
+        const btnRect = kddBtn.getBoundingClientRect()
+        let top = 0, bottom = window.innerHeight || document.documentElement.clientHeight
+        for (let p = priKdd.parentElement; p && p !== document.body; p = p.parentElement) {
+          const oy = getComputedStyle(p).overflowY
+          if (oy === "auto" || oy === "scroll" || oy === "hidden" || oy === "clip") {
+            const r = p.getBoundingClientRect()
+            top = Math.max(top, r.top)
+            bottom = Math.min(bottom, r.bottom)
+          }
+        }
+        const gap = 8
+        const menuH = kddMenu.scrollHeight
+        const spaceBelow = bottom - btnRect.bottom - gap
+        const spaceAbove = btnRect.top - top - gap
+        if (spaceBelow < menuH && spaceAbove > spaceBelow) {
+          priKdd.classList.add("kdd-open-up")
+          kddMenu.classList.add("kdd-menu-up")
+          if (spaceAbove < menuH) kddMenu.style.maxHeight = Math.max(80, spaceAbove) + "px"
+        } else if (spaceBelow < menuH) {
+          kddMenu.style.maxHeight = Math.max(80, spaceBelow) + "px"
+        }
+      }
+      function resetKddMenuPosition(m) {
+        const pk = m.closest(".tg-pri-kdd")
+        if (pk) pk.classList.remove("kdd-open-up")
+        m.classList.remove("kdd-menu-up")
+        m.style.maxHeight = ""
+      }
+
       if (kddBtn && kddMenu) {
         kddBtn.addEventListener("click", (ev) => {
           ev.stopPropagation()
@@ -20870,16 +20905,19 @@
               if (b) b.setAttribute("aria-expanded", "false")
               const card = m.closest(".kb-card, .tg-row")
               if (card) card.classList.remove("tg-dropdown-open")
+              resetKddMenuPosition(m)
             }
           })
           if (isOpen) {
             kddMenu.classList.add("hide")
             kddBtn.setAttribute("aria-expanded", "false")
             el.classList.remove("tg-dropdown-open")
+            resetKddMenuPosition(kddMenu)
           } else {
             kddMenu.classList.remove("hide")
             kddBtn.setAttribute("aria-expanded", "true")
             el.classList.add("tg-dropdown-open")
+            positionKddMenu()
           }
         })
         kddMenu.addEventListener("click", (ev) => {
@@ -20890,6 +20928,7 @@
           kddMenu.classList.add("hide")
           kddBtn.setAttribute("aria-expanded", "false")
           el.classList.remove("tg-dropdown-open")
+          resetKddMenuPosition(kddMenu)
           if (pri && pri.value !== val) {
             pri.value = val
             pri.dispatchEvent(new Event("change", { bubbles: true }))
