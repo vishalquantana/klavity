@@ -943,5 +943,12 @@
     "excerpt": "AI accessibility testing automates the machine-checkable parts of WCAG — contrast, labels, ARIA, focus order — and leaves the judgment calls to you.",
     "category": "Guides",
     "date": "2026-10-27"
+  },
+  {
+    "slug": "chatgpt-app-testing",
+    "title": "ChatGPT App Testing: A QA Guide for Pasted-In Code",
+    "excerpt": "ChatGPT app testing means verifying code written with no view of your repo. Test the seams first: execution, imports, server-side auth, error states.",
+    "category": "Guides",
+    "date": "2026-10-28"
   }
 ]

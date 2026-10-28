@@ -1,0 +1,209 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChatGPT App Testing: A QA Guide for Pasted-In Code · Klavity</title>
+<meta name="description" content="ChatGPT app testing means verifying code written with no view of your repo. Test the seams first: execution, imports, server-side auth, error states.">
+<link rel="canonical" href="https://klavity.in/blog/chatgpt-app-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="ChatGPT App Testing: A QA Guide for Pasted-In Code"><meta property="og:description" content="ChatGPT app testing means verifying code written with no view of your repo. Test the seams first: execution, imports, server-side auth, error states.">
+<meta property="og:url" content="https://klavity.in/blog/chatgpt-app-testing"><meta property="og:image" content="https://klavity.in/blog/chatgpt-app-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="ChatGPT App Testing: A QA Guide for Pasted-In Code"><meta name="twitter:description" content="ChatGPT app testing means verifying code written with no view of your repo. Test the seams first: execution, imports, server-side auth, error states."><meta name="twitter:image" content="https://klavity.in/blog/chatgpt-app-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"ChatGPT App Testing: A QA Guide for Pasted-In Code","description":"ChatGPT app testing means verifying code written with no view of your repo. Test the seams first: execution, imports, server-side auth, error states.","datePublished":"2026-10-28","dateModified":"2026-10-28","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/chatgpt-app-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/chatgpt-app-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"ChatGPT App Testing: A QA Guide for Pasted-In Code","item":"https://klavity.in/blog/chatgpt-app-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/chatgpt-app-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What should I test first in an app built with ChatGPT?","acceptedAnswer":{"@type":"Answer","text":"Authorization and data access. Generated CRUD code frequently enforces permissions in the UI only, so call the endpoint directly with a non-owner session before you test anything cosmetic. Then test anything that writes or deletes, then payments and third-party calls, then forms, then error and empty states."}},{"@type":"Question","name":"Should I write unit tests for ChatGPT-generated code?","acceptedAnswer":{"@type":"Answer","text":"Not as the first move. Generated code churns — you will likely regenerate the same function several times — so unit tests on its internals go stale fast. Cover a few end-to-end paths over the flows that matter, and add a regression test each time you find a real bug."}},{"@type":"Question","name":"Why does ChatGPT code break when it looked correct in the chat?","acceptedAnswer":{"@type":"Answer","text":"Because the model could not run it and could not see your project. Imports may target a different library version than the one installed, config keys and schema names are plausible guesses, and failure paths are usually absent because nothing in the prompt described failure."}},{"@type":"Question","name":"Do I need to re-test after re-prompting a fix?","acceptedAnswer":{"@type":"Answer","text":"Yes. Generation is not idempotent — the same prompt returns different code. A re-prompted fix is new code rather than a patch to the version you already verified, so the pass has to run again."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-28</div>
+    <h1>ChatGPT App Testing: A QA Guide for Pasted-In Code</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Code generated in a chat window pasted into a project, with failures concentrated at the integration seams">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+
+  <rect x="48" y="72" width="250" height="248" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#6366f1" stroke-opacity="0.35"/>
+  <line x1="48" y1="106" x2="298" y2="106" stroke="#6366f1" stroke-opacity="0.25"/>
+  <circle cx="68" cy="89" r="3.5" fill="#f5f0e8" fill-opacity="0.28"/>
+  <circle cx="82" cy="89" r="3.5" fill="#f5f0e8" fill-opacity="0.28"/>
+  <circle cx="96" cy="89" r="3.5" fill="#f5f0e8" fill-opacity="0.28"/>
+
+  <rect x="68" y="128" width="150" height="20" rx="10" fill="#6366f1" fill-opacity="0.22" stroke="#6366f1" stroke-opacity="0.45"/>
+
+  <rect x="68" y="170" width="176" height="8" rx="4" fill="#6366f1" fill-opacity="0.60"/>
+  <rect x="68" y="190" width="132" height="8" rx="4" fill="#6366f1" fill-opacity="0.45"/>
+  <rect x="84" y="210" width="146" height="8" rx="4" fill="#6366f1" fill-opacity="0.45"/>
+  <rect x="84" y="230" width="104" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="68" y="250" width="158" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.14"/>
+  <rect x="68" y="282" width="118" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.10"/>
+
+  <line x1="312" y1="196" x2="378" y2="196" stroke="#6366f1" stroke-width="2"/>
+  <polyline points="368,188 378,196 368,204" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="404" y="56" width="348" height="288" rx="12" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.16"/>
+  <line x1="404" y1="90" x2="752" y2="90" stroke="#f5f0e8" stroke-opacity="0.14"/>
+  <circle cx="424" cy="73" r="3.5" fill="#f5f0e8" fill-opacity="0.28"/>
+  <circle cx="438" cy="73" r="3.5" fill="#f5f0e8" fill-opacity="0.28"/>
+  <circle cx="452" cy="73" r="3.5" fill="#f5f0e8" fill-opacity="0.28"/>
+
+  <rect x="428" y="112" width="196" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="428" y="150" width="232" height="8" rx="4" fill="#f87171" fill-opacity="0.45"/>
+  <rect x="428" y="188" width="170" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="428" y="226" width="214" height="8" rx="4" fill="#f87171" fill-opacity="0.45"/>
+  <rect x="428" y="264" width="150" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+  <rect x="428" y="302" width="188" height="8" rx="4" fill="#f5f0e8" fill-opacity="0.22"/>
+
+  <polyline points="706,116 712,122 722,108" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="714" cy="154" r="7" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="710" y1="150" x2="718" y2="158" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="718" y1="150" x2="710" y2="158" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="706,192 712,198 722,184" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="714" cy="230" r="7" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="710" y1="226" x2="718" y2="234" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <line x1="718" y1="226" x2="710" y2="234" stroke="#f87171" stroke-width="2" stroke-linecap="round"/>
+  <polyline points="706,268 712,274 722,260" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="706,306 712,312 722,298" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="48" y="358" width="704" height="6" rx="3" fill="#f5f0e8" fill-opacity="0.10"/>
+  <rect x="48" y="358" width="440" height="6" rx="3" fill="#4ade80" fill-opacity="0.75"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>ChatGPT app testing is different from reviewing a teammate's code: the model never saw your schema, middleware or lockfile, so defects concentrate at the seams rather than inside the snippet. Test execution, imports, server-side authorization and error states first — and re-run the pass after every regeneration, because re-prompting produces new code, not a patch.</div>
+    <div class="prose"><p><strong>ChatGPT app testing</strong> means verifying code that was written without any view of your repository — so you test the seams first, not the logic inside the snippet. Execute every path the pasted code touches, check its imports and config keys against what is actually installed, then verify server-side authorization and error states. Those passes catch most of what ChatGPT gets wrong once its output lands in a real project.</p>
+
+<p>This is a different job from reviewing code a teammate wrote. A teammate has seen your schema. ChatGPT has seen your prompt.</p>
+
+<h2>Why is ChatGPT app testing different from testing code you wrote?</h2>
+
+<p>Three structural facts about how the code arrives decide where you should spend testing effort.</p>
+
+<p><strong>It has no repository context unless you pasted it.</strong> ChatGPT does not see your file tree, your database schema, your auth middleware, your routing conventions or your lockfile. It infers them from the shape of your prompt. That means the generated function body is often fine in isolation, while the <em>join</em> between that function and your project — the import path, the environment variable name, the table or column it selects, the middleware it forgets to wrap — is where defects concentrate.</p>
+
+<p><strong>It cannot run what it produces.</strong> There is no compile step, no failing test and no stack trace feeding back into the answer. Code you write gets corrected by the runtime within seconds; code from a chat window is syntactically confident and behaviorally unverified until you execute it yourself. Your first test is therefore not unit-level correctness. It is: does this path execute at all, end to end, with real data?</p>
+
+<p><strong>Regeneration is not idempotent.</strong> Ask the same question twice and you get different code. So when you fix a bug by re-prompting, you have not patched the thing you tested — you have replaced it with something new that needs the same pass again. Teams that treat a regenerated block as "the same code, fixed" are the ones who ship the same bug twice.</p>
+
+<h2>Where does ChatGPT-generated code usually break?</h2>
+
+<p>The failure modes repeat, which is good news: a short checklist covers most of them.</p>
+
+<table>
+  <tr><th>Failure mode</th><th>Why ChatGPT produces it</th><th>Fastest check</th></tr>
+  <tr><td>Imports or packages that don't exist, or belong to another major version</td><td>Trained across mixed library vintages; it cannot read your lockfile</td><td>Resolve every new import against the installed version before testing behavior</td></tr>
+  <tr><td>Authorization checked in the UI only</td><td>The prompt described a screen, so it secured a screen</td><td>Call the endpoint directly with a non-owner session</td></tr>
+  <tr><td>Happy path only — no empty, loading or failure state</td><td>Nothing in the prompt described failure</td><td>Run the flow with no data, a dropped network and an expired session</td></tr>
+  <tr><td>Wrong field or table names that still compile</td><td>Plausible naming invented in place of your real schema</td><td>Assert against a real record, not a mock</td></tr>
+  <tr><td>Duplicated logic that drifts from the original</td><td>Each answer is generated fresh, with no memory of the earlier copy</td><td>Search for the same rule implemented twice, then delete one</td></tr>
+  <tr><td>Config and secrets referenced by guessed names</td><td>Env var names were never visible to the model</td><td>Boot the app with a production-shaped env file</td></tr>
+</table>
+
+<p>Two of these deserve a flag. Invented references are common enough to have a name — see <a href="/blog/ai-code-hallucinations">AI code hallucinations</a> for how to catch phantom APIs, packages and config keys before launch. And missing server-side authorization is the one defect on this list where the blast radius is other people's data, not a broken screen, which is why it belongs at the top of every pass.</p>
+
+<h2>What should you test first in a ChatGPT-built app?</h2>
+
+<p>Order by what a failure would cost you, not by what is easy to test. A useful sequence:</p>
+
+<ol>
+  <li><strong>Authentication and data access.</strong> Can a logged-out visitor reach anything? Can one user read or modify another user's records by changing an ID?</li>
+  <li><strong>Anything that writes or deletes.</strong> Create, update, delete, bulk actions, imports. Destructive paths are rarely what the prompt focused on.</li>
+  <li><strong>Money and third parties.</strong> Checkout, webhooks, email sends, external APIs. Verify the failure branch, not just the success one.</li>
+  <li><strong>Forms and validation.</strong> Submit empty, submit twice, submit the wrong type, submit a very long string.</li>
+  <li><strong>Error and empty states.</strong> New account with zero data, failed request, expired session, slow connection.</li>
+  <li><strong>Mobile and a second browser.</strong> Generated layouts are usually tested, if at all, in one window at one width.</li>
+  <li><strong>Cosmetic polish.</strong> Last. It is also the only category your client will notice unprompted, which is why it cannot be first.</li>
+</ol>
+
+<p>If you want this as a standing list rather than a one-off, the <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> covers the same ground in a repeatable form.</p>
+
+<h2>How do you run ChatGPT app testing with no test suite at all?</h2>
+
+<p>Most ChatGPT-built apps have no tests, and the instinct — write unit tests for the generated code — is usually wrong at this stage. Generated code churns: you will re-prompt that function three more times this week, and the unit tests go stale with it.</p>
+
+<p>Test at the seams instead:</p>
+
+<ul>
+  <li><strong>Use your prompt as the spec.</strong> What you asked for is the acceptance criteria. Walk the feature as a user and check it against the prompt, line by line. Anything the prompt did not mention is untested by definition.</li>
+  <li><strong>Cover a handful of end-to-end paths</strong> over the flows that would embarrass you in front of a client — sign up, log in, the core action, pay. End-to-end tests survive regeneration because they assert on behavior, not on the internals that keep changing.</li>
+  <li><strong>Turn every bug you find into a test.</strong> A bug that shipped once will ship again the next time you regenerate nearby code. This is the only test suite that compounds while the code underneath you is still moving.</li>
+  <li><strong>Re-run the pass after each regeneration.</strong> Cheap if the paths are automated; otherwise it is the step everyone skips, and the reason "I already fixed that" turns into a client email.</li>
+</ul>
+
+<p>For the broader method behind this — what to verify when you did not write the code — see <a href="/blog/testing-ai-generated-code">testing AI-generated code</a> and the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>How does Klavity fit into a ChatGPT app testing loop?</h2>
+
+<p>Klavity exists for exactly this gap: code shipping faster than anyone can verify it. Three pieces map onto the loop above.</p>
+
+<ul>
+  <li><strong><a href="/snap">Snap</a></strong> turns a right-click into a complete bug report — screenshot, console errors, network requests, browser and viewport, the URL and the steps that led there. It is the difference between "the booking page is broken" from a client and a ticket you can act on without a reply.</li>
+  <li><strong><a href="/sims">Sims</a></strong> runs AI personas through your app the way different real users would, which surfaces the empty states, odd inputs and abandoned flows that a prompt-shaped happy path never describes.</li>
+  <li><strong><a href="/autosim">AutoSim</a></strong> keeps end-to-end tests alive while the code underneath them is regenerated — self-healing selectors matter more here than anywhere, because in a ChatGPT-built app the markup is rewritten by a model that has no memory of your test file.</li>
+</ul>
+
+<h2>Try ChatGPT app testing on your next build</h2>
+
+<p>You do not need a QA team to stop shipping the six failure modes in the table above. You need a pass that runs every time the code changes — and something that catches the bug the first time a human sees it, rather than the third time a client does.</p>
+
+<p><a href="/onboarding">Try Klavity free</a> and scan your next ChatGPT-built app before your client opens it.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Test the seams first: imports, config keys, schema names, auth wrappers.</li><li>Call endpoints directly with a non-owner session before testing any UI.</li><li>Cover end-to-end paths, not unit tests, while generated code still churns.</li><li>Re-run the whole pass after every regeneration — re-prompting is new code.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What should I test first in an app built with ChatGPT?</summary><p>Authorization and data access. Generated CRUD code frequently enforces permissions in the UI only, so call the endpoint directly with a non-owner session before you test anything cosmetic. Then test anything that writes or deletes, then payments and third-party calls, then forms, then error and empty states.</p></details><details><summary>Should I write unit tests for ChatGPT-generated code?</summary><p>Not as the first move. Generated code churns — you will likely regenerate the same function several times — so unit tests on its internals go stale fast. Cover a few end-to-end paths over the flows that matter, and add a regression test each time you find a real bug.</p></details><details><summary>Why does ChatGPT code break when it looked correct in the chat?</summary><p>Because the model could not run it and could not see your project. Imports may target a different library version than the one installed, config keys and schema names are plausible guesses, and failure paths are usually absent because nothing in the prompt described failure.</p></details><details><summary>Do I need to re-test after re-prompting a fix?</summary><p>Yes. Generation is not idempotent — the same prompt returns different code. A re-prompted fix is new code rather than a patch to the version you already verified, so the pass has to run again.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
