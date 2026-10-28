@@ -4,15 +4,18 @@ export type FixNotificationInput = {
   contactEmail?: string | null
   previousStatus?: string | null
   nextStatus?: string | null
+  /** KD-221: who made the change — the reporter isn't emailed about their own change. */
+  actorEmail?: string | null
   title: string
   projectName: string
   ticketUrl: string
 }
 
-export function shouldNotifyReporterOnFix(input: Pick<FixNotificationInput, "contactEmail" | "previousStatus" | "nextStatus">): boolean {
+export function shouldNotifyReporterOnFix(input: Pick<FixNotificationInput, "contactEmail" | "previousStatus" | "nextStatus" | "actorEmail">): boolean {
   const email = String(input.contactEmail || "").trim()
   if (!email) return false
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false
+  if (input.actorEmail && String(input.actorEmail).trim().toLowerCase() === email.toLowerCase()) return false
   return input.nextStatus === "done" && input.previousStatus !== "done"
 }
 

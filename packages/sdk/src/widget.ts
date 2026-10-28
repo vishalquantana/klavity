@@ -4,7 +4,15 @@ import { safeToPng, safeToPngWithScale, safeToPngWithQuality, safeToPngFullPage,
 import { buildModal, installRegionDrag, isEditableTarget, isLinkTarget, createSharePickerHint, shareCaptureLikelyGranted, type ModalController, type PickedTarget, type CaptureQuality, type ShotCapture } from "@klavity/core/modal"
 import { safeRemove } from "@klavity/core"
 import { cropDataUrl, cumulativeScrollForRect, type Rect } from "@klavity/core/crop"
-import { planScrollStitch, clampCaptureHeight } from "./sharp-capture"
+import {
+  planScrollStitch,
+  planSeamlessScrollStitch,
+  clampCaptureHeight,
+  findTopFixedStickyHeaders,
+  hideFixedStickyElements,
+  restoreFixedStickyElements,
+  type FixedStickyRestoreItem,
+} from "./sharp-capture"
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
@@ -12,7 +20,7 @@ import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavi
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
-import { computeSelector, describeElement } from "./element-selector"
+import { pickElementOnPage as pickElementOnPageShared } from "@klavity/core/element-picker"
 import { getTurnstileToken } from "./load-turnstile"
 import { icon } from "@klavity/core/icons"
 // KLA-726: keep in sync with the extension card menu — shared source of truth in @klavity/core/context-menu.
@@ -87,102 +95,14 @@ const TOKEN_KEY = "klavity_widget_token"
 const WIDGET_FETCH_TIMEOUT_MS = 15_000
 const SIM_REVIEW_FETCH_TIMEOUT_MS = 45_000
 
-// KLAVITYKLA-228/371 (JTBD 1.11): on-page element picker. Mounts a lightweight highlight overlay that
-// tracks the element under the cursor; on click it computes a robust unique CSS selector + captures a
-// human-readable text snippet (aria-label / placeholder / visible text) to pin onto the report as
-// annotations.selector + annotations.selectorText. Esc cancels. The highlight/label/banner are
-// pointer-events:none so elementFromPoint always reads the page beneath.
+// KLAVITYKLA-228/371 (JTBD 1.11): on-page element picker — the shared @klavity/core picker (KD-988: the
+// Chrome extension uses the same one). The widget's host is never pickable, and the picked element's
+// screenshot is the same pixel-accurate region crop as the drag/Region paths (full-page source + cumulative
+// scroll), so it matches the element's box even on app-shell / inner-scroller layouts.
 function pickElementOnPage(): Promise<PickedTarget | null> {
-  return new Promise((resolve) => {
-    if (typeof document === "undefined" || !document.body) return resolve(null)
-    const box = document.createElement("div")
-    // KLA-763 (odd color): the element-picker highlight box + label used #6d5efc / rgba(109,94,252,…),
-    // an off-brand purple that read as a DIFFERENT accent from the rest of the widget/composer (which is
-    // the Klavity brand accent #6366f1 = rgb 99,102,241 everywhere else — pill, FAB, region-drag, chips).
-    // Snap them to the brand accent so the picker matches the composer.
-    box.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #6366f1;background:rgba(99,102,241,.14);border-radius:4px;box-shadow:0 0 0 2px rgba(255,255,255,.55);display:none;"
-    const label = document.createElement("div")
-    label.style.cssText = "position:fixed;z-index:2147483646;pointer-events:none;font:600 11px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#6366f1;padding:2px 7px;border-radius:5px;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:none;"
-    const banner = document.createElement("div")
-    banner.setAttribute("role", "status")
-    banner.setAttribute("aria-live", "polite")
-    banner.textContent = "Click the element that's broken · press Esc to cancel"
-    banner.style.cssText = "position:fixed;z-index:2147483647;top:16px;left:50%;transform:translateX(-50%);pointer-events:none;font:600 13px/1.4 system-ui,-apple-system,sans-serif;color:#fff;background:#111827;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.3);"
-    document.body.append(box, label, banner)
-    const rootEl = document.documentElement
-    const prevCursor = rootEl.style.cursor
-    rootEl.style.cursor = "crosshair"
-
-    const isOurs = (el: Element | null): boolean => {
-      for (let n: Element | null = el; n; n = n.parentElement) {
-        if (n.id === HOST_ID || n === box || n === label || n === banner) return true
-      }
-      return false
-    }
-    const highlight = (el: Element) => {
-      const r = el.getBoundingClientRect()
-      box.style.display = "block"
-      box.style.left = r.left + "px"; box.style.top = r.top + "px"
-      box.style.width = r.width + "px"; box.style.height = r.height + "px"
-      const tag = el.tagName.toLowerCase()
-      const id = el.id ? "#" + el.id : ""
-      const cls = el.classList && el.classList.length ? "." + el.classList[0] : ""
-      label.textContent = tag + id + cls
-      label.style.display = "block"
-      label.style.left = r.left + "px"
-      label.style.top = Math.max(2, r.top - 22) + "px"
-    }
-    const onMove = (e: MouseEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (!el || isOurs(el)) return
-      highlight(el)
-    }
-    // Tear down the picker overlays + listeners. Split from resolve() so onClick can drop the highlight
-    // overlays BEFORE it captures the element crop (otherwise the purple box/label paint into the shot).
-    const teardown = () => {
-      document.removeEventListener("mousemove", onMove, true)
-      document.removeEventListener("click", onClick, true)
-      document.removeEventListener("keydown", onKey, true)
-      rootEl.style.cursor = prevCursor
-      safeRemove(box); safeRemove(label); safeRemove(banner)
-    }
-    const cleanup = (result: PickedTarget | null) => { teardown(); resolve(result) }
-    const onClick = (e: MouseEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY)
-      if (!el || isOurs(el)) return
-      e.preventDefault(); e.stopPropagation()
-      const selector = computeSelector(el)
-      if (!selector) { cleanup(null); return }
-      // KLAVITYKLA-494: also grab a cropped screenshot of the picked element's bounding box so the report
-      // carries an image of exactly what's broken (not just the selector/kref/context). Capture the rect +
-      // text NOW, drop the picker overlays, then crop out of a full-page capture — mirrors onRegionCapture.
-      const r = el.getBoundingClientRect()
-      const text = describeElement(el)
-      teardown()
-      void (async () => {
-        let shot: string | undefined
-        let shotQuality: CaptureQuality | undefined
-        try {
-          if (r.width >= 1 && r.height >= 1) {
-            // Same pixel-accurate region crop as the drag/Region paths so the picked-element shot matches the
-            // element's box even on app-shell / inner-scroller layouts (full-page source + cumulative scroll).
-            const { dataUrl, quality } = await captureRegionCrop({ x: r.left, y: r.top, w: r.width, h: r.height })
-            shot = dataUrl
-            shotQuality = quality
-          }
-        } catch { /* the crop is best-effort — the selector still pins the element even if capture fails */ }
-        // KLA-621: carry the element's rect so Retake can redo THIS element (re-resolved live from the selector,
-        // rect as fallback) cropped pixel-perfect from the shared Snap frame — not a full-screen grab.
-        resolve({ selector, text, shot, shotQuality, rect: { x: r.left, y: r.top, w: r.width, h: r.height } })
-      })()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cleanup(null) }
-    }
-    // Capture phase so we win the click/keydown before the host page's own handlers.
-    document.addEventListener("mousemove", onMove, true)
-    document.addEventListener("click", onClick, true)
-    document.addEventListener("keydown", onKey, true)
+  return pickElementOnPageShared({
+    hostIds: [HOST_ID],
+    captureRect: async (rect) => { const { dataUrl, quality } = await captureRegionCrop(rect); return { dataUrl, quality } },
   })
 }
 
@@ -193,8 +113,13 @@ function pickElementOnPage(): Promise<PickedTarget | null> {
 // promise unsettled forever — the evidence-resume loop (blobToDataUrl on a stored shot) then hung. Mirror
 // the KLA-767 "always terminate" rule: race the whole read against a hard timeout, wire onabort, and ignore
 // any late completion after settle (no double-resolve, no leaked timer). ALWAYS resolves or rejects.
-const BLOB_READ_TIMEOUT_MS = 30000
-function blobToDataUrl(blob: Blob): Promise<string> {
+const BLOB_READ_TIMEOUT_MS = 4000
+function blobToDataUrl(blob: Blob, fallbackDataUrl?: string): Promise<string> {
+  if (fallbackDataUrl) return Promise.resolve(fallbackDataUrl)
+  if (!blob || typeof FileReader === "undefined") {
+    if (fallbackDataUrl) return Promise.resolve(fallbackDataUrl)
+    return Promise.reject(new Error("invalid blob"))
+  }
   return new Promise((resolve, reject) => {
     const fr = new FileReader()
     let settled = false
@@ -202,7 +127,8 @@ function blobToDataUrl(blob: Blob): Promise<string> {
       if (settled) return
       settled = true
       try { fr.abort() } catch { /* onabort is a no-op once settled */ }
-      reject(new Error("blob read timed out"))
+      if (fallbackDataUrl) resolve(fallbackDataUrl)
+      else reject(new Error("blob read timed out"))
     }, BLOB_READ_TIMEOUT_MS)
     const settle = (fn: () => void) => {
       if (settled) return
@@ -211,10 +137,21 @@ function blobToDataUrl(blob: Blob): Promise<string> {
       fn()
     }
     fr.onload = () => settle(() => resolve(String(fr.result || "")))
-    fr.onerror = () => settle(() => reject(fr.error || new Error("blob read failed")))
-    fr.onabort = () => settle(() => reject(fr.error || new Error("blob read aborted")))
+    fr.onerror = () => settle(() => {
+      if (fallbackDataUrl) resolve(fallbackDataUrl)
+      else reject(fr.error || new Error("blob read failed"))
+    })
+    fr.onabort = () => settle(() => {
+      if (fallbackDataUrl) resolve(fallbackDataUrl)
+      else reject(fr.error || new Error("blob read aborted"))
+    })
     try { fr.readAsDataURL(blob) }
-    catch (e) { settle(() => reject(e instanceof Error ? e : new Error("blob read failed"))) }
+    catch (e) {
+      settle(() => {
+        if (fallbackDataUrl) resolve(fallbackDataUrl)
+        else reject(e instanceof Error ? e : new Error("blob read failed"))
+      })
+    }
   })
 }
 // Manual data-URL -> Blob (no fetch(), so a strict connect-src CSP can't block it).
@@ -237,11 +174,17 @@ function measureImage(dataUrl: string): Promise<{ w: number; h: number }> {
   return new Promise((resolve) => {
     try {
       const img = new Image()
-      const done = (w: number, h: number) => resolve({ w, h })
+      let settled = false
+      const done = (w: number, h: number) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve({ w, h })
+      }
+      const timer = setTimeout(() => done(img.naturalWidth || 0, img.naturalHeight || 0), 200)
       img.onload = () => done(img.naturalWidth || 0, img.naturalHeight || 0)
       img.onerror = () => done(0, 0)
       img.src = dataUrl
-      setTimeout(() => done(img.naturalWidth || 0, img.naturalHeight || 0), 3000)
     } catch { resolve({ w: 0, h: 0 }) }
   })
 }
@@ -390,6 +333,50 @@ function prefillReportDescription(ctrl: ModalController, description: string): v
   try { desc.focus({ preventScroll: true }) } catch { desc.focus() }
 }
 
+function prefillReportTitle(ctrl: ModalController, title: string): void {
+  const inp = ctrl.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
+  if (!inp) return
+  inp.value = title
+  inp.dispatchEvent(new Event("input", { bubbles: true }))
+}
+
+interface DraftState {
+  title?: string
+  desc?: string
+  isOpen?: boolean
+  updatedAt?: number
+}
+function draftStorageKey(projectId: string, origin: string): string {
+  return `klavity_draft_${projectId}_${origin}`
+}
+function saveDraft(projectId: string, origin: string, patch: Partial<DraftState>): void {
+  try {
+    const key = draftStorageKey(projectId, origin)
+    const existing: DraftState = loadDraft(projectId, origin) || {}
+    const updated: DraftState = {
+      ...existing,
+      ...patch,
+      updatedAt: Date.now(),
+    }
+    localStorage.setItem(key, JSON.stringify(updated))
+  } catch { /* best-effort / private mode */ }
+}
+function loadDraft(projectId: string, origin: string): DraftState | null {
+  try {
+    const key = draftStorageKey(projectId, origin)
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object") return parsed
+    return null
+  } catch { return null }
+}
+function clearDraft(projectId: string, origin: string): void {
+  try {
+    localStorage.removeItem(draftStorageKey(projectId, origin))
+  } catch { /* best-effort */ }
+}
+
 // Deferred openReport ref — populated inside mount() so window.Klavity.open() works post-mount.
 // Pre-mount calls are silently ignored (widget not initialised yet).
 let _openReport: (type?: "bug" | "feature") => void = () => {}
@@ -426,6 +413,23 @@ function sharpCaptureSupported(): boolean {
 const _raf = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
 const _sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 const STREAM_SETTLE_MS = 180 // let the live stream catch up to a new scroll position before grabbing a frame
+const _waitForVideoFrame = (video: HTMLVideoElement, ms = STREAM_SETTLE_MS): Promise<void> =>
+  new Promise<void>((resolve) => {
+    let resolved = false
+    const done = () => {
+      if (!resolved) {
+        resolved = true
+        resolve()
+      }
+    }
+    const timer = setTimeout(done, ms)
+    if (typeof (video as any).requestVideoFrameCallback === "function") {
+      (video as any).requestVideoFrameCallback(() => {
+        clearTimeout(timer)
+        requestAnimationFrame(() => done())
+      })
+    }
+  })
 
 // Hide every position:fixed / position:sticky element (except our own host) via visibility:hidden — keeps
 // layout so the stitched frames stay aligned. Records prior values for restore.
@@ -573,8 +577,15 @@ async function captureSharpFullPage(): Promise<string> {
 
   const widgetHost = document.getElementById(HOST_ID)
   const prevHostDisplay = widgetHost ? widgetHost.style.display : ""
-  const hiddenFixed: Array<{ el: HTMLElement; v: string }> = []
+  let restoredFixed: FixedStickyRestoreItem[] = []
   const origX = window.scrollX, origY = window.scrollY
+
+  const origHtmlBehavior = document.documentElement.style.getPropertyValue("scroll-behavior")
+  const origHtmlPriority = document.documentElement.style.getPropertyPriority("scroll-behavior")
+  const origBodyBehavior = document.body ? document.body.style.getPropertyValue("scroll-behavior") : ""
+  const origBodyPriority = document.body ? document.body.style.getPropertyPriority("scroll-behavior") : ""
+  document.documentElement.style.setProperty("scroll-behavior", "auto", "important")
+  if (document.body) document.body.style.setProperty("scroll-behavior", "auto", "important")
 
   try {
     const video = document.createElement("video")
@@ -607,19 +618,49 @@ async function captureSharpFullPage(): Promise<string> {
     // Hide OUR floating launcher for every frame (the composer is already hidden by the modal).
     if (widgetHost) widgetHost.style.display = "none"
 
-    const stops = planScrollStitch(fullH, vh)
-    const drawW = Math.round(vw * scale), drawH = Math.round(vh * scale)
-    for (let i = 0; i < stops.length; i++) {
-      window.scrollTo(0, stops[i])
-      await _raf(); await _raf(); await _sleep(STREAM_SETTLE_MS)
-      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, Math.round(stops[i] * scale), drawW, drawH)
+    const headerInfo = findTopFixedStickyHeaders(document, HOST_ID)
+    const steps = planSeamlessScrollStitch(fullH, vh, headerInfo.height)
+    const drawW = Math.round(vw * scale)
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      window.scrollTo(0, step.scrollY)
+      await _raf(); await _raf()
+      await _waitForVideoFrame(video, STREAM_SETTLE_MS)
+
+      const sx = 0
+      const sy = Math.round(step.sourceY * scale)
+      const sw = video.videoWidth
+      const sh = Math.round(step.sourceHeight * scale)
+
+      const dx = 0
+      const dy = Math.round(step.canvasY * scale)
+      const dw = drawW
+      const dh = Math.round(step.drawHeight * scale)
+
+      ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh)
+
       // After the TOP frame, hide fixed/sticky so they don't repeat; the next stop's settle lets the
       // stream reflect the change before that frame is drawn.
-      if (i === 0 && stops.length > 1) hideFixedSticky(hiddenFixed)
+      if (i === 0 && steps.length > 1 && headerInfo.elements.length > 0) {
+        restoredFixed = hideFixedStickyElements(headerInfo.elements)
+      }
     }
     return canvas.toDataURL("image/png")
   } finally {
-    for (const h of hiddenFixed) h.el.style.visibility = h.v
+    if (restoredFixed.length > 0) restoreFixedStickyElements(restoredFixed)
+    if (origHtmlBehavior) {
+      document.documentElement.style.setProperty("scroll-behavior", origHtmlBehavior, origHtmlPriority)
+    } else {
+      document.documentElement.style.removeProperty("scroll-behavior")
+    }
+    if (document.body) {
+      if (origBodyBehavior) {
+        document.body.style.setProperty("scroll-behavior", origBodyBehavior, origBodyPriority)
+      } else {
+        document.body.style.removeProperty("scroll-behavior")
+      }
+    }
     if (widgetHost) widgetHost.style.display = prevHostDisplay
     window.scrollTo(origX, origY)
     // KLA-621: do NOT stop the stream — it's the shared session stream, reused by later captures + released on close.
@@ -928,6 +969,7 @@ async function mount() {
       const shot: EvidenceShot = {
         id: makeShotId(), pageUrl: location.href, pagePath: location.pathname, label: "",
         blob, bytes: blob.size, w: dims.w, h: dims.h, ts: Date.now(),
+        dataUrl,
       }
       const res = await addShot(sessionId, shot)
       evSession = res.session
@@ -945,7 +987,15 @@ async function mount() {
   // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
   async function persistEvDesc(sessionId: string, text: string): Promise<void> {
     try {
+      saveDraft(cfg.projectId, evOrigin, { desc: text })
       const updated = await updateEvidenceFields(sessionId, { desc: text })
+      if (updated) evSession = updated
+    } catch { /* best-effort: a failed persist must never break typing */ }
+  }
+  async function persistEvTitle(sessionId: string, text: string): Promise<void> {
+    try {
+      saveDraft(cfg.projectId, evOrigin, { title: text })
+      const updated = await updateEvidenceFields(sessionId, { title: text })
       if (updated) evSession = updated
     } catch { /* best-effort: a failed persist must never break typing */ }
   }
@@ -1009,9 +1059,14 @@ async function mount() {
       "@media (prefers-reduced-motion:reduce){.kl-evdock,.kl-evpulse{animation:none}.kl-evbtn{transition:none}}"
     root.appendChild(s)
   }
+  function hasEvSessionContent(session: EvidenceSession | null): boolean {
+    if (!session) return false
+    return session.shots.length > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+  }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
     const m = evSession ? pageCount(evSession) : 0
+    if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
   function updateEvDock() {
@@ -1022,7 +1077,7 @@ async function mount() {
     try { (banner as (t: string) => void)(text) } catch { try { console.warn("[Klavity] " + text) } catch {} }
   }
   function showEvDock() {
-    if (!evSession || evSession.shots.length === 0) return
+    if (!evSession || !hasEvSessionContent(evSession)) return
     ensureEvDockStyle()
     reportDock.style.display = "none" // hide the launcher while the report-in-progress dock is up
     if (!evDockEl) {
@@ -1082,25 +1137,44 @@ async function mount() {
   }
   async function resumeEvidence() {
     // Refresh from storage (another tab/page may have added shots) then open the composer seeded.
-    try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep in-memory copy */ }
+    try {
+      const draft = loadDraft(cfg.projectId, evOrigin)
+      evSession = await getActiveSession(cfg.projectId, evOrigin)
+      if (evSession && draft) {
+        if (draft.desc !== undefined && (!evSession.desc || (draft.updatedAt ?? 0) >= (evSession.updatedAt ?? 0))) {
+          evSession.desc = draft.desc
+        }
+        if (draft.title !== undefined && (!evSession.title || (draft.updatedAt ?? 0) >= (evSession.updatedAt ?? 0))) {
+          evSession.title = draft.title
+        }
+      }
+    } catch { /* keep in-memory copy */ }
     if (!evSession) { hideEvDock(); return }
     if (evDockEl) evDockEl.style.display = "none"
     // KD-166: restore the typed description alongside the recovered screenshot(s) — previously only the
     // shots came back; the text was silently dropped even though it was the thing most recently persisted.
-    openReport("bug", { evidence: { session: evSession }, initialDescription: evSession.desc })
+    openReport("bug", {
+      evidence: { session: evSession },
+      initialDescription: evSession.desc,
+      initialTitle: evSession.title,
+    })
   }
   async function discardEvidence() {
     const s = evSession
     evSession = null
+    clearDraft(cfg.projectId, evOrigin)
     hideEvDock()
     if (s) { try { await clearEvidenceSession(s.id) } catch { /* best-effort */ } }
   }
   // Minimize the open composer to the dock WITHOUT losing evidence (called from the composer's onMinimize).
   function minimizeToDock() {
     evMinimizing = true
-    // KLA-772: capture the open composer's drawn overlays BEFORE close() (which detaches the modal + nulls the
-    // composer ref) and persist them into the session, so the shapes survive the dock + a page navigation.
-    if (evSession) persistComposerAnnotations(evSession.id)
+    if (evSession) {
+      evSession.isOpen = false
+      saveDraft(cfg.projectId, evOrigin, { isOpen: false })
+      void queueEvWrite(() => updateEvidenceFields(evSession!.id, { isOpen: false }))
+      persistComposerAnnotations(evSession.id)
+    }
     void queueEvWrite(async () => {
       try { evSession = await getActiveSession(cfg.projectId, evOrigin) } catch { /* keep copy */ }
       showEvDock()
@@ -1109,20 +1183,27 @@ async function mount() {
   }
   // Start (or continue) an evidence session, then open the composer in session mode. Falls back to a
   // plain single-page report if IndexedDB is unavailable, so nothing breaks where storage is blocked.
-  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture }) {
+  async function startBugReport(opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture }) {
     let session: EvidenceSession | null = null
-    try { session = await startOrContinue(cfg.projectId, evOrigin) } catch { session = null }
+    try {
+      session = await startOrContinue(cfg.projectId, evOrigin)
+      const draft = loadDraft(cfg.projectId, evOrigin)
+      if (draft && session) {
+        if (draft.desc && !session.desc) session.desc = draft.desc
+        if (draft.title && !session.title) session.title = draft.title
+      }
+    } catch { session = null }
     if (session) evSession = session
     // #637: an EXPLICIT Report re-trigger on an IN-PROGRESS draft must CAPTURE A NEW screenshot and APPEND it
     // at the END of the evidence strip — not silently reopen the same draft with no fresh snap (the standup
     // complaint). A draft is "in progress" when EITHER the composer is already open OR an evidence session
-    // already holds shots. We only do this for a plain Report click (no caller-supplied initialShot — a
+    // already holds shots or text. We only do this for a plain Report click (no caller-supplied initialShot — a
     // right-click region drag brings its own capture and owns its append). The FIRST open (brand-new, empty
     // session, composer closed) still single-captures via autoCaptureOnOpen, so we never double-capture on the
     // initial open — only this re-trigger adds an extra shot.
     const composerHost = composer?.shadowRoot.host as HTMLElement | null
     const composerLive = !!(composer && composerHost?.isConnected)
-    const hasDraft = composerLive || !!(session && session.shots.length > 0)
+    const hasDraft = composerLive || !!(session && hasEvSessionContent(session))
     if (hasDraft && !opts?.initialShot) {
       let fresh: { dataUrl: string; quality: "rendered" | "wireframe"; suggestSharp: boolean } | null = null
       try { fresh = withSharpSuggestion(await safeToPngWithQuality(document.body, { filter: notKlavityChrome })) } catch { fresh = null }
@@ -1136,11 +1217,24 @@ async function mount() {
         // Composer closed/minimized → reopen seeded with the existing shots, and this fresh capture appended last.
         // KD-166: an explicit caller-supplied initialDescription (e.g. the Sim-observation prefill) always
         // wins; otherwise restore whatever was last persisted to the session.
-        openReport("bug", { ...opts, initialShot: fresh.dataUrl, initialShotQuality: fresh.quality, initialShotSuggestSharp: fresh.suggestSharp, evidence: session ? { session } : undefined, initialDescription: opts?.initialDescription ?? session?.desc })
+        openReport("bug", {
+          ...opts,
+          initialShot: fresh.dataUrl,
+          initialShotQuality: fresh.quality,
+          initialShotSuggestSharp: fresh.suggestSharp,
+          evidence: session ? { session } : undefined,
+          initialDescription: opts?.initialDescription ?? session?.desc,
+          initialTitle: opts?.initialTitle ?? session?.title,
+        })
         return
       }
     }
-    openReport("bug", session ? { ...opts, evidence: { session }, initialDescription: opts?.initialDescription ?? session.desc } : opts)
+    openReport("bug", session ? {
+      ...opts,
+      evidence: { session },
+      initialDescription: opts?.initialDescription ?? session.desc,
+      initialTitle: opts?.initialTitle ?? session.title,
+    } : opts)
   }
 
   // Track deployed Sims so the context menu can show their icons without a fetch.
@@ -1203,7 +1297,13 @@ async function mount() {
   // green active-dot and issue-badge nodes are re-appended afterwards so they survive the repaint.
   function paintLauncher() {
     if (launcherMode === 'hidden') { reportDock.style.display = "none"; return }
-    reportDock.style.display = ""
+    const composerLive = !!(composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected)
+    const dockLive = !!(evDockEl && evDockEl.style.display !== "none")
+    if (evSession || composerLive || dockLive) {
+      reportDock.style.display = "none"
+    } else {
+      reportDock.style.display = ""
+    }
     // Effective mode: full/custom collapse to icon-only on mobile; icon stays icon.
     const collapse = (launcherMode === 'full' || launcherMode === 'custom') && mq.matches
     const effective = collapse ? 'icon' : launcherMode
@@ -1303,10 +1403,15 @@ async function mount() {
     reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
   }
 
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
+    if (ev) {
+      ev.isOpen = true
+      saveDraft(cfg.projectId, evOrigin, { isOpen: true, desc: ev.desc, title: ev.title })
+      void queueEvWrite(() => updateEvidenceFields(ev.id, { isOpen: true }))
+    }
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
@@ -1481,7 +1586,13 @@ async function mount() {
       // dataURL and picked element the composer hands in via ctx. Gated on the SAME per-project reportClarity
       // toggle the server reuses for enhance. Longer timeout — it's a vision call, slower than the cheap tip.
       // Best-effort: any failure resolves null so the composer silently no-ops (leaves the reporter's text).
-      onEnhance: reportClarity ? (async (text: string, ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null }) => {
+      onEnhance: reportClarity ? (async (text: string, ctx?: {
+        images?: number
+        shot?: string
+        annotations?: any
+        annotationTexts?: string[]
+        picked?: { selector: string; text: string } | null
+      }) => {
         try {
           const res = await fetchWithTimeout(cfg.backendUrl + "/api/report/enhance", {
             method: "POST",
@@ -1491,6 +1602,8 @@ async function mount() {
               text,
               pageUrl: location.href,
               shot: ctx?.shot || "",
+              annotations: ctx?.annotations || null,
+              annotationTexts: ctx?.annotationTexts || [],
               picked: ctx?.picked || null,
               images: ctx?.images ?? 0,
               client: captureClientInfo(),
@@ -1611,11 +1724,14 @@ async function mount() {
           // SERVER resolves the real Klavity intake project from KLAVITY_INTAKE_PROJECT_ID — the client only
           // ever sends this flag (never a target project id), so a report can't be routed to an arbitrary project.
           feedbackTarget: p.feedbackTarget,
+          // KD-224: the accepted AI-Enhance draft's P1/P2/P3 — mapped to a ticket priority in prepareSubmission.
+          suggestedPriority: p.suggestedPriority,
         }
         // Post-filing bookkeeping shared by both paths: fire the public 'submit' event and clear a
         // multi-page evidence session (KLA-412) now that the report is stored.
         const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
           try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          clearDraft(cfg.projectId, evOrigin)
           if (ev) {
             evMinimizing = false
             try { await clearEvidenceSession(ev.id) } catch { /* best-effort */ }
@@ -1686,6 +1802,7 @@ async function mount() {
       onShotAdded: ev ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(ev.id, dataUrl)) } : undefined,
       // KD-166: same idea, for the typed description (see onDescriptionChange's doc comment in modal.ts).
       onDescriptionChange: ev ? (text: string) => { void queueEvWrite(() => persistEvDesc(ev.id, text)) } : undefined,
+      onTitleChange: ev ? (text: string) => { void queueEvWrite(() => persistEvTitle(ev.id, text)) } : undefined,
       // KLA-412: keep the session in sync when the reporter removes a thumbnail.
       onShotRemoved: ev ? (index: number) => removeEvShotAt(index) : undefined,
       // KLA-772: persist a shot's drawn overlay incrementally as the reporter draws/edits/undoes it, so the
@@ -1717,10 +1834,20 @@ async function mount() {
         // KLA-412: a plain X/Esc close (NOT a minimize) keeps any captured evidence — we show the dock so
         // it isn't lost — but reaps an EMPTY session so an unused open never lingers, restoring the launcher.
         if (ev && !evMinimizing) {
+          saveDraft(cfg.projectId, evOrigin, { isOpen: false })
           void queueEvWrite(async () => {
             const latest = await getActiveSession(cfg.projectId, evOrigin)
-            if (latest && latest.shots.length > 0) { evSession = latest; showEvDock() }
-            else { if (latest) await clearEvidenceSession(latest.id); evSession = null; hideEvDock() }
+            if (latest && hasEvSessionContent(latest)) {
+              latest.isOpen = false
+              await updateEvidenceFields(latest.id, { isOpen: false })
+              evSession = latest
+              showEvDock()
+            } else {
+              if (latest) await clearEvidenceSession(latest.id)
+              clearDraft(cfg.projectId, evOrigin)
+              evSession = null
+              hideEvDock()
+            }
           })
         }
         evMinimizing = false
@@ -1735,6 +1862,7 @@ async function mount() {
     }, modalConfig)
     composer = ctrl // track the open composer so a second open is ignored until this one closes
     if (opts?.initialDescription) prefillReportDescription(ctrl, opts.initialDescription)
+    if (opts?.initialTitle) prefillReportTitle(ctrl, opts.initialTitle)
     if (ev) {
       // KLA-412: seed the already-persisted session shots (in order, each with its page tag), then handle a
       // region-initial shot as a NEW capture — seed it visually AND persist it to the session.
@@ -1743,7 +1871,8 @@ async function mount() {
         for (const shot of ev.shots) {
           try {
             // KLA-772: pass the shot's saved overlay back so the annotator repaints the reporter's shapes.
-            ctrl.addScreenshot(await blobToDataUrl(shot.blob), undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
+            const dataUrl = shot.dataUrl || await blobToDataUrl(shot.blob, shot.dataUrl)
+            ctrl.addScreenshot(dataUrl, undefined, { pageUrl: shot.pageUrl, pagePath: shot.pagePath, label: shot.label }, undefined, undefined, shot.annotations)
           } catch { failedRestores++ /* KLA-763: unreadable/corrupt persisted blob or read timeout */ }
         }
         // KLA-763 (codex round-2): don't SILENTLY drop persisted evidence on resume — a shot whose blob
@@ -1843,7 +1972,7 @@ async function mount() {
     // 'full' mode AND only to identified project members (own first-party page, or a signed-in widget
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
-    const showSims = rightClickMode === 'full' && (firstParty || !!getToken())
+    const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2277,12 +2406,45 @@ async function mount() {
   // a second avatar stack and a second review control in the same corner, so it is intentionally gone.
   ;(window as any).KlavityWidget = { mount, identify, setMetadata }
 
-  // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation) by showing the dock
-  // instead of the plain launcher, so the user can keep capturing on THIS page. Best-effort + non-blocking.
+  if (typeof window !== "undefined") {
+    const flushCurrentComposerDraft = () => {
+      if (!composer || !(composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+      const descEl = composer.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
+      const titleEl = composer.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
+      saveDraft(cfg.projectId, evOrigin, {
+        desc: descEl?.value ?? evSession?.desc ?? "",
+        title: titleEl?.value ?? evSession?.title ?? "",
+        isOpen: true,
+      })
+    }
+    window.addEventListener("beforeunload", flushCurrentComposerDraft)
+    window.addEventListener("pagehide", flushCurrentComposerDraft)
+  }
+
+  // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation/reload)
+  // If the composer was open when refreshed, re-opens it; otherwise displays the in-progress dock.
   void (async () => {
     try {
-      const active = await getActiveSession(cfg.projectId, evOrigin)
-      if (active && active.shots.length > 0) { evSession = active; showEvDock() }
+      const draft = loadDraft(cfg.projectId, evOrigin)
+      let active = await getActiveSession(cfg.projectId, evOrigin)
+      if (!active && draft && (draft.desc || draft.title || draft.isOpen)) {
+        active = await startOrContinue(cfg.projectId, evOrigin)
+      }
+      if (active && draft) {
+        if (draft.desc !== undefined && (!active.desc || (draft.updatedAt ?? 0) >= (active.updatedAt ?? 0))) {
+          active.desc = draft.desc
+        }
+        if (draft.title !== undefined && (!active.title || (draft.updatedAt ?? 0) >= (active.updatedAt ?? 0))) {
+          active.title = draft.title
+        }
+        if (draft.isOpen !== undefined) {
+          active.isOpen = draft.isOpen
+        }
+      }
+      if (active && hasEvSessionContent(active)) {
+        evSession = active
+        showEvDock()
+      }
     } catch { /* IndexedDB unavailable — normal launcher stands */ }
   })()
 
@@ -2618,9 +2780,16 @@ export function createUploadPill(opts: { totalBytesHint?: number; label?: string
  */
 export type PreparedSubmission = { fd: FormData; key: string; sent: boolean }
 
+// KD-224: AI-Enhance's P-tag (P1 blocker / P2 workaround exists / P3 minor — see report-enhance.ts) → the
+// ticket priority vocabulary (urgent/high/medium/low). P3 lands on 'medium', the canonical default.
+const ENHANCE_PRIORITY_TO_TICKET: Record<string, "urgent" | "high" | "medium"> = { P1: "urgent", P2: "high", P3: "medium" }
+export function enhancePriorityToTicket(p: string | undefined | null): "urgent" | "high" | "medium" | null {
+  return ENHANCE_PRIORITY_TO_TICKET[String(p || "").trim().toUpperCase()] || null
+}
+
 export async function prepareSubmission(
   cfg: { backendUrl: string; projectId: string; firstParty: boolean; token: string },
-  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity' },
+  payload: { type: string; title?: string; description: string; pageUrl: string; referrer?: string; screenshots: string[]; files?: Array<{ name: string; type: string; size: number; dataUrl: string; blob?: Blob }>; recordings?: Array<{ id: string; dataUrl: string; mime: string; durationMs: number; width: number; height: number; bytes: number; screenOnly: boolean }>; context?: ReportContext; reporter?: Reporter; clientInfo?: ClientInfo; annotations?: any; reporterEmail?: string; createContact?: boolean; turnstileToken?: string; submissionKey?: string; feedbackTarget?: 'project' | 'klavity'; suggestedPriority?: string },
 ): Promise<PreparedSubmission> {
   // Compress screenshots (PNG → JPEG, downscale very wide ones) so the upload is fast. Best-effort,
   // parallel; each falls back to its original on failure.
@@ -2672,6 +2841,12 @@ export async function prepareSubmission(
   // client never names a target project id — the server resolves KLAVITY_INTAKE_PROJECT_ID — so this can't
   // be abused to route a report into an arbitrary project (no IDOR).
   if (payload.feedbackTarget === "klavity") fd.set("feedback_target", "klavity")
+  // KD-224: an accepted AI-Enhance draft carries a P1/P2/P3 suggestion. Send it as the ticket's `priority`
+  // so the stored row (and therefore the board card) matches what the reporter saw; without it the row is
+  // stored with NO priority. Unknown/absent values send nothing. Untrusted/anonymous intake still lands as
+  // status 'new' — the server's priority-self-elevation guard is unaffected.
+  const enhancedPriority = enhancePriorityToTicket(payload.suggestedPriority)
+  if (enhancedPriority) fd.set("priority", enhancedPriority)
 
   // One idempotency key per prepared report, reused by EVERY attempt (the server returns the existing ticket for a repeat).
   const key = payload.submissionKey || newSubmissionKey()

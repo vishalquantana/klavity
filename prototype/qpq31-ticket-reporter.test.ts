@@ -40,10 +40,9 @@ test("the address is plain escaped text, not a link", () => {
   // Reporter is a fact about the report, shown as text at the same size as Assignee -- no mailto.
   expect(guard).not.toContain("mailto:")
   expect(guard).not.toContain("<a ")
-  // QPQ-31 contacts: the link text is the contact's NAME when we know one, else the address — either way
-  // it goes through esc(). The address itself also appears beneath the name, likewise escaped.
-  expect(guard).toContain("${esc(contactNameFor(t.reporterEmail) || t.reporterEmail)}</span>")
-  expect(guard).toContain('<span class="tkt-reporter-sub">${esc(t.reporterEmail)}</span>')
+  // Only the address is shown (no contact name), and it goes through esc().
+  expect(guard).toContain("${esc(t.reporterEmail)}</span>")
+  expect(guard).not.toContain("contactNameFor(")
   // nothing in the pair interpolates the address (or a contact name) un-escaped
   expect(guard).not.toContain("${t.reporterEmail}")
   expect(guard).not.toContain("${contactNameFor(t.reporterEmail)}")

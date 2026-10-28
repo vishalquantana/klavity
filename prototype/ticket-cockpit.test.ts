@@ -48,3 +48,13 @@ test("cockpit uses ONLY the app's own tokens — no external Google Fonts CDN / 
   expect(HTML).not.toContain("commondatastorage.googleapis.com")
   expect(norm(HTML)).toContain(norm("#ticketSingle.tkt-page .t3-mid .single-meta { font-family: var(--mono)"))
 })
+
+test("Attach button is rendered below description beside Enhance with AI and wired to open file picker", () => {
+  // Renders the Attach button in _descTools
+  expect(HTML).toContain('class="btn btn-ghost btn-sm t3-attach-btn"')
+  expect(HTML).toContain('Attach</button>')
+  // wireAttachments wires t3-attach-btn to input.click()
+  expect(HTML).toContain('var t3AttachBtn = detailEl.querySelector(".t3-attach-btn")')
+  expect(HTML).toContain('if (!attachInFlight(id)) input.click()')
+})
+

@@ -37,23 +37,27 @@ describe("installRegionDrag", () => {
     h.destroy()
   })
 
-  it("a plain right-click (no drag) does NOT capture and does NOT suppress the menu after release", () => {
+  it("a plain right-click (no drag) does NOT capture; the contextmenu event that follows the release is still suppressed (KD-213), then clears", () => {
+    vi.useFakeTimers()
     const onRegion = vi.fn()
     const h = installRegionDrag({ onRegion })
     down(50, 50); up(52, 51) // moved < threshold (6)
     expect(onRegion).not.toHaveBeenCalled()
-    // After mouseup pressing=false — host's contextmenu event can fire and show its menu.
+    // Windows/Linux fire contextmenu AFTER mouseup, on the menu the host just opened under the pointer — must not reach the native menu.
+    expect(h.suppressNextMenu()).toBe(true)
+    vi.advanceTimersByTime(401)
+    // Later contextmenu events (e.g. the keyboard menu key) are not suppressed.
     expect(h.suppressNextMenu()).toBe(false)
-    h.destroy()
+    h.destroy(); vi.useRealTimers()
   })
 
-  it("suppressNextMenu() returns true WHILE right button is held (pressing), false after release", () => {
+  it("suppressNextMenu() returns true WHILE right button is held (pressing) and for the contextmenu event right after release", () => {
     const h = installRegionDrag({ onRegion: vi.fn() })
     down(50, 50)
     // contextmenu fires synchronously with mousedown on macOS — must be suppressed while pressing
     expect(h.suppressNextMenu()).toBe(true)
     up(52, 51) // release without drag
-    expect(h.suppressNextMenu()).toBe(false)
+    expect(h.suppressNextMenu()).toBe(true)   // KD-213: still true for the contextmenu event that follows the release (Windows/Linux)
     h.destroy()
   })
 
@@ -269,5 +273,37 @@ describe("installRegionDrag — links pass through to the native menu", () => {
     expect(h.suppressNextMenu()).toBe(true)
     expect(onRightDown).toHaveBeenCalledTimes(1)
     up(11, 11); h.destroy(); div.remove()
+  })
+})
+
+// KD-213 regression: Windows/Linux fire contextmenu AFTER mouseup, on whatever is under the pointer. The host opens its menu on
+// release with its corner under the pointer, so the contextmenu event targets the host's OWN menu — and a host that lets right-clicks
+// on its own UI through to the native menu then shows Chrome's menu on top of its own (both menus appear).
+describe("installRegionDrag — contextmenu that follows a plain right-click release (KD-213)", () => {
+  it("is suppressed even when the pointer is now over the host's freshly opened menu", () => {
+    vi.useFakeTimers()
+    const menu = document.createElement("div"); menu.setAttribute("data-own-ui", "1"); document.body.appendChild(menu)
+    const isOwn = (e: Event) => !!(e.target as Element).closest?.("[data-own-ui]")
+    const h = installRegionDrag({ onRegion: vi.fn(), onPlainRightClick: () => { /* host opens its menu under the pointer */ } })
+    // the host's contextmenu listener, in the same order as widget.ts: suppress check first, then the own-UI pass-through
+    const results: boolean[] = []
+    const onCtx = (e: MouseEvent) => {
+      if (h.suppressNextMenu()) { e.preventDefault(); return }
+      if (isOwn(e)) return                                  // would leave the native menu open
+      e.preventDefault()
+    }
+    document.addEventListener("contextmenu", onCtx, true)
+    down(200, 200); up(200, 200)
+    const ev = new MouseEvent("contextmenu", { button: 2, clientX: 200, clientY: 200, bubbles: true, cancelable: true })
+    menu.dispatchEvent(ev)                                  // Windows/Linux: arrives after mouseup, targeting the new menu
+    results.push(ev.defaultPrevented)
+    expect(results).toEqual([true])                         // native menu stays suppressed → only the host's menu shows
+    vi.advanceTimersByTime(401)
+    // a later right-click on the host's own UI is the host's call again (native menu allowed there)
+    const later = new MouseEvent("contextmenu", { button: 2, bubbles: true, cancelable: true })
+    menu.dispatchEvent(later)
+    expect(later.defaultPrevented).toBe(false)
+    document.removeEventListener("contextmenu", onCtx, true)
+    h.destroy(); menu.remove(); vi.useRealTimers()
   })
 })

@@ -8,6 +8,9 @@ import { safeRemove } from '@klavity/core'
 import { resolveModalConfig } from '@klavity/core/modal-theme'
 import { installCapture, buildReportContext, type CaptureBuffers } from '@klavity/core/capture'
 import { cropDataUrl } from '@klavity/core/crop'
+// KD-988 (ext↔widget parity): the SAME "Pick element" picker and "Record me" recorder the widget uses.
+import { pickElementOnPage } from '@klavity/core/element-picker'
+import { recordMe, recordingSupported } from '@klavity/core/recorder'
 import { captureFullPage } from './fullpage'
 import { klavContentSig, shouldCapture, createTrailingDebounce, DEBOUNCE_MS, DEBOUNCE_MAX_WAIT_MS, ROUTE_COOLDOWN_MS, MAX_REVIEWS_PER_ROUTE, CAPTURE_BACKOFF_MS, CAPTURE_MAX_RETRIES } from './feedback-trigger'
 import { widgetPresent } from './coexist'
@@ -234,6 +237,34 @@ async function buildOneThumb(dataUrl: string): Promise<string> {
   }
 }
 
+async function compressExtScreenshot(dataUrl: string): Promise<string> {
+  const maxWidth = 2000, quality = 0.85, maxDimension = 16000
+  if (dataUrl.startsWith('data:image/jpeg') || typeof document === 'undefined' || !dataUrl.startsWith('data:image/')) return dataUrl
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl
+    })
+    const nw = img.naturalWidth, nh = img.naturalHeight
+    if (!nw || !nh) return dataUrl
+    let scale = nw > maxWidth ? maxWidth / nw : 1
+    if (nh * scale > maxDimension) {
+      scale = maxDimension / nh
+    }
+    const w = Math.round(nw * scale), h = Math.round(nh * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return dataUrl
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    const out = canvas.toDataURL('image/jpeg', quality)
+    return out.length < dataUrl.length ? out : dataUrl
+  } catch {
+    return dataUrl
+  }
+}
+
 // ── Modal ────────────────────────────────────────────────────────────────────
 // Only the three context-menu icons remain; the report composer (and all of its
 // camera/crop/image/send/pencil/trash/close iconography) now lives in buildModal.
@@ -263,19 +294,23 @@ let _composerOpening = false
 // the widget + extension for any project that opted in.
 // video-upload: file attachments DEFAULT-ON (opt-out) even when config is missing/unreachable — mirrors
 // parseComposerOpts + the widget so the "Attach file" button shows on every project by default.
-const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true }
-// KLA-728 (ext↔widget parity): when a matched project is reachable we also return an `assist` scope
+const EMPTY_COMPOSER_OPTS: ExtComposerOpts = { showTitleField: false, allowFileAttachments: true, record: true }
+// KLA-728 (ext↔widget parity): when a project is resolved + reachable we also return an `assist` scope
 // (resolved backend base + project id) so openComposer can wire the composer AI-assist callbacks
 // (Enhance / clarity-tip / voice) against the SAME per-project widget API the widget uses. Null when no
-// project matches / config is unreachable → classic composer with no assist (unchanged behavior).
+// project resolves / config is unreachable → classic composer with no assist (unchanged behavior).
+// KD-988: resolve the project like the rest of the extension (klavQaResolveProjectId: URL-allowlist match →
+// server match → popup selection → first project) instead of the URL allowlist ONLY. A report filed from a
+// page outside every project's monitored URLs still lands in a project, but its composer used to open with
+// no config → no "Enhance with AI" (nor the project's theme / composer opts).
 type AssistScope = { backendUrl: string; projectId: string } | null
 async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveModalConfig>; composer: ExtComposerOpts; assist: AssistScope }> {
   try {
-    const proj = klavMatchProject(location.href)
+    const projectId = await klavQaResolveProjectId()
     const backendUrl = klavConfig?.backendUrl
-    if (proj?.id && backendUrl) {
+    if (projectId && backendUrl) {
       const base = backendUrl.replace(/\/+$/, '')
-      const r = await fetch(`${base}/api/projects/${encodeURIComponent(proj.id)}/config`)
+      const r = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/config`)
       if (r.ok) {
         const j = await r.json()
         const modalConfig = j.modalConfig || {}
@@ -283,7 +318,7 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
         // Klavity" badge carries UTM (utm_medium=extension, utm_content=<projectId>, utm_source=host).
         if (modalConfig && typeof modalConfig === 'object') {
           ;(modalConfig as any).attributionMedium = 'extension'
-          ;(modalConfig as any).projectId = proj.id
+          ;(modalConfig as any).projectId = projectId
           // KLA-728 (ext↔widget parity): the report-clarity toggle rides at the TOP LEVEL of the config
           // response (sibling of modalConfig), NOT inside it — exactly how the widget reads it (widget.ts
           // `reportClarity = j.reportClarity !== false`). Default ON: only an explicit false disables it.
@@ -291,7 +326,7 @@ async function fetchModalConfig(): Promise<{ config: ReturnType<typeof resolveMo
           // (cfg.reportClarity) and the composer renders the clarity meter/tip when enabled.
           ;(modalConfig as any).reportClarity = j.reportClarity !== false
         }
-        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId: proj.id } }
+        return { config: resolveModalConfig(modalConfig), composer: parseComposerOpts(modalConfig), assist: { backendUrl: base, projectId } }
       }
     }
   } catch { /* default theme + classic composer */ }
@@ -335,7 +370,17 @@ function buildComposerAssist(assist: AssistScope, clarityOn: boolean): Partial<M
       try {
         const res = await assistFetch(backendUrl + '/api/report/enhance', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ projectId, text, pageUrl: location.href, shot: ctx?.shot || '', picked: ctx?.picked || null, images: ctx?.images ?? 0, client: captureExtClientInfo() }),
+          body: JSON.stringify({
+            projectId,
+            text,
+            pageUrl: location.href,
+            shot: ctx?.shot || '',
+            annotations: ctx?.annotations || null,
+            annotationTexts: ctx?.annotationTexts || [],
+            picked: ctx?.picked || null,
+            images: ctx?.images ?? 0,
+            client: captureExtClientInfo(),
+          }),
         }, 30_000) // vision call — longer timeout than the cheap tip
         if (!res.ok) return null
         const data = await res.json().catch(() => null)
@@ -417,9 +462,31 @@ async function openComposer(
     onCaptureViewport,
     onCaptureFull,
     onRegionCapture,
+    // KD-988 (ext↔widget parity): "Pick element" — the shared core picker. The extension's own UI roots are
+    // never pickable, and the picked element's screenshot is a real-pixel crop of its box (same path as Region).
+    onPickElement: () => pickElementOnPage({
+      hostIds: ['klavity-host', 'klavity-evdock-host', 'klavity-sims-host', 'klavity-qa-host', 'klavity-toast'],
+      captureRect: onRegionCapture,
+    }),
+    // KD-988 (ext↔widget parity): "Record me" — the shared core recorder (screen + optional camera + narration),
+    // DEFAULT-ON wherever the browser can screen-record unless the project set composer.record:false. The
+    // recording threads through onSubmit as `recordings` → submitViaSW already forwards it (KLA-727).
+    allowRecording: composer.record && recordingSupported(),
+    onRecord: (composer.record && recordingSupported())
+      ? (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })
+      : undefined,
     // JTBD 1.9: the extension's captures are already real-pixel, but wire onRetakeSharp for parity so a
     // (rare) degraded shot — or a future non-real-pixel path — can still re-capture at full quality.
     onRetakeSharp: onCaptureFull,
+    // KD-988 (ext↔widget parity): the primary "Snap" button, like the widget's. The widget's Snap needs a
+    // getDisplayMedia tab-share to reach real pixels; captureVisibleTab already IS real-pixel, so Snap here is
+    // the full-page scroll-stitch with NO share prompt — the tooltip copy says so via snapWithoutSharePrompt.
+    // screenCaptureDefault stays unset → the on-open default capture (viewport) is unchanged.
+    onCaptureSharp: onCaptureFull,
+    snapWithoutSharePrompt: true,
+    // Safely pre-compress high-res captures (especially full-page scroll-stitches) into high-quality JPEG
+    // so they stay under the server's 8MB limit and prevent upload rejection / evidence loss.
+    compressImage: compressExtScreenshot,
     // PX4 #411/#425 (ext↔widget parity): enhanced-composer opts from the project's modalConfig.composer,
     // parsed identically to the widget. All default off → classic Bug/Feature composer. When a project
     // opts in, the extension now offers the same Title field, extended issue-type chips (Bug/Feature/
@@ -447,6 +514,15 @@ async function openComposer(
     // #442: persist a shot captured INSIDE the composer (Full Page / Screen / Region / Upload / paste /
     // auto-capture), tagged with the CURRENT page. Serialized to avoid lost updates.
     onShotAdded: session ? (dataUrl: string) => { void queueEvWrite(() => persistEvShot(dataUrl)) } : undefined,
+    onShotReplaced: session ? (index: number, dataUrl: string) => {
+      void queueEvWrite(async () => {
+        const latest = await evGetActive(evStorage)
+        if (!latest || !latest.shots[index]) return
+        latest.shots[index].dataUrl = dataUrl
+        latest.shots[index].bytes = dataUrl.length
+        evSession = await evPut(evStorage, latest)
+      })
+    } : undefined,
     // #442: keep the session in sync when the reporter removes a thumbnail (index-aligned with the strip).
     onShotRemoved: session ? (index: number) => removeEvShotAt(index) : undefined,
     // Reset the single-slot controller ref whenever the composer closes (so it can reopen), and for a
@@ -716,7 +792,8 @@ export async function submitViaSW(
         return { ...rest, dataUrl }
       }))
     : undefined
-  const screenshotThumbs = await buildExtThumbnails(p.screenshots).catch(() => [] as string[])
+  const safeScreenshots = await Promise.all((p.screenshots || []).map((s) => compressExtScreenshot(s)))
+  const screenshotThumbs = await buildExtThumbnails(safeScreenshots).catch(() => [] as string[])
   const payload: SubmitReportPayload = {
     type: p.type,
     // PX4 #411 (ext↔widget parity): the precise issue kind (bug/feature/task/query) the reporter chose,
@@ -729,7 +806,7 @@ export async function submitViaSW(
     description,
     // B1: console logs attached only when the reporter opted in via the composer toggle (default OFF).
     context: buildContext(p.attachConsole),
-    screenshots: [...p.screenshots],
+    screenshots: safeScreenshots,
     // PX4 #425: non-image file attachments (PDF, .log, .har, ...) the reporter added. Screenshots keep
     // their own path; these ride the /api/feedback `files` field (forwarded in the background).
     ...(filesForSW && filesForSW.length ? { files: filesForSW } : {}),

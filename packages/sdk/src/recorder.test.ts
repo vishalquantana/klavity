@@ -499,3 +499,131 @@ describe('#640 prefer Entire Screen (tab-switch capture)', () => {
     await p
   })
 })
+
+describe('WebM duration injection on recording stop', () => {
+  it('injects duration into a valid WebM blob when stopped', async () => {
+    let clock = 1000
+    const deps = makeDeps({ now: () => clock })
+    const ctrl = await startRecording({}, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+
+    // Construct a minimal WebM chunk with EBML + unknown Segment + Info (no duration)
+    const ebml = new Uint8Array([
+      0x1a, 0x45, 0xdf, 0xa3, 0x97,
+      0x42, 0x86, 0x81, 0x01, 0x42, 0xf7, 0x81, 0x01,
+      0x42, 0xf2, 0x81, 0x04, 0x42, 0xf3, 0x81, 0x08,
+      0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d,
+    ])
+    const segHdr = new Uint8Array([0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+    const info = new Uint8Array([0x15, 0x49, 0xa9, 0x66, 0x87, 0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40])
+    const total = new Uint8Array(ebml.length + segHdr.length + info.length)
+    total.set(ebml, 0)
+    total.set(segHdr, ebml.length)
+    total.set(info, ebml.length + segHdr.length)
+
+    rec.ondataavailable?.({ data: new Blob([total], { type: 'video/webm' }) })
+    clock = 36000 // 35 seconds elapsed
+    ctrl.stop()
+    const r = await ctrl.done
+
+    expect(r.durationMs).toBe(35000)
+    const buf = new Uint8Array(await r.blob.arrayBuffer())
+    // Should have Duration tag 0x44 0x89 0x88
+    let foundDur = false
+    for (let i = 0; i < buf.length - 10; i++) {
+      if (buf[i] === 0x44 && buf[i + 1] === 0x89 && buf[i + 2] === 0x88) {
+        const val = new DataView(buf.buffer, buf.byteOffset + i + 3, 8).getFloat64(0, false)
+        expect(val).toBe(35000)
+        foundDur = true
+        break
+      }
+    }
+    expect(foundDur).toBe(true)
+  })
+})
+
+describe('screen sharing tab switching & mute/unmute stability', () => {
+  it('screen-only walkthrough routes native screenTrack directly to MediaRecorder', async () => {
+    const screen = new FakeStream(1, 0)
+    const expectedTrack = screen.getVideoTracks()[0]
+    const deps = makeDeps({}, { screen })
+    const ctrl = await startRecording({ wantCamera: false, wantMic: false }, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+
+    // In screen-only mode, MediaRecorder receives the native screenTrack directly.
+    // This bypasses intermediate canvas & RAF loop, ensuring tab/app switching never freezes.
+    expect(rec.stream.getTracks()).toContain(expectedTrack)
+
+    rec.pushChunk(100)
+    ctrl.stop()
+    const r = await ctrl.done
+    expect(r.screenOnly).toBe(true)
+    expect(r.bytes).toBe(100)
+  })
+
+  it('handles track mute and unmute events during tab switching without interrupting recording', async () => {
+    const screen = new FakeStream(1, 0)
+    const screenTrack = screen.getVideoTracks()[0] as any
+    const deps = makeDeps({}, { screen })
+    const onState = vi.fn()
+    const ctrl = await startRecording({ wantCamera: false, onState }, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+
+    expect(ctrl.state()).toBe('recording')
+
+    // Simulate tab switch: Chromium temporarily fires 'mute' on the video track
+    screenTrack.emit('mute')
+    expect(ctrl.state()).toBe('recording') // must NOT stop or pause
+    expect(onState).not.toHaveBeenCalledWith('stopped')
+
+    rec.pushChunk(500)
+
+    // Simulate switching back to the active tab: Chromium fires 'unmute'
+    screenTrack.emit('unmute')
+    expect(ctrl.state()).toBe('recording') // still recording smoothly
+
+    rec.pushChunk(500)
+    ctrl.stop()
+    const r = await ctrl.done
+
+    expect(ctrl.state()).toBe('stopped')
+    expect(r.bytes).toBe(1000)
+  })
+
+  it('camera PiP mode arms watchdog timer and remains active across mute and unmute', async () => {
+    const screen = new FakeStream(1, 0)
+    const screenTrack = screen.getVideoTracks()[0] as any
+    const intervals: Array<{ cb: () => void; ms: number }> = []
+    const deps = makeDeps({
+      setInterval: (cb: () => void, ms: number) => {
+        intervals.push({ cb, ms })
+        return intervals.length as any
+      },
+    }, { screen })
+
+    const ctrl = await startRecording({ wantCamera: true }, deps)
+    const rec = FakeMediaRecorder._instances[FakeMediaRecorder._instances.length - 1]
+
+    // Watchdog interval timer should be registered to handle background tabs where RAF is paused
+    expect(intervals.length).toBeGreaterThanOrEqual(1)
+
+    // Fire mute & unmute during PiP
+    screenTrack.emit('mute')
+    expect(ctrl.state()).toBe('recording')
+
+    // Trigger watchdog tick
+    for (const item of intervals) {
+      try { item.cb() } catch { /* no-op */ }
+    }
+
+    screenTrack.emit('unmute')
+    expect(ctrl.state()).toBe('recording')
+
+    rec.pushChunk(800)
+    ctrl.stop()
+    const r = await ctrl.done
+    expect(r.hadCamera).toBe(true)
+    expect(r.bytes).toBe(800)
+  })
+})
+

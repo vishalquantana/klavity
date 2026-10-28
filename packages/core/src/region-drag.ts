@@ -86,6 +86,11 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
   let pressing = false
   let didDrag = false
   let justDragged = false
+  // KD-213: Windows/Linux fire the contextmenu event AFTER mouseup (macOS fires it on mousedown). On a plain right-click the host
+  // opens its own menu on release, right under the pointer, so that late contextmenu event lands ON the freshly opened menu — which
+  // the host treats as "a right-click on our own UI" and lets through to the native browser menu, and both menus appear. Keep the
+  // native menu suppressed for the contextmenu event that follows this release.
+  let justClicked = false
   let startX = 0
   let startY = 0
   let rectEl: HTMLDivElement | null = null
@@ -150,8 +155,11 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
       setTimeout(() => { justDragged = false }, 400)
       opts.onRegion(r)
     } else if (!didDrag) {
-      // Plain right-click: the contextmenu event was suppressed (pressing was true), so the host shows
-      // its menu here on release instead.
+      // Plain right-click: on macOS the contextmenu event was suppressed (pressing was true); on Windows/Linux it has not
+      // fired yet and arrives right after this mouseup. Either way the host shows its menu here on release, so arm the
+      // suppression window BEFORE calling it (KD-213).
+      justClicked = true
+      setTimeout(() => { justClicked = false }, 400)
       opts.onPlainRightClick?.(e.clientX, e.clientY)
     }
   }
@@ -165,7 +173,7 @@ export function installRegionDrag(opts: RegionDragOptions): RegionDragHandle {
   return {
     // pressing: contextmenu fired synchronously with mousedown on macOS — suppress until mouseup so no
     // new menu flashes during a potential drag. didDrag: mid-drag. justDragged: post-drag window.
-    suppressNextMenu: () => pressing || didDrag || justDragged,
+    suppressNextMenu: () => pressing || didDrag || justDragged || justClicked,
     destroy() {
       document.removeEventListener("mousedown", onDown, true)
       document.removeEventListener("mousemove", onMove, true)

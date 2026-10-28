@@ -228,6 +228,19 @@ export async function applySchema(c: Client) {
     )`,
     `CREATE INDEX IF NOT EXISTS evt_proj_idx ON activity_events (project_id, created_at)`,
     `CREATE INDEX IF NOT EXISTS evt_actor_idx ON activity_events (project_id, actor_email, created_at)`,
+    // KD-221: in-app notifications (top-bar bell) — one row per recipient per ticket update.
+    `CREATE TABLE IF NOT EXISTS notifications (
+       id TEXT PRIMARY KEY,
+       recipient_email TEXT NOT NULL,
+       project_id TEXT NOT NULL,
+       feedback_id TEXT,
+       type TEXT NOT NULL,
+       actor_email TEXT,
+       meta_json TEXT,
+       created_at INTEGER NOT NULL,
+       read_at INTEGER
+    )`,
+    `CREATE INDEX IF NOT EXISTS notif_recipient_idx ON notifications (recipient_email, created_at)`,
     // #722 (P1): per-ticket timeline — ticketActivityTimeline runs
     // `WHERE project_id=? AND feedback_id=? ORDER BY created_at ASC, id ASC`. No index covered feedback_id,
     // so every ticket-open scanned the whole (high-write) project event partition. This composite turns it
@@ -1238,6 +1251,12 @@ export async function applySchema(c: Client) {
   if (needCol("ticket_comments", "edited_at")) {
     await c.execute("ALTER TABLE ticket_comments ADD COLUMN edited_at INTEGER")
       .catch((e: any) => console.warn("ticket_comments.edited_at ALTER skipped:", e?.message || e))
+  }
+  // KD-217: images / videos attached to a comment — JSON array of { key, filename, contentType, size } (same shape as a ticket's
+  // attachments). NULL = none.
+  if (needCol("ticket_comments", "attachments_json")) {
+    await c.execute("ALTER TABLE ticket_comments ADD COLUMN attachments_json TEXT")
+      .catch((e: any) => console.warn("ticket_comments.attachments_json ALTER skipped:", e?.message || e))
   }
 
   // ── feedback_replays.s3_key (KLA-757/759 perf): the gzipped rrweb event buffer is uploaded to object
@@ -3940,7 +3959,113 @@ export async function insertActivity(a: ActivityInsert): Promise<string> {
            a.feedbackId ?? null, a.screenshotId ?? null, a.meta != null ? JSON.stringify(a.meta) : null, Date.now()],
   })
   invalidateDashboardCache(a.projectId) // #722 (P2.2): new activity event changes the activity count
+  // KD-221: ticket updates notify the ticket's assignee (top-bar bell). Fire-and-forget — never slows or
+  // fails the write that logged the activity.
+  void notifyAssigneeOfTicketUpdate(a).catch((e: any) => console.warn("notification skipped:", e?.message || e))
   return id
+}
+
+// ── KD-221: in-app notifications ─────────────────────────────────────────────────────────────────────
+// Ticket-update activity types that notify the ticket's assignee. Comment/label/description updates aren't
+// activity events, so their routes call notifyAssigneeOfTicketUpdate directly with these extra types.
+export const NOTIFY_ASSIGNEE_TYPES = new Set([
+  "ticket_created", // a new ticket created already assigned to someone else → "assigned you a new ticket"
+  "ticket_status_changed", "ticket_priority_changed", "ticket_assignee_changed", "ticket_title_changed",
+  "ticket_attachment_added", "ticket_attachment_removed", "ticket_screenshot_annotated", "ticket_qa_closed",
+  "ticket_commented", "ticket_label_added", "ticket_label_removed", "ticket_description_changed",
+])
+
+const _notifEmail = (v: unknown): string | null => {
+  const e = v == null ? "" : String(v).trim().toLowerCase()
+  return e && e.includes("@") ? e : null
+}
+
+export async function createNotification(n: {
+  recipientEmail: string; projectId: string; feedbackId?: string | null; type: string; actorEmail?: string | null; meta?: any
+}): Promise<string> {
+  const id = "ntf_" + crypto.randomUUID()
+  await db!.execute({
+    sql: `INSERT INTO notifications (id,recipient_email,project_id,feedback_id,type,actor_email,meta_json,created_at,read_at)
+          VALUES (?,?,?,?,?,?,?,?,NULL)`,
+    args: [id, n.recipientEmail.toLowerCase(), n.projectId, n.feedbackId ?? null, n.type, n.actorEmail ?? null,
+           n.meta != null ? JSON.stringify(n.meta) : null, Date.now()],
+  })
+  return id
+}
+
+// Who hears about a ticket update: the ticket's current assignee — never the person who made the change.
+// For an assignment change, the NEW assignee ("assigned you") and the PREVIOUS one ("reassigned") hear it.
+export async function notifyAssigneeOfTicketUpdate(a: ActivityInsert): Promise<number> {
+  if (!db || !a.feedbackId || !NOTIFY_ASSIGNEE_TYPES.has(a.type)) return 0
+  const actor = _notifEmail(a.actorEmail)
+  const recipients: string[] = []
+  if (a.type === "ticket_assignee_changed") {
+    for (const e of [a.meta?.to, a.meta?.from]) { const r = _notifEmail(e); if (r) recipients.push(r) }
+  } else {
+    const r = await db.execute({ sql: "SELECT assignee FROM feedback WHERE id=? AND project_id=?", args: [a.feedbackId, a.projectId] })
+    const assignee = _notifEmail(r.rows[0]?.assignee)
+    if (assignee) recipients.push(assignee)
+  }
+  const uniq = [...new Set(recipients)].filter(e => e !== actor)
+  for (const to of uniq) {
+    await createNotification({ recipientEmail: to, projectId: a.projectId, feedbackId: a.feedbackId, type: a.type, actorEmail: actor, meta: a.meta ?? null })
+  }
+  return uniq.length
+}
+
+export type NotificationRow = {
+  id: string; projectId: string; projectName: string | null; feedbackId: string | null; type: string
+  actorEmail: string | null; meta: any; createdAt: number; readAt: number | null
+  ticketTitle: string | null; ticketSeq: number | null
+}
+
+export async function listNotifications(recipientEmail: string, limit = 30): Promise<NotificationRow[]> {
+  const r = await db!.execute({
+    sql: `SELECT n.*, p.name AS project_name, f.title AS f_title, f.suggested_bug_json AS f_sb, f.observation AS f_obs, f.seq_num AS f_seq,
+                 (f.id IS NOT NULL) AS f_exists
+          FROM notifications n
+          LEFT JOIN projects p ON p.id = n.project_id
+          LEFT JOIN feedback f ON f.id = n.feedback_id
+          WHERE n.recipient_email = ?
+          ORDER BY n.created_at DESC LIMIT ?`,
+    args: [recipientEmail.toLowerCase(), Math.max(1, Math.min(100, limit))],
+  })
+  return r.rows.map((x: any) => {
+    let meta: any = null
+    try { meta = x.meta_json ? JSON.parse(String(x.meta_json)) : null } catch { meta = null }
+    return {
+      id: String(x.id), projectId: String(x.project_id), projectName: x.project_name != null ? String(x.project_name) : null,
+      feedbackId: x.feedback_id != null ? String(x.feedback_id) : null, type: String(x.type),
+      actorEmail: x.actor_email != null ? String(x.actor_email) : null, meta,
+      createdAt: Number(x.created_at), readAt: x.read_at != null ? Number(x.read_at) : null,
+      ticketTitle: Number(x.f_exists) ? effectiveTicketTitle({ title: x.f_title, suggested_bug_json: x.f_sb, observation: x.f_obs }) : null,
+      ticketSeq: x.f_seq != null ? Number(x.f_seq) : null,
+    }
+  })
+}
+
+export async function countUnreadNotifications(recipientEmail: string): Promise<number> {
+  const r = await db!.execute({
+    sql: "SELECT COUNT(*) AS n FROM notifications WHERE recipient_email=? AND read_at IS NULL",
+    args: [recipientEmail.toLowerCase()],
+  })
+  return Number(r.rows[0]?.n ?? 0)
+}
+
+// Mark the recipient's notifications read — the given ids, or all of them when `ids` is null.
+export async function markNotificationsRead(recipientEmail: string, ids: string[] | null): Promise<number> {
+  const now = Date.now()
+  if (ids === null) {
+    const r = await db!.execute({ sql: "UPDATE notifications SET read_at=? WHERE recipient_email=? AND read_at IS NULL", args: [now, recipientEmail.toLowerCase()] })
+    return r.rowsAffected ?? 0
+  }
+  const clean = ids.map(String).filter(Boolean).slice(0, 100)
+  if (!clean.length) return 0
+  const r = await db!.execute({
+    sql: `UPDATE notifications SET read_at=? WHERE recipient_email=? AND read_at IS NULL AND id IN (${clean.map(() => "?").join(",")})`,
+    args: [now, recipientEmail.toLowerCase(), ...clean],
+  })
+  return r.rowsAffected ?? 0
 }
 
 // ── dashboard reads (P1) — indexed, project-scoped, newest-first. Reads only. ──
@@ -3978,8 +4103,18 @@ export async function listActivity(projectId: string, opts: { actorEmail?: strin
   return r.rows.map(rowToActivity)
 }
 
+export type CommentAttachment = { key: string; filename: string; contentType: string; size?: number; url?: string | null }
 export type TicketCommentRow = {
   id: string; feedbackId: string; author: string | null; body: string; createdAt: number; editedAt: number | null
+  // KD-217: images / videos attached to the comment (storage entries; the server adds a presigned url when it returns them).
+  attachments: CommentAttachment[]
+}
+function parseCommentAttachments(raw: any): CommentAttachment[] {
+  if (raw == null || raw === "") return []
+  try {
+    const v = JSON.parse(String(raw))
+    return Array.isArray(v) ? v.filter((a) => a && typeof a === "object" && a.key) : []
+  } catch { return [] }
 }
 function rowToTicketComment(x: any): TicketCommentRow {
   return {
@@ -3989,11 +4124,13 @@ function rowToTicketComment(x: any): TicketCommentRow {
     body: String(x.body),
     createdAt: Number(x.created_at),
     editedAt: x.edited_at != null ? Number(x.edited_at) : null,
+    attachments: parseCommentAttachments(x.attachments_json),
   }
 }
-export async function insertTicketComment(feedbackId: string, author: string | null, body: string): Promise<TicketCommentRow> {
+export async function insertTicketComment(feedbackId: string, author: string | null, body: string, attachments: CommentAttachment[] = []): Promise<TicketCommentRow> {
   const trimmed = String(body || "").trim()
-  if (!trimmed) throw new Error("comment body required")
+  // KD-217: a comment may be attachments only (no text) — but never completely empty.
+  if (!trimmed && !attachments.length) throw new Error("comment body required")
   // KLA-780 round-3 (Muse C3-6, checklist L): a comment on a MERGED (hidden) row would be invisible on
   // the board. Redirect it to the live survivor so the comment lands on the ticket that's actually shown.
   {
@@ -4006,10 +4143,10 @@ export async function insertTicketComment(feedbackId: string, author: string | n
   const id = "tc_" + crypto.randomUUID()
   const createdAt = Date.now()
   await db!.execute({
-    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at) VALUES (?,?,?,?,?)",
-    args: [id, feedbackId, author ?? null, trimmed, createdAt],
+    sql: "INSERT INTO ticket_comments (id,feedback_id,author,body,created_at,attachments_json) VALUES (?,?,?,?,?,?)",
+    args: [id, feedbackId, author ?? null, trimmed, createdAt, attachments.length ? JSON.stringify(attachments) : null],
   })
-  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt }
+  return { id, feedbackId, author: author ?? null, body: trimmed, createdAt, editedAt: null, attachments }
 }
 export async function listTicketComments(feedbackId: string): Promise<TicketCommentRow[]> {
   const r = await db!.execute({
@@ -4021,14 +4158,26 @@ export async function listTicketComments(feedbackId: string): Promise<TicketComm
 
 // KD-158: edit an already-posted comment's body. Scoped by feedbackId so a comment id can't be
 // used to edit a comment on an unrelated ticket. Returns the updated row, or null if not found.
-export async function updateTicketComment(commentId: string, feedbackId: string, body: string): Promise<TicketCommentRow | null> {
+export async function updateTicketComment(commentId: string, feedbackId: string, body: string, removeKeys: string[] = []): Promise<TicketCommentRow | null> {
   const trimmed = String(body || "").trim()
-  if (!trimmed) throw new Error("comment body required")
   const editedAt = Date.now()
-  const r = await db!.execute({
-    sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?",
-    args: [trimmed, editedAt, commentId, feedbackId],
-  })
+  // KD-217: an edit may also drop some of the comment's attachments (removeKeys = their storage keys). The text may then be empty
+  // only while at least one attachment is left — a comment is never completely empty.
+  let attachmentsJson: string | null | undefined
+  if (removeKeys.length) {
+    const cur = await db!.execute({ sql: "SELECT attachments_json FROM ticket_comments WHERE id=? AND feedback_id=? LIMIT 1", args: [commentId, feedbackId] })
+    if (!cur.rows.length) return null
+    const keep = parseCommentAttachments((cur.rows[0] as any).attachments_json).filter((a) => !removeKeys.includes(String(a.key)))
+    if (!trimmed && !keep.length) throw new Error("comment body required")
+    attachmentsJson = keep.length ? JSON.stringify(keep) : null
+  } else if (!trimmed) {
+    const cur = await db!.execute({ sql: "SELECT attachments_json FROM ticket_comments WHERE id=? AND feedback_id=? LIMIT 1", args: [commentId, feedbackId] })
+    if (!cur.rows.length) return null
+    if (!parseCommentAttachments((cur.rows[0] as any).attachments_json).length) throw new Error("comment body required")
+  }
+  const r = attachmentsJson === undefined
+    ? await db!.execute({ sql: "UPDATE ticket_comments SET body=?, edited_at=? WHERE id=? AND feedback_id=?", args: [trimmed, editedAt, commentId, feedbackId] })
+    : await db!.execute({ sql: "UPDATE ticket_comments SET body=?, edited_at=?, attachments_json=? WHERE id=? AND feedback_id=?", args: [trimmed, editedAt, attachmentsJson, commentId, feedbackId] })
   if (Number(r.rowsAffected) === 0) return null
   const sel = await db!.execute({ sql: "SELECT * FROM ticket_comments WHERE id=? LIMIT 1", args: [commentId] })
   return sel.rows.length ? rowToTicketComment(sel.rows[0]) : null
@@ -4044,7 +4193,7 @@ export async function deleteTicketComment(commentId: string, feedbackId: string)
 }
 
 export type TicketTimelineItem =
-  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null }
+  | { id: string; kind: "comment"; type: "comment"; author: string | null; body: string; createdAt: number; editedAt: number | null; attachments: CommentAttachment[] }
   | { id: string; kind: "activity"; type: string; actorEmail: string | null; meta: any; createdAt: number }
   | { id: string; kind: "ticket_export"; type: "connector_export"; actorEmail: string | null; meta: any; createdAt: number }
 
@@ -4062,7 +4211,7 @@ export async function ticketActivityTimeline(projectId: string, feedbackId: stri
   ])
   const items: TicketTimelineItem[] = [
     ...comments.map((c): TicketTimelineItem => ({
-      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt,
+      id: c.id, kind: "comment", type: "comment", author: c.author, body: c.body, createdAt: c.createdAt, editedAt: c.editedAt, attachments: c.attachments,
     })),
     ...activity.rows.map((r: any): TicketTimelineItem => ({
       id: String(r.id),
@@ -5087,7 +5236,7 @@ function dashCachePrune(m: Map<string, any>): void { if (m.size > 500) m.clear()
 //   NOT NULL); activity → evt_proj_idx(project_id,…). Resilient by design: a single slow/failing
 //   count resolves to `null` (rendered as "—" client-side) instead of rejecting and taking the
 //   whole /api/dashboard payload down with it — a decorative number must never break the page.
-export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null }> {
+export async function dashboardCounts(projectId: string): Promise<{ feedback: number | null; tickets: number | null; activity: number | null; openTickets: number | null }> {
   // #722 (P2.2): serve from the short-TTL project-level cache when fresh.
   const cached = dashCountsCache.get(projectId)
   if (cached && Date.now() - cached.at < DASH_CACHE_TTL_MS) return cached.value
@@ -5099,16 +5248,19 @@ export async function dashboardCounts(projectId: string): Promise<{ feedback: nu
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND plane_issue_key IS NOT NULL AND merged_into IS NULL"),
     q("SELECT COUNT(*) AS n FROM activity_events WHERE project_id=?"),
+    // KD-265: the sidebar "Tickets" badge = the tickets waiting on someone: To Do ('new'), Open and In Progress. Anything further
+    // along (blocked, ready for deployment, deployed, QA review, done) or dismissed is not counted; merged-away rows never are.
+    q("SELECT COUNT(*) AS n FROM feedback WHERE project_id=? AND merged_into IS NULL AND status IN ('new','open','in_progress')"),
   ])
   const num = (s: PromiseSettledResult<any>): number | null =>
     s.status === "fulfilled" ? Number((s.value.rows[0] as any).n) : null
-  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]) }
+  const result = { feedback: num(settled[0]), tickets: num(settled[1]), activity: num(settled[2]), openTickets: num(settled[3]) }
   // Only cache a fully-successful read; a partial/failed count (any null) is left uncached so it
   // retries next poll rather than pinning a "—" for the whole TTL. AND only if we can prove no
   // invalidation touched this project since we started (Finding 3/2): its effective last-invalidation
   // sequence must be no newer than our start snapshot. An evicted/missing project defaults to the floor,
   // which is >= any pre-prune snapshot, so such reads decline to cache — never pinning stale data.
-  if (result.feedback !== null && result.tickets !== null && result.activity !== null
+  if (result.feedback !== null && result.tickets !== null && result.activity !== null && result.openTickets !== null
       && dashGenOf(projectId) <= seqAtStart) {
     dashCachePrune(dashCountsCache)
     dashCountsCache.set(projectId, { at: Date.now(), value: result })
@@ -7313,11 +7465,42 @@ export async function removeFeedbackAttachment(feedbackId: string, projectId: st
 // point at one object — deleting it would break the other. Underscore / percent in the key only widen the LIKE, so at worst we
 // keep an orphan object and never delete a shared one.
 export async function attachmentKeyReferencedElsewhere(key: string, exceptFeedbackId: string): Promise<boolean> {
+  const like = "%\"key\":" + JSON.stringify(key) + "%"
   const r = await db!.execute({
     sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND attachments_json LIKE ? LIMIT 1",
-    args: [exceptFeedbackId, "%\"key\":" + JSON.stringify(key) + "%"],
+    args: [exceptFeedbackId, like],
   })
-  return r.rows.length > 0
+  if (r.rows.length > 0) return true
+  // KD-217: a stored file may also be attached to a comment (a deleted comment's rows are already gone when this runs).
+  const c = await db!.execute({ sql: "SELECT 1 AS x FROM ticket_comments WHERE attachments_json LIKE ? LIMIT 1", args: [like] })
+  return c.rows.length > 0
+}
+
+// KD-214: detach a ticket's own report screenshot (feedback.screenshot_id). Compare-and-swap on the screenshot id, so a stale
+// page can never clear a different screenshot. The screenshot's annotation markup belongs to it and goes too. The stored object
+// and the screenshots row are NOT touched here — the caller purges them only if nothing else references the image.
+export async function detachFeedbackScreenshot(feedbackId: string, projectId: string, screenshotId: string): Promise<boolean> {
+  if (!screenshotId) return false
+  const u = await db!.execute({
+    sql: "UPDATE feedback SET screenshot_id=NULL, annotations_json=NULL WHERE id=? AND project_id=? AND screenshot_id=?",
+    args: [feedbackId, projectId, screenshotId],
+  })
+  return Number(u.rowsAffected || 0) > 0
+}
+// KD-214: does anything OTHER than this ticket still use the screenshot? Merging copies the screenshot id onto the surviving
+// ticket / occurrence rows and attachment entries, so two tickets can point at one stored image. Any hit means "keep the file".
+export async function screenshotReferencedElsewhere(screenshotId: string, exceptFeedbackId: string): Promise<boolean> {
+  const checks: Array<{ sql: string; args: any[] }> = [
+    { sql: "SELECT 1 AS x FROM feedback WHERE id<>? AND (screenshot_id=? OR attachments_json LIKE ?) LIMIT 1", args: [exceptFeedbackId, screenshotId, "%\"screenshotId\":" + JSON.stringify(screenshotId) + "%"] },
+    { sql: "SELECT 1 AS x FROM feedback_occurrences WHERE feedback_id<>? AND screenshot_id=? LIMIT 1", args: [exceptFeedbackId, screenshotId] },
+    { sql: "SELECT 1 AS x FROM sim_runs WHERE screenshot_id=? LIMIT 1", args: [screenshotId] },
+    { sql: "SELECT 1 AS x FROM activity_events WHERE screenshot_id=? AND (feedback_id IS NULL OR feedback_id<>?) LIMIT 1", args: [screenshotId, exceptFeedbackId] },
+  ]
+  for (const c of checks) {
+    const r = await db!.execute(c)
+    if (r.rows.length > 0) return true
+  }
+  return false
 }
 
 // QA mode (team-gated per-page bug view): the reports/tickets whose captured page matches a given
@@ -8215,6 +8398,7 @@ export async function eraseUser(email: string): Promise<{ s3Keys: string[] }> {
   await db!.execute({ sql: "DELETE FROM project_members WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM monitoring_consent WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM extension_tokens WHERE email=?", args: [e] })
+  await db!.execute({ sql: "DELETE FROM notifications WHERE recipient_email=?", args: [e] }) // KD-221
   await db!.execute({ sql: "DELETE FROM login_otps WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM sessions WHERE email=?", args: [e] })
   await db!.execute({ sql: "DELETE FROM users WHERE email=?", args: [e] })
@@ -8344,6 +8528,7 @@ export async function listTriageFeedback(projectId: string): Promise<any[]> {
       // JTBD 2.8: inline-evidence fields for the expandable triage row.
       hasReplay: replaySet.has(String(x.id)),
       clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+      source: x.source != null ? String(x.source) : (x.sim_id != null ? "sim" : null),
     }
   })
 }
@@ -8518,8 +8703,11 @@ export async function listTicketsPaginated(
     statuses?: string[]      // e.g. ["open","in_progress"]; empty = all non-new
     priorities?: string[]    // e.g. ["urgent","high"]
     assignee?: string        // exact email match; empty string = unassigned; omit = all
+    assignees?: string[]     // multi-assignee list; empty string or __unassigned__ = unassigned
     source?: "sim" | "human" | "manual" // sim = sim_id IS NOT NULL; human = sim_id IS NULL and not manual; manual = source='manual'
+    sources?: string[]       // multi-source list
     label?: string           // exact label id; omit = all labels
+    labels?: string[]        // multi-label list
     search?: string          // case-insensitive text search across ticket content
     page?: number            // 1-indexed, default 1
     limit?: number           // default 50, max 200
@@ -8553,11 +8741,22 @@ export async function listTicketsPaginated(
   }
 
   if (opts.priorities && opts.priorities.length) {
-    conditions.push(`f.priority IN (${opts.priorities.map(() => "?").join(",")})`)
+    // KD-236: an unset priority is "medium" (the canonical default the UI shows), so the Medium filter includes it.
+    conditions.push(`COALESCE(NULLIF(f.priority, ''), 'medium') IN (${opts.priorities.map(() => "?").join(",")})`)
     args.push(...opts.priorities)
   }
 
-  if (opts.assignee !== undefined) {
+  if (opts.assignees && opts.assignees.length) {
+    const hasUnassigned = opts.assignees.includes("") || opts.assignees.includes("__unassigned__")
+    const named = opts.assignees.filter(a => a && a !== "__unassigned__")
+    const aParts: string[] = []
+    if (hasUnassigned) aParts.push("(f.assignee IS NULL OR f.assignee='')")
+    if (named.length) {
+      aParts.push(`f.assignee IN (${named.map(() => "?").join(",")})`)
+      args.push(...named)
+    }
+    if (aParts.length) conditions.push(`(${aParts.join(" OR ")})`)
+  } else if (opts.assignee !== undefined) {
     if (opts.assignee === "") {
       conditions.push("(f.assignee IS NULL OR f.assignee='')")
     } else {
@@ -8566,17 +8765,21 @@ export async function listTicketsPaginated(
     }
   }
 
-  if (opts.source === "sim") conditions.push("f.sim_id IS NOT NULL")
-  else if (opts.source === "manual") conditions.push("f.source='manual'")
-  else if (opts.source === "human") conditions.push("f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual')")
+  const sources = (opts.sources && opts.sources.length) ? opts.sources : (opts.source ? [opts.source] : [])
+  if (sources.length) {
+    const sParts: string[] = []
+    if (sources.includes("sim")) sParts.push("f.sim_id IS NOT NULL")
+    if (sources.includes("manual")) sParts.push("f.source='manual'")
+    if (sources.includes("human")) sParts.push("(f.sim_id IS NULL AND (f.source IS NULL OR f.source != 'manual'))")
+    if (sParts.length) conditions.push(`(${sParts.join(" OR ")})`)
+  }
 
-  if (opts.label) {
-    // Scope the label through the ticket's project too: a label from another tenant can never
-    // influence this result, even if its ID were somehow supplied by a caller.
+  const labels = (opts.labels && opts.labels.length) ? opts.labels : (opts.label ? [opts.label] : [])
+  if (labels.length) {
     conditions.push(`EXISTS (SELECT 1 FROM ticket_labels tl
                              JOIN labels l ON l.id = tl.label_id
-                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id = ?)`)
-    args.push(opts.label)
+                             WHERE tl.feedback_id = f.id AND l.project_id = f.project_id AND tl.label_id IN (${labels.map(() => "?").join(",")}))`)
+    args.push(...labels)
   }
 
   const search = opts.search?.trim()
@@ -8653,13 +8856,53 @@ export async function listTicketsPaginated(
       createdAt: Number(x.created_at),
       updatedAt: x.updated_at != null ? Number(x.updated_at) : null,
     lastSeenAt: x.last_seen_at != null ? Number(x.last_seen_at) : null,
-      source: x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human"),
+      source: x.source === "autosim" ? "autosim" : (x.sim_id != null ? "sim" : (x.source === "manual" ? "manual" : "human")),
       // KLA-200: human-readable sequential number
       seqNum: x.seq_num != null ? Number(x.seq_num) : null,
     }
   })
 
   return { tickets, total, page, totalPages }
+}
+
+export async function deleteTicketsBulk(
+  projectId: string,
+  ticketIds: string[]
+): Promise<{ deleted: number; ticketIds: string[] }> {
+  const cleanIds = Array.isArray(ticketIds)
+    ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
+    : []
+  if (!cleanIds.length) return { deleted: 0, ticketIds: [] }
+
+  const placeholders = cleanIds.map(() => "?").join(",")
+  const existingRows = await db!.execute({
+    sql: `SELECT id FROM feedback WHERE project_id = ? AND id IN (${placeholders})`,
+    args: [projectId, ...cleanIds],
+  })
+  const validIds = existingRows.rows.map((r: any) => String(r.id)).filter(Boolean)
+  if (!validIds.length) return { deleted: 0, ticketIds: [] }
+
+  const validPlaceholders = validIds.map(() => "?").join(",")
+
+  const stmts: Array<{ sql: string; args: any[] }> = [
+    { sql: `DELETE FROM ticket_comments WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_labels WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_exports WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM activity_events WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback_occurrences WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback_replays WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_viewers WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM ticket_assignment_invites WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM export_requests WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM export_outbox WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `UPDATE submission_keys SET feedback_id=NULL WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
+    { sql: `DELETE FROM feedback WHERE project_id = ? AND id IN (${validPlaceholders})`, args: [projectId, ...validIds] },
+  ]
+
+  await db!.batch(stmts, "write")
+  invalidateDashboardCache(projectId)
+
+  return { deleted: validIds.length, ticketIds: validIds }
 }
 
 // ── sim_runs — on-demand Sim run records ─────────────────────────────────────

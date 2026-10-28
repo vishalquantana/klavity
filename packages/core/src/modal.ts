@@ -1,8 +1,8 @@
 import type { ReportType, IssueKind, ReportFileAttachment, ReportRecording, Shape } from './types'
-import { Annotator } from './annotator'
+import { Annotator, renderAnnotatedImage, extractAnnotationTexts } from './annotator'
 import { themeCss, resolveModalConfig, type ModalConfig } from './modal-theme'
 import { icon } from './icons'
-import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode } from './voice-input'
+import { VoiceInput, LiveDictation, StreamingDictation, pickDictationMode, joinSpeechSegments, formatSpeechFinal } from './voice-input'
 import { maskNumbers } from './mask-numbers'
 import { scoreReportClarity, shouldFetchClarityTip, shouldNudgeOnSubmit, suppressesAutoCapturedAsk } from './report-clarity'
 import { safeRemove } from './safe-remove'
@@ -320,6 +320,10 @@ export interface ModalCallbacks {
   // (what the reporter actually sees). The manual "Screen" button still uses the full-page onCaptureSharp,
   // and "Full Page" stays an explicit opt-in. Absent → the default falls back to onCaptureSharp (unchanged).
   onCaptureSharpViewport?: () => Promise<CaptureResult>
+  // KD-988 (ext↔widget parity): true when the host's onCaptureSharp needs NO screen-share prompt (the extension
+  // grabs real tab pixels via captureVisibleTab). The Snap tooltip then drops the "share this tab" copy and the
+  // hover never shows the "click Allow" share-picker hint. Default false → the widget's getDisplayMedia copy.
+  snapWithoutSharePrompt?: boolean
   // JTBD 1.9: the real-pixel "Retake sharp" path invoked from a degraded (rendered/wireframe) thumbnail's
   // badge. Returns a fresh real-pixel capture that replaces the degraded image in place. On the widget this
   // is the getDisplayMedia screen-share; on the extension it's the captureVisibleTab full-page capture. The
@@ -360,6 +364,8 @@ export interface ModalCallbacks {
   // full current text (not a diff) so the host can just persist-overwrite. Best-effort, fire-and-forget —
   // never blocks typing or Submit. Absent → composer identical to today (no persistence, full back-compat).
   onDescriptionChange?: (text: string) => void
+  // Persist the typed title (if the title field is shown) into the active draft session.
+  onTitleChange?: (text: string) => void
   // KLA-586 (AI "Enhance"): the heavier, opt-in rung above the clarity coach. When wired, an "Enhance with
   // AI" button appears under the description; clicking it hands the reporter's current text + the primary
   // captured screenshot + the picked element to this callback, which POSTs /api/report/enhance and resolves
@@ -369,7 +375,13 @@ export interface ModalCallbacks {
   // Widget-only — the extension omits it (no button), preserving parity with onClarityTip/onPickElement.
   onEnhance?: (
     text: string,
-    ctx?: { images?: number; shot?: string; picked?: { selector: string; text: string } | null },
+    ctx?: {
+      images?: number
+      shot?: string
+      annotations?: any
+      annotationTexts?: string[]
+      picked?: { selector: string; text: string } | null
+    },
   ) => Promise<EnhanceDraftLike | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
@@ -450,12 +462,8 @@ export interface ModalCallbacks {
   // evidence strip as a removable video chip, threading through onSubmit as `recordings`. Default false →
   // no button, composer identical to today (full back-compat — callers that don't enable it are unchanged).
   allowRecording?: boolean
-  // Host-supplied recorder entry point. Returns the captured recording (or null if the reporter cancelled).
-  // Kept as a callback so the heavy MediaRecorder/getDisplayMedia machinery lives in the sdk, not core.
-  // KLA-555 (walkthrough mode): receives an optional `onPhase` the recorder fires on each overlay phase
-  // ('consent'|'recording'|'preview'). The composer hides itself while phase==='recording' (so the docked
-  // Stop bar sits over the live app, not behind a dimmed composer) and restores on any other phase — plus a
-  // belt-and-suspenders restore in the click handler's finally when onRecord resolves/rejects.
+  // Seed recordings when the composer opens (e.g. from an in-progress session restore).
+  initialRecordings?: ReportRecording[]
   onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
@@ -540,6 +548,8 @@ export interface ModalCallbacks {
   // controller's addScreenshot() (the host already knows those). The host uses it to append the shot,
   // tagged with the current page URL, to the evidence session. Absent => nothing extra happens.
   onShotAdded?: (dataUrl: string, quality: CaptureQuality | undefined) => void
+  // Fired when an in-place capture (e.g. background full-page render) swaps out a fast preview.
+  onShotReplaced?: (index: number, dataUrl: string, quality: CaptureQuality | undefined) => void
   // Fired when the reporter removes a thumbnail, with its strip index, so the host can drop the matching
   // shot from the evidence session (indices stay aligned with the seed + append order). Absent => no-op.
   onShotRemoved?: (index: number) => void
@@ -733,6 +743,7 @@ export function buildModal(
   // renderer couldn't inline dropped to white gaps). Drives a non-intrusive callout pointing at the Screen
   // button. Cleared when the shot is retaken sharp / removed. Index-aligned like the quality + page arrays.
   let screenshotSuggestSharp: boolean[] = []
+  let inFlightFullRender: Promise<void> | null = null
   // KLA-621: parallel array of per-shot capture provenance — screenshotCapture[i] tells Retake what to redo
   // for screenshots[i] (region rect / picked element selector / sharp mode). undefined for shots with no known
   // provenance (uploads / pastes) → Retake keeps its legacy full-frame behaviour. Index-aligned like the rest.
@@ -743,6 +754,9 @@ export function buildModal(
   // and we chose to show the "couldn't capture — Snap" empty state instead of seeding a white image. Cleared
   // the moment any real shot lands so the empty state reverts to its normal copy.
   let blankCaptureHint = false
+  // KD-184: the page was too large for the rendered auto-capture-on-open, so it was skipped — the empty stage
+  // says so (and steers to Snap / Full Page) instead of the neutral "capture or upload" prompt.
+  let largePageHint = false
   // snap-share-hint: set once a real screen-share (getDisplayMedia) capture succeeds — after that the reporter
   // clearly knows the flow, so the "click Allow" hover hint on the Snap button suppresses itself for the session.
   let shareCaptureSucceeded = false
@@ -752,9 +766,12 @@ export function buildModal(
   const sessionMode = !!callbacks.onMinimize
   // Upload guards (Dev 6 audit #4): cap how many images can be attached and how big each may be.
   const MAX_IMAGES = sessionMode ? 8 : 5
-  // KLAVITYKLA-506: above this element count, auto-capture-on-open is skipped (the html-to-image render
-  // would jank the composer's first paint). The user can still click "Full Page" to capture on demand.
-  const AUTO_CAPTURE_MAX_NODES = 15_000
+  // KLAVITYKLA-506: above this element count, the RENDERED auto-capture-on-open is skipped (the html-to-image
+  // render would jank the composer's first paint). The user can still click "Full Page" to capture on demand.
+  // KD-184: raised from 15k — PX4's Objections list (721 rows) is ~18.4k elements and its viewport render takes
+  // ~2.3s with <=1s main-thread gaps, AFTER the composer has painted; at 15k it silently opened to an empty stage.
+  // The on-open Screen (getDisplayMedia) capture is real pixels, so it is never gated by this count.
+  const AUTO_CAPTURE_MAX_NODES = 30_000
   const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per image
   // PX4 #425: non-image file attachments (PDF, .log, .har, ...). Kept separate from screenshots[] so the
   // image-hero/annotator logic is untouched. Capped by count + total bytes; each file also obeys MAX_FILE_BYTES.
@@ -792,7 +809,7 @@ export function buildModal(
   })
   const voiceSupported = voiceMode !== 'none'
   const MAX_RECORDINGS = 2
-  let recordings: ReportRecording[] = []
+  let recordings: ReportRecording[] = (callbacks.initialRecordings && Array.isArray(callbacks.initialRecordings)) ? [...callbacks.initialRecordings] : []
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
   const issueTypeOpts = (callbacks.issueTypes && callbacks.issueTypes.length) ? callbacks.issueTypes : null
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
@@ -1553,7 +1570,7 @@ export function buildModal(
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
       <div class="klavity-actions">
-        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b> using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.</span></button>` : ''}
+        ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b>${callbacks.snapWithoutSharePrompt ? '.' : ` using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.`}</span></button>` : ''}
         <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
         ${/* KLA-591: ONE unified attach control (images + video + PDF/logs) when file attachments are on;
              image-only "Upload" otherwise. The old separate "Attach file" button is gone. */''}
@@ -1693,7 +1710,8 @@ export function buildModal(
     const showTip = () => {
       // Prefer the actionable "click Allow" share hint; fall back to the plain "what Snap does" tip once a
       // share has been granted this session or the browser reports display-capture already granted.
-      if (!shareCaptureSucceeded && !shareGranted) {
+      // KD-988: a prompt-less Snap (the extension) has no share dialog to explain → always the plain tip.
+      if (!callbacks.snapWithoutSharePrompt && !shareCaptureSucceeded && !shareGranted) {
         ft.classList.remove('kl-show')
         placeUnderSharp(shp, 288)
         shp.classList.add('kl-show')
@@ -1800,6 +1818,19 @@ export function buildModal(
       uploadProgressPct = attachmentProgressPercent(pct)
       if (_closed) return
       try { updateStrip(); renderFiles() } catch { /* progress paint is best-effort */ }
+    },
+    addRecording: (rec: ReportRecording) => {
+      if (!rec || _closed) return
+      const existingIdx = recordings.findIndex((r) => (r.id && rec.id && r.id === rec.id) || (r.dataUrl && rec.dataUrl && r.dataUrl === rec.dataUrl))
+      if (existingIdx >= 0) {
+        recordings[existingIdx] = rec
+        activeRecordingIndex = existingIdx
+      } else {
+        recordings.push(rec)
+        activeRecordingIndex = recordings.length - 1
+      }
+      activeVideoIndex = null
+      renderRecordings()
     },
   }
 
@@ -1962,7 +1993,11 @@ export function buildModal(
       wrap.className = 'klavity-thumb kl-video-thumb kl-rec-tile'
       if (activeRecordingIndex === ri) wrap.classList.add('kl-thumb-active')
       const vid = document.createElement('video')
-      vid.src = rec.dataUrl
+      let thumbSrc = rec.dataUrl
+      if (rec.blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        thumbSrc = (rec as any)._previewUrl || ((rec as any)._previewUrl = URL.createObjectURL(rec.blob))
+      }
+      vid.src = thumbSrc
       vid.muted = true
       vid.preload = 'metadata'
       vid.setAttribute('playsinline', '')
@@ -1986,7 +2021,10 @@ export function buildModal(
       redo.setAttribute('aria-label', 'Re-record')
       redo.addEventListener('click', (e) => {
         e.stopPropagation()
-        recordings.splice(ri, 1)
+        const removed = recordings.splice(ri, 1)[0]
+        if (removed && (removed as any)._previewUrl) {
+          try { URL.revokeObjectURL((removed as any)._previewUrl) } catch {}
+        }
         if (activeRecordingIndex === ri) activeRecordingIndex = null
         else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
         renderRecordings()
@@ -2000,7 +2038,10 @@ export function buildModal(
       rm.title = 'Remove'
       rm.addEventListener('click', (e) => {
         e.stopPropagation()
-        recordings.splice(ri, 1)
+        const removed = recordings.splice(ri, 1)[0]
+        if (removed && (removed as any)._previewUrl) {
+          try { URL.revokeObjectURL((removed as any)._previewUrl) } catch {}
+        }
         if (activeRecordingIndex === ri) activeRecordingIndex = null
         else if (activeRecordingIndex != null && activeRecordingIndex > ri) activeRecordingIndex -= 1
         renderRecordings()
@@ -2101,9 +2142,17 @@ export function buildModal(
   // neutral "capture or upload" prompt.
   function emptyStateText(): string {
     if (blankCaptureHint) {
+      if (callbacks.onCaptureSharp && callbacks.snapWithoutSharePrompt) {
+        return "Couldn't grab this page automatically — click Snap for a pixel-perfect shot, or attach an image."
+      }
       return callbacks.onCaptureSharp
         ? "Couldn't grab this page automatically — click Snap to share your tab for a pixel-perfect shot, or attach an image."
         : "Couldn't grab this page automatically — try Full Page, or attach an image."
+    }
+    if (largePageHint) {
+      return callbacks.onCaptureSharp
+        ? "This page is too large to capture automatically — click Snap for a pixel-perfect shot, or Full Page."
+        : "This page is too large to capture automatically — click Full Page to capture it, or attach an image."
     }
     return 'Capture or upload a screenshot to start marking it up'
   }
@@ -2126,6 +2175,7 @@ export function buildModal(
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
     clearError()
+    largePageHint = false
     blankCaptureHint = false // a real shot landed → drop the "couldn't capture" empty-state steer
     screenshots.push(dataUrl)
     // KLA-772: re-seed a restored shot's saved overlay so the inline annotator repaints the drawn shapes when
@@ -2407,6 +2457,15 @@ export function buildModal(
     if (_closed) return
     _closed = true
     for (const f of attachedFiles) revokeAttachmentPreview(f)
+    for (const r of recordings) {
+      if ((r as any)._previewUrl) {
+        try { URL.revokeObjectURL((r as any)._previewUrl) } catch {}
+      }
+    }
+    if (activeHeroObjectUrl) {
+      try { URL.revokeObjectURL(activeHeroObjectUrl) } catch {}
+      activeHeroObjectUrl = null
+    }
     _stopVoice?.()
     if (autodismissTimeout) {
       clearTimeout(autodismissTimeout)
@@ -2640,7 +2699,7 @@ export function buildModal(
   const emailValid = () => !callbacks.requireEmail || (!!remail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(remail.value.trim()))
   // JTBD 1.10: a screenshot (or an attached replay buffer) is evidence in its own right — Submit no longer
   // requires typed prose. The server accepts an evidence-only report and the AI drafts the title post-intake.
-  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0
+  const hasEvidence = () => screenshots.length > 0 || replayAttached || attachedFiles.length > 0 || recordings.length > 0 || desc.value.trim().length > 0 || ((modal.querySelector('#klavity-title') as HTMLInputElement | null)?.value.trim().length ?? 0) > 0
   // KLA-773: closing with unsaved evidence (screenshot / recording / replay / files) used to discard it
   // silently — X, backdrop click and Esc all called close() unconditionally. Guard those three paths with a
   // lightweight in-modal confirm (never a blocking window.confirm() — that would freeze the host page). The
@@ -2706,10 +2765,40 @@ export function buildModal(
   if (callbacks.onDescriptionChange) {
     const onDescriptionChange = callbacks.onDescriptionChange
     let descPersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushDesc = () => {
+      if (descPersistTimer) { clearTimeout(descPersistTimer); descPersistTimer = null }
+      try { onDescriptionChange(desc.value) } catch { /* best-effort */ }
+    }
     desc.addEventListener('input', () => {
       if (descPersistTimer) clearTimeout(descPersistTimer)
-      descPersistTimer = setTimeout(() => { try { onDescriptionChange(desc.value) } catch { /* best-effort */ } }, 600)
+      descPersistTimer = setTimeout(flushDesc, 600)
     })
+    desc.addEventListener('blur', flushDesc)
+    desc.addEventListener('change', flushDesc)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushDesc)
+      window.addEventListener('pagehide', flushDesc)
+    }
+  }
+
+  const titleInp = modal.querySelector('#klavity-title') as HTMLInputElement | null
+  if (titleInp && callbacks.onTitleChange) {
+    const onTitleChange = callbacks.onTitleChange
+    let titlePersistTimer: ReturnType<typeof setTimeout> | null = null
+    const flushTitle = () => {
+      if (titlePersistTimer) { clearTimeout(titlePersistTimer); titlePersistTimer = null }
+      try { onTitleChange(titleInp.value) } catch { /* best-effort */ }
+    }
+    titleInp.addEventListener('input', () => {
+      if (titlePersistTimer) clearTimeout(titlePersistTimer)
+      titlePersistTimer = setTimeout(flushTitle, 600)
+    })
+    titleInp.addEventListener('blur', flushTitle)
+    titleInp.addEventListener('change', flushTitle)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', flushTitle)
+      window.addEventListener('pagehide', flushTitle)
+    }
   }
   // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
   // Shown for any well-formed address (see the markup note on why we never ask the server whether it
@@ -2876,6 +2965,26 @@ export function buildModal(
     let originalText: string | null = null
     // The primary screenshot for grounding: the active hero shot, else the first captured shot.
     const primaryShot = (): string => screenshots[activeIndex] || screenshots[0] || ''
+    const getActiveAnnotatedShotSync = (): string | null => {
+      const base = primaryShot()
+      if (!base) return ''
+      const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+      const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+      if (!ann || !Array.isArray(ann.shapes) || !ann.shapes.length) return base
+
+      // If the hero stage currently has the canvas for this index, use it directly (already rendered):
+      const stage = shadowRoot.getElementById('klavity-hero-stage')
+      const heroCanvas = stage?.querySelector('canvas') as HTMLCanvasElement | null
+      if (heroCanvas && activeIndex === targetIdx && heroCanvas.width > 1 && heroCanvas.height > 1) {
+        try {
+          const url = heroCanvas.toDataURL('image/png')
+          if (url && url.length > 64) return url
+        } catch { /* fallback to offscreen renderer */ }
+      }
+
+      return null
+    }
+
     const runEnhance = async () => {
       if (busy) return
       const text = desc.value.trim()
@@ -2885,7 +2994,21 @@ export function buildModal(
       if (spinEl) spinEl.hidden = false
       try {
         const picked = pickedTarget ? { selector: pickedTarget.selector, text: pickedTarget.text } : null
-        const draft = await onEnhance(text, { images: screenshots.length, shot: primaryShot(), picked })
+        const targetIdx = activeIndex >= 0 && activeIndex < screenshots.length ? activeIndex : 0
+        const ann = annotationsByIndex[targetIdx] ?? (targetIdx === 0 ? annotationsByIndex[0] : null)
+        const annotationTexts = extractAnnotationTexts(ann?.shapes)
+        const base = primaryShot()
+        let shot = getActiveAnnotatedShotSync()
+        if (shot === null) {
+          shot = await renderAnnotatedImage(base, ann.shapes, ann.w, ann.h)
+        }
+        const draft = await onEnhance(text, {
+          images: screenshots.length,
+          shot,
+          annotations: ann,
+          annotationTexts,
+          picked,
+        })
         if (seq !== enhanceSeq) return         // a newer Enhance/Regenerate superseded this response
         if (!draft) return                     // null → silent no-op, leave the reporter's text as-is
         desc.value = renderDraftToWhatsApp(draft)   // .value setter renders the Markdown live in place
@@ -3184,9 +3307,21 @@ export function buildModal(
 
     // Shared engine handlers — assigned to whichever engine is active so a fallback swap is seamless.
     const wire = (engine: DictationEngine) => {
+      let lastInterim = ''
       engine.onTranscript = (text) => {
-        const existing = desc.value
-        desc.value = existing + (existing.length > 0 && !/\s$/.test(existing) ? ' ' : '') + text
+        lastInterim = ''
+        streamBase = joinSpeechSegments(streamBase, text)
+        desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
+      engine.onInterim = (text) => {
+        lastInterim = text || ''
+        const sep = streamBase.length > 0 && !/\s$/.test(streamBase) ? ' ' : ''
+        desc.value = streamBase + (text ? sep + text : '')
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         refreshSubmit()
       }
       // Non-alarming reconnect status while an engine auto-retries a transient drop. When it recovers ('idle')
@@ -3200,10 +3335,21 @@ export function buildModal(
         setVoiceStatus('err', message, 4000)
       }
       engine.onStop = () => {
+        if (lastInterim) {
+          streamBase = joinSpeechSegments(streamBase, lastInterim)
+          lastInterim = ''
+        }
+        if (streamBase) {
+          streamBase = formatSpeechFinal(streamBase)
+          desc.value = streamBase
+        }
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false
         setVoiceBtnMode(false)
         stopRing()
         clearInfoStatus()
+        refreshSubmit()
       }
     }
 
@@ -3215,6 +3361,7 @@ export function buildModal(
       // The user may have pressed Stop before the server came back unavailable — don't resurrect it.
       if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
       if (VoiceInput.isSupported()) {
+        streamBase = desc.value
         voice = makeWebSpeech()
         setVoiceStatus('info', 'Reconnecting dictation…')
         void voice.start()
@@ -3240,19 +3387,41 @@ export function buildModal(
       // KLA-774: track the latest interim so that if Stop's grace window expires WITHOUT a server 'final'
       // (slow/dropped final), we still commit the last spoken words instead of discarding them on onStop.
       let lastInterim = ''
-      s.onTranscript = (text) => { lastInterim = ''; streamBase = streamBase + sep() + text; desc.value = streamBase; refreshSubmit() }
-      s.onInterim = (text) => { lastInterim = text || ''; desc.value = streamBase + sep() + text; refreshSubmit() }
+      s.onTranscript = (text) => {
+        lastInterim = ''
+        streamBase = joinSpeechSegments(streamBase, text)
+        desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
+      s.onInterim = (text) => {
+        lastInterim = text || ''
+        desc.value = streamBase + sep() + text
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
+        refreshSubmit()
+      }
       s.onStatus = (type, message) => { if (type === 'idle') clearInfoStatus(); else setVoiceStatus('info', message) }
       s.onError = (_, message) => { if (message) setVoiceStatus('err', message, 4000) }
       s.onStop = () => {
         // Commit a still-uncommitted interim (no final arrived) so short utterances aren't lost; else the
         // final already folded into streamBase and lastInterim is ''.
-        if (lastInterim) { streamBase = streamBase + sep() + lastInterim; lastInterim = '' }
+        if (lastInterim) {
+          streamBase = joinSpeechSegments(streamBase, lastInterim)
+          lastInterim = ''
+        }
+        if (streamBase) {
+          streamBase = formatSpeechFinal(streamBase)
+        }
         desc.value = streamBase
+        try { desc.scrollTop = desc.scrollHeight } catch {}
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         voiceRecording = false; setVoiceBtnMode(false); stopRing(); clearInfoStatus(); refreshSubmit()
       }
       s.onUnavailable = () => {
         desc.value = streamBase // clear the interim preview before another engine takes over
+        try { desc.dispatchEvent(new Event('input', { bubbles: true })) } catch { /* no-op */ }
         if (!voiceRecording) { setVoiceBtnMode(false); stopRing(); clearInfoStatus(); return }
         const batch = makeBatchServer()
         if (batch) { voice = batch; setVoiceStatus('info', 'Reconnecting dictation…'); void voice.start(); return }
@@ -3309,6 +3478,10 @@ export function buildModal(
     // still fire; removing a shot mid-compression would splice the live arrays and misalign the annotation
     // map against the (already-captured) screenshot list. Building the payload from these frozen snapshots
     // makes post-submit mutation harmless — the report reflects exactly the state at the moment of Submit.
+    // If a full-page render is settling, give microtasks a chance to swap it in before snapshotting
+    if (inFlightFullRender) {
+      await Promise.race([inFlightFullRender, Promise.resolve()])
+    }
     const compressedSnapshot = screenshotCompressed.slice()
     const annotationsSnapshot = buildAnnotationsPayload()
     const filesSnapshot = attachedFiles.slice()
@@ -3433,6 +3606,7 @@ export function buildModal(
     if (annotationsByIndex[index]) delete annotationsByIndex[index]
     delete undoStacks[index]; delete cropStacks[index]
     updateStrip()
+    try { callbacks.onShotReplaced?.(index, dataUrl, quality) } catch { /* best-effort */ }
   }
 
   // KLAVITYKLA-509: viewport-first capture. Render the FAST above-the-fold preview immediately so the strip
@@ -3456,7 +3630,7 @@ export function buildModal(
     } catch { /* preview failed — the background full render below becomes the primary shot */ }
     finally { restore?.() }
     // Phase 2 — full-page render in the background. Fire-and-forget; swap the preview for it when ready.
-    void (async () => {
+    const fullRenderP = (async () => {
       const restore2 = maskOn ? maskNumbers(document.body) : null
       try {
         const full = await callbacks.onCaptureFull()
@@ -3467,8 +3641,12 @@ export function buildModal(
           if (dataUrl) { addScreenshot(dataUrl, quality, undefined, true, !!suggestSharp); if (activeBtn) setActiveCapture(activeBtn) }
         }
       } catch { capturing = false; updateStrip() }
-      finally { restore2?.() }
+      finally {
+        restore2?.()
+        if (inFlightFullRender === fullRenderP) inFlightFullRender = null
+      }
     })()
+    inFlightFullRender = fullRenderP
     return true
   }
 
@@ -3632,8 +3810,14 @@ export function buildModal(
         // KLA-602(a): a finished recording drops STRAIGHT into the gallery as a selected, removable video tile
         // (no Preview→Attach modal). Select it as the inline-playable hero, like addCapturedShot does for images.
         if (rec) {
-          recordings.push(rec)
-          activeRecordingIndex = recordings.length - 1
+          const existingIdx = recordings.findIndex((r) => (r.id && rec.id && r.id === rec.id) || (r.dataUrl && rec.dataUrl && r.dataUrl === rec.dataUrl))
+          if (existingIdx >= 0) {
+            recordings[existingIdx] = rec
+            activeRecordingIndex = existingIdx
+          } else {
+            recordings.push(rec)
+            activeRecordingIndex = recordings.length - 1
+          }
           activeVideoIndex = null
           renderRecordings()
           setActiveCapture(recordBtn)
@@ -3864,6 +4048,8 @@ export function buildModal(
     mountHeroAnnotator(activeIndex)
   }
 
+  let activeHeroObjectUrl: string | null = null
+
   // KLA-591/602(a): render an inline, playable video preview in the hero stage (mirrors how an image shot
   // expands). No annotator toolbar for video — just <video controls>. Shared by video attachments AND "Record
   // me" recordings. Browser-only; safe no-op in headless test envs.
@@ -3874,11 +4060,43 @@ export function buildModal(
     detachHeroKeys()
     if (tools) tools.innerHTML = ''
     stage.innerHTML = ''
+
+    if (activeHeroObjectUrl) {
+      try { URL.revokeObjectURL(activeHeroObjectUrl) } catch {}
+      activeHeroObjectUrl = null
+    }
+
+    let playUrl = src
+    const currentRec = (activeRecordingIndex != null && recordings[activeRecordingIndex]) ? recordings[activeRecordingIndex] : null
+    if (currentRec && (currentRec as any).blob instanceof Blob && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        playUrl = URL.createObjectURL((currentRec as any).blob)
+        activeHeroObjectUrl = playUrl
+      } catch {}
+    } else if (src.startsWith('data:') && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      try {
+        const parts = src.split(',')
+        if (parts.length >= 2) {
+          const mimeMatch = parts[0].match(/:(.*?);/)
+          const cleanMime = (mimeMatch ? mimeMatch[1] : 'video/webm').split(';')[0]
+          const bstr = atob(parts[1])
+          let n = bstr.length
+          const u8arr = new Uint8Array(n)
+          while (n--) {
+            u8arr[n] = bstr.charCodeAt(n)
+          }
+          const blob = new Blob([u8arr], { type: cleanMime })
+          playUrl = URL.createObjectURL(blob)
+          activeHeroObjectUrl = playUrl
+        }
+      } catch {}
+    }
+
     const wrap = document.createElement('div')
     wrap.className = 'kl-hero-vwrap'
     wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;max-width:100%;max-height:100%;'
     const video = document.createElement('video')
-    video.src = src
+    video.src = playUrl
     video.controls = true
     video.setAttribute('playsinline', '')
     video.preload = 'metadata'
@@ -3890,7 +4108,7 @@ export function buildModal(
     err.className = 'kl-hero-verror'
     err.style.cssText = 'display:none;flex-direction:column;align-items:center;gap:6px;color:#fff;font-size:13px;text-align:center;'
     const dl = document.createElement('a')
-    dl.href = src
+    dl.href = playUrl || src
     dl.setAttribute('download', 'recording.webm')
     dl.setAttribute('target', '_blank')
     dl.setAttribute('rel', 'noopener')
@@ -3912,19 +4130,37 @@ export function buildModal(
   // error reveal the download fallback. Browser-only; guarded for headless/jsdom envs.
   function wireHeroVideoRepair(video: HTMLVideoElement, errEl: HTMLElement | null) {
     let repairing = false
+    let repairTimer: any = null
     video.addEventListener('loadedmetadata', () => {
-      if (!isFinite(video.duration) || video.duration <= 0) {
+      if (!isFinite(video.duration) || isNaN(video.duration) || video.duration <= 0) {
         repairing = true
         try { video.currentTime = 1e101 } catch {}
+        repairTimer = setTimeout(() => {
+          if (repairing) {
+            repairing = false
+            try { video.currentTime = 0 } catch {}
+          }
+        }, 400)
       }
     })
     video.addEventListener('durationchange', () => {
       if (repairing && isFinite(video.duration) && video.duration > 0) {
         repairing = false
+        if (repairTimer) clearTimeout(repairTimer)
         try { video.currentTime = 0 } catch {}
       }
     })
     video.addEventListener('error', () => {
+      if (repairing) {
+        repairing = false
+        if (repairTimer) clearTimeout(repairTimer)
+        try {
+          video.currentTime = 0
+          video.style.display = 'block'
+          if (errEl) errEl.style.display = 'none'
+          return
+        } catch {}
+      }
       try { video.style.display = 'none' } catch {}
       if (errEl) errEl.style.display = 'flex'
     })
@@ -4850,7 +5086,9 @@ export function buildModal(
     // click "Full Page" themselves — the strip stays empty (no false skeleton) so the choice is obvious.
     let nodeCount = 0
     try { nodeCount = document.getElementsByTagName('*').length } catch { nodeCount = 0 }
-    if (nodeCount <= AUTO_CAPTURE_MAX_NODES) {
+    const renderOk = nodeCount <= AUTO_CAPTURE_MAX_NODES
+    // KD-184: the Screen default (real pixels) runs whatever the DOM size; only the RENDERED path is gated.
+    if (renderOk || defaultCaptureMode(callbacks) === 'screen') {
       // KLAVITYKLA-509: show the skeleton placeholder IMMEDIATELY (before the render), swap in the real shot
       // on resolve so the thumbnail slot is never blank.
       capturing = true
@@ -4869,6 +5107,8 @@ export function buildModal(
           const ok = await runScreenCapture({ viewport: true })
           if (ok) { capturing = false; updateStrip(); return }
           if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
+          // KD-184: too large for the rendered fallback → leave the stage empty with the large-page steer.
+          if (!renderOk) { largePageHint = true; capturing = false; updateStrip(); return }
           // Silent fallback → rendered viewport (or full render where no viewport path is wired).
           capturing = true; updateStrip()
           if (callbacks.onCaptureViewport) { captureViewportOnly(null).catch(() => { capturing = false; updateStrip() }); return }
@@ -4903,6 +5143,9 @@ export function buildModal(
       const ric = (window as any).requestIdleCallback as undefined | ((cb: () => void, opts?: { timeout?: number }) => void)
       if (typeof ric === 'function') ric(() => runCapture(), { timeout: 1200 })
       else requestAnimationFrame(() => setTimeout(runCapture, 0))
+    } else {
+      largePageHint = true
+      updateStrip()
     }
   }
 

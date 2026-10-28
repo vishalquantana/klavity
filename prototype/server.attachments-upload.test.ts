@@ -231,3 +231,226 @@ test("remove: the action is recorded on the ticket's activity timeline", async (
   }
   expect(found).toBe(true)
 })
+
+// ── KD-214: DELETE /api/feedback/:id/attachments?screenshot= — remove the ticket's own report screenshot ──────────────────
+const delShot = (id: string, shotId: string | null, sid: string | null = SID) =>
+  fetch(`${BASE}/api/feedback/${id}/attachments${shotId == null ? "" : "?screenshot=" + encodeURIComponent(shotId)}`, { method: "DELETE", headers: sid ? { Cookie: `klav_session=${sid}` } : {} })
+async function newShot(tag: string) {
+  const sid = `shot_kd214_${tag}_${RUN}`, key = `uploads/screenshots/kd214-${tag}-${RUN}.png`
+  await exec("INSERT INTO screenshots (id, project_id, s3_key, bucket, content_type, created_at) VALUES (?,?,?,?,?,?)", [sid, PROJ, key, "b", "image/png", NOW])
+  return { sid, key }
+}
+const shotOf = async (id: string) => (await exec("SELECT screenshot_id, annotations_json FROM feedback WHERE id=?", [id])).rows[0] as any
+const shotRowExists = async (sid: string) => (await exec("SELECT 1 FROM screenshots WHERE id=?", [sid])).rows.length > 0
+
+test("screenshot remove: detached from the ticket (annotations cleared), unshared object + screenshots row are deleted, activity recorded", async () => {
+  const id = await newTicket(), { sid, key } = await newShot("solo")
+  await exec("UPDATE feedback SET screenshot_id=?, annotations_json=? WHERE id=?", [sid, JSON.stringify({ w: 1, h: 1, shapes: [] }), id])
+  deletedPaths.length = 0
+  const r = await delShot(id, sid)
+  expect(r.status).toBe(200)
+  expect(await r.json()).toEqual({ ok: true, removed: sid, screenshot: true })
+  const row = await shotOf(id)
+  expect(row.screenshot_id).toBeNull(); expect(row.annotations_json).toBeNull()
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(key)))).toBe(true)
+  for (let i = 0; i < 40 && await shotRowExists(sid); i++) await Bun.sleep(50)
+  expect(await shotRowExists(sid)).toBe(false)
+  let found = false
+  for (let i = 0; i < 40 && !found; i++) {
+    const rows = (await exec("SELECT meta_json FROM activity_events WHERE feedback_id=? AND type='ticket_attachment_removed'", [id])).rows as any[]
+    found = rows.length > 0 && String(rows[0].meta_json).includes("Screenshot")
+    if (!found) await Bun.sleep(50)
+  }
+  expect(found).toBe(true)
+})
+test("screenshot remove: a screenshot another ticket (merged) or an occurrence still uses is detached but NOT deleted", async () => {
+  const a = await newTicket(), b = await newTicket(), c = await newTicket(), d = await newTicket()
+  const shared = await newShot("shared"), viaOcc = await newShot("occ")
+  await exec("UPDATE feedback SET screenshot_id=? WHERE id IN (?,?)", [shared.sid, a, b])
+  await exec("UPDATE feedback SET screenshot_id=? WHERE id=?", [viaOcc.sid, c])
+  await exec("INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, screenshot_id, created_at) VALUES (?,?,?,?,?,?)", [`occ_kd214_${RUN}`, d, PROJ, NOW, viaOcc.sid, NOW])
+  deletedPaths.length = 0
+  expect((await delShot(a, shared.sid)).status).toBe(200)
+  expect((await delShot(c, viaOcc.sid)).status).toBe(200)
+  await Bun.sleep(300)
+  expect((await shotOf(a)).screenshot_id).toBeNull()
+  expect((await shotOf(b)).screenshot_id).toBe(shared.sid)                                   // the other ticket keeps it
+  expect(deletedPaths.some(p => p.endsWith(shared.key) || p.endsWith(viaOcc.key))).toBe(false)
+  expect(await shotRowExists(shared.sid)).toBe(true); expect(await shotRowExists(viaOcc.sid)).toBe(true)
+})
+test("screenshot remove: wrong id → 404 (ticket keeps its screenshot), removing twice → second is 404, no session → 401, non-member → 403/404", async () => {
+  const id = await newTicket(), { sid, key } = await newShot("guard")
+  await exec("UPDATE feedback SET screenshot_id=? WHERE id=?", [sid, id])
+  deletedPaths.length = 0
+  expect((await delShot(id, "shot_nope")).status).toBe(404)
+  expect((await delShot(id, sid, null)).status).toBe(401)
+  expect([403, 404]).toContain((await delShot(id, sid, SID_X)).status)
+  expect((await shotOf(id)).screenshot_id).toBe(sid)
+  await Bun.sleep(150)
+  expect(deletedPaths.some(p => p.endsWith(key))).toBe(false)                                 // nothing was purged by the rejected calls
+  expect((await delShot(id, sid)).status).toBe(200)
+  expect((await delShot(id, sid)).status).toBe(404)
+})
+
+// ── KD-217: images / videos on a comment — POST /api/feedback/:id/comments (multipart) ───────────────────────────────
+const cJson = (id: string, body: string, sid: string | null = SID) =>
+  fetch(`${BASE}/api/feedback/${id}/comments`, { method: "POST", headers: { "content-type": "application/json", ...(sid ? { Cookie: `klav_session=${sid}` } : {}) }, body: JSON.stringify({ body }) })
+const cForm = (id: string, text: string | null, files: File[], sid: string | null = SID) => {
+  const fd = new FormData(); if (text != null) fd.set("body", text); files.forEach(f => fd.append("files", f))
+  return fetch(`${BASE}/api/feedback/${id}/comments`, { method: "POST", headers: sid ? { Cookie: `klav_session=${sid}` } : {}, body: fd })
+}
+const cList = async (id: string): Promise<any[]> => ((await (await fetch(`${BASE}/api/feedback/${id}/comments`, { headers: { Cookie: `klav_session=${SID}` } })).json()) as any).comments
+const vid = (name: string, size = 3000) => new File([new Uint8Array(size).fill(9)], name, { type: "video/mp4" })
+
+test("comment with an image and a video: both are stored, the 201 carries signed links, text is kept", async () => {
+  const id = await newTicket(); puts = 0
+  const r = await cForm(id, "see these", [file("shot.png", 2100), vid("clip.mp4", 3100)])
+  expect(r.status).toBe(201)
+  const c: any = ((await r.json()) as any).comment
+  expect(c.body).toBe("see these")
+  expect(c.attachments.map((a: any) => a.filename)).toEqual(["shot.png", "clip.mp4"])
+  expect(c.attachments.every((a: any) => String(a.url).startsWith("http") && a.key)).toBe(true)
+  expect(puts).toBe(2)
+  const listed = await cList(id)
+  expect(listed.length).toBe(1)
+  expect(listed[0].attachments.map((a: any) => a.filename)).toEqual(["shot.png", "clip.mp4"])      // GET returns them (with fresh links) too
+  expect(String(listed[0].attachments[0].url)).toContain("http")
+})
+test("a comment may be attachments only (no text); an empty comment is still rejected", async () => {
+  const id = await newTicket()
+  const ok = await cForm(id, "", [file("only.png", 1800)])
+  expect(ok.status).toBe(201)
+  expect((((await ok.json()) as any).comment).body).toBe("")
+  expect((await cForm(id, "", [])).status).toBe(400)
+  expect((await cForm(id, null, [])).status).toBe(400)
+  expect((await cJson(id, "   ")).status).toBe(400)
+})
+test("plain JSON comments still work exactly as before (older clients, the v1 API) and carry no attachments", async () => {
+  const id = await newTicket()
+  const r = await cJson(id, "just text")
+  expect(r.status).toBe(201)
+  const c: any = ((await r.json()) as any).comment
+  expect(c.body).toBe("just text"); expect(c.attachments).toEqual([])
+})
+test("only images and videos are accepted on a comment; nothing is uploaded when one file is refused", async () => {
+  const id = await newTicket(); puts = 0
+  const pdf = new File([new Uint8Array(900).fill(1)], "doc.pdf", { type: "application/pdf" })
+  const r = await cForm(id, "x", [file("fine.png", 700), pdf])
+  expect(r.status).toBe(400)
+  expect(String(((await r.json()) as any).error)).toContain("doc.pdf")
+  expect(puts).toBe(0)
+  expect((await cList(id)).length).toBe(0)
+})
+test("size limits apply before any upload (8 MB per image), and at most 5 files are kept", async () => {
+  const id = await newTicket(); puts = 0
+  const big = await cForm(id, "x", [file("huge.png", 9 * 1024 * 1024)])
+  expect(big.status).toBe(400); expect(puts).toBe(0)
+  const many = await cForm(id, "x", Array.from({ length: 7 }, (_, i) => file("m" + i + ".png", 500 + i)))
+  expect(many.status).toBe(201)
+  expect((((await many.json()) as any).comment).attachments.length).toBe(5)
+})
+test("only project members can attach: no session → 401, a non-member → 403/404 (nothing uploaded)", async () => {
+  const id = await newTicket(); puts = 0
+  expect((await cForm(id, "x", [file("a.png", 600)], null)).status).toBe(401)
+  expect([403, 404]).toContain((await cForm(id, "x", [file("a.png", 600)], SID_X)).status)
+  expect(puts).toBe(0)
+})
+test("deleting a comment deletes its files from storage; a file another ticket still references is kept", async () => {
+  const id = await newTicket(), other = await newTicket()
+  const r = await cForm(id, "bye", [file("gone.png", 1900), file("shared.png", 1901)])
+  const c: any = ((await r.json()) as any).comment
+  const [gone, shared] = c.attachments.map((a: any) => a.key)
+  await exec("UPDATE feedback SET attachments_json=? WHERE id=?", [JSON.stringify([{ key: shared, filename: "shared.png", contentType: "image/png", size: 1901 }]), other])
+  deletedPaths.length = 0
+  const del = await fetch(`${BASE}/api/feedback/${id}/comments/${c.id}`, { method: "DELETE", headers: { Cookie: `klav_session=${SID}` } })
+  expect(del.status).toBe(200)
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(gone)))).toBe(true)
+  await Bun.sleep(150)
+  expect(deletedPaths.some(p => p.endsWith(shared))).toBe(false)
+  expect((await cList(id)).length).toBe(0)
+})
+test("the ticket timeline returns comment attachments with signed links", async () => {
+  const id = await newTicket()
+  await cForm(id, "in the timeline", [file("tl.png", 1500)])
+  const t: any = await (await fetch(`${BASE}/api/feedback/${id}/timeline`, { headers: { Cookie: `klav_session=${SID}` } })).json()
+  const item = t.items.find((i: any) => i.kind === "comment")
+  expect(item.attachments.length).toBe(1)
+  expect(String(item.attachments[0].url)).toContain("http")
+})
+
+// ── Stored images / videos must be allowed to load, or an uploaded attachment cannot be opened ──────────────────────────
+test("the page security policy lets stored media load: https: for images and videos, plus the (plain-http) storage origin itself", async () => {
+  const csp = String((await fetch(`${BASE}/login`)).headers.get("content-security-policy") || "")
+  const origin = "http://127.0.0.1:" + s3.port
+  const directive = (name: string) => csp.split(";").map(d => d.trim()).find(d => d.startsWith(name + " ")) || ""
+  expect(directive("img-src")).toContain("https:"); expect(directive("img-src")).toContain(origin)
+  expect(directive("media-src")).toContain("https:"); expect(directive("media-src")).toContain(origin)   // videos from storage were blocked before
+  expect(directive("media-src")).toContain("'self'"); expect(directive("media-src")).toContain("blob:")
+  expect(directive("default-src")).toBe("default-src 'self'")                                              // everything else stays locked down
+  expect(directive("object-src")).toBe("object-src 'none'")
+})
+
+// ── KD-217: editing a comment can drop its attachments ─────────────────────────────────────────────────────────────────
+const cPatch = (id: string, cid: string, payload: any, sid: string | null = SID) =>
+  fetch(`${BASE}/api/feedback/${id}/comments/${cid}`, { method: "PATCH", headers: { "content-type": "application/json", ...(sid ? { Cookie: `klav_session=${sid}` } : {}) }, body: JSON.stringify(payload) })
+async function commentWith(id: string, text: string, files: File[]) {
+  const c: any = ((await (await cForm(id, text, files)).json()) as any).comment
+  return { c, keys: c.attachments.map((a: any) => a.key) as string[] }
+}
+
+test("edit: removing one attachment keeps the text and the other file, and deletes only the dropped file from storage", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "two files", [file("keep.png", 2201), file("drop.png", 2202)])
+  deletedPaths.length = 0
+  const r = await cPatch(id, c.id, { body: "two files (edited)", removeAttachments: [keys[1]] })
+  expect(r.status).toBe(200)
+  const u: any = ((await r.json()) as any).comment
+  expect(u.body).toBe("two files (edited)"); expect(u.editedAt).toBeTruthy()
+  expect(u.attachments.map((a: any) => a.filename)).toEqual(["keep.png"])
+  expect(String(u.attachments[0].url)).toContain("http")
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(keys[1])))).toBe(true)
+  await Bun.sleep(150)
+  expect(deletedPaths.some(p => p.endsWith(keys[0]))).toBe(false)
+  expect((await cList(id))[0].attachments.map((a: any) => a.filename)).toEqual(["keep.png"])       // persisted
+})
+test("edit: dropping every attachment needs some text; with text it works and the comment ends up plain", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "had a file", [file("only.png", 2210)])
+  expect((await cPatch(id, c.id, { body: "", removeAttachments: keys })).status).toBe(400)           // would be completely empty
+  expect((await cList(id))[0].attachments.length).toBe(1)                                          // nothing changed
+  deletedPaths.length = 0
+  const ok = await cPatch(id, c.id, { body: "file removed", removeAttachments: keys })
+  expect(ok.status).toBe(200)
+  expect((((await ok.json()) as any).comment).attachments).toEqual([])
+  expect(await waitFor(() => deletedPaths.some(p => p.endsWith(keys[0])))).toBe(true)
+})
+test("edit: an attachments-only comment may be saved with empty text as long as a file is left", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "", [file("a.png", 2220), file("b.png", 2221)])
+  const r = await cPatch(id, c.id, { body: "", removeAttachments: [keys[0]] })
+  expect(r.status).toBe(200)
+  const u: any = ((await r.json()) as any).comment
+  expect(u.body).toBe(""); expect(u.attachments.map((a: any) => a.filename)).toEqual(["b.png"])
+  expect((await cPatch(id, c.id, { body: "" })).status).toBe(200)                                   // plain text edit to empty is fine while a file remains
+})
+test("edit: keys that are not on this comment are ignored (nothing else is touched or deleted); a plain text edit leaves the files alone", async () => {
+  const id = await newTicket(), other = await newTicket()
+  const mine = await commentWith(id, "mine", [file("mine.png", 2230)])
+  const theirs = await commentWith(other, "theirs", [file("theirs.png", 2231)])
+  deletedPaths.length = 0
+  const r = await cPatch(id, mine.c.id, { body: "mine v2", removeAttachments: [theirs.keys[0], "uploads/attachments/nope.png"] })
+  expect(r.status).toBe(200)
+  expect((((await r.json()) as any).comment).attachments.length).toBe(1)
+  await Bun.sleep(200)
+  expect(deletedPaths.length).toBe(0)
+  const plain = await cPatch(id, mine.c.id, { body: "mine v3" })
+  expect((((await plain.json()) as any).comment).attachments.map((a: any) => a.filename)).toEqual(["mine.png"])
+  expect((await cList(other))[0].attachments.length).toBe(1)
+})
+test("edit: same permission rules as before — no session 401, a non-member cannot edit", async () => {
+  const id = await newTicket()
+  const { c, keys } = await commentWith(id, "guarded", [file("g.png", 2240)])
+  expect((await cPatch(id, c.id, { body: "x", removeAttachments: keys }, null)).status).toBe(401)
+  expect([403, 404]).toContain((await cPatch(id, c.id, { body: "x", removeAttachments: keys }, SID_X)).status)
+  expect((await cList(id))[0].attachments.length).toBe(1)
+})

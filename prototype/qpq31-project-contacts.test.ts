@@ -106,17 +106,12 @@ test("the dashboard payload sends contacts as their own array, not merged into m
   expect(SERVER).toContain("members: [], contacts: [],")
 })
 
-test("a contact is labelled as such so nobody mistakes one for a teammate", () => {
-  expect(HTML).toContain("tkt-contact-tag")
-  expect(HTML).toContain("function isProjectContact(")
-  // isProjectContact must exclude real members, or a teammate would be mislabelled
-  const fn = HTML.match(/function isProjectContact\(email\)[\s\S]*?\n\}/)
-  expect(fn![0]).toContain("state.members")
-  expect(fn![0]).toContain("return false")
+test("the ticket's Reporter carries no contact tag", () => {
+  expect(HTML).not.toContain("tkt-contact-tag")
+  expect(HTML).not.toContain("isProjectContact(")
 })
 
-test("the ticket shows the contact's name when known, with the address beneath", () => {
-  expect(HTML).toContain("function contactNameFor(")
-  expect(HTML).toContain("contactNameFor(t.reporterEmail) || t.reporterEmail")
-  expect(HTML).toContain("tkt-reporter-sub")
+test("the ticket's Reporter shows only the email, never the contact's name", () => {
+  expect(HTML).not.toContain("contactNameFor(t.reporterEmail)")
+  expect(HTML).toContain('<span class="tkt-reporter" title="${esc(t.reporterEmail)}">${esc(t.reporterEmail)}</span>')
 })

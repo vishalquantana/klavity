@@ -96,7 +96,8 @@ test("#734: no raw-HTML passthrough — a literal tag in the text is escaped eve
 
 test("#734: description read view uses linkifyDescription (formatted); EDIT mode shows RAW observation", () => {
   const desc = extractFn(HTML, "function descriptionBlockHtml(text)")
-  expect(desc).toContain("linkifyDescription(raw)")   // read view = formatted
+  expect(desc).toContain("descObsInner(raw)")   // read view = formatted (descObsInner → linkifyDescription, or the empty-state prompt)
+  expect(extractFn(HTML, "function descObsInner(text)")).toContain("linkifyDescription(raw)")
   const build = extractFn(HTML, "function buildTktDetail(t, admin, onChange, isSingle = false)")
   // the inline editor loads the RAW observation into the textarea (asterisks preserved, not the HTML)…
   expect(build).toContain('const cur = t.observation != null ? String(t.observation) : ""')

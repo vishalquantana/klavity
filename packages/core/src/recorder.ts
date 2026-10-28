@@ -1,0 +1,805 @@
+// ── "Record me" recorder (KLAVITYKLA-438, Phase 1) ────────────────────────────────────────────────────
+// From inside the Snap composer, record the reporter's SCREEN + optional CAMERA (picture-in-picture) +
+// MIC narration, composite them onto a single <canvas>, and encode ONE webm/mp4 blob via MediaRecorder.
+// Grounded in the #426 feasibility spike (docs/spikes/recording/record-poc.html) and reuses the same
+// getDisplayMedia orchestration style the widget's Sharp capture already ships (capture.ts / widget.ts).
+//
+// This module is split into three seams so the risky/engine part is pure + unit-testable:
+//   1. pickRecordingMime / recordingSupported — pure feature-detection helpers.
+//   2. startRecording(opts, deps)             — the capture ENGINE. Every browser primitive it touches
+//      (mediaDevices, MediaRecorder, MediaStream, canvas/video elements, timers) is injected via `deps`,
+//      so tests drive start→chunk→stop, cap enforcement, and the screen-only fallback with mocks.
+//   3. recordMe(opts)                          — a thin browser-only overlay UI (consent → recording →
+//      preview → attach) that drives the engine and resolves a RecordingAttachment for the composer.
+//
+// Phase 2 (transcript) is intentionally NOT built here. The RecordingAttachment carries a stable `id`
+// so a transcript produced later can be attached back to the exact recording (recordings_json row).
+
+// ── Caps ──────────────────────────────────────────────────────────────────────────────────────────────
+// Length cap: 3 min hard auto-stop (keeps blobs bounded + cheap to transcribe later). Size cap: ~50MB —
+// mirrors the server's RECORDING_MAX_BYTES so a client-accepted recording also passes server intake.
+import { fixWebmDuration } from './webm-duration'
+
+export const RECORDING_MAX_DURATION_MS = 3 * 60 * 1000
+export const RECORDING_MAX_BYTES = 50 * 1024 * 1024
+
+// KLA-831 (file size): a screen recording composited onto a 1280-wide canvas at a modest framerate does
+// NOT need a 2.5Mbps stream — that produced multi-MB clips for a few seconds of capture. Cap the encoder
+// hard so a few-second clip is a few hundred KB. VP9 (preferred codec) honours videoBitsPerSecond well.
+//   • 1.0 Mbps video  → ~125 KB/s → a 4s clip ≈ 0.5 MB, a 30s clip ≈ 3.75 MB (well under the 50MB ceiling)
+//   • 96 kbps audio   → transparent for voice narration
+//   • 15 fps default  → screen/UI walkthroughs read fine at 15fps and it roughly halves the bitrate need
+// Overridable via StartRecordingOptions for callers that want higher fidelity.
+export const DEFAULT_VIDEO_BITS_PER_SECOND = 1_000_000
+export const DEFAULT_AUDIO_BITS_PER_SECOND = 96_000
+export const DEFAULT_RECORDING_FPS = 15
+/** Hard cap on the composited canvas width so huge/retina monitors don't balloon the encoded size. */
+export const RECORDING_MAX_WIDTH = 1280
+
+export interface RecordingCaps {
+  maxDurationMs: number
+  maxBytes: number
+}
+export const DEFAULT_RECORDING_CAPS: RecordingCaps = {
+  maxDurationMs: RECORDING_MAX_DURATION_MS,
+  maxBytes: RECORDING_MAX_BYTES,
+}
+
+// vp9/opus webm is the Chrome/Edge/Firefox target; Safari 17+ emits mp4 (H.264/AAC). Feature-pick rather
+// than hardcode so storage/serving accepts whichever container the running browser produced.
+export const RECORDING_MIME_CANDIDATES = [
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm;codecs=h264,opus',
+  'video/mp4;codecs=avc1,mp4a.40.2',
+  'video/webm',
+]
+
+// ── RecordingAttachment: the composer/widget-facing result ─────────────────────────────────────────────
+// `id` is the stable per-recording identity minted at capture time. It threads all the way to the server
+// so Phase 2's transcript can reference the exact recording. `dataUrl` is the encoded blob for upload.
+export interface RecordingAttachment {
+  id: string
+  dataUrl: string
+  blob?: Blob
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
+}
+
+export type RecorderState = 'idle' | 'recording' | 'paused' | 'stopped'
+
+export interface RecordingResult {
+  id: string
+  blob: Blob
+  mime: string
+  durationMs: number
+  bytes: number
+  width: number
+  height: number
+  screenOnly: boolean
+  hadCamera: boolean
+  hadAudio: boolean
+}
+
+export interface StartRecordingOptions {
+  // #639: OPT-IN. Defaults to false — screen-only is the default capture. Pass true to composite the webcam PiP.
+  wantCamera?: boolean
+  wantMic?: boolean
+  fps?: number
+  // KLA-831: encoder bitrate caps (bits/sec). Default to the compact DEFAULT_*_BITS_PER_SECOND so clips
+  // stay small; a caller can raise them for higher fidelity. Applied straight to the MediaRecorder.
+  videoBitsPerSecond?: number
+  audioBitsPerSecond?: number
+  caps?: Partial<RecordingCaps>
+  onState?: (state: RecorderState) => void
+  onStats?: (stats: { elapsedMs: number; bytes: number }) => void
+  // Called once if getUserMedia (camera/mic) rejects — e.g. the customer site's Permissions-Policy blocks
+  // camera/microphone for embedded tools. The recording continues SCREEN-ONLY; the UI surfaces the hint.
+  onFallback?: (reason: string) => void
+}
+
+export interface RecordingController {
+  pause(): void
+  resume(): void
+  stop(): void
+  state(): RecorderState
+  screenOnly(): boolean
+  // KLA-602(b): the LIVE local camera stream (getUserMedia) when the recording actually includes the camera,
+  // so the overlay can render a self-view bubble (Loom/Mevak style). null when screen-only / camera blocked.
+  // This is the raw local preview stream — it is separate from the composited canvas that gets recorded.
+  cameraStream(): any | null
+  // Resolves when the recording fully stops (native "stop sharing", Stop button, or a cap auto-stop).
+  done: Promise<RecordingResult>
+}
+
+// ── Injected browser dependencies (real globals by default; mocked in tests) ───────────────────────────
+export interface RecorderDeps {
+  mediaDevices: {
+    getDisplayMedia: (constraints: any) => Promise<any>
+    getUserMedia: (constraints: any) => Promise<any>
+  }
+  MediaRecorder: any
+  MediaStream: any
+  createElement: (tag: 'canvas' | 'video') => any
+  now: () => number
+  raf: (cb: (t: number) => void) => number
+  caf: (id: number) => void
+  setInterval: (cb: () => void, ms: number) => any
+  clearInterval: (id: any) => void
+}
+
+export function defaultRecorderDeps(): RecorderDeps {
+  const g: any = globalThis as any
+  return {
+    mediaDevices: (typeof navigator !== 'undefined' ? (navigator as any).mediaDevices : undefined) as any,
+    MediaRecorder: g.MediaRecorder,
+    MediaStream: g.MediaStream,
+    createElement: (tag) => document.createElement(tag) as any,
+    now: () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
+    raf: (cb) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(cb) : (setTimeout(() => cb(Date.now()), 16) as unknown as number)),
+    caf: (id) => { if (typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(id); else clearTimeout(id) },
+    setInterval: (cb, ms) => setInterval(cb, ms),
+    clearInterval: (id) => clearInterval(id),
+  }
+}
+
+// ── Pure helpers ───────────────────────────────────────────────────────────────────────────────────────
+// Return the first MediaRecorder mimeType this browser will actually emit, or null when MediaRecorder /
+// no candidate codec is available. `isSupported` is injectable so the choice is unit-testable per browser.
+export function pickRecordingMime(
+  isSupported?: (m: string) => boolean,
+  candidates: string[] = RECORDING_MIME_CANDIDATES,
+): string | null {
+  const test = isSupported ?? ((m: string) =>
+    typeof MediaRecorder !== 'undefined' && !!MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m))
+  for (const c of candidates) { if (test(c)) return c }
+  return null
+}
+
+// Feature-detect: screen capture + MediaRecorder. Matches the Sharp-capture support envelope (no
+// getDisplayMedia on iOS Safari → the "Record me" button is simply hidden there).
+export function recordingSupported(deps: Partial<RecorderDeps> & { mediaDevices?: any } = defaultRecorderDeps()): boolean {
+  const md = deps.mediaDevices
+  const MR = (deps as any).MediaRecorder ?? (globalThis as any).MediaRecorder
+  return !!md && typeof md.getDisplayMedia === 'function' && typeof MR !== 'undefined'
+}
+
+function newRecordingId(): string {
+  const rnd = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36)
+  return 'rec_' + rnd
+}
+
+// ── The capture engine ─────────────────────────────────────────────────────────────────────────────────
+// getDisplayMedia FIRST (preserves the click's user gesture — same rule the Sharp path respects). Camera/
+// mic are best-effort: a rejection (often a customer-site Permissions-Policy block) falls back to
+// screen-only and fires onFallback. Composites screen full-frame + camera as a bottom-right PiP onto a
+// canvas, then MediaRecorder(canvas.captureStream + micTrack). Enforces both the length + byte caps.
+export async function startRecording(
+  opts: StartRecordingOptions = {},
+  deps: RecorderDeps = defaultRecorderDeps(),
+): Promise<RecordingController> {
+  const caps: RecordingCaps = { ...DEFAULT_RECORDING_CAPS, ...(opts.caps || {}) }
+  // #639: the webcam camera is OFF by default — screen-only (+ mic narration) is the default capture path.
+  // Camera is strictly OPT-IN: a caller must pass wantCamera:true (or tick the consent-panel camera box) to
+  // enable the PiP self-view. Mic stays default-ON (narration) unless explicitly disabled. This avoids
+  // surprising reporters with a live webcam and keeps the common bug-repro flow screen-only.
+  const wantCamera = opts.wantCamera === true
+  const wantMic = opts.wantMic !== false
+  const fps = Math.max(5, Math.min(60, opts.fps ?? DEFAULT_RECORDING_FPS))
+
+  const mime = pickRecordingMime(
+    deps.MediaRecorder?.isTypeSupported ? (m: string) => deps.MediaRecorder.isTypeSupported(m) : undefined,
+  )
+  if (!mime) throw new Error('recording-unsupported: no MediaRecorder codec available in this browser')
+
+  const id = newRecordingId()
+  const canvas = deps.createElement('canvas')
+  const ctx = canvas.getContext ? canvas.getContext('2d') : null
+  const screenVid = deps.createElement('video')
+  screenVid.muted = true
+  ;(screenVid as any).playsInline = true
+  ;(screenVid as any).autoplay = true
+  try {
+    screenVid.setAttribute?.('playsinline', '')
+    screenVid.setAttribute?.('autoplay', '')
+    screenVid.setAttribute?.('muted', '')
+  } catch { /* no-op */ }
+  const camVid = deps.createElement('video')
+  camVid.muted = true
+  ;(camVid as any).playsInline = true
+  ;(camVid as any).autoplay = true
+  try {
+    camVid.setAttribute?.('playsinline', '')
+    camVid.setAttribute?.('autoplay', '')
+    camVid.setAttribute?.('muted', '')
+  } catch { /* no-op */ }
+
+  let state: RecorderState = 'idle'
+  const setState = (s: RecorderState) => { state = s; try { opts.onState?.(s) } catch { /* listener errors never break capture */ } }
+
+  // 1) Screen — required. Throws (caller treats as cancel) if the user dismisses the picker.
+  // #640: hint the picker toward the WHOLE MONITOR so multi-page/tab flows are actually captured. With a
+  // single-tab share, switching tabs isn't recorded; "Entire Screen" captures everything the reporter does.
+  // We cannot FORCE the browser's choice, but the constraints below nudge it:
+  //   • displaySurface:'monitor'      — advertises "Entire Screen" as the preferred surface (Chromium orders
+  //                                     the monitor option first / preselects it).
+  //   • preferCurrentTab:false        — don't shortcut to a current-tab capture.
+  //   • selfBrowserSurface:'exclude'  — de-emphasise sharing THIS very tab (avoids the trivial current-tab pick).
+  //   • surfaceSwitching:'include'    — lets the reporter switch the shared surface mid-recording without a restart.
+  //   • monitorTypeSurfaces:'include' — ensure monitor surfaces are offered.
+  // Findings (#640c) on "picked Entire Screen but only the current app was captured": this is an OS-level
+  // screen-recording PERMISSION gap, not a constraints bug — on macOS, if the browser lacks Screen Recording
+  // permission (System Settings → Privacy & Security → Screen Recording) getDisplayMedia can hand back a stream
+  // that only paints the browser's own window/app and shows other apps as blank/black until the permission is
+  // granted and the browser is relaunched. Virtual desktops/Spaces and HDR/secondary displays can likewise clip
+  // capture to the active app. The fix is user-side (grant OS permission + relaunch); the constraints here can't
+  // override it, so the consent-panel tip + this note document it. These extra keys are non-standard/advisory and
+  // browsers safely ignore unknown ones, so older engines keep the previous behaviour.
+  const screenStream = await deps.mediaDevices.getDisplayMedia({
+    video: { frameRate: fps, displaySurface: 'monitor' },
+    audio: false,
+    preferCurrentTab: false,
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+  } as any)
+
+  // #474 (privacy): once ANY track is acquired, a throw during the REST of init (canvas.captureStream,
+  // new MediaStream/MediaRecorder, recorder.start) must never leave live camera/mic/screen tracks running.
+  // Hoist camStream + a stop-all helper here, then wrap the whole engine setup so any init throw stops
+  // every acquired track before rethrowing — the caller sees the reject and the browser's recording
+  // indicator clears instead of staying lit forever.
+  let camStream: any = null
+  const stopAllTracks = () => {
+    for (const s of [screenStream, camStream]) { try { s?.getTracks?.().forEach((t: any) => t.stop?.()) } catch { /* no-op */ } }
+  }
+  try {
+  const screenTrack = screenStream.getVideoTracks?.()[0]
+  const st = (screenTrack?.getSettings?.() ?? {}) as { width?: number; height?: number }
+  const aspect = (st.width && st.height) ? st.width / st.height : 16 / 9
+  // KLA-831: cap the composited width so the encode stays cheap regardless of the shared monitor's size.
+  canvas.width = RECORDING_MAX_WIDTH
+  canvas.height = Math.round(RECORDING_MAX_WIDTH / aspect)
+
+  // 2) Camera + mic — best-effort. A rejection → audio-only retry (mic kept) → screen-only fallback.
+  let micTrack: any = null
+  let hadCamera = false
+  let screenOnly = true
+  if (wantCamera || wantMic) {
+    try {
+      camStream = await deps.mediaDevices.getUserMedia({
+        video: wantCamera ? { width: 640, height: 480, facingMode: 'user' } : false,
+        audio: wantMic ? { echoCancellation: true, noiseSuppression: true } : false,
+      })
+      if (wantCamera && camStream.getVideoTracks?.().length) {
+        hadCamera = true; screenOnly = false
+        try { camVid.srcObject = camStream; await (camVid.play?.() ?? Promise.resolve()) } catch { /* no-op */ }
+      }
+      if (wantMic) { micTrack = camStream.getAudioTracks?.()[0] || null; if (micTrack) screenOnly = false }
+    } catch (e: any) {
+      // #477: a getUserMedia rejection is often the site's Permissions-Policy blocking the CAMERA while the
+      // MICROPHONE is still allowed — the combined request rejects, discarding mic narration. Before giving up
+      // to screen-only, RETRY audio-only (mic, no camera) so we keep the reporter's spoken narration.
+      // Fallback ladder: full (cam+mic) -> audio-only (mic, no cam) -> screen-only (neither).
+      let recovered = false
+      if (wantMic && wantCamera) {
+        try {
+          camStream = await deps.mediaDevices.getUserMedia({ video: false, audio: { echoCancellation: true, noiseSuppression: true } })
+          micTrack = camStream.getAudioTracks?.()[0] || null
+          if (micTrack) { screenOnly = false; recovered = true; try { opts.onFallback?.('camera-blocked') } catch { /* no-op */ } }
+        } catch { /* audio-only also blocked — fall through to screen-only */ }
+      }
+      if (!recovered) {
+        // KEY spike finding: on a customer site, Permissions-Policy can silently block camera/mic here.
+        try { opts.onFallback?.(e?.name === 'NotAllowedError' ? 'permissions-policy' : (e?.name || 'camera-mic-blocked')) } catch { /* no-op */ }
+        screenOnly = true
+      }
+    }
+  }
+  const hadAudio = !!micTrack
+
+  if (hadCamera) {
+    try { screenVid.srcObject = screenStream; await (screenVid.play?.() ?? Promise.resolve()) } catch { /* jsdom/headless: no real playback */ }
+  }
+
+  // 3) Compositor & Stream Source:
+  // When recording screen-only (camera OFF or blocked, which is the standard walkthrough mode), pass the
+  // native screenTrack directly from getDisplayMedia to MediaRecorder.
+  // Crucial: browsers throttle/suspend requestAnimationFrame and unattached <video> playback to 0 FPS in
+  // background tabs when the user switches to other browser tabs or desktop applications.
+  // Passing the native screenTrack directly into MediaRecorder bypasses intermediate canvas/video overhead and
+  // allows the browser/OS display capture engine to pipe hardware-accelerated frames across all tab and app
+  // switches continuously without freezing on the initial content or showing blank frames.
+  // When camera PiP is opted-in and granted, we composite screen + camera via canvas, reinforced with an
+  // interval watchdog timer so rendering continues reliably even if the tab is backgrounded.
+  let rafId = 0
+  let compTimerId: any = 0
+  const drawFrame = () => {
+    if (!ctx) return
+    const W = canvas.width, H = canvas.height
+    if ((screenVid as any).videoWidth) {
+      const sw = (screenVid as any).videoWidth
+      const sh = (screenVid as any).videoHeight
+      const sr = sw / sh, cr = W / H
+      let dw = W, dh = H, dx = 0, dy = 0
+      if (sr > cr) { dh = W / sr; dy = (H - dh) / 2 } else { dw = H * sr; dx = (W - dw) / 2 }
+      if (dx > 0 || dy > 0) {
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, W, H)
+      }
+      ctx.drawImage(screenVid, dx, dy, dw, dh)
+    }
+    if (hadCamera && (camVid as any).videoWidth) {
+      const pw = Math.round(W * 0.22), ph = Math.round(pw * ((camVid as any).videoHeight / (camVid as any).videoWidth))
+      const px = W - pw - 20, py = H - ph - 20
+      ctx.drawImage(camVid, px, py, pw, ph)
+      ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 2; ctx.strokeRect(px, py, pw, ph)
+    }
+    if (state === 'recording') { ctx.fillStyle = '#e11'; ctx.beginPath(); ctx.arc(24, 24, 7, 0, Math.PI * 2); ctx.fill() }
+  }
+
+  if (hadCamera) {
+    let lastDraw = 0
+    const frameIntervalMs = Math.floor(1000 / fps)
+    const render = () => {
+      lastDraw = deps.now()
+      drawFrame()
+    }
+    const rafLoop = () => {
+      rafId = deps.raf(rafLoop)
+      render()
+    }
+    rafLoop()
+
+    // Background watchdog: requestAnimationFrame is suspended in background tabs. This timer ensures
+    // frame updates continue during tab or app switching.
+    compTimerId = deps.setInterval(() => {
+      if (screenVid.paused && !(screenTrack as any)?.muted) {
+        try { screenVid.play?.() } catch { /* no-op */ }
+      }
+      if (deps.now() - lastDraw >= frameIntervalMs) {
+        render()
+      }
+    }, Math.max(16, frameIntervalMs))
+  }
+
+  // 4) Combined output stream: composited canvas video track (if PiP) or native screenTrack + mic audio track
+  const outTracks: any[] = []
+  let canvasStream: any = null
+  if (hadCamera) {
+    try {
+      canvasStream = canvas.captureStream ? canvas.captureStream(fps) : null
+    } catch { /* no-op */ }
+    const canvasTrack = canvasStream?.getVideoTracks?.()[0]
+    if (canvasTrack) {
+      outTracks.push(canvasTrack)
+    } else if (screenTrack) {
+      outTracks.push(screenTrack)
+    }
+  } else if (screenTrack) {
+    outTracks.push(screenTrack)
+  }
+  if (micTrack) outTracks.push(micTrack)
+  const out = new deps.MediaStream(outTracks)
+
+  // Track event handlers:
+  // - 'ended': user explicitly stopped sharing via browser bar ("Stop sharing") -> end recording cleanly.
+  // - 'mute' / 'unmute': fired when switching tabs or occluded -> DO NOT stop or disconnect recording.
+  try {
+    screenTrack?.addEventListener?.('ended', () => stop())
+    screenTrack?.addEventListener?.('mute', () => {
+      // Tab switched or capture surface temporarily unavailable: keep recording stable.
+    })
+    screenTrack?.addEventListener?.('unmute', () => {
+      if (hadCamera) {
+        try { screenVid.play?.() } catch { /* no-op */ }
+        drawFrame()
+      }
+    })
+  } catch { /* no-op */ }
+
+  const onVisibilityChange = () => {
+    if (hadCamera && typeof document !== 'undefined' && !document.hidden) {
+      try { screenVid.play?.() } catch { /* no-op */ }
+      try { camVid.play?.() } catch { /* no-op */ }
+      drawFrame()
+    }
+  }
+  try {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
+  } catch { /* no-op */ }
+
+  // KLA-831: apply the compact bitrate caps so a few-second clip is a few hundred KB, not many MB.
+  const videoBps = Math.max(150_000, Math.floor(opts.videoBitsPerSecond ?? DEFAULT_VIDEO_BITS_PER_SECOND))
+  const audioBps = Math.max(16_000, Math.floor(opts.audioBitsPerSecond ?? DEFAULT_AUDIO_BITS_PER_SECOND))
+  const recorder = new deps.MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: videoBps, audioBitsPerSecond: audioBps })
+  const chunks: BlobPart[] = []
+  let totalBytes = 0
+  let startedAt = 0, pausedMs = 0, pauseStartedAt = 0
+  let tickId: any = 0
+  let stopping = false
+
+  const elapsedMs = (): number => {
+    if (state === 'idle') return 0
+    const base = deps.now() - startedAt - pausedMs
+    return Math.max(0, base - (pauseStartedAt ? deps.now() - pauseStartedAt : 0))
+  }
+
+  recorder.ondataavailable = (ev: any) => {
+    if (ev?.data && ev.data.size) { chunks.push(ev.data); totalBytes += ev.data.size }
+    try { opts.onStats?.({ elapsedMs: elapsedMs(), bytes: totalBytes }) } catch { /* no-op */ }
+    // Size cap: stop the moment the accumulated blob would exceed the byte ceiling.
+    if (totalBytes >= caps.maxBytes) stop()
+  }
+
+  let resolveDone!: (r: RecordingResult) => void
+  const done = new Promise<RecordingResult>((res) => { resolveDone = res })
+
+  const cleanupStreams = stopAllTracks
+
+  recorder.onstop = async () => {
+    if (rafId) deps.caf(rafId)
+    if (compTimerId) { deps.clearInterval(compTimerId); compTimerId = 0 }
+    if (tickId) { deps.clearInterval(tickId); tickId = 0 }
+    try {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
+    } catch { /* no-op */ }
+    const durationMs = elapsedMs()
+    cleanupStreams()
+    try { screenVid.srcObject = null } catch { /* no-op */ }
+    try { camVid.srcObject = null } catch { /* no-op */ }
+    setState('stopped')
+    const rawBlob = new Blob(chunks, { type: mime.split(';')[0] })
+    let blob = rawBlob
+    if (durationMs > 0 && (rawBlob.type.includes('webm') || mime.includes('webm'))) {
+      try {
+        blob = await fixWebmDuration(rawBlob, durationMs)
+      } catch {
+        blob = rawBlob
+      }
+    }
+    const finalWidth = (st.width && st.width > 0) ? st.width : canvas.width
+    const finalHeight = (st.height && st.height > 0) ? st.height : canvas.height
+    resolveDone({
+      id, blob, mime: (blob.type || mime || 'video/webm').split(';')[0], durationMs, bytes: blob.size || totalBytes,
+      width: hadCamera ? canvas.width : finalWidth,
+      height: hadCamera ? canvas.height : finalHeight,
+      screenOnly, hadCamera, hadAudio,
+    })
+  }
+
+  function stop() {
+    if (stopping) return
+    stopping = true
+    try { if (recorder.state !== 'inactive') recorder.stop() } catch { /* already stopped */ }
+  }
+
+  // Emit a chunk every 1s so live size/elapsed readouts update; length-cap auto-stop is checked here.
+  recorder.start(1000)
+  startedAt = deps.now()
+  setState('recording')
+  tickId = deps.setInterval(() => {
+    const el = elapsedMs()
+    try { opts.onStats?.({ elapsedMs: el, bytes: totalBytes }) } catch { /* no-op */ }
+    if (el >= caps.maxDurationMs) stop()
+  }, 200)
+
+  return {
+    pause() {
+      if (state !== 'recording') return
+      try { recorder.pause() } catch { /* no-op */ }
+      pauseStartedAt = deps.now(); setState('paused')
+    },
+    resume() {
+      if (state !== 'paused') return
+      try { recorder.resume() } catch { /* no-op */ }
+      pausedMs += deps.now() - pauseStartedAt; pauseStartedAt = 0; setState('recording')
+    },
+    stop() { stop() },
+    state() { return state },
+    screenOnly() { return screenOnly },
+    // KLA-602(b): expose the live camera stream ONLY when the camera is genuinely part of the capture, so the
+    // overlay can mount a self-view bubble. Screen-only / audio-only(mic) fallbacks return null → no bubble.
+    cameraStream() { return hadCamera && camStream ? camStream : null },
+    done,
+  }
+  } catch (e) {
+    // #474: init failed after some tracks were already acquired — stop every one before rethrowing so the
+    // camera/mic/screen never stay live (the browser recording indicator clears). Caller treats as cancel.
+    stopAllTracks()
+    throw e
+  }
+}
+
+// ── Blob → data URL (upload form uses data URLs; widget-lib re-hydrates to a Blob on submit) ────────────
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const fr = new FileReader()
+      fr.onload = () => resolve(String(fr.result))
+      fr.onerror = () => reject(fr.error || new Error('read failed'))
+      fr.readAsDataURL(blob)
+    } catch (e) { reject(e as Error) }
+  })
+}
+
+export async function recordingResultToAttachment(r: RecordingResult): Promise<RecordingAttachment> {
+  return {
+    id: r.id,
+    dataUrl: await blobToDataUrl(r.blob),
+    blob: r.blob,
+    mime: (r.mime || 'video/webm').split(';')[0],
+    durationMs: Math.round(r.durationMs),
+    bytes: r.bytes,
+    width: r.width,
+    height: r.height,
+    screenOnly: r.screenOnly,
+  }
+}
+
+// ── KLA-602(b): live camera self-view bubble (Loom/Mevak style) ────────────────────────────────────────
+// A small circular LIVE preview of the LOCAL getUserMedia camera track, shown WHILE recording so the reporter
+// sees themselves. It plays a muted <video> off the camera stream and is NOT composited into the recorded file
+// here (compositing already happens in startRecording's PiP; live-bubble compositing is Phase B / KLA follow-up).
+// Returns the bubble element (the caller appends it to the recorder host so it's torn down with the overlay), or
+// null when there is no camera track (screen-only / camera blocked) — so a permission denial simply yields no
+// bubble and no error. Corner-anchored bottom-left by default; draggable via pointer events.
+export function startCameraPreview(stream: any | null): HTMLElement | null {
+  if (typeof document === 'undefined') return null
+  if (!stream || !(stream.getVideoTracks?.().length)) return null
+  const bubble = document.createElement('div')
+  bubble.setAttribute('data-klavity-ui', 'camera-preview')
+  bubble.setAttribute('role', 'img')
+  bubble.setAttribute('aria-label', 'Your camera preview')
+  bubble.style.cssText =
+    'position:fixed;left:24px;bottom:24px;width:128px;height:128px;border-radius:50%;overflow:hidden;' +
+    'z-index:2147483647;pointer-events:auto;cursor:grab;background:#000;border:3px solid #7c3aed;' +
+    'box-shadow:0 10px 30px rgba(28,22,40,.42);touch-action:none'
+  const video = document.createElement('video')
+  video.muted = true
+  ;(video as any).playsInline = true
+  video.setAttribute('playsinline', '')
+  video.autoplay = true
+  video.setAttribute('aria-hidden', 'true')
+  // Mirror horizontally so it reads like a selfie/webcam preview; cover-fit the circle.
+  video.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block'
+  try { (video as any).srcObject = stream } catch { /* jsdom/headless: no real playback */ }
+  try { const p = video.play?.(); if (p && typeof p.catch === 'function') p.catch(() => {}) } catch { /* no-op */ }
+  bubble.appendChild(video)
+  // Best-effort drag to reposition (corner-anchored otherwise). Pointer events keep it simple + touch-friendly.
+  let dragging = false, startX = 0, startY = 0, originX = 0, originY = 0
+  const onDown = (e: any) => {
+    dragging = true
+    bubble.style.cursor = 'grabbing'
+    const r = bubble.getBoundingClientRect()
+    originX = r.left; originY = r.top; startX = e.clientX; startY = e.clientY
+    // switch from bottom/left anchoring to absolute top/left so the drag math is uniform
+    bubble.style.right = 'auto'; bubble.style.bottom = 'auto'
+    bubble.style.left = originX + 'px'; bubble.style.top = originY + 'px'
+    try { bubble.setPointerCapture?.(e.pointerId) } catch { /* no-op */ }
+  }
+  const onMove = (e: any) => {
+    if (!dragging) return
+    bubble.style.left = Math.max(0, originX + (e.clientX - startX)) + 'px'
+    bubble.style.top = Math.max(0, originY + (e.clientY - startY)) + 'px'
+  }
+  const onUp = () => { dragging = false; bubble.style.cursor = 'grab' }
+  bubble.addEventListener('pointerdown', onDown)
+  bubble.addEventListener('pointermove', onMove)
+  bubble.addEventListener('pointerup', onUp)
+  return bubble
+}
+
+// ── recordMe(): thin browser-only overlay (consent → recording → auto-attach) ─────────────────────────
+// KLA-602(a): the finished recording now resolves DIRECTLY when the reporter stops (no "Preview → Attach to
+// report" gate) — the composer drops it straight into the photos/videos gallery as a removable video tile, and
+// Re-record lives there as a tile action. recordMe still resolves null on cancel/close. Deliberately
+// self-contained (its own fixed overlay) so the heavy MediaRecorder machinery stays OUT of the shared composer
+// (packages/core/src/modal.ts) — the composer only sees the resolved attachment.
+export interface RecordMeOptions {
+  caps?: Partial<RecordingCaps>
+  deps?: RecorderDeps
+  // KLA-555 (walkthrough mode): fires on every overlay phase transition so the host can minimize/restore the
+  // composer around a live recording. 'consent' renders the centered card+backdrop; the ACTIVE 'recording'
+  // phase docks a compact bar and lets clicks pass through to the page, so the host should hide the composer
+  // while phase==='recording' and restore it otherwise (and when recordMe's promise resolves/rejects).
+  // ('preview' is retained in the union for back-compat but is NO LONGER emitted — KLA-602(a) dropped the
+  // preview panel; stop auto-attaches.) Best-effort — listener errors never break capture.
+  onPhase?: (phase: 'consent' | 'recording' | 'preview') => void
+  // #639: initial state of the consent panel's Camera checkbox. Defaults to FALSE (camera OFF / opt-in) so
+  // screen-only is the default. A host/project that wants camera-on-by-default can pass defaultCamera:true.
+  // (A persistent per-project UI toggle for this belongs in the shared composer settings — see modal.ts
+  // follow-up noted in the ticket report; recordMe only takes the resolved boolean.)
+  defaultCamera?: boolean
+}
+
+export async function recordMe(opts: RecordMeOptions = {}): Promise<RecordingAttachment | null> {
+  if (typeof document === 'undefined') return null
+  const deps = opts.deps ?? defaultRecorderDeps()
+  if (!recordingSupported(deps)) return null
+  return new Promise<RecordingAttachment | null>((resolve) => {
+    const host = document.createElement('div')
+    host.setAttribute('data-klavity-ui', 'recorder')
+    const card = document.createElement('div')
+    host.appendChild(card); document.body.appendChild(host)
+
+    const FONT = 'font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#19140f'
+    // KLA-555 (walkthrough mode): the overlay chrome is per-phase, not static.
+    //   'modal' → full-screen dim backdrop centering a 360px card (consent + preview panels). Blocks the page.
+    //   'bar'   → transparent, pointer-events:none host (clicks pass THROUGH to the live app) with a compact
+    //             control docked bottom-center (pointer-events:auto). Used only for the ACTIVE recording phase
+    //             so the reporter can navigate + narrate over the running app, Loom/CleanShot style.
+    const setChrome = (mode: 'modal' | 'bar') => {
+      if (mode === 'bar') {
+        // KLA-831: the ACTIVE recording control floats on the RIGHT edge, vertically centered, so there is
+        // an obvious always-visible Stop affordance (reporters kept looking for one and only found Chrome's
+        // native "Stop sharing"). The host stays click-through (pointer-events:none) so the reporter can
+        // still drive the live app; only this docked control captures clicks.
+        host.style.cssText = `position:fixed;inset:0;z-index:2147483647;pointer-events:none;${FONT}`
+        card.style.cssText = 'position:fixed;right:20px;top:50%;transform:translateY(-50%);pointer-events:auto;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:14px;box-shadow:0 12px 40px rgba(28,22,40,.32);overflow:hidden;max-width:min(240px,80vw)'
+      } else {
+        host.style.cssText = `position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.55);${FONT}`
+        card.style.cssText = 'width:360px;max-width:92vw;background:#f5f3ee;border:1px solid #e3ddd1;border-radius:12px;box-shadow:0 20px 60px rgba(28,22,40,.28);overflow:hidden'
+      }
+    }
+    const emitPhase = (phase: 'consent' | 'recording' | 'preview') => { try { opts.onPhase?.(phase) } catch { /* listener errors never break capture */ } }
+    setChrome('modal')
+
+    let settled = false
+    let controller: RecordingController | null = null
+    // KLA-620: click-outside-to-dismiss for the consent card (standard modal affordance). Only armed while the
+    // consent panel is up (modal chrome); the ACTIVE 'recording' bar must NOT be dismissed by a stray page click
+    // (its host is pointer-events:none anyway, so clicks pass through to the live app). renderConsent arms this;
+    // renderRecording disarms it. Same effect as Cancel/Escape — finish(null) tears down every track.
+    let backdropDismiss = false
+    // #474 (privacy) teardown hook: recordMe owns its own fixed overlay, sibling to the composer modal. If the
+    // overlay is dismissed (Attach/Cancel/Re-record), the reporter presses Escape, or the host page navigates
+    // away while a recording is ACTIVE, every camera/mic/screen track must stop. finish() is the single exit and
+    // ALWAYS stops the controller; the Escape + pagehide listeners funnel those paths back through finish().
+    const teardownRecorder = () => { try { controller?.stop() } catch { /* no-op */ } }
+    const onKeydown = (e: KeyboardEvent) => {
+      // Registered at document capture; because recordMe mounts AFTER the composer, this runs before the
+      // composer's own Esc handler while the recorder overlay is up. Cancel the recording (stopping tracks)
+      // and swallow the key so the underlying modal does NOT also close behind us.
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); finish(null) }
+    }
+    const onPageHide = () => { teardownRecorder() }
+    // KLA-620: backdrop pointerdown. host is the full-screen dim layer that centers the card; a pointerdown whose
+    // target is host itself (i.e. OUTSIDE the card) while the consent panel is up dismisses like Cancel. Clicks
+    // landing on the card (or its descendants) have target !== host and are ignored, so the card stays put.
+    const onBackdropDown = (e: PointerEvent) => {
+      if (!backdropDismiss) return
+      if (e.target === host) { e.preventDefault(); e.stopPropagation(); finish(null) }
+    }
+    host.addEventListener('pointerdown', onBackdropDown)
+    document.addEventListener('keydown', onKeydown, { capture: true })
+    if (typeof window !== 'undefined') { window.addEventListener('pagehide', onPageHide); window.addEventListener('beforeunload', onPageHide) }
+    const finish = (val: RecordingAttachment | null) => {
+      if (settled) return
+      settled = true
+      teardownRecorder() // stop any live camera/mic/screen tracks on EVERY exit (cancel/attach/redo/esc/close)
+      host.removeEventListener('pointerdown', onBackdropDown)
+      document.removeEventListener('keydown', onKeydown, { capture: true })
+      if (typeof window !== 'undefined') { window.removeEventListener('pagehide', onPageHide); window.removeEventListener('beforeunload', onPageHide) }
+      try { host.remove() } catch { /* no-op */ }
+      resolve(val)
+    }
+
+    const fmtTime = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
+    const fmtMB = (b: number) => `${(b / 1048576).toFixed(1)} MB`
+    const caps: RecordingCaps = { ...DEFAULT_RECORDING_CAPS, ...(opts.caps || {}) }
+
+    // Panel 1 — consent-first start.
+    const renderConsent = () => {
+      setChrome('modal'); emitPhase('consent')
+      backdropDismiss = true // KLA-620: consent panel is a real modal — click-outside dismisses like Cancel
+      card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true'); card.setAttribute('aria-label', 'Record a walkthrough')
+      // #639: camera OFF by default (opt-in). The checkbox starts unchecked unless the host opted in via
+      // opts.defaultCamera. #640: an inline tip nudges the reporter to pick "Entire Screen" in the browser's
+      // upcoming share picker so multi-page flows (tab switches) are actually captured.
+      const camChecked = opts.defaultCamera === true ? ' checked' : ''
+      card.innerHTML =
+        '<div style="padding:14px;border-bottom:1px solid #e3ddd1;font-weight:600">Record a walkthrough</div>' +
+        '<div style="padding:14px">' +
+        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-screen" checked disabled> Share my <b>screen</b></label>' +
+        `<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-cam"${camChecked}> Camera <span style="font-size:9px;font-weight:800;color:#fff;background:#6366f1;padding:1px 5px;border-radius:999px">optional</span></label>` +
+        '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="klr-mic" checked> Microphone (narration)</label>' +
+        '<div style="display:flex;gap:8px;margin-top:10px"><button id="klr-start" style="padding:8px 13px;border-radius:8px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:600;cursor:pointer">Start recording</button><button id="klr-cancel" style="padding:8px 13px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Cancel</button></div>' +
+        '<p style="font-size:11px;color:#574f45;margin-top:8px;padding:8px;background:#efeadf;border-radius:8px;border:1px solid #e3ddd1">Tip: to capture steps across <b>multiple pages/tabs</b>, choose <b>&quot;Entire Screen&quot;</b> in the next dialog. Sharing a single tab will not follow you when you switch tabs.</p>' +
+        `<p style="font-size:11px;color:#574f45;margin-top:8px">Your browser will ask to share a tab/screen. Max ${Math.round(caps.maxDurationMs / 60000)} min. Nothing uploads until you attach it.</p>` +
+        '<div id="klr-hint"></div></div>'
+      ;(card.querySelector('#klr-cancel') as HTMLButtonElement).onclick = () => finish(null)
+      ;(card.querySelector('#klr-start') as HTMLButtonElement).onclick = () => {
+        const wantCamera = (card.querySelector('#klr-cam') as HTMLInputElement).checked
+        const wantMic = (card.querySelector('#klr-mic') as HTMLInputElement).checked
+        void begin(wantCamera, wantMic)
+      }
+    }
+
+    const begin = async (wantCamera: boolean, wantMic: boolean) => {
+      // #477: onFallback may fire with 'camera-blocked' (mic narration KEPT via the audio-only retry) or a
+      // screen-only reason ('permissions-policy'/error name). The recording panel hint reflects which.
+      let fallbackReason: string | null = null
+      try {
+        controller = await startRecording({
+          wantCamera, wantMic, caps: opts.caps,
+          onFallback: (reason) => { fallbackReason = reason },
+          onStats: ({ elapsedMs, bytes }) => {
+            const t = card.querySelector('#klr-timer'); if (t) t.textContent = 'REC ' + fmtTime(elapsedMs)
+            const m = card.querySelector('#klr-meta')
+            if (m) m.innerHTML = `${fmtTime(Math.max(0, caps.maxDurationMs - elapsedMs))} left<br>~${fmtMB(bytes)}`
+          },
+        }, deps)
+      } catch {
+        finish(null); return // user dismissed the screen-share picker
+      }
+      renderRecording(fallbackReason)
+      // KLA-602(b): live self-view bubble while recording, ONLY when the camera is genuinely part of the
+      // capture (opt-in via the consent camera checkbox + granted). A denial → cameraStream() is null → no
+      // bubble, no error. Appended to the recorder host so finish()'s host.remove() tears it down.
+      try {
+        const camBubble = startCameraPreview(controller?.cameraStream?.())
+        if (camBubble) host.appendChild(camBubble)
+      } catch { /* preview is a nicety — never let it break capture */ }
+      // KLA-602(a): on stop, resolve the attachment DIRECTLY (no preview/attach gate) — the composer auto-adds
+      // it to the gallery as a selected, removable video tile.
+      controller.done.then(async (r) => { finish(await recordingResultToAttachment(r)) })
+    }
+
+    // Panel 2 — ACTIVE recording. KLA-555: a NON-BLOCKING compact bar docked bottom-center (Loom/CleanShot
+    // style) instead of a page-dimming modal, so the reporter can navigate + narrate over the LIVE app while
+    // recording. The host chrome goes transparent + pointer-events:none (clicks pass through to the page) and
+    // only this bar captures pointer events. The pointless 120px "screen preview" box is dropped — the user is
+    // watching the real app. Element ids #klr-timer / #klr-meta are unchanged so the onStats handler keeps
+    // updating them, and #klr-pause / #klr-stop keep their wiring.
+    const renderRecording = (fallbackReason: string | null) => {
+      // #477: 'camera-blocked' means the audio-only retry KEPT the mic (screen + narration); any other reason
+      // means neither camera nor mic is available (screen only).
+      const micKept = fallbackReason === 'camera-blocked'
+      const screenOnlyFallback = !!fallbackReason && !micKept
+      const hint = micKept
+        ? '<div style="padding:0 14px 10px;font-size:11px;color:#574f45">Camera blocked by this site — recording <b>screen + mic narration</b>.</div>'
+        : screenOnlyFallback
+          ? '<div style="padding:0 14px 10px;font-size:11px;color:#574f45">Camera/mic blocked — recording <b>screen only</b>. Narrate by typing, or use the extension.</div>'
+          : ''
+      setChrome('bar'); emitPhase('recording')
+      backdropDismiss = false // KLA-620: recording is ACTIVE — a stray page click must NOT tear it down
+      card.removeAttribute('role'); card.removeAttribute('aria-modal'); card.removeAttribute('aria-label')
+      // KLA-831: a vertical stack with a BIG, unmistakable red "Stop recording" button as the dominant
+      // affordance, so the reporter never has to hunt for how to end the clip (they were falling back to
+      // Chrome's native "Stop sharing"). Timer sits above it; Pause is a secondary control below.
+      card.innerHTML =
+        '<div style="display:flex;flex-direction:column;gap:9px;padding:12px 14px;min-width:180px">' +
+        '<span style="display:inline-flex;align-items:center;gap:7px;font-weight:700;white-space:nowrap">' +
+        '<span aria-hidden="true" style="width:10px;height:10px;border-radius:50%;background:#e11;flex:none"></span>' +
+        '<span id="klr-timer">REC 0:00</span></span>' +
+        '<button id="klr-stop" aria-label="Stop recording" title="Stop recording" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #dc2626;background:#dc2626;color:#fff;font-weight:700;font-size:15px;cursor:pointer">' +
+        '<span aria-hidden="true" style="width:12px;height:12px;border-radius:2px;background:#fff;flex:none"></span>Stop recording</button>' +
+        '<button id="klr-pause" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid #e3ddd1;background:#fffdf8;font-weight:600;cursor:pointer">Pause</button>' +
+        '<span id="klr-meta" style="font-size:11px;color:#574f45;text-align:center;white-space:nowrap"></span>' +
+        '</div>' +
+        hint
+      const pauseBtn = card.querySelector('#klr-pause') as HTMLButtonElement
+      pauseBtn.onclick = () => {
+        if (!controller) return
+        if (controller.state() === 'recording') { controller.pause(); pauseBtn.textContent = 'Resume' }
+        else { controller.resume(); pauseBtn.textContent = 'Pause' }
+      }
+      ;(card.querySelector('#klr-stop') as HTMLButtonElement).onclick = () => controller?.stop()
+    }
+
+    // KLA-602(a): the old "Panel 3 — preview → attach" is GONE. Stopping the recording resolves the
+    // attachment directly (see begin()'s controller.done handler), and the composer drops it straight into the
+    // gallery as a selected, removable video tile with a Re-record tile action.
+    renderConsent()
+  })
+}

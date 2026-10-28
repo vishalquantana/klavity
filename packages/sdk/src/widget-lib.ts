@@ -3,10 +3,12 @@ import { buildFeedbackFormData } from '../../core/src/integrations/backend'
 import { coerceReporter } from './identity'
 import { icon } from '@klavity/core/icons'
 
-export function parseScriptConfig(scriptEl: { dataset: Record<string, string | undefined>, src: string }): { projectId: string, backendUrl: string, reporter?: Reporter, metadata?: Record<string, string> } {
-  const projectId = scriptEl.dataset.project || ""
+export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | undefined>, src?: string } | null | undefined): { projectId: string, backendUrl: string, reporter?: Reporter, identity?: Reporter, metadata?: Record<string, string> } {
+  if (!scriptEl) return { projectId: "", backendUrl: "" }
+  const d = scriptEl.dataset || {}
+  const projectId = d.project || ""
   let backendUrl = ""
-  try { backendUrl = new URL(scriptEl.src).origin } catch { backendUrl = "" }
+  try { backendUrl = scriptEl.src ? new URL(scriptEl.src).origin : "" } catch { backendUrl = "" }
   // PX4 #439 / G5: the reporter identity can be declared directly on the script tag. Two attribute
   // spellings are accepted (both map to the same dataset camelCase keys):
   //   data-klavity-user-*  → dataset.klavityUser*   (PX4 #439 canonical, namespaced)
@@ -16,7 +18,6 @@ export function parseScriptConfig(scriptEl: { dataset: Record<string, string | u
   //           data-klavity-user-id="u_42" data-klavity-user-email="a@b.com" data-klavity-user-name="Ada"
   //           data-klavity-user-org="Acme" data-klavity-user-role="admin" data-klavity-user-env="prod"
   //           data-meta='{"plan":"pro","tenant":"acme"}'></script>
-  const d = scriptEl.dataset
   const raw: Record<string, string | undefined> = {
     id:      d.klavityUserId      ?? d.userId,
     email:   d.klavityUserEmail   ?? d.userEmail,
@@ -30,9 +31,9 @@ export function parseScriptConfig(scriptEl: { dataset: Record<string, string | u
   }
   const reporter = coerceReporter(raw)
   let metadata: Record<string, string> | undefined
-  if (scriptEl.dataset.meta) {
+  if (d.meta) {
     try {
-      const parsed = JSON.parse(scriptEl.dataset.meta)
+      const parsed = JSON.parse(d.meta)
       if (parsed && typeof parsed === "object") {
         metadata = {}
         for (const [k, v] of Object.entries(parsed)) {
@@ -42,7 +43,7 @@ export function parseScriptConfig(scriptEl: { dataset: Record<string, string | u
       }
     } catch { /* ignore malformed data-meta */ }
   }
-  return { projectId, backendUrl, reporter, metadata }
+  return { projectId, backendUrl, reporter, identity: reporter, metadata }
 }
 
 export interface SuccessCopy {
@@ -157,8 +158,11 @@ export async function compressScreenshot(dataUrl: string, opts: { maxWidth?: num
       i.src = dataUrl
     })
     const nw = img.naturalWidth, nh = img.naturalHeight
-    if (!nw || !nh) return dataUrl
-    const scale = nw > maxWidth ? maxWidth / nw : 1
+    const maxDimension = 16000
+    let scale = nw > maxWidth ? maxWidth / nw : 1
+    if (nh * scale > maxDimension) {
+      scale = maxDimension / nh
+    }
     const w = Math.round(nw * scale), h = Math.round(nh * scale)
     const canvas = document.createElement("canvas")
     canvas.width = w; canvas.height = h

@@ -108,12 +108,16 @@ test("Ticket detail priority editor persists via PATCH and is timeline-tracked (
   expect(html).toContain('ticket_priority_changed:')
 })
 
-test("Tickets kanban fetch includes all board statuses by default and supports Closed filter", () => {
+test("Tickets kanban fetch includes all board statuses by default; no fake 'Closed' status filter", () => {
   // KD-208: the literal list became ALL_STATUSES, derived from STATUS_ORDER.
-  expect(html).toContain('return view === "board" ? ALL_STATUSES : ""')
+  expect(html).toContain("return ALL_STATUSES")
   expect(html).toContain('const ALL_STATUSES = STATUS_ORDER.join(",")')
-  expect(html).toContain('if (_tktFilters.status === "closed") return "done,dismissed"')
-  expect(html).toContain('<option value="closed">Closed</option>')
+  // KD-223: "Closed" isn't a real status (it was a Done+Dismissed shortcut) — removed from the Status filter,
+  // and an old ?status=closed link falls back to All statuses.
+  expect(html).not.toContain('<option value="closed">Closed</option>')
+  expect(html).not.toContain('if (_tktFilters.status === "closed") return "done,dismissed"')
+  expect(html).not.toContain('if (s === "closed") want.push("done", "dismissed")')
+  expect(html).toContain('_tktFilters.status = _tktFilters.status.filter(s => s !== "closed")')
 })
 
 test("Dragging a ticket across columns PATCHes feedback status; same-column drag is ignored", () => {
@@ -249,10 +253,15 @@ test("KD-224: every board card shows its priority right beside the source chip",
   const high = kbCardMetaHtml({ priority: "high", labels: [] })
   expect(high).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-high"')
   expect(high).toContain(">high</span>")
-  // An unset priority still shows a chip, so no card is left without one.
-  const none = kbCardMetaHtml({ priority: null, labels: [] })
-  expect(none).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-none"')
-  expect(none).toContain(">No priority</span>")
+  // KD-236: an unset priority shows the canonical default "medium" — the same value the ticket detail page shows
+  // for that ticket (it used to read "No priority" on the card while the detail page said medium).
+  for (const unset of [null, undefined, ""]) {
+    const none = kbCardMetaHtml({ priority: unset, labels: [] })
+    expect(none).toStartWith('<span class="src-chip src-human">Widget</span><span class="chip sev-medium"')
+    expect(none).toContain(">medium</span>")
+    expect(none).not.toContain("No priority")
+  }
+  expect(html).toContain('const curPri = t.priority || "medium"') // the detail page's default this mirrors
   // Urgent has its own colour.
   expect(src).toContain(".chip.sev-urgent {")
 })

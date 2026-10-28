@@ -12,6 +12,7 @@ import { join } from "node:path"
 const file = join(tmpdir(), `klav-transcribe-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)
 process.env.TURSO_DATABASE_URL = "file:" + file
 delete process.env.TURSO_AUTH_TOKEN
+delete process.env.DEEPGRAM_API_KEY
 process.env.OPENROUTER_API_KEY = "sk-test-transcribe" // so transcription is "configured"
 // PX4 #471: tiny payload cap so the over-cap test can trip it with a small buffer (must be set BEFORE
 // importing ./transcribe, which reads KLAV_TRANSCRIBE_MAX_BYTES at module load).
