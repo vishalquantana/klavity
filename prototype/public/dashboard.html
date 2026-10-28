@@ -15282,6 +15282,42 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+      max-height: min(280px, 80vh);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--line) transparent;
+    }
+
+    .tg-pri-kdd .kdd-menu::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .tg-pri-kdd .kdd-menu::-webkit-scrollbar-thumb {
+      background: var(--line);
+      border-radius: 4px;
+    }
+
+    /* Responsive upward positioning when insufficient space below */
+    .tg-pri-kdd.kdd-open-up .kdd-menu,
+    .tg-pri-kdd.up .kdd-menu,
+    .tg-pri-kdd .kdd-menu.kdd-menu-up,
+    .tg-pri-kdd .kdd-menu.up {
+      top: auto !important;
+      bottom: calc(100% + 4px) !important;
+      box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, .3), 0 -8px 10px -6px rgba(0, 0, 0, .2);
+    }
+
+    /* Explicit downward positioning when not upward */
+    .tg-pri-kdd:not(.kdd-open-up):not(.up) .kdd-menu:not(.kdd-menu-up):not(.up) {
+      top: calc(100% + 4px) !important;
+      bottom: auto !important;
+    }
+
+    /* Align right if overflowing right edge of card/screen */
+    .tg-pri-kdd.kdd-align-right .kdd-menu,
+    .tg-pri-kdd .kdd-menu.kdd-align-right {
+      left: auto !important;
+      right: 0 !important;
     }
 
     .tg-pri-kdd .kdd-menu.hide {
@@ -15393,25 +15429,6 @@
       font-weight: 700;
     }
 
-    .tg-pri-kdd .kdd-pri-neutral .prop-sq {
-      background: #94a3b8;
-      box-shadow: 0 0 0 1px rgba(148, 163, 184, .3);
-    }
-
-    .tg-pri-kdd .kdd-pri-neutral:hover,
-    .tg-pri-kdd .kdd-pri-neutral:focus-visible {
-      background: rgba(148, 163, 184, .1);
-      border-color: rgba(148, 163, 184, .25);
-      color: #64748b;
-    }
-
-    .tg-pri-kdd .kdd-pri-neutral[aria-checked="true"] {
-      background: rgba(148, 163, 184, .15);
-      border-color: rgba(148, 163, 184, .35);
-      color: #64748b;
-      font-weight: 700;
-    }
-
     /* Dark theme text contrast adjustments */
     [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:hover,
     [data-theme="dark"] .tg-pri-kdd .kdd-pri-urgent:focus-visible,
@@ -15437,19 +15454,23 @@
       color: #60a5fa;
     }
 
-    [data-theme="dark"] .tg-pri-kdd .kdd-pri-neutral:hover,
-    [data-theme="dark"] .tg-pri-kdd .kdd-pri-neutral:focus-visible,
-    [data-theme="dark"] .tg-pri-kdd .kdd-pri-neutral[aria-checked="true"] {
-      color: #94a3b8;
-    }
-
-    /* Elevated z-index when dropdown is open so it renders above surrounding cards */
+    /* Elevated z-index when dropdown is open so it renders above surrounding cards and columns */
     .kb-card.tg-dropdown-open,
     .tg-row.tg-dropdown-open,
     .kb-card:has(.tg-pri-kdd .kdd-menu:not(.hide)),
     .tg-row:has(.tg-pri-kdd .kdd-menu:not(.hide)) {
-      z-index: 50;
-      position: relative;
+      z-index: 1000 !important;
+      position: relative !important;
+      transform: none !important;
+    }
+
+    .kb-col:has(.tg-dropdown-open),
+    .kb-col.tg-dropdown-col {
+      z-index: 900 !important;
+    }
+
+    .tg-pri-kdd.kdd-open {
+      z-index: 1001 !important;
     }
 
     /* Screen-reader / form-accessible hiding of native select when paired with custom .kdd dropdown */
@@ -20579,6 +20600,10 @@
               if (b) b.setAttribute("aria-expanded", "false")
               const card = m.closest(".kb-card, .tg-row")
               if (card) card.classList.remove("tg-dropdown-open")
+              const pk = m.closest(".tg-pri-kdd")
+              if (pk) pk.classList.remove("kdd-open-up")
+              m.classList.remove("kdd-menu-up")
+              m.style.maxHeight = ""
             })
           }
         })
@@ -20596,6 +20621,10 @@
               if (b) b.setAttribute("aria-expanded", "false")
               const card = m.closest(".kb-card, .tg-row")
               if (card) card.classList.remove("tg-dropdown-open")
+              const pk = m.closest(".tg-pri-kdd")
+              if (pk) pk.classList.remove("kdd-open-up")
+              m.classList.remove("kdd-menu-up")
+              m.style.maxHeight = ""
             })
           }
         })
@@ -20796,7 +20825,7 @@
       // Severity rail
       const rail = single.querySelector(".single-rail")
       if (rail) {
-        const sv = ["urgent", "high", "medium", "low"].includes(newPri) ? newPri : (newPri === "neutral" ? "med" : "none")
+        const sv = ["urgent", "high", "medium", "low"].includes(newPri) ? newPri : "none"
         rail.className = "single-rail sv-" + sv
       }
     }
@@ -20814,7 +20843,7 @@
       const priKdd = el.querySelector(".tg-pri-kdd")
       const kddBtn = priKdd ? priKdd.querySelector(".kdd-btn") : null
       const kddMenu = priKdd ? priKdd.querySelector(".kdd-menu") : null
-      const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low", neutral: "Neutral" }
+      const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
 
       function updateKddDisplay(val) {
         if (!kddBtn) return
@@ -20830,6 +20859,41 @@
         }
       }
 
+      // Flip the priority menu above the button when there isn't room below it — measured against the
+      // viewport and any scrolling/clipping ancestor (board column, list body), whichever is tighter.
+      function positionKddMenu() {
+        priKdd.classList.remove("kdd-open-up")
+        kddMenu.classList.remove("kdd-menu-up")
+        kddMenu.style.maxHeight = ""
+        const btnRect = kddBtn.getBoundingClientRect()
+        let top = 0, bottom = window.innerHeight || document.documentElement.clientHeight
+        for (let p = priKdd.parentElement; p && p !== document.body; p = p.parentElement) {
+          const oy = getComputedStyle(p).overflowY
+          if (oy === "auto" || oy === "scroll" || oy === "hidden" || oy === "clip") {
+            const r = p.getBoundingClientRect()
+            top = Math.max(top, r.top)
+            bottom = Math.min(bottom, r.bottom)
+          }
+        }
+        const gap = 8
+        const menuH = kddMenu.scrollHeight
+        const spaceBelow = bottom - btnRect.bottom - gap
+        const spaceAbove = btnRect.top - top - gap
+        if (spaceBelow < menuH && spaceAbove > spaceBelow) {
+          priKdd.classList.add("kdd-open-up")
+          kddMenu.classList.add("kdd-menu-up")
+          if (spaceAbove < menuH) kddMenu.style.maxHeight = Math.max(80, spaceAbove) + "px"
+        } else if (spaceBelow < menuH) {
+          kddMenu.style.maxHeight = Math.max(80, spaceBelow) + "px"
+        }
+      }
+      function resetKddMenuPosition(m) {
+        const pk = m.closest(".tg-pri-kdd")
+        if (pk) pk.classList.remove("kdd-open-up")
+        m.classList.remove("kdd-menu-up")
+        m.style.maxHeight = ""
+      }
+
       if (kddBtn && kddMenu) {
         kddBtn.addEventListener("click", (ev) => {
           ev.stopPropagation()
@@ -20841,16 +20905,19 @@
               if (b) b.setAttribute("aria-expanded", "false")
               const card = m.closest(".kb-card, .tg-row")
               if (card) card.classList.remove("tg-dropdown-open")
+              resetKddMenuPosition(m)
             }
           })
           if (isOpen) {
             kddMenu.classList.add("hide")
             kddBtn.setAttribute("aria-expanded", "false")
             el.classList.remove("tg-dropdown-open")
+            resetKddMenuPosition(kddMenu)
           } else {
             kddMenu.classList.remove("hide")
             kddBtn.setAttribute("aria-expanded", "true")
             el.classList.add("tg-dropdown-open")
+            positionKddMenu()
           }
         })
         kddMenu.addEventListener("click", (ev) => {
@@ -20861,6 +20928,7 @@
           kddMenu.classList.add("hide")
           kddBtn.setAttribute("aria-expanded", "false")
           el.classList.remove("tg-dropdown-open")
+          resetKddMenuPosition(kddMenu)
           if (pri && pri.value !== val) {
             pri.value = val
             pri.dispatchEvent(new Event("change", { bubbles: true }))
@@ -21006,9 +21074,9 @@
           }
           // Shared priority dropdown generator for Sim Reports cards and rows
           function tgPriorityDropdownHtml(t) {
-            const curPri = (["urgent", "high", "medium", "low", "neutral"].includes(t.priority) ? t.priority : "medium")
-            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low", neutral: "Neutral" }
-            const opts = ["urgent", "high", "medium", "low", "neutral"]
+            const curPri = (["urgent", "high", "medium", "low"].includes(t.priority) ? t.priority : "medium")
+            const priLabels = { urgent: "Urgent", high: "High", medium: "Medium", low: "Low" }
+            const opts = ["urgent", "high", "medium", "low"]
             return `<div class="kdd tg-pri-kdd" data-kdd="priority">
         <button type="button" class="kdd-btn tg-pri-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(priLabels[curPri] || curPri)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         <div class="kdd-menu hide" role="menu" aria-label="Priority">${opts.map(s => `<button type="button" class="kdd-item kdd-pri-${s}" role="menuitemradio" aria-checked="${s === curPri}" data-val="${s}"><span class="prop-sq dp-${s}"></span><span class="kdd-txt">${priLabels[s]}</span></button>`).join("")}</div>
@@ -24891,7 +24959,7 @@
             // (matching the triage row select), so the <select> marks 'medium' selected instead of falling
             // through to the first option ('urgent') and silently mis-representing an un-triaged report.
             const curPri = t.priority || "medium"
-            const priOpts = ["urgent", "high", "medium", "low", "neutral"].map(p =>
+            const priOpts = ["urgent", "high", "medium", "low"].map(p =>
               `<option value="${p}"${p === curPri ? " selected" : ""}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`
             ).join("")
             // #653: reusable (i) info tooltip for the genuinely-unclear controls. Text is trusted/static; esc anyway.
@@ -24912,7 +24980,7 @@
         <span class="tkt-prop-lb">Priority</span>
         <span class="tkt-prop-vv"><span class="kdd" data-kdd="priority">
           <button type="button" class="kdd-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(curPri ? (curPri.charAt(0).toUpperCase() + curPri.slice(1)) : "Medium")}</span><svg class=\"kdd-caret\" xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><polyline points=\"6 9 12 15 18 9\"></polyline></svg></button>
-          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low", "neutral"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2.charAt(0).toUpperCase() + p2.slice(1)}</button>`).join("")}</span>
+          <span class="kdd-menu hide" role="menu" aria-label="Priority">${["urgent", "high", "medium", "low"].map(p2 => `<button type="button" class="kdd-item" role="menuitemradio" aria-checked="${p2 === curPri}" data-val="${p2}"><span class="prop-sq dp-${p2}"></span>${p2.charAt(0).toUpperCase() + p2.slice(1)}</button>`).join("")}</span>
           <select class="tkt-pri-sel kdd-native" aria-hidden="true" tabindex="-1">${priOpts}</select>
         </span></span>
         <span class="tkt-prop-lb">Assignee</span>
