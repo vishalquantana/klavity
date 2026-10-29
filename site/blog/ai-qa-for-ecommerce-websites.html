@@ -1,0 +1,217 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for Ecommerce Websites: What to Test and How · Klavity</title>
+<meta name="description" content="AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-ecommerce-websites">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for Ecommerce Websites: What to Test and How"><meta property="og:description" content="AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-ecommerce-websites"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-ecommerce-websites.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for Ecommerce Websites: What to Test and How"><meta name="twitter:description" content="AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-ecommerce-websites.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for Ecommerce Websites: What to Test and How","description":"AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why.","datePublished":"2026-10-29","dateModified":"2026-10-29","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-ecommerce-websites.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-ecommerce-websites","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for Ecommerce Websites: What to Test and How","item":"https://klavity.in/blog/ai-qa-for-ecommerce-websites"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-ecommerce-websites"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What should AI QA for an ecommerce website test first?","acceptedAnswer":{"@type":"Answer","text":"The happy-path purchase: land on a product, select a variant, add to cart, check out as a guest, reach confirmation. Every other store test is a variation of that path, so automate it before anything else. Cart arithmetic and discount-code boundaries come next, then checkout form validation and post-purchase surfaces like the receipt email."}},{"@type":"Question","name":"How do you test checkout without placing real orders?","acceptedAnswer":{"@type":"Answer","text":"Use your payment provider's test mode and test card numbers, which exercise the real integration without charging. Alternatives are a staging store with a seeded catalogue, running production up to but not through the payment step, or a single controlled real order per release that you then refund to verify receipts and fulfilment."}},{"@type":"Question","name":"Why doesn't error monitoring catch ecommerce bugs?","acceptedAnswer":{"@type":"Answer","text":"Because the most costly store bugs succeed from the server's point of view. A discount that applies twice, a shipping rate that resolves to zero, or a variant that falls back to the default price all return HTTP 200 with no exception thrown. They need assertions on displayed values, or a model reading the page, rather than exception capture."}},{"@type":"Question","name":"Can AI replace a manual QA pass on a store?","acceptedAnswer":{"@type":"Answer","text":"Not entirely. AI handles the repetitive exercising of flows, the combinatorial variant and discount cases, and the evidence capture. It cannot confirm your tax rates are legally correct, know a client's business rules unless told, or judge whether a conversion change is a defect. Those remain human decisions."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-10-29</div>
+    <h1>AI QA for Ecommerce Websites: What to Test and How</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Four ecommerce funnel stages — product, cart, checkout, confirmation — with checkout failing">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="40" y="48" width="64" height="6" rx="3" fill="#6366f1"/>
+  <rect x="40" y="68" width="230" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <rect x="40" y="110" width="160" height="190" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="40" y="110" width="160" height="190" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <rect x="56" y="128" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="56" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="56" y="174" width="86" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="120" cy="252" r="17" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="112,252 118,259 128,245" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="230" y="110" width="160" height="190" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="230" y="110" width="160" height="190" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <rect x="246" y="128" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="246" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="246" y="174" width="104" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="310" cy="252" r="17" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="302,252 308,259 318,245" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="420" y="110" width="160" height="190" rx="10" fill="#f87171" opacity="0.07"/>
+  <rect x="420" y="110" width="160" height="190" rx="10" fill="none" stroke="#f87171" stroke-width="2" opacity="0.85"/>
+  <rect x="436" y="128" width="58" height="7" rx="3.5" fill="#f87171" opacity="0.55"/>
+  <rect x="436" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="436" y="174" width="68" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="500" cy="252" r="17" fill="none" stroke="#f87171" stroke-width="2.4"/>
+  <line x1="493" y1="245" x2="507" y2="259" stroke="#f87171" stroke-width="2.8" stroke-linecap="round"/>
+  <line x1="507" y1="245" x2="493" y2="259" stroke="#f87171" stroke-width="2.8" stroke-linecap="round"/>
+
+  <rect x="610" y="110" width="160" height="190" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="610" y="110" width="160" height="190" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <rect x="626" y="128" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="626" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="626" y="174" width="92" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="690" cy="252" r="17" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="682,252 688,259 698,245" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M204 205 L222 205 M215 199 L222 205 L215 211" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M394 205 L412 205 M405 199 L412 205 L405 211" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M584 205 L602 205 M595 199 L602 205 L595 211" fill="none" stroke="#f87171" stroke-width="2.2" stroke-linecap="round" opacity="0.7"/>
+
+  <rect x="40" y="344" width="730" height="12" rx="6" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="40" y="344" width="420" height="12" rx="6" fill="#4ade80" opacity="0.75"/>
+  <rect x="494" y="338" width="4" height="24" rx="2" fill="#f87171"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for ecommerce websites means exercising the revenue flows — variant pages, cart, discount codes, checkout, confirmation — and reporting failures with reproducible evidence. Store bugs differ from brochure-site bugs because they are stateful and silent: the worst of them return HTTP 200, so error monitoring never fires. Order the work by revenue exposure, automate the happy-path purchase first, and use AI exploration for the variant and discount combinations too numerous to script.</div>
+    <div class="prose"><p><strong>AI QA for ecommerce websites</strong> means using AI to exercise the parts of a store where money actually moves — product and variant pages, the cart, promo codes, checkout, and the order confirmation — and to report what breaks with enough evidence that a developer can fix it without a follow-up conversation. It matters more on a store than on a brochure site because ecommerce failures are stateful and compounding: a cart that silently drops a line item does not throw an error, it just reduces the order total. The practical approach is to test by funnel stage rather than by page, and to automate the three or four paths that carry revenue before you try to cover the whole catalogue.</p>
+
+<p>If you build or maintain stores for clients, this is the difference between finding a broken discount code yourself on Tuesday and hearing about it from the client on Friday, after a weekend campaign has already run.</p>
+
+<h2>Why does ecommerce QA fail differently from other site QA?</h2>
+
+<p>A marketing site is mostly stateless. You load a page, it either renders or it doesn't. A store carries state across steps — selected variant, cart contents, applied discount, shipping zone, tax, payment intent — and each step inherits whatever the previous one got wrong. Three consequences follow, and they explain most escaped defects on store launches:</p>
+
+<ul>
+<li><strong>Failures are quiet.</strong> The worst ecommerce bugs return HTTP 200. A promo code that applies twice, a shipping rate that resolves to zero for one country, a variant whose price falls back to the default SKU — none of these raise an exception. Nothing in your error monitoring lights up, because from the server's point of view the request succeeded.</li>
+<li><strong>The surface is combinatorial.</strong> Variants multiply. A product with three sizes, four colours, and two subscription options is 24 purchasable configurations, and the one that breaks is usually the one nobody thought to click. You cannot click your way out of this, and you shouldn't try to script all of it either.</li>
+<li><strong>Third parties are inside the critical path.</strong> Payment providers, tax and shipping calculators, review widgets, consent banners, analytics tags. These change without telling you, and a consent banner that covers the "Place order" button on mobile is a complete revenue outage that no code change of yours caused.</li>
+</ul>
+
+<p>This is the same pattern we describe in <a href="/blog/how-to-reduce-escaped-defects">how to reduce escaped defects</a>, just with a shorter fuse: on a store, an escaped defect has a price per hour.</p>
+
+<h2>What should AI QA for ecommerce websites cover first?</h2>
+
+<p>Order the work by revenue exposure, not by how easy it is to automate. For almost every store, the sequence looks like this:</p>
+
+<ol>
+<li><strong>The happy-path purchase.</strong> Land on a product, pick a variant, add to cart, check out as a guest, reach the confirmation page. If you automate exactly one thing, automate this. It is the path every other test is a variation of.</li>
+<li><strong>Cart arithmetic.</strong> Quantity changes, removing a line, adding the same SKU twice, a cart that survives a page reload and a new tab. Assert on the displayed total, not just that the page rendered.</li>
+<li><strong>Discounts and edge pricing.</strong> Valid code, expired code, code that shouldn't stack, free-shipping threshold just above and just below. Boundary values are where discount logic breaks, as in any <a href="/blog/how-to-test-for-edge-cases-checklist">edge-case checklist</a>.</li>
+<li><strong>Checkout form validation.</strong> Postcodes that aren't five digits, addresses with apostrophes, international phone formats, a country with no state field. Validation written for one market is the most common source of "I couldn't check out" emails.</li>
+<li><strong>Post-purchase surfaces.</strong> Confirmation page, receipt email, order-status page. A store that takes money and sends nothing is a support crisis even when the payment worked.</li>
+</ol>
+
+<p>Everything else — catalogue pages, filters, search, account management — matters, but it degrades gracefully. Checkout does not.</p>
+
+<h2>Which ecommerce bugs does AI catch that scripted tests miss?</h2>
+
+<p>Scripted end-to-end tests are excellent at the paths you already thought of, and blind to the rest. That is their design, not a defect. AI-driven testing helps in three specific places:</p>
+
+<ul>
+<li><strong>Unanticipated paths.</strong> A model given the goal "buy two of the cheapest item and apply a student discount" will take steps you never wrote down, including the back button, a second tab, and the mobile menu. This is where persona-driven runs earn their keep — <a href="/sims">Sims</a> drives a store as a set of plausible shoppers rather than as one scripted sequence.</li>
+<li><strong>Judgement calls a selector can't make.</strong> "The price in the cart does not match the price on the product page" requires comparing two pieces of rendered meaning. An assertion can check this only if someone predicted that exact mismatch; a model reading both pages notices it as an inconsistency.</li>
+<li><strong>Test maintenance after a redesign.</strong> Stores get re-themed constantly, and a theme update rewrites the DOM that your selectors depend on. Self-healing tests re-anchor to the element's role and context instead of a brittle CSS path — the mechanics are in <a href="/blog/what-are-self-healing-end-to-end-tests">what are self-healing end-to-end tests</a>, and <a href="/autosim">AutoSim</a> is our take on it.</li>
+</ul>
+
+<p>What AI does not do reliably: decide whether a dip in conversion is a bug or a seasonal swing, verify that your tax rates are legally correct, or know your client's business rules unless you tell it. Those stay human.</p>
+
+<h2>How do you test checkout without placing real orders?</h2>
+
+<p>This is the question that stalls ecommerce QA programmes, so settle it before you automate anything. Four workable options, roughly in order of fidelity:</p>
+
+<ul>
+<li><strong>Provider test mode.</strong> Stripe, PayPal, Adyen and most others issue test credentials and card numbers that exercise the real integration without charging. This is the default answer and it covers most of what you need.</li>
+<li><strong>A staging store with a seeded catalogue.</strong> Same code, non-production data. The usual gap is that staging has twelve clean products and production has four thousand with messy inventory, so bugs that depend on real data hide here.</li>
+<li><strong>Production, up to the payment step.</strong> Run the real store, assert the order summary on the final page, and stop before submitting. Catches almost everything cheaply, misses only post-payment behaviour.</li>
+<li><strong>Production with a controlled test order.</strong> A real purchase you then refund, used sparingly — typically once per release on the single highest-value path, because it is the only way to verify receipts, fulfilment hooks, and the order record end to end.</li>
+</ul>
+
+<h2>Which testing approach fits which ecommerce surface?</h2>
+
+<table>
+<tr><th>Surface</th><th>Best approach</th><th>Why</th></tr>
+<tr><td>Happy-path purchase</td><td>Scripted E2E, every deploy</td><td>Stable, high value, must never regress</td></tr>
+<tr><td>Variant and pricing combinations</td><td>AI exploration</td><td>Too many combinations to script, cheap to explore</td></tr>
+<tr><td>Discount and threshold logic</td><td>Scripted boundary cases</td><td>Rules are known and exact; assert the number</td></tr>
+<tr><td>Usability of checkout on mobile</td><td>AI personas</td><td>Needs judgement about friction, not pass/fail</td></tr>
+<tr><td>Third-party widget breakage</td><td>Visual regression + console checks</td><td>Changes arrive without a deploy of yours</td></tr>
+<tr><td>Client- and customer-found issues</td><td>In-app reporting</td><td>Capture the state at the moment it happened</td></tr>
+</table>
+
+<p>The last row is the one agencies under-invest in. When a client finds a problem, what you get is "checkout is broken" and a phone photo. A right-click report from <a href="/snap">Snap</a> attaches the URL, viewport, console errors, and failed network requests, which is the difference between a ticket and a guessing game — see <a href="/blog/reduce-cannot-reproduce-bug-tickets">reducing cannot-reproduce tickets</a>.</p>
+
+<h2>What does a realistic weekly rhythm look like?</h2>
+
+<p>You do not need a QA department. You need the checks to happen without anyone remembering to do them:</p>
+
+<ul>
+<li><strong>Every deploy:</strong> the automated happy-path purchase plus cart arithmetic. If it fails, the deploy does not go out.</li>
+<li><strong>Weekly, scheduled:</strong> an AI exploration pass across variants, discounts, and checkout validation on staging. Triage the findings once, in one sitting.</li>
+<li><strong>Before any campaign:</strong> the specific codes and landing pages that campaign uses, tested as a set. Campaign traffic is the worst possible time to discover a broken coupon.</li>
+<li><strong>Always on:</strong> a reporting path so the client and their customers can file something usable the moment they hit it.</li>
+</ul>
+
+<p>For the broader framework this sits inside, start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>Where to start this week</h2>
+
+<p>Pick your highest-revenue client store. Write down its single most valuable purchase path, automate that one path, then schedule one exploration pass against variants and discount codes. That is a day of setup, and it moves you from "we hope the store works" to "we would know by Tuesday morning."</p>
+
+<p><a href="/onboarding"><strong>Scan your next client store free →</strong></a> Klavity runs AI QA on the flows that carry revenue, and turns whatever your client finds into a report a developer can act on.</p>
+</div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Automate the happy-path purchase before any other store test</li><li>Assert displayed totals, not just that the page rendered</li><li>Test discount codes at their boundaries, not just the valid case</li><li>Give clients a reporting path that captures console and network state</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What should AI QA for an ecommerce website test first?</summary><p>The happy-path purchase: land on a product, select a variant, add to cart, check out as a guest, reach confirmation. Every other store test is a variation of that path, so automate it before anything else. Cart arithmetic and discount-code boundaries come next, then checkout form validation and post-purchase surfaces like the receipt email.</p></details><details><summary>How do you test checkout without placing real orders?</summary><p>Use your payment provider's test mode and test card numbers, which exercise the real integration without charging. Alternatives are a staging store with a seeded catalogue, running production up to but not through the payment step, or a single controlled real order per release that you then refund to verify receipts and fulfilment.</p></details><details><summary>Why doesn't error monitoring catch ecommerce bugs?</summary><p>Because the most costly store bugs succeed from the server's point of view. A discount that applies twice, a shipping rate that resolves to zero, or a variant that falls back to the default price all return HTTP 200 with no exception thrown. They need assertions on displayed values, or a model reading the page, rather than exception capture.</p></details><details><summary>Can AI replace a manual QA pass on a store?</summary><p>Not entirely. AI handles the repetitive exercising of flows, the combinatorial variant and discount cases, and the evidence capture. It cannot confirm your tax rates are legally correct, know a client's business rules unless told, or judge whether a conversion change is a defect. Those remain human decisions.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

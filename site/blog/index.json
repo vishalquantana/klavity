@@ -950,5 +950,12 @@
     "excerpt": "ChatGPT app testing means verifying code written with no view of your repo. Test the seams first: execution, imports, server-side auth, error states.",
     "category": "Guides",
     "date": "2026-10-28"
+  },
+  {
+    "slug": "ai-qa-for-ecommerce-websites",
+    "title": "AI QA for Ecommerce Websites: What to Test and How",
+    "excerpt": "AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why.",
+    "category": "Guides",
+    "date": "2026-10-29"
   }
 ]

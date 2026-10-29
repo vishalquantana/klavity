@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Four ecommerce funnel stages — product, cart, checkout, confirmation — with checkout failing">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+  <rect x="40" y="48" width="64" height="6" rx="3" fill="#6366f1"/>
+  <rect x="40" y="68" width="230" height="6" rx="3" fill="#f5f0e8" opacity="0.14"/>
+
+  <rect x="40" y="110" width="160" height="190" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="40" y="110" width="160" height="190" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <rect x="56" y="128" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="56" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="56" y="174" width="86" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="120" cy="252" r="17" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="112,252 118,259 128,245" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="230" y="110" width="160" height="190" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="230" y="110" width="160" height="190" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <rect x="246" y="128" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="246" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="246" y="174" width="104" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="310" cy="252" r="17" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="302,252 308,259 318,245" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="420" y="110" width="160" height="190" rx="10" fill="#f87171" opacity="0.07"/>
+  <rect x="420" y="110" width="160" height="190" rx="10" fill="none" stroke="#f87171" stroke-width="2" opacity="0.85"/>
+  <rect x="436" y="128" width="58" height="7" rx="3.5" fill="#f87171" opacity="0.55"/>
+  <rect x="436" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="436" y="174" width="68" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="500" cy="252" r="17" fill="none" stroke="#f87171" stroke-width="2.4"/>
+  <line x1="493" y1="245" x2="507" y2="259" stroke="#f87171" stroke-width="2.8" stroke-linecap="round"/>
+  <line x1="507" y1="245" x2="493" y2="259" stroke="#f87171" stroke-width="2.8" stroke-linecap="round"/>
+
+  <rect x="610" y="110" width="160" height="190" rx="10" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="610" y="110" width="160" height="190" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.45"/>
+  <rect x="626" y="128" width="58" height="7" rx="3.5" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="626" y="152" width="128" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <rect x="626" y="174" width="92" height="11" rx="3" fill="#f5f0e8" opacity="0.10"/>
+  <circle cx="690" cy="252" r="17" fill="none" stroke="#4ade80" stroke-width="2.4"/>
+  <polyline points="682,252 688,259 698,245" fill="none" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M204 205 L222 205 M215 199 L222 205 L215 211" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M394 205 L412 205 M405 199 L412 205 L405 211" fill="none" stroke="#6366f1" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M584 205 L602 205 M595 199 L602 205 L595 211" fill="none" stroke="#f87171" stroke-width="2.2" stroke-linecap="round" opacity="0.7"/>
+
+  <rect x="40" y="344" width="730" height="12" rx="6" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="40" y="344" width="420" height="12" rx="6" fill="#4ade80" opacity="0.75"/>
+  <rect x="494" y="338" width="4" height="24" rx="2" fill="#f87171"/>
+</svg>
