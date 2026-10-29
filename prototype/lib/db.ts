@@ -6,6 +6,7 @@ import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
 import { sanitizeLabelRules, type LabelRule } from "./label-rules"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
+import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -2494,6 +2495,8 @@ export async function ensureAccount(email: string, attr?: SanitizedAttr | null):
   // leaves the row un-slugged. Best-effort — never blocks signup (opaque fb_ permalink always works).
   await claimAccountSlug(aid, `${local}'s Workspace`).catch((e: any) => { console.warn("ensureAccount slug mint skipped:", e?.message || e); return null })
   await claimProjectKey(aid, "proj_" + aid, "Default Project").catch((e: any) => { console.warn("ensureAccount key mint skipped:", e?.message || e); return null })
+  // Baseline QA Sim: every new project starts with the system-provided QA persona. Best-effort + idempotent — never blocks signup.
+  await ensureBaselineQaSim("proj_" + aid).catch((e: any) => { console.warn("ensureAccount baseline-qa provision skipped:", e?.message || e); return false })
   if (attr) await setAccountAttribution(aid, attr)
   return membershipsFor(email)
 }
@@ -2592,6 +2595,7 @@ export async function createProject(accountId: string, name: string, siteUrl?: s
   })
   // #728: derive a ticket key unique within this account (KLAV, KLAV2, …), race-safe (finding 9).
   await claimProjectKey(accountId, id, name).catch((e: any) => { console.warn("createProject ticket_key mint skipped:", e?.message || e); return null })
+  await ensureBaselineQaSim(id).catch((e: any) => { console.warn("createProject baseline-qa provision skipped:", e?.message || e); return false })
   const p = await projectById(id)
   return p!
 }
@@ -3580,6 +3584,33 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
   })
 }
 
+// Baseline QA Sim provisioning. ONE atomic INSERT OR IGNORE with a deterministic id (sim_baseline_<projectId>): a retried
+// workspace/project creation, a concurrent request or a re-run of the backfill can never create a second one, and an existing
+// row — including one the customer has since edited — is never overwritten. Returns true only when a row was actually created.
+// A failure leaves nothing behind (single statement); callers treat it as best-effort so it never blocks workspace/project creation.
+export async function ensureBaselineQaSim(projectId: string): Promise<boolean> {
+  const q = BASELINE_QA_SIM
+  const now = Date.now()
+  const r = await db!.execute({
+    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [baselineQaId(projectId), projectId, q.name, q.role, q.type, q.initials, q.accent, q.summary,
+           JSON.stringify(q.insights), null, q.simClass, q.side,
+           JSON.stringify(q.core.goals), q.core.expertise, q.core.temperament, q.core.voice, JSON.stringify(q.core.watchFor),
+           BASELINE_QA_SOURCE, now, now],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// One-off, idempotent backfill for projects that existed before Baseline QA shipped. NOT run automatically (no startup hook,
+// no migration) — it is invoked explicitly (see scripts/backfill-baseline-qa.ts), so deploying never mutates existing data.
+export async function backfillBaselineQaSims(): Promise<{ projects: number; created: number }> {
+  const r = await db!.execute({ sql: "SELECT id FROM projects", args: [] })
+  let created = 0
+  for (const row of r.rows) { if (await ensureBaselineQaSim(String((row as any).id))) created++ }
+  return { projects: r.rows.length, created }
+}
+
 // KLA-838 (perf): count personas across an ACCOUNT in ONE aggregate query, for the Sim-creation quota
 // (POST /api/personas). That path previously summed listPersonas(p.id).length over every project in the
 // account — one SELECT per project (O(N-projects)) just to compute a single number. The account is the
@@ -3589,7 +3620,8 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
 // can count 1 higher — which is the stricter (more correct) number for a creation quota.
 export async function countPersonasForAccount(accountId: string): Promise<number> {
   const r = await db!.execute({
-    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?)`,
+    // The system-provided Baseline QA Sim is not the customer's Sim: it must never consume their plan quota.
+    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?) AND COALESCE(sim_source,'') <> '${BASELINE_QA_SOURCE}'`,
     args: [accountId],
   })
   return Number((r.rows[0] as any)?.c || 0)

@@ -21304,11 +21304,19 @@
             }
             return null
           }
+          // A finding raised by the system-provided Baseline QA Sim (sim_source='baseline') is classified "Baseline QA", distinct from
+          // customer-specific Sims. The ticket payload carries simSource; triage rows only carry simId, so fall back to the loaded Sim list.
+          function isBaselineQaFinding(t) {
+            if (!t) return false
+            if (t.simSource) return t.simSource === "baseline"
+            const sim = t.simId ? ((state && state.sims) || []).find(x => x.id === t.simId) : null
+            return !!(sim && sim.simSource === "baseline")
+          }
           function tgSourceBadgeHtml(t) {
             const k = tgSourceKind(t)
             if (!k) return ""
             const isAuto = k === "autosim"
-            const label = isAuto ? "AutoSim" : "Sim"
+            const label = isAuto ? "AutoSim" : (isBaselineQaFinding(t) ? "Baseline QA" : "Sim")
             const icon = isAuto ? kicon('zap', { size: 11 }) : kicon('bot', { size: 11 })
             return `<span class="tg-src-badge tg-src-${k}" data-source="${k}" title="Source: ${label}">${icon}<span>${label}</span></span>`
           }
@@ -23237,7 +23245,7 @@
       <a class="sim" href="${esc(href)}">
         <div class="av" style="background:${safeAccent(s.accent, col(s.name))}">${esc(s.initials || initials(s.name))}</div>
         <div class="body">
-          <div class="name">${esc(s.name)}${s.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}</div>
+          <div class="name">${esc(s.name)}${s.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}${s.simSource === "baseline" ? '<span class="sim-global-badge" title="System-provided QA preset — not a customer">System preset</span>' : ''}</div>
           <div class="role">${esc(s.role || "")}</div>
           <div class="la">${s.lastActiveAt ? ("active " + ago(s.lastActiveAt)) : (s.insightsCount + " insight" + (s.insightsCount === 1 ? "" : "s"))}</div>
         </div>
@@ -23380,7 +23388,7 @@
       <a class="sf-hd" href="${esc(href)}">
         <div class="av" style="background:${safeAccent(sim.accent, col(sim.name))}">${esc(sim.initials || initials(sim.name))}</div>
         <div class="body">
-          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}</div>
+          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}${sim.simSource === "baseline" ? '<span class="sim-global-badge" title="System-provided QA preset — not a customer">System preset</span>' : ''}</div>
           <div class="role">${esc(sim.role || "")}</div>
         </div>
         <span class="sf-badge">${badge}</span>
@@ -28606,7 +28614,7 @@
           }
           function srcChipHtml(t) {
             const k = ticketSourceKind(t)
-            const label = k === "autosim" ? "AutoSim" : (k === "sim" ? "Sim" : (k === "manual" ? "Manual" : "Widget"))
+            const label = k === "autosim" ? "AutoSim" : (k === "sim" ? (isBaselineQaFinding(t) ? "Baseline QA" : "Sim") : (k === "manual" ? "Manual" : "Widget"))
             return `<span class="src-chip src-${k}">${label}</span>`
           }
 
