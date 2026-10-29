@@ -16960,6 +16960,8 @@
 </head>
 
 <body data-view="overview">
+  <!-- A #sims deep link (e.g. "‹ Sims" back from a Sim page) shows the Sims tab from the first paint; the boot setView() below still owns the rest. -->
+  <script>if (location.hash === "#sims") document.body.setAttribute("data-view", "sims")</script>
   <div class="bar">
     <div class="bar-in">
       <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->

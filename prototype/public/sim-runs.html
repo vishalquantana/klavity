@@ -551,7 +551,7 @@ h1 {
 <div class="bar"><div class="bar-in">
   <a class="brand" href="/dashboard"><img src="/favicon.svg" width="28" height="28" alt="Klavity" style="border-radius:8px;display:block" />Klavity</a>
   <nav class="nav">
-    <a href="/dashboard">Dashboard</a>
+    <a href="/dashboard#sims" id="simsBack">Sims</a>
     <a href="/trails">AutoSims</a>
     <a href="/sim-runs" class="on">Sim Runs</a>
   </nav>
@@ -596,6 +596,9 @@ h1 {
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
+// Run history is opened from the Sims tab — send "Sims" back there, on the same project.
+function setSimsBack(pid){var a=$("simsBack");if(a)a.setAttribute("href",(pid?"/dashboard?project="+encodeURIComponent(pid):"/dashboard")+"#sims")}
+setSimsBack(projParam());
 // KLAVITYKLA-371: how long the run actually took. durationMs is null while a run is still
 // in progress (finished_at NULL) — render "running…" rather than a bogus 0.0s.
 function fmtDuration(run){
@@ -666,6 +669,7 @@ async function load() {
     state.email = d.email;
     state.projects = d.projects || [];
     state.active = d.active;
+    setSimsBack((state.active && state.active.id) || projParam());
 
     $("who").textContent = state.email || "";
 
