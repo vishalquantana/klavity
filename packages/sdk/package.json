@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "vite build && vite build --config vite.widget.config.ts",
+    "build": "vite build && vite build --config vite.widget.config.ts && vite build --config vite.recorder-window.config.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

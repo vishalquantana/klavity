@@ -16,7 +16,7 @@ import {
 import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
-import type { ReportContext, ReportIdentity, Reporter, ClientInfo } from "@klavity/core"
+import type { ReportContext, ReportIdentity, Reporter, ClientInfo, ReportRecording } from "@klavity/core"
 import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
@@ -27,6 +27,7 @@ import { icon } from "@klavity/core/icons"
 import { CONTEXT_MENU_CSS, MENU_ARROW_SVG, buildMenuCard } from "@klavity/core/context-menu"
 import { klavityAttributionUrl } from "@klavity/core/attribution"
 import { recordMe, recordingSupported } from "./recorder"
+import { createRecordBridge, recorderWindowAvailable } from "./record-bridge"
 import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
@@ -813,7 +814,11 @@ async function mount() {
   // the browser can screen-record (getDisplayMedia + MediaRecorder) — hidden on iOS Safari, matching the
   // Sharp-capture support envelope. A project turns it OFF only by explicitly setting composer.record:false
   // (or allowRecording:false). No config / a failed config fetch → the button shows (when supported).
-  let composerRecord = (() => { try { return resolveComposerRecord(null, recordingSupported()) } catch { return false } })()
+  // The recorder window (record-bridge) is opt-in per embed (data-record-mode="window", e.g. PX4); every other
+  // project keeps the original in-page recorder and its support check, unchanged.
+  const useRecorderWindow = cfg.recordMode === "window"
+  const recordCapable = () => recordingSupported() || (useRecorderWindow && recorderWindowAvailable())
+  let composerRecord = (() => { try { return resolveComposerRecord(null, recordCapable()) } catch { return false } })()
   let composerIssueTypes: Array<{ value: 'bug' | 'feature' | 'task' | 'query'; label: string; mappingLabel?: string }> | undefined
   // Report-clarity helper (per-project, DEFAULT on). Only OFF when the server explicitly returns
   // reportClarity:false. Server + widget ship together (orchestrator), so the field is always present.
@@ -879,7 +884,7 @@ async function mount() {
         composerFileAttach = !(composer.fileAttach === false || composer.allowFileAttachments === false)
         // "Record me" (KLAVITYKLA-438): DEFAULT-ON — only an EXPLICIT record:false / allowRecording:false
         // turns it off. Still gated on browser screen-capture support (recordingSupported()).
-        composerRecord = resolveComposerRecord(composer, recordingSupported())
+        composerRecord = resolveComposerRecord(composer, recordCapable())
         if (Array.isArray(composer.issueTypes) && composer.issueTypes.length) {
           const cleaned = composer.issueTypes
             .filter((t: any) => t && typeof t.value === 'string' && ['bug', 'feature', 'task', 'query'].includes(t.value))
@@ -1403,7 +1408,7 @@ async function mount() {
     reportBtn.addEventListener("mouseleave", () => { fabHover = false; fabShareHint?.classList.remove("kl-show") })
   }
 
-  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
+  function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession }; initialRecordings?: ReportRecording[] }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
@@ -1450,7 +1455,13 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
+      // A "Record me" video that finished after the reporter navigated (record-bridge) reopens the composer with it.
+      initialRecordings: (() => {
+        const all = [...(opts?.initialRecordings || []), ...arrivedRecordings]
+        arrivedRecordings = []
+        return all.length ? all : undefined
+      })(),
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1631,7 +1642,17 @@ async function mount() {
       allowRecording: composerRecord,
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
-      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,
+      // Opted-in embeds (data-record-mode="window") record in the Klavity recorder WINDOW (record-bridge.ts) so it
+      // survives full page loads; the in-page recordMe() overlay is the fallback when the popup is blocked.
+      // Every other embed uses recordMe() exactly as before.
+      onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => {
+        if (!recBridge) return recordMe({ onPhase })
+        const viaWindow = recBridge.start(onPhase)
+        if (viaWindow) return viaWindow
+        if (recordingSupported()) return recordMe({ onPhase })
+        evBanner("Allow pop-ups for this site to use Record me.")
+        return Promise.resolve(null)
+      }) : undefined,
       // KLA-505: server-side live dictation for the Voice button (replaces the flaky Web Speech backend).
       // The composer records a short mic clip and hands each audio Blob here; we POST it to the STT endpoint
       // (POST /api/voice/transcribe, multipart: audio + projectId) and resolve the recognized text. On ANY
@@ -2420,6 +2441,38 @@ async function mount() {
     window.addEventListener("beforeunload", flushCurrentComposerDraft)
     window.addEventListener("pagehide", flushCurrentComposerDraft)
   }
+
+  // ── "Record me" across navigation: the bridge to the recorder window. Created on every page so a recording
+  // started on an earlier page of this tab re-attaches here (REC bar + Stop). A video that finishes once the
+  // original composer is gone reopens the report — with the in-progress evidence session + draft — attached.
+  // Only for embeds that opted in to the recorder window — elsewhere no bridge exists and nothing changes.
+  let arrivedRecordings: ReportRecording[] = []
+  const recBridge = !useRecorderWindow ? null : createRecordBridge({
+    backendUrl: cfg.backendUrl,
+    projectId: cfg.projectId,
+    notify: (text) => evBanner(text),
+    onRecordingArrived: (rec) => {
+      arrivedRecordings.push(rec)
+      if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) {
+        evBanner("Your recording is ready — it will be attached the next time you open the report.")
+        return
+      }
+      void (async () => {
+        const initialRecordings = arrivedRecordings
+        arrivedRecordings = []
+        let active: EvidenceSession | null = null
+        try { active = await getActiveSession(cfg.projectId, evOrigin) } catch { active = null }
+        const draft = loadDraft(cfg.projectId, evOrigin)
+        if (active) {
+          evSession = active
+          if (evDockEl) evDockEl.style.display = "none"
+          openReport("bug", { evidence: { session: active }, initialDescription: draft?.desc || active.desc, initialTitle: draft?.title || active.title, initialRecordings })
+        } else {
+          openReport("bug", { initialDescription: draft?.desc, initialTitle: draft?.title, initialRecordings })
+        }
+      })()
+    },
+  })
 
   // ── KLA-412: on load, resume a still-fresh evidence session (survives navigation/reload)
   // If the composer was open when refreshed, re-opens it; otherwise displays the in-progress dock.

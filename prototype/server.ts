@@ -4074,6 +4074,18 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       headers: { "content-type": "text/html; charset=utf-8" },
     })
   }
+  // "Record me" recorder window: the widget opens this as a popup so a screen recording keeps running
+  // while the reporter's tab does full page loads (multi-page apps). Logic lives in /recorder-window.js.
+  if (req.method === "GET" && path === "/recorder-window") {
+    return new Response(Bun.file(PUB + "/recorder-window.html"), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
+    })
+  }
+  if (req.method === "GET" && path === "/recorder-window.js") {
+    return new Response(Bun.file(REPO_ROOT + "/packages/sdk/dist/klavity-recorder-window.iife.js"), {
+      headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache, must-revalidate" },
+    })
+  }
   if (req.method === "GET" && path === "/intro-reel") return file(SITE + "/intro-reel.html")
   if (req.method === "GET" && path === "/privacy") return htmlPage(SITE + "/privacy.html")
   if (req.method === "GET" && path === "/terms") return htmlPage(SITE + "/terms.html")
