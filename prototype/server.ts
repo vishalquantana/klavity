@@ -11980,6 +11980,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           accent: p.accent || "#6366f1",
           insightsCount: Array.isArray(p.insights) ? p.insights.length : 0,
           lastActiveAt: lastActiveBySim.get(p.id) ?? null,
+          // "baseline" marks the system-provided Baseline QA Sim (UI shows a System preset chip); null for customer Sims.
+          simSource: p.simSource ?? null,
         }))
 
         // saying — "what your Sims are saying" overview feed: only Sim observations, newest-first.
@@ -12048,7 +12050,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           // Retry (KLA-283). connectorId + status ride along for that retry call.
           const exports = ticketExportBadges(ticketExportsMap[f.id] ?? [])
           return {
-            id: f.id, simName: p?.name ?? null,
+            id: f.id, simName: p?.name ?? null, simSource: p?.simSource ?? null,
             // #745: pretty-permalink parts — per-project sequence + workspace slug + project key.
             seqNum: f.seqNum ?? null, slug: aliasInfo.slug, ticketKey: aliasInfo.ticketKey,
             // PX4 #411: surface the reporter's explicit composer Title when present + non-empty;
