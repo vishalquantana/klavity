@@ -146,8 +146,11 @@ const OUTCOME = {
 const ic = (name) => (window.kicon ? kicon(name, { size: 13 }) : "")
 
 document.querySelector('.brand .spark').innerHTML = ic('zap')
-$("backLink").innerHTML = ic('chevron-left') + " Dashboard"
-$("backLink").setAttribute("href", PROJECT_ID ? "/dashboard?project=" + encodeURIComponent(PROJECT_ID) : "/dashboard")
+// Back to the Sims tab this page was opened from (not the Overview), keeping the project.
+const SIMS_URL = (PROJECT_ID ? "/dashboard?project=" + encodeURIComponent(PROJECT_ID) : "/dashboard") + "#sims"
+$("backLink").innerHTML = ic('chevron-left') + " Sims"
+$("backLink").setAttribute("href", SIMS_URL)
+$("backLink").setAttribute("aria-label", "Back to Sims")
 
 function traitsCard(traits) {
   if (!traits.length) return `<div class="card"><div class="empty">No traits configured yet — this Sim's persona has no extracted pains/wants/loves.</div></div>`
@@ -232,7 +235,7 @@ async function load() {
       }
     }
     if (r.status === 401) { location.href = "/login"; return }
-    if (r.status === 404) { $("root").innerHTML = `<div class="err">Sim not found — it may belong to a different project. <a href="/dashboard">← Back to Dashboard</a></div>`; return }
+    if (r.status === 404) { $("root").innerHTML = `<div class="err">Sim not found — it may belong to a different project. <a href="${SIMS_URL}">← Back to Sims</a></div>`; return }
     if (!r.ok) { $("root").innerHTML = `<div class="err">Couldn't load this Sim (${r.status}).</div>`; return }
     data = await r.json()
   } catch (e) {
