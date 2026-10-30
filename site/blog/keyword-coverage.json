@@ -54,7 +54,8 @@
     "marker.io vs bugherd": "marker-io-vs-bugherd",
     "jam.dev alternative": "jam-dev-alternative",
     "usersnap alternative": "usersnap-alternative",
-    "browserstack alternative": "browserstack-alternative"
+    "browserstack alternative": "browserstack-alternative",
+    "mabl alternative": "mabl-alternative"
   },
   "tier-d": {
     "how to reduce cannot reproduce bug reports": "reduce-cannot-reproduce-bug-tickets",

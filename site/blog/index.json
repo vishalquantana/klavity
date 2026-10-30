@@ -957,5 +957,12 @@
     "excerpt": "AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why.",
     "category": "Guides",
     "date": "2026-10-29"
+  },
+  {
+    "slug": "mabl-alternative",
+    "title": "Mabl Alternative: 6 Options for Agencies and Founders",
+    "excerpt": "The best mabl alternative depends on the job: Testim or Autify for low-code swaps, Playwright for control, Klavity when no one can author tests.",
+    "category": "Compare",
+    "date": "2026-10-30"
   }
 ]
