@@ -1614,6 +1614,24 @@ async function mount() {
           return (data && data.draft) ? data.draft : null
         } catch { return null }
       }) : undefined,
+      // KD-995: split a "Record me" walkthrough into separate tickets — POST the clip to /api/report/split
+      // (transcribe + AI issue extraction) and resolve the issues it found. Gated on the same reportClarity
+      // toggle as Enhance (the server enforces it too). Long timeout: STT of a clip + an LLM call. Best-effort:
+      // any failure resolves null so the composer keeps the single ticket.
+      onSplitRecording: (reportClarity && composerRecord) ? (async (audio: Blob, ctx?: { text?: string }) => {
+        try {
+          const fd = new FormData()
+          fd.append('projectId', cfg.projectId)
+          fd.append('audio', audio, 'recording.webm')
+          if (audio.type) fd.append('mime', audio.type)
+          fd.append('pageUrl', location.href)
+          if (ctx?.text) fd.append('text', ctx.text)
+          const res = await fetchWithTimeout(cfg.backendUrl + '/api/report/split', { method: 'POST', body: fd }, 90000)
+          if (!res.ok) return null
+          const data = await res.json().catch(() => null)
+          return (data && Array.isArray(data.issues)) ? data.issues : null
+        } catch { return null }
+      }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
       prefillEmail: _reporter?.email,

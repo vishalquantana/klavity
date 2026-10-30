@@ -157,7 +157,9 @@ import { generateEnhancedDraft, renderDraftToText, formatAnnotationsForPrompt } 
 import { collectVideoTranscripts, gatherTranscriptText, isThinDescription, buildTranscriptDetailsSection, pickKeyframeTimestampsMs, fmtTimestamp, type VideoTranscript } from "./lib/video-enrich"
 import { extractKeyframes } from "./lib/keyframes"
 import { updateFeedbackTitle, updateFeedbackAnnotations } from "./lib/db"
-import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, activeTranscribeModel } from "./lib/transcribe"
+import { transcribeFeedbackRecordings, transcribeFeedbackAttachments, transcribeAudioBytes, transcribeConfigured, TRANSCRIBE_MODEL, TRANSCRIBE_MAX_BYTES, activeTranscribeModel } from "./lib/transcribe"
+// KD-995: split one Record-me walkthrough into separate tickets (POST /api/report/split).
+import { splitTranscriptIntoIssues } from "./lib/issue-split"
 import { DeepgramRelay, deepgramConfigured, deepgramCostUsd, evaluateVoiceStreamUpgrade, createVoiceStreamWsHandlers, VOICE_STREAM_MAX_SESSION_MS, type VoiceStreamData } from "./lib/deepgram-stream"
 import { validateAssertionDraft, normalizeCheckpointInput } from "./lib/assertion-spec"
 import { buildRecurrenceMemory, listProjectRecurringIssues } from "./lib/recurrence-memory"
@@ -1378,6 +1380,7 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/known-check":
     case "/api/report/clarity":
     case "/api/report/enhance":
+    case "/api/report/split":
     case "/api/voice/transcribe":
     case "/api/voice/stream":
     // KLA-612: the widget's guest "Request upgrade" button POSTs here cross-origin from the customer's site.
@@ -4780,6 +4783,95 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // the client shows a graceful message and transparently engages its Web Speech fallback (it treats any
     // non-ok response as "endpoint unavailable"). fallback:true is advisory for the client.
     return wjson({ error: "transcription failed", reason: outcome.reason, text: "", fallback: true }, 503)
+  }
+
+  // ── KD-995: POST /api/report/split — split ONE "Record me" walkthrough into SEPARATE tickets. The composer
+  // POSTs the finished recording (multipart: `audio` = the clip, `projectId`, optional `pageUrl`/`text`) BEFORE
+  // submit; we transcribe it through the shared STT core (Deepgram / OpenRouter, same as /api/voice/transcribe)
+  // and ask the LLM for every distinct issue the reporter narrates. Returns { issues, transcript }. The composer
+  // offers the review panel only for 2+ issues; the reporter edits/unticks them, then Submit files one ticket per
+  // issue. Auth + gating mirror /api/report/enhance (anonymous, project-scoped, CORS-gated, reportClarity
+  // toggle, per-IP + per-project caps). Best-effort: any failure returns { issues: [] } (never 500).
+  if (req.method === "POST" && path === "/api/report/split") {
+    if (!rlAllow(`split:ip:${clientIp(req, server)}`, 10, 60_000)) return wjson({ error: "rate limited", issues: [] }, 429)
+    const SIZE_CEIL = TRANSCRIBE_MAX_BYTES + 64 * 1024 // clip cap + multipart framing overhead
+    const declaredLen = Number(req.headers.get("content-length") || 0)
+    if (declaredLen > SIZE_CEIL) return wjson({ error: "payload too large", issues: [] }, 413)
+    const bounded = await readBodyBounded(req, SIZE_CEIL)
+    if (bounded === BODY_TOO_LARGE) return wjson({ error: "payload too large", issues: [] }, 413)
+    let form: FormData
+    try {
+      form = await new Request("http://x/", {
+        method: "POST",
+        headers: { "content-type": req.headers.get("content-type") || "" },
+        body: bounded,
+      }).formData()
+    } catch { return wjson({ error: "expected multipart form", issues: [] }, 400) }
+    const projectId = String(form.get("projectId") || form.get("project") || "")
+    if (!projectId) return wjson({ error: "project required", issues: [] }, 400)
+    const proj = db ? await projectById(projectId) : null
+    if (!proj) return wjson({ error: "not found", issues: [] }, 404)
+    // Same per-project AI toggle as clarity/enhance — a disabled project never spends an STT/LLM call here.
+    if (!proj.reportClarity) return wjson({ error: "disabled", issues: [] }, 403)
+    const audio = form.get("audio")
+    if (!(audio instanceof Blob) || audio.size === 0) return wjson({ error: "audio required", issues: [] }, 400)
+    if (!KEY || !transcribeConfigured()) return wjson({ issues: [] })
+    if (!rlAllow(`split:proj:${projectId}`, ENHANCE_PER_PROJECT_DAY, CLARITY_PROJECT_WINDOW)) {
+      return wjson({ error: "daily split limit reached", issues: [] }, 429)
+    }
+
+    const contentType = String((audio as any).type || form.get("mime") || "video/webm")
+    let outcome: Awaited<ReturnType<typeof transcribeAudioBytes>>
+    try {
+      outcome = await transcribeAudioBytes(new Uint8Array(await audio.arrayBuffer()), contentType)
+    } catch (e: any) {
+      console.warn("[split] transcribe failed (non-fatal):", e?.message || e)
+      outcome = { status: "failed", reason: "unexpected-error" }
+    }
+    if (outcome.status !== "skipped") {
+      await recordAiCall({
+        type: "transcribe", model: activeTranscribeModel(), projectId, feature: "report-split",
+        costUsd: outcome.status === "done" ? (outcome.result.usage.cost ?? null) : null,
+        ok: outcome.status === "done",
+      }).catch(() => null)
+    }
+    if (outcome.status !== "done" || !outcome.result.text.trim()) return wjson({ issues: [] })
+    const transcript = outcome.result
+
+    // KLAVITY CREDITS (Phase 1, SOFT): meter the split like a transcript enrichment, priced per minute.
+    // Best-effort — a resolution/reserve miss must never block the split; soft mode only logs wouldBlock.
+    const wsId = db ? await accountIdForAiCall(projectId, null, null) : null
+    let rv: Awaited<ReturnType<typeof reserveCredits>> | null = null
+    try {
+      const lastEnd = (transcript.segments || []).reduce((m, s) => Math.max(m, Number(s.end) || 0), 0)
+      if (wsId) rv = await reserveCredits(wsId, "transcript", { plan: await accountPlan(wsId), units: Math.max(1, lastEnd / 60), refFeedbackId: null })
+      if (rv?.wouldBlock) console.log(`[credits] split wouldBlock ws=${wsId} (soft)`)
+    } catch (e: any) { console.warn("[credits] split reserve skipped (non-fatal):", e?.message || e) }
+
+    const pageUrl = String(form.get("pageUrl") || "").slice(0, 300)
+    const note = String(form.get("text") || "").slice(0, 2000)
+    const issues = await splitTranscriptIntoIssues(transcript, {
+      llm: async (input, systemPrompt) => {
+        const { content } = await chat(
+          [
+            { role: "system", content: systemPrompt + UNTRUSTED_GUARD },
+            {
+              role: "user",
+              // Transcript + reporter note + page URL are UNTRUSTED (spoken/typed user content) → fenced as data.
+              content: "VIDEO WALKTHROUGH TRANSCRIPT (untrusted — the reporter narrating):\n" + wrapUntrusted(input) +
+                "\n\nREPORTER NOTE (untrusted):\n" + wrapUntrusted(note || "(none)") +
+                "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)"),
+            },
+          ],
+          1500, true,
+          // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.
+          { type: "report-split", feature: "report-split", model: ENHANCE_MODEL, projectId, email: null, temperature: 0.2 },
+        )
+        return String(content ?? "")
+      },
+    })
+    try { await rv?.settle({ ok: issues.length > 0, aiCallId: null }) } catch { }
+    return wjson({ issues, transcript: transcript.text })
   }
 
   // ── inbound two-way status sync (G4): external tracker → Klavity ticket ──

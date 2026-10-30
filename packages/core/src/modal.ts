@@ -94,6 +94,40 @@ export interface EnhanceDraftLike {
   confidence?: number
 }
 
+// KD-995: one issue the split endpoint found in a "Record me" walkthrough (mirrors prototype/lib/issue-split.ts
+// SplitIssue without importing across the package boundary). startSec/endSec locate it in the clip.
+export interface SplitIssueLike {
+  title: string
+  description: string
+  kind?: 'bug' | 'feature'
+  startSec?: number | null
+  endSec?: number | null
+}
+
+// KD-995: "0:42–1:10" for an issue's span in the clip ("0:42" when only the start is known, "" when neither).
+export function formatSplitSpan(startSec?: number | null, endSec?: number | null): string {
+  const f = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  const a = typeof startSec === 'number' && isFinite(startSec) && startSec >= 0 ? startSec : null
+  const b = typeof endSec === 'number' && isFinite(endSec) && endSec >= 0 ? endSec : null
+  if (a == null) return b == null ? '' : f(b)
+  return b == null || b <= a ? f(a) : `${f(a)}–${f(b)}`
+}
+
+// KD-995: the description each split ticket is filed with. Issue #1 (the ticket that carries the video) keeps
+// the reporter's own typed note underneath; issues 2..N point back to the video on issue #1 (by its key when
+// the host already knows it, else by its title) and say where in the clip the issue is discussed.
+export function buildSplitDescription(
+  issue: SplitIssueLike,
+  opts: { primary: boolean; reporterNote?: string; videoTitle?: string; videoKey?: string },
+): string {
+  const body = String(issue.description || '').trim()
+  const note = String(opts.reporterNote || '').trim()
+  if (opts.primary) return note && note !== body ? `${body}\n\nReporter note:\n${note}` : body
+  const span = formatSplitSpan(issue.startSec, issue.endSec)
+  const ref = opts.videoKey ? `${opts.videoKey}${opts.videoTitle ? ` (“${opts.videoTitle}”)` : ''}` : (opts.videoTitle ? `“${opts.videoTitle}”` : 'the related ticket')
+  return `${body}\n\n—\nSplit from a Record me video${span ? ` (at ${span})` : ''}. The video is attached to ${ref}.`
+}
+
 // renderDraftToWhatsApp: compose the field body from an accepted Enhance draft as WhatsApp-style Markdown so
 // it renders formatted LIVE in the field (bold summary + *Actual:* / *Expected:* labels, a numbered Steps
 // block, and a final Severity·Priority line). Pure + exported for tests. Skips empty sections.
@@ -383,6 +417,12 @@ export interface ModalCallbacks {
       picked?: { selector: string; text: string } | null
     },
   ) => Promise<EnhanceDraftLike | null>
+  // KD-995: split ONE "Record me" walkthrough into SEPARATE tickets. When provided, every recording the reporter
+  // attaches is handed here (the clip Blob + the typed note); the host POSTs it to /api/report/split, which
+  // transcribes it and returns each distinct issue the reporter narrated. With 2+ issues the composer shows an
+  // editable review panel; on Submit the main ticket becomes issue #1 (it keeps the video + screenshots) and each
+  // other ticked issue is filed through onSubmit as its own ticket. null / 0-1 issues → nothing changes.
+  onSplitRecording?: (audio: Blob, ctx?: { text?: string }) => Promise<SplitIssueLike[] | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -861,6 +901,14 @@ export function buildModal(
   // payload as structured fields alongside the human-readable Severity line in the description.
   let enhanceSeverity: string | null = null
   let enhancePriority: string | null = null
+  // KD-995: Record-me split state. splitForRecId = the recording the analysis belongs to (a removed/replaced
+  // clip drops it); splitSkipIds = recordings already analysed or dismissed ("Keep as one ticket") so they are
+  // never re-sent. splitIssues holds the reporter-editable cards (null/<2 → no panel, single-ticket submit).
+  let splitIssues: Array<SplitIssueLike & { include: boolean }> | null = null
+  let splitForRecId: string | null = null
+  let splitAnalyzing = false
+  let splitSeq = 0
+  const splitSkipIds = new Set<string>()
   let autodismissTimeout: any = null
   // #468: single source of truth for "this modal instance has been torn down". Guards close() against a
   // double-fire (Esc/X/backdrop during a submit + the submit's later resolution both calling close()) and
@@ -1235,6 +1283,23 @@ export function buildModal(
     .kl-enh-loader{width:15px;height:15px;border:2.5px solid color-mix(in srgb,var(--kl-accent) 30%,transparent);border-top-color:var(--kl-accent);border-radius:50%;animation:kl-enh-spin .7s linear infinite;}
     @keyframes kl-enh-spin{to{transform:rotate(360deg)}}
     @media (prefers-reduced-motion: reduce){.kl-enh-loader{animation-duration:1.4s;}.klavity-enhance-btn{transition:none;}.klavity-enhance-btn:hover{transform:none;}}
+    /* KD-995: Record-me split review — one editable card per issue the walkthrough narrated. */
+    .klavity-split{margin:0 0 12px;border:1px solid color-mix(in srgb,var(--kl-accent) 35%,var(--kl-border));border-radius:11px;background:color-mix(in srgb,var(--kl-accent) 5%,var(--kl-input-bg));padding:10px 11px;}
+    .klavity-split[hidden]{display:none;}
+    .kl-split-status{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--kl-accent);font-weight:600;}
+    .kl-split-head{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--kl-fg);line-height:1.4;margin:0 0 9px;}
+    .kl-split-head b{color:var(--kl-accent);}
+    .kl-split-card{border:1px solid var(--kl-border);border-radius:9px;background:var(--kl-input-bg);padding:8px 9px;margin:0 0 7px;}
+    .kl-split-card.kl-off{opacity:.55;}
+    .kl-split-top{display:flex;align-items:center;gap:7px;margin:0 0 6px;font-size:11.5px;color:var(--kl-muted);font-weight:650;}
+    .kl-split-top input[type=checkbox]{accent-color:var(--kl-accent);margin:0;}
+    .kl-split-span{margin-left:auto;font-variant-numeric:tabular-nums;}
+    .kl-split-title,.kl-split-desc{width:100%;box-sizing:border-box;border:1px solid var(--kl-border);border-radius:7px;background:transparent;color:var(--kl-fg);font:inherit;font-size:12.5px;padding:6px 8px;}
+    .kl-split-title{font-weight:650;margin:0 0 5px;}
+    .kl-split-desc{min-height:52px;resize:vertical;line-height:1.4;}
+    .kl-split-title:focus,.kl-split-desc:focus{outline:none;border-color:var(--kl-accent);}
+    .kl-split-keep{border:1px solid var(--kl-border);background:var(--kl-input-bg);color:var(--kl-muted);font-weight:650;font-size:12px;border-radius:9px;padding:7px 11px;cursor:pointer;}
+    .kl-split-keep:hover{color:var(--kl-accent);}
     /* JTBD 1.10: hint shown when the reporter has attached a screenshot but typed nothing — Submit is
        enabled and the AI will title the report. Sits just under the textarea; hidden by default. */
     .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
@@ -1606,6 +1671,7 @@ export function buildModal(
         <button type="button" class="klavity-enhance-regen" id="klavity-enhance-regen" hidden>${icon('refresh-cw', { size: 13 })}<span>Regenerate</span></button>
       </div>
       <div class="klavity-enhance-spin" id="klavity-enhance-spin" hidden><span class="kl-enh-loader"></span><span>Drafting from your screenshot…</span></div>` : ''}
+      ${callbacks.onSplitRecording ? '<div class="klavity-split" id="klavity-split" aria-live="polite" hidden></div>' : ''}
       ${/* QPQ-31: reporter's email, directly under Enhance with AI. Always rendered; OPTIONAL unless the
            project's email gate (requireEmail) makes it mandatory — the label says which. Same
            #klavity-remail element/plumbing as the old gate-only field, so prefill, submit-gating and
@@ -2442,6 +2508,91 @@ export function buildModal(
     if (_closed) return
     updateStrip()
     refreshSubmit()
+    syncSplit()
+  }
+
+  // ── KD-995: split ONE "Record me" walkthrough into separate tickets ─────────────────────────────────────
+  // Called on every recording add/remove (renderRecordings). Drops the split when its clip is gone, and starts
+  // the analysis for the newest clip that hasn't been analysed/dismissed yet. Best-effort: a null/failed
+  // response or <2 issues leaves the composer exactly as it was (single ticket).
+  function syncSplit() {
+    if (!callbacks.onSplitRecording) return
+    if (splitForRecId && !recordings.some((r) => r.id === splitForRecId)) {
+      splitForRecId = null; splitIssues = null; splitAnalyzing = false; splitSeq++
+    }
+    const next = [...recordings].reverse().find((r) => r.id && !splitSkipIds.has(r.id))
+    if (next && !splitAnalyzing && !(splitIssues && splitIssues.length >= 2)) void runSplit(next)
+    renderSplit()
+  }
+
+  async function runSplit(rec: ReportRecording) {
+    const onSplit = callbacks.onSplitRecording
+    if (!onSplit) return
+    splitSkipIds.add(rec.id)
+    const seq = ++splitSeq
+    splitForRecId = rec.id
+    splitAnalyzing = true
+    renderSplit()
+    let issues: SplitIssueLike[] | null = null
+    try {
+      const blob = rec.blob || await (await fetch(rec.dataUrl)).blob()
+      issues = await onSplit(blob, { text: desc.value.trim() })
+    } catch { issues = null }
+    if (seq !== splitSeq || _closed) return  // the clip was removed / a newer one superseded this run
+    splitAnalyzing = false
+    const usable = (issues || []).filter((i) => i && (String(i.title || '').trim() || String(i.description || '').trim()))
+    if (usable.length >= 2) splitIssues = usable.map((i) => ({ ...i, title: String(i.title || '').trim(), description: String(i.description || '').trim(), include: true }))
+    else { splitIssues = null; splitForRecId = null }
+    renderSplit()
+  }
+
+  function splitTicketCount(): number {
+    return splitIssues && splitIssues.length >= 2 ? splitIssues.filter((i, idx) => idx === 0 || i.include).length : 1
+  }
+
+  function paintSplitSubmitLabel() {
+    if (busy) return
+    const n = splitTicketCount()
+    submitBtn.textContent = n > 1 ? `Submit ${n} tickets` : 'Submit'
+  }
+
+  function renderSplit() {
+    const el = shadowRoot.getElementById('klavity-split') as HTMLElement | null
+    if (!el) return
+    if (splitAnalyzing) {
+      el.hidden = false
+      el.innerHTML = `<div class="kl-split-status"><span class="kl-enh-loader"></span><span>Checking your recording for separate issues…</span></div>`
+      paintSplitSubmitLabel()
+      return
+    }
+    if (!splitIssues || splitIssues.length < 2) { el.hidden = true; el.innerHTML = ''; paintSplitSubmitLabel(); return }
+    const n = splitTicketCount()
+    el.hidden = false
+    el.innerHTML =
+      `<div class="kl-split-head">${icon('sparkles', { size: 14 })}<span>We found <b>${splitIssues.length} issues</b> in your recording. ` +
+      `They'll be filed as <b>${n} separate ticket${n === 1 ? '' : 's'}</b> — edit or untick any before submitting.</span></div>` +
+      splitIssues.map((it, i) => {
+        const span = formatSplitSpan(it.startSec, it.endSec)
+        return `<div class="kl-split-card${it.include || i === 0 ? '' : ' kl-off'}" data-i="${i}">` +
+          `<label class="kl-split-top"><input type="checkbox" class="kl-split-inc" ${it.include || i === 0 ? 'checked' : ''} ${i === 0 ? 'disabled' : ''}>` +
+          `<span>Ticket ${i + 1}${i === 0 ? ' · keeps the video' : ''}${it.kind === 'feature' ? ' · feature' : ''}</span>` +
+          `${span ? `<span class="kl-split-span">${escHtml(span)}</span>` : ''}</label>` +
+          `<input type="text" class="kl-split-title" maxlength="160" aria-label="Ticket ${i + 1} title" value="${escHtml(it.title)}">` +
+          `<textarea class="kl-split-desc" aria-label="Ticket ${i + 1} description">${escHtml(it.description)}</textarea></div>`
+      }).join('') +
+      `<button type="button" class="kl-split-keep" id="klavity-split-keep">Keep as one ticket</button>`
+    el.querySelectorAll<HTMLElement>('.kl-split-card').forEach((card) => {
+      const i = Number(card.dataset.i)
+      const it = splitIssues![i]
+      card.querySelector<HTMLInputElement>('.kl-split-title')?.addEventListener('input', (e) => { it.title = (e.target as HTMLInputElement).value })
+      card.querySelector<HTMLTextAreaElement>('.kl-split-desc')?.addEventListener('input', (e) => { it.description = (e.target as HTMLTextAreaElement).value })
+      card.querySelector<HTMLInputElement>('.kl-split-inc')?.addEventListener('change', (e) => { it.include = (e.target as HTMLInputElement).checked; renderSplit() })
+    })
+    el.querySelector('#klavity-split-keep')?.addEventListener('click', () => {
+      splitIssues = null; splitForRecId = null
+      renderSplit()
+    })
+    paintSplitSubmitLabel()
   }
 
   let _stopVoice: (() => void) | null = null
@@ -3497,6 +3648,27 @@ export function buildModal(
       : undefined
     // QPQ-31: only claim contact intent when the choice still matches the address being submitted.
     const createContactSnapshot = !!(emailSnapshot && createContact && emailSnapshot.toLowerCase() === contactFor)
+    // KD-995: snapshot the Record-me split (2+ issues). Card 0 becomes THIS ticket (video + screenshots); each
+    // other ticked card is filed as its own ticket after it. null → the classic single-ticket submit.
+    const splitCards = splitIssues && splitIssues.length >= 2
+      ? splitIssues.filter((it, i) => i === 0 || it.include).map((it) => ({ ...it, title: it.title.trim(), description: it.description.trim() }))
+      : null
+    const primaryCard = splitCards ? splitCards[0] : null
+    const extraCards = splitCards ? splitCards.slice(1) : []
+    const primaryTitle = primaryCard?.title || title
+    const buildExtraPayload = (card: SplitIssueLike, videoKey?: string) => {
+      const kind: IssueKind = card.kind === 'feature' ? 'feature' : 'bug'
+      return {
+        type: kind as ReportType,
+        ...(issueTypeOpts ? { kind } : {}),
+        ...(card.title ? { title: card.title } : {}),
+        description: buildSplitDescription(card, { primary: false, videoTitle: primaryTitle, videoKey }),
+        screenshots: [] as string[],
+        reporterEmail: emailSnapshot,
+        createContact: false,
+        ...(cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}),
+      }
+    }
     lockComposer(true) // disable Submit + every capture button + the payload mutators for the upload duration
     submitBtn.textContent = 'Uploading…'
     const errEl = shadowRoot.getElementById('klavity-err')!
@@ -3524,8 +3696,8 @@ export function buildModal(
       const submitPayload = {
         type: coarseType,
         ...(issueTypeOpts ? { kind: kindSnapshot } : {}),
-        ...(title ? { title } : {}),
-        description,
+        ...(primaryTitle ? { title: primaryTitle } : {}),
+        description: primaryCard ? buildSplitDescription(primaryCard, { primary: true, reporterNote: description }) : description,
         screenshots: finalScreenshots,
         ...(filesSnapshot.length ? { files: filesSnapshot } : {}),
         ...(recordingsSnapshot.length ? { recordings: recordingsSnapshot } : {}),
@@ -3550,10 +3722,24 @@ export function buildModal(
       // this mode (it surfaces errors in the pill). See ModalCallbacks.backgroundUpload.
       if (callbacks.backgroundUpload) {
         void callbacks.onSubmit(submitPayload)
+        // KD-995: each extra split ticket gets its own background upload (the host's pill stack shows them).
+        if (extraCards.length) {
+          const submit = callbacks.onSubmit
+          void (async () => { for (const c of extraCards) { try { await submit(buildExtraPayload(c)) } catch (e) { try { console.error('[Klavity] split ticket failed:', e) } catch {} } } })()
+        }
         close({ immediate: true, reason: 'submitted' })
         return
       }
       const result = await callbacks.onSubmit(submitPayload)
+      // KD-995: blocking path — file the extra split tickets after #1 so each can cite #1's key for the video.
+      let splitOutcome: { filed: number; failed: number } | undefined
+      if (extraCards.length) {
+        splitOutcome = { filed: 1, failed: 0 }
+        for (const c of extraCards) {
+          try { await callbacks.onSubmit(buildExtraPayload(c, result.issueKey || undefined)); splitOutcome.filed++ }
+          catch (e) { splitOutcome.failed++; try { console.error('[Klavity] split ticket failed:', e) } catch {} }
+        }
+      }
       // #468: the user may have closed the modal (Esc / X / backdrop) while onSubmit was in flight. If it's
       // already torn down, do NOT render a confirmation or arm a timer on the detached modal — that would
       // call close()+onClose a second time and could tear down a freshly-reopened session.
@@ -3571,7 +3757,7 @@ export function buildModal(
         // giving it the pill is a follow-up. Swaps the frozen composer body for a "Report sent" card
         // (check + headline + line + quotable ref + Open-in-Klavity link) with a countdown auto-close
         // after SUBMIT_AUTOCLOSE_MS. cfg.thankYou (host custom copy) rides in as the body line.
-        renderSentConfirmation(result.issueKey, result.issueUrl)
+        renderSentConfirmation(result.issueKey, result.issueUrl, splitOutcome)
       }
     } catch (err) {
       // Upload failed — surface the error and re-open the composer (never leave it stuck/disabled).
@@ -3587,6 +3773,7 @@ export function buildModal(
       errEl.style.display = 'block'
       submitBtn.textContent = 'Submit'
       lockComposer(false) // re-enable capture buttons + Submit (Submit only if still valid)
+      paintSplitSubmitLabel() // KD-995: restore "Submit N tickets" when a split is still pending
     }
   })
 
@@ -4887,7 +5074,7 @@ export function buildModal(
   // the server returned a dashboard URL. A countdown progress line runs along the bottom and auto-closes
   // the modal after SUBMIT_AUTOCLOSE_MS; hovering pauses it and the link stays clickable until it closes.
   // Dynamic values go in via textContent/href (never innerHTML) per this file's XSS guards.
-  function renderSentConfirmation(issueKey: string, issueUrl: string) {
+  function renderSentConfirmation(issueKey: string, issueUrl: string, split?: { filed: number; failed: number }) {
     const wrap = document.createElement('div')
     wrap.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:all;'
     const card = document.createElement('div')
@@ -4897,11 +5084,17 @@ export function buildModal(
     check.innerHTML = icon('check', { label: 'Sent', size: 22 })
     card.appendChild(check)
     const h = document.createElement('h2')
-    h.textContent = 'Report sent'
+    // KD-995: a split Record-me submit reports how many tickets were filed (and any that failed).
+    h.textContent = split && split.filed > 1 ? `${split.filed} reports sent` : 'Report sent'
     card.appendChild(h)
     const p = document.createElement('p')
     p.textContent = cfg.thankYou || 'We filed it and emailed you a copy.'
     card.appendChild(p)
+    if (split && split.failed > 0) {
+      const warn = document.createElement('p')
+      warn.textContent = `${split.failed} of the split tickets couldn't be sent — please report ${split.failed === 1 ? 'it' : 'them'} again.`
+      card.appendChild(warn)
+    }
     if (issueKey) {
       const ref = document.createElement('div')
       ref.className = 'klavity-ref'
