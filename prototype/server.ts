@@ -4579,7 +4579,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const parsed = JSON.parse(String(content || "{}"))
         const t = typeof parsed?.tip === "string" ? parsed.tip.trim().slice(0, 240) : ""
         tip = t || null
-      } catch { /* best-effort — heuristic still returns below */ }
+      } catch (e: any) { console.error("[report-clarity] LLM call failed:", e?.message || e) /* best-effort — heuristic still returns below */ }
     }
     return wjson({ score: h.score, coverage: h.coverage, level: h.level, tip })
   }
@@ -4679,7 +4679,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       })
       try { await reservation?.settle({ ok: !!draft, aiCallId: null }) } catch { }
       return wjson({ draft }) // draft may be null → client no-ops
-    } catch {
+    } catch (e: any) {
+      console.error("[report-enhance] LLM call failed:", e?.message || e)
       try { await reservation?.settle({ ok: false, aiCallId: null }) } catch { }
       return wjson({ draft: null }) // best-effort; never 500 into the composer
     }

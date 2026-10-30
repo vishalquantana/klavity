@@ -1832,6 +1832,159 @@
       color: var(--paper)
     }
 
+    /* KD-1006: klavConfirm() — compact in-app confirmation dialog (replaces the browser-native confirm()). */
+    .modal-bg.kconfirm-bg {
+      z-index: 9500;
+      animation: kconfirm-fade var(--mi-dur, .16s) var(--mi-ease, ease-out)
+    }
+
+    .modal.kconfirm {
+      max-width: 448px;
+      padding: 0;
+      overflow: hidden;
+      text-align: left;
+      border-radius: 16px;
+      box-shadow: 0 24px 60px rgba(25, 20, 15, .35);
+      animation: kconfirm-pop var(--mi-dur, .16s) var(--mi-ease, ease-out)
+    }
+
+    /* Icon sits beside the copy: a fixed 40px column + a flexible text column, top-aligned so a long
+       title/description wraps under its own column instead of under the icon. */
+    .kconfirm-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 24px 24px 20px
+    }
+
+    .kconfirm-text {
+      flex: 1;
+      min-width: 0;
+      padding-top: 1px
+    }
+
+    .kconfirm-ic {
+      flex: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: var(--indigo);
+      background: rgba(99, 102, 241, .12)
+    }
+
+    .kconfirm-danger .kconfirm-ic {
+      color: var(--rose);
+      background: rgba(219, 39, 119, .12)
+    }
+
+    .kconfirm-title {
+      font-family: var(--display);
+      font-weight: 500;
+      font-size: 19px;
+      line-height: 1.3;
+      margin: 0 0 6px;
+      color: var(--paper);
+      overflow-wrap: anywhere
+    }
+
+    .kconfirm-msg {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--paper-dim);
+      overflow-wrap: anywhere
+    }
+
+    /* Footer band: separated from the copy, buttons right-aligned at the bottom. */
+    .kconfirm-acts {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 24px;
+      border-top: 1px solid var(--line);
+      background: var(--ink)
+    }
+
+    .kconfirm-acts .btn {
+      min-width: 96px;
+      height: 38px;
+      justify-content: center;
+      white-space: nowrap
+    }
+
+    .kconfirm-ok {
+      background: var(--indigo);
+      border-color: var(--indigo);
+      color: #fff
+    }
+
+    .kconfirm-danger .kconfirm-ok {
+      background: #dc2626;
+      border-color: #dc2626
+    }
+
+    .kconfirm-ok:hover {
+      filter: brightness(1.08)
+    }
+
+    .kconfirm-acts .btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .35)
+    }
+
+    @keyframes kconfirm-fade {
+      from { opacity: 0 }
+    }
+
+    @keyframes kconfirm-pop {
+      from { opacity: 0; transform: translateY(6px) scale(.98) }
+    }
+
+    /* Phones: tighter gutters, and the actions stack full-width with the destructive one on top
+       (thumb-reachable, and Cancel stays the last, safest item). */
+    @media (max-width: 480px) {
+      .modal-bg.kconfirm-bg {
+        padding: 16px
+      }
+
+      .kconfirm-head {
+        gap: 12px;
+        padding: 20px 18px 16px
+      }
+
+      .kconfirm-ic {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px
+      }
+
+      .kconfirm-title {
+        font-size: 18px
+      }
+
+      .kconfirm-acts {
+        flex-direction: column-reverse;
+        align-items: stretch;
+        gap: 8px;
+        padding: 14px 18px 18px
+      }
+
+      .kconfirm-acts .btn {
+        width: 100%;
+        height: 42px
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .modal-bg.kconfirm-bg,
+      .modal.kconfirm {
+        animation: none
+      }
+    }
+
     /* New-project modal inputs — match the app's standard input style (padding/radius/focus ring). Without
    this they fell back to the thin browser base and looked cramped next to every other input. */
     #npBg input {
@@ -16807,6 +16960,8 @@
 </head>
 
 <body data-view="overview">
+  <!-- A #sims deep link (e.g. "‹ Sims" back from a Sim page) shows the Sims tab from the first paint; the boot setView() below still owns the rest. -->
+  <script>if (location.hash === "#sims") document.body.setAttribute("data-view", "sims")</script>
   <div class="bar">
     <div class="bar-in">
       <!-- Mobile-only: brand lives here when the sidebar collapses to a horizontal tab row -->
@@ -19173,6 +19328,54 @@
     const col = (s) => COLORS[[...String(s || "")].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length]
     const initials = (e) => String(e || "").slice(0, 2).toUpperCase()
     const esc = (s) => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
+    // KD-1006: in-app confirmation dialog for destructive actions — replaces the browser-native confirm(), which showed
+    // "<host> says …". Resolves true on confirm; false on Cancel, Esc or a backdrop click. Focus starts on Cancel (the safe
+    // choice), Tab stays inside the dialog, and focus returns to the button that opened it.
+    function klavConfirm(opts) {
+      const o = opts || {}
+      return new Promise(resolve => {
+        const prevFocus = document.activeElement
+        const bg = document.createElement("div")
+        bg.className = "modal-bg open kconfirm-bg"
+        bg.setAttribute("role", "alertdialog")
+        bg.setAttribute("aria-modal", "true")
+        bg.setAttribute("aria-labelledby", "kconfirmTitle")
+        bg.setAttribute("aria-describedby", "kconfirmMsg")
+        bg.innerHTML =
+          `<div class="modal kconfirm${o.danger === false ? "" : " kconfirm-danger"}">` +
+          `<div class="kconfirm-head">` +
+          `<div class="kconfirm-ic" aria-hidden="true">${kicon(o.icon || (o.danger === false ? "check-circle" : "trash-2"), { size: 20 })}</div>` +
+          `<div class="kconfirm-text">` +
+          `<h3 class="kconfirm-title" id="kconfirmTitle">${esc(o.title || "Are you sure?")}</h3>` +
+          `<p class="kconfirm-msg" id="kconfirmMsg">${esc(o.message || "")}</p>` +
+          `</div></div>` +
+          `<div class="kconfirm-acts">` +
+          `<button type="button" class="btn btn-ghost" data-kc="cancel">${esc(o.cancelText || "Cancel")}</button>` +
+          `<button type="button" class="btn kconfirm-ok" data-kc="ok">${esc(o.confirmText || "Confirm")}</button>` +
+          `</div></div>`
+        const btns = [...bg.querySelectorAll("button")]
+        const done = (val) => {
+          document.removeEventListener("keydown", onKey, true)
+          bg.remove()
+          try { if (prevFocus && prevFocus.isConnected) prevFocus.focus() } catch (e) { }
+          resolve(val)
+        }
+        const onKey = (e) => {
+          if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false) }
+          else if (e.key === "Tab") {
+            const i = btns.indexOf(document.activeElement)
+            e.preventDefault()
+            btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus()
+          }
+        }
+        bg.addEventListener("mousedown", (e) => { if (e.target === bg) done(false) })
+        bg.querySelector('[data-kc="cancel"]').addEventListener("click", () => done(false))
+        bg.querySelector('[data-kc="ok"]').addEventListener("click", () => done(true))
+        document.addEventListener("keydown", onKey, true)
+        document.body.appendChild(bg)
+        bg.querySelector('[data-kc="cancel"]').focus()
+      })
+    }
     // Only ever emit a strict #rrggbb/#rgb hex into a style attribute. Model-generated `accent` is
     // untrusted (LLM05) — without this, a value like `#fff" onmouseover=…` would break out of the attr.
     const safeAccent = (v, fallback) => /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(String(v || "")) ? String(v) : fallback
@@ -20693,7 +20896,12 @@
       if (bulkDelete) bulkDelete.addEventListener("click", async (ev) => {
         const ids = [..._tgSelected]
         if (!ids.length) return
-        if (!confirm(`Are you sure you want to permanently delete ${ids.length} report${ids.length === 1 ? "" : "s"}? This action cannot be undone.`)) return
+        const ok = await klavConfirm({
+          title: `Delete ${ids.length} report${ids.length === 1 ? "" : "s"}?`,
+          message: `${ids.length === 1 ? "This report" : `These ${ids.length} reports`} will be permanently deleted. This action cannot be undone.`,
+          confirmText: `Delete ${ids.length === 1 ? "report" : `${ids.length} reports`}`,
+        })
+        if (!ok) return
         const pid = curProjId(); if (!pid) return
         const restoreBtn = tgBtnPending(ev.currentTarget)
         const removed = tgRemoveLocal(ids)
@@ -20710,7 +20918,7 @@
             return
           }
           const res = await r.json().catch(() => ({}))
-          klavToast(`${res.deleted || ids.length} report${(res.deleted || ids.length) === 1 ? "" : "s"} deleted.`)
+          klavToast(`${res.deleted || ids.length} report${(res.deleted || ids.length) === 1 ? "" : "s"} deleted successfully.`)
         } finally {
           window.__klavMutating--
         }
@@ -27363,7 +27571,12 @@
 
             const doDeleteSingleTicket = async () => {
               const pid = (state.active && state.active.id) || t.projectId || (typeof curProjId === "function" ? curProjId() : null)
-              if (!confirm(`Are you sure you want to permanently delete ticket ${key}? This action cannot be undone.`)) return
+              const ok = await klavConfirm({
+                title: `Delete ticket ${key}?`,
+                message: "This ticket will be permanently deleted. This action cannot be undone.",
+                confirmText: "Delete ticket",
+              })
+              if (!ok) return
               window.__klavMutating++
               try {
                 const r = await fetch(`/api/projects/${encodeURIComponent(pid)}/tickets/bulk`, {
@@ -27381,7 +27594,7 @@
                   _tktBoardTickets = _tktBoardTickets.filter(x => String(x.id) !== String(id))
                 }
                 closeSingleTicket()
-                if (typeof klavToast === "function") klavToast(`Ticket ${key} deleted.`)
+                if (typeof klavToast === "function") klavToast(`Ticket ${key} deleted successfully.`)
                 if (typeof renderTicketsKanban === "function") renderTicketsKanban()
                 if (typeof renderTktList === "function" && listView && !listView.classList.contains("hide")) {
                   const wrap = document.getElementById("tktListContent")
@@ -29158,7 +29371,12 @@
               const ids = [..._bulkSelected]
               if (!ids.length) return
               const n = ids.length
-              if (!confirm(`Are you sure you want to permanently delete ${n} ticket${n === 1 ? "" : "s"}? This action cannot be undone.`)) return
+              const ok = await klavConfirm({
+                title: `Delete ${n} ticket${n === 1 ? "" : "s"}?`,
+                message: `${n === 1 ? "This ticket" : `These ${n} tickets`} will be permanently deleted. This action cannot be undone.`,
+                confirmText: `Delete ${n === 1 ? "ticket" : `${n} tickets`}`,
+              })
+              if (!ok) return
               window.__klavMutating++
               try {
                 const r = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets/bulk`, {
@@ -29178,7 +29396,7 @@
                   _tktBoardTickets = _tktBoardTickets.filter(t => !ids.includes(String(t.id)))
                 }
                 const deletedCount = typeof res.deleted === "number" ? res.deleted : n
-                if (typeof klavToast === "function") klavToast(`${deletedCount} ticket${deletedCount === 1 ? "" : "s"} deleted.`)
+                if (typeof klavToast === "function") klavToast(`${deletedCount} ticket${deletedCount === 1 ? "" : "s"} deleted successfully.`)
                 if (onDone) onDone()
               } finally {
                 window.__klavMutating--
