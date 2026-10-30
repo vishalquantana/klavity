@@ -306,7 +306,8 @@ export async function generateEnhancedDraft(input: string, opts: GenerateEnhance
   try {
     const reply = await opts.llm(oneLiner, ENHANCE_SYSTEM_PROMPT)
     return parseEnhanceReply(reply)
-  } catch {
+  } catch (e: any) {
+    console.error("[report-enhance] LLM call failed:", e?.message || e)
     return null
   }
 }
