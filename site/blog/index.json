@@ -964,5 +964,12 @@
     "excerpt": "The best mabl alternative depends on the job: Testim or Autify for low-code swaps, Playwright for control, Klavity when no one can author tests.",
     "category": "Compare",
     "date": "2026-10-30"
+  },
+  {
+    "slug": "what-is-agentic-coding",
+    "title": "What Is Agentic Coding? A Definition and QA Playbook",
+    "excerpt": "Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it.",
+    "category": "Learn",
+    "date": "2026-10-31"
   }
 ]

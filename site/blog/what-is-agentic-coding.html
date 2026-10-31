@@ -1,0 +1,206 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Agentic Coding? A Definition and QA Playbook · Klavity</title>
+<meta name="description" content="Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-agentic-coding">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Agentic Coding? A Definition and QA Playbook"><meta property="og:description" content="Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-agentic-coding"><meta property="og:image" content="https://klavity.in/blog/what-is-agentic-coding.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Agentic Coding? A Definition and QA Playbook"><meta name="twitter:description" content="Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it."><meta name="twitter:image" content="https://klavity.in/blog/what-is-agentic-coding.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Agentic Coding? A Definition and QA Playbook","description":"Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it.","datePublished":"2026-10-31","dateModified":"2026-10-31","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/what-is-agentic-coding.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-agentic-coding","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Agentic Coding? A Definition and QA Playbook","item":"https://klavity.in/blog/what-is-agentic-coding"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-agentic-coding"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is agentic coding in simple terms?","acceptedAnswer":{"@type":"Answer","text":"It is coding where you give an AI agent an outcome — 'add Google sign-in', 'fix this failing test' — and the agent decides the steps: which files to open, what to edit, what commands to run. It keeps iterating until its own checks pass, then hands you a finished multi-file change to review."}},{"@type":"Question","name":"Is agentic coding the same as vibe coding?","acceptedAnswer":{"@type":"Answer","text":"They overlap but fail differently. Vibe coding means judging the app by the running result rather than the code, so you are unsure what the code does. Agentic coding means an agent applies multi-file changes to a real repo, so the harder question is what the change touched beyond what you asked for."}},{"@type":"Question","name":"Do I still need to review the code if the agent's tests pass?","acceptedAnswer":{"@type":"Answer","text":"Yes. When the same model writes the feature and its tests, both carry the same misunderstanding of the requirement, so the suite can go green while the behaviour is wrong. Tests written by the author of the bug are not independent evidence — verify the requirement against the running product."}},{"@type":"Question","name":"What is the fastest way to QA an agent's change?","acceptedAnswer":{"@type":"Answer","text":"Start with the files that changed but were not in the scope you gave; that is where collateral edits hide. Then run the main flow end to end both logged in and logged out, and check that every new network call has a visible failure state in the UI."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-10-31</div>
+    <h1>What Is Agentic Coding? A Definition and QA Playbook</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="An AI agent loop editing multiple files, with unverified paths flagged">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="120" cy="210" r="62" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <circle cx="120" cy="210" r="16" fill="#6366f1"/>
+  <path d="M120 148 A62 62 0 0 1 172 240" fill="none" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+  <polyline points="160 232 174 242 164 256" fill="none" stroke="#6366f1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="120" cy="148" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="58" cy="210" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <circle cx="120" cy="272" r="6" fill="#f5f0e8" opacity="0.5"/>
+  <line x1="196" y1="210" x2="268" y2="210" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 6"/>
+  <polyline points="258 202 270 210 258 218" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="284" y="52" width="210" height="88" rx="10" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="284" y="52" width="210" height="88" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="284" y1="76" x2="494" y2="76" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <rect x="302" y="92" width="120" height="7" rx="3.5" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="302" y="110" width="78" height="7" rx="3.5" fill="#4ade80" opacity="0.8"/>
+  <rect x="284" y="166" width="210" height="88" rx="10" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="284" y="166" width="210" height="88" rx="10" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="284" y1="190" x2="494" y2="190" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <rect x="302" y="206" width="148" height="7" rx="3.5" fill="#f5f0e8" opacity="0.4"/>
+  <rect x="302" y="224" width="96" height="7" rx="3.5" fill="#f87171" opacity="0.9"/>
+  <rect x="284" y="280" width="210" height="88" rx="10" fill="#f5f0e8" opacity="0.07"/>
+  <rect x="284" y="280" width="210" height="88" rx="10" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <line x1="284" y1="304" x2="494" y2="304" stroke="#f87171" stroke-width="1.5" opacity="0.5"/>
+  <rect x="302" y="320" width="104" height="7" rx="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="302" y="338" width="134" height="7" rx="3.5" fill="#f5f0e8" opacity="0.18"/>
+  <circle cx="470" cy="330" r="15" fill="none" stroke="#f87171" stroke-width="2"/>
+  <line x1="470" y1="322" x2="470" y2="332" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="470" cy="338" r="1.8" fill="#f87171"/>
+  <line x1="520" y1="96" x2="596" y2="196" stroke="#f5f0e8" stroke-width="1.5" opacity="0.28"/>
+  <line x1="520" y1="210" x2="596" y2="206" stroke="#f5f0e8" stroke-width="1.5" opacity="0.28"/>
+  <line x1="520" y1="324" x2="596" y2="216" stroke="#f87171" stroke-width="1.5" opacity="0.55" stroke-dasharray="5 5"/>
+  <rect x="604" y="150" width="150" height="120" rx="12" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <rect x="604" y="150" width="150" height="26" rx="12" fill="#4ade80" opacity="0.12"/>
+  <polyline points="640 212 663 236 712 188" fill="none" stroke="#4ade80" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="620" cy="163" r="3.5" fill="#4ade80" opacity="0.7"/>
+  <circle cx="632" cy="163" r="3.5" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="604" y="300" width="150" height="7" rx="3.5" fill="#6366f1" opacity="0.55"/>
+  <rect x="604" y="318" width="104" height="7" rx="3.5" fill="#6366f1" opacity="0.3"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Agentic coding is development where an AI agent takes a goal and executes it itself — reading files, editing several of them, running commands and iterating until its own checks pass. Unlike autocomplete, you review the change after it is applied, not before. The verification that used to come free with typing the code yourself has to be put back deliberately, against the running product.</div>
+    <div class="prose"><p><strong>Agentic coding</strong> is software development where you give an AI coding agent a goal rather than a line of code, and it plans and carries out the work itself — reading files, editing several of them, running commands, inspecting the result and iterating until it decides the task is done. Cursor's agent mode, Claude Code, Replit Agent and Copilot's agent features all work this way. The practical difference from older AI assistance is scope and timing: autocomplete offers one line that you read before accepting, while an agent hands you a finished multi-file change that you review afterwards, if at all.</p>
+
+<h2>What is agentic coding, exactly?</h2>
+
+<p>Agentic coding describes a loop rather than a feature. You state an outcome — "add Google sign-in", "make the dashboard load faster", "fix the failing checkout test" — and the agent runs a cycle: plan the steps, edit code, execute something (a build, a test, a script), read what came back, then correct itself and continue. It stops when its own checks pass or when it runs out of ideas.</p>
+
+<p>Three properties separate it from a chat window that returns a snippet:</p>
+
+<ul>
+<li><strong>Autonomy over steps.</strong> You approve the destination, not each turn. The agent chooses which files to open and what order to do things in, and those choices are not in the final diff.</li>
+<li><strong>Multi-file scope.</strong> A single instruction can touch a component, a route, a migration, a config file and a test. Nothing warns you when it edits a file you never mentioned.</li>
+<li><strong>Tool use.</strong> The agent runs your terminal, your package manager, your test suite — sometimes your database. It is acting on your project, not just writing text about it.</li>
+</ul>
+
+<p>That third property is why agentic coding is genuinely more productive than autocomplete, and also why it needs a different kind of verification. An agent that can run commands can also make its own work <em>look</em> finished.</p>
+
+<h2>How is agentic coding different from vibe coding and autocomplete?</h2>
+
+<p>These terms get used interchangeably and shouldn't be. They differ in how much you read before the code is yours.</p>
+
+<table>
+<tr><th>Mode</th><th>You provide</th><th>You get back</th><th>What you typically read</th><th>Main QA risk</th></tr>
+<tr><td>Autocomplete</td><td>The next few keystrokes</td><td>A line or block</td><td>Every suggestion, before accepting</td><td>Small logic slips</td></tr>
+<tr><td>Chat assistance</td><td>A described problem</td><td>A snippet to paste</td><td>The snippet, while placing it</td><td>Context mismatch with your codebase</td></tr>
+<tr><td><a href="/blog/what-is-vibe-coding">Vibe coding</a></td><td>A description of the app</td><td>Working-looking features</td><td>Little or none — you judge by the running result</td><td>No idea which paths were never exercised</td></tr>
+<tr><td>Agentic coding</td><td>A goal plus repo access</td><td>A multi-file change, already applied</td><td>A diff, after the fact</td><td>Unreviewed blast radius beyond the ask</td></tr>
+</table>
+
+<p>Agentic coding and vibe coding overlap in practice — many non-technical founders are doing both at once — but they fail differently. Vibe coding leaves you unsure what the code does. Agentic coding leaves you unsure what the code <em>changed</em>.</p>
+
+<h2>Why does agentic coding break the assumptions QA is built on?</h2>
+
+<p>Most QA habits assume a human wrote the change, so the change is roughly the size of what a human can hold in their head. Agents break that assumption in three specific ways.</p>
+
+<p><strong>Review happens after the work, at a size attention can't match.</strong> A prompt that takes seconds to write can produce a diff that takes a long, careful sitting to read properly. The realistic options are to skim or to become the bottleneck, and skimming a diff is how changes outside the stated scope get merged without anyone noticing them.</p>
+
+<p><strong>The agent is often its own only verifier.</strong> When the same model writes the feature and the test for the feature, both inherit the same misunderstanding of the requirement. The suite goes green because the test encodes what the code does, not what you asked for. Green tests written by the author of the bug are not evidence.</p>
+
+<p><strong>Correctness of code is not correctness of product.</strong> An agent can be right about every function it wrote and still break the app, because it did not know that one of the files it refactored was also used by your billing webhook. Static review catches malformed code; it does not catch a flow that no longer completes. That gap is the core argument of our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>: verification has to happen against the running product, not just the diff.</p>
+
+<h2>What kinds of bugs does agentic coding produce?</h2>
+
+<p>The failure patterns are consistent enough to check for deliberately:</p>
+
+<ul>
+<li><strong>Invented interfaces.</strong> Calls to a library method, option or response field that is plausible but does not exist in the version you have installed. Common when the agent is working from a familiar pattern rather than your lockfile.</li>
+<li><strong>Swallowed errors.</strong> A <code>try/catch</code> added to make a build pass, which now hides the real failure at runtime. Nothing breaks; nothing works either.</li>
+<li><strong>Happy-path-only UI.</strong> The screen renders, the button exists, and the loading, empty, error and unauthorised states were never considered because nobody asked for them.</li>
+<li><strong>Missing authorisation on new paths.</strong> New endpoints and new routes are where permission checks go absent, because the agent was focused on making the feature work, and it worked — as the logged-in developer.</li>
+<li><strong>Drifted duplicates.</strong> The same logic generated in two places across two sessions. Fixing one copy leaves the other live.</li>
+<li><strong>Collateral edits.</strong> A tidy-up of an import, a renamed prop, a "while I was here" change in a file you never put in scope.</li>
+</ul>
+
+<h2>How do you QA an agentically coded app?</h2>
+
+<p>The goal is not to review more. It is to move verification somewhere a human can realistically do it — the behaviour of the running app — and to keep each agent task small enough to judge.</p>
+
+<ol>
+<li><strong>Constrain the blast radius before you run the agent.</strong> One task per run, with a stated scope, and a commit between tasks. A 60-line diff you actually read beats a 600-line diff you skim.</li>
+<li><strong>Review by behaviour, not by file.</strong> Ask what a user can now do that they couldn't, and what they could do before that might have moved. Then check the files the agent touched that you didn't expect — that list is where the surprises live. Our notes on <a href="/blog/how-to-review-ai-generated-code">reviewing AI-generated code</a> go through this in order.</li>
+<li><strong>Verify from outside the code.</strong> Click the flow end to end, logged out as well as logged in. <a href="/sims">Sims</a> does this as AI personas that use the product the way different real users would, so the states the agent skipped get exercised by someone other than the agent.</li>
+<li><strong>Don't let the agent be your only test author.</strong> Write — or have something independent write — the assertions for the requirement, not for the implementation.</li>
+<li><strong>Lock the flows you cannot afford to lose.</strong> Signup, login, checkout, save. <a href="/autosim">AutoSim</a> keeps those E2E tests passing through the selector churn that agent refactors cause, which is usually why handwritten suites get abandoned.</li>
+<li><strong>Make real-world capture one click.</strong> When a client or a user does hit something, <a href="/snap">Snap</a> turns a right-click into a report with the console, network and environment attached, so the next agent prompt starts from evidence instead of "it's broken".</li>
+</ol>
+
+<h2>What should you check before shipping an agent's work?</h2>
+
+<p>A short pass that catches most of the above, in the order that finds problems fastest:</p>
+
+<ul>
+<li>Did any file change that wasn't in the scope you gave? Read those first.</li>
+<li>Does every new network call have a visible failure state in the UI?</li>
+<li>Is there a permission check on every new endpoint or route?</li>
+<li>Does the main flow still complete for a brand-new, logged-out visitor?</li>
+<li>Do the new tests assert the requirement, or just restate the code?</li>
+</ul>
+
+<p>Agentic coding is a real change in how much software one person can ship, and it is not going back. What it removes is the incidental verification that used to come free with typing the code yourself. That has to be put back deliberately — and it has to live where the product runs, not only where the diff is read.</p>
+
+<p><a href="/onboarding">Try Klavity free</a> and put a verification layer under your agent's output before your users find what it missed.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Give the agent one scoped task per run and commit between tasks, so each diff stays readable.</li><li>Read the diff by behaviour, and read the unexpected files first.</li><li>Never let the agent be the only author of the tests that verify its own work.</li><li>Verify against the running product — logged out as well as logged in — not just the code.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is agentic coding in simple terms?</summary><p>It is coding where you give an AI agent an outcome — 'add Google sign-in', 'fix this failing test' — and the agent decides the steps: which files to open, what to edit, what commands to run. It keeps iterating until its own checks pass, then hands you a finished multi-file change to review.</p></details><details><summary>Is agentic coding the same as vibe coding?</summary><p>They overlap but fail differently. Vibe coding means judging the app by the running result rather than the code, so you are unsure what the code does. Agentic coding means an agent applies multi-file changes to a real repo, so the harder question is what the change touched beyond what you asked for.</p></details><details><summary>Do I still need to review the code if the agent's tests pass?</summary><p>Yes. When the same model writes the feature and its tests, both carry the same misunderstanding of the requirement, so the suite can go green while the behaviour is wrong. Tests written by the author of the bug are not independent evidence — verify the requirement against the running product.</p></details><details><summary>What is the fastest way to QA an agent's change?</summary><p>Start with the files that changed but were not in the scope you gave; that is where collateral edits hide. Then run the main flow end to end both logged in and logged out, and check that every new network call has a visible failure state in the UI.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
