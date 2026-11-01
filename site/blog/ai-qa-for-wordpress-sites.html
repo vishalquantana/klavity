@@ -1,0 +1,205 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI QA for WordPress Sites: A Guide for Web Agencies · Klavity</title>
+<meta name="description" content="AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence.">
+<link rel="canonical" href="https://klavity.in/blog/ai-qa-for-wordpress-sites">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="AI QA for WordPress Sites: A Guide for Web Agencies"><meta property="og:description" content="AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence.">
+<meta property="og:url" content="https://klavity.in/blog/ai-qa-for-wordpress-sites"><meta property="og:image" content="https://klavity.in/blog/ai-qa-for-wordpress-sites.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="AI QA for WordPress Sites: A Guide for Web Agencies"><meta name="twitter:description" content="AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence."><meta name="twitter:image" content="https://klavity.in/blog/ai-qa-for-wordpress-sites.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"AI QA for WordPress Sites: A Guide for Web Agencies","description":"AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence.","datePublished":"2026-11-01","dateModified":"2026-11-01","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/ai-qa-for-wordpress-sites.svg"}},"mainEntityOfPage":"https://klavity.in/blog/ai-qa-for-wordpress-sites","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"AI QA for WordPress Sites: A Guide for Web Agencies","item":"https://klavity.in/blog/ai-qa-for-wordpress-sites"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/ai-qa-for-wordpress-sites"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What should AI QA for a WordPress site test first?","acceptedAnswer":{"@type":"Answer","text":"Forms and lead delivery. It is the most common silent failure on agency WordPress sites: the visitor sees a success message while delivery fails downstream at SMTP, a spam filter or a CRM API. Assert that the entry arrived at its destination, not that the page said thanks. Logged-out cached rendering and page-builder layout at mobile widths come next."}},{"@type":"Question","name":"Should you QA a WordPress site on staging or production?","acceptedAnswer":{"@type":"Answer","text":"Both, for different things. Staging is where you verify an update before applying it, but it is never identical: licences, caching layers, CDN rules, mail transport and serialized URLs in the options table all differ. Anything involving delivery, caching or payment needs a final check against production in a clean, logged-out session."}},{"@type":"Question","name":"Do plugin auto-updates need their own QA pass?","acceptedAnswer":{"@type":"Answer","text":"Yes, and this is the case for scheduling QA rather than triggering it on deploys. Auto-updates change the site's behaviour without a commit, a ticket or a notification you will read. A recurring run over the site's top paths is what turns that into something you find instead of something the client finds."}},{"@type":"Question","name":"Can AI QA replace a manual pass on a WordPress site?","acceptedAnswer":{"@type":"Answer","text":"Not entirely. AI handles the repetitive work well: exercising the same paths after every update, crawling every template type, checking layout across widths, and capturing evidence. It cannot know a client's business rules unless told, judge whether a content change is wrong, or decide that a legally required disclosure is missing. Those stay human."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-01</div>
+    <h1>AI QA for WordPress Sites: A Guide for Web Agencies</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+
+  <rect x="46" y="110" width="124" height="52" rx="9" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.55"/>
+  <rect x="46" y="178" width="124" height="52" rx="9" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.55"/>
+  <rect x="46" y="246" width="124" height="52" rx="9" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.55"/>
+  <circle cx="70" cy="136" r="7" fill="#6366f1"/>
+  <circle cx="70" cy="204" r="7" fill="#6366f1"/>
+  <circle cx="70" cy="272" r="7" fill="#f5f0e8" opacity="0.35"/>
+
+  <line x1="184" y1="136" x2="246" y2="136" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <line x1="184" y1="204" x2="246" y2="204" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <line x1="184" y1="272" x2="246" y2="272" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <path d="M240 130 L250 136 L240 142" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M240 198 L250 204 L240 210" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <path d="M240 266 L250 272 L240 278" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+
+  <rect x="268" y="88" width="266" height="244" rx="13" fill="#f5f0e8" fill-opacity="0.04" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="2"/>
+  <line x1="268" y1="122" x2="534" y2="122" stroke="#f5f0e8" stroke-opacity="0.2" stroke-width="2"/>
+  <circle cx="288" cy="105" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="302" cy="105" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="316" cy="105" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="290" y="140" width="222" height="34" rx="6" fill="#6366f1" fill-opacity="0.38"/>
+  <rect x="290" y="188" width="104" height="58" rx="6" fill="#f5f0e8" fill-opacity="0.09"/>
+  <rect x="408" y="188" width="104" height="58" rx="6" fill="#f5f0e8" fill-opacity="0.09"/>
+  <rect x="290" y="262" width="222" height="30" rx="6" fill="#f87171" fill-opacity="0.18" stroke="#f87171" stroke-width="2"/>
+
+  <circle cx="512" cy="277" r="22" fill="none" stroke="#f87171" stroke-width="2" opacity="0.3"/>
+  <circle cx="512" cy="277" r="13" fill="#1e1b2e" stroke="#f87171" stroke-width="2"/>
+  <path d="M507 272 L517 282 M517 272 L507 282" stroke="#f87171" stroke-width="2" fill="none"/>
+
+  <line x1="548" y1="200" x2="604" y2="200" stroke="#6366f1" stroke-width="2" opacity="0.6"/>
+  <path d="M598 194 L608 200 L598 206" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+
+  <circle cx="664" cy="200" r="52" fill="#4ade80" fill-opacity="0.07" stroke="#4ade80" stroke-width="2" opacity="0.85"/>
+  <polyline points="641,200 659,219 691,182" fill="none" stroke="#4ade80" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="736" y="150" width="24" height="24" rx="5" fill="none" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="2"/>
+  <rect x="736" y="188" width="24" height="24" rx="5" fill="none" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="2"/>
+  <rect x="736" y="226" width="24" height="24" rx="5" fill="none" stroke="#f5f0e8" stroke-opacity="0.25" stroke-width="2"/>
+  <circle cx="748" cy="162" r="4" fill="#4ade80"/>
+  <circle cx="748" cy="200" r="4" fill="#4ade80"/>
+  <circle cx="748" cy="238" r="4" fill="#f87171"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>AI QA for WordPress sites is about the breakage you did not cause: plugin, theme, core and PHP updates land on other people's schedules, so a site nobody has touched in a quarter has had no QA in a quarter. Test on a calendar rather than only on deploys, verify as a logged-out visitor against the cached page, and assert the far end of forms rather than the thank-you message.</div>
+    <div class="prose"><p><strong>AI QA for WordPress sites</strong> means using AI to exercise a live WordPress install the way real visitors and admins use it — forms, logged-out cached pages, page-builder layouts, checkout — and catching the breakage that arrives from plugin, theme and core updates rather than from your own commits. It matters more on WordPress than on a hand-built site because the regression surface changes when nobody on your team has touched anything: a form plugin auto-updates on Tuesday and lead email quietly stops being delivered. The practical approach is to run QA on a schedule rather than only on deploys, and to test as an anonymous visitor in a clean session, because that is the only state your client's customers ever see.</p>
+
+<p>If you maintain a portfolio of client WordPress sites, this is the difference between finding a dead contact form yourself and hearing about it from the client six weeks of missing enquiries later.</p>
+
+<h2>Why do WordPress sites break when nobody changed the code?</h2>
+
+<p>On a bespoke application, the regression surface moves when you push. On WordPress, it moves on other people's schedules. A typical client site runs core, a theme, a page builder and a long list of plugins, each maintained by a different author on its own release cadence. Core ships minor releases automatically by default, and plugins and themes can be set to auto-update individually from the admin. Your host bumps PHP. A premium licence lapses.</p>
+
+<p>Three consequences follow, and between them they explain most of what clients report on sites that were "finished" months ago:</p>
+
+<ul>
+  <li><strong>QA cannot be deploy-triggered only.</strong> If your only testing happens when you ship, a site you have not touched in a quarter has had no QA in a quarter — while its plugin stack has turned over several times. Maintenance sites need a <em>calendar</em> trigger.</li>
+  <li><strong>The failures are at integration boundaries.</strong> Not in logic you wrote, but where a plugin meets the theme, the cache, the mail transport or another plugin. These are exactly the seams unit tests never cover.</li>
+  <li><strong>Licence and configuration state is live state.</strong> An expired premium licence stops updates on most plugins and, on some, switches paid features off entirely. The page still returns 200; the slider, the SEO meta tags or the caching layer simply stops existing.</li>
+</ul>
+
+<h2>What should AI QA for WordPress sites cover first?</h2>
+
+<p>Order by what the client loses if it breaks, not by what is easy to automate. For most WordPress builds the sequence is:</p>
+
+<ol>
+  <li><strong>Forms and lead delivery.</strong> The single most common silent failure on agency WordPress sites. Contact form plugins hand off to <code>wp_mail</code>, an SMTP plugin, or a CRM API — and when credentials rotate, a spam filter changes, or deliverability degrades, the visitor still sees the success message. Assert the <em>other end</em>: an inbox, a CRM record, a database entry. A test that only checks for "Thanks, we'll be in touch" tests nothing worth testing.</li>
+  <li><strong>The logged-out, uncached-vs-cached view.</strong> Cache plugins and CDNs bypass the cache for logged-in users, so the page you look at as an admin is often not the page a visitor gets. Always verify in a clean, cookie-free session, and once more after a cache purge.</li>
+  <li><strong>Page-builder layout at real breakpoints.</strong> Builder output is deeply nested and style-sensitive, so theme and builder updates break layout before they break function. The hero CTA pushed below the fold on a 390px viewport is a conversion outage that no error log will mention.</li>
+  <li><strong>Commerce paths, if any.</strong> WooCommerce turns the site into a stateful store with its own failure modes — see our guide to <a href="/blog/ai-qa-for-ecommerce-websites">AI QA for ecommerce websites</a> for how to sequence those.</li>
+  <li><strong>Login, accounts and gated content.</strong> Membership and restriction plugins fail in both directions: locking out paying members, or exposing gated content to logged-out visitors. Test both polarities, not just that login works.</li>
+  <li><strong>Search, archives, redirects and 404s.</strong> Especially after a migration or a permalink change, where old URLs quietly start returning 404 and nobody notices until organic traffic drops.</li>
+</ul>
+
+<h2>Which WordPress failures are invisible to error monitoring?</h2>
+
+<p>Error monitoring catches fatals and exceptions. The expensive WordPress bugs are not fatals — they are successful responses with wrong content. Three patterns recur:</p>
+
+<ul>
+  <li><strong>Successful-looking form submissions.</strong> The POST returns 200, the plugin logs the entry, and mail delivery fails downstream. Nothing throws.</li>
+  <li><strong>Stale cache served to the public.</strong> You update a price, a date or an opening-hours block; it renders correctly for you as an admin and the cached page keeps serving the old version to everyone else.</li>
+  <li><strong>Migration artifacts.</strong> WordPress stores serialized arrays in the options table, so a careless staging-to-production URL replacement leaves broken serialized values — widgets vanish, settings reset to defaults, assets point at the staging host. The site loads; parts of it are simply gone.</li>
+</ul>
+
+<p>This is the same escaped-defect pattern described in our <a href="/blog/pre-launch-qa-checklist-for-web-agencies">pre-launch QA checklist for web agencies</a>, except on a maintenance site there is no launch date to catch it — so the only backstop is a recurring pass.</p>
+
+<h2>How do you QA a WordPress site after a plugin or core update?</h2>
+
+<p>Match the check to the change. This mapping covers the overwhelming majority of post-update regressions:</p>
+
+<table>
+  <tr><th>Change</th><th>What usually breaks</th><th>How to catch it</th></tr>
+  <tr><td>Minor core auto-update</td><td>Block rendering, REST endpoints the theme or builder depends on</td><td>Smoke the top five templates logged out; load the editor once</td></tr>
+  <tr><td>Form plugin update</td><td>Delivery, spam filtering, field validation, honeypots</td><td>Submit a real test entry and assert it arrived at the destination</td></tr>
+  <tr><td>Theme or page-builder update</td><td>Layout, spacing, CTA position, mobile nav</td><td>Visual pass per template type at three widths</td></tr>
+  <tr><td>WooCommerce update</td><td>Cart arithmetic, checkout, gateway compatibility</td><td>Happy-path purchase in the gateway's test mode</td></tr>
+  <tr><td>Host PHP version bump</td><td>Deprecated calls in older plugins; fatals on rarely visited templates</td><td>Crawl every template type, including search and 404</td></tr>
+  <tr><td>Premium licence lapse</td><td>Silent loss of pro features — sliders, caching, SEO output</td><td>Assert a feature-level output, not just a 200 status</td></tr>
+</table>
+
+<h2>What does an AI QA workflow look like on a client WordPress site?</h2>
+
+<p>Three recurring pieces, none of which require a dedicated QA hire:</p>
+
+<ul>
+  <li><strong>A scheduled run of the paths that matter.</strong> The enquiry form, the main conversion journey, login, and checkout if present. <a href="/autosim">AutoSim</a> keeps these E2E tests alive through the markup churn that page-builder updates cause, which is where hand-written selectors on WordPress sites usually die.</li>
+  <li><strong>An exploratory pass on the templates.</strong> <a href="/sims">Sims</a> sends AI personas through the site like unfamiliar visitors, which is how you find the consent banner covering the phone number on mobile — a class of bug no assertion was ever written for.</li>
+  <li><strong>A reporting path for whatever humans hit.</strong> Clients and stakeholders find bugs; the question is whether that arrives as a usable report or a blurry phone photo.</li>
+</ul>
+
+<p>For the broader framework this sits inside, start with our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>How should clients report WordPress bugs they find?</h2>
+
+<p>Give them a way to file from the page itself. With <a href="/snap">Snap</a> installed, a client right-clicks the thing that looks wrong and the report carries the console output, the network activity, the viewport and the DOM context with it. That removes the two worst parts of WordPress support: the round trip asking which page and which browser, and the ticket you close as "cannot reproduce" because the client was logged in and you were not.</p>
+
+<h2>Where to start this week</h2>
+
+<p>Pick the client site with the most plugins and the most valuable contact form. Automate one path — land, submit the form, confirm it arrived — and put a weekly run on the calendar. That is an afternoon of setup, and it converts your maintenance retainer from "we assume it still works" into "we would know by Monday."</p>
+
+<p><strong><a href="/onboarding">Scan your next client site free →</a></strong> Klavity runs AI QA on the flows your WordPress clients actually depend on, and turns whatever they find into a report a developer can act on.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Schedule QA on a calendar, not only on deploys</li><li>Assert forms arrived, not that the page said thanks</li><li>Always verify logged out, after a cache purge</li><li>Re-test layout after every theme or builder update</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What should AI QA for a WordPress site test first?</summary><p>Forms and lead delivery. It is the most common silent failure on agency WordPress sites: the visitor sees a success message while delivery fails downstream at SMTP, a spam filter or a CRM API. Assert that the entry arrived at its destination, not that the page said thanks. Logged-out cached rendering and page-builder layout at mobile widths come next.</p></details><details><summary>Should you QA a WordPress site on staging or production?</summary><p>Both, for different things. Staging is where you verify an update before applying it, but it is never identical: licences, caching layers, CDN rules, mail transport and serialized URLs in the options table all differ. Anything involving delivery, caching or payment needs a final check against production in a clean, logged-out session.</p></details><details><summary>Do plugin auto-updates need their own QA pass?</summary><p>Yes, and this is the case for scheduling QA rather than triggering it on deploys. Auto-updates change the site's behaviour without a commit, a ticket or a notification you will read. A recurring run over the site's top paths is what turns that into something you find instead of something the client finds.</p></details><details><summary>Can AI QA replace a manual pass on a WordPress site?</summary><p>Not entirely. AI handles the repetitive work well: exercising the same paths after every update, crawling every template type, checking layout across widths, and capturing evidence. It cannot know a client's business rules unless told, judge whether a content change is wrong, or decide that a legally required disclosure is missing. Those stay human.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

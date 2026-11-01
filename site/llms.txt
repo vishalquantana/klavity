@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [AI QA for WordPress Sites: A Guide for Web Agencies](https://klavity.in/blog/ai-qa-for-wordpress-sites) — AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence.
 - [What Is Agentic Coding? A Definition and QA Playbook](https://klavity.in/blog/what-is-agentic-coding) — Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it.
 - [Mabl Alternative: 6 Options for Agencies and Founders](https://klavity.in/blog/mabl-alternative) — The best mabl alternative depends on the job: Testim or Autify for low-code swaps, Playwright for control, Klavity when no one can author tests.
 - [AI QA for Ecommerce Websites: What to Test and How](https://klavity.in/blog/ai-qa-for-ecommerce-websites) — AI QA for ecommerce websites targets the flows where money moves: variants, cart, discounts, checkout. Here is what to automate first, and why.

@@ -971,5 +971,12 @@
     "excerpt": "Agentic coding is giving an AI agent a goal instead of a line of code: it plans, edits many files and runs commands. Here is how to QA it.",
     "category": "Learn",
     "date": "2026-10-31"
+  },
+  {
+    "slug": "ai-qa-for-wordpress-sites",
+    "title": "AI QA for WordPress Sites: A Guide for Web Agencies",
+    "excerpt": "AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence.",
+    "category": "Guides",
+    "date": "2026-11-01"
   }
 ]
