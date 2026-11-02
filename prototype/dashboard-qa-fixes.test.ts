@@ -145,3 +145,12 @@ test("#743: annotate modal shows a spinner (never a blank canvas) until the imag
   expect(HTML).toContain("annotator.baseImg = ready; annotator.redraw()")
   expect(HTML).toContain(".evann-spinner{")
 })
+
+// ── Sim is ready popup outside click guard ──────────────────────────────────────
+test("Sim is ready popup remains open when clicking outside its boundaries", () => {
+  const i = HTML.indexOf('ov.addEventListener("mousedown"')
+  expect(i).toBeGreaterThan(-1)
+  const region = HTML.slice(i, i + 400)
+  expect(region).toContain("if (simSuccessShown()) return")
+  expect(region).toContain("requestClose()")
+})

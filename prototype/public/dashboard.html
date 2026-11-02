@@ -34538,10 +34538,24 @@
               showDiscard();
             }
             $("simClose").onclick = function () { requestClose(); };
-            ov.addEventListener("mousedown", (e) => { if (e.target === ov) requestClose(); });
+            ov.addEventListener("mousedown", (e) => {
+              if (e.target === ov) {
+                // Keep the "Sim is ready" popup open when clicking outside its boundaries;
+                // it should only close via explicit close/action buttons inside the popup or the 'X' icon.
+                if (simSuccessShown()) return;
+                requestClose();
+              }
+            });
+            ov.addEventListener("click", (e) => {
+              if (e.target === ov && simSuccessShown()) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            });
             document.addEventListener("keydown", (e) => {
               if (e.key !== "Escape" || !ov.classList.contains("show")) return;
               if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
+              if (simSuccessShown()) return;
               requestClose();
             });
             window.addEventListener("beforeunload", (e) => { if (simDirty()) { e.preventDefault(); e.returnValue = ""; } });
