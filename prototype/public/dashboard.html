@@ -13983,20 +13983,67 @@
       }
     }
 
+    /* Name step (design): a separate screen — tabs hidden, heading becomes "Name your Sim". */
     #smNameStep {
       max-width: 540px;
-      margin: 0 auto
+      margin: 0 auto;
+      text-align: left
+    }
+
+    .sm-desc-box {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--paper-faint) 6%, transparent);
+      margin-bottom: 16px
+    }
+
+    .sm-desc-lbl {
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 4px
+    }
+
+    .sm-desc-txt {
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere
     }
 
     .sm-name-lbl {
       display: block;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       margin: 0 0 8px
     }
 
-    .sm-name-back {
-      margin-top: 10px
+    .sm-name-in {
+      width: 100%;
+      box-sizing: border-box;
+      height: 44px;
+      padding: 0 14px;
+      font: inherit;
+      font-size: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--paper-faint) 6%, transparent);
+      color: var(--paper)
+    }
+
+    .sm-name-in:focus {
+      outline: none;
+      border-color: var(--indigo)
+    }
+
+    .sm-name-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px
+    }
+
+    .sm-modal-namestep .sm-seg {
+      display: none
     }
 
     .sm-field {
@@ -34234,7 +34281,7 @@
             <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" />
           </svg></span>
         <h2 id="simHd">Bring your first Sim to life</h2>
-        <p>A Sim is an AI user that reacts to your pages and files what bugs them. Start any way you like — <b>you can
+        <p id="simSub">A Sim is an AI user that reacts to your pages and files what bugs them. Start any way you like — <b>you can
             edit them later.</b></p>
       </div>
       <div class="sm-seg" role="tablist">
@@ -34279,12 +34326,13 @@
           <div class="sm-chips" id="smChips"></div>
         </div>
         <div id="smNameStep" hidden>
-          <label class="sm-name-lbl" for="smName">Name your Sim</label>
-          <div class="sm-field">
-            <input id="smName" type="text" maxlength="60" placeholder="e.g. Priya, the ops manager" autocomplete="off" />
+          <div class="sm-desc-box"><div class="sm-desc-lbl">Sim description</div><div class="sm-desc-txt" id="smDescTxt"></div></div>
+          <label class="sm-name-lbl" for="smName">Sim name</label>
+          <input id="smName" class="sm-name-in" type="text" maxlength="60" placeholder="e.g. Eleanor, Cautious Buyer, Finance Lead" autocomplete="off" />
+          <div class="sm-name-actions">
+            <button type="button" class="btn btn-ghost" id="smNameBack">← Back</button>
             <button class="btn btn-indigo" id="smCreateGo" disabled>Create Sim →</button>
           </div>
-          <button type="button" class="btn btn-ghost btn-sm sm-name-back" id="smNameBack">← Back</button>
         </div>
       </div>
       <div class="sm-pane" data-pane="site">
@@ -34515,6 +34563,15 @@
             function showBriefStep(step) {
               const onName = step === "name";
               $("smBriefStep").hidden = onName; $("smNameStep").hidden = !onName;
+              const hd = $("simHd"), sub = $("simSub"), card = ov;
+              card.classList.toggle("sm-modal-namestep", onName);
+              if (onName) {
+                if (hd.dataset.orig === undefined) { hd.dataset.orig = hd.textContent; sub.dataset.orig = sub.innerHTML; }
+                hd.textContent = "Name your Sim"; sub.textContent = "Give this Sim a memorable name. You can change it later.";
+                $("smDescTxt").textContent = $("smBrief").value.trim();
+              } else if (hd.dataset.orig !== undefined) {
+                hd.textContent = hd.dataset.orig; sub.innerHTML = sub.dataset.orig; delete hd.dataset.orig; delete sub.dataset.orig;
+              }
               $("smCreateGo").disabled = !$("smName").value.trim();
               if (!onName) out.innerHTML = "";
               setTimeout(function () { const f = $(onName ? "smName" : "smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 30);
@@ -34861,7 +34918,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep"); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";

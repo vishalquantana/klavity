@@ -15,7 +15,11 @@ function block(src: string, start: string, len = 1500): string {
 
 test("Describe step 1 is 'Continue →' (not Create) and step 2 is 'Name your Sim' with Create disabled until named", () => {
   expect(DASH).toContain('<button class="btn btn-indigo" id="smBriefGo">Continue →</button>')
-  expect(DASH).toContain("Name your Sim</label>")
+  expect(DASH).toContain('hd.textContent = "Name your Sim"; sub.textContent = "Give this Sim a memorable name. You can change it later."')
+  expect(DASH).toContain('<label class="sm-name-lbl" for="smName">Sim name</label>')
+  expect(DASH).toContain('placeholder="e.g. Eleanor, Cautious Buyer, Finance Lead"')
+  expect(DASH).toContain('<div class="sm-desc-lbl">Sim description</div>')
+  expect(DASH).toContain(".sm-modal-namestep .sm-seg")      // tabs are hidden on the name screen
   expect(DASH).toContain('id="smCreateGo" disabled>Create Sim →</button>')
   expect(DASH).toContain('$("smName").addEventListener("input", () => { $("smCreateGo").disabled = !$("smName").value.trim(); });')
 })
@@ -36,7 +40,7 @@ test("example chips and Enter in the description go to the name step; Create sen
 })
 
 test("opening the modal resets to step 1, and a typed name counts as unsaved work", () => {
-  expect(DASH).toContain('$("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true;')
+  expect(DASH).toContain('$("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep");')
   expect(DASH).toContain('$("smBrief").value.trim() || $("smName").value.trim() || $("smTx").value.trim()')
 })
 
