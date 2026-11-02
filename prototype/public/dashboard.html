@@ -13983,6 +13983,22 @@
       }
     }
 
+    #smNameStep {
+      max-width: 540px;
+      margin: 0 auto
+    }
+
+    .sm-name-lbl {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 8px
+    }
+
+    .sm-name-back {
+      margin-top: 10px
+    }
+
     .sm-field {
       display: flex;
       gap: 9px;
@@ -34252,21 +34268,32 @@
             </svg></span>Presets</button>
       </div>
       <div class="sm-pane on" data-pane="describe">
-        <div class="sm-field">
-          <input id="smBrief" type="text" placeholder="e.g. A busy ops manager who lives in spreadsheets"
-            autocomplete="off" />
-          <button class="btn btn-indigo" id="smBriefGo">Create Sim →</button>
+        <!-- WP-S3a: two steps. 1) describe who the Sim is, 2) name them, then the generated Sim is shown to review and add. -->
+        <div id="smBriefStep">
+          <div class="sm-field">
+            <input id="smBrief" type="text" placeholder="e.g. A busy ops manager who lives in spreadsheets"
+              autocomplete="off" />
+            <button class="btn btn-indigo" id="smBriefGo">Continue →</button>
+          </div>
+          <p class="sm-exlead">or start from an example</p>
+          <div class="sm-chips" id="smChips"></div>
         </div>
-        <p class="sm-exlead">or start from an example</p>
-        <div class="sm-chips" id="smChips"></div>
+        <div id="smNameStep" hidden>
+          <label class="sm-name-lbl" for="smName">Name your Sim</label>
+          <div class="sm-field">
+            <input id="smName" type="text" maxlength="60" placeholder="e.g. Priya, the ops manager" autocomplete="off" />
+            <button class="btn btn-indigo" id="smCreateGo" disabled>Create Sim →</button>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm sm-name-back" id="smNameBack">← Back</button>
+        </div>
       </div>
       <div class="sm-pane" data-pane="site">
         <div class="sm-field url">
           <input id="smUrl" type="text" placeholder="yourproduct.com" autocomplete="off" />
-          <button class="btn btn-indigo" id="smUrlGo">Suggest Sims</button>
+          <button class="btn btn-indigo" id="smUrlGo">Analyse &amp; suggest Sims →</button>
         </div>
-        <p class="sm-note">We read your public home page and propose a starting cast — keep the ones that ring true.
-          Nothing’s saved until you add a Sim.</p>
+        <p class="sm-note">Klavity will analyse your site and suggest Sims based on who likely uses it. Nothing’s saved
+          until you add a Sim.</p>
       </div>
       <div class="sm-pane" data-pane="call">
         <textarea class="sm-ta" id="smTx"
@@ -34484,13 +34511,27 @@
               const link = (u && (u.charAt(0) === "/" || u.indexOf("https://") === 0)) ? ' <a href="' + esc(u) + '" target="_blank" rel="noopener">Upgrade</a>' : "";
               out.innerHTML = '<div class="sm-err">' + esc(msg || "Something went wrong. Try again.") + link + "</div>";
             }
-            async function genBrief() {
+            // WP-S3a: Describe is two steps — the description, then "Name your Sim". Create stays disabled until a name is typed.
+            function showBriefStep(step) {
+              const onName = step === "name";
+              $("smBriefStep").hidden = onName; $("smNameStep").hidden = !onName;
+              $("smCreateGo").disabled = !$("smName").value.trim();
+              if (!onName) out.innerHTML = "";
+              setTimeout(function () { const f = $(onName ? "smName" : "smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 30);
+            }
+            function goToName() {
               clearFieldErr();
               const v = $("smBrief").value.trim(); if (v.length < 4) { fieldErr($("smBrief"), "Describe your user in a sentence — a few words is enough."); return; }
+              showBriefStep("name");
+            }
+            async function genBrief() {
+              clearFieldErr();
+              const v = $("smBrief").value.trim(); if (v.length < 4) { showBriefStep("brief"); fieldErr($("smBrief"), "Describe your user in a sentence — a few words is enough."); return; }
+              const nm = $("smName").value.trim(); if (!nm) { fieldErr($("smName"), "Give your Sim a name."); return; }
               think("Imagining your Sim…");
               // KLAVITYKLA-301: stamp which modal tab generated these Sims so saveSim can send source to server
               lastSimSource = PANE_TO_SOURCE["describe"] || "describe";
-              try { const d = await postJSON("/api/persona/brief", { brief: v }); showSims(d.persona ? [d.persona] : []); } catch (e) { fail(e.message); }
+              try { const d = await postJSON("/api/persona/brief", { brief: v, name: nm }); showSims(d.persona ? [d.persona] : []); } catch (e) { fail(e.message); }
             }
             async function genSite() {
               clearFieldErr();
@@ -34755,9 +34796,13 @@
             }));
             // example chips
             $("smChips").innerHTML = EXAMPLES.map(x => `<button class="sm-chip">${esc(x)}</button>`).join("");
-            $("smChips").addEventListener("click", (e) => { const c = e.target.closest(".sm-chip"); if (!c) return; $("smBrief").value = c.textContent; genBrief(); });
+            $("smChips").addEventListener("click", (e) => { const c = e.target.closest(".sm-chip"); if (!c) return; $("smBrief").value = c.textContent; goToName(); });
             // primary actions
-            $("smBriefGo").onclick = () => withBusy($("smBriefGo"), "Imagining…", genBrief);
+            $("smBriefGo").onclick = goToName;
+            $("smCreateGo").onclick = () => withBusy($("smCreateGo"), "Imagining…", genBrief);
+            $("smNameBack").onclick = () => showBriefStep("brief");
+            $("smName").addEventListener("input", () => { $("smCreateGo").disabled = !$("smName").value.trim(); });
+            $("smName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if ($("smName").value.trim()) withBusy($("smCreateGo"), "Imagining…", genBrief); } });
             $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
             $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
 
@@ -34782,7 +34827,7 @@
               rd.onerror = () => { fail("Couldn't read that file — try pasting the transcript instead."); smFile.value = ""; };
               rd.readAsText(f);
             });
-            $("smBrief").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); genBrief(); } });
+            $("smBrief").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); goToName(); } });
             $("smUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); genSite(); } });
 
             // KLAVITYKLA-187: the Add-a-Sim surface is addressable at /sim/new so it behaves like a
@@ -34816,7 +34861,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";
@@ -34843,7 +34888,7 @@
             function simDirty() {
               if (!ov.classList.contains("show") || simSuccessShown()) return false;
               const siteDefault = ((state && state.active && state.active.siteUrl) || "").trim();
-              if ($("smBrief").value.trim() || $("smTx").value.trim() || $("smUrl").value.trim() !== siteDefault) return true;
+              if ($("smBrief").value.trim() || $("smName").value.trim() || $("smTx").value.trim() || $("smUrl").value.trim() !== siteDefault) return true;
               return !!out.querySelector(".sm-sim:not(.added)");   // generated Sims that were not added yet
             }
             let discardEl = null;

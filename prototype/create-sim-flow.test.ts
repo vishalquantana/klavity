@@ -65,7 +65,7 @@ test("a second click while it is working does nothing (no parallel AI calls)", a
 function makeDirty(o: { shown?: boolean; success?: boolean; brief?: string; tx?: string; url?: string; siteUrl?: string; unsavedCards?: boolean }) {
   const ov = { classList: { contains: (c: string) => c === "show" && o.shown !== false } }
   const successEl = { classList: { contains: (c: string) => c === "show" && !!o.success } }
-  const vals: Record<string, string> = { smBrief: o.brief || "", smTx: o.tx || "", smUrl: o.url ?? (o.siteUrl || "") }
+  const vals: Record<string, string> = { smBrief: o.brief || "", smName: "", smTx: o.tx || "", smUrl: o.url ?? (o.siteUrl || "") }
   const $ = (id: string) => ({ value: vals[id] })
   const out = { querySelector: (sel: string) => (sel === ".sm-sim:not(.added)" && o.unsavedCards ? {} : null) }
   const state = { active: { siteUrl: o.siteUrl || "" } }
@@ -98,7 +98,7 @@ test("✕, backdrop, Escape and browser Back all go through the same check; the 
   expect(HTML).toContain('id="smKeep">Keep editing</button><button type="button" class="btn btn-indigo btn-sm" id="smDiscardGo">Discard</button>')
 })
 test("the three generate buttons show progress, validation lands under the field, and a locked plan gets an Upgrade link", () => {
-  expect(HTML).toContain('$("smBriefGo").onclick = () => withBusy($("smBriefGo"), "Imagining…", genBrief);')
+  expect(HTML).toContain('$("smCreateGo").onclick = () => withBusy($("smCreateGo"), "Imagining…", genBrief);')
   expect(HTML).toContain('$("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);')
   expect(HTML).toContain('$("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);')
   expect(HTML).toContain('fieldErr($("smBrief"), "Describe your user in a sentence — a few words is enough.")')

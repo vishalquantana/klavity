@@ -15644,8 +15644,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // brief → one persona (no transcript needed)
     if (req.method === "POST" && path === "/api/persona/brief") {
       try {
-        const { brief } = await req.json()
+        const { brief, name: briefName } = await req.json()
         if (!brief || String(brief).trim().length < 4) return json({ error: "Describe your user in a sentence." }, 400)
+        // WP-S3a: the two-step Describe flow lets the user name the Sim up front; when given, that exact name is used.
+        const chosenName = String(briefName ?? "").replace(/\s+/g, " ").trim().slice(0, 60)
         if (String(brief).length > AI_DEMO_MAX_CHARS) return json({ error: "Brief too long." }, 413)
         // simClass: "user" = operates the product hands-on (UI/interaction focus); "client" = judges outcomes/business results.
         // Default described Sims to "user" unless the brief clearly indicates an outcome-judging stakeholder (exec, buyer, decision-maker).
@@ -15656,12 +15658,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
         const meB = (await sessionEmail(req)) || (await bearerEmail(req))
         if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
+        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
         const data = parseJSON(content)
         // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
         if (data.persona) {
           if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
           if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
+          if (chosenName) {
+            data.persona.name = chosenName
+            const w = chosenName.split(" ").filter(Boolean)
+            data.persona.initials = ((w[0]?.[0] || "") + (w.length > 1 ? w[w.length - 1][0] : (w[0]?.[1] || ""))).toUpperCase() || data.persona.initials
+          }
         }
         return json({ persona: data.persona, usage })
       } catch (e: any) { return json(oops(e, "create"), 500) }
