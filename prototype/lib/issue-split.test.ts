@@ -84,3 +84,23 @@ describe("splitTranscriptIntoIssues", () => {
     expect(await splitTranscriptIntoIssues({ text: "x" }, { llm: async () => { throw new Error("boom") } })).toEqual([])
   })
 })
+
+describe("Enhance-identical draft per issue", () => {
+  test("carries steps/actual/expected/severity/priority through the Enhance clamps", () => {
+    const [a, b] = parseSplitReply(JSON.stringify({ issues: [
+      { title: "Dashboard count wrong", description: "x", kind: "bug", actualResult: "Count shows 0.", expectedResult: "Count matches the list.",
+        stepsToReproduce: ["Open the ticket dashboard", "", "Compare the count"], suggestedSeverity: "c2", suggestedPriority: "bogus" },
+      { title: "Filter broken", description: "Filter does nothing." },
+    ] }))
+    expect(a.actualResult).toBe("Count shows 0.")
+    expect(a.expectedResult).toBe("Count matches the list.")
+    expect(a.stepsToReproduce).toEqual(["Open the ticket dashboard", "Compare the count"])
+    expect(a.suggestedSeverity).toBe("C2")
+    expect(a.suggestedPriority).toBe("P2") // garbage priority → derived from severity, like Enhance
+    expect(b.stepsToReproduce).toBeUndefined() // no draft content → plain description only
+    expect(b.suggestedSeverity).toBeUndefined()
+  })
+  test("prompt asks for the Enhance fields", () => {
+    for (const k of ["actualResult", "expectedResult", "stepsToReproduce", "suggestedSeverity", "suggestedPriority"]) expect(SPLIT_SYSTEM_PROMPT).toContain(k)
+  })
+})

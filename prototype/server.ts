@@ -4863,7 +4863,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 "\n\nPAGE URL (untrusted):\n" + wrapUntrusted(pageUrl || "(unknown)"),
             },
           ],
-          1500, true,
+          3000, true,
           // feature tag 'report-split' → budget-gated + cost-logged like every other LLM call.
           { type: "report-split", feature: "report-split", model: ENHANCE_MODEL, projectId, email: null, temperature: 0.2 },
         )

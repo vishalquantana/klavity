@@ -6,6 +6,12 @@
 // failure splitTranscriptIntoIssues resolves to [] so the composer simply keeps the single ticket.
 //
 // The composer only offers the split when this returns 2+ issues; with 0/1 the report stays one ticket.
+//
+// Each issue also carries the SAME structured draft "Enhance with AI" produces (steps / actual / expected /
+// severity / priority, validated by report-enhance's draftFromObject) so the composer renders every split
+// ticket's description exactly like an enhanced one.
+
+import { draftFromObject, type Severity, type Priority } from "./report-enhance"
 
 export const MAX_SPLIT_ISSUES = 8
 export const SPLIT_TITLE_MAX_LEN = 120
@@ -21,6 +27,12 @@ export type SplitIssue = {
   // Where in the clip the reporter talks about this issue (seconds). Null when the transcript has no timings.
   startSec: number | null
   endSec: number | null
+  // Enhance-identical draft fields (absent when the model returned none for this issue).
+  actualResult?: string
+  expectedResult?: string
+  stepsToReproduce?: string[]
+  suggestedSeverity?: Severity
+  suggestedPriority?: Priority
 }
 
 export const SPLIT_SYSTEM_PROMPT =
@@ -36,14 +48,29 @@ export const SPLIT_SYSTEM_PROMPT =
   "filler, greetings and narration that is not a problem or request.\n" +
   "- title: specific, WHAT + WHERE + WRONG BEHAVIOR (e.g. 'Save button stays disabled after editing the profile " +
   "name'). No classification prefix, no URL.\n" +
-  "- description: plain text, 1-4 short paragraphs: what happens, what should happen, and the steps the reporter " +
-  "showed, using only what the transcript supports. Quote error messages verbatim.\n" +
+  "- description: one or two plain sentences summarising the issue (fallback text only).\n" +
+  "- For EVERY issue also write the developer-ready report fields, exactly like a Senior QA Manager filing a Jira " +
+  "defect, using ONLY what the transcript (and note/URL) supports:\n" +
+  "  - actualResult: what currently happens — observed behavior only, error messages quoted verbatim. Never what " +
+  "should happen.\n" +
+  "  - expectedResult: what should happen — the reporter's stated expectation, else a conservative behavior-level " +
+  "statement. For a feature request: the requested behavior.\n" +
+  "  - stepsToReproduce: short, sequential, imperative steps grounded in the page/screens and actions the reporter " +
+  "narrates (e.g. 'Open the ticket dashboard', 'Apply a status filter'). Never invent form values, accounts or " +
+  "preconditions; if the path is unknown give a minimal skeleton. At most 8 steps. Empty array for a pure feature " +
+  "request with no flow.\n" +
+  "  - suggestedSeverity: C1 = critical (crash, data loss, security, or a core flow broken with NO workaround); " +
+  "C2 = major (broken but a workaround exists, or non-core); C3 = minor (cosmetic / no functional loss). When " +
+  "unsure, bias LOWER. Feature requests are C3.\n" +
+  "  - suggestedPriority: derived C1->P1, C2->P2, C3->P3 unless the reporter explicitly states a priority.\n" +
+  "  - Never invent API, backend, database or root-cause claims; never assert a cause as fact.\n" +
   "- kind: 'bug' for broken/incorrect behavior, 'feature' for a request for new/changed behavior.\n" +
   "- startSec/endSec: when the transcript lines carry [start-end] timings, the span (seconds) where the reporter " +
   "talks about this issue; otherwise null.\n" +
   "- Order issues as they appear in the video. At most " + MAX_SPLIT_ISSUES + " issues.\n\n" +
   "OUTPUT. Reply with STRICT JSON only, no prose, no code fences:\n" +
-  '{"issues":[{"title":"...","description":"...","kind":"bug","startSec":12.5,"endSec":40}]}\n' +
+  '{"issues":[{"title":"...","description":"...","kind":"bug","startSec":12.5,"endSec":40,' +
+  '"actualResult":"...","expectedResult":"...","stepsToReproduce":["..."],"suggestedSeverity":"C2","suggestedPriority":"P2"}]}\n' +
   'If the narration describes no concrete issue, reply {"issues":[]}.'
 
 type Seg = { start: number; end: number; text: string }
@@ -102,7 +129,17 @@ export function parseSplitReply(raw: unknown): SplitIssue[] {
     let startSec = sec(it.startSec)
     let endSec = sec(it.endSec)
     if (startSec != null && endSec != null && endSec < startSec) [startSec, endSec] = [endSec, startSec]
-    out.push({ title: title || clip(description.split("\n")[0], SPLIT_TITLE_MAX_LEN), description: description || title, kind, startSec, endSec })
+    const issue: SplitIssue = { title: title || clip(description.split("\n")[0], SPLIT_TITLE_MAX_LEN), description: description || title, kind, startSec, endSec }
+    // Enhance-identical draft (same clamps/whitelists as /api/report/enhance) — only when it has report content.
+    const draft = draftFromObject({ ...it, summary: issue.title })
+    if (draft && (draft.actualResult || draft.expectedResult || draft.stepsToReproduce.length)) {
+      issue.actualResult = draft.actualResult
+      issue.expectedResult = draft.expectedResult
+      issue.stepsToReproduce = draft.stepsToReproduce
+      issue.suggestedSeverity = draft.suggestedSeverity
+      issue.suggestedPriority = draft.suggestedPriority
+    }
+    out.push(issue)
     if (out.length >= MAX_SPLIT_ISSUES) break
   }
   return out

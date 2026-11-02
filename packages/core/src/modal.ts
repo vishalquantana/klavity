@@ -102,6 +102,28 @@ export interface SplitIssueLike {
   kind?: 'bug' | 'feature'
   startSec?: number | null
   endSec?: number | null
+  // The same structured draft "Enhance with AI" returns — when present the card's description is rendered
+  // with renderDraftToWhatsApp so a split ticket reads exactly like an enhanced one.
+  actualResult?: string
+  expectedResult?: string
+  stepsToReproduce?: string[]
+  suggestedSeverity?: string
+  suggestedPriority?: string
+}
+
+// KD-995: a split issue's card description — the Enhance layout when the issue carries a draft, else its
+// plain description.
+export function splitIssueBody(issue: SplitIssueLike): string {
+  const steps = Array.isArray(issue.stepsToReproduce) ? issue.stepsToReproduce : []
+  if (!issue.actualResult && !issue.expectedResult && !steps.length) return String(issue.description || '').trim()
+  return renderDraftToWhatsApp({
+    summary: String(issue.title || '').trim(),
+    actualResult: issue.actualResult || '',
+    expectedResult: issue.expectedResult || '',
+    stepsToReproduce: steps,
+    suggestedSeverity: issue.suggestedSeverity || '',
+    suggestedPriority: issue.suggestedPriority || '',
+  })
 }
 
 // KD-995: "0:42–1:10" for an issue's span in the clip ("0:42" when only the start is known, "" when neither).
@@ -2541,7 +2563,7 @@ export function buildModal(
     if (seq !== splitSeq || _closed) return  // the clip was removed / a newer one superseded this run
     splitAnalyzing = false
     const usable = (issues || []).filter((i) => i && (String(i.title || '').trim() || String(i.description || '').trim()))
-    if (usable.length >= 2) splitIssues = usable.map((i) => ({ ...i, title: String(i.title || '').trim(), description: String(i.description || '').trim(), include: true }))
+    if (usable.length >= 2) splitIssues = usable.map((i) => ({ ...i, title: String(i.title || '').trim(), description: splitIssueBody(i), include: true }))
     else { splitIssues = null; splitForRecId = null }
     renderSplit()
   }
@@ -2578,7 +2600,7 @@ export function buildModal(
           `<span>Ticket ${i + 1}${i === 0 ? ' · keeps the video' : ''}${it.kind === 'feature' ? ' · feature' : ''}</span>` +
           `${span ? `<span class="kl-split-span">${escHtml(span)}</span>` : ''}</label>` +
           `<input type="text" class="kl-split-title" maxlength="160" aria-label="Ticket ${i + 1} title" value="${escHtml(it.title)}">` +
-          `<textarea class="kl-split-desc" aria-label="Ticket ${i + 1} description">${escHtml(it.description)}</textarea></div>`
+          `<textarea class="kl-split-desc" rows="7" aria-label="Ticket ${i + 1} description">${escHtml(it.description)}</textarea></div>`
       }).join('') +
       `<button type="button" class="kl-split-keep" id="klavity-split-keep">Keep as one ticket</button>`
     el.querySelectorAll<HTMLElement>('.kl-split-card').forEach((card) => {
@@ -3666,6 +3688,8 @@ export function buildModal(
         screenshots: [] as string[],
         reporterEmail: emailSnapshot,
         createContact: false,
+        ...(card.suggestedSeverity ? { suggestedSeverity: card.suggestedSeverity } : {}),
+        ...(card.suggestedPriority ? { suggestedPriority: card.suggestedPriority } : {}),
         ...(cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}),
       }
     }
@@ -3709,8 +3733,9 @@ export function buildModal(
         // route to Klavity). The server resolves the real Klavity intake project — the client only says 'klavity'.
         ...(cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}),
         // KLA-586: ride the accepted AI-Enhance draft's severity/priority as structured fields (cleared on Undo).
-        ...(enhanceSeverity ? { suggestedSeverity: enhanceSeverity } : {}),
-        ...(enhancePriority ? { suggestedPriority: enhancePriority } : {}),
+        // KD-995: when split, ticket #1's severity/priority come from its own card (its body replaced the field).
+        ...((primaryCard ? primaryCard.suggestedSeverity : enhanceSeverity) ? { suggestedSeverity: primaryCard ? primaryCard.suggestedSeverity : enhanceSeverity } : {}),
+        ...((primaryCard ? primaryCard.suggestedPriority : enhancePriority) ? { suggestedPriority: primaryCard ? primaryCard.suggestedPriority : enhancePriority } : {}),
         // #638: only when the toggle was rendered — the reporter's console-logs opt-in (DEFAULT false). Read
         // live from the checkbox so the current state travels; the host attaches console logs only when true.
         ...(callbacks.consoleAttachToggle ? { attachConsole: !!(shadowRoot.getElementById('klavity-conlog-cb') as HTMLInputElement | null)?.checked } : {}),

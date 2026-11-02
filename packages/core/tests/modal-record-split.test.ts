@@ -4,7 +4,7 @@
 // ticket per ticked issue (issue #1 keeps the video). 0/1 issues, "Keep as one ticket" or no callback → the
 // classic single-ticket submit.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { buildModal, formatSplitSpan, buildSplitDescription, type SplitIssueLike } from '../src/modal'
+import { buildModal, formatSplitSpan, buildSplitDescription, splitIssueBody, renderDraftToWhatsApp, type SplitIssueLike } from '../src/modal'
 import type { ReportRecording } from '../src/types'
 
 beforeEach(() => { document.body.innerHTML = '' })
@@ -132,5 +132,35 @@ describe('buildModal Record-me split', () => {
     await flush()
     expect(q(ctrl, '#klavity-split')).toBeNull()
     ctrl.close()
+  })
+
+  it('cards with an Enhance draft render the Enhance layout and each ticket carries its own severity/priority', async () => {
+    const drafted: SplitIssueLike[] = [
+      { title: 'Dashboard count wrong', description: 'x', kind: 'bug', actualResult: 'Count shows 0.', expectedResult: 'Count matches the list.',
+        stepsToReproduce: ['Open the ticket dashboard'], suggestedSeverity: 'C2', suggestedPriority: 'P2' },
+      { title: 'List filter broken', description: 'y', kind: 'bug', actualResult: 'Filter does nothing.', expectedResult: 'List is filtered.',
+        stepsToReproduce: ['Open the list page', 'Apply a filter'], suggestedSeverity: 'C3', suggestedPriority: 'P3' },
+    ]
+    const { ctrl, onSubmit } = await openWithRecording(drafted)
+    const body0 = (ctrl.shadowRoot.querySelectorAll('.kl-split-desc')[0] as HTMLTextAreaElement).value
+    expect(body0).toBe(renderDraftToWhatsApp({ summary: 'Dashboard count wrong', actualResult: 'Count shows 0.', expectedResult: 'Count matches the list.',
+      stepsToReproduce: ['Open the ticket dashboard'], suggestedSeverity: 'C2', suggestedPriority: 'P2' }))
+    expect(body0).toContain('*Actual:* Count shows 0.')
+    expect(body0).toContain('*Steps to reproduce:*\n1. Open the ticket dashboard')
+    ;(q(ctrl, '#klavity-submit') as HTMLButtonElement).click()
+    await flush()
+    const [first] = onSubmit.mock.calls[0] as any[]
+    const [second] = onSubmit.mock.calls[1] as any[]
+    expect(first.description).toBe(body0)
+    expect(first.suggestedSeverity).toBe('C2')
+    expect(first.suggestedPriority).toBe('P2')
+    expect(second.description).toContain('*Expected:* List is filtered.')
+    expect(second.suggestedSeverity).toBe('C3')
+    expect(second.suggestedPriority).toBe('P3')
+    ctrl.close()
+  })
+
+  it('splitIssueBody falls back to the plain description without a draft', () => {
+    expect(splitIssueBody({ title: 'T', description: '  plain  ' })).toBe('plain')
   })
 })
