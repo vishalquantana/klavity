@@ -54,7 +54,7 @@ test("KLA-513: detail picker defaults missing priority to medium (not urgent)", 
   expect(HTML).toContain('const curPri = t.priority || "medium"')
 })
 test("KLA-513: triage row select uses the same medium default", () => {
-  expect(HTML).toContain('s===(t.priority||"medium")')
+  expect(HTML).toContain('s === (t.priority || "medium")')
 })
 
 // ── KLAVITYKLA-514 · per-view header ───────────────────────────────────────────
@@ -64,7 +64,7 @@ test("KLA-514: greeting is scoped per view (applyViewHeader)", () => {
   // render() defers to the current view instead of hard-coding the greeting
   expect(HTML).toContain('applyViewHeader(document.body.getAttribute("data-view") || "overview")')
   // setView() re-titles on navigation
-  expect(HTML).toContain("if(typeof applyViewHeader==='function')applyViewHeader(v);")
+  expect(HTML).toContain("if (typeof applyViewHeader === 'function') applyViewHeader(v);")
 })
 
 // ── KLAVITYKLA-515 · merge always available ────────────────────────────────────
