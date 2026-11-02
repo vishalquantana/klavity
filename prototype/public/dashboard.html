@@ -14628,6 +14628,78 @@
       margin-top: 2px
     }
 
+    /* From a call (design): lead line, dashed drop zone, Browse files. Transcript text files only for now. */
+    .sm-note.sm-call-lead {
+      text-align: center;
+      max-width: none;
+      margin: 0 0 12px;
+      font-size: 12px
+    }
+
+    .sm-drop {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-height: 150px;
+      padding: 22px 16px;
+      border: 1.5px dashed var(--line);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--paper-faint) 4%, transparent);
+      text-align: center;
+      transition: border-color .15s, background .15s
+    }
+
+    .sm-drop.over {
+      border-color: var(--indigo);
+      background: color-mix(in srgb, var(--indigo) 8%, transparent)
+    }
+
+    .sm-drop.has-file {
+      border-style: solid
+    }
+
+    .sm-drop-ic {
+      color: var(--paper-faint);
+      margin-bottom: 6px
+    }
+
+    .sm-drop-t {
+      font-size: 13px;
+      font-weight: 600
+    }
+
+    .sm-drop-s {
+      font-size: 11.5px;
+      color: var(--paper-faint);
+      overflow-wrap: anywhere
+    }
+
+    .sm-drop-btn {
+      margin-top: 10px;
+      cursor: pointer
+    }
+
+    .sm-paste-link {
+      display: block;
+      margin: 10px auto 0;
+      border: 0;
+      background: none;
+      font: inherit;
+      font-size: 12px;
+      color: var(--indigo);
+      cursor: pointer
+    }
+
+    #smTx {
+      margin: 10px auto 0
+    }
+
+    #smTx[hidden] {
+      display: none
+    }
+
     .sm-file {
       cursor: pointer;
       display: inline-flex;
@@ -34375,15 +34447,26 @@
         <button class="btn btn-indigo sm-site-go" id="smUrlGo">Analyse &amp; suggest Sims →</button>
       </div>
       <div class="sm-pane" data-pane="call">
-        <textarea class="sm-ta" id="smTx"
-          placeholder="Paste a sales or support call — 2–3 minutes of dialogue works best. Or upload a transcript file."></textarea>
-        <div class="sm-call-actions">
-          <label class="sm-file btn btn-ghost btn-sm" for="smFile" id="smFileLbl">Upload transcript
+        <p class="sm-note sm-call-lead">Upload a sales call, user interview, or support transcript. Klavity extracts a Sim from the real person’s behaviour.</p>
+        <div class="sm-drop" id="smDrop" role="group" aria-label="Transcript file">
+          <svg xmlns="http://www.w3.org/2000/svg" class="sm-drop-ic" width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 19v3" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <rect x="9" y="2" width="6" height="13" rx="3" />
+          </svg>
+          <div class="sm-drop-t" id="smDropT">Drop a transcript file</div>
+          <div class="sm-drop-s" id="smDropS">TXT, VTT or SRT</div>
+          <label class="sm-drop-btn btn btn-ghost btn-sm" for="smFile" id="smBrowse">Browse files
             <input id="smFile" type="file" accept=".txt,.vtt,.srt,text/plain" hidden /></label>
+        </div>
+        <button type="button" class="sm-paste-link" id="smPasteToggle">or paste a transcript instead</button>
+        <textarea class="sm-ta" id="smTx" hidden
+          placeholder="Paste a sales or support call — 2–3 minutes of dialogue works best."></textarea>
+        <div class="sm-call-actions">
           <button class="btn btn-indigo" id="smTxGo">Extract Sims →</button>
         </div>
-        <p class="sm-note lft">Most realistic — Sims quote the call. Drop in a <b>.txt</b>, <b>.vtt</b> or <b>.srt</b>
-          transcript, or paste it. Names &amp; quotes stay private to this project.</p>
+        <p class="sm-note lft">Most realistic — Sims quote the call. Names &amp; quotes stay private to this project.</p>
       </div>
       <div class="sm-pane" data-pane="preset">
         <p class="sm-note">A ready-made cast of QA reviewer Sims — grammar, UI alignment, colour &amp; branding,
@@ -34631,7 +34714,11 @@
             }
             async function genCall() {
               clearFieldErr();
-              const v = $("smTx").value.trim(); if (v.length < 20) { fieldErr($("smTx"), "Paste a bit more of the call (a few lines)."); return; }
+              const v = $("smTx").value.trim();
+              if (v.length < 20) {
+                if ($("smTx").hidden && !v) { fieldErr($("smPasteToggle"), "Drop or browse a transcript file, or paste the call."); return; }
+                $("smTx").hidden = false; fieldErr($("smTx"), "Paste a bit more of the call (a few lines)."); return;
+              }
               think("Reading the call, pulling out who’s who…");
               lastSimSource = PANE_TO_SOURCE["call"] || "transcript";
               try { const d = await postJSON("/api/extract", { transcript: v }); showSims(d.personas || []); }
@@ -34907,14 +34994,32 @@
               }
               return out.join("\n");
             }
-            const smFile = $("smFile");
-            if (smFile) smFile.addEventListener("change", (e) => {
-              const f = e.target.files && e.target.files[0]; if (!f) return;
+            // From a call: a dropped / browsed transcript file fills the (hidden-by-default) transcript box, and the drop zone says what loaded.
+            function loadTranscriptFile(f) {
+              const smFile = $("smFile");
+              if (!f) return;
+              if (!/\.(txt|vtt|srt)$/i.test(f.name) && !/^text\//.test(f.type || "")) { fail("Use a .txt, .vtt or .srt transcript — or paste it instead."); return; }
               const rd = new FileReader();
-              rd.onload = () => { let txt = String(rd.result || ""); try { txt = parseTranscriptFile(f.name, txt); } catch (err) { } $("smTx").value = txt; smFile.value = ""; $("smTx").focus(); };
-              rd.onerror = () => { fail("Couldn't read that file — try pasting the transcript instead."); smFile.value = ""; };
+              rd.onload = () => {
+                let txt = String(rd.result || ""); try { txt = parseTranscriptFile(f.name, txt); } catch (err) { }
+                $("smTx").value = txt; if (smFile) smFile.value = "";
+                clearFieldErr(); out.innerHTML = "";
+                $("smDrop").classList.add("has-file");
+                $("smDropT").textContent = f.name;
+                $("smDropS").textContent = txt.length.toLocaleString() + " characters ready — click Extract Sims";
+              };
+              rd.onerror = () => { fail("Couldn't read that file — try pasting the transcript instead."); if (smFile) smFile.value = ""; };
               rd.readAsText(f);
-            });
+            }
+            const smFile = $("smFile");
+            if (smFile) smFile.addEventListener("change", (e) => loadTranscriptFile(e.target.files && e.target.files[0]));
+            const smDrop = $("smDrop");
+            if (smDrop) {
+              ["dragenter", "dragover"].forEach((ev) => smDrop.addEventListener(ev, (e) => { e.preventDefault(); smDrop.classList.add("over"); }));
+              ["dragleave", "dragend"].forEach((ev) => smDrop.addEventListener(ev, () => smDrop.classList.remove("over")));
+              smDrop.addEventListener("drop", (e) => { e.preventDefault(); smDrop.classList.remove("over"); loadTranscriptFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]); });
+            }
+            $("smPasteToggle").onclick = () => { const t = $("smTx"); t.hidden = !t.hidden; if (!t.hidden) t.focus(); };
             $("smBrief").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); goToName(); } });
             $("smUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); genSite(); } });
 
@@ -34949,7 +35054,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep"); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = "";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep"); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";

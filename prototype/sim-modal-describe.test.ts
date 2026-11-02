@@ -70,3 +70,21 @@ test("Add a Sim popup follows the design: 580px wide, users icon, lead line abov
   expect(DASH.indexOf('class="sm-field url sm-url-wrap"')).toBeLessThan(DASH.indexOf('class="btn btn-indigo sm-site-go" id="smUrlGo"'))
   expect(DASH).toContain('<path d="M16 3.13a4 4 0 0 1 0 7.75" />')   // lucide "users" header icon
 })
+
+test("From a call is a drop zone (drag-drop + Browse files) for .txt/.vtt/.srt; pasting is still available behind a link", () => {
+  expect(DASH).toContain('class="sm-drop" id="smDrop"')
+  expect(DASH).toContain('Drop a transcript file')
+  expect(DASH).toContain('accept=".txt,.vtt,.srt,text/plain"')
+  expect(DASH).toContain('Upload a sales call, user interview, or support transcript.')
+  const l = block(DASH, "function loadTranscriptFile(f)", 1400)
+  expect(l).toContain("parseTranscriptFile(f.name, txt)")      // .vtt/.srt cue stripping still applies
+  expect(l).toContain('$("smTx").value = txt')                   // feeds the existing Extract flow
+  expect(DASH).toContain('smDrop.addEventListener("drop"')
+  expect(DASH).toContain('$("smPasteToggle").onclick')
+  expect(DASH).toContain("#smTx[hidden]")                        // .sm-ta display:block must not defeat `hidden`
+})
+
+test("Extract Sims with nothing loaded says what to do (the hidden paste box can't show an inline error)", () => {
+  const g = block(DASH, "async function genCall()", 700)
+  expect(g).toContain("Drop or browse a transcript file, or paste the call.")
+})
