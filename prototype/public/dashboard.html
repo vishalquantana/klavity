@@ -23498,8 +23498,8 @@
           }
 
           // ── Sim picker: choose which Sims a URL preview runs ────────────────────────────
-          // With 0–1 Sims there is nothing to choose, so Run Sims just runs. With 2+, the first click opens the picker; once it is open at
-          // least one Sim must be ticked, and the run is limited to the ticked Sims (the server validates the ids again).
+          // With 0–1 Sims there is nothing to choose, so Run Sims just runs. With 2+ Sims the picker appears as soon as a URL is entered,
+          // and Run Sims stays disabled until at least one Sim is ticked; the run is limited to the ticked Sims (the server validates the ids again).
           var _supPick = { pid: null, open: false, selected: new Set(), q: "" }
 
           // Pure: what a "Run Sims" click should do. sims = [{id}], selected = Set of ids, open = picker already showing.
@@ -23563,11 +23563,31 @@
               }
               const m = document.getElementById("supMsg"); if (m && _supPick.selected.size) m.textContent = ""
               supPickPaint()
+              supPickRefresh()
             }
             host.oninput = function (ev) {
               if (ev.target && ev.target.id === "supPickSearch") { _supPick.q = ev.target.value; supPickPaint() }
             }
             supPickPaint()
+          }
+
+          // Show the picker once a URL is typed (2+ Sims) and keep Run Sims disabled until a Sim is ticked. Safe to call any time.
+          function supPickRefresh() {
+            const runBtn = document.getElementById("supRunBtn")
+            const urlInput = document.getElementById("supUrlInput")
+            if (!runBtn || !urlInput) return
+            const pid = curProjId()
+            if (pid) supPickSync(pid)
+            const multi = supPickSims().length >= 2
+            const hasUrl = !!(urlInput.value || "").trim()
+            const host = document.getElementById("supPicker")
+            const wantOpen = multi && hasUrl
+            if (wantOpen && (!_supPick.open || (host && host.hidden))) { _supPick.open = true; supPickRender() }
+            else if (!wantOpen && (_supPick.open || (host && !host.hidden))) { _supPick.open = false; supPickRender() }
+            const spinning = document.getElementById("supSpinner")?.classList.contains("show")
+            const needPick = multi && (!hasUrl || _supPick.selected.size === 0)
+            runBtn.disabled = !!spinning || needPick
+            runBtn.title = needPick && hasUrl ? "Select at least one Sim to run." : ""
           }
 
           // ── URL preview with real Sims ───────────────────────────────────────────────
@@ -23581,7 +23601,7 @@
             if (!pvUrl) { $("supMsg").textContent = "Enter a URL first."; urlInput?.focus(); return }
             if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
 
-            // Sim picker: with 2+ Sims the first click opens the picker; then at least one Sim must be ticked.
+            // Sim picker: with 2+ Sims at least one Sim must be ticked (Run Sims is disabled until then; this guards Enter-key runs).
             supPickSync(pid)
             const pick = supPickDecide(supPickSims(), _supPick.selected, _supPick.open)
             if (pick.action !== "run") {
@@ -23668,11 +23688,17 @@
               if (gotResponse) console.error("[sim-preview] could not render results", e)
               $("supMsg").textContent = gotResponse ? "The run finished, but the results couldn't be displayed. Reload the page to see them in Sim Reports." : "Network error — check your connection and try again."
             }
+            finally {
+              supPickRefresh() // re-apply "disabled until a Sim is ticked" after the run (the paths above re-enable the button)
+            }
           }
           // Allow pressing Enter in the URL input to trigger the run
           document.addEventListener("DOMContentLoaded", function () {
             const inp = document.getElementById("supUrlInput")
-            if (inp) inp.addEventListener("keydown", function (e) { if (e.key === "Enter") runSimUrlPreview() })
+            if (inp) {
+              inp.addEventListener("keydown", function (e) { if (e.key === "Enter") runSimUrlPreview() })
+              inp.addEventListener("input", supPickRefresh)
+            }
           })
 
           function renderMembers(admin) {

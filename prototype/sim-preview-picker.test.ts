@@ -106,3 +106,15 @@ test("URL preview renders sentiment with helpers that exist, and a display failu
   expect(body).toContain("gotResponse ? ")                     // catch distinguishes display failure from network failure
   expect(DASH).not.toMatch(/normSentiment\(/)
 })
+
+// ── picker appears once a URL is entered; Run Sims disabled until a Sim is ticked ─────────────────────────────────────
+test("picker shows when a URL is typed (2+ Sims) and Run Sims is disabled until a Sim is ticked", () => {
+  const refresh = fn(DASH, "function supPickRefresh(")
+  expect(refresh).toContain("multi && hasUrl")                            // picker opens as soon as there is a URL and 2+ Sims
+  expect(refresh).toContain("_supPick.selected.size === 0")               // nothing ticked => disabled
+  expect(refresh).toContain("runBtn.disabled = !!spinning || needPick")
+  expect(DASH).toContain('inp.addEventListener("input", supPickRefresh)') // typing in the URL box drives it
+  const run = fn(DASH, "async function runSimUrlPreview(")
+  expect(run).toContain("finally {")                                      // button state re-applied after a run
+  expect(run).toContain("supPickRefresh()")
+})
