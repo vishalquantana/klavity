@@ -91,7 +91,7 @@ test("picker open with Sims ticked: runs exactly those, in list order; stale ids
 })
 
 test("the request carries simIds only when the picker chose them", () => {
-  expect(DASH).toContain("pick.simIds ? { url: pvUrl, projectId: pid, simIds: pick.simIds } : { url: pvUrl, projectId: pid }")
+  expect(DASH).toContain("pick.simIds ? { url: pvUrl, projectId: pid, env: env, simIds: pick.simIds } : { url: pvUrl, projectId: pid, env: env }")
 })
 
 test("picker markup: search, Select all, selected count, per-Sim checkboxes", () => {

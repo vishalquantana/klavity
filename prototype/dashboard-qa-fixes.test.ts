@@ -54,7 +54,7 @@ test("KLA-513: detail picker defaults missing priority to medium (not urgent)", 
   expect(HTML).toContain('const curPri = t.priority || "medium"')
 })
 test("KLA-513: triage row select uses the same medium default", () => {
-  expect(HTML).toContain('s===(t.priority||"medium")')
+  expect(HTML).toContain('s === (t.priority || "medium")')
 })
 
 // ── KLAVITYKLA-514 · per-view header ───────────────────────────────────────────
@@ -64,7 +64,7 @@ test("KLA-514: greeting is scoped per view (applyViewHeader)", () => {
   // render() defers to the current view instead of hard-coding the greeting
   expect(HTML).toContain('applyViewHeader(document.body.getAttribute("data-view") || "overview")')
   // setView() re-titles on navigation
-  expect(HTML).toContain("if(typeof applyViewHeader==='function')applyViewHeader(v);")
+  expect(HTML).toContain("if (typeof applyViewHeader === 'function') applyViewHeader(v);")
 })
 
 // ── KLAVITYKLA-515 · merge always available ────────────────────────────────────
@@ -145,3 +145,38 @@ test("#743: annotate modal shows a spinner (never a blank canvas) until the imag
   expect(HTML).toContain("annotator.baseImg = ready; annotator.redraw()")
   expect(HTML).toContain(".evann-spinner{")
 })
+
+// ── Sim is ready popup outside click guard ──────────────────────────────────────
+test("Sim is ready popup remains open when clicking outside its boundaries", () => {
+  const i = HTML.indexOf('ov.addEventListener("mousedown"')
+  expect(i).toBeGreaterThan(-1)
+  const region = HTML.slice(i, i + 600)
+  expect(region).toContain("if (simSuccessShown()) return")
+  expect(region).toContain("requestClose()")
+  expect(HTML).toContain("isOutsideModal(e)")
+  expect(HTML).toContain('ov.addEventListener("pointerdown"')
+  expect(HTML).toContain('ov.addEventListener("click"')
+  // Esc key does not close when simSuccessShown
+  const escIdx = HTML.indexOf('if (e.key !== "Escape" || !ov.classList.contains("show"))')
+  expect(escIdx).toBeGreaterThan(-1)
+  const escRegion = HTML.slice(escIdx, escIdx + 300)
+  expect(escRegion).toContain("if (simSuccessShown()) return")
+})
+
+// ── Sims view · Run Sims on URL with dev environment support ───────────────────
+test("Sims preview: URL preview card sits at the top of Sims tab with dev environment options", () => {
+  const previewIdx = HTML.indexOf('id="simUrlPreviewCard"')
+  const heroIdx = HTML.indexOf('class="card full sims-hero"')
+  expect(previewIdx).toBeGreaterThan(-1)
+  expect(heroIdx).toBeGreaterThan(-1)
+  // preview card is positioned before the hero list of Sims
+  expect(previewIdx).toBeLessThan(heroIdx)
+
+  // Dev options & environment selection
+  expect(HTML).toContain('id="supEnvSelect"')
+  expect(HTML).toContain('id="supDevGuide"')
+  expect(HTML).toContain('id="supRunDevBtn"')
+  expect(HTML).toContain("toggleSupDevGuide")
+  expect(HTML).toContain("selectAndFocusDev")
+})
+

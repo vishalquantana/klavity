@@ -92,7 +92,7 @@ test("Extract Sims with nothing loaded says what to do (the hidden paste box can
 test("Adding a Sim shows the design's 'Sim created!' popup view, then closes itself (reloading the list); the old 'put them to work' panel is never shown", () => {
   expect(DASH).toContain('id="smCreatedT">Sim created!</h2>')
   expect(DASH).toContain("It will appear in your Sims list shortly.")
-  const f = block(DASH, "function showSuccessPanel(addedName, addedCount, merged)", 1800)
+  const f = block(DASH, "function showSuccessPanel(addedName, addedCount, merged, simId)", 1800)
   expect(f).toContain('ov.classList.add("sm-modal-created")')
   expect(f).toContain("createdTimer = setTimeout(")
   expect(f).toContain("close()")

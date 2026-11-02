@@ -87,7 +87,8 @@ test("once a Sim was added (success panel showing) or the dialog is closed, ther
 // ── wiring ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test("✕, backdrop, Escape and browser Back all go through the same check; the page warns on unload while unsaved", () => {
   expect(HTML).toContain('$("simClose").onclick = function () { requestClose(); };')
-  expect(HTML).toContain("ov.addEventListener(\"mousedown\", (e) => { if (e.target === ov) requestClose(); });")
+  expect(HTML).toContain("if (isOutsideModal(e)) {")
+  expect(HTML).toContain("if (simSuccessShown()) return;")
   expect(HTML).toContain("if (discardOpen()) { hideDiscard(); return; }")
   expect(HTML).toContain("else if (ov.classList.contains(\"show\")) { requestClose(true); }")
   expect(HTML).toContain('window.addEventListener("beforeunload", (e) => { if (simDirty()) { e.preventDefault(); e.returnValue = ""; } });')

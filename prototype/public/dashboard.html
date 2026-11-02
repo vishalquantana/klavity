@@ -1936,11 +1936,16 @@
     }
 
     @keyframes kconfirm-fade {
-      from { opacity: 0 }
+      from {
+        opacity: 0
+      }
     }
 
     @keyframes kconfirm-pop {
-      from { opacity: 0; transform: translateY(6px) scale(.98) }
+      from {
+        opacity: 0;
+        transform: translateY(6px) scale(.98)
+      }
     }
 
     /* Phones: tighter gutters, and the actions stack full-width with the destructive one on top
@@ -1979,6 +1984,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
+
       .modal-bg.kconfirm-bg,
       .modal.kconfirm {
         animation: none
@@ -6550,6 +6556,184 @@
       padding: 10px 4px;
       font-size: 12.5px;
       color: var(--paper-faint)
+    }
+
+    .sup-hd-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap
+    }
+
+    .sup-env-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 3px 8px
+    }
+
+    .sup-env-lbl {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper-faint);
+      text-transform: uppercase;
+      letter-spacing: .04em
+    }
+
+    .sup-select {
+      appearance: none;
+      background: transparent;
+      border: none;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding-right: 18px;
+      outline: none;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 2px center
+    }
+
+    .sup-select option {
+      background: var(--ink-2);
+      color: var(--paper)
+    }
+
+    .sup-dev-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--indigo);
+      background: rgba(99, 102, 241, .1);
+      padding: 2px 7px;
+      border-radius: 5px;
+      margin-bottom: 6px
+    }
+
+    .sup-dev-guide {
+      display: none;
+      margin-top: 14px;
+      padding: 16px 18px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      animation: smfade .2s ease
+    }
+
+    .sup-dev-guide.show {
+      display: block
+    }
+
+    .sup-dev-guide-hd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--paper);
+      margin-bottom: 12px
+    }
+
+    .sup-dev-close {
+      margin-left: auto;
+      background: transparent;
+      border: none;
+      color: var(--paper-faint);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1
+    }
+
+    .sup-dev-close:hover {
+      color: var(--paper);
+      background: var(--line)
+    }
+
+    .sup-dev-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px
+    }
+
+    .sup-dev-card {
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px
+    }
+
+    .sup-dev-card h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--paper);
+      margin: 0
+    }
+
+    .sup-dev-card p {
+      font-size: 12px;
+      color: var(--paper-dim);
+      margin: 0;
+      line-height: 1.45;
+      flex: 1
+    }
+
+    .sup-dev-card code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: rgba(255, 255, 255, .06);
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: var(--paper)
+    }
+
+    .sup-dev-card .btn {
+      align-self: flex-start;
+      margin-top: 4px
+    }
+
+    .sup-env-chip {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 5px;
+      margin-left: 6px
+    }
+
+    .sup-env-chip.development,
+    .sup-env-chip.dev {
+      background: rgba(99, 102, 241, .15);
+      color: var(--indigo);
+      border: 1px solid rgba(99, 102, 241, .3)
+    }
+
+    .sup-env-chip.staging {
+      background: rgba(245, 158, 11, .15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, .3)
+    }
+
+    .sup-env-chip.production,
+    .sup-env-chip.prod {
+      background: rgba(16, 185, 129, .15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, .3)
     }
 
     .sup-msg {
@@ -14393,6 +14577,103 @@
       margin-bottom: 11px
     }
 
+    .sm-sim-edit-box {
+      margin-bottom: 12px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    .sm-sim.is-editing .sm-sim-view {
+      display: none
+    }
+
+    .sm-sim.is-editing .sm-sim-edit-box {
+      display: flex !important
+    }
+
+    .sm-edit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px
+    }
+
+    .sm-edit-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px
+    }
+
+    .sm-edit-field.full {
+      grid-column: 1 / -1
+    }
+
+    .sm-edit-lbl {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--paper-faint)
+    }
+
+    .sm-edit-input {
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-family: var(--body);
+      font-size: 13px;
+      color: var(--paper);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+      width: 100%;
+      box-sizing: border-box
+    }
+
+    .sm-edit-input:focus {
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--indigo) 18%, transparent)
+    }
+
+    .sm-edit-input.sm-edit-summary {
+      font-size: 12px;
+      line-height: 1.45;
+      resize: vertical;
+      min-height: 52px
+    }
+
+    .sm-edit-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px
+    }
+
+    .sm-manual-opt {
+      text-align: center;
+      margin-top: 13px
+    }
+
+    .sm-manual-btn {
+      font-size: 12px;
+      color: var(--paper-faint);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 4px 8px;
+      font-family: var(--body);
+      transition: color .15s
+    }
+
+    .sm-manual-btn:hover {
+      color: var(--indigo)
+    }
+
     .sm-ins {
       display: flex;
       flex-direction: column;
@@ -18301,23 +18582,91 @@
           </div>
         </div>
 
-        <!-- Sims tab: paste-URL preview — run the project's real Sims on any public URL, results persisted -->
+        <!-- Sims tab: paste-URL preview — run the project's real Sims on any URL, results persisted (placed at top of Sims tab) -->
         <div class="card full sup-card" id="simUrlPreviewCard" data-view="sims">
           <div class="sup-hd">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            Preview a URL with your Sims
+            <div style="display:flex;align-items:center;gap:8px">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <span>Preview a URL with your Sims</span>
+            </div>
+            <div class="sup-hd-actions">
+              <div class="sup-env-wrap" title="Specify target environment">
+                <span class="sup-env-lbl">Environment:</span>
+                <select id="supEnvSelect" class="sup-select" onchange="onSupEnvChange(this.value)"
+                  aria-label="Select environment">
+                  <option value="development" selected>Development</option>
+                  <option value="staging">Staging</option>
+                  <option value="production">Production</option>
+                  <option value="local">Local (localhost)</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-ghost btn-xs sup-dev-guide-btn" id="supDevGuideToggle"
+                onclick="toggleSupDevGuide()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                  style="margin-right:4px">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                Dev Guide
+              </button>
+            </div>
           </div>
           <div class="sup-row">
-            <input id="supUrlInput" type="url" placeholder="https://your-product.com/pricing" autocomplete="off"
-              spellcheck="false" />
+            <input id="supUrlInput" type="url" placeholder="https://dev.yourproduct.com/pricing or tunnel URL"
+              autocomplete="off" spellcheck="false" />
             <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
+            <button id="supRunDevBtn" class="btn btn-ghost btn-sm" type="button" onclick="selectAndFocusDev()"
+              title="Run this URL in development environment">Run in Dev →</button>
           </div>
           <div id="supPicker" class="sup-picker" hidden></div>
           <div id="supMsg" class="sup-msg"></div>
+
+          <!-- Development Environment Guide -->
+          <div id="supDevGuide" class="sup-dev-guide">
+            <div class="sup-dev-guide-hd">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 18l6-6-6-6" />
+                <path d="M8 6l-6 6 6 6" />
+              </svg>
+              <strong>Running Sims in a Development Environment</strong>
+              <button type="button" class="sup-dev-close" onclick="toggleSupDevGuide(false)"
+                aria-label="Close dev guide">✕</button>
+            </div>
+            <div class="sup-dev-grid">
+              <div class="sup-dev-card">
+                <div class="sup-dev-badge">Option 1 · Localhost (Recommended)</div>
+                <h4>Klavity Chrome Extension</h4>
+                <p>Cloud servers cannot reach <code>localhost</code> directly. Open your local dev app in Chrome and
+                  click <b>Ask Sims to review this</b> in the Klavity extension — Sims react directly to your active
+                  local tab.</p>
+                <a class="btn btn-ghost btn-xs"
+                  href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank"
+                  rel="noopener">Get Extension →</a>
+              </div>
+              <div class="sup-dev-card">
+                <div class="sup-dev-badge">Option 2 · Public Dev Tunnel</div>
+                <h4>Forward with ngrok / localtunnel</h4>
+                <p>Forward your local dev port using a tunnel like <code>npx localtunnel --port 3000</code> or
+                  <code>ngrok http 3000</code>, then paste the generated HTTPS URL above to run Sims from this
+                  dashboard.</p>
+              </div>
+              <div class="sup-dev-card">
+                <div class="sup-dev-badge">Option 3 · Hosted Dev / Staging</div>
+                <h4>Hosted Development Server</h4>
+                <p>If your dev environment is on a hosted URL (e.g. <code>https://dev.yourapp.com</code>), select
+                  <b>Development</b> in the dropdown and click <b>Run Sims</b>.</p>
+              </div>
+            </div>
+          </div>
+
           <div id="supSpinner" class="sup-spinner">
             <div class="sup-spin"></div>
             <span id="supSpinMsg">Your Sims are opening the page…</span>
@@ -21679,7 +22028,7 @@
             return `<div class="kdd tg-pri-kdd" data-kdd="priority">
         <button type="button" class="kdd-btn tg-pri-btn" aria-haspopup="menu" aria-expanded="false" aria-label="Priority"><span class="prop-sq dp-${esc(curPri)}"></span><span class="kdd-txt">${esc(priLabels[curPri] || curPri)}</span><svg class="kdd-caret" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
         <div class="kdd-menu hide" role="menu" aria-label="Priority">${opts.map(s => `<button type="button" class="kdd-item kdd-pri-${s}" role="menuitemradio" aria-checked="${s === curPri}" data-val="${s}"><span class="prop-sq dp-${s}"></span><span class="kdd-txt">${priLabels[s]}</span></button>`).join("")}</div>
-        <select class="tg-pri kdd-native" aria-label="Priority" tabindex="-1">${opts.map(s => `<option value="${s}"${s===(t.priority||"medium") ? " selected" : ""}>${priLabels[s]}</option>`).join("")}</select>
+        <select class="tg-pri kdd-native" aria-label="Priority" tabindex="-1">${opts.map(s => `<option value="${s}"${s === (t.priority || "medium") ? " selected" : ""}>${priLabels[s]}</option>`).join("")}</select>
       </div>`
           }
           // Sim Reports source helper: distinguish Sim vs AutoSim origins safely
@@ -21697,11 +22046,19 @@
             }
             return null
           }
+    // A finding raised by the system-provided Baseline QA Sim (sim_source='baseline') is classified "Baseline QA", distinct from
+    // customer-specific Sims. The ticket payload carries simSource; triage rows only carry simId, so fall back to the loaded Sim list.
+    function isBaselineQaFinding(t) {
+      if (!t) return false
+      if (t.simSource) return t.simSource === "baseline"
+      const sim = t.simId ? ((state && state.sims) || []).find(x => x.id === t.simId) : null
+      return !!(sim && sim.simSource === "baseline")
+    }
           function tgSourceBadgeHtml(t) {
             const k = tgSourceKind(t)
             if (!k) return ""
             const isAuto = k === "autosim"
-            const label = isAuto ? "AutoSim" : "Sim"
+      const label = isAuto ? "AutoSim" : (isBaselineQaFinding(t) ? "Baseline QA" : "Sim")
             const icon = isAuto ? kicon('zap', { size: 11 }) : kicon('bot', { size: 11 })
             return `<span class="tg-src-badge tg-src-${k}" data-source="${k}" title="Source: ${label}">${icon}<span>${label}</span></span>`
           }
@@ -23630,7 +23987,7 @@
       <a class="sim" href="${esc(href)}">
         <div class="av" style="background:${safeAccent(s.accent, col(s.name))}">${esc(s.initials || initials(s.name))}</div>
         <div class="body">
-          <div class="name">${esc(s.name)}${s.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}</div>
+          <div class="name">${esc(s.name)}${s.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}${s.simSource === "baseline" ? '<span class="sim-global-badge" title="System-provided QA preset — not a customer">System preset</span>' : ''}</div>
           <div class="role">${esc(s.role || "")}</div>
           <div class="la">${s.lastActiveAt ? ("active " + ago(s.lastActiveAt)) : (s.insightsCount + " insight" + (s.insightsCount === 1 ? "" : "s"))}</div>
         </div>
@@ -23779,7 +24136,7 @@
       <a class="sf-hd" href="${esc(href)}">
         <div class="av" style="background:${safeAccent(sim.accent, col(sim.name))}">${esc(sim.initials || initials(sim.name))}</div>
         <div class="body">
-          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}</div>
+          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}${sim.simSource === "baseline" ? '<span class="sim-global-badge" title="System-provided QA preset — not a customer">System preset</span>' : ''}</div>
           <div class="role">${esc(sim.role || "")}</div>
         </div>
         <span class="sf-badge">${badge}</span>
@@ -23927,13 +24284,52 @@
           // ── URL preview with real Sims ───────────────────────────────────────────────
           // Calls POST /api/sim/preview with projectId (authenticated branch) so the project's
           // real Sims run on the pasted URL and reactions are persisted to the feedback table.
-          async function runSimUrlPreview() {
+    function toggleSupDevGuide(force) {
+      const g = $("supDevGuide")
+      if (!g) return
+      if (typeof force === "boolean") g.classList.toggle("show", force)
+      else g.classList.toggle("show")
+    }
+    window.toggleSupDevGuide = toggleSupDevGuide
+
+    function onSupEnvChange(val) {
+      const inp = document.getElementById("supUrlInput")
+      if (!inp) return
+      if (val === "local") {
+        toggleSupDevGuide(true)
+        if (!inp.value || inp.value.includes("your-product.com")) inp.placeholder = "http://localhost:3000 or tunnel URL"
+      } else if (val === "development") {
+        if (!inp.value || inp.value.includes("your-product.com")) inp.placeholder = "https://dev.yourproduct.com/pricing or tunnel URL"
+      } else if (val === "staging") {
+        if (!inp.value || inp.value.includes("your-product.com")) inp.placeholder = "https://staging.yourproduct.com/pricing"
+      } else {
+        if (!inp.value || inp.value.includes("dev.")) inp.placeholder = "https://your-product.com/pricing"
+      }
+    }
+    window.onSupEnvChange = onSupEnvChange
+
+    function selectAndFocusDev() {
+      const sel = document.getElementById("supEnvSelect")
+      if (sel) { sel.value = "development"; onSupEnvChange("development"); }
+      toggleSupDevGuide(true)
+      const inp = document.getElementById("supUrlInput")
+      if (inp) {
+        inp.scrollIntoView({ behavior: "smooth", block: "center" })
+        inp.focus()
+      }
+    }
+    window.selectAndFocusDev = selectAndFocusDev
+
+    async function runSimUrlPreview(forcedEnv) {
             const pid = curProjId()
             if (!pid) { $("supMsg").textContent = "Select a project first."; return }
             const urlInput = /** @type {HTMLInputElement} */ (document.getElementById("supUrlInput"))
             let pvUrl = (urlInput?.value || "").trim()
             if (!pvUrl) { $("supMsg").textContent = "Enter a URL first."; urlInput?.focus(); return }
             if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
+
+      const envSel = /** @type {HTMLSelectElement} */ (document.getElementById("supEnvSelect"))
+      const env = forcedEnv || (envSel?.value || "development")
 
             // Sim picker: with 2+ Sims at least one Sim must be ticked (Run Sims is disabled until then; this guards Enter-key runs).
             supPickSync(pid)
@@ -23947,6 +24343,7 @@
             }
 
             const runBtn = document.getElementById("supRunBtn")
+      const runDevBtn = document.getElementById("supRunDevBtn")
             const spinner = $("supSpinner")
             const spinMsg = document.getElementById("supSpinMsg")
             const resultsEl = $("supResults")
@@ -23957,9 +24354,18 @@
             msgEl.textContent = ""
             resultsEl.innerHTML = ""
             savedEl.classList.remove("show")
+
+      // Local development URL detection: provide immediate helpful instructions instead of failed fetch
+      if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|.*\.local)(:\d+)?(\/.*)?$/i.test(pvUrl)) {
+        toggleSupDevGuide(true)
+        msgEl.innerHTML = `<span style="color:#f59e0b"><strong>Local development URL detected (${esc(pvUrl)}):</strong> Cloud runners cannot connect to <code>localhost</code> directly. Use the <strong>Klavity Chrome Extension</strong> on your active tab to run Sims live, or expose a public dev tunnel via <code>npx localtunnel --port 3000</code> or <code>ngrok</code> to test here.</span>`
+        return
+      }
+
             spinner.classList.add("show")
-            if (spinMsg) spinMsg.textContent = `Your Sims are opening ${pvUrl}…`
+      if (spinMsg) spinMsg.textContent = `Your Sims are opening ${pvUrl} (${env})…`
             if (runBtn) runBtn.disabled = true
+      if (runDevBtn) runDevBtn.disabled = true
 
             let gotResponse = false // true once the server answered: any later failure is a display problem, not a network one
             try {
@@ -23967,12 +24373,13 @@
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify(pick.simIds ? { url: pvUrl, projectId: pid, simIds: pick.simIds } : { url: pvUrl, projectId: pid }),
+                body: JSON.stringify(pick.simIds ? { url: pvUrl, projectId: pid, env: env, simIds: pick.simIds } : { url: pvUrl, projectId: pid, env: env }),
               })
               const data = await res.json()
               gotResponse = true
               spinner.classList.remove("show")
               if (runBtn) runBtn.disabled = false
+        if (runDevBtn) runDevBtn.disabled = false
 
               if (!res.ok || data.error) {
                 msgEl.textContent = data.error || "Something went wrong. Try a public page."
@@ -24005,7 +24412,7 @@
         <div class="sup-sim-hd">
           <div class="av" style="background:${accent}">${inits}</div>
           <div>
-            <div class="name">${esc(rv.simName || "Sim")}</div>
+            <div class="name">${esc(rv.simName || "Sim")} <span class="sup-env-chip ${esc(env)}">${esc(env)}</span></div>
             <div class="role">${observations.length} observation${observations.length === 1 ? "" : "s"}</div>
           </div>
         </div>
@@ -24014,11 +24421,13 @@
               }).join("")
 
               if (data.persisted) {
+          savedEl.innerHTML = `Reactions saved in <b>${esc(env)}</b> environment — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs" id="supRunsLink" style="color:var(--indigo)">run history</a>.`
                 savedEl.classList.add("show")
               }
             } catch (e) {
               spinner.classList.remove("show")
               if (runBtn) runBtn.disabled = false
+              if (runDevBtn) runDevBtn.disabled = false
               if (gotResponse) console.error("[sim-preview] could not render results", e)
               $("supMsg").textContent = gotResponse ? "The run finished, but the results couldn't be displayed. Reload the page to see them in Sim Reports." : "Network error — check your connection and try again."
             }
@@ -26182,7 +26591,7 @@
                       const railCls = sevRailClass(newPri)
                       if (railCls) triageEl.classList.add(...railCls.split(" ").filter(Boolean))
                     }
-                  } catch (e) {}
+            } catch (e) { }
                   // #653: repaint the priority severity square.
                   const _sq = detailEl.querySelector(".prop-sq")
                   if (_sq) _sq.className = "prop-sq dp-" + (newPri || "medium")
@@ -29160,7 +29569,7 @@
           }
           function srcChipHtml(t) {
             const k = ticketSourceKind(t)
-            const label = k === "autosim" ? "AutoSim" : (k === "sim" ? "Sim" : (k === "manual" ? "Manual" : "Widget"))
+      const label = k === "autosim" ? "AutoSim" : (k === "sim" ? (isBaselineQaFinding(t) ? "Baseline QA" : "Sim") : (k === "manual" ? "Manual" : "Widget"))
             return `<span class="src-chip src-${k}">${label}</span>`
           }
 
@@ -34275,7 +34684,7 @@
                 normalizeSidebar();
                 document.body.setAttribute('data-view', v);
                 sidebarNavs().forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-go') === v); });
-                if(typeof applyViewHeader==='function')applyViewHeader(v);   // KLAVITYKLA-514: per-view page title
+          if (typeof applyViewHeader === 'function') applyViewHeader(v);   // KLAVITYKLA-514: per-view page title
                 if (typeof applyUpgradeWall === 'function') applyUpgradeWall();
                 // P1 deep-link loop fix: strip the ?ticket= deep-link param whenever the user leaves the tickets
                 // view. openSingleTicket() keeps re-writing ?ticket= into the URL, so without this a later reload
@@ -34469,6 +34878,10 @@
           </div>
           <p class="sm-exlead">or start from an example</p>
           <div class="sm-chips" id="smChips"></div>
+        <div class="sm-manual-opt">
+          <button type="button" class="sm-manual-btn" id="smManualBtn">or define Sim name &amp; description
+            manually</button>
+        </div>
         </div>
         <div id="smNameStep" hidden>
           <div class="sm-desc-box"><div class="sm-desc-lbl">Sim description</div><div class="sm-desc-txt" id="smDescTxt"></div></div>
@@ -34555,7 +34968,22 @@
               id="smRunViewAll">View all in Sims →</button></div>
         </div>
         <div class="sm-next-steps">
-          <p class="sm-next-lead">Or activate another way:</p>
+          <p class="sm-next-lead">Or customize &amp; activate another way:</p>
+          <!-- Edit / customize Sim profile — edit name, description, traits -->
+          <a class="sm-next-step" href="#" id="smNextEdit">
+            <div class="sm-next-step-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                <path d="m15 5 4 4" />
+              </svg></div>
+            <div class="sm-next-step-body">
+              <div class="sm-next-step-t" id="smNextEditTitle">Edit Sim name &amp; description</div>
+              <div class="sm-next-step-d" id="smNextEditDesc">Customize their name, role, description, traits, and
+                persona prompt.</div>
+            </div>
+            <span class="sm-next-step-arr" aria-hidden="true">→</span>
+          </a>
           <!-- Secondary: Chrome extension — see live reactions while browsing -->
           <a class="sm-next-step" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene"
             target="_blank" rel="noopener" id="smNextExt">
@@ -34614,6 +35042,7 @@
           </button>
         </div>
         <div class="sm-success-foot">
+          <a class="btn btn-ghost btn-sm" id="smSuccessEdit" href="#">Edit Sim profile</a>
           <button class="btn btn-ghost btn-sm" id="smSuccessBack" type="button">Add another Sim</button>
           <button class="btn btn-ghost btn-sm" id="smSuccessDash" type="button">Go to dashboard</button>
         </div>
@@ -34657,14 +35086,33 @@
               const clientTip = "Judges outcomes &amp; strategy — not individual buttons";
               const userTip = "Operates the product hands-on — reacts to UI &amp; interaction";
               return `<div class="sm-sim" data-idx="${idx}" data-simclass="${cls}">
+      <div class="sm-sim-view">
       <div class="sm-sim-top"><div class="sm-av" style="background:${acc}">${esc(s.initials || inits(s.name))}</div>
         <div><div class="sm-nm">${esc(s.name || "Sim")}</div><div class="sm-rl">${esc(s.role || "")}</div></div>
         <span class="sm-badges"><span class="sm-kind ${cls}" data-tip="${cls === "client" ? clientTip : userTip}">${cls === "client" ? "Client" : "User"}</span><span class="sm-side">${esc(side)}</span></span></div>
       ${s.summary ? `<div class="sm-sum">${esc(s.summary)}</div>` : ""}
+      </div>
+      <div class="sm-sim-edit-box" style="display:none">
+        <div class="sm-edit-grid">
+          <div class="sm-edit-field">
+            <label class="sm-edit-lbl">Name</label>
+            <input class="sm-edit-input sm-edit-name" data-sim-field="name" data-idx="${idx}" type="text" value="${esc(s.name || "Sim")}" placeholder="Sim name" />
+          </div>
+          <div class="sm-edit-field">
+            <label class="sm-edit-lbl">Role</label>
+            <input class="sm-edit-input sm-edit-role" data-sim-field="role" data-idx="${idx}" type="text" value="${esc(s.role || "")}" placeholder="Role or title" />
+          </div>
+          <div class="sm-edit-field full">
+            <label class="sm-edit-lbl">Description / Summary</label>
+            <textarea class="sm-edit-input sm-edit-summary" data-sim-field="summary" data-idx="${idx}" rows="2" placeholder="What describes this Sim and how they evaluate your product?">${esc(s.summary || "")}</textarea>
+          </div>
+        </div>
+      </div>
       ${coreHtml}
       <div class="sm-ins">${ins}</div>
       <div class="sm-class-pick"><span class="sm-class-pick-lbl">Type:</span><button class="sm-class-btn user${cls === "user" ? " on" : ""}" data-class-pick="${idx}" data-class="user" title="User — operates the product hands-on; reacts to UI &amp; interaction">User</button><button class="sm-class-btn client${cls === "client" ? " on" : ""}" data-class-pick="${idx}" data-class="client" title="Client — judges outcomes &amp; strategy, not individual buttons">Client</button></div>
       <div class="sm-foot"><button class="btn btn-indigo btn-sm" data-add="${idx}">＋ Add ${first}</button>
+        <button class="btn btn-ghost btn-sm sm-edit-toggle" data-edit-sim="${idx}" type="button">${kicon('pencil', { size: 12 })} <span class="sm-edit-btn-text">Edit</span></button>
         <button class="btn btn-ghost btn-sm" data-skip="${idx}">Skip</button><span class="grow"></span></div></div>`;
             }
             let lastSims = [];
@@ -34817,10 +35265,6 @@
             }
             // Pretty host for the run-now prompt copy ("…on acme.com?"). Never throws on junk input.
             function runNowHost(u) { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
-            // Figma design: there is no "now put them to work" panel. Adding a Sim closes the modal, a toast confirms it, and the
-            // new Sim shows at the top of the Sims list (close() reloads it). If other suggested Sims are still waiting in the
-            // list (From your site / From a call), stay open so they can be added or skipped, and close once none are left.
-            // (The old panel markup below is no longer shown.)
             // Figma design: after adding, the popup becomes a short "Sim created!" view (check, name, "It will appear in your Sims
             // list shortly.") and closes by itself; close() reloads the list so the new Sim is there. If other suggested Sims are
             // still waiting (From your site / From a call) we only toast, so they can be added or skipped, and show the view last.
@@ -34830,7 +35274,7 @@
               if (createdTimer) { clearTimeout(createdTimer); createdTimer = null; }
               ov.classList.remove("sm-modal-created"); $("smCreated").hidden = true;
             }
-            function showSuccessPanel(addedName, addedCount, merged) {
+            function showSuccessPanel(addedName, addedCount, merged, simId) {
               const many = addedCount && addedCount > 1, dup = merged && !many;
               if (out.querySelector(".sm-sim:not(.added)")) {
                 klavToast(esc(dup ? (addedName || "That Sim") + " already exists — merged into your existing one." : (addedName || "Sim") + " added."));
@@ -34941,12 +35385,39 @@
               if (activePane) activePane.click(); else out.innerHTML = "";
               setTimeout(function () { var f = $("smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 60);
             };
+      const nextEditBtn = $("smNextEdit");
+      if (nextEditBtn) {
+        nextEditBtn.onclick = function (e) {
+          e.preventDefault();
+          const h = this.getAttribute("href");
+          close();
+          if (h && h !== "#") location.href = h;
+        };
+      }
+      const successEditBtn = $("smSuccessEdit");
+      if (successEditBtn) {
+        successEditBtn.onclick = function (e) {
+          e.preventDefault();
+          const h = this.getAttribute("href");
+          close();
+          if (h && h !== "#") location.href = h;
+        };
+      }
 
             async function saveSim(s, cardEl, btn, opts) {
               const orig = btn ? btn.textContent : ""; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
               // Read the chosen simClass from the card's data-simclass attribute (may have been flipped by the picker);
               // fall back to the AI-returned simClass on the Sim object.
               const chosenClass = (cardEl && cardEl.dataset.simclass) || (simClassOf(s));
+        // Ensure any edited field values in the card inputs are synced into the Sim object before saving
+        if (cardEl) {
+          const nameInp = cardEl.querySelector(".sm-edit-name");
+          const roleInp = cardEl.querySelector(".sm-edit-role");
+          const sumInp = cardEl.querySelector(".sm-edit-summary");
+          if (nameInp && nameInp.value.trim()) s.name = nameInp.value.trim();
+          if (roleInp) s.role = roleInp.value.trim();
+          if (sumInp) s.summary = sumInp.value.trim();
+        }
               try {
                 // KLAVITYKLA-301: pass simSource so the server can stamp which Add-a-Sim path created this Sim.
                 const res = await postJSON("/api/personas" + projQ(), {
@@ -34961,10 +35432,11 @@
                 // already exists — the server merged into the existing row instead of duplicating. Tell the user
                 // explicitly rather than silently showing "Added" for a Sim they already have.
                 const merged = !!(res && res.existing);
+          const savedSimId = (res && res.persona && res.persona.id) || (res && res.id) || null;
                 if (cardEl) { cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b => b.disabled = true); if (btn) btn.textContent = merged ? "Already exists — merged" : "Added"; } // emoji-ok
                 // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
-                if (!opts || !opts.defer) showSuccessPanel(s.name, 1, merged);
-                return merged;
+          if (!opts || !opts.defer) showSuccessPanel(s.name, 1, merged, savedSimId);
+          return { merged, id: savedSimId };
               } catch (e) {
                 if (btn) { btn.disabled = false; btn.textContent = orig; }
                 // GTM round 2: Sim quota hit (402 quota_exceeded, only when KLAV_BILLING_ENFORCEMENT=1) —
@@ -34981,8 +35453,26 @@
               }
             }
 
-            // delegate clicks inside the result list (Add / Skip / Add all / simClass picker)
+      // delegate clicks inside the result list (Add / Skip / Add all / simClass picker / Edit toggle)
             out.addEventListener("click", (e) => {
+        // Edit toggle: expand/collapse inline edit inputs for Sim name & description
+        const edit = e.target.closest("[data-edit-sim]");
+        if (edit) {
+          const card = edit.closest(".sm-sim");
+          if (!card) return;
+          const isEditing = card.classList.toggle("is-editing");
+          const editBox = card.querySelector(".sm-sim-edit-box");
+          const view = card.querySelector(".sm-sim-view");
+          const btnText = edit.querySelector(".sm-edit-btn-text");
+          if (editBox) editBox.style.display = isEditing ? "flex" : "none";
+          if (view) view.style.display = isEditing ? "none" : "";
+          if (btnText) btnText.textContent = isEditing ? "Done" : "Edit";
+          if (isEditing) {
+            const nameInput = card.querySelector(".sm-edit-name");
+            if (nameInput) { nameInput.focus(); nameInput.select(); }
+          }
+          return;
+        }
               // simClass picker: flip User/Client on the card before saving
               const pick = e.target.closest("[data-class-pick]");
               if (pick) {
@@ -35013,10 +35503,53 @@
                 const count = btns.length;
                 Promise.all(btns.map(b => { const i = +b.dataset.add; const card = b.closest(".sm-sim"); return saveSim(lastSims[i], card, b, { defer: true }); }))
                   // JTBD 3.10: when the batch is a single Sim that already existed, surface the merged heading.
-                  .then(results => showSuccessPanel(null, count, count === 1 && results[0] === true))
+            .then(results => {
+              const firstId = (results && results.find(r => r && r.id)) ? results.find(r => r && r.id).id : null;
+              const isMerged = count === 1 && results && results[0] && results[0].merged === true;
+              showSuccessPanel(null, count, isMerged, firstId);
+            })
                   .catch(() => { }); // individual errors already surface via fail()
               }
             });
+
+      // Live reactive update as user edits Sim name, role, or description before creation
+      out.addEventListener("input", (e) => {
+        const inp = e.target.closest(".sm-edit-input");
+        if (!inp) return;
+        const card = inp.closest(".sm-sim");
+        const idx = +inp.dataset.idx;
+        const field = inp.dataset.simField;
+        if (!card || isNaN(idx) || !lastSims[idx]) return;
+        const val = inp.value;
+        if (field === "name") {
+          lastSims[idx].name = val.trim() || "Sim";
+          const nmEl = card.querySelector(".sm-nm");
+          if (nmEl) nmEl.textContent = val || "Sim";
+          const av = card.querySelector(".sm-av");
+          if (av) av.textContent = lastSims[idx].initials || inits(val);
+          const addBtn = card.querySelector("[data-add]");
+          if (addBtn && !addBtn.disabled) {
+            const first = esc(String(val || "Sim").split(" ")[0]);
+            addBtn.textContent = "＋ Add " + first;
+          }
+        } else if (field === "role") {
+          lastSims[idx].role = val.trim();
+          const rlEl = card.querySelector(".sm-rl");
+          if (rlEl) rlEl.textContent = val;
+        } else if (field === "summary") {
+          lastSims[idx].summary = val.trim();
+          let sumEl = card.querySelector(".sm-sum");
+          if (!sumEl && val.trim()) {
+            const view = card.querySelector(".sm-sim-view");
+            if (view) {
+              sumEl = document.createElement("div");
+              sumEl.className = "sm-sum";
+              view.appendChild(sumEl);
+            }
+          }
+          if (sumEl) sumEl.textContent = val;
+        }
+      });
 
             // segmented switcher — also hides success panel if user switches tabs after adding
             ov.querySelectorAll(".sm-seg button").forEach(b => b.addEventListener("click", () => {
@@ -35039,6 +35572,33 @@
             $("smName").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if ($("smName").value.trim()) withBusy($("smCreateGo"), "Imagining…", genBrief); } });
             $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
             $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
+      const smManualBtn = $("smManualBtn");
+      if (smManualBtn) {
+        smManualBtn.onclick = function () {
+          clearFieldErr();
+          const customSim = {
+            name: "New Sim",
+            role: "User",
+            summary: "",
+            simClass: "user",
+            side: "external",
+            insights: []
+          };
+          lastSimSource = "describe";
+          showSims([customSim]);
+          const card = out.querySelector('.sm-sim[data-idx="0"]');
+          if (card) {
+            const editBtn = card.querySelector('[data-edit-sim="0"]');
+            if (editBtn) editBtn.click();
+            const nameInput = card.querySelector(".sm-edit-name");
+            if (nameInput) {
+              nameInput.value = "";
+              nameInput.placeholder = "Enter Sim name (e.g. Sarah Chen)";
+              nameInput.focus();
+            }
+          }
+        };
+      }
 
             // "From a call" transcript file upload (.txt / .vtt / .srt) — loads file text into the paste box before Extract
             const smFileLbl = $("smFileLbl"); if (smFileLbl) smFileLbl.innerHTML = kicon("paperclip", { size: 14 }) + " Upload transcript" + smFileLbl.querySelector("input").outerHTML;
@@ -35166,11 +35726,33 @@
               if (fromPop) { try { history.pushState(null, "", simNewUrl(currentMode())); } catch (e) { } }
               showDiscard();
             }
+      function isOutsideModal(e) {
+        return e.target === ov || !e.target.closest(".sm-modal");
+      }
             $("simClose").onclick = function () { requestClose(); };
-            ov.addEventListener("mousedown", (e) => { if (e.target === ov) requestClose(); });
+      ov.addEventListener("mousedown", (e) => {
+        if (isOutsideModal(e)) {
+          // Keep the "Sim is ready" popup open when clicking outside its boundaries;
+          // it should only close via explicit close/action buttons inside the popup or the 'X' icon.
+          if (simSuccessShown()) return;
+          requestClose();
+        }
+      });
+      ov.addEventListener("pointerdown", (e) => {
+        if (isOutsideModal(e) && simSuccessShown()) {
+          e.stopPropagation();
+        }
+      });
+      ov.addEventListener("click", (e) => {
+        if (isOutsideModal(e) && simSuccessShown()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
             document.addEventListener("keydown", (e) => {
               if (e.key !== "Escape" || !ov.classList.contains("show")) return;
               if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
+        if (simSuccessShown()) return;
               requestClose();
             });
             window.addEventListener("beforeunload", (e) => { if (simDirty()) { e.preventDefault(); e.returnValue = ""; } });
