@@ -34537,17 +34537,25 @@
               if (fromPop) { try { history.pushState(null, "", simNewUrl(currentMode())); } catch (e) { } }
               showDiscard();
             }
+            function isOutsideModal(e) {
+              return e.target === ov || !e.target.closest(".sm-modal");
+            }
             $("simClose").onclick = function () { requestClose(); };
             ov.addEventListener("mousedown", (e) => {
-              if (e.target === ov) {
+              if (isOutsideModal(e)) {
                 // Keep the "Sim is ready" popup open when clicking outside its boundaries;
                 // it should only close via explicit close/action buttons inside the popup or the 'X' icon.
                 if (simSuccessShown()) return;
                 requestClose();
               }
             });
+            ov.addEventListener("pointerdown", (e) => {
+              if (isOutsideModal(e) && simSuccessShown()) {
+                e.stopPropagation();
+              }
+            });
             ov.addEventListener("click", (e) => {
-              if (e.target === ov && simSuccessShown()) {
+              if (isOutsideModal(e) && simSuccessShown()) {
                 e.preventDefault();
                 e.stopPropagation();
               }

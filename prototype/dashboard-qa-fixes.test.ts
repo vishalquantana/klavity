@@ -150,7 +150,15 @@ test("#743: annotate modal shows a spinner (never a blank canvas) until the imag
 test("Sim is ready popup remains open when clicking outside its boundaries", () => {
   const i = HTML.indexOf('ov.addEventListener("mousedown"')
   expect(i).toBeGreaterThan(-1)
-  const region = HTML.slice(i, i + 400)
+  const region = HTML.slice(i, i + 600)
   expect(region).toContain("if (simSuccessShown()) return")
   expect(region).toContain("requestClose()")
+  expect(HTML).toContain("isOutsideModal(e)")
+  expect(HTML).toContain('ov.addEventListener("pointerdown"')
+  expect(HTML).toContain('ov.addEventListener("click"')
+  // Esc key does not close when simSuccessShown
+  const escIdx = HTML.indexOf('if (e.key !== "Escape" || !ov.classList.contains("show"))')
+  expect(escIdx).toBeGreaterThan(-1)
+  const escRegion = HTML.slice(escIdx, escIdx + 300)
+  expect(escRegion).toContain("if (simSuccessShown()) return")
 })
