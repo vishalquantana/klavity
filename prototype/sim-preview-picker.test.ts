@@ -50,7 +50,7 @@ test("/api/sim/preview validates the selection before any SSRF/screenshot work, 
   const i = SERVER.indexOf('path === "/api/sim/preview"')
   const body = SERVER.slice(i, i + 9000)
   expect(body).toContain("simIds: pvSimIds")
-  const sel = body.indexOf("selectPreviewSims(projectSims, pvSimIds)")
+  const sel = body.indexOf("selectPreviewSims(projectSims, pvSimIds")
   const ssrf = body.indexOf("SSRF preflight: reuse")
   expect(sel).toBeGreaterThan(0)
   expect(ssrf).toBeGreaterThan(sel)                          // bad selection never burns a browser slot or an AI call

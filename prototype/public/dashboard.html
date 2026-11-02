@@ -6252,7 +6252,8 @@
       margin-right: 12px;
       flex-shrink: 0;
       font-size: 12px;
-      padding: 5px 11px;
+      font-weight: 500;
+      padding: 7px 12px;
       border-radius: 8px;
       border: 1px solid var(--line);
       background: transparent;
@@ -6270,16 +6271,16 @@
       cursor: default
     }
 
+    /* Sits on the right of the header, between the observations pill and the Activate/Deactivate button (matches the design). */
     .sf-state {
-      display: inline-block;
-      margin-left: 8px;
-      padding: 1px 8px;
+      flex-shrink: 0;
+      padding: 4px 10px;
       border-radius: 999px;
-      font-size: 11px;
+      font-family: var(--mono);
+      font-size: 9.5px;
       font-weight: 600;
-      vertical-align: 1px;
-      background: color-mix(in srgb, #16a34a 14%, transparent);
-      color: #15803d
+      background: color-mix(in srgb, #20b56a 12%, transparent);
+      color: #20b56a
     }
 
     .sf-row.is-inactive .sf-state {
@@ -6291,11 +6292,6 @@
       background: #9ca3af !important
     }
 
-    .sf-row.is-inactive .sf-hd .name,
-    .sf-row.is-inactive .sf-hd .role,
-    .sf-row.is-inactive .sf-obs {
-      opacity: .6
-    }
 
     .sf-hd {
       display: flex;
@@ -6561,6 +6557,12 @@
       margin-top: 8px;
       min-height: 16px;
       color: var(--paper-faint)
+    }
+
+    /* Empty message / results take no space, so the card is as tight as the design when idle. */
+    .sup-msg:empty,
+    .sup-results:empty {
+      display: none
     }
 
     .sup-spinner {
@@ -18077,6 +18079,33 @@
           </div>
         </div>
 
+        <!-- Sims tab: paste-URL preview — run the project's real Sims on any public URL, results persisted -->
+        <div class="card full sup-card" id="simUrlPreviewCard" data-view="sims">
+          <div class="sup-hd">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+            Preview a URL with your Sims
+          </div>
+          <div class="sup-row">
+            <input id="supUrlInput" type="url" placeholder="https://your-product.com/pricing" autocomplete="off"
+              spellcheck="false" />
+            <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
+          </div>
+          <div id="supPicker" class="sup-picker" hidden></div>
+          <div id="supMsg" class="sup-msg"></div>
+          <div id="supSpinner" class="sup-spinner">
+            <div class="sup-spin"></div>
+            <span id="supSpinMsg">Your Sims are opening the page…</span>
+          </div>
+          <div id="supResults" class="sup-results"></div>
+          <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage"
+              onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs"
+              id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
+        </div>
+
         <!-- Sims tab: each Sim with the feedback they have given (primary Sims view) -->
         <div class="card full sims-hero" data-view="sims">
           <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
@@ -18108,33 +18137,6 @@
                   style="width:40%"></span></div><span class="sk sk-pill"></span>
             </div>
           </div>
-        </div>
-
-        <!-- Sims tab: paste-URL preview — run the project's real Sims on any public URL, results persisted -->
-        <div class="card full sup-card" id="simUrlPreviewCard" data-view="sims">
-          <div class="sup-hd">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            Preview a URL with your Sims
-          </div>
-          <div class="sup-row">
-            <input id="supUrlInput" type="url" placeholder="https://your-product.com/pricing" autocomplete="off"
-              spellcheck="false" />
-            <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
-          </div>
-          <div id="supPicker" class="sup-picker" hidden></div>
-          <div id="supMsg" class="sup-msg"></div>
-          <div id="supSpinner" class="sup-spinner">
-            <div class="sup-spin"></div>
-            <span id="supSpinMsg">Your Sims are opening the page…</span>
-          </div>
-          <div id="supResults" class="sup-results"></div>
-          <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage"
-              onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs"
-              id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
         </div>
 
         <!-- Sims tab: compact, dismissible live-trigger guidance — kept for onboarding, no longer the hero -->
@@ -23487,9 +23489,7 @@
             if (!el) return
             // Update the count badge in the simsFeed card header (this card owns the Sims tab header)
             const countEl = $("simsCount")
-            // WP-S2: say how many Sims are active when some are switched off.
-            const activeSims = sims.filter(function (x) { return x.active !== false })
-            if (countEl) countEl.textContent = !sims.length ? "" : (activeSims.length === sims.length ? String(sims.length) : activeSims.length + " of " + sims.length + " active")
+            if (countEl) countEl.textContent = sims.length ? String(sims.length) : ""
             const canToggle = !!(state && state.active && state.active.role === "admin")
             if (!sims.length) {
               el.innerHTML = '<div class="sim-ob">'
@@ -23557,10 +23557,11 @@
       <a class="sf-hd" href="${esc(href)}">
         <div class="av" style="background:${safeAccent(sim.accent, col(sim.name))}">${esc(sim.initials || initials(sim.name))}</div>
         <div class="body">
-          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}<span class="sf-state">${isActive ? "Active" : "Inactive"}</span></div>
+          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}</div>
           <div class="role">${esc(sim.role || "")}</div>
         </div>
         <span class="sf-badge">${badge}</span>
+        <span class="sf-state">${isActive ? "Active" : "Inactive"}</span>
       </a>
       ${toggleBtn}
       </div>

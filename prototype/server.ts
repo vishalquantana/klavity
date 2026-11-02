@@ -15789,7 +15789,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           projectSims = pvAllSims.filter((p) => p.active !== false)
           if (!projectSims.length) return json({ error: "All of this project's Sims are inactive. Activate a Sim to run a preview." }, 400)
           // Sim picker: validate the chosen Sims here, before any SSRF/screenshot work. Omitted simIds = all Sims (unchanged behaviour).
-          const pvSel = selectPreviewSims(projectSims, pvSimIds)
+          const pvSel = selectPreviewSims(projectSims, pvSimIds, new Set(pvAllSims.filter((p) => p.active === false).map((p) => p.id)))
           if (!pvSel.ok) return json({ error: pvSel.error }, 400)
           pvSelectedSims = pvSel.sims
           pvSubsetIds = pvSel.simIds

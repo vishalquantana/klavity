@@ -19,7 +19,7 @@ test("dashboard URL preview runs only active Sims, and says so when every Sim is
   expect(b).toContain("pvAllSims.filter((p) => p.active !== false)")
   expect(b).toContain("inactive")
   // the picker's selection is validated against the ACTIVE list, so an inactive Sim cannot be picked
-  expect(b.indexOf("projectSims = pvAllSims.filter")).toBeLessThan(b.indexOf("selectPreviewSims(projectSims, pvSimIds)"))
+  expect(b.indexOf("projectSims = pvAllSims.filter")).toBeLessThan(b.indexOf("selectPreviewSims(projectSims, pvSimIds"))
 })
 
 test("extension / widget reviews (/api/sim/review) never run an inactive Sim, even if named in simIds", () => {
@@ -68,8 +68,14 @@ test("Sim cards show Active/Inactive, a Deactivate/Activate button (admins), a c
   expect(DASH).toContain("canToggle")                       // admin-only control
 })
 
-test("header count says how many Sims are active", () => {
-  expect(DASH).toContain('" of " + sims.length + " active"')
+// Matches the Figma design: the header count is the total number of Sims, the Active/Inactive badge sits on the right of the
+// card header (after the observations pill, before the button), and the Preview a URL card comes above Your Sims.
+test("Sims page layout follows the design: total count, badge after the observations pill, Preview card above Your Sims", () => {
+  expect(DASH).toContain('countEl.textContent = sims.length ? String(sims.length) : ""')
+  expect(DASH).not.toContain('" of " + sims.length + " active"')
+  expect(DASH.indexOf('<span class="sf-badge">${badge}</span>')).toBeLessThan(DASH.indexOf('<span class="sf-state">'))
+  expect(DASH.indexOf('<span class="sf-state">')).toBeLessThan(DASH.indexOf("${toggleBtn}"))
+  expect(DASH.indexOf('id="simUrlPreviewCard"')).toBeLessThan(DASH.indexOf('class="card full sims-hero"'))
 })
 
 test("the Run Sims picker offers only active Sims, and Run Sims is disabled when every Sim is inactive", () => {

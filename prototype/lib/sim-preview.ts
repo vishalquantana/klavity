@@ -191,12 +191,14 @@ export type PreviewSimSelection<T> =
  * this runs BEFORE any SSRF/screenshot work so a bad selection never burns a browser slot or an AI call. Duplicate ids are ignored and the
  * result keeps the project's own Sim order.
  */
-export function selectPreviewSims<T extends { id: string }>(projectSims: T[], simIds: unknown): PreviewSimSelection<T> {
+export function selectPreviewSims<T extends { id: string }>(projectSims: T[], simIds: unknown, inactiveIds?: ReadonlySet<string>): PreviewSimSelection<T> {
   if (simIds === undefined || simIds === null) return { ok: true, sims: projectSims, simIds: null }
   if (!Array.isArray(simIds)) return { ok: false, error: "simIds must be a list of Sim ids." }
   const wanted = new Set(simIds.map((x) => String(x ?? "").trim()).filter(Boolean))
   if (wanted.size === 0) return { ok: false, error: "Select at least one Sim to run." }
   const known = new Set(projectSims.map((s) => s.id))
+  // WP-S2: name the real reason when the Sim exists but is switched off (projectSims holds active Sims only).
+  for (const id of wanted) if (!known.has(id) && inactiveIds?.has(id)) return { ok: false, error: "One or more selected Sims are inactive. Activate them to run a preview." }
   for (const id of wanted) if (!known.has(id)) return { ok: false, error: "One or more selected Sims aren't in this project." }
   const sims = projectSims.filter((s) => wanted.has(s.id))
   return { ok: true, sims, simIds: sims.length === projectSims.length ? null : sims.map((s) => s.id) }
