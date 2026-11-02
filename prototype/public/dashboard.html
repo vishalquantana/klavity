@@ -6390,6 +6390,110 @@
       white-space: nowrap
     }
 
+    /* ── Sim picker (Preview a URL): choose which Sims run ─────────────────────── */
+    .sup-picker {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px 6px
+    }
+
+    .sup-picker[hidden] {
+      display: none
+    }
+
+    .sup-pick-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 6px
+    }
+
+    .sup-pick-lbl {
+      font-size: 11px;
+      color: var(--paper-faint)
+    }
+
+    .sup-pick-count {
+      font-size: 13.5px;
+      font-weight: 600
+    }
+
+    .sup-picker input[type=search] {
+      flex: 0 1 240px;
+      min-width: 140px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 13px;
+      color: var(--paper);
+      font-family: var(--body);
+      outline: none
+    }
+
+    .sup-picker input[type=search]:focus {
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--indigo) 18%, transparent)
+    }
+
+    .sup-pick-list {
+      max-height: 220px;
+      overflow: auto
+    }
+
+    .sup-pick-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 4px;
+      border-top: 1px solid var(--line);
+      cursor: pointer
+    }
+
+    .sup-pick-row:hover {
+      background: color-mix(in srgb, var(--indigo) 6%, transparent)
+    }
+
+    .sup-pick-row input {
+      flex-shrink: 0
+    }
+
+    .sup-pick-row .av {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0
+    }
+
+    .sup-pick-txt {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      font-size: 13px
+    }
+
+    .sup-pick-txt small {
+      font-size: 11.5px;
+      color: var(--paper-faint);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap
+    }
+
+    .sup-pick-none {
+      padding: 10px 4px;
+      font-size: 12.5px;
+      color: var(--paper-faint)
+    }
+
     .sup-msg {
       font-size: 12.5px;
       margin-top: 8px;
@@ -17959,6 +18063,7 @@
               spellcheck="false" />
             <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
           </div>
+          <div id="supPicker" class="sup-picker" hidden></div>
           <div id="supMsg" class="sup-msg"></div>
           <div id="supSpinner" class="sup-spinner">
             <div class="sup-spin"></div>
@@ -23392,6 +23497,79 @@
             }).join("")
           }
 
+          // ── Sim picker: choose which Sims a URL preview runs ────────────────────────────
+          // With 0–1 Sims there is nothing to choose, so Run Sims just runs. With 2+, the first click opens the picker; once it is open at
+          // least one Sim must be ticked, and the run is limited to the ticked Sims (the server validates the ids again).
+          var _supPick = { pid: null, open: false, selected: new Set(), q: "" }
+
+          // Pure: what a "Run Sims" click should do. sims = [{id}], selected = Set of ids, open = picker already showing.
+          function supPickDecide(sims, selected, open) {
+            const ids = (sims || []).map(function (s) { return s.id })
+            if (ids.length < 2) return { action: "run", simIds: null }
+            if (!open) return { action: "open", message: "Select at least one Sim to run." }
+            const picked = ids.filter(function (id) { return selected.has(id) })
+            if (!picked.length) return { action: "error", message: "Select at least one Sim to run." }
+            return { action: "run", simIds: picked }
+          }
+
+          function supPickSims() { return (state && state.sims) || [] }
+          // A different project (or a Sim that no longer exists) must not leak a stale selection into this run.
+          function supPickSync(pid) {
+            if (_supPick.pid !== pid) _supPick = { pid: pid, open: false, selected: new Set(), q: "" }
+            const live = new Set(supPickSims().map(function (s) { return s.id }))
+            _supPick.selected.forEach(function (id) { if (!live.has(id)) _supPick.selected.delete(id) })
+          }
+
+          // Paint the parts that change on every tick/keystroke (count, Select-all state, list). The search box is left alone so it keeps focus.
+          function supPickPaint() {
+            const sims = supPickSims()
+            const n = _supPick.selected.size
+            const countEl = document.getElementById("supPickCount")
+            if (countEl) countEl.textContent = n === 0 ? "No Sims selected" : (n + " Sim" + (n === 1 ? "" : "s") + " selected")
+            const allEl = document.getElementById("supPickAll")
+            if (allEl) { allEl.checked = n > 0 && n === sims.length; allEl.indeterminate = n > 0 && n < sims.length }
+            const q = (_supPick.q || "").trim().toLowerCase()
+            const shown = q ? sims.filter(function (s) { return String(s.name || "").toLowerCase().includes(q) || String(s.role || "").toLowerCase().includes(q) }) : sims
+            const listEl = document.getElementById("supPickList")
+            if (!listEl) return
+            listEl.innerHTML = shown.length ? shown.map(function (s) {
+              return `<label class="sup-pick-row">
+        <input type="checkbox" data-sim="${esc(s.id)}"${_supPick.selected.has(s.id) ? " checked" : ""}>
+        <span class="av" style="background:${safeAccent(s.accent, col(s.name))}">${esc(s.initials || initials(s.name))}</span>
+        <span class="sup-pick-txt"><b>${esc(s.name)}</b><small>${esc(s.role || "")}</small></span>
+      </label>`
+            }).join("") : `<div class="sup-pick-none">No Sims match “${esc(_supPick.q)}”.</div>`
+          }
+
+          function supPickRender() {
+            const host = document.getElementById("supPicker")
+            if (!host) return
+            if (!_supPick.open || supPickSims().length < 2) { host.hidden = true; host.innerHTML = ""; return }
+            host.hidden = false
+            host.innerHTML = `<div class="sup-pick-hd">
+        <div><div class="sup-pick-lbl">Select Sims</div><div class="sup-pick-count" id="supPickCount" aria-live="polite"></div></div>
+        <input id="supPickSearch" type="search" placeholder="Search Sims…" aria-label="Search Sims" autocomplete="off" value="${esc(_supPick.q)}">
+      </div>
+      <label class="sup-pick-row"><input type="checkbox" id="supPickAll"><span class="sup-pick-txt"><b>Select all Sims</b><small>Run every available Sim.</small></span></label>
+      <div class="sup-pick-list" id="supPickList" role="group" aria-label="Sims to run"></div>`
+            host.onchange = function (ev) {
+              const t = ev.target
+              if (!t || t.type !== "checkbox") return
+              if (t.id === "supPickAll") {
+                _supPick.selected = t.checked ? new Set(supPickSims().map(function (s) { return s.id })) : new Set()
+              } else if (t.getAttribute("data-sim")) {
+                const id = t.getAttribute("data-sim")
+                if (t.checked) _supPick.selected.add(id); else _supPick.selected.delete(id)
+              }
+              const m = document.getElementById("supMsg"); if (m && _supPick.selected.size) m.textContent = ""
+              supPickPaint()
+            }
+            host.oninput = function (ev) {
+              if (ev.target && ev.target.id === "supPickSearch") { _supPick.q = ev.target.value; supPickPaint() }
+            }
+            supPickPaint()
+          }
+
           // ── URL preview with real Sims ───────────────────────────────────────────────
           // Calls POST /api/sim/preview with projectId (authenticated branch) so the project's
           // real Sims run on the pasted URL and reactions are persisted to the feedback table.
@@ -23402,6 +23580,17 @@
             let pvUrl = (urlInput?.value || "").trim()
             if (!pvUrl) { $("supMsg").textContent = "Enter a URL first."; urlInput?.focus(); return }
             if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
+
+            // Sim picker: with 2+ Sims the first click opens the picker; then at least one Sim must be ticked.
+            supPickSync(pid)
+            const pick = supPickDecide(supPickSims(), _supPick.selected, _supPick.open)
+            if (pick.action !== "run") {
+              _supPick.open = true
+              supPickRender()
+              $("supMsg").textContent = pick.message
+              const first = document.querySelector("#supPickList input[type=checkbox]"); if (first && pick.action === "open") first.focus()
+              return
+            }
 
             const runBtn = document.getElementById("supRunBtn")
             const spinner = $("supSpinner")
@@ -23418,14 +23607,16 @@
             if (spinMsg) spinMsg.textContent = `Your Sims are opening ${pvUrl}…`
             if (runBtn) runBtn.disabled = true
 
+            let gotResponse = false // true once the server answered: any later failure is a display problem, not a network one
             try {
               const res = await fetch("/api/sim/preview", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ url: pvUrl, projectId: pid }),
+                body: JSON.stringify(pick.simIds ? { url: pvUrl, projectId: pid, simIds: pick.simIds } : { url: pvUrl, projectId: pid }),
               })
               const data = await res.json()
+              gotResponse = true
               spinner.classList.remove("show")
               if (runBtn) runBtn.disabled = false
 
@@ -23448,7 +23639,7 @@
                 const inits = esc(rv.initials || sim.initials || initials(rv.simName || "?"))
                 const observations = Array.isArray(rv.observations) ? rv.observations : []
                 const obsHtml = observations.map(o => {
-                  const sentimentChip = o.sentiment ? `<span class="chip s-${esc(normSentiment(o.sentiment))}">${esc(o.sentiment)}</span>` : ""
+                  const sentimentChip = o.sentiment ? `<span class="chip s-${esc(o.sentiment)}">${esc(o.sentiment)}</span>` : ""
                   const priorityChip = o.priority ? `<span class="chip sev-${esc(o.priority)}">${esc(o.priority)}</span>` : ""
                   const chips = [sentimentChip, priorityChip].filter(Boolean).join("")
                   return `<div class="sup-ob">
@@ -23474,7 +23665,8 @@
             } catch (e) {
               spinner.classList.remove("show")
               if (runBtn) runBtn.disabled = false
-              $("supMsg").textContent = "Network error — check your connection and try again."
+              if (gotResponse) console.error("[sim-preview] could not render results", e)
+              $("supMsg").textContent = gotResponse ? "The run finished, but the results couldn't be displayed. Reload the page to see them in Sim Reports." : "Network error — check your connection and try again."
             }
           }
           // Allow pressing Enter in the URL input to trigger the run

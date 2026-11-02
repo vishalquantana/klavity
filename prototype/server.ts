@@ -88,7 +88,7 @@ import {
   MARKETING_PRESIGNUP_PROJECT_ID, makeTeaser, validateFreetoolEmail, checkFreetoolRun,
   bumpFreetoolRun, bumpFreetoolCost, ipBucket, freetoolDailyRunCap,
 } from "./lib/freetool-guard"
-import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout } from "./lib/sim-preview"
+import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout, selectPreviewSims } from "./lib/sim-preview"
 // KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
 import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
 import { buildSuperadminPL, creditsMarginByWorkspace } from "./lib/superadmin"
@@ -15731,7 +15731,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-371: capture the true start BEFORE any work (SSRF preflight, screenshot,
         // Sim reviews) so the sim_runs row records a real duration rather than 0ms.
         const pvRunStartedAt = Date.now()
-        let { url: pvUrl, persona, projectId: pvProjectId } = await req.json()
+        let { url: pvUrl, persona, projectId: pvProjectId, simIds: pvSimIds } = await req.json()
         pvUrl = String(pvUrl || "").trim()
         if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
         if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
@@ -15743,6 +15743,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // SSRF quota or a browser slot. SSRF and screenshotUrl run only if gates pass.
         let pvProj: { id: string; access: "admin" | "member" } | null = null
         let projectSims: any[] = []
+        let pvSelectedSims: any[] = []          // the Sims this run uses (all of them unless the Sim picker chose a subset)
+        let pvSubsetIds: string[] | null = null // null = all Sims
         if (mePv && pvProjectId) {
           const pvProjId = String(pvProjectId).trim()
           pvProj = await resolveProject(mePv, pvProjId)
@@ -15752,6 +15754,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (pvLock) return json(pvLock, 402)
           projectSims = await listPersonas(pvProj.id)
           if (!projectSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          // Sim picker: validate the chosen Sims here, before any SSRF/screenshot work. Omitted simIds = all Sims (unchanged behaviour).
+          const pvSel = selectPreviewSims(projectSims, pvSimIds)
+          if (!pvSel.ok) return json({ error: pvSel.error }, 400)
+          pvSelectedSims = pvSel.sims
+          pvSubsetIds = pvSel.simIds
         }
 
         // SSRF preflight: reuse safeFetch's guard (rejects private/loopback + validates each redirect
@@ -15806,13 +15813,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             screenshotId = "no-s3-" + Date.now().toString(36)
           }
 
-          // Run all Sims through the SAME pipeline as /api/sim/review.
+          // Run the chosen Sims (all of them unless the picker selected a subset) through the SAME pipeline as /api/sim/review.
           // adhoc=true: bypass seenHashes + near-dup dedup so all current Sim reactions surface.
-          const seenKeys = projectSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
+          const seenKeys = pvSelectedSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
           const reviews = await runSimReviews({
             projectId: authenticatedProjectId, urlPath, urlHost, pageUrl: pvUrl,
             imageB64: shot.imageB64, mediaType: shot.mediaType,
-            targetSims: projectSims,
+            targetSims: pvSelectedSims,
             actorEmail: mePv, screenshotId,
             seenKeys, seenHashes: new Set(), sessionId: undefined,
             mode: "all", adhoc: true,
@@ -15828,7 +15835,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             try {
               await insertSimRun({
                 projectId: authenticatedProjectId, url: pvUrl,
-                simIds: null,  // null = all Sims
+                simIds: pvSubsetIds,  // null = all Sims; otherwise exactly the Sims the picker chose
                 screenshotId, reactions: reviews,
                 actorEmail: mePv, status: "done",
                 startedAt: pvRunStartedAt, finishedAt: Date.now(),
