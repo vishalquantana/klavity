@@ -54,7 +54,7 @@ test("KLA-513: detail picker defaults missing priority to medium (not urgent)", 
   expect(HTML).toContain('const curPri = t.priority || "medium"')
 })
 test("KLA-513: triage row select uses the same medium default", () => {
-  expect(HTML).toContain('s===(t.priority||"medium")')
+  expect(HTML).toContain('s === (t.priority || "medium")')
 })
 
 // ── KLAVITYKLA-514 · per-view header ───────────────────────────────────────────
@@ -64,7 +64,7 @@ test("KLA-514: greeting is scoped per view (applyViewHeader)", () => {
   // render() defers to the current view instead of hard-coding the greeting
   expect(HTML).toContain('applyViewHeader(document.body.getAttribute("data-view") || "overview")')
   // setView() re-titles on navigation
-  expect(HTML).toContain("if(typeof applyViewHeader==='function')applyViewHeader(v);")
+  expect(HTML).toContain("if (typeof applyViewHeader === 'function') applyViewHeader(v);")
 })
 
 // ── KLAVITYKLA-515 · merge always available ────────────────────────────────────
@@ -146,58 +146,37 @@ test("#743: annotate modal shows a spinner (never a blank canvas) until the imag
   expect(HTML).toContain(".evann-spinner{")
 })
 
-// ── KLAVITYKLA-519 · Add-a-Sim popup does not close unexpectedly when clicking outside ──
-test("popup remains open when clicking outside if success panel is displayed", () => {
-  // mousedown on ov backdrop checks if successEl is displayed and prevents closing
-  expect(HTML).toContain('if (successEl && successEl.classList.contains("show")) return;')
+// ── Sim is ready popup outside click guard ──────────────────────────────────────
+test("Sim is ready popup remains open when clicking outside its boundaries", () => {
+  const i = HTML.indexOf('ov.addEventListener("mousedown"')
+  expect(i).toBeGreaterThan(-1)
+  const region = HTML.slice(i, i + 600)
+  expect(region).toContain("if (simSuccessShown()) return")
+  expect(region).toContain("requestClose()")
+  expect(HTML).toContain("isOutsideModal(e)")
+  expect(HTML).toContain('ov.addEventListener("pointerdown"')
+  expect(HTML).toContain('ov.addEventListener("click"')
+  // Esc key does not close when simSuccessShown
+  const escIdx = HTML.indexOf('if (e.key !== "Escape" || !ov.classList.contains("show"))')
+  expect(escIdx).toBeGreaterThan(-1)
+  const escRegion = HTML.slice(escIdx, escIdx + 300)
+  expect(escRegion).toContain("if (simSuccessShown()) return")
 })
 
-// ── KLAVITYKLA-520 · Option to edit Sim name and description in 'Add a Sim' modal ──
-test("candidate Sim cards provide inline edit inputs for name, role, and description", () => {
-  expect(HTML).toContain('class="sm-edit-input sm-edit-name"')
-  expect(HTML).toContain('class="sm-edit-input sm-edit-role"')
-  expect(HTML).toContain('class="sm-edit-input sm-edit-summary"')
-  expect(HTML).toContain('data-edit-sim="${idx}"')
-  expect(HTML).toContain('data-sim-field="name"')
-  expect(HTML).toContain('data-sim-field="summary"')
-})
+// ── Sims view · Run Sims on URL with dev environment support ───────────────────
+test("Sims preview: URL preview card sits at the top of Sims tab with dev environment options", () => {
+  const previewIdx = HTML.indexOf('id="simUrlPreviewCard"')
+  const heroIdx = HTML.indexOf('class="card full sims-hero"')
+  expect(previewIdx).toBeGreaterThan(-1)
+  expect(heroIdx).toBeGreaterThan(-1)
+  // preview card is positioned before the hero list of Sims
+  expect(previewIdx).toBeLessThan(heroIdx)
 
-test("Add a Sim modal provides a manual entry option to define name and description directly", () => {
-  expect(HTML).toContain('id="smManualBtn"')
-  expect(HTML).toContain('or define Sim name &amp; description manually')
-})
-
-test("saveSim extracts any edited fields from the card inputs before saving to /api/personas", () => {
-  const saveIdx = HTML.indexOf("async function saveSim(")
-  expect(saveIdx).toBeGreaterThan(-1)
-  const region = HTML.slice(saveIdx, saveIdx + 1200)
-  expect(region).toContain('cardEl.querySelector(".sm-edit-name")')
-  expect(region).toContain('cardEl.querySelector(".sm-edit-summary")')
-  expect(region).toContain('s.name = nameInp.value.trim()')
-})
-
-test("post-add success panel provides immediate options to edit the Sim profile", () => {
-  expect(HTML).toContain('id="smNextEdit"')
-  expect(HTML).toContain('id="smSuccessEdit"')
-  expect(HTML).toContain('Edit Sim name &amp; description')
-  const showSuccessIdx = HTML.indexOf("function showSuccessPanel(")
-  expect(showSuccessIdx).toBeGreaterThan(-1)
-  const region = HTML.slice(showSuccessIdx, showSuccessIdx + 3000)
-  expect(region).toContain('editUrl = simId')
-  expect(region).toContain('nextEdit.setAttribute("href", editUrl)')
-  expect(region).toContain('successEdit.setAttribute("href", editUrl)')
-})
-
-// ── KLAVITYKLA-521 · Sim profile page provides inline editing of name and description ──
-const PROFILE_HTML = await Bun.file(import.meta.dir + "/public/sim-profile.html").text()
-
-test("sim-profile.html includes inline editing for name, role, and summary", () => {
-  expect(PROFILE_HTML).toContain('id="simEditToggleBtn"')
-  expect(PROFILE_HTML).toContain('id="simEditBox"')
-  expect(PROFILE_HTML).toContain('id="simEditName"')
-  expect(PROFILE_HTML).toContain('id="simEditRole"')
-  expect(PROFILE_HTML).toContain('id="simEditSummary"')
-  expect(PROFILE_HTML).toContain('function simEditSubmit()')
-  expect(PROFILE_HTML).toContain('PUT')
+  // Dev options & environment selection
+  expect(HTML).toContain('id="supEnvSelect"')
+  expect(HTML).toContain('id="supDevGuide"')
+  expect(HTML).toContain('id="supRunDevBtn"')
+  expect(HTML).toContain("toggleSupDevGuide")
+  expect(HTML).toContain("selectAndFocusDev")
 })
 

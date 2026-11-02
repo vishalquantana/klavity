@@ -15733,7 +15733,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-371: capture the true start BEFORE any work (SSRF preflight, screenshot,
         // Sim reviews) so the sim_runs row records a real duration rather than 0ms.
         const pvRunStartedAt = Date.now()
-        let { url: pvUrl, persona, projectId: pvProjectId } = await req.json()
+        let { url: pvUrl, persona, projectId: pvProjectId, env: pvEnv } = await req.json()
+        const chosenEnv = (typeof pvEnv === "string" && pvEnv.trim()) ? pvEnv.trim().toLowerCase() : null
         pvUrl = String(pvUrl || "").trim()
         if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
         if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
@@ -15823,6 +15824,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             // autoCopy intentionally omitted: triage-gated (fires on PATCH status→open, not on insert).
             markSeen: () => { },  // no seen-key bookkeeping for one-shot URL previews
             db: db ?? null,
+            reportEnv: chosenEnv,
           })
 
           // Persist a sim_runs record for the dashboard run history.
@@ -15834,6 +15836,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
                 screenshotId, reactions: reviews,
                 actorEmail: mePv, status: "done",
                 startedAt: pvRunStartedAt, finishedAt: Date.now(),
+                label: chosenEnv,
               })
             } catch (e: any) { console.warn("[sim-preview] sim_runs insert skipped:", e?.message || e) }
           }
