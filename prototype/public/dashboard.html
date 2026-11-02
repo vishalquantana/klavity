@@ -6235,6 +6235,68 @@
       margin-bottom: 12px
     }
 
+    /* WP-S2: header row = the Sim link + the Active/Deactivate control (a button can't live inside the <a>). */
+    .sf-top {
+      display: flex;
+      align-items: stretch;
+      background: var(--ink)
+    }
+
+    .sf-top .sf-hd {
+      flex: 1;
+      min-width: 0
+    }
+
+    .sf-act {
+      align-self: center;
+      margin-right: 12px;
+      flex-shrink: 0;
+      font-size: 12px;
+      padding: 5px 11px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--body);
+      cursor: pointer
+    }
+
+    .sf-act:hover:not(:disabled) {
+      background: var(--ink-3)
+    }
+
+    .sf-act:disabled {
+      opacity: .55;
+      cursor: default
+    }
+
+    .sf-state {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      vertical-align: 1px;
+      background: color-mix(in srgb, #16a34a 14%, transparent);
+      color: #15803d
+    }
+
+    .sf-row.is-inactive .sf-state {
+      background: color-mix(in srgb, var(--paper-faint) 16%, transparent);
+      color: var(--paper-faint)
+    }
+
+    .sf-row.is-inactive .sf-hd .av {
+      background: #9ca3af !important
+    }
+
+    .sf-row.is-inactive .sf-hd .name,
+    .sf-row.is-inactive .sf-hd .role,
+    .sf-row.is-inactive .sf-obs {
+      opacity: .6
+    }
+
     .sf-hd {
       display: flex;
       align-items: center;
@@ -23425,7 +23487,10 @@
             if (!el) return
             // Update the count badge in the simsFeed card header (this card owns the Sims tab header)
             const countEl = $("simsCount")
-            if (countEl) countEl.textContent = sims.length ? String(sims.length) : ""
+            // WP-S2: say how many Sims are active when some are switched off.
+            const activeSims = sims.filter(function (x) { return x.active !== false })
+            if (countEl) countEl.textContent = !sims.length ? "" : (activeSims.length === sims.length ? String(sims.length) : activeSims.length + " of " + sims.length + " active")
+            const canToggle = !!(state && state.active && state.active.role === "admin")
             if (!sims.length) {
               el.innerHTML = '<div class="sim-ob">'
                 + '<div class="sim-ob-head">Bring your first Sim to life</div>'
@@ -23483,18 +23548,58 @@
           </div></div>`
                 })()
                 : `<div class="sf-obs"><div class="sf-none">No feedback yet from this Sim.</div></div>`
-              return `<div class="sf-row">
+              const isActive = sim.active !== false
+              const toggleBtn = canToggle
+                ? `<button type="button" class="sf-act" data-sim-toggle="${esc(sim.id)}" onclick="toggleSimActive('${esc(sim.id)}', ${isActive ? "false" : "true"}, this)">${isActive ? "Deactivate" : "Activate"}</button>`
+                : ""
+              return `<div class="sf-row${isActive ? "" : " is-inactive"}">
+      <div class="sf-top">
       <a class="sf-hd" href="${esc(href)}">
         <div class="av" style="background:${safeAccent(sim.accent, col(sim.name))}">${esc(sim.initials || initials(sim.name))}</div>
         <div class="body">
-          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}</div>
+          <div class="name">${esc(sim.name)}${sim.isGlobal ? '<span class="sim-global-badge" title="Available in all your projects">Global</span>' : ''}<span class="sf-state">${isActive ? "Active" : "Inactive"}</span></div>
           <div class="role">${esc(sim.role || "")}</div>
         </div>
         <span class="sf-badge">${badge}</span>
       </a>
+      ${toggleBtn}
+      </div>
       ${obHtml}
     </div>`
             }).join("")
+            if (typeof supPickRefresh === "function") supPickRefresh() // the Run Sims picker only offers active Sims
+          }
+
+          // WP-S2: activate / deactivate a Sim. An inactive Sim keeps its history but no review, schedule or widget uses it.
+          async function toggleSimActive(simId, makeActive, btn) {
+            const pid = curProjId()
+            const sim = (state.sims || []).find(function (x) { return x.id === simId })
+            if (!pid || !sim) return
+            if (!makeActive) {
+              const ok = await klavConfirm({
+                title: "Deactivate " + sim.name + "?",
+                message: sim.name + " will stop reviewing pages and won't appear in the widget or extension. Their history stays, and you can activate them again any time.",
+                confirmText: "Deactivate",
+                danger: false,
+              })
+              if (!ok) return
+            }
+            if (btn) btn.disabled = true
+            try {
+              const res = await fetch("/api/personas/" + encodeURIComponent(simId) + "/active?project=" + encodeURIComponent(pid), {
+                method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include",
+                body: JSON.stringify({ active: !!makeActive }),
+              })
+              const data = await res.json().catch(function () { return {} })
+              if (!res.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
+              sim.active = !!makeActive
+              renderSimsFeed()
+              klavToast(esc(sim.name) + (makeActive ? " is active again." : " is deactivated."))
+            } catch (e) {
+              klavToast("Could not update the Sim. Check your connection and try again.", true)
+            } finally {
+              if (btn) btn.disabled = false
+            }
           }
 
           // ── Sim picker: choose which Sims a URL preview runs ────────────────────────────
@@ -23512,7 +23617,8 @@
             return { action: "run", simIds: picked }
           }
 
-          function supPickSims() { return (state && state.sims) || [] }
+          // WP-S2: only active Sims can be run, so only they are offered.
+          function supPickSims() { return ((state && state.sims) || []).filter(function (x) { return x.active !== false }) }
           // A different project (or a Sim that no longer exists) must not leak a stale selection into this run.
           function supPickSync(pid) {
             if (_supPick.pid !== pid) _supPick = { pid: pid, open: false, selected: new Set(), q: "" }
@@ -23586,8 +23692,13 @@
             else if (!wantOpen && (_supPick.open || (host && !host.hidden))) { _supPick.open = false; supPickRender() }
             const spinning = document.getElementById("supSpinner")?.classList.contains("show")
             const needPick = multi && (!hasUrl || _supPick.selected.size === 0)
-            runBtn.disabled = !!spinning || needPick
-            runBtn.title = needPick && hasUrl ? "Select at least one Sim to run." : ""
+            // WP-S2: Sims exist but every one is inactive, so nothing can run until one is activated.
+            const allInactive = ((state && state.sims) || []).length > 0 && supPickSims().length === 0
+            const INACTIVE_MSG = "All your Sims are inactive. Activate a Sim to run a preview."
+            const msgEl = document.getElementById("supMsg")
+            if (msgEl) { if (allInactive) msgEl.textContent = INACTIVE_MSG; else if (msgEl.textContent === INACTIVE_MSG) msgEl.textContent = "" }
+            runBtn.disabled = !!spinning || needPick || allInactive
+            runBtn.title = allInactive ? INACTIVE_MSG : (needPick && hasUrl ? "Select at least one Sim to run." : "")
           }
 
           // ── URL preview with real Sims ───────────────────────────────────────────────
