@@ -82,6 +82,7 @@ export interface SimRunOptions {
   autoCopy?: (feedbackId: string, projectId: string, actor: string) => void
   markSeen?: (key: string) => void
   db: Client | null
+  reportEnv?: string | null
 }
 
 // ── Internal dedup helpers ────────────────────────────────────────────────────
@@ -151,7 +152,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     projectId, urlPath, urlHost, pageUrl, imageB64, mediaType,
     targetSims, actorEmail, screenshotId, seenHashes = new Set(),
     sessionId, mode = "all", adhoc = false,
-    reactFn, resolveCitationsFn, autoCopy, markSeen, db,
+    reactFn, resolveCitationsFn, autoCopy, markSeen, db, reportEnv,
   } = opts
 
   const out: SimReview[] = []
@@ -315,6 +316,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
+            reportEnv: reportEnv ?? null,
           })
           if (feedbackId) autoCopy?.(feedbackId, projectId, actorEmail)
           // Feed into expectations spine.
@@ -353,6 +355,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: hash,
+            reportEnv: reportEnv ?? null,
           })
         }
       }

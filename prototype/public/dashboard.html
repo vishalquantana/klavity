@@ -6390,6 +6390,184 @@
       white-space: nowrap
     }
 
+    .sup-hd-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap
+    }
+
+    .sup-env-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 3px 8px
+    }
+
+    .sup-env-lbl {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper-faint);
+      text-transform: uppercase;
+      letter-spacing: .04em
+    }
+
+    .sup-select {
+      appearance: none;
+      background: transparent;
+      border: none;
+      color: var(--paper);
+      font-family: var(--body);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding-right: 18px;
+      outline: none;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 2px center
+    }
+
+    .sup-select option {
+      background: var(--ink-2);
+      color: var(--paper)
+    }
+
+    .sup-dev-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--indigo);
+      background: rgba(99, 102, 241, .1);
+      padding: 2px 7px;
+      border-radius: 5px;
+      margin-bottom: 6px
+    }
+
+    .sup-dev-guide {
+      display: none;
+      margin-top: 14px;
+      padding: 16px 18px;
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      animation: smfade .2s ease
+    }
+
+    .sup-dev-guide.show {
+      display: block
+    }
+
+    .sup-dev-guide-hd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--paper);
+      margin-bottom: 12px
+    }
+
+    .sup-dev-close {
+      margin-left: auto;
+      background: transparent;
+      border: none;
+      color: var(--paper-faint);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1
+    }
+
+    .sup-dev-close:hover {
+      color: var(--paper);
+      background: var(--line)
+    }
+
+    .sup-dev-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px
+    }
+
+    .sup-dev-card {
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px
+    }
+
+    .sup-dev-card h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--paper);
+      margin: 0
+    }
+
+    .sup-dev-card p {
+      font-size: 12px;
+      color: var(--paper-dim);
+      margin: 0;
+      line-height: 1.45;
+      flex: 1
+    }
+
+    .sup-dev-card code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: rgba(255, 255, 255, .06);
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: var(--paper)
+    }
+
+    .sup-dev-card .btn {
+      align-self: flex-start;
+      margin-top: 4px
+    }
+
+    .sup-env-chip {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 5px;
+      margin-left: 6px
+    }
+
+    .sup-env-chip.development,
+    .sup-env-chip.dev {
+      background: rgba(99, 102, 241, .15);
+      color: var(--indigo);
+      border: 1px solid rgba(99, 102, 241, .3)
+    }
+
+    .sup-env-chip.staging {
+      background: rgba(245, 158, 11, .15);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, .3)
+    }
+
+    .sup-env-chip.production,
+    .sup-env-chip.prod {
+      background: rgba(16, 185, 129, .15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, .3)
+    }
+
     .sup-msg {
       font-size: 12.5px;
       margin-top: 8px;
@@ -17909,6 +18087,78 @@
           </div>
         </div>
 
+        <!-- Sims tab: paste-URL preview — run the project's real Sims on any URL, results persisted (placed at top of Sims tab) -->
+        <div class="card full sup-card" id="simUrlPreviewCard" data-view="sims">
+          <div class="sup-hd">
+            <div style="display:flex;align-items:center;gap:8px">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+              <span>Preview a URL with your Sims</span>
+            </div>
+            <div class="sup-hd-actions">
+              <div class="sup-env-wrap" title="Specify target environment">
+                <span class="sup-env-lbl">Environment:</span>
+                <select id="supEnvSelect" class="sup-select" onchange="onSupEnvChange(this.value)" aria-label="Select environment">
+                  <option value="development" selected>Development</option>
+                  <option value="staging">Staging</option>
+                  <option value="production">Production</option>
+                  <option value="local">Local (localhost)</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-ghost btn-xs sup-dev-guide-btn" id="supDevGuideToggle" onclick="toggleSupDevGuide()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Dev Guide
+              </button>
+            </div>
+          </div>
+          <div class="sup-row">
+            <input id="supUrlInput" type="url" placeholder="https://dev.yourproduct.com/pricing or tunnel URL" autocomplete="off"
+              spellcheck="false" />
+            <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
+            <button id="supRunDevBtn" class="btn btn-ghost btn-sm" type="button" onclick="selectAndFocusDev()" title="Run this URL in development environment">Run in Dev →</button>
+          </div>
+          <div id="supMsg" class="sup-msg"></div>
+
+          <!-- Development Environment Guide -->
+          <div id="supDevGuide" class="sup-dev-guide">
+            <div class="sup-dev-guide-hd">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
+              <strong>Running Sims in a Development Environment</strong>
+              <button type="button" class="sup-dev-close" onclick="toggleSupDevGuide(false)" aria-label="Close dev guide">✕</button>
+            </div>
+            <div class="sup-dev-grid">
+              <div class="sup-dev-card">
+                <div class="sup-dev-badge">Option 1 · Localhost (Recommended)</div>
+                <h4>Klavity Chrome Extension</h4>
+                <p>Cloud servers cannot reach <code>localhost</code> directly. Open your local dev app in Chrome and click <b>Ask Sims to review this</b> in the Klavity extension — Sims react directly to your active local tab.</p>
+                <a class="btn btn-ghost btn-xs" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene" target="_blank" rel="noopener">Get Extension →</a>
+              </div>
+              <div class="sup-dev-card">
+                <div class="sup-dev-badge">Option 2 · Public Dev Tunnel</div>
+                <h4>Forward with ngrok / localtunnel</h4>
+                <p>Forward your local dev port using a tunnel like <code>npx localtunnel --port 3000</code> or <code>ngrok http 3000</code>, then paste the generated HTTPS URL above to run Sims from this dashboard.</p>
+              </div>
+              <div class="sup-dev-card">
+                <div class="sup-dev-badge">Option 3 · Hosted Dev / Staging</div>
+                <h4>Hosted Development Server</h4>
+                <p>If your dev environment is on a hosted URL (e.g. <code>https://dev.yourapp.com</code>), select <b>Development</b> in the dropdown and click <b>Run Sims</b>.</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="supSpinner" class="sup-spinner">
+            <div class="sup-spin"></div>
+            <span id="supSpinMsg">Your Sims are opening the page…</span>
+          </div>
+          <div id="supResults" class="sup-results"></div>
+          <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage"
+              onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs"
+              id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
+        </div>
+
         <!-- Sims tab: each Sim with the feedback they have given (primary Sims view) -->
         <div class="card full sims-hero" data-view="sims">
           <h2 style="display:flex;align-items:center;gap:10px"><svg xmlns="http://www.w3.org/2000/svg" class="icon"
@@ -17940,32 +18190,6 @@
                   style="width:40%"></span></div><span class="sk sk-pill"></span>
             </div>
           </div>
-        </div>
-
-        <!-- Sims tab: paste-URL preview — run the project's real Sims on any public URL, results persisted -->
-        <div class="card full sup-card" id="simUrlPreviewCard" data-view="sims">
-          <div class="sup-hd">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            Preview a URL with your Sims
-          </div>
-          <div class="sup-row">
-            <input id="supUrlInput" type="url" placeholder="https://your-product.com/pricing" autocomplete="off"
-              spellcheck="false" />
-            <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
-          </div>
-          <div id="supMsg" class="sup-msg"></div>
-          <div id="supSpinner" class="sup-spinner">
-            <div class="sup-spin"></div>
-            <span id="supSpinMsg">Your Sims are opening the page…</span>
-          </div>
-          <div id="supResults" class="sup-results"></div>
-          <div id="supSaved" class="sup-saved">Reactions saved — see them in <a href="#triage"
-              onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs"
-              id="supRunsLink" style="color:var(--indigo)">run history</a>.</div>
         </div>
 
         <!-- Sims tab: compact, dismissible live-trigger guidance — kept for onboarding, no longer the hero -->
@@ -23393,7 +23617,43 @@
           // ── URL preview with real Sims ───────────────────────────────────────────────
           // Calls POST /api/sim/preview with projectId (authenticated branch) so the project's
           // real Sims run on the pasted URL and reactions are persisted to the feedback table.
-          async function runSimUrlPreview() {
+          function toggleSupDevGuide(force) {
+            const g = $("supDevGuide")
+            if (!g) return
+            if (typeof force === "boolean") g.classList.toggle("show", force)
+            else g.classList.toggle("show")
+          }
+          window.toggleSupDevGuide = toggleSupDevGuide
+
+          function onSupEnvChange(val) {
+            const inp = document.getElementById("supUrlInput")
+            if (!inp) return
+            if (val === "local") {
+              toggleSupDevGuide(true)
+              if (!inp.value || inp.value.includes("your-product.com")) inp.placeholder = "http://localhost:3000 or tunnel URL"
+            } else if (val === "development") {
+              if (!inp.value || inp.value.includes("your-product.com")) inp.placeholder = "https://dev.yourproduct.com/pricing or tunnel URL"
+            } else if (val === "staging") {
+              if (!inp.value || inp.value.includes("your-product.com")) inp.placeholder = "https://staging.yourproduct.com/pricing"
+            } else {
+              if (!inp.value || inp.value.includes("dev.")) inp.placeholder = "https://your-product.com/pricing"
+            }
+          }
+          window.onSupEnvChange = onSupEnvChange
+
+          function selectAndFocusDev() {
+            const sel = document.getElementById("supEnvSelect")
+            if (sel) { sel.value = "development"; onSupEnvChange("development"); }
+            toggleSupDevGuide(true)
+            const inp = document.getElementById("supUrlInput")
+            if (inp) {
+              inp.scrollIntoView({ behavior: "smooth", block: "center" })
+              inp.focus()
+            }
+          }
+          window.selectAndFocusDev = selectAndFocusDev
+
+          async function runSimUrlPreview(forcedEnv) {
             const pid = curProjId()
             if (!pid) { $("supMsg").textContent = "Select a project first."; return }
             const urlInput = /** @type {HTMLInputElement} */ (document.getElementById("supUrlInput"))
@@ -23401,7 +23661,11 @@
             if (!pvUrl) { $("supMsg").textContent = "Enter a URL first."; urlInput?.focus(); return }
             if (!/^https?:\/\//i.test(pvUrl)) pvUrl = "https://" + pvUrl
 
+            const envSel = /** @type {HTMLSelectElement} */ (document.getElementById("supEnvSelect"))
+            const env = forcedEnv || (envSel?.value || "development")
+
             const runBtn = document.getElementById("supRunBtn")
+            const runDevBtn = document.getElementById("supRunDevBtn")
             const spinner = $("supSpinner")
             const spinMsg = document.getElementById("supSpinMsg")
             const resultsEl = $("supResults")
@@ -23412,20 +23676,30 @@
             msgEl.textContent = ""
             resultsEl.innerHTML = ""
             savedEl.classList.remove("show")
+
+            // Local development URL detection: provide immediate helpful instructions instead of failed fetch
+            if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|.*\.local)(:\d+)?(\/.*)?$/i.test(pvUrl)) {
+              toggleSupDevGuide(true)
+              msgEl.innerHTML = `<span style="color:#f59e0b"><strong>Local development URL detected (${esc(pvUrl)}):</strong> Cloud runners cannot connect to <code>localhost</code> directly. Use the <strong>Klavity Chrome Extension</strong> on your active tab to run Sims live, or expose a public dev tunnel via <code>npx localtunnel --port 3000</code> or <code>ngrok</code> to test here.</span>`
+              return
+            }
+
             spinner.classList.add("show")
-            if (spinMsg) spinMsg.textContent = `Your Sims are opening ${pvUrl}…`
+            if (spinMsg) spinMsg.textContent = `Your Sims are opening ${pvUrl} (${env})…`
             if (runBtn) runBtn.disabled = true
+            if (runDevBtn) runDevBtn.disabled = true
 
             try {
               const res = await fetch("/api/sim/preview", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ url: pvUrl, projectId: pid }),
+                body: JSON.stringify({ url: pvUrl, projectId: pid, env: env }),
               })
               const data = await res.json()
               spinner.classList.remove("show")
               if (runBtn) runBtn.disabled = false
+              if (runDevBtn) runDevBtn.disabled = false
 
               if (!res.ok || data.error) {
                 msgEl.textContent = data.error || "Something went wrong. Try a public page."
@@ -23458,7 +23732,7 @@
         <div class="sup-sim-hd">
           <div class="av" style="background:${accent}">${inits}</div>
           <div>
-            <div class="name">${esc(rv.simName || "Sim")}</div>
+            <div class="name">${esc(rv.simName || "Sim")} <span class="sup-env-chip ${esc(env)}">${esc(env)}</span></div>
             <div class="role">${observations.length} observation${observations.length === 1 ? "" : "s"}</div>
           </div>
         </div>
@@ -23467,11 +23741,13 @@
               }).join("")
 
               if (data.persisted) {
+                savedEl.innerHTML = `Reactions saved in <b>${esc(env)}</b> environment — see them in <a href="#triage" onclick="setView('triage')" style="color:var(--indigo)">Sim Reports</a> or the full <a href="/sim-runs" id="supRunsLink" style="color:var(--indigo)">run history</a>.`
                 savedEl.classList.add("show")
               }
             } catch (e) {
               spinner.classList.remove("show")
               if (runBtn) runBtn.disabled = false
+              if (runDevBtn) runDevBtn.disabled = false
               $("supMsg").textContent = "Network error — check your connection and try again."
             }
           }

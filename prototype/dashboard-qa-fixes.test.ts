@@ -162,3 +162,21 @@ test("Sim is ready popup remains open when clicking outside its boundaries", () 
   const escRegion = HTML.slice(escIdx, escIdx + 300)
   expect(escRegion).toContain("if (simSuccessShown()) return")
 })
+
+// ── Sims view · Run Sims on URL with dev environment support ───────────────────
+test("Sims preview: URL preview card sits at the top of Sims tab with dev environment options", () => {
+  const previewIdx = HTML.indexOf('id="simUrlPreviewCard"')
+  const heroIdx = HTML.indexOf('class="card full sims-hero"')
+  expect(previewIdx).toBeGreaterThan(-1)
+  expect(heroIdx).toBeGreaterThan(-1)
+  // preview card is positioned before the hero list of Sims
+  expect(previewIdx).toBeLessThan(heroIdx)
+
+  // Dev options & environment selection
+  expect(HTML).toContain('id="supEnvSelect"')
+  expect(HTML).toContain('id="supDevGuide"')
+  expect(HTML).toContain('id="supRunDevBtn"')
+  expect(HTML).toContain("toggleSupDevGuide")
+  expect(HTML).toContain("selectAndFocusDev")
+})
+
