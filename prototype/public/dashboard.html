@@ -14075,6 +14075,103 @@
       margin-bottom: 11px
     }
 
+    .sm-sim-edit-box {
+      margin-bottom: 12px;
+      background: var(--ink-2);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    .sm-sim.is-editing .sm-sim-view {
+      display: none
+    }
+
+    .sm-sim.is-editing .sm-sim-edit-box {
+      display: flex !important
+    }
+
+    .sm-edit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px
+    }
+
+    .sm-edit-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px
+    }
+
+    .sm-edit-field.full {
+      grid-column: 1 / -1
+    }
+
+    .sm-edit-lbl {
+      font-family: var(--mono);
+      font-size: 9.5px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--paper-faint)
+    }
+
+    .sm-edit-input {
+      background: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-family: var(--body);
+      font-size: 13px;
+      color: var(--paper);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+      width: 100%;
+      box-sizing: border-box
+    }
+
+    .sm-edit-input:focus {
+      border-color: var(--indigo);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--indigo) 18%, transparent)
+    }
+
+    .sm-edit-input.sm-edit-summary {
+      font-size: 12px;
+      line-height: 1.45;
+      resize: vertical;
+      min-height: 52px
+    }
+
+    .sm-edit-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px
+    }
+
+    .sm-manual-opt {
+      text-align: center;
+      margin-top: 13px
+    }
+
+    .sm-manual-btn {
+      font-size: 12px;
+      color: var(--paper-faint);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 4px 8px;
+      font-family: var(--body);
+      transition: color .15s
+    }
+
+    .sm-manual-btn:hover {
+      color: var(--indigo)
+    }
+
     .sm-ins {
       display: flex;
       flex-direction: column;
@@ -33927,6 +34024,9 @@
         </div>
         <p class="sm-exlead">or start from an example</p>
         <div class="sm-chips" id="smChips"></div>
+        <div class="sm-manual-opt">
+          <button type="button" class="sm-manual-btn" id="smManualBtn">or define Sim name &amp; description manually</button>
+        </div>
       </div>
       <div class="sm-pane" data-pane="site">
         <div class="sm-field url">
@@ -33977,7 +34077,21 @@
               id="smRunViewAll">View all in Sims →</button></div>
         </div>
         <div class="sm-next-steps">
-          <p class="sm-next-lead">Or activate another way:</p>
+          <p class="sm-next-lead">Or customize &amp; activate another way:</p>
+          <!-- Edit / customize Sim profile — edit name, description, traits -->
+          <a class="sm-next-step" href="#" id="smNextEdit">
+            <div class="sm-next-step-ic"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="18" height="18"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                <path d="m15 5 4 4" />
+              </svg></div>
+            <div class="sm-next-step-body">
+              <div class="sm-next-step-t" id="smNextEditTitle">Edit Sim name &amp; description</div>
+              <div class="sm-next-step-d" id="smNextEditDesc">Customize their name, role, description, traits, and persona prompt.</div>
+            </div>
+            <span class="sm-next-step-arr" aria-hidden="true">→</span>
+          </a>
           <!-- Secondary: Chrome extension — see live reactions while browsing -->
           <a class="sm-next-step" href="https://chromewebstore.google.com/detail/olahjdcgbdjajbfmgnakjlehgjdmaene"
             target="_blank" rel="noopener" id="smNextExt">
@@ -34036,6 +34150,7 @@
           </button>
         </div>
         <div class="sm-success-foot">
+          <a class="btn btn-ghost btn-sm" id="smSuccessEdit" href="#">Edit Sim profile</a>
           <button class="btn btn-ghost btn-sm" id="smSuccessBack" type="button">Add another Sim</button>
           <button class="btn btn-ghost btn-sm" id="smSuccessDash" type="button">Go to dashboard</button>
         </div>
@@ -34079,14 +34194,33 @@
               const clientTip = "Judges outcomes &amp; strategy — not individual buttons";
               const userTip = "Operates the product hands-on — reacts to UI &amp; interaction";
               return `<div class="sm-sim" data-idx="${idx}" data-simclass="${cls}">
-      <div class="sm-sim-top"><div class="sm-av" style="background:${acc}">${esc(s.initials || inits(s.name))}</div>
-        <div><div class="sm-nm">${esc(s.name || "Sim")}</div><div class="sm-rl">${esc(s.role || "")}</div></div>
-        <span class="sm-badges"><span class="sm-kind ${cls}" data-tip="${cls === "client" ? clientTip : userTip}">${cls === "client" ? "Client" : "User"}</span><span class="sm-side">${esc(side)}</span></span></div>
-      ${s.summary ? `<div class="sm-sum">${esc(s.summary)}</div>` : ""}
+      <div class="sm-sim-view">
+        <div class="sm-sim-top"><div class="sm-av" style="background:${acc}">${esc(s.initials || inits(s.name))}</div>
+          <div><div class="sm-nm">${esc(s.name || "Sim")}</div><div class="sm-rl">${esc(s.role || "")}</div></div>
+          <span class="sm-badges"><span class="sm-kind ${cls}" data-tip="${cls === "client" ? clientTip : userTip}">${cls === "client" ? "Client" : "User"}</span><span class="sm-side">${esc(side)}</span></span></div>
+        ${s.summary ? `<div class="sm-sum">${esc(s.summary)}</div>` : ""}
+      </div>
+      <div class="sm-sim-edit-box" style="display:none">
+        <div class="sm-edit-grid">
+          <div class="sm-edit-field">
+            <label class="sm-edit-lbl">Name</label>
+            <input class="sm-edit-input sm-edit-name" data-sim-field="name" data-idx="${idx}" type="text" value="${esc(s.name || "Sim")}" placeholder="Sim name" />
+          </div>
+          <div class="sm-edit-field">
+            <label class="sm-edit-lbl">Role</label>
+            <input class="sm-edit-input sm-edit-role" data-sim-field="role" data-idx="${idx}" type="text" value="${esc(s.role || "")}" placeholder="Role or title" />
+          </div>
+          <div class="sm-edit-field full">
+            <label class="sm-edit-lbl">Description / Summary</label>
+            <textarea class="sm-edit-input sm-edit-summary" data-sim-field="summary" data-idx="${idx}" rows="2" placeholder="What describes this Sim and how they evaluate your product?">${esc(s.summary || "")}</textarea>
+          </div>
+        </div>
+      </div>
       ${coreHtml}
       <div class="sm-ins">${ins}</div>
       <div class="sm-class-pick"><span class="sm-class-pick-lbl">Type:</span><button class="sm-class-btn user${cls === "user" ? " on" : ""}" data-class-pick="${idx}" data-class="user" title="User — operates the product hands-on; reacts to UI &amp; interaction">User</button><button class="sm-class-btn client${cls === "client" ? " on" : ""}" data-class-pick="${idx}" data-class="client" title="Client — judges outcomes &amp; strategy, not individual buttons">Client</button></div>
       <div class="sm-foot"><button class="btn btn-indigo btn-sm" data-add="${idx}">＋ Add ${first}</button>
+        <button class="btn btn-ghost btn-sm sm-edit-toggle" data-edit-sim="${idx}" type="button">${kicon('pencil', { size: 12 })} <span class="sm-edit-btn-text">Edit</span></button>
         <button class="btn btn-ghost btn-sm" data-skip="${idx}">Skip</button><span class="grow"></span></div></div>`;
             }
             let lastSims = [];
@@ -34212,7 +34346,7 @@
             }
             // Pretty host for the run-now prompt copy ("…on acme.com?"). Never throws on junk input.
             function runNowHost(u) { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
-            function showSuccessPanel(addedName, addedCount, merged) {
+            function showSuccessPanel(addedName, addedCount, merged, simId) {
               // KLAVITYKLA-388: prefer the URL the user JUST used in "From your site" so the site-mode
               // Add / Add-all funnels straight into running their first review on that exact site; fall
               // back to the project's configured site_url via projSiteUrl() for describe/call flows.
@@ -34232,6 +34366,31 @@
               resetRunNow();
               const runUrl = $("smRunUrl");
               if (runUrl && !runUrl.value) runUrl.value = runNowUrl;
+
+              // Configure the "Edit Sim" actions (JTBD: immediate option to edit Sim name & description after creation)
+              const pid = curProjId();
+              const editUrl = simId
+                ? ("/sim/" + encodeURIComponent(simId) + (pid ? "?project=" + encodeURIComponent(pid) : ""))
+                : ("/dashboard" + (pid ? "?project=" + encodeURIComponent(pid) : "") + "#sims");
+              const nextEdit = $("smNextEdit");
+              const nextEditTitle = $("smNextEditTitle");
+              const nextEditDesc = $("smNextEditDesc");
+              const successEdit = $("smSuccessEdit");
+              if (nextEdit) nextEdit.setAttribute("href", editUrl);
+              if (successEdit) successEdit.setAttribute("href", editUrl);
+              if (nextEditTitle) {
+                if (addedCount && addedCount > 1) {
+                  nextEditTitle.textContent = "Edit your Sims";
+                  if (nextEditDesc) nextEditDesc.textContent = "Fine-tune names, roles, and descriptions in the Sims tab.";
+                  if (successEdit) successEdit.textContent = "Edit Sims in dashboard";
+                } else {
+                  const targetName = addedName ? ("" + addedName) : "Sim";
+                  nextEditTitle.textContent = "Edit " + targetName + "’s profile & description";
+                  if (nextEditDesc) nextEditDesc.textContent = "Customize name, role, description, traits, and persona prompt.";
+                  if (successEdit) successEdit.textContent = "Edit " + targetName + "’s profile →";
+                }
+              }
+
               // Hide the result cards while keeping them in the DOM (so close() still triggers load())
               out.style.display = "none";
               successEl.classList.add("show");
@@ -34334,12 +34493,39 @@
               if (activePane) activePane.click(); else out.innerHTML = "";
               setTimeout(function () { var f = $("smBrief"); if (f && ov.classList.contains("show")) f.focus(); }, 60);
             };
+            const nextEditBtn = $("smNextEdit");
+            if (nextEditBtn) {
+              nextEditBtn.onclick = function (e) {
+                e.preventDefault();
+                const h = this.getAttribute("href");
+                close();
+                if (h && h !== "#") location.href = h;
+              };
+            }
+            const successEditBtn = $("smSuccessEdit");
+            if (successEditBtn) {
+              successEditBtn.onclick = function (e) {
+                e.preventDefault();
+                const h = this.getAttribute("href");
+                close();
+                if (h && h !== "#") location.href = h;
+              };
+            }
 
             async function saveSim(s, cardEl, btn, opts) {
               const orig = btn ? btn.textContent : ""; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
               // Read the chosen simClass from the card's data-simclass attribute (may have been flipped by the picker);
               // fall back to the AI-returned simClass on the Sim object.
               const chosenClass = (cardEl && cardEl.dataset.simclass) || (simClassOf(s));
+              // Ensure any edited field values in the card inputs are synced into the Sim object before saving
+              if (cardEl) {
+                const nameInp = cardEl.querySelector(".sm-edit-name");
+                const roleInp = cardEl.querySelector(".sm-edit-role");
+                const sumInp = cardEl.querySelector(".sm-edit-summary");
+                if (nameInp && nameInp.value.trim()) s.name = nameInp.value.trim();
+                if (roleInp) s.role = roleInp.value.trim();
+                if (sumInp) s.summary = sumInp.value.trim();
+              }
               try {
                 // KLAVITYKLA-301: pass simSource so the server can stamp which Add-a-Sim path created this Sim.
                 const res = await postJSON("/api/personas" + projQ(), {
@@ -34354,10 +34540,11 @@
                 // already exists — the server merged into the existing row instead of duplicating. Tell the user
                 // explicitly rather than silently showing "Added" for a Sim they already have.
                 const merged = !!(res && res.existing);
+                const savedSimId = (res && res.persona && res.persona.id) || (res && res.id) || null;
                 if (cardEl) { cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b => b.disabled = true); if (btn) btn.textContent = merged ? "Already exists — merged" : "Added"; } // emoji-ok
                 // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
-                if (!opts || !opts.defer) showSuccessPanel(s.name, 1, merged);
-                return merged;
+                if (!opts || !opts.defer) showSuccessPanel(s.name, 1, merged, savedSimId);
+                return { merged, id: savedSimId };
               } catch (e) {
                 if (btn) { btn.disabled = false; btn.textContent = orig; }
                 // GTM round 2: Sim quota hit (402 quota_exceeded, only when KLAV_BILLING_ENFORCEMENT=1) —
@@ -34374,8 +34561,26 @@
               }
             }
 
-            // delegate clicks inside the result list (Add / Skip / Add all / simClass picker)
+            // delegate clicks inside the result list (Add / Skip / Add all / simClass picker / Edit toggle)
             out.addEventListener("click", (e) => {
+              // Edit toggle: expand/collapse inline edit inputs for Sim name & description
+              const edit = e.target.closest("[data-edit-sim]");
+              if (edit) {
+                const card = edit.closest(".sm-sim");
+                if (!card) return;
+                const isEditing = card.classList.toggle("is-editing");
+                const editBox = card.querySelector(".sm-sim-edit-box");
+                const view = card.querySelector(".sm-sim-view");
+                const btnText = edit.querySelector(".sm-edit-btn-text");
+                if (editBox) editBox.style.display = isEditing ? "flex" : "none";
+                if (view) view.style.display = isEditing ? "none" : "";
+                if (btnText) btnText.textContent = isEditing ? "Done" : "Edit";
+                if (isEditing) {
+                  const nameInput = card.querySelector(".sm-edit-name");
+                  if (nameInput) { nameInput.focus(); nameInput.select(); }
+                }
+                return;
+              }
               // simClass picker: flip User/Client on the card before saving
               const pick = e.target.closest("[data-class-pick]");
               if (pick) {
@@ -34406,8 +34611,51 @@
                 const count = btns.length;
                 Promise.all(btns.map(b => { const i = +b.dataset.add; const card = b.closest(".sm-sim"); return saveSim(lastSims[i], card, b, { defer: true }); }))
                   // JTBD 3.10: when the batch is a single Sim that already existed, surface the merged heading.
-                  .then(results => showSuccessPanel(null, count, count === 1 && results[0] === true))
+                  .then(results => {
+                    const firstId = (results && results.find(r => r && r.id)) ? results.find(r => r && r.id).id : null;
+                    const isMerged = count === 1 && results && results[0] && results[0].merged === true;
+                    showSuccessPanel(null, count, isMerged, firstId);
+                  })
                   .catch(() => { }); // individual errors already surface via fail()
+              }
+            });
+
+            // Live reactive update as user edits Sim name, role, or description before creation
+            out.addEventListener("input", (e) => {
+              const inp = e.target.closest(".sm-edit-input");
+              if (!inp) return;
+              const card = inp.closest(".sm-sim");
+              const idx = +inp.dataset.idx;
+              const field = inp.dataset.simField;
+              if (!card || isNaN(idx) || !lastSims[idx]) return;
+              const val = inp.value;
+              if (field === "name") {
+                lastSims[idx].name = val.trim() || "Sim";
+                const nmEl = card.querySelector(".sm-nm");
+                if (nmEl) nmEl.textContent = val || "Sim";
+                const av = card.querySelector(".sm-av");
+                if (av) av.textContent = lastSims[idx].initials || inits(val);
+                const addBtn = card.querySelector("[data-add]");
+                if (addBtn && !addBtn.disabled) {
+                  const first = esc(String(val || "Sim").split(" ")[0]);
+                  addBtn.textContent = "＋ Add " + first;
+                }
+              } else if (field === "role") {
+                lastSims[idx].role = val.trim();
+                const rlEl = card.querySelector(".sm-rl");
+                if (rlEl) rlEl.textContent = val;
+              } else if (field === "summary") {
+                lastSims[idx].summary = val.trim();
+                let sumEl = card.querySelector(".sm-sum");
+                if (!sumEl && val.trim()) {
+                  const view = card.querySelector(".sm-sim-view");
+                  if (view) {
+                    sumEl = document.createElement("div");
+                    sumEl.className = "sm-sum";
+                    view.appendChild(sumEl);
+                  }
+                }
+                if (sumEl) sumEl.textContent = val;
               }
             });
 
@@ -34428,6 +34676,33 @@
             $("smBriefGo").onclick = () => withBusy($("smBriefGo"), "Imagining…", genBrief);
             $("smUrlGo").onclick = () => withBusy($("smUrlGo"), "Reading…", genSite);
             $("smTxGo").onclick = () => withBusy($("smTxGo"), "Extracting…", genCall);
+            const smManualBtn = $("smManualBtn");
+            if (smManualBtn) {
+              smManualBtn.onclick = function () {
+                clearFieldErr();
+                const customSim = {
+                  name: "New Sim",
+                  role: "User",
+                  summary: "",
+                  simClass: "user",
+                  side: "external",
+                  insights: []
+                };
+                lastSimSource = "describe";
+                showSims([customSim]);
+                const card = out.querySelector('.sm-sim[data-idx="0"]');
+                if (card) {
+                  const editBtn = card.querySelector('[data-edit-sim="0"]');
+                  if (editBtn) editBtn.click();
+                  const nameInput = card.querySelector(".sm-edit-name");
+                  if (nameInput) {
+                    nameInput.value = "";
+                    nameInput.placeholder = "Enter Sim name (e.g. Sarah Chen)";
+                    nameInput.focus();
+                  }
+                }
+              };
+            }
 
             // "From a call" transcript file upload (.txt / .vtt / .srt) — loads file text into the paste box before Extract
             const smFileLbl = $("smFileLbl"); if (smFileLbl) smFileLbl.innerHTML = kicon("paperclip", { size: 14 }) + " Upload transcript" + smFileLbl.querySelector("input").outerHTML;
@@ -34538,7 +34813,14 @@
               showDiscard();
             }
             $("simClose").onclick = function () { requestClose(); };
-            ov.addEventListener("mousedown", (e) => { if (e.target === ov) requestClose(); });
+            ov.addEventListener("mousedown", (e) => {
+              if (e.target === ov) {
+                // The 'Sarah Chen is ready — now put them to work' popup should remain open
+                // when clicking outside its boundaries; only close via 'X' or action button.
+                if (successEl && successEl.classList.contains("show")) return;
+                requestClose();
+              }
+            });
             document.addEventListener("keydown", (e) => {
               if (e.key !== "Escape" || !ov.classList.contains("show")) return;
               if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing
