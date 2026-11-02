@@ -88,3 +88,13 @@ test("Extract Sims with nothing loaded says what to do (the hidden paste box can
   const g = block(DASH, "async function genCall()", 700)
   expect(g).toContain("Drop or browse a transcript file, or paste the call.")
 })
+
+test("Adding a Sim no longer shows the 'now put them to work' panel: it toasts and closes (reloading the list), staying open only while suggestions remain", () => {
+  const f = block(DASH, "function showSuccessPanel(addedName, addedCount, merged)", 900)
+  expect(f).toContain("klavToast(esc(msg))")
+  expect(f).toContain('out.querySelector(".sm-sim:not(.added)")')
+  expect(f).toContain("close()")
+  expect(f).not.toContain("successEl.classList.add")          // the panel is never shown
+  expect(f).not.toContain("put them to work")
+  expect(block(DASH, "function close(fromPop)", 1200)).toContain("if (simAdded) { simAdded = false; load(); }")
+})

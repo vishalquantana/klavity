@@ -34760,29 +34760,17 @@
             }
             // Pretty host for the run-now prompt copy ("…on acme.com?"). Never throws on junk input.
             function runNowHost(u) { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } }
+            // Figma design: there is no "now put them to work" panel. Adding a Sim closes the modal, a toast confirms it, and the
+            // new Sim shows at the top of the Sims list (close() reloads it). If other suggested Sims are still waiting in the
+            // list (From your site / From a call), stay open so they can be added or skipped, and close once none are left.
+            // (The old panel markup below is no longer shown.)
             function showSuccessPanel(addedName, addedCount, merged) {
-              // KLAVITYKLA-388: prefer the URL the user JUST used in "From your site" so the site-mode
-              // Add / Add-all funnels straight into running their first review on that exact site; fall
-              // back to the project's configured site_url via projSiteUrl() for describe/call flows.
-              const runNowUrl = lastSiteUrl || projSiteUrl();
-              const host = runNowHost(runNowUrl);
-              // Update heading to reflect single vs. multiple (and the run-on-your-site funnel when known).
-              const title = $("smSuccessTitle");
-              if (title) {
-                // JTBD 3.10: a single duplicate-merge gets an explicit "already exists" heading so the user
-                // knows nothing new was created; new adds and batches keep the "ready to work" framing.
-                if (merged && (!addedCount || addedCount <= 1)) title.textContent = (addedName ? "" + addedName + " already exists" : "That Sim already exists") + " — merged into your existing one";
-                else if (host) title.textContent = ((addedCount && addedCount > 1) ? "Your cast is ready" : (addedName ? "" + addedName + " is ready" : "Your Sim is ready")) + " — run their first review on " + host + "?";
-                else if (addedCount && addedCount > 1) title.textContent = "Your Sims are ready — now put them to work";
-                else title.textContent = (addedName ? "" + addedName + " is ready" : "Your Sim is ready") + " — now put them to work";
-              }
-              // Prefill the run-now URL with the site the user just used (or the project's configured site).
-              resetRunNow();
-              const runUrl = $("smRunUrl");
-              if (runUrl && !runUrl.value) runUrl.value = runNowUrl;
-              // Hide the result cards while keeping them in the DOM (so close() still triggers load())
-              out.style.display = "none";
-              successEl.classList.add("show");
+              let msg;
+              if (merged && (!addedCount || addedCount <= 1)) msg = (addedName ? addedName + " already exists" : "That Sim already exists") + " — merged into your existing one.";
+              else if (addedCount && addedCount > 1) msg = addedCount + " Sims added.";
+              else msg = (addedName ? addedName : "Your Sim") + " is ready.";
+              klavToast(esc(msg));
+              if (!out.querySelector(".sm-sim:not(.added)")) close();
             }
             function hideSuccessPanel() {
               successEl.classList.remove("show");
