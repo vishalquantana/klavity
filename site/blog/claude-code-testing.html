@@ -1,0 +1,212 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Testing: How to QA What the Agent Ships · Klavity</title>
+<meta name="description" content="Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works.">
+<link rel="canonical" href="https://klavity.in/blog/claude-code-testing">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Claude Code Testing: How to QA What the Agent Ships"><meta property="og:description" content="Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works.">
+<meta property="og:url" content="https://klavity.in/blog/claude-code-testing"><meta property="og:image" content="https://klavity.in/blog/claude-code-testing.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Claude Code Testing: How to QA What the Agent Ships"><meta name="twitter:description" content="Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works."><meta name="twitter:image" content="https://klavity.in/blog/claude-code-testing.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Claude Code Testing: How to QA What the Agent Ships","description":"Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works.","datePublished":"2026-11-02","dateModified":"2026-11-02","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/claude-code-testing.svg"}},"mainEntityOfPage":"https://klavity.in/blog/claude-code-testing","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Claude Code Testing: How to QA What the Agent Ships","item":"https://klavity.in/blog/claude-code-testing"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/claude-code-testing"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does Claude Code test its own code?","acceptedAnswer":{"@type":"Answer","text":"It runs the checks it decides are relevant — type-checks, linting and usually the test file for the feature it just touched. That is genuine verification, but it is scoped to what the agent chose to run and executed inside its own session environment. Re-run the full suite in CI on the pushed branch before you treat it as verified."}},{"@type":"Question","name":"Why can't I rely on tests the agent wrote itself?","acceptedAnswer":{"@type":"Answer","text":"Because the same model wrote the implementation and the test. If it misread the requirement, that misreading is usually encoded in both, and the test passes. Agent-written tests are a good regression net for future changes; they are not an independent check that the current change does what you meant."}},{"@type":"Question","name":"What does Claude Code testing miss most often?","acceptedAnswer":{"@type":"Answer","text":"Anything that only shows up in a viewport. An agent verifies by exit codes and log output, so broken layout, an element that renders but isn't clickable, a focus trap, or a form field that silently drops data all produce a passing run. Browser-level and journey-level testing is the layer that catches those."}},{"@type":"Question","name":"How do I stop agent refactors from breaking my E2E tests?","acceptedAnswer":{"@type":"Answer","text":"Assert observable behaviour — rendered text, status codes, redirect targets, persisted data — rather than internal structure or brittle CSS selectors. Re-running the same prompt produces different implementations, so tests tied to implementation detail break on every pass. Self-healing suites like AutoSim are built for exactly this churn."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-02</div>
+    <h1>Claude Code Testing: How to QA What the Agent Ships</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Terminal green check on the left, unverified browser behaviour on the right">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="640" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="150" cy="380" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="96" width="300" height="228" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="56" y="96" width="300" height="228" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="56" y1="128" x2="356" y2="128" stroke="#6366f1" stroke-width="1.5" opacity="0.4"/>
+  <circle cx="74" cy="112" r="4" fill="#f87171" opacity="0.7"/>
+  <circle cx="90" cy="112" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="106" cy="112" r="4" fill="#4ade80" opacity="0.7"/>
+
+  <path d="M80 158 l12 10 -12 10" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="102" y="162" width="150" height="8" rx="4" fill="#f5f0e8" opacity="0.3"/>
+  <rect x="102" y="194" width="196" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="102" y="222" width="120" height="8" rx="4" fill="#f5f0e8" opacity="0.16"/>
+  <polyline points="80 252 88 260 102 244" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="118" y="248" width="94" height="8" rx="4" fill="#4ade80" opacity="0.55"/>
+  <polyline points="80 286 88 294 102 278" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="118" y="282" width="134" height="8" rx="4" fill="#4ade80" opacity="0.4"/>
+
+  <path d="M372 210 h56" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="7 7"/>
+  <path d="M424 202 l10 8 -10 8" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="450" y="96" width="300" height="228" rx="12" fill="#f5f0e8" opacity="0.04"/>
+  <rect x="450" y="96" width="300" height="228" rx="12" fill="none" stroke="#6366f1" stroke-width="1.5" opacity="0.5"/>
+  <line x1="450" y1="128" x2="750" y2="128" stroke="#6366f1" stroke-width="1.5" opacity="0.4"/>
+  <rect x="468" y="107" width="104" height="11" rx="5.5" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="474" y="152" width="112" height="60" rx="8" fill="#6366f1" opacity="0.22"/>
+  <rect x="604" y="152" width="112" height="60" rx="8" fill="#6366f1" opacity="0.22"/>
+  <rect x="474" y="236" width="242" height="16" rx="8" fill="#f5f0e8" opacity="0.12"/>
+  <rect x="474" y="268" width="150" height="34" rx="8" fill="#6366f1" opacity="0.55"/>
+
+  <circle cx="700" cy="285" r="26" fill="#f87171" opacity="0.18"/>
+  <circle cx="700" cy="285" r="17" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="700" y1="276" x2="700" y2="288" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="700" cy="294" r="1.8" fill="#f87171"/>
+  <circle cx="586" cy="182" r="22" fill="#f87171" opacity="0.14"/>
+  <line x1="578" y1="174" x2="594" y2="190" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="594" y1="174" x2="578" y2="190" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+
+  <rect x="56" y="352" width="118" height="5" rx="2.5" fill="#4ade80" opacity="0.55"/>
+  <rect x="450" y="352" width="118" height="5" rx="2.5" fill="#f87171" opacity="0.55"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Claude Code testing means verifying behaviour across the whole repo, not just confirming the code compiled. An agent can reliably prove its code type-checks, lints and passes the tests it chose to run — it cannot prove the requirement was understood, the UI is usable, or nothing else regressed, because it checks its own work through a terminal rather than a browser.</div>
+    <div class="prose"><p><strong>Claude Code testing</strong> means verifying the behaviour of code an agent wrote across your whole repository — not just confirming it compiled. Because Claude Code works agentically, it can edit a dozen files in one pass and run your test suite itself, so a green terminal tells you the commands the agent chose to run passed. It does not tell you the feature works. The gap to close is behavioural: does the finished flow work in a real browser, for a real user, on the paths nobody wrote a test for?</p>
+
+<p>That gap is where the bugs your client finds live. This guide covers what an agent can verify about its own output, what it structurally cannot, and how to build a testing loop around the difference.</p>
+
+<h2>What does Claude Code testing actually have to cover?</h2>
+
+<p>Agent-written code fails differently from hand-written code, so the testing surface is shaped differently too. Three properties of agentic coding drive everything else:</p>
+
+<ul>
+  <li><strong>The blast radius is wider than the diff you read.</strong> A single instruction like "add tenant scoping to the reports endpoint" can touch a route, a query builder, a migration, a type definition and two call sites. Reviewing the agent's summary is not reviewing the change. The diff is the change.</li>
+  <li><strong>The same model wrote the code and the tests.</strong> If the agent misunderstood the requirement, it will usually encode that same misunderstanding in the test it writes to prove the code works — and the test will pass. Tests authored alongside an implementation are a regression net, not an independent check of intent.</li>
+  <li><strong>Verification happens through a terminal, not a viewport.</strong> By default an agent confirms work by exit codes, log output and test results. It is not looking at the rendered page. Layout breakage, a button that is visually present but not clickable, a modal that traps focus, a form that silently drops a field — none of these produce a non-zero exit code.</li>
+</ul>
+
+<p>So a useful Claude Code testing strategy is not "write more unit tests." It is: let the agent own the checks it can run deterministically, and put an independent behavioural layer on top of everything it can't see.</p>
+
+<h2>Why isn't a green test run enough?</h2>
+
+<p>There are two separate reasons, and they compound.</p>
+
+<p>The first is <em>scope</em>. An agent runs the tests it believes are relevant. If it added a feature and ran that feature's spec file, the suite it ran is green and the suite it skipped is unknown. Always re-run the full suite yourself, in CI, on the pushed branch — not in the agent's working session.</p>
+
+<p>The second is <em>environment drift</em>. The agent's sandbox has its own installed dependencies, its own environment variables, and whatever state previous steps left behind. Code that passes locally can fail in CI on a missing env var, an unpinned dependency, or a lockfile the agent regenerated. Treat the agent's green run as a signal to open a pull request, not as permission to merge.</p>
+
+<p>There is also a subtler issue specific to non-deterministic authors: run the same prompt twice and you get two different implementations. That means your regression suite should pin <em>observable behaviour</em> — status codes, rendered text, redirect targets, persisted rows — rather than internal function names or call structure, or it will break every time the agent refactors.</p>
+
+<h2>What can the agent verify itself, and what can't it?</h2>
+
+<p>This split is the most practical thing to internalise. Push work leftward where you can; cover the right-hand column with something else.</p>
+
+<table>
+  <thead>
+    <tr><th>Check</th><th>Agent can verify itself</th><th>Needs an independent layer</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Compiles / type-checks</td><td>Yes — reliably</td><td>—</td></tr>
+    <tr><td>Linting and formatting</td><td>Yes — reliably</td><td>—</td></tr>
+    <tr><td>Unit tests pass</td><td>Yes, for tests it runs</td><td>Full-suite run in CI</td></tr>
+    <tr><td>Requirement was understood correctly</td><td>No — same author bias</td><td>Human review or independent test</td></tr>
+    <tr><td>UI renders and is usable</td><td>No — no viewport</td><td>Browser-level testing</td></tr>
+    <tr><td>Real user journeys end to end</td><td>Partially, if E2E tests exist</td><td>Persona / journey testing</td></tr>
+    <tr><td>Auth and tenant boundaries hold</td><td>No — it tests the happy path</td><td>Adversarial, multi-account testing</td></tr>
+    <tr><td>Nothing else regressed</td><td>No</td><td>Full regression run</td></tr>
+  </tbody>
+</table>
+
+<h2>What should a Claude Code testing loop look like?</h2>
+
+<p>A loop that works in practice, in order:</p>
+
+<ol>
+  <li><strong>Make the agent's checks mandatory, not optional.</strong> Put type-check, lint and the unit suite in a single command the agent is instructed to run before declaring done. If it is one command, it gets run; if it is four, it gets partly run.</li>
+  <li><strong>Read the whole diff before anything else.</strong> Specifically look for files you did not expect to be touched — those are where unrequested changes hide. See <a href="/blog/how-to-review-ai-generated-code">how to review AI-generated code</a> for what to prioritise when the diff is large.</li>
+  <li><strong>Re-run everything in CI on the branch.</strong> Clean environment, full suite, no agent session state.</li>
+  <li><strong>Exercise the feature in a browser.</strong> Not a glance at the happy path — the empty state, the error state, a second user account, a slow network, a mobile width.</li>
+  <li><strong>Capture anything broken with full context the first time.</strong> A screenshot with no console log, network trail or DOM state becomes a "cannot reproduce" ticket and a second round trip.</li>
+  <li><strong>Turn each confirmed bug into a regression test</strong> that asserts behaviour, so the next agent pass cannot silently reintroduce it.</li>
+</ol>
+
+<h2>How does this compare to testing other AI coding tools?</h2>
+
+<p>The principles carry across, but the emphasis shifts. With in-editor assistants the unit of change is a file or a function, so review is tractable and the main risk is subtle logic error — that is the world of <a href="/blog/cursor-ide-testing">Cursor IDE testing</a>. With prompt-to-app builders, you often cannot meaningfully review the code at all, so verification is almost entirely behavioural.</p>
+
+<p>Claude Code sits in between and inherits the hard parts of both: the changes are large and multi-file like a builder's, but you do have a real repository, real CI and a real diff to work with. That combination is good news — it means you can automate most of the verification instead of clicking through it by hand.</p>
+
+<h2>What tools fit a Claude Code testing workflow?</h2>
+
+<p>Three jobs need covering, and they map onto Klavity's pieces:</p>
+
+<ul>
+  <li><strong>Catching what you see.</strong> <a href="/snap">Snap</a> turns a right-click into a bug report carrying the console log, network requests, DOM state and environment — so the report lands reproducible instead of becoming a thread.</li>
+  <li><strong>Catching what you didn't think to try.</strong> <a href="/sims">Sims</a> runs AI personas through your app the way different real users would, which is how you find the broken path that no spec described and no test covered.</li>
+  <li><strong>Keeping it caught.</strong> <a href="/autosim">AutoSim</a> maintains self-healing end-to-end tests, which matters specifically here: when an agent refactors the markup, brittle selector-based suites break and get deleted. A suite that repairs itself survives agentic churn.</li>
+</ul>
+
+<p>For the wider picture of where automated checks fit against human review, start with the <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>The short version</h2>
+
+<p>Claude Code will reliably tell you that your code compiles, lints and passes the tests it ran. It cannot tell you that the feature does what you meant, that the UI works, or that nothing else broke — because it is checking its own homework through a terminal. Keep the deterministic checks with the agent, keep behavioural verification independent of it, and ship at agent speed without finding out from your client.</p>
+
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> — point it at your next agent-built feature and see what the terminal missed.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Read the full diff, not the agent's summary — unexpected files are where unrequested changes hide.</li><li>Re-run the complete suite in CI on the branch, never trust the agent's session environment.</li><li>Cover the viewport yourself: empty states, error states, a second account, mobile width.</li><li>Turn every confirmed bug into a behaviour-level regression test, not a selector-level one.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>Does Claude Code test its own code?</summary><p>It runs the checks it decides are relevant — type-checks, linting and usually the test file for the feature it just touched. That is genuine verification, but it is scoped to what the agent chose to run and executed inside its own session environment. Re-run the full suite in CI on the pushed branch before you treat it as verified.</p></details><details><summary>Why can't I rely on tests the agent wrote itself?</summary><p>Because the same model wrote the implementation and the test. If it misread the requirement, that misreading is usually encoded in both, and the test passes. Agent-written tests are a good regression net for future changes; they are not an independent check that the current change does what you meant.</p></details><details><summary>What does Claude Code testing miss most often?</summary><p>Anything that only shows up in a viewport. An agent verifies by exit codes and log output, so broken layout, an element that renders but isn't clickable, a focus trap, or a form field that silently drops data all produce a passing run. Browser-level and journey-level testing is the layer that catches those.</p></details><details><summary>How do I stop agent refactors from breaking my E2E tests?</summary><p>Assert observable behaviour — rendered text, status codes, redirect targets, persisted data — rather than internal structure or brittle CSS selectors. Re-running the same prompt produces different implementations, so tests tied to implementation detail break on every pass. Self-healing suites like AutoSim are built for exactly this churn.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

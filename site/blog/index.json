@@ -978,5 +978,12 @@
     "excerpt": "AI QA for WordPress sites catches what plugin, theme and core updates break between your deploys — on a schedule, logged out, with real evidence.",
     "category": "Guides",
     "date": "2026-11-01"
+  },
+  {
+    "slug": "claude-code-testing",
+    "title": "Claude Code Testing: How to QA What the Agent Ships",
+    "excerpt": "Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works.",
+    "category": "Guides",
+    "date": "2026-11-02"
   }
 ]
