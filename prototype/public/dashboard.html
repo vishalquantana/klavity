@@ -13988,6 +13988,53 @@
       }
     }
 
+    /* "Sim created!" view (design): hides everything else in the popup except the close button. */
+    .sm-created {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 4px;
+      padding: 18px 0 14px
+    }
+
+    .sm-created[hidden] {
+      display: none
+    }
+
+    .sm-created-ic {
+      color: #20b56a;
+      margin-bottom: 6px
+    }
+
+    .sm-created-t {
+      font-family: var(--display);
+      font-size: 25px;
+      font-weight: 540;
+      letter-spacing: -.018em;
+      margin: 0 0 22px
+    }
+
+    .sm-created-n {
+      font-size: 14px;
+      font-weight: 700
+    }
+
+    .sm-created-s {
+      font-size: 12.5px;
+      color: var(--paper-faint)
+    }
+
+    .sm-modal-created .sm-hd .gl,
+    .sm-modal-created #simHd,
+    .sm-modal-created #simSub,
+    .sm-modal-created .sm-seg,
+    .sm-modal-created .sm-pane,
+    .sm-modal-created #smOut,
+    .sm-modal-created #smSuccess {
+      display: none !important
+    }
+
     /* Name step (design): a separate screen — tabs hidden, heading becomes "Name your Sim". */
     #smNameStep {
       max-width: 540px;
@@ -34474,6 +34521,16 @@
           areas on any page.</p>
       </div>
       <div class="sm-out" id="smOut"></div>
+      <!-- Figma design: after Create/Add the popup becomes a short "Sim created!" view, then closes by itself. -->
+      <div class="sm-created" id="smCreated" role="status" aria-live="polite" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" class="sm-created-ic" width="22" height="22" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+        <h2 class="sm-created-t" id="smCreatedT">Sim created!</h2>
+        <div class="sm-created-n" id="smCreatedN"></div>
+        <div class="sm-created-s" id="smCreatedS">It will appear in your Sims list shortly.</div>
+      </div>
       <!-- Post-add success panel: shown after at least one Sim is saved; guides user to activate their Sims -->
       <div class="sm-success" id="smSuccess" role="status" aria-live="polite">
         <div class="sm-success-hd">
@@ -34764,13 +34821,27 @@
             // new Sim shows at the top of the Sims list (close() reloads it). If other suggested Sims are still waiting in the
             // list (From your site / From a call), stay open so they can be added or skipped, and close once none are left.
             // (The old panel markup below is no longer shown.)
+            // Figma design: after adding, the popup becomes a short "Sim created!" view (check, name, "It will appear in your Sims
+            // list shortly.") and closes by itself; close() reloads the list so the new Sim is there. If other suggested Sims are
+            // still waiting (From your site / From a call) we only toast, so they can be added or skipped, and show the view last.
+            // (The old "now put them to work" panel markup further down is no longer shown.)
+            let createdTimer = null;
+            function clearCreatedView() {
+              if (createdTimer) { clearTimeout(createdTimer); createdTimer = null; }
+              ov.classList.remove("sm-modal-created"); $("smCreated").hidden = true;
+            }
             function showSuccessPanel(addedName, addedCount, merged) {
-              let msg;
-              if (merged && (!addedCount || addedCount <= 1)) msg = (addedName ? addedName + " already exists" : "That Sim already exists") + " — merged into your existing one.";
-              else if (addedCount && addedCount > 1) msg = addedCount + " Sims added.";
-              else msg = (addedName ? addedName : "Your Sim") + " is ready.";
-              klavToast(esc(msg));
-              if (!out.querySelector(".sm-sim:not(.added)")) close();
+              const many = addedCount && addedCount > 1, dup = merged && !many;
+              if (out.querySelector(".sm-sim:not(.added)")) {
+                klavToast(esc(dup ? (addedName || "That Sim") + " already exists — merged into your existing one." : (addedName || "Sim") + " added."));
+                return;
+              }
+              $("smCreatedT").textContent = dup ? "Already exists" : many ? "Sims created!" : "Sim created!";
+              $("smCreatedN").textContent = many ? addedCount + " Sims" : (addedName || "");
+              $("smCreatedS").textContent = dup ? "Merged into your existing Sim." : many ? "They will appear in your Sims list shortly." : "It will appear in your Sims list shortly.";
+              clearCreatedView();
+              $("smCreated").hidden = false; ov.classList.add("sm-modal-created");
+              createdTimer = setTimeout(function () { createdTimer = null; if (ov.classList.contains("sm-modal-created")) close(); }, 2200);
             }
             function hideSuccessPanel() {
               successEl.classList.remove("show");
@@ -35042,7 +35113,7 @@
               $("simHd").textContent = first ? "Bring your first Sim to life" : "Add a Sim";
               // Prefill the site URL from the project when known — one less hop to a first Sim reaction.
               hideDiscard(); clearFieldErr();
-              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep"); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
+              out.innerHTML = ""; out.style.display = ""; $("smBrief").value = ""; $("smName").value = ""; $("smBriefStep").hidden = false; $("smNameStep").hidden = true; $("smCreateGo").disabled = true; ov.classList.remove("sm-modal-namestep"); clearCreatedView(); if ($("simHd").dataset.orig !== undefined) { $("simSub").innerHTML = $("simSub").dataset.orig; delete $("simHd").dataset.orig; delete $("simSub").dataset.orig; } $("smUrl").value = (state && state.active && state.active.siteUrl) || ""; $("smTx").value = ""; $("smTx").hidden = true; $("smDrop").classList.remove("has-file", "over"); $("smDropT").textContent = "Drop a transcript file"; $("smDropS").textContent = "TXT, VTT or SRT";
               hideSuccessPanel();
               selectPane(mode);
               ov.classList.add("show"); document.body.style.overflow = "hidden";
@@ -35052,7 +35123,7 @@
             let simNewReturnUrl = null;
             // fromPop=true means popstate already moved history — don't touch it again.
             function close(fromPop) {
-              ov.classList.remove("show"); document.body.style.overflow = ""; hideSuccessPanel(); hideDiscard();
+              clearCreatedView(); ov.classList.remove("show"); document.body.style.overflow = ""; hideSuccessPanel(); hideDiscard();
               // If WE pushed the /sim/new entry, pop it with history.back() so the browser Back button
               // isn't left pointing at an entry that just re-opens the surface (replaceState made Back
               // look like a no-op). Deep-link hits (no pushed entry) still replace, so Back leaves the app.
@@ -35065,7 +35136,7 @@
             }
             // Closing (✕, backdrop, Escape, browser Back, tab close) used to throw away whatever was typed or generated, with no warning.
             // Now, if there is anything unsaved, ask first. Nothing to lose (or already saved) closes straight away as before.
-            function simSuccessShown() { return successEl.classList.contains("show"); }
+            function simSuccessShown() { return successEl.classList.contains("show") || ov.classList.contains("sm-modal-created"); }
             function simDirty() {
               if (!ov.classList.contains("show") || simSuccessShown()) return false;
               const siteDefault = ((state && state.active && state.active.siteUrl) || "").trim();

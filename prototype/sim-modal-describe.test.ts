@@ -89,12 +89,18 @@ test("Extract Sims with nothing loaded says what to do (the hidden paste box can
   expect(g).toContain("Drop or browse a transcript file, or paste the call.")
 })
 
-test("Adding a Sim no longer shows the 'now put them to work' panel: it toasts and closes (reloading the list), staying open only while suggestions remain", () => {
-  const f = block(DASH, "function showSuccessPanel(addedName, addedCount, merged)", 900)
-  expect(f).toContain("klavToast(esc(msg))")
-  expect(f).toContain('out.querySelector(".sm-sim:not(.added)")')
+test("Adding a Sim shows the design's 'Sim created!' popup view, then closes itself (reloading the list); the old 'put them to work' panel is never shown", () => {
+  expect(DASH).toContain('id="smCreatedT">Sim created!</h2>')
+  expect(DASH).toContain("It will appear in your Sims list shortly.")
+  const f = block(DASH, "function showSuccessPanel(addedName, addedCount, merged)", 1800)
+  expect(f).toContain('ov.classList.add("sm-modal-created")')
+  expect(f).toContain("createdTimer = setTimeout(")
   expect(f).toContain("close()")
-  expect(f).not.toContain("successEl.classList.add")          // the panel is never shown
+  expect(f).toContain('out.querySelector(".sm-sim:not(.added)")')   // suggestions still waiting → toast only, popup view last
+  expect(f).not.toContain("successEl.classList.add")                // the old panel is never shown
   expect(f).not.toContain("put them to work")
-  expect(block(DASH, "function close(fromPop)", 1200)).toContain("if (simAdded) { simAdded = false; load(); }")
+  expect(DASH).toContain(".sm-modal-created .sm-seg")                // everything but the close button is hidden meanwhile
+  expect(block(DASH, "function close(fromPop)", 300)).toContain("clearCreatedView()")
+  expect(block(DASH, "function close(fromPop)", 1300)).toContain("if (simAdded) { simAdded = false; load(); }")
+  expect(DASH).toContain('ov.classList.contains("sm-modal-created"); }')   // an open created view never counts as unsaved work
 })
