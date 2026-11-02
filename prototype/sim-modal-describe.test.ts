@@ -63,3 +63,10 @@ test("Presets are unchanged: still the five QA reviewers, no persona-preset grou
   expect(SERVER).not.toContain("PERSONA_PRESET_SIMS")
   expect(SERVER).toContain('return wjson({ presets: PRESET_SIMS })')
 })
+
+test("Add a Sim popup follows the design: 580px wide, users icon, lead line above a full-width URL field with a globe, full-width action button", () => {
+  expect(DASH).toContain("max-width: 580px;\n      padding: 30px 30px 26px;".replace(/\n/g, DASH.includes("\r\n") ? "\r\n" : "\n"))
+  expect(DASH.indexOf('class="sm-note sm-site-lead"')).toBeLessThan(DASH.indexOf('class="sm-field url sm-url-wrap"'))
+  expect(DASH.indexOf('class="sm-field url sm-url-wrap"')).toBeLessThan(DASH.indexOf('class="btn btn-indigo sm-site-go" id="smUrlGo"'))
+  expect(DASH).toContain('<path d="M16 3.13a4 4 0 0 1 0 7.75" />')   // lucide "users" header icon
+})
