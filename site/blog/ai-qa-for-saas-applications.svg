@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="AI QA for SaaS applications: three user roles tested against one app, producing pass and bug results">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+
+  <rect x="36" y="86" width="150" height="62" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="62" cy="117" r="11" fill="#6366f1"/>
+  <rect x="84" y="105" width="78" height="8" rx="4" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="84" y="121" width="48" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="36" y="172" width="150" height="62" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="62" cy="203" r="11" fill="#6366f1" opacity="0.65"/>
+  <rect x="84" y="191" width="66" height="8" rx="4" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="84" y="207" width="54" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+
+  <rect x="36" y="258" width="150" height="62" rx="10" fill="#6366f1" opacity="0.16" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="62" cy="289" r="11" fill="#6366f1" opacity="0.35"/>
+  <rect x="84" y="277" width="58" height="8" rx="4" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="84" y="293" width="40" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+
+  <path d="M190 117 L246 196" stroke="#6366f1" stroke-width="2" fill="none" opacity="0.7"/>
+  <path d="M190 203 L246 203" stroke="#6366f1" stroke-width="2" fill="none" opacity="0.7"/>
+  <path d="M190 289 L246 210" stroke="#6366f1" stroke-width="2" fill="none" opacity="0.7"/>
+  <polyline points="238,197 250,203 238,209" fill="#6366f1"/>
+
+  <rect x="258" y="112" width="268" height="186" rx="12" fill="#f5f0e8" opacity="0.06"/>
+  <rect x="258" y="112" width="268" height="186" rx="12" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <line x1="258" y1="142" x2="526" y2="142" stroke="#6366f1" stroke-width="2" opacity="0.8"/>
+  <circle cx="276" cy="127" r="4.5" fill="#f87171"/>
+  <circle cx="292" cy="127" r="4.5" fill="#f5f0e8" opacity="0.4"/>
+  <circle cx="308" cy="127" r="4.5" fill="#4ade80"/>
+  <rect x="272" y="156" width="62" height="128" rx="6" fill="#6366f1" opacity="0.2"/>
+  <rect x="282" y="168" width="42" height="7" rx="3.5" fill="#f5f0e8" opacity="0.35"/>
+  <rect x="350" y="156" width="76" height="48" rx="6" fill="#6366f1" opacity="0.3"/>
+  <rect x="438" y="156" width="76" height="48" rx="6" fill="#6366f1" opacity="0.3"/>
+  <rect x="350" y="218" width="164" height="10" rx="5" fill="#f5f0e8" opacity="0.28"/>
+
+  <path d="M530 205 L600 205" stroke="#6366f1" stroke-width="2" fill="none" opacity="0.7"/>
+  <polyline points="592,199 604,205 592,211" fill="#6366f1"/>
+
+  <circle cx="648" cy="130" r="22" fill="#4ade80" opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="638,130 645,138 659,122" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="648" cy="205" r="22" fill="#4ade80" opacity="0.16" stroke="#4ade80" stroke-width="2"/>
+  <polyline points="638,205 645,213 659,197" fill="none" stroke="#4ade80" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="648" cy="280" r="22" fill="#f87171" opacity="0.18" stroke="#f87171" stroke-width="2"/>
+  <circle cx="648" cy="282" r="8" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="648" y1="266" x2="648" y2="274" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="636" y1="276" x2="641" y2="279" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="660" y1="276" x2="655" y2="279" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+
+
+</svg>

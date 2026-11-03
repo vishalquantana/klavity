@@ -985,5 +985,12 @@
     "excerpt": "Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works.",
     "category": "Guides",
     "date": "2026-11-02"
+  },
+  {
+    "slug": "ai-qa-for-saas-applications",
+    "title": "AI QA for SaaS Applications: The Practical Playbook",
+    "excerpt": "AI QA for SaaS applications means testing per role and per plan, not per page — because the same URL behaves differently for every user.",
+    "category": "Guides",
+    "date": "2026-11-03"
   }
 ]
