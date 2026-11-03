@@ -28,21 +28,24 @@ describe("KLA-601 Screen-decline helper nudge", () => {
     onClose: vi.fn(),
     onSubmit: vi.fn().mockResolvedValue({ issueKey: "KLA-1", issueUrl: "" }),
     autoCaptureOnOpen: true,
-    screenCaptureDefault: true,
   })
 
-  it("on decline: keeps the rendered fallback AND shows a one-time nudge that pulses the Screen button", async () => {
+  it("on manual Screen decline in composer: keeps the rendered capture AND shows a one-time nudge that pulses the Screen button", async () => {
     const cbs = declineCbs()
     buildModal("bug", cbs as any, { theme: "light" } as any)
     const shadow = modalShadow()
     await wait(60)
-    // Rendered fallback still ran — the reporter is never left shot-less.
+    // Rendered capture ran on open
     expect(cbs.onCaptureViewport).toHaveBeenCalledTimes(1)
+    // Manual Screen click declined
+    const sharp = shadow.getElementById("klavity-sharp") as HTMLButtonElement
+    sharp.click()
+    await wait(60)
+    expect(cbs.onCaptureSharp).toHaveBeenCalledTimes(1)
     // The action-oriented nudge is anchored near the Screen button and steers the eye (pulse).
     const nudges = shadow.querySelectorAll(".kl-nudge")
     expect(nudges.length).toBe(1)
     expect(nudges[0].textContent || "").toMatch(/pixel-perfect|try it now/i)
-    const sharp = shadow.getElementById("klavity-sharp") as HTMLButtonElement
     expect(sharp.classList.contains("kl-pulse")).toBe(true)
     // It is non-blocking: no error surfaced for a decline.
     const err = shadow.getElementById("klavity-err") as HTMLElement | null
@@ -54,14 +57,17 @@ describe("KLA-601 Screen-decline helper nudge", () => {
     buildModal("bug", cbs as any, { theme: "light" } as any)
     const shadow = modalShadow()
     await wait(60)
+    const sharp = shadow.getElementById("klavity-sharp") as HTMLButtonElement
+    sharp.click()
+    await wait(60)
     expect(shadow.querySelectorAll(".kl-nudge").length).toBe(1)
     // Dismiss it via its close affordance.
     ;(shadow.querySelector(".kl-nudge .kl-nudge-x") as HTMLButtonElement).click()
     expect(shadow.querySelectorAll(".kl-nudge").length).toBe(0)
     // A SECOND decline (manual Screen click → rejects again) must NOT resurrect the nudge.
-    ;(shadow.getElementById("klavity-sharp") as HTMLButtonElement).click()
+    sharp.click()
     await wait(30)
-    expect(cbs.onCaptureSharp).toHaveBeenCalledTimes(2) // both the on-open default + the manual retry declined
+    expect(cbs.onCaptureSharp).toHaveBeenCalledTimes(2)
     expect(shadow.querySelectorAll(".kl-nudge").length).toBe(0) // once-per-session: never shown again
   })
 

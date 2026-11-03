@@ -2765,7 +2765,14 @@ function Hm(e) {
   const M = document.createElement("div");
   M.className = "kl-shp-foot";
   const k = document.createElement("span");
-  k.className = "kl-shp-cancel", k.textContent = "Cancel";
+  k.className = "kl-shp-cancel", k.textContent = "Cancel", k.style.cursor = "pointer", k.addEventListener("click", (T) => {
+    var N;
+    T.stopPropagation(), n.classList.remove("kl-show");
+    try {
+      (N = e.onCancel) == null || N.call(e);
+    } catch {
+    }
+  });
   const b = document.createElement("span");
   b.className = "kl-shp-allow", b.textContent = "Allow", M.append(k, b), l.append(d, p, M);
   const A = document.createElement("div");
@@ -3067,14 +3074,14 @@ function vg(e, t, r = {}) {
   let c = [], l = !1, d = [], a = [], h = [], p = null, u = [], m = !1, f = !1, y = !1, M = !1;
   const k = !!t.onMinimize, b = k ? 8 : 5, A = 3e4, S = 10 * 1024 * 1024, v = !!t.allowFileAttachments, T = 5, N = t.maxFileBytes && t.maxFileBytes > 0 ? t.maxFileBytes : yg, U = t.reporterRole ?? "anon", z = t.upgradeUrl, ee = Math.max(120 * 1024 * 1024, N + 20 * 1024 * 1024);
   let W = [];
-  const I = /* @__PURE__ */ new WeakMap(), rt = () => typeof URL < "u" && typeof URL.createObjectURL == "function", Ge = (g) => I.get(g) || g.dataUrl, me = (g) => {
-    const w = I.get(g);
+  const O = /* @__PURE__ */ new WeakMap(), rt = () => typeof URL < "u" && typeof URL.createObjectURL == "function", Ge = (g) => O.get(g) || g.dataUrl, me = (g) => {
+    const w = O.get(g);
     if (w) {
       try {
         URL.revokeObjectURL(w);
       } catch {
       }
-      I.delete(g);
+      O.delete(g);
     }
   };
   let he = null;
@@ -3098,7 +3105,7 @@ function vg(e, t, r = {}) {
     }
     return pe && (w.selector = pe.selector, w.selectorText = pe.text), w;
   };
-  let Be = e, ke = 0, xe = null, j = null, Le = null, ve = t.replayState === "attached", Pe = null, Je = null, le = "idle", Qe = null, ye = null, Ct = null, dt = !1, ar = "", Mt = 0, Re = null, wt = !1, lr = "", xt = null, Rt = null, St = null, Pt = null, te = !1;
+  let Be = e, ke = 0, xe = null, j = null, Le = null, ve = t.replayState === "attached", Pe = null, Je = null, le = "idle", Qe = null, ye = null, Ct = null, dt = !1, lr = "", Mt = 0, Re = null, wt = !1, cr = "", xt = null, Rt = null, St = null, Pt = null, te = !1;
   const ze = 4e3, ot = 5e3, $e = {}, We = {}, Vt = (g) => g ? JSON.parse(JSON.stringify(g)) : null, Gt = (g) => {
     var w;
     try {
@@ -3942,8 +3949,8 @@ function vg(e, t, r = {}) {
       x = _;
     }).catch(() => {
     });
-    const C = (_, O) => {
-      const L = Ie.getBoundingClientRect(), $ = Math.min(O, window.innerWidth - 16), F = 8, B = window.innerWidth, K = window.innerHeight;
+    const C = (_, I) => {
+      const L = Ie.getBoundingClientRect(), $ = Math.min(I, window.innerWidth - 16), F = 8, B = window.innerWidth, K = window.innerHeight;
       _.style.left = Math.max(F, Math.min(L.left + L.width / 2 - $ / 2, B - $ - F)) + "px", _.style.top = "-9999px", _.style.visibility = "hidden", _.style.display = "block";
       const J = _.offsetHeight;
       _.style.display = "";
@@ -3983,10 +3990,10 @@ function vg(e, t, r = {}) {
         requestAnimationFrame(E);
         return;
       }
-      const O = window.innerWidth, L = window.innerHeight;
+      const I = window.innerWidth, L = window.innerHeight;
       g.style.visibility = "hidden", g.style.display = "block";
       const $ = g.offsetHeight;
-      g.style.left = Math.max(w, Math.min(_.right - x, O - x - w)) + "px";
+      g.style.left = Math.max(w, Math.min(_.right - x, I - x - w)) + "px";
       let F = _.bottom + 8;
       F + $ + w > L && (F = _.top - $ - 8), g.style.top = Math.max(w, Math.min(F, L - $ - w)) + "px", g.style.visibility = "", g.classList.add("kl-show");
     };
@@ -4011,7 +4018,7 @@ function vg(e, t, r = {}) {
     addScreenshot: (g, w, x, C, E, R) => Tt(g, w, x, !1, !!C, E, R),
     // fireAdded=true: select the new shot as the active hero + fire onShotAdded (persist). See interface doc.
     addCapturedShot: (g, w, x, C, E) => Tt(g, w, x, !0, !!C, E),
-    close: cr,
+    close: nr,
     // KLA-772: expose the full per-image overlay map so the host can persist it on minimize.
     getAnnotations: gn,
     setReplayState: dp,
@@ -4045,12 +4052,12 @@ function vg(e, t, r = {}) {
       _.className = "klavity-rm", _.innerHTML = Z("x", { size: 13 }), _.title = "Remove", _.addEventListener("click", (F) => {
         F.stopPropagation(), Ea(C), Oe();
       });
-      const O = document.createElement("button");
-      O.className = "klavity-mk", O.innerHTML = Z("pencil", { size: 13 }), O.title = "Mark up", O.addEventListener("click", (F) => {
+      const I = document.createElement("button");
+      I.className = "klavity-mk", I.innerHTML = Z("pencil", { size: 13 }), I.title = "Mark up", I.addEventListener("click", (F) => {
         F.stopPropagation(), Up(C);
       });
       const L = document.createElement("div");
-      L.className = "klavity-thumb-media", L.append(R, _, O), E.append(L);
+      L.className = "klavity-thumb-media", L.append(R, _, I), E.append(L);
       const $ = a[C];
       if ($) {
         const F = hg[$], B = document.createElement("span");
@@ -4074,14 +4081,14 @@ function vg(e, t, r = {}) {
       R.src = Ge(x), R.muted = !0, R.preload = "metadata", R.setAttribute("playsinline", ""), R.tabIndex = -1;
       const _ = document.createElement("span");
       _.className = "kl-video-play", _.setAttribute("aria-hidden", "true"), _.innerHTML = Z("play", { size: 16 });
-      const O = document.createElement("span");
-      O.className = "kl-video-badge", O.innerHTML = Z("play", { size: 9 }) + "<span>Video</span>", E.title = "Click to play " + x.name, E.addEventListener("click", () => {
+      const I = document.createElement("span");
+      I.className = "kl-video-badge", I.innerHTML = Z("play", { size: 9 }) + "<span>Video</span>", E.title = "Click to play " + x.name, E.addEventListener("click", () => {
         xe = C, j = null, Oe();
       });
       const L = document.createElement("button");
       L.className = "klavity-rm", L.innerHTML = Z("x", { size: 13 }), L.title = "Remove", L.addEventListener("click", (F) => {
         F.stopPropagation(), Ra(C);
-      }), E.append(R, _, O, L);
+      }), E.append(R, _, I, L);
       const $ = oi(he);
       if ($ != null) {
         const F = document.createElement("div");
@@ -4096,8 +4103,8 @@ function vg(e, t, r = {}) {
       const R = document.createElement("video");
       let _ = x.dataUrl;
       x.blob && typeof URL < "u" && typeof URL.createObjectURL == "function" && (_ = x._previewUrl || (x._previewUrl = URL.createObjectURL(x.blob))), R.src = _, R.muted = !0, R.preload = "metadata", R.setAttribute("playsinline", ""), R.tabIndex = -1;
-      const O = document.createElement("span");
-      O.className = "kl-video-play", O.setAttribute("aria-hidden", "true"), O.innerHTML = Z("play", { size: 16 });
+      const I = document.createElement("span");
+      I.className = "kl-video-play", I.setAttribute("aria-hidden", "true"), I.innerHTML = Z("play", { size: 16 });
       const L = Math.round(x.durationMs / 1e3), $ = document.createElement("span");
       $.className = "kl-video-badge", $.innerHTML = Z("play", { size: 9 }) + `<span>${Math.floor(L / 60)}:${String(L % 60).padStart(2, "0")}${x.screenOnly ? " · screen" : ""}</span>`, E.title = "Click to play your recording", E.addEventListener("click", () => {
         j = C, xe = null, Oe();
@@ -4128,7 +4135,7 @@ function vg(e, t, r = {}) {
           } catch {
           }
         j === C ? j = null : j != null && j > C && (j -= 1), yn();
-      }), E.append(R, O, $, F, B);
+      }), E.append(R, I, $, F, B);
       const K = oi(he);
       if (K != null) {
         const J = document.createElement("div");
@@ -4211,8 +4218,8 @@ function vg(e, t, r = {}) {
       return;
     }
     Xi(), y = !1, f = !1, c.push(g);
-    const O = c.length - 1;
-    if (_ && Array.isArray(_.shapes) && _.shapes.length && (Y[O] = Vt(_)), d.push(t.compressImage ? t.compressImage(g) : Promise.resolve(g)), a.push(w), h.push(E && w !== "real-pixel"), u.push(R), C && (ke = c.length - 1, xe = null, j = null), Oe(), C)
+    const I = c.length - 1;
+    if (_ && Array.isArray(_.shapes) && _.shapes.length && (Y[I] = Vt(_)), d.push(t.compressImage ? t.compressImage(g) : Promise.resolve(g)), a.push(w), h.push(E && w !== "real-pixel"), u.push(R), C && (ke = c.length - 1, xe = null, j = null), Oe(), C)
       try {
         (L = t.onShotAdded) == null || L.call(t, g, w);
       } catch {
@@ -4278,12 +4285,12 @@ function vg(e, t, r = {}) {
       R.className = "kl-file-ic", R.innerHTML = Z("file-text", { size: 14 });
       const _ = document.createElement("span");
       _.className = "kl-file-nm", _.textContent = x.name, _.title = x.name;
-      const O = document.createElement("span");
-      O.className = "kl-file-sz", O.textContent = x.size < 1024 ? `${x.size} B` : x.size < 1024 * 1024 ? `${Math.round(x.size / 1024)} KB` : `${(x.size / 1024 / 1024).toFixed(1)} MB`;
+      const I = document.createElement("span");
+      I.className = "kl-file-sz", I.textContent = x.size < 1024 ? `${x.size} B` : x.size < 1024 * 1024 ? `${Math.round(x.size / 1024)} KB` : `${(x.size / 1024 / 1024).toFixed(1)} MB`;
       const L = document.createElement("button");
       L.type = "button", L.className = "kl-file-rm", L.setAttribute("aria-label", `Remove ${x.name}`), L.title = "Remove", L.innerHTML = Z("x", { size: 11 }), L.addEventListener("click", () => {
         Ra(C);
-      }), E.append(R, _, O, L);
+      }), E.append(R, _, I, L);
       const $ = oi(he);
       if ($ != null) {
         const F = document.createElement("div");
@@ -4368,11 +4375,11 @@ function vg(e, t, r = {}) {
         const E = w.type || (zs(w) ? fg(w.name) : ""), R = zs(w) && rt(), _ = R ? { name: w.name, type: E, size: w.size, dataUrl: "", blob: w } : { name: w.name, type: E, size: w.size, dataUrl: await Al(w) };
         if (R)
           try {
-            I.set(_, URL.createObjectURL(w));
+            O.set(_, URL.createObjectURL(w));
           } catch {
           }
-        const O = W.push(_) - 1;
-        Zi(), Kr(W[O]) === "video" && (xe = O), Oe();
+        const I = W.push(_) - 1;
+        Zi(), Kr(W[I]) === "video" && (xe = I), Oe();
       } catch {
         $t(`Couldn't add "${w.name}". Please try a different file.`);
       }
@@ -4391,17 +4398,17 @@ function vg(e, t, r = {}) {
     else if (le === "done" && ye) {
       const E = ye.length;
       w.hidden = !1, w.innerHTML = `${E} issue${E === 1 ? "" : "s"} identified and ready for review.<button type="button" class="kl-multi-reopen" id="klavity-multi-reopen">Review</button>`, (C = w.querySelector("#klavity-multi-reopen")) == null || C.addEventListener("click", () => Ta());
-    } else ar ? (w.hidden = !1, w.textContent = ar) : (w.hidden = !0, w.textContent = "");
+    } else lr ? (w.hidden = !1, w.textContent = lr) : (w.hidden = !0, w.textContent = "");
   }
   async function bp() {
-    var O, L;
+    var I, L;
     if (At || le === "processing" || le === "recording" || !t.onRecord || !t.onSplitRecording) return;
     if (!!!(Qe && P.includes(Qe)) && P.length >= ne) {
       $t(`You can attach up to ${ne} recordings.`);
       return;
     }
     const w = ++Mt;
-    ar = "", st(!0);
+    lr = "", st(!0);
     const x = ($) => {
       o.style.display = $ === "recording" ? "none" : "", $ === "recording" && w === Mt && (le = "recording", Xt());
     };
@@ -4419,7 +4426,7 @@ function vg(e, t, r = {}) {
       return;
     }
     for (let $ = c.length - 1; $ >= 0; $--)
-      (L = (O = Y[$]) == null ? void 0 : O.shapes) != null && L.length || Ea($);
+      (L = (I = Y[$]) == null ? void 0 : I.shapes) != null && L.length || Ea($);
     const E = Qe ? P.indexOf(Qe) : -1;
     E >= 0 ? P[E] = C : P.push(C), j = E >= 0 ? E : P.length - 1, xe = null, Qe = C, ye = null, Ct = null, bn(), le = "processing", yn(), Xt();
     let R = null;
@@ -4432,7 +4439,7 @@ function vg(e, t, r = {}) {
     if (w !== Mt || te) return;
     const _ = (R || []).filter(($) => $ && (String($.title || "").trim() || String($.description || "").trim()));
     if (!_.length) {
-      Qe = null, ye = null, Ct = null, le = "idle", ar = "We couldn't pick out separate issues in this recording — it's attached, so you can describe it and submit it as one report.", Xt();
+      Qe = null, ye = null, Ct = null, le = "idle", lr = "We couldn't pick out separate issues in this recording — it's attached, so you can describe it and submit it as one report.", Xt();
       return;
     }
     ye = _.map(($, F) => ({
@@ -4443,7 +4450,7 @@ function vg(e, t, r = {}) {
       description: Ml($),
       selected: !0,
       thumb: null
-    })), Ct = ye.map(($) => ({ ...$ })), dt = !1, St = null, lr = "", le = "done", Xt(), Ta(), kp(w);
+    })), Ct = ye.map(($) => ({ ...$ })), dt = !1, St = null, cr = "", le = "done", Xt(), Ta(), kp(w);
   }
   async function kp(g) {
     const w = Qe;
@@ -4457,16 +4464,16 @@ function vg(e, t, r = {}) {
     try {
       for (const E of [...ye]) {
         if (g !== Mt || te) return;
-        const R = typeof E.startSec == "number" ? E.startSec : 0, _ = typeof E.endSec == "number" && E.endSec > R ? E.endSec : R + 2, O = x ? await lg(x, R + Math.min(1, (_ - R) / 2)) : null;
+        const R = typeof E.startSec == "number" ? E.startSec : 0, _ = typeof E.endSec == "number" && E.endSec > R ? E.endSec : R + 2, I = x ? await lg(x, R + Math.min(1, (_ - R) / 2)) : null;
         if (g !== Mt) return;
-        if (O) {
+        if (I) {
           for (const L of [ye, Ct]) {
             const $ = L == null ? void 0 : L.find((F) => F.id === E.id);
-            $ && ($.thumb = O);
+            $ && ($.thumb = I);
           }
           Et();
         }
-        vp(E.id, O, g);
+        vp(E.id, I, g);
       }
     } finally {
       if (C)
@@ -4486,17 +4493,17 @@ function vg(e, t, r = {}) {
       }
     };
     _(!0), Et();
-    let O = null;
+    let I = null;
     try {
-      O = await C(R, { images: w ? 1 : 0, ...w ? { shot: w } : {} });
+      I = await C(R, { images: w ? 1 : 0, ...w ? { shot: w } : {} });
     } catch {
-      O = null;
+      I = null;
     }
     if (!(x !== Mt || te)) {
-      if (_(!1), O)
+      if (_(!1), I)
         for (const L of [ye, Ct]) {
           const $ = L == null ? void 0 : L.find((F) => F.id === g);
-          !$ || L === ye && $.edited || ($.title = String(O.summary || "").trim() || $.title, $.actualResult = O.actualResult || "", $.expectedResult = O.expectedResult || "", $.stepsToReproduce = Array.isArray(O.stepsToReproduce) ? O.stepsToReproduce : [], O.suggestedSeverity && ($.suggestedSeverity = O.suggestedSeverity), O.suggestedPriority && ($.suggestedPriority = O.suggestedPriority), $.description = Ml($));
+          !$ || L === ye && $.edited || ($.title = String(I.summary || "").trim() || $.title, $.actualResult = I.actualResult || "", $.expectedResult = I.expectedResult || "", $.stepsToReproduce = Array.isArray(I.stepsToReproduce) ? I.stepsToReproduce : [], I.suggestedSeverity && ($.suggestedSeverity = I.suggestedSeverity), I.suggestedPriority && ($.suggestedPriority = I.suggestedPriority), $.description = Ml($));
         }
       Et();
     }
@@ -4511,7 +4518,7 @@ function vg(e, t, r = {}) {
     xt = null, Rt = null, Re == null || Re.remove(), Re = null, (g = s.getElementById("klavity-side")) == null || g.classList.remove("kl-mr-open");
   }
   function wp() {
-    !Qe || P.includes(Qe) || (Mt++, Qe = null, ye = null, Ct = null, dt = !1, le = "idle", ar = "", bn(), Xt());
+    !Qe || P.includes(Qe) || (Mt++, Qe = null, ye = null, Ct = null, dt = !1, le = "idle", lr = "", bn(), Xt());
   }
   function xp(g) {
     if (!Qe) return;
@@ -4553,10 +4560,10 @@ function vg(e, t, r = {}) {
       return;
     }
     const g = ye, w = g.filter((_) => _.selected), x = g.length > 0 && w.length === g.length, C = g.length, E = w.length, R = g.map((_) => {
-      const O = $s(_.startSec, _.endSec), L = og(_.suggestedPriority), $ = typeof _.confidence == "number" && isFinite(_.confidence) ? Math.round(_.confidence * 100) : null, F = _.kind === "feature";
-      return `<div class="kl-mr-card${_.selected ? "" : " kl-off"}" data-id="${Te(_.id)}"><input type="checkbox" class="kl-mr-cb" ${_.selected ? "checked" : ""} aria-label="${_.selected ? "Deselect" : "Select"} ${Te(_.title)}"><div class="kl-mr-thumb">${_.thumb ? `<img src="${Te(_.thumb)}" alt="">` : Z("play", { size: 18 })}</div><div class="kl-mr-main"><div class="kl-mr-row"><p class="kl-mr-t">${Te(_.title)}</p><button type="button" class="kl-mr-edit" aria-label="Edit ${Te(_.title)}">${Z("pencil", { size: 15 })}</button></div><div class="kl-mr-badges"><span class="${F ? "kl-mr-feat" : "kl-mr-bug"}">${Z(F ? "lightbulb" : "bug", { size: 10 })}${F ? "Feature" : "Bug"}</span>${L ? `<span class="kl-mr-p${L === "High" ? 1 : L === "Medium" ? 2 : 3}">${L}</span>` : ""}${$ != null && $ < 85 ? `<span class="kl-mr-conf">${$}% · review</span>` : ""}${_.possibleDuplicate ? '<span class="kl-mr-dup">Possible duplicate</span>' : ""}${_.enhancing ? '<span class="kl-mr-enh"><span class="kl-enh-loader"></span>Enhancing…</span>' : ""}</div><p class="kl-mr-d">${Te(Sp(_))}</p>${O ? `<button type="button" class="kl-mr-ts" title="Open recording at this timestamp">${Z("clock", { size: 11 })} ${Te(O)}</button>` : ""}</div></div>`;
+      const I = $s(_.startSec, _.endSec), L = og(_.suggestedPriority), $ = typeof _.confidence == "number" && isFinite(_.confidence) ? Math.round(_.confidence * 100) : null, F = _.kind === "feature";
+      return `<div class="kl-mr-card${_.selected ? "" : " kl-off"}" data-id="${Te(_.id)}"><input type="checkbox" class="kl-mr-cb" ${_.selected ? "checked" : ""} aria-label="${_.selected ? "Deselect" : "Select"} ${Te(_.title)}"><div class="kl-mr-thumb">${_.thumb ? `<img src="${Te(_.thumb)}" alt="">` : Z("play", { size: 18 })}</div><div class="kl-mr-main"><div class="kl-mr-row"><p class="kl-mr-t">${Te(_.title)}</p><button type="button" class="kl-mr-edit" aria-label="Edit ${Te(_.title)}">${Z("pencil", { size: 15 })}</button></div><div class="kl-mr-badges"><span class="${F ? "kl-mr-feat" : "kl-mr-bug"}">${Z(F ? "lightbulb" : "bug", { size: 10 })}${F ? "Feature" : "Bug"}</span>${L ? `<span class="kl-mr-p${L === "High" ? 1 : L === "Medium" ? 2 : 3}">${L}</span>` : ""}${$ != null && $ < 85 ? `<span class="kl-mr-conf">${$}% · review</span>` : ""}${_.possibleDuplicate ? '<span class="kl-mr-dup">Possible duplicate</span>' : ""}${_.enhancing ? '<span class="kl-mr-enh"><span class="kl-enh-loader"></span>Enhancing…</span>' : ""}</div><p class="kl-mr-d">${Te(Sp(_))}</p>${I ? `<button type="button" class="kl-mr-ts" title="Open recording at this timestamp">${Z("clock", { size: 11 })} ${Te(I)}</button>` : ""}</div></div>`;
     }).join("");
-    Re.innerHTML = `<div class="kl-mr-head"><button type="button" class="kl-mr-icon" id="kl-mr-back" aria-label="Back to new report">${Z("chevron-left", { size: 20 })}</button><p class="kl-mr-title">AI Analysis Complete</p><button type="button" class="kl-mr-icon kl-mr-x" id="kl-mr-close" aria-label="Close">${Z("x", { size: 18 })}</button></div><div class="kl-mr-body"><div class="kl-mr-inner"><div class="kl-mr-banner"><span class="kl-mr-ok">${Z("check", { size: 14 })}</span><div><p class="kl-mr-b1">We've identified ${C} report${C === 1 ? "" : "s"} from your recording</p><p class="kl-mr-b2">Review, select and submit the tickets you want to create.</p></div></div><div class="kl-mr-counts"><p>${C} report${C === 1 ? "" : "s"} detected</p><p class="kl-mr-sel">${E} selected</p></div><label class="kl-mr-all"><input type="checkbox" id="kl-mr-all" ${x ? "checked" : ""} aria-label="${x ? "Deselect all tickets" : "Select all tickets"}"><span>Select all</span><span class="kl-mr-kept">Recording and transcript preserved</span></label><div class="kl-mr-list">${R}</div></div></div><div class="kl-mr-foot"><p>${E} of ${C} tickets selected</p>${lr ? `<p class="kl-mr-err" role="alert">${Te(lr)}</p>` : ""}<button type="button" class="kl-mr-submit" id="kl-mr-submit" ${E === 0 || wt ? "disabled" : ""}>${wt ? '<span class="kl-enh-loader"></span> Creating tickets…' : `Submit ${E} ${E === 1 ? "Ticket" : "Tickets"}`}</button></div>` + (xt && Rt ? Ep() : ""), Cp();
+    Re.innerHTML = `<div class="kl-mr-head"><button type="button" class="kl-mr-icon" id="kl-mr-back" aria-label="Back to new report">${Z("chevron-left", { size: 20 })}</button><p class="kl-mr-title">AI Analysis Complete</p><button type="button" class="kl-mr-icon kl-mr-x" id="kl-mr-close" aria-label="Close">${Z("x", { size: 18 })}</button></div><div class="kl-mr-body"><div class="kl-mr-inner"><div class="kl-mr-banner"><span class="kl-mr-ok">${Z("check", { size: 14 })}</span><div><p class="kl-mr-b1">We've identified ${C} report${C === 1 ? "" : "s"} from your recording</p><p class="kl-mr-b2">Review, select and submit the tickets you want to create.</p></div></div><div class="kl-mr-counts"><p>${C} report${C === 1 ? "" : "s"} detected</p><p class="kl-mr-sel">${E} selected</p></div><label class="kl-mr-all"><input type="checkbox" id="kl-mr-all" ${x ? "checked" : ""} aria-label="${x ? "Deselect all tickets" : "Select all tickets"}"><span>Select all</span><span class="kl-mr-kept">Recording and transcript preserved</span></label><div class="kl-mr-list">${R}</div></div></div><div class="kl-mr-foot"><p>${E} of ${C} tickets selected</p>${cr ? `<p class="kl-mr-err" role="alert">${Te(cr)}</p>` : ""}<button type="button" class="kl-mr-submit" id="kl-mr-submit" ${E === 0 || wt ? "disabled" : ""}>${wt ? '<span class="kl-enh-loader"></span> Creating tickets…' : `Submit ${E} ${E === 1 ? "Ticket" : "Tickets"}`}</button></div>` + (xt && Rt ? Ep() : ""), Cp();
   }
   function Ep() {
     const g = Rt, w = (x, C) => `<div class="kl-mr-seg" style="grid-template-columns:repeat(${C.length},1fr)">${C.map(([E, R, _]) => `<button type="button" class="${x}${(x === "kl-mr-kind" ? g.kind : g.priority) === E ? " kl-on" : ""}" data-v="${E}">${_}${R}</button>`).join("")}</div>`;
@@ -4569,18 +4576,18 @@ function vg(e, t, r = {}) {
     (w = g("#kl-mr-back")) == null || w.addEventListener("click", () => {
       wt || !Aa() || (bn(), Xt());
     }), (x = g("#kl-mr-close")) == null || x.addEventListener("click", () => {
-      wt || !Aa() || (bn(), cr());
+      wt || !Aa() || (bn(), nr());
     }), (C = g("#kl-mr-all")) == null || C.addEventListener("change", (R) => {
       const _ = R.target.checked;
-      ye.forEach((O) => {
-        O.selected = _;
+      ye.forEach((I) => {
+        I.selected = _;
       }), dt = !0, Et();
     }), (E = g("#kl-mr-submit")) == null || E.addEventListener("click", () => {
       Tp();
     }), Re.querySelectorAll(".kl-mr-card").forEach((R) => {
-      var O, L, $;
+      var I, L, $;
       const _ = ye.find((F) => F.id === R.dataset.id);
-      _ && ((O = R.querySelector(".kl-mr-cb")) == null || O.addEventListener("change", (F) => {
+      _ && ((I = R.querySelector(".kl-mr-cb")) == null || I.addEventListener("change", (F) => {
         _.selected = F.target.checked, dt = !0, Et();
       }), (L = R.querySelector(".kl-mr-edit")) == null || L.addEventListener("click", () => {
         var F;
@@ -4589,7 +4596,7 @@ function vg(e, t, r = {}) {
     }), xt && Rt && Mp();
   }
   function Mp() {
-    var R, _, O, L, $, F;
+    var R, _, I, L, $, F;
     const g = Rt, w = (B) => Re.querySelector(B), x = w("#kl-mr-ed-save"), C = () => {
       x && (x.disabled = !(g.title.trim() && g.description.trim()));
     }, E = () => {
@@ -4599,7 +4606,7 @@ function vg(e, t, r = {}) {
       g.title = B.target.value, C();
     }), (_ = w("#kl-mr-ed-desc")) == null || _.addEventListener("input", (B) => {
       g.description = B.target.value, C();
-    }), (O = w("#kl-mr-ed-ts")) == null || O.addEventListener("input", (B) => {
+    }), (I = w("#kl-mr-ed-ts")) == null || I.addEventListener("input", (B) => {
       g.ts = B.target.value;
     }), Re.querySelectorAll(".kl-mr-kind,.kl-mr-pri").forEach((B) => B.addEventListener("click", () => {
       B.classList.contains("kl-mr-kind") ? g.kind = B.dataset.v === "feature" ? "feature" : "bug" : g.priority = B.dataset.v || "";
@@ -4625,15 +4632,15 @@ function vg(e, t, r = {}) {
     var C, E;
     if (!Re || !St) return;
     const g = St.refs.length, w = St.refs.filter((R) => R.key).map((R) => {
-      const _ = So(R.url), O = Te(xo(R.key, R.url));
-      return _ ? `<a href="${Te(_)}" target="_blank" rel="noopener">${O}</a>` : `<span>${O}</span>`;
+      const _ = So(R.url), I = Te(xo(R.key, R.url));
+      return _ ? `<a href="${Te(_)}" target="_blank" rel="noopener">${I}</a>` : `<span>${I}</span>`;
     }).join("");
     Re.innerHTML = `<div class="kl-mr-head"><p class="kl-mr-title" style="padding-left:6px">Tickets created</p><button type="button" class="kl-mr-icon kl-mr-x" id="kl-mr-close" aria-label="Close">${Z("x", { size: 18 })}</button></div><div class="kl-mr-done"><span class="kl-mr-done-ic">${Z("check", { size: 25 })}</span><h3>${g} ticket${g === 1 ? "" : "s"} created</h3><p>${Te(n.thankYou || "Your AI-generated reports have been filed.")}</p>${St.failed ? `<p role="alert">${St.failed} ticket${St.failed === 1 ? "" : "s"} couldn't be created — please report ${St.failed === 1 ? "it" : "them"} again.</p>` : ""}${w ? `<div class="kl-mr-keys">${w}</div>` : ""}<button type="button" class="kl-mr-btn kl-primary" id="kl-mr-done">Done</button></div>`;
-    const x = () => cr({ reason: "submitted" });
+    const x = () => nr({ reason: "submitted" });
     (C = Re.querySelector("#kl-mr-close")) == null || C.addEventListener("click", x), (E = Re.querySelector("#kl-mr-done")) == null || E.addEventListener("click", x);
   }
   async function Tp() {
-    var O;
+    var I;
     if (!ye || !Qe || wt) return;
     const g = ye.filter((L) => L.selected).map((L) => ({ ...L, title: L.title.trim(), description: L.description.trim() }));
     if (!g.length) return;
@@ -4641,7 +4648,7 @@ function vg(e, t, r = {}) {
       ...L.suggestedSeverity ? { suggestedSeverity: L.suggestedSeverity } : {},
       ...L.suggestedPriority ? { suggestedPriority: L.suggestedPriority } : {}
     }), R = g[0], _ = g.slice(1);
-    wt = !0, lr = "", Et();
+    wt = !0, cr = "", Et();
     try {
       const L = await Promise.all(d.slice()), $ = Qe, F = {
         type: C(R),
@@ -4656,7 +4663,7 @@ function vg(e, t, r = {}) {
         createContact: w.createContact,
         ...x,
         ...E(R),
-        ...t.consoleAttachToggle ? { attachConsole: !!((O = s.getElementById("klavity-conlog-cb")) != null && O.checked) } : {}
+        ...t.consoleAttachToggle ? { attachConsole: !!((I = s.getElementById("klavity-conlog-cb")) != null && I.checked) } : {}
       }, B = (X, G) => ({
         type: C(X),
         ...ue ? { kind: C(X) } : {},
@@ -4681,7 +4688,7 @@ function vg(e, t, r = {}) {
               } catch {
               }
             }
-        })(), cr({ immediate: !0, reason: "submitted" });
+        })(), nr({ immediate: !0, reason: "submitted" });
         return;
       }
       const K = await t.onSubmit(F), J = [{ key: K.issueKey, url: K.issueUrl }];
@@ -4705,11 +4712,11 @@ function vg(e, t, r = {}) {
       } catch {
       }
       if (te) return;
-      wt = !1, lr = n.debug ? `Couldn't create the tickets — ${(L == null ? void 0 : L.message) || "Unknown error"}` : "Couldn't create the tickets. Please check your connection and try again.", Et();
+      wt = !1, cr = n.debug ? `Couldn't create the tickets — ${(L == null ? void 0 : L.message) || "Unknown error"}` : "Couldn't create the tickets. Please check your connection and try again.", Et();
     }
   }
   let Er = null;
-  function cr(g) {
+  function nr(g) {
     var C;
     if (te) return;
     te = !0, Mt++;
@@ -4748,15 +4755,15 @@ function vg(e, t, r = {}) {
     let C = w, E = Date.now();
     const R = () => {
       E = Date.now(), Pt = setTimeout(() => {
-        cr();
+        nr();
       }, C);
     }, _ = () => {
       Pt && (clearTimeout(Pt), Pt = null, C = Math.max(0, C - (Date.now() - E)), x.style.animationPlayState = "paused");
-    }, O = () => {
+    }, I = () => {
       Pt || g.classList.contains("kl-closing") || (x.style.animationPlayState = "running", R());
     };
-    g.addEventListener("mouseenter", _), g.addEventListener("mouseleave", O), g.addEventListener("focusin", _), g.addEventListener("focusout", (L) => {
-      g.contains(L.relatedTarget) || O();
+    g.addEventListener("mouseenter", _), g.addEventListener("mouseleave", I), g.addEventListener("focusin", _), g.addEventListener("focusout", (L) => {
+      g.contains(L.relatedTarget) || I();
     }), R();
   }
   function Cr(g) {
@@ -4847,9 +4854,9 @@ function vg(e, t, r = {}) {
       const R = g();
       if (R)
         try {
-          const _ = document.createRange(), O = document.createTreeWalker(V, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+          const _ = document.createRange(), I = document.createTreeWalker(V, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
           let L, $ = E, F = !1;
-          for (; L = O.nextNode(); ) {
+          for (; L = I.nextNode(); ) {
             if (L.nodeName === "BR") {
               if ($ === 0) {
                 _.setStartBefore(L), F = !0;
@@ -4912,7 +4919,7 @@ function vg(e, t, r = {}) {
   const ro = () => {
     var C, E, R;
     if (!to()) {
-      cr();
+      nr();
       return;
     }
     if (Hn) return;
@@ -4924,7 +4931,7 @@ function vg(e, t, r = {}) {
     Yn = w, g.addEventListener("click", (_) => {
       _.target === g && w();
     }), (C = g.querySelector("#kl-cc-keep")) == null || C.addEventListener("click", w), (E = g.querySelector("#kl-cc-discard")) == null || E.addEventListener("click", () => {
-      w(), cr({ reason: "discard" });
+      w(), nr({ reason: "discard" });
     }), (s.querySelector(".klavity-modal") || Sr).appendChild(g);
     try {
       (R = g.querySelector("#kl-cc-keep")) == null || R.focus();
@@ -5035,8 +5042,8 @@ function vg(e, t, r = {}) {
   }), dr(), t.onEnhance) {
     const g = t.onEnhance, w = ae.querySelector("#klavity-enhance"), x = ae.querySelector("#klavity-enhance-undo"), C = ae.querySelector("#klavity-enhance-regen"), E = ae.querySelector("#klavity-enhance-spin");
     let R = 0, _ = null;
-    const O = () => c[ke] || c[0] || "", L = () => {
-      const F = O();
+    const I = () => c[ke] || c[0] || "", L = () => {
+      const F = I();
       if (!F) return "";
       const B = ke >= 0 && ke < c.length ? ke : 0, K = Y[B] ?? (B === 0 ? Y[0] : null);
       if (!K || !Array.isArray(K.shapes) || !K.shapes.length) return F;
@@ -5055,7 +5062,7 @@ function vg(e, t, r = {}) {
       const B = ++R;
       w && (w.disabled = !0), E && (E.hidden = !1);
       try {
-        const K = pe ? { selector: pe.selector, text: pe.text } : null, J = ke >= 0 && ke < c.length ? ke : 0, ie = Y[J] ?? (J === 0 ? Y[0] : null), X = lm(ie == null ? void 0 : ie.shapes), G = O();
+        const K = pe ? { selector: pe.selector, text: pe.text } : null, J = ke >= 0 && ke < c.length ? ke : 0, ie = Y[J] ?? (J === 0 ? Y[0] : null), X = lm(ie == null ? void 0 : ie.shapes), G = I();
         let fe = L();
         fe === null && (fe = await cm(G, ie.shapes, ie.w, ie.h));
         const je = await g(F, {
@@ -5092,7 +5099,7 @@ function vg(e, t, r = {}) {
       g.innerHTML = `<span class="kl-known-ic">${Z("check-circle", { size: 15 })}</span><div class="kl-known-body"><span class="kl-known-title">${$}</span> — status: <span class="kl-known-status">${Te(L.statusLabel)}</span>. We're already tracking "${Te(L.title)}". Add your note and submit anyway — it'll be linked.</div><button type="button" class="kl-known-dismiss" id="klavity-known-dismiss">Dismiss</button>`, g.hidden = !1, (F = g.querySelector("#klavity-known-dismiss")) == null || F.addEventListener("click", () => {
         E = V.value.trim(), R();
       });
-    }, O = async () => {
+    }, I = async () => {
       const L = V.value.trim();
       if (L.length < 12 || L === E) {
         R();
@@ -5111,7 +5118,7 @@ function vg(e, t, r = {}) {
       }
     };
     V.addEventListener("input", () => {
-      V.value.trim() !== E && (E = ""), x && clearTimeout(x), x = setTimeout(O, 500);
+      V.value.trim() !== E && (E = ""), x && clearTimeout(x), x = setTimeout(I, 500);
     });
   }
   if (n.reportClarity) {
@@ -5119,7 +5126,7 @@ function vg(e, t, r = {}) {
       problem: ae.querySelector("#klavity-clarity-problem"),
       expected: ae.querySelector("#klavity-clarity-expected"),
       repro: ae.querySelector("#klavity-clarity-repro")
-    }, C = ae.querySelector("#klavity-clarity-tip"), E = ae.querySelector("#klavity-clarity-tip-text"), R = ae.querySelector("#klavity-nudge"), _ = t.onClarityTip, O = /* @__PURE__ */ new Map();
+    }, C = ae.querySelector("#klavity-clarity-tip"), E = ae.querySelector("#klavity-clarity-tip-text"), R = ae.querySelector("#klavity-nudge"), _ = t.onClarityTip, I = /* @__PURE__ */ new Map();
     let L = null, $ = 0;
     const F = (X, G, fe) => {
       if (!X) return;
@@ -5140,15 +5147,15 @@ function vg(e, t, r = {}) {
           B();
           return;
         }
-        if (O.has(X)) {
-          K(O.get(X));
+        if (I.has(X)) {
+          K(I.get(X));
           return;
         }
         const G = ++$;
         try {
           const fe = await _(X, { images: c.length });
           if (G !== $ || V.value.trim() !== X) return;
-          fe && fe.tip && (O.set(X, fe.tip), K(fe.tip));
+          fe && fe.tip && (I.set(X, fe.tip), K(fe.tip));
         } catch {
         }
       }, 1e3));
@@ -5190,15 +5197,15 @@ function vg(e, t, r = {}) {
     Ua().forEach((w) => {
       w.classList.remove("kl-active"), w.removeAttribute("aria-pressed");
     }), g && (g.classList.add("kl-active"), g.setAttribute("aria-pressed", "true"));
-  }, nr = ae.querySelector("#klavity-voice");
-  if (nr) {
-    const x = nr.querySelector(".kl-vring-prog");
-    let C = 0, E = 0, R = !1, _, O = "";
+  }, ir = ae.querySelector("#klavity-voice");
+  if (ir) {
+    const x = ir.querySelector(".kl-vring-prog");
+    let C = 0, E = 0, R = !1, _, I = "";
     const L = () => {
       E = Date.now();
       const be = () => {
         const De = Date.now() - E, Ne = Math.min(De / 18e4, 1);
-        if (x == null || x.setAttribute("stroke-dashoffset", String(Ne * 81.68)), De >= 165e3 && nr.classList.add("kl-voice-warn"), De >= 18e4) {
+        if (x == null || x.setAttribute("stroke-dashoffset", String(Ne * 81.68)), De >= 165e3 && ir.classList.add("kl-voice-warn"), De >= 18e4) {
           _.stop();
           return;
         }
@@ -5206,7 +5213,7 @@ function vg(e, t, r = {}) {
       };
       C = requestAnimationFrame(be);
     }, $ = () => {
-      cancelAnimationFrame(C), x == null || x.setAttribute("stroke-dashoffset", String(81.68)), nr.classList.remove("kl-voice-warn");
+      cancelAnimationFrame(C), x == null || x.setAttribute("stroke-dashoffset", String(81.68)), ir.classList.remove("kl-voice-warn");
     }, F = ae.querySelector("#klavity-voice-status");
     let B = null;
     const K = () => {
@@ -5216,11 +5223,11 @@ function vg(e, t, r = {}) {
     }, ie = "Recording — tap to stop", X = () => {
       F && F.classList.contains("kl-vs-info") && K();
     }, G = (be) => {
-      nr.classList.toggle("kl-voice-rec", be), nr.setAttribute("aria-pressed", be ? "true" : "false"), nr.setAttribute("aria-label", be ? "Stop recording" : "Voice dictation"), nr.title = be ? ie : "Voice dictation";
+      ir.classList.toggle("kl-voice-rec", be), ir.setAttribute("aria-pressed", be ? "true" : "false"), ir.setAttribute("aria-label", be ? "Stop recording" : "Voice dictation"), ir.title = be ? ie : "Voice dictation";
     }, fe = (be) => {
       let De = "";
       be.onTranscript = (Ne) => {
-        De = "", O = ii(O, Ne), V.value = O;
+        De = "", I = ii(I, Ne), V.value = I;
         try {
           V.scrollTop = V.scrollHeight;
         } catch {
@@ -5232,8 +5239,8 @@ function vg(e, t, r = {}) {
         nt();
       }, be.onInterim = (Ne) => {
         De = Ne || "";
-        const Q = O.length > 0 && !/\s$/.test(O) ? " " : "";
-        V.value = O + (Ne ? Q + Ne : "");
+        const Q = I.length > 0 && !/\s$/.test(I) ? " " : "";
+        V.value = I + (Ne ? Q + Ne : "");
         try {
           V.scrollTop = V.scrollHeight;
         } catch {
@@ -5248,7 +5255,7 @@ function vg(e, t, r = {}) {
       }, be.onError = (Ne, Q) => {
         Q && J("err", Q, 4e3);
       }, be.onStop = () => {
-        De && (O = ii(O, De), De = ""), O && (O = Sl(O), V.value = O);
+        De && (I = ii(I, De), De = ""), I && (I = Sl(I), V.value = I);
         try {
           V.scrollTop = V.scrollHeight;
         } catch {
@@ -5267,16 +5274,16 @@ function vg(e, t, r = {}) {
         G(!1), $(), X();
         return;
       }
-      An.isSupported() ? (O = V.value, _ = je(), J("info", "Reconnecting dictation…"), _.start()) : (R = !1, G(!1), $(), J("err", "Voice dictation is unavailable right now", 4e3));
+      An.isSupported() ? (I = V.value, _ = je(), J("info", "Reconnecting dictation…"), _.start()) : (R = !1, G(!1), $(), J("err", "Voice dictation is unavailable right now", 4e3));
     }, pt = () => {
       if (!(_e === "server" && t.onDictate)) return null;
       const be = new xi({ transcribe: (De) => t.onDictate(De) });
       return fe(be), be.onUnavailable = Ze, be;
     }, hr = (be) => {
-      const De = () => O.length > 0 && !/\s$/.test(O) ? " " : "";
+      const De = () => I.length > 0 && !/\s$/.test(I) ? " " : "";
       let Ne = "";
       be.onTranscript = (Q) => {
-        Ne = "", O = ii(O, Q), V.value = O;
+        Ne = "", I = ii(I, Q), V.value = I;
         try {
           V.scrollTop = V.scrollHeight;
         } catch {
@@ -5287,7 +5294,7 @@ function vg(e, t, r = {}) {
         }
         nt();
       }, be.onInterim = (Q) => {
-        Ne = Q || "", V.value = O + De() + Q;
+        Ne = Q || "", V.value = I + De() + Q;
         try {
           V.scrollTop = V.scrollHeight;
         } catch {
@@ -5302,7 +5309,7 @@ function vg(e, t, r = {}) {
       }, be.onError = (Q, de) => {
         de && J("err", de, 4e3);
       }, be.onStop = () => {
-        Ne && (O = ii(O, Ne), Ne = ""), O && (O = Sl(O)), V.value = O;
+        Ne && (I = ii(I, Ne), Ne = ""), I && (I = Sl(I)), V.value = I;
         try {
           V.scrollTop = V.scrollHeight;
         } catch {
@@ -5313,7 +5320,7 @@ function vg(e, t, r = {}) {
         }
         R = !1, G(!1), $(), X(), nt();
       }, be.onUnavailable = () => {
-        V.value = O;
+        V.value = I;
         try {
           V.dispatchEvent(new Event("input", { bubbles: !0 }));
         } catch {
@@ -5336,8 +5343,8 @@ function vg(e, t, r = {}) {
       }
       return pt() ?? je();
     };
-    _ = _t(), nr.addEventListener("click", () => {
-      R ? _.stop() : (K(), O = V.value, _ = _t(), R = !0, G(!0), _.start(), L());
+    _ = _t(), ir.addEventListener("click", () => {
+      R ? _.stop() : (K(), I = V.value, _ = _t(), R = !0, G(!0), _.start(), L());
     }), Er = () => {
       R && _.stop();
     };
@@ -5351,7 +5358,7 @@ function vg(e, t, r = {}) {
     if (At || Mr.disabled) return;
     const g = V.value.trim(), w = ae.querySelector("#klavity-title"), x = w ? w.value.trim() : "", C = Be === "feature" ? "feature" : "bug";
     p && await Promise.race([p, Promise.resolve()]);
-    const E = d.slice(), R = ge(), _ = W.slice(), O = P.slice(), L = Be, { email: $, createContact: F } = Ba();
+    const E = d.slice(), R = ge(), _ = W.slice(), I = P.slice(), L = Be, { email: $, createContact: F } = Ba();
     st(!0), Mr.textContent = "Uploading…";
     const B = s.getElementById("klavity-err");
     B.style.display = "none";
@@ -5372,7 +5379,7 @@ function vg(e, t, r = {}) {
         description: g,
         screenshots: fe,
         ..._.length ? { files: _ } : {},
-        ...O.length ? { recordings: O } : {},
+        ...I.length ? { recordings: I } : {},
         annotations: R,
         reporterEmail: $,
         createContact: F,
@@ -5388,7 +5395,7 @@ function vg(e, t, r = {}) {
         ...t.consoleAttachToggle ? { attachConsole: !!((G = s.getElementById("klavity-conlog-cb")) != null && G.checked) } : {}
       };
       if (t.backgroundUpload) {
-        t.onSubmit(je), cr({ immediate: !0, reason: "submitted" });
+        t.onSubmit(je), nr({ immediate: !0, reason: "submitted" });
         return;
       }
       const Ze = await t.onSubmit(je);
@@ -5435,8 +5442,8 @@ function vg(e, t, r = {}) {
         if (w) Np(w, R);
         else {
           l = !1;
-          const { dataUrl: _, quality: O, suggestSharp: L } = Zt(R);
-          _ && (Tt(_, O, void 0, !0, !!L), g && Jt(g));
+          const { dataUrl: _, quality: I, suggestSharp: L } = Zt(R);
+          _ && (Tt(_, I, void 0, !0, !!L), g && Jt(g));
         }
       } catch {
         l = !1, Oe();
@@ -5461,7 +5468,7 @@ function vg(e, t, r = {}) {
   }
   const Tr = ae.querySelector("#klavity-full");
   Tr.addEventListener("click", async () => {
-    if (!At && !(t.onCaptureSharp && await ao())) {
+    if (!At && !(t.onCaptureSharp && (await ao()).ok)) {
       st(!0), Tr.classList.add("kl-loading");
       try {
         if (t.onCaptureViewport) {
@@ -5483,39 +5490,40 @@ function vg(e, t, r = {}) {
   });
   async function ao(g) {
     const w = g != null && g.viewport && t.onCaptureSharpViewport ? t.onCaptureSharpViewport : t.onCaptureSharp;
-    if (At || !w || !Ie) return !1;
+    if (At || !w || !Ie) return { ok: !1, declined: !1 };
     const x = Ie.querySelector(".kl-sharp-label");
     st(!0), Ie.classList.add("kl-loading"), o.style.display = "none";
     const C = x ?? Ie, E = C.textContent;
     C.textContent = "Capturing…";
-    let R = !1;
+    let R = !1, _ = !1;
     try {
-      const _ = i ? _r(document.body) : null;
-      let O;
+      const I = i ? _r(document.body) : null;
+      let L;
       try {
-        O = await w();
+        L = await w();
       } finally {
-        _ == null || _();
+        I == null || I();
       }
-      if (O) {
-        const { dataUrl: L, quality: $ } = Zt(O);
-        L && (Tt(L, $ ?? "real-pixel", void 0, !0, !1, { kind: g != null && g.viewport ? "viewport" : "full" }), Jt(Ie), R = !0, M = !0);
+      if (L) {
+        const { dataUrl: $, quality: F } = Zt(L);
+        $ && (Tt($, F ?? "real-pixel", void 0, !0, !1, { kind: g != null && g.viewport ? "viewport" : "full" }), Jt(Ie), R = !0, M = !0);
       }
-    } catch (_) {
-      if (pg(_))
+    } catch (I) {
+      if (pg(I)) {
+        if (_ = !0, !(g != null && g.onOpen))
+          try {
+            up();
+          } catch {
+          }
+      } else
         try {
-          up();
-        } catch {
-        }
-      else
-        try {
-          console.warn("[Klavity] Screen capture failed; using rendered fallback:", _);
+          console.warn("[Klavity] Screen capture failed; using rendered fallback:", I);
         } catch {
         }
     } finally {
-      o.style.display = "", C.textContent = E, Ie.classList.remove("kl-loading"), st(!1);
+      g != null && g.onOpen && _ || (o.style.display = "", C.textContent = E, Ie.classList.remove("kl-loading"), st(!1));
     }
-    return R;
+    return { ok: R, declined: _ };
   }
   Ie && t.onCaptureSharp && Ie.addEventListener("click", () => {
     ao();
@@ -5611,11 +5619,11 @@ function vg(e, t, r = {}) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-0.125em">${g}</svg>`;
   }
   function $p(g) {
-    const w = (R, _, O, L) => `<button type="button" class="kl-htool" data-tool="${R}" title="${_} (${L.toUpperCase()})" aria-label="${_}">${O}<span class="kl-hk">${L.toUpperCase()}</span></button>`, x = (R) => {
+    const w = (R, _, I, L) => `<button type="button" class="kl-htool" data-tool="${R}" title="${_} (${L.toUpperCase()})" aria-label="${_}">${I}<span class="kl-hk">${L.toUpperCase()}</span></button>`, x = (R) => {
       const _ = R.replace("#", "");
       if (!/^[0-9a-fA-F]{6}$/.test(_)) return !1;
-      const O = parseInt(_.slice(0, 2), 16), L = parseInt(_.slice(2, 4), 16), $ = parseInt(_.slice(4, 6), 16);
-      return (0.2126 * O + 0.7152 * L + 0.0722 * $) / 255 > 0.7;
+      const I = parseInt(_.slice(0, 2), 16), L = parseInt(_.slice(2, 4), 16), $ = parseInt(_.slice(4, 6), 16);
+      return (0.2126 * I + 0.7152 * L + 0.0722 * $) / 255 > 0.7;
     }, C = (R) => `<button type="button" class="kl-hcolor${x(R) ? " kl-hcolor-light" : ""}" data-color="${R}" style="background:${R}" title="${R}" aria-label="Colour ${R}"></button>`;
     return (
       // Klavity logo, TOP-LEFT of the editor toolbar. It links to the homepage (UTM-stamped so clicks are
@@ -5690,10 +5698,10 @@ function vg(e, t, r = {}) {
     R.className = "kl-hero-vwrap", R.style.cssText = "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;max-width:100%;max-height:100%;";
     const _ = document.createElement("video");
     _.src = C, _.controls = !0, _.setAttribute("playsinline", ""), _.preload = "metadata", _.className = "kl-hero-video", _.style.cssText = "display:block;max-width:100%;max-height:100%;border-radius:8px;background:#000;box-shadow:0 12px 40px rgba(0,0,0,.5);";
-    const O = document.createElement("div");
-    O.className = "kl-hero-verror", O.style.cssText = "display:none;flex-direction:column;align-items:center;gap:6px;color:#fff;font-size:13px;text-align:center;";
+    const I = document.createElement("div");
+    I.className = "kl-hero-verror", I.style.cssText = "display:none;flex-direction:column;align-items:center;gap:6px;color:#fff;font-size:13px;text-align:center;";
     const L = document.createElement("a");
-    L.href = C || g, L.setAttribute("download", "recording.webm"), L.setAttribute("target", "_blank"), L.setAttribute("rel", "noopener"), L.textContent = "Download recording", L.style.cssText = "color:#a5b4fc;font-size:12px;text-decoration:underline;", O.innerHTML = "<span>This recording couldn’t play here.</span>", O.appendChild(L), R.appendChild(_), R.appendChild(O), w.appendChild(R), zp(_, O);
+    L.href = C || g, L.setAttribute("download", "recording.webm"), L.setAttribute("target", "_blank"), L.setAttribute("rel", "noopener"), L.textContent = "Download recording", L.style.cssText = "color:#a5b4fc;font-size:12px;text-decoration:underline;", I.innerHTML = "<span>This recording couldn’t play here.</span>", I.appendChild(L), R.appendChild(_), R.appendChild(I), w.appendChild(R), zp(_, I);
   }
   function zp(g, w) {
     let x = !1, C = null;
@@ -5745,21 +5753,21 @@ function vg(e, t, r = {}) {
     _.onload = () => {
       var J, ie;
       if (c[g] !== R) return;
-      const O = document.createElement("canvas");
-      O.width = Math.max(1, Math.round(C)), O.height = Math.max(1, Math.round(E));
-      const L = O.getContext("2d");
+      const I = document.createElement("canvas");
+      I.width = Math.max(1, Math.round(C)), I.height = Math.max(1, Math.round(E));
+      const L = I.getContext("2d");
       if (!L) return;
-      L.drawImage(_, w, x, C, E, 0, 0, O.width, O.height);
+      L.drawImage(_, w, x, C, E, 0, 0, I.width, I.height);
       let $;
       try {
-        $ = O.toDataURL("image/png");
+        $ = I.toDataURL("image/png");
       } catch {
         return;
       }
       const F = ((J = $e[g]) == null ? void 0 : J.length) ?? 0, B = Br(g);
       c[g] = $, d[g] = t.compressImage ? t.compressImage($) : Promise.resolve($);
       const K = (ie = Y[g]) == null ? void 0 : ie.shapes;
-      Array.isArray(K) && K.length ? Y[g] = { w: O.width, h: O.height, shapes: ig(K, -w, -x) } : delete Y[g], ($e[g] ?? ($e[g] = [])).push(B), (We[g] ?? (We[g] = [])).push({ snap: B, mark: F }), Gt(g), Oe();
+      Array.isArray(K) && K.length ? Y[g] = { w: I.width, h: I.height, shapes: ig(K, -w, -x) } : delete Y[g], ($e[g] ?? ($e[g] = [])).push(B), (We[g] ?? (We[g] = [])).push({ snap: B, mark: F }), Gt(g), Oe();
     }, _.src = R;
   }
   function Fp(g) {
@@ -5776,10 +5784,10 @@ function vg(e, t, r = {}) {
     E.width = 1, E.height = 1, E.style.cssText = "display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;touch-action:none;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5);";
     const R = new Ns(E, C), _ = (L = Y[g]) == null ? void 0 : L.shapes;
     Array.isArray(_) && _.forEach((X) => R.shapes.push({ ...X })), w.appendChild(E);
-    const O = new Image();
-    O.onload = () => {
-      !document.body.contains(o) || ke !== g || c[g] !== C || (E.width = O.naturalWidth || 1, E.height = O.naturalHeight || 1, R.redraw());
-    }, O.src = C, R.redraw();
+    const I = new Image();
+    I.onload = () => {
+      !document.body.contains(o) || ke !== g || c[g] !== C || (E.width = I.naturalWidth || 1, E.height = I.naturalHeight || 1, R.redraw());
+    }, I.src = C, R.redraw();
     {
       x.innerHTML = $p(((($ = We[g]) == null ? void 0 : $.length) ?? 0) > 0);
       const X = x.querySelector("#kl-hero-logo");
@@ -6119,10 +6127,10 @@ function vg(e, t, r = {}) {
         <button id="klavity-save-ann" style="padding:6px 10px;background:#89b4fa;color:#1e1e2e;border:none;border-radius:4px;cursor:pointer;font-weight:700;">${Z("check", { label: "Save", size: 14 })} Save</button>
         <button id="klavity-cancel-ann" style="padding:6px 10px;background:#313244;color:#cdd6f4;border:none;border-radius:4px;cursor:pointer;">${Z("x", { size: 14 })}</button>
       `, C.style.cssText = "cursor:crosshair;display:block;margin:12px auto;touch-action:none;background:#fff;border-radius:4px;outline:1px solid rgba(255,255,255,.12);outline-offset:-1px;box-shadow:0 12px 44px rgba(0,0,0,.55);";
-      const O = document.createElement("div");
-      O.style.cssText = "flex:1;min-height:0;overflow:auto;display:block;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);", O.appendChild(C);
+      const I = document.createElement("div");
+      I.style.cssText = "flex:1;min-height:0;overflow:auto;display:block;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);", I.appendChild(C);
       const L = document.createElement("style");
-      L.textContent = ".kl-edtb button{transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease;will-change:transform;}.kl-edtb button:hover{transform:translateY(-1px) scale(1.02);background:#45475a;}.kl-edtb button[data-color]:hover{transform:scale(1.14);background:initial;}.kl-edtb button:active{transform:scale(.96);}.kl-edtb button:focus-visible{outline:2px solid #89b4fa;outline-offset:2px;}.kl-edtb .kl-zb{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 9px;background:#313244;color:#cdd6f4;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;line-height:1;}.kl-edtb .kl-zb:hover{background:#45475a;}@media (prefers-reduced-motion:reduce){.kl-edtb button{transition:none;}.kl-edtb button:hover,.kl-edtb button:active,.kl-edtb button[data-color]:hover{transform:none;}}", R.append(L, _, O), s.appendChild(R), Sn();
+      L.textContent = ".kl-edtb button{transition:transform .15s cubic-bezier(.34,1.56,.64,1),background .15s ease;will-change:transform;}.kl-edtb button:hover{transform:translateY(-1px) scale(1.02);background:#45475a;}.kl-edtb button[data-color]:hover{transform:scale(1.14);background:initial;}.kl-edtb button:active{transform:scale(.96);}.kl-edtb button:focus-visible{outline:2px solid #89b4fa;outline-offset:2px;}.kl-edtb .kl-zb{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;padding:0 9px;background:#313244;color:#cdd6f4;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;line-height:1;}.kl-edtb .kl-zb:hover{background:#45475a;}@media (prefers-reduced-motion:reduce){.kl-edtb button{transition:none;}.kl-edtb button:hover,.kl-edtb button:active,.kl-edtb button[data-color]:hover{transform:none;}}", R.append(L, _, I), s.appendChild(R), Sn();
       let $ = 1;
       const F = (Q) => Math.max(0.05, Math.min(5, Q || 1));
       function B(Q) {
@@ -6130,7 +6138,7 @@ function vg(e, t, r = {}) {
         const de = _.querySelector("#klavity-zoom-pct");
         de && (de.textContent = Math.round($ * 100) + "%");
       }
-      const K = () => Math.max(1, O.clientWidth - 24) / C.width, J = () => Math.min(Math.max(1, O.clientWidth - 24) / C.width, Math.max(1, O.clientHeight - 24) / C.height), ie = C.height / C.width > Math.max(1, O.clientHeight) / Math.max(1, O.clientWidth);
+      const K = () => Math.max(1, I.clientWidth - 24) / C.width, J = () => Math.min(Math.max(1, I.clientWidth - 24) / C.width, Math.max(1, I.clientHeight - 24) / C.height), ie = C.height / C.width > Math.max(1, I.clientHeight) / Math.max(1, I.clientWidth);
       B(ie ? K() : J()), _.querySelector("#klavity-zoom-in").addEventListener("click", () => B($ * 1.25)), _.querySelector("#klavity-zoom-out").addEventListener("click", () => B($ / 1.25)), _.querySelector("#klavity-fit-width").addEventListener("click", () => B(K())), _.querySelector("#klavity-fit-page").addEventListener("click", () => B(J()));
       let X = "rect", G = "#ef4444", fe = !1, je = [], Ze = 0, pt = 0;
       function hr(Q) {
@@ -6214,18 +6222,18 @@ function vg(e, t, r = {}) {
     R.textContent = "Report sent", C.appendChild(R);
     const _ = document.createElement("p");
     if (_.textContent = n.thankYou || "We filed it and emailed you a copy.", C.appendChild(_), g) {
-      const O = document.createElement("div");
-      O.className = "klavity-ref";
+      const I = document.createElement("div");
+      I.className = "klavity-ref";
       const L = document.createElement("span");
       L.textContent = "Filed as";
       const $ = document.createElement("code");
-      $.textContent = xo(g, w), O.append(L, $);
+      $.textContent = xo(g, w), I.append(L, $);
       const F = So(w);
       if (F) {
         const B = document.createElement("a");
-        B.href = F, B.target = "_blank", B.rel = "noopener", B.textContent = "Open in Klavity", O.appendChild(B);
+        B.href = F, B.target = "_blank", B.rel = "noopener", B.textContent = "Open in Klavity", I.appendChild(B);
       }
-      C.appendChild(O);
+      C.appendChild(I);
     }
     x.appendChild(C), Xe(Sr), s.appendChild(x), _a(C, ze);
   }
@@ -6253,7 +6261,7 @@ function vg(e, t, r = {}) {
       }
       R.appendChild(L);
     }
-    const O = () => _a(ae, ot);
+    const I = () => _a(ae, ot);
     if (C.showEmail) {
       const L = document.createElement("div");
       L.className = "klavity-lead";
@@ -6281,7 +6289,7 @@ function vg(e, t, r = {}) {
           return;
         }
         const X = document.createElement("div");
-        X.className = "klavity-thanks", X.textContent = "Thanks — we'll be in touch.", Xe(K), L.replaceWith(X), C.showCta || O();
+        X.className = "klavity-thanks", X.textContent = "Thanks — we'll be in touch.", Xe(K), L.replaceWith(X), C.showCta || I();
       };
       F.addEventListener("click", J), $.addEventListener("keydown", (ie) => {
         ie.key === "Enter" && J();
@@ -6301,7 +6309,7 @@ function vg(e, t, r = {}) {
         ref: n.projectId
       }), $.target = "_blank", $.rel = "noopener", $.textContent = "Klavity", L.append("Powered by ", $), ae.appendChild(L);
     }
-    !C.showEmail && !C.showCta && O();
+    !C.showEmail && !C.showCta && I();
   }
   if (t.autoCaptureOnOpen) {
     let g = 0;
@@ -6314,8 +6322,13 @@ function vg(e, t, r = {}) {
     if (w || Tl(t) === "screen") {
       if (l = !0, Oe(), Tl(t) === "screen")
         return (async () => {
-          if (await ao({ viewport: !0 })) {
+          const E = await ao({ viewport: !0, onOpen: !0 });
+          if (E.ok) {
             l = !1, Oe();
+            return;
+          }
+          if (E.declined) {
+            l = !1, nr({ immediate: !0, reason: "discard" });
             return;
           }
           if (c.length) {
@@ -6333,12 +6346,12 @@ function vg(e, t, r = {}) {
             return;
           }
           t.onCaptureFull().then((R) => {
-            const { dataUrl: _, quality: O, suggestSharp: L, blank: $ } = Zt(R);
+            const { dataUrl: _, quality: I, suggestSharp: L, blank: $ } = Zt(R);
             if (l = !1, $ && c.length === 0) {
               Ki();
               return;
             }
-            Tt(_, O, void 0, !0, !!L), Jt(Tr);
+            Tt(_, I, void 0, !0, !!L), Jt(Tr);
           }).catch(() => {
             l = !1, Oe();
           });
@@ -6351,12 +6364,12 @@ function vg(e, t, r = {}) {
           return;
         }
         t.onCaptureFull().then((E) => {
-          const { dataUrl: R, quality: _, suggestSharp: O, blank: L } = Zt(E);
+          const { dataUrl: R, quality: _, suggestSharp: I, blank: L } = Zt(E);
           if (l = !1, L && c.length === 0) {
             Ki();
             return;
           }
-          Tt(R, _, void 0, !0, !!O), Jt(Tr);
+          Tt(R, _, void 0, !0, !!I), Jt(Tr);
         }).catch(() => {
           l = !1, Oe();
         });
@@ -6842,10 +6855,10 @@ function Bg(e, t) {
   ee[0] = 21, ee[1] = 73, ee[2] = 169, ee[3] = 102, ee.set(z, 4);
   const W = new Uint8Array(ee.length + U.length);
   W.set(ee, 0), W.set(U, ee.length);
-  const I = u + p.value, rt = W.length - I;
+  const O = u + p.value, rt = W.length - O;
   let Ge = null;
   d || (Ge = Ll(s.value + rt, s.width));
-  const me = e.subarray(0, i + o.width), he = Ge || e.subarray(i + o.width, c), Ae = e.subarray(c, h), Ue = W, _e = e.subarray(h + I), ce = me.length + he.length + Ae.length + Ue.length + _e.length, ne = new Uint8Array(ce);
+  const me = e.subarray(0, i + o.width), he = Ge || e.subarray(i + o.width, c), Ae = e.subarray(c, h), Ue = W, _e = e.subarray(h + O), ce = me.length + he.length + Ae.length + Ue.length + _e.length, ne = new Uint8Array(ce);
   let P = 0;
   return ne.set(me, P), P += me.length, ne.set(he, P), P += he.length, ne.set(Ae, P), P += Ae.length, ne.set(Ue, P), P += Ue.length, ne.set(_e, P), P += _e.length, ne;
 }
@@ -6908,7 +6921,7 @@ function Jg() {
   return "rec_" + (typeof crypto < "u" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 }
 async function Zg(e = {}, t = Xs()) {
-  var M, k, b, A, S, v, T, N, U, z, ee, W, I, rt, Ge, me, he, Ae, Ue, _e;
+  var M, k, b, A, S, v, T, N, U, z, ee, W, O, rt, Ge, me, he, Ae, Ue, _e;
   const r = { ...Vu, ...e.caps || {} }, n = e.wantCamera === !0, i = e.wantMic !== !1, o = Math.max(5, Math.min(60, e.fps ?? Gg)), s = Xg(
     (M = t.MediaRecorder) != null && M.isTypeSupported ? (ce) => t.MediaRecorder.isTypeSupported(ce) : void 0
   );
@@ -6955,8 +6968,8 @@ async function Zg(e = {}, t = Xs()) {
   };
   try {
     let ce = function() {
-      if (!lr) {
-        lr = !0;
+      if (!cr) {
+        cr = !0;
         try {
           ye.state !== "inactive" && ye.stop();
         } catch {
@@ -6983,7 +6996,7 @@ async function Zg(e = {}, t = Xs()) {
         let ze = !1;
         if (i && n)
           try {
-            if (f = await t.mediaDevices.getUserMedia({ video: !1, audio: { echoCancellation: !0, noiseSuppression: !0 } }), Y = ((I = f.getAudioTracks) == null ? void 0 : I.call(f)[0]) || null, Y) {
+            if (f = await t.mediaDevices.getUserMedia({ video: !1, audio: { echoCancellation: !0, noiseSuppression: !0 } }), Y = ((O = f.getAudioTracks) == null ? void 0 : O.call(f)[0]) || null, Y) {
               ge = !1, ze = !0;
               try {
                 (rt = e.onFallback) == null || rt.call(e, "camera-blocked");
@@ -7083,10 +7096,10 @@ async function Zg(e = {}, t = Xs()) {
     } catch {
     }
     const le = Math.max(15e4, Math.floor(e.videoBitsPerSecond ?? Yg)), Qe = Math.max(16e3, Math.floor(e.audioBitsPerSecond ?? Vg)), ye = new t.MediaRecorder(Pe, { mimeType: s, videoBitsPerSecond: le, audioBitsPerSecond: Qe }), Ct = [];
-    let dt = 0, ar = 0, Mt = 0, Re = 0, wt = 0, lr = !1;
+    let dt = 0, lr = 0, Mt = 0, Re = 0, wt = 0, cr = !1;
     const xt = () => {
       if (p === "idle") return 0;
-      const te = t.now() - ar - Mt;
+      const te = t.now() - lr - Mt;
       return Math.max(0, te - (Re ? t.now() - Re : 0));
     };
     ye.ondataavailable = (te) => {
@@ -7140,7 +7153,7 @@ async function Zg(e = {}, t = Xs()) {
         hadCamera: pe,
         hadAudio: Be
       });
-    }, ye.start(1e3), ar = t.now(), u("recording"), wt = t.setInterval(() => {
+    }, ye.start(1e3), lr = t.now(), u("recording"), wt = t.setInterval(() => {
       var ze;
       const te = xt();
       try {
@@ -7310,8 +7323,8 @@ async function ry(e = {}) {
           onStats: ({ elapsedMs: z, bytes: ee }) => {
             const W = i.querySelector("#klr-timer");
             W && (W.textContent = "REC " + y(z));
-            const I = i.querySelector("#klr-meta");
-            I && (I.innerHTML = `${y(Math.max(0, k.maxDurationMs - z))} left<br>~${M(ee)}`);
+            const O = i.querySelector("#klr-meta");
+            O && (O.innerHTML = `${y(Math.max(0, k.maxDurationMs - z))} left<br>~${M(ee)}`);
           }
         }, t);
       } catch {
@@ -7430,7 +7443,7 @@ function Js(e) {
   }
 }
 const Co = {};
-function or(e, t, r) {
+function sr(e, t, r) {
   var n;
   const i = `${e}.${String(r)}`;
   if (Co[i])
@@ -7454,19 +7467,19 @@ function Xu(e, t, r) {
   return typeof o != "function" ? t[r] : (Mo[n] = o, o.bind(t));
 }
 function cy(e) {
-  return or("Node", e, "ownerDocument");
+  return sr("Node", e, "ownerDocument");
 }
 function uy(e) {
-  return or("Node", e, "childNodes");
+  return sr("Node", e, "childNodes");
 }
 function dy(e) {
-  return or("Node", e, "parentNode");
+  return sr("Node", e, "parentNode");
 }
 function py(e) {
-  return or("Node", e, "parentElement");
+  return sr("Node", e, "parentElement");
 }
 function hy(e) {
-  return or("Node", e, "textContent");
+  return sr("Node", e, "textContent");
 }
 function fy(e, t) {
   return Xu("Node", e, "contains")(t);
@@ -7475,19 +7488,19 @@ function my(e) {
   return Xu("Node", e, "getRootNode")();
 }
 function gy(e) {
-  return !e || !("host" in e) ? null : or("ShadowRoot", e, "host");
+  return !e || !("host" in e) ? null : sr("ShadowRoot", e, "host");
 }
 function yy(e) {
   return e.styleSheets;
 }
 function by(e) {
-  return !e || !("shadowRoot" in e) ? null : or("Element", e, "shadowRoot");
+  return !e || !("shadowRoot" in e) ? null : sr("Element", e, "shadowRoot");
 }
 function ky(e, t) {
-  return or("Element", e, "querySelector")(t);
+  return sr("Element", e, "querySelector")(t);
 }
 function vy(e, t) {
-  return or("Element", e, "querySelectorAll")(t);
+  return sr("Element", e, "querySelectorAll")(t);
 }
 function wy() {
   return [
@@ -8279,18 +8292,18 @@ function rn(e, t) {
     return console.warn(e, "not serialized"), null;
   let W;
   n.hasNode(e) ? W = n.getId(e) : Jy(ee, u) || !z && ee.type === tt.Text && !ee.textContent.replace(/^\s+|\s+$/gm, "").length ? W = $n : W = rd();
-  const I = Object.assign(ee, { id: W });
-  if (n.add(e, I), W === $n)
+  const O = Object.assign(ee, { id: W });
+  if (n.add(e, O), W === $n)
     return null;
   M && M(e);
   let rt = !l;
-  if (I.type === tt.Element) {
-    rt = rt && !I.needBlock, delete I.needBlock;
+  if (O.type === tt.Element) {
+    rt = rt && !O.needBlock, delete O.needBlock;
     const me = ut.shadowRoot(e);
-    me && Ln(me) && (I.isShadowHost = !0);
+    me && Ln(me) && (O.isShadowHost = !0);
   }
-  if ((I.type === tt.Document || I.type === tt.Element) && rt) {
-    u.headWhitespace && I.type === tt.Element && I.tagName === "head" && (z = !1);
+  if ((O.type === tt.Document || O.type === tt.Element) && rt) {
+    u.headWhitespace && O.type === tt.Element && O.tagName === "head" && (z = !1);
     const me = {
       doc: r,
       mirror: n,
@@ -8317,22 +8330,22 @@ function rn(e, t) {
       keepIframeSrcFn: v,
       cssCaptured: !1
     };
-    if (!(I.type === tt.Element && I.tagName === "textarea" && I.attributes.value !== void 0)) {
-      I.type === tt.Element && I.attributes._cssText !== void 0 && typeof I.attributes._cssText == "string" && (me.cssCaptured = !0);
+    if (!(O.type === tt.Element && O.tagName === "textarea" && O.attributes.value !== void 0)) {
+      O.type === tt.Element && O.attributes._cssText !== void 0 && typeof O.attributes._cssText == "string" && (me.cssCaptured = !0);
       for (const Ae of Array.from(ut.childNodes(e))) {
         const Ue = rn(Ae, me);
-        Ue && I.childNodes.push(Ue);
+        Ue && O.childNodes.push(Ue);
       }
     }
     let he = null;
     if (Zu(e) && (he = ut.shadowRoot(e)))
       for (const Ae of Array.from(ut.childNodes(he))) {
         const Ue = rn(Ae, me);
-        Ue && (Ln(he) && (Ue.isShadow = !0), I.childNodes.push(Ue));
+        Ue && (Ln(he) && (Ue.isShadow = !0), O.childNodes.push(Ue));
       }
   }
   const Ge = ut.parentNode(e);
-  return Ge && _n(Ge) && Ln(Ge) && (I.isShadow = !0), I.type === tt.Element && I.tagName === "iframe" && Hy(
+  return Ge && _n(Ge) && Ln(Ge) && (O.isShadow = !0), O.type === tt.Element && O.tagName === "iframe" && Hy(
     e,
     () => {
       const me = e.contentDocument;
@@ -8369,7 +8382,7 @@ function rn(e, t) {
       }
     },
     b
-  ), I.type === tt.Element && I.tagName === "link" && typeof I.attributes.rel == "string" && (I.attributes.rel === "stylesheet" || I.attributes.rel === "preload" && typeof I.attributes.href == "string" && td(I.attributes.href) === "css") && Yy(
+  ), O.type === tt.Element && O.tagName === "link" && typeof O.attributes.rel == "string" && (O.attributes.rel === "stylesheet" || O.attributes.rel === "preload" && typeof O.attributes.href == "string" && td(O.attributes.href) === "css") && Yy(
     e,
     () => {
       if (A) {
@@ -8405,7 +8418,7 @@ function rn(e, t) {
       }
     },
     S
-  ), I;
+  ), O;
 }
 function Zy(e, t) {
   const {
@@ -9691,7 +9704,7 @@ function ob() {
   oc = 1;
   const e = 39, t = 34, r = 92, n = 47, i = 10, o = 32, s = 12, c = 9, l = 13, d = 91, a = 93, h = 40, p = 41, u = 123, m = 125, f = 59, y = 42, M = 58, k = 64, b = /[\t\n\f\r "#'()/;[\\\]{}]/g, A = /[\t\n\f\r !"#'():;@[\\\]{}]|\/(?=\*)/g, S = /.[\r\n"'(/\\]/, v = /[\da-f]/i;
   return qo = function(N, U = {}) {
-    let z = N.css.valueOf(), ee = U.ignoreErrors, W, I, rt, Ge, me, he, Ae, Ue, _e, ce, ne = z.length, P = 0, ue = [], Y = [];
+    let z = N.css.valueOf(), ee = U.ignoreErrors, W, O, rt, Ge, me, he, Ae, Ue, _e, ce, ne = z.length, P = 0, ue = [], Y = [];
     function pe() {
       return P;
     }
@@ -9711,11 +9724,11 @@ function ob() {
         case c:
         case l:
         case s: {
-          I = P;
+          O = P;
           do
-            I += 1, W = z.charCodeAt(I);
+            O += 1, W = z.charCodeAt(O);
           while (W === o || W === i || W === c || W === l || W === s);
-          ce = ["space", z.slice(P, I)], P = I - 1;
+          ce = ["space", z.slice(P, O)], P = O - 1;
           break;
         }
         case d:
@@ -9731,55 +9744,55 @@ function ob() {
         }
         case h: {
           if (Ue = ue.length ? ue.pop()[1] : "", _e = z.charCodeAt(P + 1), Ue === "url" && _e !== e && _e !== t && _e !== o && _e !== i && _e !== c && _e !== s && _e !== l) {
-            I = P;
+            O = P;
             do {
-              if (he = !1, I = z.indexOf(")", I + 1), I === -1)
+              if (he = !1, O = z.indexOf(")", O + 1), O === -1)
                 if (ee || Le) {
-                  I = P;
+                  O = P;
                   break;
                 } else
                   ge("bracket");
-              for (Ae = I; z.charCodeAt(Ae - 1) === r; )
+              for (Ae = O; z.charCodeAt(Ae - 1) === r; )
                 Ae -= 1, he = !he;
             } while (he);
-            ce = ["brackets", z.slice(P, I + 1), P, I], P = I;
+            ce = ["brackets", z.slice(P, O + 1), P, O], P = O;
           } else
-            I = z.indexOf(")", P + 1), Ge = z.slice(P, I + 1), I === -1 || S.test(Ge) ? ce = ["(", "(", P] : (ce = ["brackets", Ge, P, I], P = I);
+            O = z.indexOf(")", P + 1), Ge = z.slice(P, O + 1), O === -1 || S.test(Ge) ? ce = ["(", "(", P] : (ce = ["brackets", Ge, P, O], P = O);
           break;
         }
         case e:
         case t: {
-          rt = W === e ? "'" : '"', I = P;
+          rt = W === e ? "'" : '"', O = P;
           do {
-            if (he = !1, I = z.indexOf(rt, I + 1), I === -1)
+            if (he = !1, O = z.indexOf(rt, O + 1), O === -1)
               if (ee || Le) {
-                I = P + 1;
+                O = P + 1;
                 break;
               } else
                 ge("string");
-            for (Ae = I; z.charCodeAt(Ae - 1) === r; )
+            for (Ae = O; z.charCodeAt(Ae - 1) === r; )
               Ae -= 1, he = !he;
           } while (he);
-          ce = ["string", z.slice(P, I + 1), P, I], P = I;
+          ce = ["string", z.slice(P, O + 1), P, O], P = O;
           break;
         }
         case k: {
-          b.lastIndex = P + 1, b.test(z), b.lastIndex === 0 ? I = z.length - 1 : I = b.lastIndex - 2, ce = ["at-word", z.slice(P, I + 1), P, I], P = I;
+          b.lastIndex = P + 1, b.test(z), b.lastIndex === 0 ? O = z.length - 1 : O = b.lastIndex - 2, ce = ["at-word", z.slice(P, O + 1), P, O], P = O;
           break;
         }
         case r: {
-          for (I = P, me = !0; z.charCodeAt(I + 1) === r; )
-            I += 1, me = !me;
-          if (W = z.charCodeAt(I + 1), me && W !== n && W !== o && W !== i && W !== c && W !== l && W !== s && (I += 1, v.test(z.charAt(I)))) {
-            for (; v.test(z.charAt(I + 1)); )
-              I += 1;
-            z.charCodeAt(I + 1) === o && (I += 1);
+          for (O = P, me = !0; z.charCodeAt(O + 1) === r; )
+            O += 1, me = !me;
+          if (W = z.charCodeAt(O + 1), me && W !== n && W !== o && W !== i && W !== c && W !== l && W !== s && (O += 1, v.test(z.charAt(O)))) {
+            for (; v.test(z.charAt(O + 1)); )
+              O += 1;
+            z.charCodeAt(O + 1) === o && (O += 1);
           }
-          ce = ["word", z.slice(P, I + 1), P, I], P = I;
+          ce = ["word", z.slice(P, O + 1), P, O], P = O;
           break;
         }
         default: {
-          W === n && z.charCodeAt(P + 1) === y ? (I = z.indexOf("*/", P + 2) + 1, I === 0 && (ee || Le ? I = z.length : ge("comment")), ce = ["comment", z.slice(P, I + 1), P, I], P = I) : (A.lastIndex = P + 1, A.test(z), A.lastIndex === 0 ? I = z.length - 1 : I = A.lastIndex - 2, ce = ["word", z.slice(P, I + 1), P, I], ue.push(ce), P = I);
+          W === n && z.charCodeAt(P + 1) === y ? (O = z.indexOf("*/", P + 2) + 1, O === 0 && (ee || Le ? O = z.length : ge("comment")), ce = ["comment", z.slice(P, O + 1), P, O], P = O) : (A.lastIndex = P + 1, A.test(z), A.lastIndex === 0 ? O = z.length - 1 : O = A.lastIndex - 2, ce = ["word", z.slice(P, O + 1), P, O], ue.push(ce), P = O);
           break;
         }
       }
@@ -11987,7 +12000,7 @@ function vb() {
   Nc = 1;
   const e = 39, t = 34, r = 92, n = 47, i = 10, o = 32, s = 12, c = 9, l = 13, d = 91, a = 93, h = 40, p = 41, u = 123, m = 125, f = 59, y = 42, M = 58, k = 64, b = /[\t\n\f\r "#'()/;[\\\]{}]/g, A = /[\t\n\f\r !"#'():;@[\\\]{}]|\/(?=\*)/g, S = /.[\r\n"'(/\\]/, v = /[\da-f]/i;
   return ms = function(N, U = {}) {
-    let z = N.css.valueOf(), ee = U.ignoreErrors, W, I, rt, Ge, me, he, Ae, Ue, _e, ce, ne = z.length, P = 0, ue = [], Y = [];
+    let z = N.css.valueOf(), ee = U.ignoreErrors, W, O, rt, Ge, me, he, Ae, Ue, _e, ce, ne = z.length, P = 0, ue = [], Y = [];
     function pe() {
       return P;
     }
@@ -12007,11 +12020,11 @@ function vb() {
         case c:
         case l:
         case s: {
-          I = P;
+          O = P;
           do
-            I += 1, W = z.charCodeAt(I);
+            O += 1, W = z.charCodeAt(O);
           while (W === o || W === i || W === c || W === l || W === s);
-          ce = ["space", z.slice(P, I)], P = I - 1;
+          ce = ["space", z.slice(P, O)], P = O - 1;
           break;
         }
         case d:
@@ -12027,55 +12040,55 @@ function vb() {
         }
         case h: {
           if (Ue = ue.length ? ue.pop()[1] : "", _e = z.charCodeAt(P + 1), Ue === "url" && _e !== e && _e !== t && _e !== o && _e !== i && _e !== c && _e !== s && _e !== l) {
-            I = P;
+            O = P;
             do {
-              if (he = !1, I = z.indexOf(")", I + 1), I === -1)
+              if (he = !1, O = z.indexOf(")", O + 1), O === -1)
                 if (ee || Le) {
-                  I = P;
+                  O = P;
                   break;
                 } else
                   ge("bracket");
-              for (Ae = I; z.charCodeAt(Ae - 1) === r; )
+              for (Ae = O; z.charCodeAt(Ae - 1) === r; )
                 Ae -= 1, he = !he;
             } while (he);
-            ce = ["brackets", z.slice(P, I + 1), P, I], P = I;
+            ce = ["brackets", z.slice(P, O + 1), P, O], P = O;
           } else
-            I = z.indexOf(")", P + 1), Ge = z.slice(P, I + 1), I === -1 || S.test(Ge) ? ce = ["(", "(", P] : (ce = ["brackets", Ge, P, I], P = I);
+            O = z.indexOf(")", P + 1), Ge = z.slice(P, O + 1), O === -1 || S.test(Ge) ? ce = ["(", "(", P] : (ce = ["brackets", Ge, P, O], P = O);
           break;
         }
         case e:
         case t: {
-          rt = W === e ? "'" : '"', I = P;
+          rt = W === e ? "'" : '"', O = P;
           do {
-            if (he = !1, I = z.indexOf(rt, I + 1), I === -1)
+            if (he = !1, O = z.indexOf(rt, O + 1), O === -1)
               if (ee || Le) {
-                I = P + 1;
+                O = P + 1;
                 break;
               } else
                 ge("string");
-            for (Ae = I; z.charCodeAt(Ae - 1) === r; )
+            for (Ae = O; z.charCodeAt(Ae - 1) === r; )
               Ae -= 1, he = !he;
           } while (he);
-          ce = ["string", z.slice(P, I + 1), P, I], P = I;
+          ce = ["string", z.slice(P, O + 1), P, O], P = O;
           break;
         }
         case k: {
-          b.lastIndex = P + 1, b.test(z), b.lastIndex === 0 ? I = z.length - 1 : I = b.lastIndex - 2, ce = ["at-word", z.slice(P, I + 1), P, I], P = I;
+          b.lastIndex = P + 1, b.test(z), b.lastIndex === 0 ? O = z.length - 1 : O = b.lastIndex - 2, ce = ["at-word", z.slice(P, O + 1), P, O], P = O;
           break;
         }
         case r: {
-          for (I = P, me = !0; z.charCodeAt(I + 1) === r; )
-            I += 1, me = !me;
-          if (W = z.charCodeAt(I + 1), me && W !== n && W !== o && W !== i && W !== c && W !== l && W !== s && (I += 1, v.test(z.charAt(I)))) {
-            for (; v.test(z.charAt(I + 1)); )
-              I += 1;
-            z.charCodeAt(I + 1) === o && (I += 1);
+          for (O = P, me = !0; z.charCodeAt(O + 1) === r; )
+            O += 1, me = !me;
+          if (W = z.charCodeAt(O + 1), me && W !== n && W !== o && W !== i && W !== c && W !== l && W !== s && (O += 1, v.test(z.charAt(O)))) {
+            for (; v.test(z.charAt(O + 1)); )
+              O += 1;
+            z.charCodeAt(O + 1) === o && (O += 1);
           }
-          ce = ["word", z.slice(P, I + 1), P, I], P = I;
+          ce = ["word", z.slice(P, O + 1), P, O], P = O;
           break;
         }
         default: {
-          W === n && z.charCodeAt(P + 1) === y ? (I = z.indexOf("*/", P + 2) + 1, I === 0 && (ee || Le ? I = z.length : ge("comment")), ce = ["comment", z.slice(P, I + 1), P, I], P = I) : (A.lastIndex = P + 1, A.test(z), A.lastIndex === 0 ? I = z.length - 1 : I = A.lastIndex - 2, ce = ["word", z.slice(P, I + 1), P, I], ue.push(ce), P = I);
+          W === n && z.charCodeAt(P + 1) === y ? (O = z.indexOf("*/", P + 2) + 1, O === 0 && (ee || Le ? O = z.length : ge("comment")), ce = ["comment", z.slice(P, O + 1), P, O], P = O) : (A.lastIndex = P + 1, A.test(z), A.lastIndex === 0 ? O = z.length - 1 : O = A.lastIndex - 2, ce = ["word", z.slice(P, O + 1), P, O], ue.push(ce), P = O);
           break;
         }
       }
@@ -13160,7 +13173,7 @@ function fa(e) {
   }
 }
 const Rs = {};
-function sr(e, t, r) {
+function ar(e, t, r) {
   var n;
   const i = `${e}.${String(r)}`;
   if (Rs[i])
@@ -13184,19 +13197,19 @@ function xd(e, t, r) {
   return typeof o != "function" ? t[r] : (Ts[n] = o, o.bind(t));
 }
 function Tb(e) {
-  return sr("Node", e, "ownerDocument");
+  return ar("Node", e, "ownerDocument");
 }
 function Ab(e) {
-  return sr("Node", e, "childNodes");
+  return ar("Node", e, "childNodes");
 }
 function _b(e) {
-  return sr("Node", e, "parentNode");
+  return ar("Node", e, "parentNode");
 }
 function Lb(e) {
-  return sr("Node", e, "parentElement");
+  return ar("Node", e, "parentElement");
 }
 function Ib(e) {
-  return sr("Node", e, "textContent");
+  return ar("Node", e, "textContent");
 }
 function Ob(e, t) {
   return xd("Node", e, "contains")(t);
@@ -13205,19 +13218,19 @@ function Nb(e) {
   return xd("Node", e, "getRootNode")();
 }
 function Pb(e) {
-  return !e || !("host" in e) ? null : sr("ShadowRoot", e, "host");
+  return !e || !("host" in e) ? null : ar("ShadowRoot", e, "host");
 }
 function $b(e) {
   return e.styleSheets;
 }
 function zb(e) {
-  return !e || !("shadowRoot" in e) ? null : sr("Element", e, "shadowRoot");
+  return !e || !("shadowRoot" in e) ? null : ar("Element", e, "shadowRoot");
 }
 function Db(e, t) {
-  return sr("Element", e, "querySelector")(t);
+  return ar("Element", e, "querySelector")(t);
 }
 function Fb(e, t) {
-  return sr("Element", e, "querySelectorAll")(t);
+  return ar("Element", e, "querySelectorAll")(t);
 }
 function Sd() {
   return [
@@ -13429,7 +13442,7 @@ function Id(e) {
   const t = we.ownerDocument(e);
   return t ? we.contains(t, e) || jb(e) : !1;
 }
-var Me = /* @__PURE__ */ ((e) => (e[e.DomContentLoaded = 0] = "DomContentLoaded", e[e.Load = 1] = "Load", e[e.FullSnapshot = 2] = "FullSnapshot", e[e.IncrementalSnapshot = 3] = "IncrementalSnapshot", e[e.Meta = 4] = "Meta", e[e.Custom = 5] = "Custom", e[e.Plugin = 6] = "Plugin", e[e.Asset = 7] = "Asset", e))(Me || {}), Ee = /* @__PURE__ */ ((e) => (e[e.Mutation = 0] = "Mutation", e[e.MouseMove = 1] = "MouseMove", e[e.MouseInteraction = 2] = "MouseInteraction", e[e.Scroll = 3] = "Scroll", e[e.ViewportResize = 4] = "ViewportResize", e[e.Input = 5] = "Input", e[e.TouchMove = 6] = "TouchMove", e[e.MediaInteraction = 7] = "MediaInteraction", e[e.StyleSheetRule = 8] = "StyleSheetRule", e[e.CanvasMutation = 9] = "CanvasMutation", e[e.Font = 10] = "Font", e[e.Log = 11] = "Log", e[e.Drag = 12] = "Drag", e[e.StyleDeclaration = 13] = "StyleDeclaration", e[e.Selection = 14] = "Selection", e[e.AdoptedStyleSheet = 15] = "AdoptedStyleSheet", e[e.CustomElement = 16] = "CustomElement", e))(Ee || {}), vt = /* @__PURE__ */ ((e) => (e[e.MouseUp = 0] = "MouseUp", e[e.MouseDown = 1] = "MouseDown", e[e.Click = 2] = "Click", e[e.ContextMenu = 3] = "ContextMenu", e[e.DblClick = 4] = "DblClick", e[e.Focus = 5] = "Focus", e[e.Blur = 6] = "Blur", e[e.TouchStart = 7] = "TouchStart", e[e.TouchMove_Departed = 8] = "TouchMove_Departed", e[e.TouchEnd = 9] = "TouchEnd", e[e.TouchCancel = 10] = "TouchCancel", e))(vt || {}), ir = /* @__PURE__ */ ((e) => (e[e.Mouse = 0] = "Mouse", e[e.Pen = 1] = "Pen", e[e.Touch = 2] = "Touch", e))(ir || {}), hn = /* @__PURE__ */ ((e) => (e[e["2D"] = 0] = "2D", e[e.WebGL = 1] = "WebGL", e[e.WebGL2 = 2] = "WebGL2", e))(hn || {}), en = /* @__PURE__ */ ((e) => (e[e.Play = 0] = "Play", e[e.Pause = 1] = "Pause", e[e.Seeked = 2] = "Seeked", e[e.VolumeChange = 3] = "VolumeChange", e[e.RateChange = 4] = "RateChange", e))(en || {}), Od = /* @__PURE__ */ ((e) => (e[e.Document = 0] = "Document", e[e.DocumentType = 1] = "DocumentType", e[e.Element = 2] = "Element", e[e.Text = 3] = "Text", e[e.CDATA = 4] = "CDATA", e[e.Comment = 5] = "Comment", e))(Od || {});
+var Me = /* @__PURE__ */ ((e) => (e[e.DomContentLoaded = 0] = "DomContentLoaded", e[e.Load = 1] = "Load", e[e.FullSnapshot = 2] = "FullSnapshot", e[e.IncrementalSnapshot = 3] = "IncrementalSnapshot", e[e.Meta = 4] = "Meta", e[e.Custom = 5] = "Custom", e[e.Plugin = 6] = "Plugin", e[e.Asset = 7] = "Asset", e))(Me || {}), Ee = /* @__PURE__ */ ((e) => (e[e.Mutation = 0] = "Mutation", e[e.MouseMove = 1] = "MouseMove", e[e.MouseInteraction = 2] = "MouseInteraction", e[e.Scroll = 3] = "Scroll", e[e.ViewportResize = 4] = "ViewportResize", e[e.Input = 5] = "Input", e[e.TouchMove = 6] = "TouchMove", e[e.MediaInteraction = 7] = "MediaInteraction", e[e.StyleSheetRule = 8] = "StyleSheetRule", e[e.CanvasMutation = 9] = "CanvasMutation", e[e.Font = 10] = "Font", e[e.Log = 11] = "Log", e[e.Drag = 12] = "Drag", e[e.StyleDeclaration = 13] = "StyleDeclaration", e[e.Selection = 14] = "Selection", e[e.AdoptedStyleSheet = 15] = "AdoptedStyleSheet", e[e.CustomElement = 16] = "CustomElement", e))(Ee || {}), vt = /* @__PURE__ */ ((e) => (e[e.MouseUp = 0] = "MouseUp", e[e.MouseDown = 1] = "MouseDown", e[e.Click = 2] = "Click", e[e.ContextMenu = 3] = "ContextMenu", e[e.DblClick = 4] = "DblClick", e[e.Focus = 5] = "Focus", e[e.Blur = 6] = "Blur", e[e.TouchStart = 7] = "TouchStart", e[e.TouchMove_Departed = 8] = "TouchMove_Departed", e[e.TouchEnd = 9] = "TouchEnd", e[e.TouchCancel = 10] = "TouchCancel", e))(vt || {}), or = /* @__PURE__ */ ((e) => (e[e.Mouse = 0] = "Mouse", e[e.Pen = 1] = "Pen", e[e.Touch = 2] = "Touch", e))(or || {}), hn = /* @__PURE__ */ ((e) => (e[e["2D"] = 0] = "2D", e[e.WebGL = 1] = "WebGL", e[e.WebGL2 = 2] = "WebGL2", e))(hn || {}), en = /* @__PURE__ */ ((e) => (e[e.Play = 0] = "Play", e[e.Pause = 1] = "Pause", e[e.Seeked = 2] = "Seeked", e[e.VolumeChange = 3] = "VolumeChange", e[e.RateChange = 4] = "RateChange", e))(en || {}), Od = /* @__PURE__ */ ((e) => (e[e.Document = 0] = "Document", e[e.DocumentType = 1] = "DocumentType", e[e.Element = 2] = "Element", e[e.Text = 3] = "Text", e[e.CDATA = 4] = "CDATA", e[e.Comment = 5] = "Comment", e))(Od || {});
 function Kc(e) {
   return "__ln" in e;
 }
@@ -13900,18 +13913,18 @@ function Zb({
     if ("pointerType" in h) {
       switch (h.pointerType) {
         case "mouse":
-          u = ir.Mouse;
+          u = or.Mouse;
           break;
         case "touch":
-          u = ir.Touch;
+          u = or.Touch;
           break;
         case "pen":
-          u = ir.Pen;
+          u = or.Pen;
           break;
       }
-      u === ir.Touch ? vt[a] === vt.MouseDown ? m = "TouchStart" : vt[a] === vt.MouseUp && (m = "TouchEnd") : ir.Pen;
-    } else Us(h) && (u = ir.Touch);
-    u !== null ? (l = u, (m.startsWith("Touch") && u === ir.Touch || m.startsWith("Mouse") && u === ir.Mouse) && (u = null)) : vt[a] === vt.Click && (u = l, l = null);
+      u === or.Touch ? vt[a] === vt.MouseDown ? m = "TouchStart" : vt[a] === vt.MouseUp && (m = "TouchEnd") : or.Pen;
+    } else Us(h) && (u = or.Touch);
+    u !== null ? (l = u, (m.startsWith("Touch") && u === or.Touch || m.startsWith("Mouse") && u === or.Mouse) && (u = null)) : vt[a] === vt.Click && (u = l, l = null);
     const f = Us(h) ? h.changedTouches[0] : h;
     if (!f)
       return;
@@ -15451,7 +15464,7 @@ function xr(e = {}) {
     collectFonts: z = !1,
     inlineImages: ee = !1,
     plugins: W,
-    keepIframeSrcFn: I = () => !1,
+    keepIframeSrcFn: O = () => !1,
     ignoreCSSAttributes: rt = /* @__PURE__ */ new Set([]),
     errorHandler: Ge
   } = e;
@@ -15593,7 +15606,7 @@ function xr(e = {}) {
       iframeManager: Be,
       stylesheetManager: ge,
       canvasManager: _s,
-      keepIframeSrcFn: I,
+      keepIframeSrcFn: O,
       processedNodeManager: ke
     },
     mirror: Ut
@@ -15635,7 +15648,7 @@ function xr(e = {}) {
       onStylesheetLoad: (ve, Pe) => {
         ge.attachLinkElement(ve, Pe);
       },
-      keepIframeSrcFn: I
+      keepIframeSrcFn: O
     });
     if (!Le)
       return console.warn("Failed to snapshot the document");
@@ -15751,7 +15764,7 @@ function xr(e = {}) {
           doc: Pe,
           maskInputFn: m,
           maskTextFn: f,
-          keepIframeSrcFn: I,
+          keepIframeSrcFn: O,
           blockSelector: o,
           slimDOMOptions: Ue,
           dataURLOptions: b,
