@@ -23536,12 +23536,12 @@
           window.applyNavLocks = applyNavLocks
 
           // New Sim / New AutoSim buttons (the pages' own buttons and the top-bar "Create New" menu items) follow the same
-          // permissions as the Sims and AutoSims pages. New Sim is for project admins, New AutoSim for any member. On a
+          // permissions as the Sims and AutoSims pages. Both are for project admins only. On a
           // Snap-only project (those pages sit behind the upgrade wall) the allowed buttons stay visible with a lock icon
           // beside them, and clicking one opens the plan/upgrade drawer instead of the Sim modal / AutoSim wizard.
           function applyCreateGates(admin) {
             const snap = snapOnly()
-            ;[["newSimBtn", !!admin], ["createItemSim", !!admin], ["newTrailBtn", true], ["createItemAutoSim", true]].forEach(([id, allowed]) => {
+            ;[["newSimBtn", !!admin], ["createItemSim", !!admin], ["newTrailBtn", !!admin], ["createItemAutoSim", !!admin]].forEach(([id, allowed]) => {
               const el = $(id); if (!el) return
               el.classList.toggle("hide", !allowed)
               el.classList.toggle("snap-locked", allowed && snap)

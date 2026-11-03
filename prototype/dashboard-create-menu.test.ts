@@ -162,9 +162,10 @@ test("New Sim buttons: admins only; on a Snap project they stay visible, locked"
   expect(s.createItemSim.attrs["data-snap-locked"]).toBe("1")
   expect(runGates(false, true).newSimBtn.cls.has("hide")).toBe(true)   // a non-admin still never sees New Sim
 })
-test("New AutoSim buttons: any member; locked on a Snap project", () => {
-  const m = runGates(false, false); expect(m.newTrailBtn.cls.has("hide")).toBe(false); expect(m.createItemAutoSim.attrs["data-snap-locked"]).toBeUndefined()
-  const s = runGates(false, true)
+test("New AutoSim buttons: admins only (same as New Sim); locked on a Snap project", () => {
+  const m = runGates(false, false); expect(m.newTrailBtn.cls.has("hide")).toBe(true); expect(m.createItemAutoSim.cls.has("hide")).toBe(true)
+  const a = runGates(true, false); expect(a.newTrailBtn.cls.has("hide")).toBe(false); expect(a.createItemAutoSim.attrs["data-snap-locked"]).toBeUndefined()
+  const s = runGates(true, true)
   expect(s.newTrailBtn.cls.has("hide")).toBe(false); expect(s.newTrailBtn.attrs["data-snap-locked"]).toBe("1"); expect(s.createItemAutoSim.badge).not.toBeNull()
 })
 test("a locked button opens the upgrade drawer in the capture phase, before its own handler", () => {
