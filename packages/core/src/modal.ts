@@ -3898,8 +3898,8 @@ export function buildModal(
     // onCaptureSharp) or the user declines / loses the share gesture — in which case we drop to the fast DOM
     // render below so the user still gets a shot (with the usual suggestSharp nudge).
     if (callbacks.onCaptureSharp) {
-      const added = await runScreenCapture()
-      if (added) return
+      const res = await runScreenCapture()
+      if (res.ok) return
     }
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
@@ -3925,13 +3925,13 @@ export function buildModal(
   // gesture is preserved), and adds the resulting real-pixel shot. Returns true when a shot was added; false
   // on a user DECLINE / lost-gesture / unsupported / empty result so the caller can fall back to a rendered
   // capture. NEVER surfaces an error for a decline — the fallback is silent (per the founder decision).
-  async function runScreenCapture(opts?: { viewport?: boolean }): Promise<boolean> {
+  async function runScreenCapture(opts?: { viewport?: boolean; onOpen?: boolean }): Promise<{ ok: boolean; declined: boolean }> {
     // KLA composer-polish: the on-open DEFAULT capture asks for the VIEWPORT-scoped Screen frame (single
     // visible frame, no scroll-stitch) when the host wired onCaptureSharpViewport; the manual Screen button
     // asks for the full-page onCaptureSharp. Falls back to onCaptureSharp when the viewport variant isn't
     // wired (e.g. the extension), so no host regresses.
     const capFn = (opts?.viewport && callbacks.onCaptureSharpViewport) ? callbacks.onCaptureSharpViewport : callbacks.onCaptureSharp
-    if (busy || !capFn || !sharpBtn) return false // re-entrancy / not wired
+    if (busy || !capFn || !sharpBtn) return { ok: false, declined: false } // re-entrancy / not wired
     // The "Screen" word lives in its own span so the "Capturing…" state never clobbers the icon or the (i).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
     lockComposer(true)
@@ -3941,6 +3941,7 @@ export function buildModal(
     const orig = target.textContent
     target.textContent = 'Capturing…'
     let added = false
+    let declined = false
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       let shot: CaptureResult | undefined
@@ -3957,18 +3958,22 @@ export function buildModal(
       // leave a dev-console breadcrumb so it's diagnosable.
       if (!isScreenDeclineError(err)) { try { console.warn('[Klavity] Screen capture failed; using rendered fallback:', err) } catch {} }
       else {
-        // KLA-601: the reporter cancelled the share picker. We keep the rendered fallback, but instead of
-        // failing silently, surface a one-time helper nudge on the Screen button so they know the sharper
-        // option is one tap away. Once-per-session + dismissible (see showScreenNudge).
-        try { showScreenNudge() } catch { /* the nudge is a nicety — never let it break the fallback */ }
+        declined = true
+        // Only surface the helper nudge when manual re-snap inside an already open composer is declined,
+        // never on the initial on-open prompt where Cancel dismisses the dialog.
+        if (!opts?.onOpen) {
+          try { showScreenNudge() } catch { /* the nudge is a nicety — never let it break the fallback */ }
+        }
       }
     } finally {
-      host.style.display = ''
-      target.textContent = orig
-      sharpBtn.classList.remove('kl-loading')
-      lockComposer(false)
+      if (!(opts?.onOpen && declined)) {
+        host.style.display = ''
+        target.textContent = orig
+        sharpBtn.classList.remove('kl-loading')
+        lockComposer(false)
+      }
     }
-    return added
+    return { ok: added, declined }
   }
   if (sharpBtn && callbacks.onCaptureSharp) {
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
@@ -5322,8 +5327,14 @@ export function buildModal(
         void (async () => {
           // KLA composer-polish (founder PX4 repro): the DEFAULT on-open Screen capture is VIEWPORT-scoped —
           // a single visible frame, NOT the full-page scroll-stitch. The manual Screen button stays full-page.
-          const ok = await runScreenCapture({ viewport: true })
-          if (ok) { capturing = false; updateStrip(); return }
+          const res = await runScreenCapture({ viewport: true, onOpen: true })
+          if (res.ok) { capturing = false; updateStrip(); return }
+          if (res.declined) {
+            // Cancel button clicked in permission popup: dismiss dialog and cancel bug reporting process.
+            capturing = false
+            close({ immediate: true, reason: 'discard' })
+            return
+          }
           if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
           // KD-184: too large for the rendered fallback → leave the stage empty with the large-page steer.
           if (!renderOk) { largePageHint = true; capturing = false; updateStrip(); return }

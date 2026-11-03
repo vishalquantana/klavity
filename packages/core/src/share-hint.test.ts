@@ -26,6 +26,18 @@ describe("createSharePickerHint", () => {
     expect(el.querySelector("img")).toBeNull()
     expect((el.querySelector(".kl-shp-dt")?.textContent || "")).toContain("<img src=x onerror=alert(1)>")
   })
+
+  it("clicking Cancel dismisses the hint and fires onCancel", () => {
+    const onCancel = vi.fn()
+    const el = createSharePickerHint({ host: "bookjoy.co", title: "t", steer: "s", onCancel })
+    document.body.appendChild(el)
+    el.classList.add("kl-show")
+    expect(el.classList.contains("kl-show")).toBe(true)
+    const cancel = el.querySelector(".kl-shp-cancel") as HTMLElement
+    cancel.click()
+    expect(el.classList.contains("kl-show")).toBe(false)
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe("shareCaptureLikelyGranted", () => {
