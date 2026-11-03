@@ -66,7 +66,7 @@ describe("auto-capture on large pages (KD-184)", () => {
     expect(modalShadow().getElementById("klavity-hero-empty-txt")).toBeNull() // the Snap shot landed
   })
 
-  it("above the limit: a declined Snap does NOT fall back to the heavy render — shows the large-page steer", async () => {
+  it("above the limit: a declined Snap does NOT fall back to the heavy render — dismisses the dialog", async () => {
     padDom(31_000)
     const declined = Object.assign(new Error("Permission denied"), { name: "NotAllowedError" })
     const cbs = { ...baseCallbacks(), screenCaptureDefault: true, onCaptureSharp: vi.fn(), onCaptureSharpViewport: vi.fn().mockRejectedValue(declined) }
@@ -74,7 +74,6 @@ describe("auto-capture on large pages (KD-184)", () => {
     await wait(150)
     expect(cbs.onCaptureViewport).not.toHaveBeenCalled()
     expect(cbs.onCaptureFull).not.toHaveBeenCalled()
-    expect(emptyText()).toContain("too large")
-    expect(emptyText()).toContain("snap")
+    expect(cbs.onClose).toHaveBeenCalledWith("discard")
   })
 })
