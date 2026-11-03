@@ -18594,36 +18594,11 @@
               </svg>
               <span>Preview a URL with your Sims</span>
             </div>
-            <div class="sup-hd-actions">
-              <div class="sup-env-wrap" title="Specify target environment">
-                <span class="sup-env-lbl">Environment:</span>
-                <select id="supEnvSelect" class="sup-select" onchange="onSupEnvChange(this.value)"
-                  aria-label="Select environment">
-                  <option value="development" selected>Development</option>
-                  <option value="staging">Staging</option>
-                  <option value="production">Production</option>
-                  <option value="local">Local (localhost)</option>
-                </select>
-              </div>
-              <button type="button" class="btn btn-ghost btn-xs sup-dev-guide-btn" id="supDevGuideToggle"
-                onclick="toggleSupDevGuide()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                  style="margin-right:4px">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                  <line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-                Dev Guide
-              </button>
-            </div>
           </div>
           <div class="sup-row">
             <input id="supUrlInput" type="url" placeholder="https://dev.yourproduct.com/pricing or tunnel URL"
               autocomplete="off" spellcheck="false" />
             <button id="supRunBtn" class="btn btn-indigo btn-sm" onclick="runSimUrlPreview()">Run Sims</button>
-            <button id="supRunDevBtn" class="btn btn-ghost btn-sm" type="button" onclick="selectAndFocusDev()"
-              title="Run this URL in development environment">Run in Dev →</button>
           </div>
           <div id="supPicker" class="sup-picker" hidden></div>
           <div id="supMsg" class="sup-msg"></div>
@@ -18656,13 +18631,15 @@
                 <h4>Forward with ngrok / localtunnel</h4>
                 <p>Forward your local dev port using a tunnel like <code>npx localtunnel --port 3000</code> or
                   <code>ngrok http 3000</code>, then paste the generated HTTPS URL above to run Sims from this
-                  dashboard.</p>
+                  dashboard.
+                </p>
               </div>
               <div class="sup-dev-card">
                 <div class="sup-dev-badge">Option 3 · Hosted Dev / Staging</div>
                 <h4>Hosted Development Server</h4>
                 <p>If your dev environment is on a hosted URL (e.g. <code>https://dev.yourapp.com</code>), select
-                  <b>Development</b> in the dropdown and click <b>Run Sims</b>.</p>
+                  <b>Development</b> in the dropdown and click <b>Run Sims</b>.
+                </p>
               </div>
             </div>
           </div>
