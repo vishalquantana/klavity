@@ -12,7 +12,7 @@ import { projectEntitlement } from "./lib/entitlement"
 import { logAudit, queryAuditLog, auditRowsToCsv, type AuditAction } from "./lib/audit-log"
 import { buildMemberExport, membersToCsv, MEMBER_EXPORT_FIELDS } from "./lib/member-export"
 import { isMaskingEnabled, maskMemberExportRow, maskDeep, maskWalkReportData } from "./lib/data-masking"
-import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
+import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession, deleteSession, ensureAccount, setAccountDomain, markAccountOnboarded, isAccountOnboarded, membershipsFor, hasAnyMembership, membersOf, roleIn, listPersonas, listPersonasForProject, setPersonaGlobal, setPersonaActive, upsertPersona, deletePersona, insertPersonaEdit, listPersonaEdits, insertScreenshot, insertFeedback, updateFeedbackReportGeo, insertActivity, notifyAssigneeOfTicketUpdate, listNotifications, countUnreadNotifications, markNotificationsRead, updateFeedbackTracker, advanceFeedbackToOpenIfNew, listActivity, listFeedback, dashboardCounts, projectAccess, listProjects, createProject, renameProject, renameAccount, projectById, membersOfProject, addProjectMember, removeProjectMember, upsertTicketAssignmentInvite, hasPendingTicketAssignmentInvite, acceptPendingTicketAssignmentInvites, insertTranscript, listTranscripts, listTraits, listTraitEvents, insertTrait, updateTrait, insertTraitEvent, logTraitEdit, hasReconcileRun, markReconcileRun, rebuildInsightsJson, ensureTraitsSeeded, listMonitoredUrls, addMonitoredUrl, setMonitoredUrlEnabled, setMonitoredUrlPattern, removeMonitoredUrl, getExtensionTokenEmail, getExtensionTokenInfo, issueExtensionToken, issueCIToken, issueCITokenNamed, listCITokens, revokeCITokenById, matchMonitored, getConsent, setConsent, getReviewMode, setReviewMode, tryConsumeReviewBudget, reviewGate, reviewDedupeKey, reviewDay, screenshotById, recordAiCall, opsTotals, opsDaily, opsByProject, opsByTypeModel, opsReplayCogs, opsRecentCalls, opsTodaySpend, opsTenantCostSummary, getModelWeights, setModelWeights, listConnectors, getConnectorById, createConnector, updateConnector, removeConnector, listAutoCopyConnectors, touchConnectorHeartbeat, updateFeedbackMeta, feedbackById, feedbackByPageUrl, distinctReportedPages, publicReportStatus, resolveFeedbackRef, resolveWorkspaceTicket, isReservedSlug, prettyTicketPath, projectAliasInfo, type PublicReportStatus, addTicketExport, listTicketExports, exportsForFeedbackIds, findExportByExternalKey, findPriorSuccessfulExport, getExportPolicy, setExportPolicy, normalizeExportPolicy, getProjectLabelRules, setProjectLabelRules, EXPORT_POLICIES, getSnapRouting, setSnapRouting, normalizeSnapRouting, SNAP_ROUTINGS, normalizeShareMode, createExportRequest, getExportRequestById, listPendingExportRequests, resolveExportRequest, recordConnectorPendingMappings, clearConnectorPendingMapping, enqueueExportOutbox, listDueExportOutbox, listExportOutboxForProject, markExportOutboxDone, bumpExportOutboxAttempt, markExportOutboxInFlight, listStaleInFlightExportOutbox, markExportOutboxNeedsReview, requeueExportOutbox, pauseExportOutbox, resumePausedExportOutbox, insertTicketComment, listTicketComments, updateTicketComment, deleteTicketComment, ticketActivityTimeline, getRecentlyResolvedTraits, type RecentlyResolvedTrait, transcriptById, sourceTranscriptsForSim, originAllowedForProject, findFeedbackByIssueKey, listRecentFeedbackForDedup, bumpFeedbackRecurrence, insertFeedbackOccurrence, listFeedbackOccurrences, mergeFeedbackClusters, splitOccurrenceToNewTicket, addDedupExclusion, excludedDedupIds, DEFAULT_AI_CALL_EST_USD, tryReserveDailySpend, reconcileDailySpend, tryReserveFreeToolSpend, reconcileFreeToolSpend, getProjectModalConfig, setProjectModalConfig, setProjectInstructions, isAccountPro, setAccountPlan, accountPlan, isAccountUnlimited, getWidgetConfig, getWidgetNotifyEmail, setWidgetConfig, getBugNotifyConfig, setBugNotifyConfig, getProjectDedupEnabled, setProjectDedupEnabled, recordWidgetPing, latestWidgetPing, setFeedbackContactEmail, upsertProjectContact, listProjectContacts, exportUserData, eraseUser, computeDashboardInsights, listTriageFeedback, listFeedbackForSim, simAcceptRate, recordSimDismissEvents, listTicketsPaginated, resolveAutosimAuthSetupToken, registerAutosimAuthConfig, getAutosimAuthConfigEncrypted, createAutosimAuthSetupToken, previousSimRunForUrl, usagePeriod, getAccountUsage, accountBillingState, updateAccountBillingState, accountIdForStripeCustomer, accountIdForStripeSubscription, accountIdForOwnerEmail, insertPendingSimMatch, listPendingSimMatches, getPendingSimMatch, confirmPendingSimMatch, rejectPendingSimMatch, insertPendingTranscript, getPendingTranscript, deletePendingTranscript, listInboxForProjects, setProjectTrailsAutofile, setUserAttribution, recordPartnerCodeRedemption, listPartnerCodeRedemptions, countPartnerCodeRedemptions, accountIdForAiCall, getAccountUsageByProject, tenantTodaySpendByProject, agencyClientOutcomes, accountIdForProject, countAccountAutosimFlows, setFeedbackWalkthroughSummary, appendFeedbackAttachments, renameFeedbackTitle, appendObservationIfUnchanged, accountRole, accountMembersRaw, issueManagementTokenNamed, listManagementTokens, revokeManagementTokenById, listProjectsForAccount, accountMembersRaw } from "./lib/db"
 import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
@@ -88,7 +88,7 @@ import {
   MARKETING_PRESIGNUP_PROJECT_ID, makeTeaser, validateFreetoolEmail, checkFreetoolRun,
   bumpFreetoolRun, bumpFreetoolCost, ipBucket, freetoolDailyRunCap,
 } from "./lib/freetool-guard"
-import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout } from "./lib/sim-preview"
+import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, classifyPreviewFailure, withPreviewTimeout, selectPreviewSims } from "./lib/sim-preview"
 // KLAVITYKLA-486: COGS instrumentation + superadmin P&L.
 import { recordS3Storage, recordS3Egress, recordEmailSend } from "./lib/cost-events"
 import { buildSuperadminPL, creditsMarginByWorkspace } from "./lib/superadmin"
@@ -4496,7 +4496,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (!projectId) return wjson({ error: "project required" }, 400)
     const proj = await projectById(projectId)
     if (!proj) return wjson({ error: "not found" }, 404)
-    const personas = await listPersonas(projectId)
+    // WP-S2: the widget's Sim chips only offer active Sims.
+    const personas = await listPersonas(projectId, { activeOnly: true })
     const sims = personas.map((p) => ({
       id: p.id, name: p.name,
       initials: p.initials ?? null,
@@ -7215,9 +7216,29 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // DELETE: only the home-project can delete. listPersonas is project-scoped (no global union).
         const ownPersona = (await listPersonas(wid)).some(p => p.id === pid)
         if (!ownPersona) return wjson({ error: "Not found" }, 404)
+        // WP-S2 (D2): the Baseline QA system Sim can be deactivated but not deleted.
+        if (pid.startsWith("sim_baseline_")) return wjson({ error: "Baseline QA can't be deleted. Deactivate it instead." }, 403)
         await deletePersona(pid, wid)
         return wjson({ ok: true })
       }
+    }
+    // WP-S2: activate / deactivate a Sim. Admin only; home project only (setPersonaActive is project-scoped, so a sibling
+    // project cannot toggle a global Sim it merely sees). An inactive Sim keeps its history and stays listed, but every
+    // review / run / offer path skips it. Logged to the append-only persona_edits audit like any other change.
+    const activeMatch = path.match(/^\/api\/personas\/([^/]+)\/active$/)
+    if (activeMatch && (req.method === "PATCH" || req.method === "PUT")) {
+      const pid = activeMatch[1]
+      if (proj2.access !== "admin") return wjson({ error: "Only project admins can activate or deactivate a Sim." }, 403)
+      const body = await req.json().catch(() => null) as any
+      if (!body || typeof body.active !== "boolean") return wjson({ error: "active must be true or false." }, 400)
+      const before = (await listPersonas(wid)).find(p => p.id === pid)
+      if (!before) return wjson({ error: "Not found" }, 404)
+      const wasActive = before.active !== false
+      if (wasActive !== body.active) {
+        await setPersonaActive(pid, wid, body.active)
+        await insertPersonaEdit({ personaId: pid, projectId: wid, field: "active", beforeVal: String(wasActive), afterVal: String(body.active), actor: me2, createdAt: Date.now() })
+      }
+      return wjson({ ok: true, id: pid, active: body.active })
     }
     const editsMatch = path.match(/^\/api\/personas\/([^/]+)\/edits$/)
     if (editsMatch && req.method === "GET") {
@@ -7612,7 +7633,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // same account are included in reviews — they surface via the UNION query in listPersonasForProject.
       // listPersonas is project-scoped only and silently excludes global Sims, causing them to never
       // react to a project's pages even though they're listed in that project's UI (KLAVITYKLA-257).
-      const projectSims = await listPersonasForProject(projectId)
+      // WP-S2: a deactivated Sim never runs, even when the caller names it in simIds.
+      const projectSims = await listPersonasForProject(projectId, { activeOnly: true })
       const targetSims = reqSimIds.length ? projectSims.filter((p) => reqSimIds.includes(p.id)) : projectSims
 
       const seenKeys = targetSims.map((s) => reviewDedupeKey(s.id, urlPath || "", domSig))
@@ -7782,7 +7804,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     if (!meS2) return json({ error: "Sign in to continue." }, 401)
     const projS = await resolveProject(meS2, url.searchParams.get("project"))
     if (!projS) return json({ error: "No accessible project." }, 404)
-    const personas = await listPersonas(projS.id)
+    // WP-S2: only active Sims are offered for a review.
+    const personas = await listPersonas(projS.id, { activeOnly: true })
     const sims = personas.map((p) => ({ id: p.id, name: p.name, initials: p.initials ?? null, accent: p.accent ?? null, role: p.role ?? null }))
     return json({ sims })
   }
@@ -11128,6 +11151,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const personas = await listPersonas(projectId)
           const persona = personas.find(p => p.id === personaId)
           if (!persona) return json({ error: "Persona not found in this project" }, 404)
+          // WP-S2: a deactivated Sim does not judge walks. 409 = the Sim exists but is switched off.
+          if (persona.active === false) return json({ error: `${persona.name} is inactive. Activate this Sim or pick another to judge.` }, 409)
 
           const llmFn = async (systemPrompt: string, userContent: string) => {
             const apiKey = process.env.KLAV_OPENROUTER_KEY
@@ -11169,7 +11194,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (pid !== null && pid !== undefined && typeof pid !== "string") return json({ error: "personaId must be a string or null" }, 400)
         if (pid) {
           const personas = await listPersonas(projectId)
-          if (!personas.some(p => p.id === pid)) return json({ error: "Persona not found in this project" }, 404)
+          const picked = personas.find(p => p.id === pid)
+          if (!picked) return json({ error: "Persona not found in this project" }, 404)
+          // WP-S2: an inactive Sim cannot be chosen as a trail's judge.
+          if (picked.active === false) return json({ error: `${picked.name} is inactive. Activate this Sim or pick another.` }, 409)
         }
         await updateTrail(projectId, trail.id, { judgePersonaId: pid ?? null })
         return json({ ok: true })
@@ -11372,6 +11400,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const personas = await listPersonas(projectId)
         const match = personas.find((p) => p.name === simName) || personas.find((p) => p.id === simName)
         if (!match) return json({ error: `unknown reviewer Sim "${simName}"` }, 400)
+        // WP-S2: an inactive Sim cannot be the reviewer.
+        if (match.active === false) return json({ error: `reviewer Sim "${match.name}" is inactive. Activate it or pick another.` }, 409)
         judgePersonaId = match.id
       }
       // File-upload fixtures: the wizard uploads each file via /api/trails/author/attachments first,
@@ -12072,6 +12102,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           accent: p.accent || "#6366f1",
           insightsCount: Array.isArray(p.insights) ? p.insights.length : 0,
           lastActiveAt: lastActiveBySim.get(p.id) ?? null,
+          active: p.active !== false, // WP-S2: false = deactivated (shown greyed out; skipped by every review)
           // "baseline" marks the system-provided Baseline QA Sim (UI shows a System preset chip); null for customer Sims.
           simSource: p.simSource ?? null,
         }))
@@ -15707,8 +15738,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     // brief → one persona (no transcript needed)
     if (req.method === "POST" && path === "/api/persona/brief") {
       try {
-        const { brief } = await req.json()
+        const { brief, name: briefName } = await req.json()
         if (!brief || String(brief).trim().length < 4) return json({ error: "Describe your user in a sentence." }, 400)
+        // WP-S3a: the two-step Describe flow lets the user name the Sim up front; when given, that exact name is used.
+        const chosenName = String(briefName ?? "").replace(/\s+/g, " ").trim().slice(0, 60)
         if (String(brief).length > AI_DEMO_MAX_CHARS) return json({ error: "Brief too long." }, 413)
         // simClass: "user" = operates the product hands-on (UI/interaction focus); "client" = judges outcomes/business results.
         // Default described Sims to "user" unless the brief clearly indicates an outcome-judging stakeholder (exec, buyer, decision-maker).
@@ -15719,12 +15752,17 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
         const meB = (await sessionEmail(req)) || (await bearerEmail(req))
         if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
+        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
         const data = parseJSON(content)
         // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
         if (data.persona) {
           if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
           if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
+          if (chosenName) {
+            data.persona.name = chosenName
+            const w = chosenName.split(" ").filter(Boolean)
+            data.persona.initials = ((w[0]?.[0] || "") + (w.length > 1 ? w[w.length - 1][0] : (w[0]?.[1] || ""))).toUpperCase() || data.persona.initials
+          }
         }
         return json({ persona: data.persona, usage })
       } catch (e: any) { return json(oops(e, "create"), 500) }
@@ -15825,7 +15863,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // KLAVITYKLA-371: capture the true start BEFORE any work (SSRF preflight, screenshot,
         // Sim reviews) so the sim_runs row records a real duration rather than 0ms.
         const pvRunStartedAt = Date.now()
-        let { url: pvUrl, persona, projectId: pvProjectId, env: pvEnv } = await req.json()
+        let { url: pvUrl, persona, projectId: pvProjectId, simIds: pvSimIds, env: pvEnv } = await req.json()
         const chosenEnv = (typeof pvEnv === "string" && pvEnv.trim()) ? pvEnv.trim().toLowerCase() : null
         pvUrl = String(pvUrl || "").trim()
         if (!pvUrl) return json({ error: "Enter your product's URL." }, 400)
@@ -15838,6 +15876,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // SSRF quota or a browser slot. SSRF and screenshotUrl run only if gates pass.
         let pvProj: { id: string; access: "admin" | "member" } | null = null
         let projectSims: any[] = []
+        let pvSelectedSims: any[] = []          // the Sims this run uses (all of them unless the Sim picker chose a subset)
+        let pvSubsetIds: string[] | null = null // null = all Sims
         if (mePv && pvProjectId) {
           const pvProjId = String(pvProjectId).trim()
           pvProj = await resolveProject(mePv, pvProjId)
@@ -15845,8 +15885,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const pvFullProj = await projectById(pvProj.id)
           const pvLock = pvFullProj ? snapLocked(pvFullProj) : null
           if (pvLock) return json(pvLock, 402)
-          projectSims = await listPersonas(pvProj.id)
-          if (!projectSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          const pvAllSims = await listPersonas(pvProj.id)
+          if (!pvAllSims.length) return json({ error: "This project has no Sims yet. Add a Sim first." }, 400)
+          // WP-S2: deactivated Sims are not run (and cannot be picked).
+          projectSims = pvAllSims.filter((p) => p.active !== false)
+          if (!projectSims.length) return json({ error: "All of this project's Sims are inactive. Activate a Sim to run a preview." }, 400)
+          // Sim picker: validate the chosen Sims here, before any SSRF/screenshot work. Omitted simIds = all Sims (unchanged behaviour).
+          const pvSel = selectPreviewSims(projectSims, pvSimIds, new Set(pvAllSims.filter((p) => p.active === false).map((p) => p.id)))
+          if (!pvSel.ok) return json({ error: pvSel.error }, 400)
+          pvSelectedSims = pvSel.sims
+          pvSubsetIds = pvSel.simIds
         }
 
         // SSRF preflight: reuse safeFetch's guard (rejects private/loopback + validates each redirect
@@ -15901,13 +15949,13 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             screenshotId = "no-s3-" + Date.now().toString(36)
           }
 
-          // Run all Sims through the SAME pipeline as /api/sim/review.
+          // Run the chosen Sims (all of them unless the picker selected a subset) through the SAME pipeline as /api/sim/review.
           // adhoc=true: bypass seenHashes + near-dup dedup so all current Sim reactions surface.
-          const seenKeys = projectSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
+          const seenKeys = pvSelectedSims.map((s) => `urlprev:${s.id}:${urlPath || "/"}`)
           const reviews = await runSimReviews({
             projectId: authenticatedProjectId, urlPath, urlHost, pageUrl: pvUrl,
             imageB64: shot.imageB64, mediaType: shot.mediaType,
-            targetSims: projectSims,
+            targetSims: pvSelectedSims,
             actorEmail: mePv, screenshotId,
             seenKeys, seenHashes: new Set(), sessionId: undefined,
             mode: "all", adhoc: true,
@@ -15924,7 +15972,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             try {
               await insertSimRun({
                 projectId: authenticatedProjectId, url: pvUrl,
-                simIds: null,  // null = all Sims
+                simIds: pvSubsetIds,  // null = all Sims; otherwise exactly the Sims the picker chose
                 screenshotId, reactions: reviews,
                 actorEmail: mePv, status: "done",
                 startedAt: pvRunStartedAt, finishedAt: Date.now(),
