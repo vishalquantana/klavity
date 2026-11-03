@@ -3496,6 +3496,11 @@
       display: none
     }
 
+    /* Non-admins can't create AutoSims: hide every creation entry point (empty-state CTA, Convert to AutoSim, guard Trail) */
+    body.no-autosim-create .as-create {
+      display: none !important
+    }
+
     /* Snap-locked New Sim / New AutoSim: lock icon beside the label (click opens the upgrade drawer) */
     .cg-lock {
       display: inline-flex;
@@ -23541,6 +23546,7 @@
           // beside them, and clicking one opens the plan/upgrade drawer instead of the Sim modal / AutoSim wizard.
           function applyCreateGates(admin) {
             const snap = snapOnly()
+            document.body.classList.toggle("no-autosim-create", !admin)
             ;[["newSimBtn", !!admin], ["createItemSim", !!admin], ["newTrailBtn", !!admin], ["createItemAutoSim", !!admin]].forEach(([id, allowed]) => {
               const el = $(id); if (!el) return
               el.classList.toggle("hide", !allowed)
@@ -24029,7 +24035,7 @@
           <div class="la">${s.lastActiveAt ? ("active " + ago(s.lastActiveAt)) : (s.insightsCount + " insight" + (s.insightsCount === 1 ? "" : "s"))}</div>
         </div>
       </a>
-      <button class="btn-convert-sim" title="Let this Sim test your product on its own, on a schedule" onclick="openConvertAutosim('${esc(s.id)}')">&#10022; Convert to AutoSim</button>
+      <button class="btn-convert-sim as-create" title="Let this Sim test your product on its own, on a schedule" onclick="openConvertAutosim('${esc(s.id)}')">&#10022; Convert to AutoSim</button>
     </div>`
             }).join("") + `</div>`
           }
@@ -36783,7 +36789,7 @@
               var tEl = $("trails")
               if (!trails.length) {
                 tEl.innerHTML = '<div class="ob-wrap">'
-                  + '<div class="ob-primary"><div><h3>Create your first AutoSim</h3><p>Describe the path you want checked. The wizard will guide you through the site URL, objective, reviewer, and first live run.</p></div>'
+                  + '<div class="ob-primary as-create"><div><h3>Create your first AutoSim</h3><p>Describe the path you want checked. The wizard will guide you through the site URL, objective, reviewer, and first live run.</p></div>'
                   + '<button class="btn btn-indigo" onclick="openWizard()">Create your first AutoSim</button></div>'
                   + '<div class="ob-head">How AutoSims work</div>'
                   + '<div class="ob-sub">AutoSims drive a real browser through your product — not a recorded script. They heal UI drift silently and only file a bug when something genuinely breaks.</div>'
@@ -37536,7 +37542,7 @@
               var actsEl = card.querySelector(".ec-acts"); if (actsEl) actsEl.style.display = "none"
               var fb = document.createElement("div"); fb.className = "ec-confirm"
               fb.innerHTML = '<div class="cc-target">No AutoSim Trail exists yet to attach this guard to.</div>'
-                + '<div class="cc-acts"><button class="btn btn-indigo" data-record-trail>' + kicon("shield", { size: 13 }) + ' Record a guard Trail</button>'
+                + '<div class="cc-acts"><button class="btn btn-indigo as-create" data-record-trail>' + kicon("shield", { size: 13 }) + ' Record a guard Trail</button>'
                 + '<button class="btn btn-ghost" data-hold-awaiting>Hold until a Trail exists</button>'
                 + '<button class="btn btn-ghost" data-cancel-enforce>Cancel</button></div>'
               card.appendChild(fb)
@@ -37690,7 +37696,7 @@
                   // B.5: held awaiting a Trail — show the state + let the user record a Trail now.
                   card.innerHTML = expCardHtml(exp)
                     + '<div class="ec-badges" style="margin-top:8px"><span class="ec-badge" style="background:rgba(99,102,241,.14);color:var(--indigo)">' + kicon("clock", { size: 11 }) + ' awaiting Trail</span></div>'
-                    + '<div class="ec-acts" style="margin-top:10px"><button class="btn btn-ghost" style="font-size:12px;padding:7px 13px" data-record-trail-awaiting>' + kicon("shield", { size: 12 }) + ' Record a guard Trail</button></div><div class="ec-msg"></div>'
+                    + '<div class="ec-acts" style="margin-top:10px"><button class="btn btn-ghost as-create" style="font-size:12px;padding:7px 13px" data-record-trail-awaiting>' + kicon("shield", { size: 12 }) + ' Record a guard Trail</button></div><div class="ec-msg"></div>'
                   validEl.appendChild(card)
                   card.querySelector("[data-record-trail-awaiting]").onclick = function () { openGuardTrailWizard(exp) }
                 } else {
