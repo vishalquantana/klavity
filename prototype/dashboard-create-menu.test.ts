@@ -132,8 +132,44 @@ test("placement: 'Create New' is the third left-hand action, after Snap Reports 
 test("New Sim in the menu is role-gated exactly like the existing #newSimBtn (project admins only); New Ticket is not gated", () => {
   expect(HTML).toContain('<button class="create-item hide" id="createItemSim"')              // hidden by default
   expect(HTML).not.toContain('<button class="create-item hide" id="createItemTicket"')
-  expect(HTML).toContain('$("newSimBtn").classList.toggle("hide", !admin)')
-  expect(HTML).toContain('cs.classList.toggle("hide", !admin)')
+  expect(HTML).toContain('applyCreateGates(admin)')
+})
+
+// New Sim / New AutoSim (page buttons + Create New menu) follow the Sims / AutoSims pages' permissions.
+function runGates(admin: boolean, snap: boolean) {
+  const m = HTML.match(/function applyCreateGates\(admin\) \{[\s\S]*?\n          \}\r?\n/)
+  if (!m) throw new Error("applyCreateGates not found")
+  const els: Record<string, any> = {}
+  for (const id of ["newSimBtn", "createItemSim", "newTrailBtn", "createItemAutoSim"]) {
+    const cls = new Set<string>(), attrs: Record<string, string> = {}
+    let badge: any = null
+    els[id] = {
+      classList: { toggle: (c: string, on: boolean) => { on ? cls.add(c) : cls.delete(c) } }, cls, attrs, title: "",
+      querySelector: () => badge, setAttribute: (k: string, v: string) => { attrs[k] = v }, removeAttribute: (k: string) => { delete attrs[k] },
+      appendChild: (n: any) => { badge = n }, get badge() { return badge },
+    }
+  }
+  const $ = (id: string) => els[id]
+  const document = { createElement: () => ({ className: "", innerHTML: "", remove() { } }) }
+  new Function("$", "snapOnly", "document", "kicon", m[0] + "; applyCreateGates(" + admin + ")")($, () => snap, document, () => "<svg/>")
+  return els
+}
+test("New Sim buttons: admins only; on a Snap project they stay visible, locked", () => {
+  const a = runGates(true, false); expect(a.newSimBtn.cls.has("hide")).toBe(false); expect(a.createItemSim.attrs["data-snap-locked"]).toBeUndefined()
+  const m = runGates(false, false); expect(m.newSimBtn.cls.has("hide")).toBe(true); expect(m.createItemSim.cls.has("hide")).toBe(true)
+  const s = runGates(true, true)
+  expect(s.newSimBtn.cls.has("hide")).toBe(false); expect(s.newSimBtn.attrs["data-snap-locked"]).toBe("1"); expect(s.newSimBtn.badge).not.toBeNull()
+  expect(s.createItemSim.attrs["data-snap-locked"]).toBe("1")
+  expect(runGates(false, true).newSimBtn.cls.has("hide")).toBe(true)   // a non-admin still never sees New Sim
+})
+test("New AutoSim buttons: any member; locked on a Snap project", () => {
+  const m = runGates(false, false); expect(m.newTrailBtn.cls.has("hide")).toBe(false); expect(m.createItemAutoSim.attrs["data-snap-locked"]).toBeUndefined()
+  const s = runGates(false, true)
+  expect(s.newTrailBtn.cls.has("hide")).toBe(false); expect(s.newTrailBtn.attrs["data-snap-locked"]).toBe("1"); expect(s.createItemAutoSim.badge).not.toBeNull()
+})
+test("a locked button opens the upgrade drawer in the capture phase, before its own handler", () => {
+  expect(HTML).toContain('closest("[data-snap-locked]")')
+  expect(HTML).toMatch(/e\.stopImmediatePropagation\(\)[\s\S]{0,200}openPlanDrawer\(\)[\s\S]{0,40}\}, true\)/)
 })
 
 test("the menu is wired at load time and the existing in-context buttons are untouched", () => {

@@ -3496,6 +3496,14 @@
       display: none
     }
 
+    /* Snap-locked New Sim / New AutoSim: lock icon beside the label (click opens the upgrade drawer) */
+    .cg-lock {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      opacity: .75
+    }
+
     .create-item {
       display: flex;
       align-items: center;
@@ -22705,8 +22713,7 @@
             safeRender("counts", syncSidebarCounts)
 
             // role-gated controls
-            $("newSimBtn").classList.toggle("hide", !admin)
-            { const cs = $("createItemSim"); if (cs) cs.classList.toggle("hide", !admin) }   // "+ Create" → New Sim: admins only
+            applyCreateGates(admin)   // New Sim / New AutoSim buttons (page + "Create New" menu): same rules as the Sims / AutoSims pages
             // Invite is no longer admin-only — any project member can invite a teammate (server caps a
             // non-admin inviter to granting "member", never "admin"; see POST /api/projects/:id/invite).
             $("inviteWrap").classList.remove("hide")
@@ -23527,6 +23534,36 @@
             })
           }
           window.applyNavLocks = applyNavLocks
+
+          // New Sim / New AutoSim buttons (the pages' own buttons and the top-bar "Create New" menu items) follow the same
+          // permissions as the Sims and AutoSims pages. New Sim is for project admins, New AutoSim for any member. On a
+          // Snap-only project (those pages sit behind the upgrade wall) the allowed buttons stay visible with a lock icon
+          // beside them, and clicking one opens the plan/upgrade drawer instead of the Sim modal / AutoSim wizard.
+          function applyCreateGates(admin) {
+            const snap = snapOnly()
+            ;[["newSimBtn", !!admin], ["createItemSim", !!admin], ["newTrailBtn", true], ["createItemAutoSim", true]].forEach(([id, allowed]) => {
+              const el = $(id); if (!el) return
+              el.classList.toggle("hide", !allowed)
+              el.classList.toggle("snap-locked", allowed && snap)
+              let badge = el.querySelector(".cg-lock")
+              if (allowed && snap) {
+                el.setAttribute("data-snap-locked", "1"); el.title = "Upgrade to unlock"
+                if (!badge) { badge = document.createElement("span"); badge.className = "cg-lock"; badge.innerHTML = kicon("lock", { size: 12 }); el.appendChild(badge) }
+              } else {
+                el.removeAttribute("data-snap-locked"); if (el.title === "Upgrade to unlock") el.removeAttribute("title")
+                if (badge) badge.remove()
+              }
+            })
+          }
+          // Capture phase so it wins over the buttons' own handlers (inline onclick / addEventListener / the menu's bind()).
+          document.addEventListener("click", (e) => {
+            const t = e.target && e.target.closest ? e.target.closest("[data-snap-locked]") : null
+            if (!t || !snapOnly()) return
+            e.preventDefault(); e.stopImmediatePropagation()
+            const m = document.getElementById("createMenu"); if (m) m.classList.add("hide")
+            if (typeof openPlanDrawer === "function") openPlanDrawer()
+          }, true)
+          window.applyCreateGates = applyCreateGates
 
           // AI-settings note: when snap-only, disable the Sims/AutoSim-only admin controls (live-Sims
           // pause + monitored URLs, AutoSim autofile) and show an inline upgrade note next to each.
