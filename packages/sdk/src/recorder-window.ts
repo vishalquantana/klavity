@@ -33,6 +33,59 @@ let acked = false
 let heartbeat: any = 0
 let deliverTimer: any = 0
 
+// ── Backup stream ─────────────────────────────────────────────────────────────────────────────────────
+// Every ~1s piece is posted to the reporter's tab, which keeps it in its own IndexedDB (record-backup.ts).
+// If this window is closed by mistake, the tab rebuilds the video up to that point. The tab acks the
+// highest contiguous piece it stored; anything after that is re-sent (a post made while the tab is
+// mid-navigation is simply lost, so a single send is not enough).
+const pieces: Blob[] = []
+const sentAt: number[] = []
+let hostAck = -1
+let pieceMime = ''
+const RESEND_AFTER_MS = 1500
+const RESEND_PER_BEAT = 4
+
+function postPiece(seq: number) {
+  sentAt[seq] = Date.now()
+  post({ kind: 'chunk', seq, blob: pieces[seq] })
+}
+function onPiece(data: Blob) {
+  if (!pieceMime && data.type) pieceMime = data.type
+  const seq = pieces.length
+  pieces.push(data)
+  postPiece(seq)
+}
+function resendUnacked() {
+  let n = 0
+  for (let seq = hostAck + 1; seq < pieces.length && n < RESEND_PER_BEAT; seq++) {
+    if (Date.now() - (sentAt[seq] || 0) < RESEND_AFTER_MS) continue
+    postPiece(seq); n++
+  }
+}
+
+// ── Out of the way while recording ───────────────────────────────────────────────────────────────────
+// A web page can't minimise its own window (no browser API allows it) and can't move it off-screen (the
+// browser clamps it back). So the recorder window is opened INSIDE the reporter's browser window
+// (record-bridge.ts) and, once sharing starts, the browser brings the shared tab to the front (Conditional
+// Focus: startRecording focusCapturedSurface). The reporter's app then covers this window completely.
+// We also shrink it in place (no move, so it stays within the app's bounds) and ask for the opener's focus
+// as a second signal — that keeps it small if it ever is visible (e.g. "Entire Screen" was shared, where the
+// browser won't switch focus).
+const FULL_SIZE = { w: 400, h: 560 }
+const COMPACT_SIZE = { w: 340, h: 190 }
+let compact = false
+function setCompact(on: boolean) {
+  compact = on
+  document.body.classList.toggle('compact', on)
+  const size = on ? COMPACT_SIZE : FULL_SIZE
+  try { window.resizeTo(size.w, size.h) } catch { /* browser refused — layout still adapts */ }
+  if (phase === 'recording' || phase === 'paused') render()
+}
+function sendBehindApp() {
+  setCompact(true)
+  try { opener?.focus() } catch { /* cross-window focus is best-effort; Conditional Focus is the main path */ }
+}
+
 function post(msg: Record<string, unknown>) {
   if (!opener || !targetOrigin) return
   try { opener.postMessage({ type: 'klavity-rec', session, ...msg }, targetOrigin) } catch { /* opener mid-navigation — next beat retries */ }
@@ -40,7 +93,11 @@ function post(msg: Record<string, unknown>) {
 
 function beat() {
   const state = phase === 'paused' ? 'paused' : phase === 'recording' ? 'recording' : phase === 'finishing' ? 'finishing' : phase
-  post({ kind: 'state', state, elapsedMs: elapsed, maxMs: DEFAULT_RECORDING_CAPS.maxDurationMs })
+  post({
+    kind: 'state', state, elapsedMs: elapsed, maxMs: DEFAULT_RECORDING_CAPS.maxDurationMs,
+    pieces: pieces.length, mime: pieceMime, screenOnly: controller ? controller.screenOnly() : true,
+  })
+  if (state === 'recording' || state === 'paused' || state === 'finishing') resendUnacked()
 }
 
 function render() {
@@ -52,8 +109,8 @@ function render() {
       `<label><input type="checkbox" id="cam"> Camera <span class="opt">optional</span></label>` +
       `<label><input type="checkbox" id="mic" checked> Microphone (narration)</label>` +
       `<div class="row"><button class="primary" id="start">Start recording</button><button id="cancel">Cancel</button></div>` +
-      `<p class="tip">Pick <b>the tab you are reporting on</b> or <b>Entire Screen</b> in the next dialog. ` +
-      `Keep this window open — the recording carries on while you move between pages, and you can stop it from the page or here.</p>` +
+      `<p class="tip">In the next dialog choose <b>Chrome Tab</b> and pick <b>the tab you are reporting on</b>. ` +
+      `This window then moves behind your app; the recording carries on while you move between pages, and you stop it from the page.</p>` +
       `<p class="small">Max ${Math.round(DEFAULT_RECORDING_CAPS.maxDurationMs / 60000)} min. Nothing uploads until you submit the report.</p>` +
       `<div id="hint" class="small"></div>`
     ;(document.getElementById('start') as HTMLButtonElement).onclick = () => void begin()
@@ -67,10 +124,13 @@ function render() {
       `<div class="col"><button class="stop" id="stop"><i></i>Stop recording</button>` +
       `<button id="pause">${phase === 'paused' ? 'Resume' : 'Pause'}</button></div>` +
       `<p class="small" id="meta"></p>` +
-      `<p class="tip">You can switch back to your app and navigate freely. Don't close this window until you stop.</p>` +
+      `<p class="tip">You can switch back to your app and navigate freely. If this window is closed by mistake, ` +
+      `what you recorded so far is kept and attached to your report.</p>` +
+      `<button class="link" id="size" type="button">${compact ? 'Expand' : 'Make smaller'}</button>` +
       `<div id="hint" class="small"></div>`
     ;(document.getElementById('stop') as HTMLButtonElement).onclick = () => stop()
     ;(document.getElementById('pause') as HTMLButtonElement).onclick = () => togglePause()
+    ;(document.getElementById('size') as HTMLButtonElement).onclick = () => setCompact(!compact)
     updateStats()
     return
   }
@@ -110,6 +170,11 @@ async function begin() {
       wantCamera, wantMic,
       onFallback: (reason) => { fallback = reason },
       onStats: (s) => { elapsed = s.elapsedMs; bytes = s.bytes; updateStats() },
+      onChunk: (data) => onPiece(data),
+      // Pre-select "Chrome Tab" and bring the shared tab to the front once sharing starts, so the reporter's
+      // app covers this window (see sendBehindApp).
+      preferSurface: 'browser',
+      focusCapturedSurface: true,
       onState: (s) => {
         if (s === 'recording' || s === 'paused') { phase = s; render(); beat() }
       },
@@ -130,6 +195,8 @@ async function begin() {
     if (bubble) { bubble.style.width = bubble.style.height = '96px'; document.body.appendChild(bubble) }
   } catch { /* preview is a nicety */ }
   beat()
+  // Recording is running — get out of the reporter's way.
+  sendBehindApp()
   controller.done.then((r) => deliver(r)).catch(() => showError('The recording failed. Please try again.'))
 }
 
@@ -168,6 +235,7 @@ window.addEventListener('message', (ev: MessageEvent) => {
   if (ev.origin !== targetOrigin || ev.source !== opener) return
   const d = ev.data
   if (!d || d.type !== 'klavity-rec-cmd' || d.session !== session) return
+  if (d.cmd === 'chunk-ack') { const s = Number(d.seq); if (Number.isFinite(s) && s > hostAck) hostAck = s; return }
   if (d.cmd === 'stop') stop()
   else if (d.cmd === 'pause') { if (controller?.state() === 'recording') controller.pause() }
   else if (d.cmd === 'resume') { if (controller?.state() === 'paused') controller.resume() }
@@ -184,7 +252,15 @@ window.addEventListener('message', (ev: MessageEvent) => {
 window.addEventListener('beforeunload', (e) => {
   if (phase === 'recording' || phase === 'paused' || phase === 'finishing' || (phase === 'delivering' && !acked)) { e.preventDefault(); e.returnValue = '' }
 })
-window.addEventListener('pagehide', () => { if (phase === 'consent') post({ kind: 'cancel' }) })
+window.addEventListener('pagehide', () => {
+  if (phase === 'consent') { post({ kind: 'cancel' }); return }
+  // Closed mid-recording (the reporter confirmed "Leave"): tell the tab right away so it rebuilds the video
+  // from the pieces it already backed up, instead of waiting for the heartbeat to time out.
+  if (phase === 'recording' || phase === 'paused' || phase === 'finishing') {
+    resendUnacked()
+    post({ kind: 'closed', elapsedMs: elapsed, pieces: pieces.length, mime: pieceMime })
+  }
+})
 
 if (!session || !targetOrigin || !opener) {
   showError('Open the recorder from the Klavity widget\'s "Record me" button.')

@@ -21,6 +21,8 @@
 
 import type { ReportRecording } from '@klavity/core'
 import { blobToDataUrl } from './recorder'
+import { fixWebmDuration } from './webm-duration'
+import { createRecordBackup, contiguousUpTo, type RecordBackup, type BackupMeta } from './record-backup'
 
 export type RecordPhase = 'consent' | 'recording' | 'preview'
 
@@ -31,7 +33,14 @@ export interface RecordBridgeOptions {
   onRecordingArrived: (rec: ReportRecording) => void
   // Surface a short notice to the reporter (e.g. the widget banner). Optional.
   notify?: (text: string) => void
+  // Where streamed pieces are backed up (IndexedDB by default). Injectable for tests.
+  backup?: RecordBackup
 }
+
+// A backup whose session stopped sending pieces this long ago (and isn't this tab's live session) belongs to
+// a tab that was closed mid-recording — recover it on the next page load. Older than MAX age → discard.
+const ORPHAN_IDLE_MS = 20_000
+const ORPHAN_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 export interface RecordBridge {
   // Opens the recorder window. Returns null when the popup was blocked, so the caller can fall back to the
@@ -71,6 +80,21 @@ function newSessionId(): string {
 
 const fmtTime = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 
+// Open the recorder window CENTRED INSIDE the reporter's browser window. Once recording starts the browser
+// brings the shared tab to the front (recorder-window.ts → Conditional Focus), and because the recorder window
+// sits entirely within the app window's bounds, the app covers it — no manual minimise needed.
+export const RECORDER_WINDOW_SIZE = { w: 400, h: 560 }
+export function recorderWindowFeatures(win: { screenX?: number; screenY?: number; outerWidth?: number; outerHeight?: number } = window): string {
+  const { w, h } = RECORDER_WINDOW_SIZE
+  const sx = Number(win.screenX) || 0
+  const sy = Number(win.screenY) || 0
+  const ow = Number(win.outerWidth) || w
+  const oh = Number(win.outerHeight) || h
+  const left = Math.round(sx + Math.max(0, (ow - w) / 2))
+  const top = Math.round(sy + Math.max(0, (oh - h) / 2))
+  return `popup,width=${w},height=${h},left=${left},top=${top}`
+}
+
 export function recorderWindowAvailable(): boolean {
   return typeof window !== 'undefined' && typeof window.open === 'function' && typeof Blob !== 'undefined'
 }
@@ -87,6 +111,75 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
   let watchdog: any = 0
   let closedPoll: any = 0
   const handled = new Set<string>()
+
+  // ── Backup of the streamed pieces (see record-backup.ts) ──
+  const backup = opts.backup ?? createRecordBackup()
+  const have = new Map<string, Set<number>>()        // session → seqs stored (this page)
+  const live = { elapsedMs: 0, mime: '', screenOnly: true }
+  const ackedOnPage = new Set<string>()
+  const recovering = new Set<string>()
+  let storeQueue: Promise<unknown> = Promise.resolve() // serialises writes; recovery waits on it
+  const seqsFor = (s: string) => { let set = have.get(s); if (!set) { set = new Set(); have.set(s, set) } return set }
+  const ackChunks = (s: string) => {
+    const target = source ?? pending?.win ?? null
+    if (!target || !backendOrigin) return
+    try { target.postMessage({ type: 'klavity-rec-cmd', session: s, cmd: 'chunk-ack', seq: contiguousUpTo(seqsFor(s)) }, backendOrigin) } catch { /* window gone */ }
+  }
+  const storePiece = (s: string, seq: number, blob: Blob) => {
+    storeQueue = storeQueue.then(async () => {
+      await backup.putChunk(s, seq, blob)
+      seqsFor(s).add(seq)
+      const prev = await backup.getMeta(s)
+      const meta: BackupMeta = {
+        session: s, projectId: opts.projectId, mime: live.mime || prev?.mime || blob.type || 'video/webm',
+        elapsedMs: Math.max(live.elapsedMs, prev?.elapsedMs || 0), width: 0, height: 0,
+        screenOnly: live.screenOnly, startedAt: prev?.startedAt ?? stored?.startedAt ?? Date.now(), updatedAt: Date.now(),
+      }
+      await backup.putMeta(meta)
+      ackChunks(s)
+    }).catch(() => { /* a failed backup write must never break the recording */ })
+    return storeQueue
+  }
+  // Rebuild "the recording up to the point the window closed" from the contiguous backed-up pieces.
+  const rebuild = async (s: string, elapsedHintMs = 0): Promise<ReportRecording | null> => {
+    await storeQueue
+    const parts = await backup.contiguousChunks(s)
+    if (!parts.length) return null
+    const meta = await backup.getMeta(s)
+    const mime = String(meta?.mime || parts[0].type || 'video/webm').split(';')[0]
+    // Each piece is ~1s of recorded time (pauses emit nothing), so the piece count bounds the duration.
+    const elapsed = Math.max(meta?.elapsedMs || 0, elapsedHintMs)
+    const durationMs = Math.min(elapsed || Infinity, parts.length * 1000)
+    let blob = new Blob(parts, { type: mime })
+    if (mime.includes('webm')) { try { blob = await fixWebmDuration(blob, durationMs) } catch { /* raw blob still plays */ } }
+    return {
+      id: 'rec_' + s, dataUrl: await blobToDataUrl(blob), blob, mime, durationMs, bytes: blob.size,
+      width: 0, height: 0, screenOnly: meta?.screenOnly ?? true,
+    }
+  }
+  // The recorder window went away mid-recording → keep what was recorded instead of discarding it.
+  const recover = async (s: string) => {
+    if (recovering.has(s)) return
+    recovering.add(s)
+    // Only tear down this tab's live session when it IS the one being recovered (orphans from other tabs
+    // must never end a recording that is running here).
+    const isCurrent = s === currentSession()
+    const ownsPending = pending?.session === s
+    // The window's last reported elapsed time can be newer than the last stored piece's meta.
+    const elapsedHint = isCurrent ? live.elapsedMs : 0
+    if (isCurrent) endSession()
+    let rec: ReportRecording | null = null
+    try { rec = await rebuild(s, elapsedHint) } catch { rec = null }
+    if (!rec) {
+      if (ownsPending) settlePending(null)
+      if (isCurrent) opts.notify?.('The recording window was closed before anything was recorded.')
+    } else {
+      if (!(ownsPending && settlePending(rec))) { try { opts.onRecordingArrived(rec) } catch { /* no-op */ } }
+      opts.notify?.(`The recording window was closed. Your recording up to ${fmtTime(rec.durationMs)} was saved and attached to the report.`)
+    }
+    try { await backup.clear(s) } catch { /* no-op */ }
+    have.delete(s)
+  }
 
   // ── REC bar (own shadow host so page CSS can't touch it) ──
   let barHost: HTMLElement | null = null
@@ -179,11 +272,11 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
     lastBeat = lastBeat || Date.now()
     watchdog = setInterval(() => {
       if (Date.now() - lastBeat < HEARTBEAT_LOST_MS) return
-      // The recorder window vanished without delivering a result (closed by the reporter / crashed).
-      const hadBar = !!barHost
-      endSession()
-      settlePending(null)
-      if (hadBar) opts.notify?.('The recording window was closed, so the recording was discarded.')
+      // The recorder window vanished without delivering a result (closed by the reporter / crashed):
+      // rebuild the recording from the backed-up pieces instead of discarding it.
+      const s = currentSession()
+      if (s) void recover(s)
+      else { endSession(); settlePending(null) }
     }, 1000)
   }
 
@@ -212,8 +305,33 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
     source = (ev.source as Window | null) ?? source
     lastBeat = Date.now()
 
+    if (d.kind === 'chunk') {
+      armWatchdog()
+      const seq = Number(d.seq)
+      if (d.blob instanceof Blob && Number.isInteger(seq) && seq >= 0) {
+        if (seqsFor(session).has(seq)) ackChunks(session) // a resend we already hold — just re-ack
+        else void storePiece(session, seq, d.blob)
+      }
+      return
+    }
+    if (d.kind === 'closed') {
+      if (Number(d.elapsedMs) > live.elapsedMs) live.elapsedMs = Number(d.elapsedMs)
+      void recover(session)
+      return
+    }
     if (d.kind === 'state') {
       armWatchdog()
+      if (Number(d.elapsedMs) > live.elapsedMs) live.elapsedMs = Number(d.elapsedMs)
+      if (typeof d.mime === 'string' && d.mime) live.mime = d.mime
+      if (typeof d.screenOnly === 'boolean') live.screenOnly = d.screenOnly
+      // First beat on this page: tell the window which pieces survived the navigation so it re-sends the rest.
+      if (!ackedOnPage.has(session)) {
+        ackedOnPage.add(session)
+        void (async () => {
+          try { for (const q of await backup.seqs(session)) seqsFor(session).add(q) } catch { /* no-op */ }
+          ackChunks(session)
+        })()
+      }
       if (d.state === 'recording' || d.state === 'paused' || d.state === 'finishing') {
         if (pending && !pending.recordingSignalled) { pending.recordingSignalled = true; try { pending.onPhase?.('recording') } catch { /* no-op */ } }
         renderState(d.state, Number(d.elapsedMs) || 0, Number(d.maxMs) || 0)
@@ -223,6 +341,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
     if (d.kind === 'cancel') {
       endSession()
       settlePending(null)
+      void backup.clear(session).catch(() => {})
       return
     }
     if (d.kind === 'done') {
@@ -231,6 +350,9 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
       if (id && handled.has(id)) return // the window repeats 'done' until acked
       if (id) handled.add(id)
       endSession()
+      // The full video arrived normally — the backup is no longer needed.
+      void storeQueue.then(() => backup.clear(session)).catch(() => {})
+      have.delete(session)
       let rec: ReportRecording | null = null
       try { rec = await toRecording(d.recording) } catch { rec = null }
       if (!rec) { settlePending(null); opts.notify?.('The recording could not be attached.'); return }
@@ -246,6 +368,19 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
     const boot = () => { if (stored === s) { renderState('recording', Date.now() - s.startedAt, 0); armWatchdog() } }
     if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot, { once: true })
   }
+  // A tab that was closed mid-recording leaves its backup behind (sessionStorage died with the tab, so no
+  // page re-attaches to it). Recover such orphans for this project on the next page load.
+  void (async () => {
+    let metas: BackupMeta[] = []
+    try { metas = await backup.listMeta() } catch { return }
+    const now = Date.now()
+    for (const m of metas) {
+      if (m.projectId !== opts.projectId || m.session === currentSession()) continue
+      if (now - m.updatedAt < ORPHAN_IDLE_MS) continue // still alive in another tab
+      if (now - m.updatedAt > ORPHAN_MAX_AGE_MS) { void backup.clear(m.session).catch(() => {}); continue }
+      await recover(m.session)
+    }
+  })()
 
   return {
     start(onPhase) {
@@ -255,7 +390,7 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
       const url = opts.backendUrl.replace(/\/+$/, '') + '/recorder-window?session=' + encodeURIComponent(session)
         + '&origin=' + encodeURIComponent(location.origin) + '&project=' + encodeURIComponent(opts.projectId)
       let win: Window | null = null
-      try { win = window.open(url, WINDOW_NAME, 'popup,width=400,height=560') } catch { win = null }
+      try { win = window.open(url, WINDOW_NAME, recorderWindowFeatures()) } catch { win = null }
       if (!win) return null // popup blocked → caller falls back to the in-page recorder
       stored = { session, projectId: opts.projectId, startedAt: Date.now() }
       writeStored(stored)
@@ -267,9 +402,9 @@ export function createRecordBridge(opts: RecordBridgeOptions): RecordBridge {
           let closed = false
           try { closed = !!win && win.closed } catch { closed = false }
           if (closed && pending?.session === session) {
-            const wasRecording = pending.recordingSignalled
-            endSession(); settlePending(null)
-            if (wasRecording) opts.notify?.('The recording window was closed, so the recording was discarded.')
+            // Closed mid-recording → keep what was recorded. Closed during consent → plain cancel.
+            if (pending.recordingSignalled || seqsFor(session).size) void recover(session)
+            else { endSession(); settlePending(null) }
           }
         }, 500)
       })
