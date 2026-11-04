@@ -992,5 +992,12 @@
     "excerpt": "AI QA for SaaS applications means testing per role and per plan, not per page — because the same URL behaves differently for every user.",
     "category": "Guides",
     "date": "2026-11-03"
+  },
+  {
+    "slug": "vibe-coding-best-practices",
+    "title": "Vibe Coding Best Practices: Ship AI Code That Holds Up",
+    "excerpt": "Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch.",
+    "category": "Guides",
+    "date": "2026-11-04"
   }
 ]

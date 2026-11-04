@@ -1,0 +1,220 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe Coding Best Practices: Ship AI Code That Holds Up · Klavity</title>
+<meta name="description" content="Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch.">
+<link rel="canonical" href="https://klavity.in/blog/vibe-coding-best-practices">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="Vibe Coding Best Practices: Ship AI Code That Holds Up"><meta property="og:description" content="Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch.">
+<meta property="og:url" content="https://klavity.in/blog/vibe-coding-best-practices"><meta property="og:image" content="https://klavity.in/blog/vibe-coding-best-practices.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Vibe Coding Best Practices: Ship AI Code That Holds Up"><meta name="twitter:description" content="Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch."><meta name="twitter:image" content="https://klavity.in/blog/vibe-coding-best-practices.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Vibe Coding Best Practices: Ship AI Code That Holds Up","description":"Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch.","datePublished":"2026-11-04","dateModified":"2026-11-04","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/vibe-coding-best-practices.svg"}},"mainEntityOfPage":"https://klavity.in/blog/vibe-coding-best-practices","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"Vibe Coding Best Practices: Ship AI Code That Holds Up","item":"https://klavity.in/blog/vibe-coding-best-practices"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/vibe-coding-best-practices"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What are the most important vibe coding best practices?","acceptedAnswer":{"@type":"Answer","text":"One concern per prompt, read the diff rather than the model's summary, verify the change in the running app, commit after every working step, check that new dependencies actually exist and are pinned, review anything touching auth or payments line by line, and turn every fixed bug into an automated test."}},{"@type":"Question","name":"Why does AI-generated code need different QA than hand-written code?","acceptedAnswer":{"@type":"Answer","text":"Hand-written bugs cluster where the developer was confused, so they are somewhat predictable. Generated code is uniformly confident, including where the model guessed, so the common failures are silent scope drift, happy-path-only logic, and integrations with the right shape but the wrong field names or library version."}},{"@type":"Question","name":"How do I QA a vibe-coded app if I can't read the code?","acceptedAnswer":{"@type":"Answer","text":"Test behaviour instead of code. Write down in plain sentences what the app must do before you prompt, check those statements on a real phone as well as desktop, ask the model what could break and what it assumed rather than whether it is correct, and get one automated or human pass that isn't you."}},{"@type":"Question","name":"Do I need tests if I'm vibe coding a prototype?","acceptedAnswer":{"@type":"Answer","text":"You need them most on anything you ship to users, because each new prompt can rewrite earlier work, so prototypes regress constantly. A fixed bug with no test is a bug you will fix twice. Self-healing tests matter here because AI refactors break brittle selectors, and tests that break get deleted."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Guides · 2026-11-04</div>
+    <h1>Vibe Coding Best Practices: Ship AI Code That Holds Up</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">7 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Vibe coding best practices: small prompt, reviewed diff, verified in browser">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="380" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="70" width="200" height="130" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="74" y="92" width="96" height="7" rx="3.5" fill="#6366f1"/>
+  <rect x="74" y="112" width="150" height="6" rx="3" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="74" y="130" width="120" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="74" y="148" width="138" height="6" rx="3" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="74" y="170" width="62" height="14" rx="7" fill="#6366f1" opacity="0.55"/>
+
+  <rect x="300" y="55" width="200" height="160" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="300" y="55" width="4" height="160" rx="2" fill="#4ade80"/>
+  <rect x="318" y="80" width="112" height="6" rx="3" fill="#4ade80" opacity="0.85"/>
+  <rect x="318" y="100" width="146" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="318" y="120" width="90" height="6" rx="3" fill="#f87171" opacity="0.8"/>
+  <rect x="318" y="140" width="130" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="318" y="160" width="104" height="6" rx="3" fill="#4ade80" opacity="0.6"/>
+  <rect x="318" y="180" width="124" height="6" rx="3" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="544" y="70" width="200" height="130" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="544" y1="96" x2="744" y2="96" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="560" cy="83" r="4" fill="#f87171"/>
+  <circle cx="574" cy="83" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="588" cy="83" r="4" fill="#4ade80"/>
+  <path d="M608 150 l18 18 l34 -40" fill="none" stroke="#4ade80" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M262 135 h30" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M286 129 l8 6 l-8 6" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M506 135 h30" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M530 129 l8 6 l-8 6" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M644 212 v34 q0 14 -14 14 H184 q-14 0 -14 -14 v-22" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 7" opacity="0.75"/>
+  <path d="M164 196 l6 -10 l6 10" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="248" y="300" width="304" height="62" rx="12" fill="#6366f1" opacity="0.14" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="290" cy="331" r="13" fill="none" stroke="#4ade80" stroke-width="3"/>
+  <path d="M284 331 l5 5 l9 -11" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="320" y="320" width="196" height="7" rx="3.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="320" y="338" width="132" height="7" rx="3.5" fill="#6366f1" opacity="0.8"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>The core vibe coding best practices are small prompts you can actually review, verification in the running app rather than in the model's summary, and an automated check in front of every path a real user touches. AI-generated code usually runs — it just quietly does the wrong thing, so the risk is unreviewed scope drift and happy-path-only logic, not broken syntax.</div>
+    <div class="prose"><p>The core <strong>vibe coding best practices</strong> are: keep every AI prompt small enough that you can read the whole diff, verify behaviour in a browser rather than trusting the model's summary, and put an automated check in front of every path a real user will touch. Vibe coding fails not because AI writes bad syntax — it usually writes code that runs — but because it writes code that runs <em>and does the wrong thing quietly</em>. The practices below exist to shorten the gap between "the model said it's done" and "someone verified it works."</p>
+
+<p>If you're building with Cursor, Claude Code, Bolt, Lovable, v0 or Replit and you have no QA process at all, the single highest-leverage change is this: stop treating "it compiles and the preview loads" as the finish line.</p>
+
+<h2>What are the best practices for vibe coding?</h2>
+
+<p>Seven practices, in rough order of how much trouble they save you:</p>
+
+<ol>
+<li><strong>One concern per prompt.</strong> Ask for a login form, or a password reset, not both. Big prompts produce big diffs, and big diffs don't get read.</li>
+<li><strong>Read the diff, not the summary.</strong> The model's description of its own change is a claim, not evidence. The diff is the evidence.</li>
+<li><strong>Verify in the running app.</strong> Click the thing. AI-generated code frequently passes a build and fails a human.</li>
+<li><strong>Commit after every working step.</strong> Small commits give you a working state to return to when the next prompt goes sideways.</li>
+<li><strong>Pin your dependencies and check that they exist.</strong> Models sometimes invent package names that look plausible; installing one is how you end up with a package nobody audited.</li>
+<li><strong>Never let the model near secrets or auth logic unsupervised.</strong> Review anything touching tokens, sessions, permissions or payment line by line.</li>
+<li><strong>Automate the regression check.</strong> Anything you've manually tested twice should be a test, not a habit.</li>
+</ol>
+
+<h2>Why does vibe-coded code fail differently from hand-written code?</h2>
+
+<p>When a developer writes a feature by hand, their bugs tend to cluster where they were confused. When a model writes a feature, the code is uniformly confident — including in the places it guessed. That changes where you should look.</p>
+
+<p>Three failure modes show up repeatedly:</p>
+
+<ul>
+<li><strong>Silent scope drift.</strong> You asked for a fix to the checkout button; the model also "tidied" the pricing helper it passed through. Nothing errors. The totals are now wrong.</li>
+<li><strong>Happy-path-only logic.</strong> Generated code handles the case described in the prompt. Empty states, expired sessions, duplicate submissions, slow networks and non-ASCII input were never mentioned, so they were never handled.</li>
+<li><strong>Plausible-but-wrong integration.</strong> The model writes an API call with the right shape and the wrong field names, or against a version of the library you aren't running. It looks correct in review and fails at runtime.</li>
+</ul>
+
+<p>None of these are caught by "does the app load." All three are caught by exercising the app the way a user would — which is the entire argument for having <a href="/blog/ai-qa-complete-guide">an actual QA layer</a> rather than vibes.</p>
+
+<h2>How small should each prompt be?</h2>
+
+<p>Small enough that you can read the resulting diff in one sitting without skimming. That's the practical test — not a line count.</p>
+
+<p>The failure pattern is recursive: a large prompt produces a diff too large to review, so you accept it unreviewed, so the next prompt builds on code you don't understand, so the next diff is even harder to judge. Within a few rounds you're shipping a codebase you cannot reason about, and debugging means asking the model to explain its own work back to you.</p>
+
+<p>Two habits that prevent it:</p>
+
+<ul>
+<li><strong>Describe the end state, then ask for one step toward it.</strong> Give the model context about where you're going; give it permission to change only one thing.</li>
+<li><strong>Reject and re-prompt rather than patching.</strong> If a change is wrong in structure, asking for fix-on-top-of-fix compounds it. Revert and rewrite the prompt.</li>
+</ul>
+
+<h2>What should you verify before accepting an AI change?</h2>
+
+<p>A short, repeatable pass beats an exhaustive one you skip. Check, in this order:</p>
+
+<table>
+<tr><th>Check</th><th>What you're looking for</th><th>Why it matters</th></tr>
+<tr><td>Diff scope</td><td>Files changed that you didn't ask about</td><td>Scope drift is the most common silent regression</td></tr>
+<tr><td>The happy path</td><td>The feature works once, in the browser</td><td>Confirms the change is real, not just compiling</td></tr>
+<tr><td>One unhappy path</td><td>Empty input, wrong password, double-click submit</td><td>This is where generated code is thinnest</td></tr>
+<tr><td>Auth and data boundaries</td><td>Can a logged-out user reach it? Can user A see user B's data?</td><td>Highest-cost class of bug to find in production</td></tr>
+<tr><td>New dependencies</td><td>Package actually exists, is maintained, is pinned</td><td>Invented or typo-squatted packages are a real supply-chain risk</td></tr>
+<tr><td>Console and network</td><td>New errors, failed requests, 4xx/5xx</td><td>Cheapest signal available; usually ignored</td></tr>
+</table>
+
+<p>That's a few minutes per change. It is also roughly the set of checks that <a href="/sims">AI persona testing</a> is designed to run for you — Sims walks your app as different kinds of user and reports what broke, so the unhappy paths get exercised even on the days you don't feel like it.</p>
+
+<h2>How do you catch bugs you didn't think to look for?</h2>
+
+<p>You don't, by inspection. Self-review has a ceiling: you test the behaviour you had in mind, which is the same behaviour you prompted for. The bugs that reach your users live outside that set.</p>
+
+<p>Three things widen the net without adding a QA hire:</p>
+
+<ul>
+<li><strong>Make bug capture frictionless for everyone else.</strong> When a teammate, client or early user hits something, the report needs to arrive with the URL, console log, browser and a screenshot attached — not as "the page looked weird." That's what <a href="/snap">right-click bug reporting</a> exists for; see also <a href="/blog/reduce-cannot-reproduce-bug-tickets">why most bug reports can't be reproduced</a>.</li>
+<li><strong>Turn every fixed bug into a test.</strong> Vibe-coded projects regress constantly, because each new prompt can rewrite earlier work. A fixed bug with no test is a bug you will fix twice. <a href="/autosim">Self-healing E2E tests</a> matter here specifically because AI-driven refactors break selectors — brittle tests get deleted, and deleted tests protect nothing.</li>
+<li><strong>Run the checks before you ship, not after.</strong> A pre-deploy pass on the paths that earn money — signup, login, checkout, the core action — catches the expensive failures while they're still free to fix.</li>
+</ul>
+
+<h2>What if you're not technical enough to review the code?</h2>
+
+<p>Then shift your effort from reading code to testing behaviour, and lean on automation for the rest. You can validate an app you can't read:</p>
+
+<ul>
+<li><strong>Write down what the app must do</strong> — in plain sentences, before you prompt. "A logged-out visitor cannot see the dashboard." That list is your test suite, and it's reviewable without knowing the language.</li>
+<li><strong>Test on a real phone,</strong> not just the desktop preview. Layout and touch-target bugs are the most common thing non-technical founders ship.</li>
+<li><strong>Ask the model to explain risk, not correctness.</strong> "What could break because of this change? What did you assume?" is a more useful prompt than "is this right?" — models will confirm their own work.</li>
+<li><strong>Get a second, non-you pass.</strong> An automated walkthrough or one honest tester will find the broken signup flow that you've unconsciously learned to click around.</li>
+</ul>
+
+<p>For a structured version of this, work through the <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> — it's the same practices in a form you can tick off before each deploy.</p>
+
+<h2>What do vibe coding best practices look like in practice?</h2>
+
+<p>A healthy vibe-coding loop looks like: small prompt → read diff → click it → commit → repeat, with an automated pass over your critical flows before anything reaches users, and a one-click way for anyone who finds a bug to report it with evidence attached. Nothing here requires a QA team. It requires that verification happen on the same cadence as generation — which is the one thing AI coding tools made easy to skip.</p>
+
+<p>Ship fast, but make "verified" mean something.</p>
+
+<p><strong><a href="/onboarding">Try Klavity free</a></strong> — point it at your vibe-coded app and see what your next deploy would have shipped.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>One concern per prompt — if the diff is too big to read, it won't be read.</li><li>Treat the model's summary as a claim; the diff and the running app are the evidence.</li><li>Always test one unhappy path: empty input, expired session, double submit.</li><li>Turn every fixed bug into an automated test before the next prompt rewrites it.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What are the most important vibe coding best practices?</summary><p>One concern per prompt, read the diff rather than the model's summary, verify the change in the running app, commit after every working step, check that new dependencies actually exist and are pinned, review anything touching auth or payments line by line, and turn every fixed bug into an automated test.</p></details><details><summary>Why does AI-generated code need different QA than hand-written code?</summary><p>Hand-written bugs cluster where the developer was confused, so they are somewhat predictable. Generated code is uniformly confident, including where the model guessed, so the common failures are silent scope drift, happy-path-only logic, and integrations with the right shape but the wrong field names or library version.</p></details><details><summary>How do I QA a vibe-coded app if I can't read the code?</summary><p>Test behaviour instead of code. Write down in plain sentences what the app must do before you prompt, check those statements on a real phone as well as desktop, ask the model what could break and what it assumed rather than whether it is correct, and get one automated or human pass that isn't you.</p></details><details><summary>Do I need tests if I'm vibe coding a prototype?</summary><p>You need them most on anything you ship to users, because each new prompt can rewrite earlier work, so prototypes regress constantly. A fixed bug with no test is a bug you will fix twice. Self-healing tests matter here because AI refactors break brittle selectors, and tests that break get deleted.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>

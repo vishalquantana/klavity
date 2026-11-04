@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Vibe coding best practices: small prompt, reviewed diff, verified in browser">
+  <rect width="800" height="420" fill="#1e1b2e"/>
+  <circle cx="690" cy="60" r="150" fill="#6366f1" opacity="0.07"/>
+  <circle cx="90" cy="380" r="120" fill="#6366f1" opacity="0.05"/>
+
+  <rect x="56" y="70" width="200" height="130" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="74" y="92" width="96" height="7" rx="3.5" fill="#6366f1"/>
+  <rect x="74" y="112" width="150" height="6" rx="3" fill="#f5f0e8" opacity="0.28"/>
+  <rect x="74" y="130" width="120" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="74" y="148" width="138" height="6" rx="3" fill="#f5f0e8" opacity="0.16"/>
+  <rect x="74" y="170" width="62" height="14" rx="7" fill="#6366f1" opacity="0.55"/>
+
+  <rect x="300" y="55" width="200" height="160" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <rect x="300" y="55" width="4" height="160" rx="2" fill="#4ade80"/>
+  <rect x="318" y="80" width="112" height="6" rx="3" fill="#4ade80" opacity="0.85"/>
+  <rect x="318" y="100" width="146" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="318" y="120" width="90" height="6" rx="3" fill="#f87171" opacity="0.8"/>
+  <rect x="318" y="140" width="130" height="6" rx="3" fill="#f5f0e8" opacity="0.22"/>
+  <rect x="318" y="160" width="104" height="6" rx="3" fill="#4ade80" opacity="0.6"/>
+  <rect x="318" y="180" width="124" height="6" rx="3" fill="#f5f0e8" opacity="0.16"/>
+
+  <rect x="544" y="70" width="200" height="130" rx="10" fill="#f5f0e8" opacity="0.05" stroke="#6366f1" stroke-width="1.5"/>
+  <line x1="544" y1="96" x2="744" y2="96" stroke="#6366f1" stroke-width="1.5" opacity="0.6"/>
+  <circle cx="560" cy="83" r="4" fill="#f87171"/>
+  <circle cx="574" cy="83" r="4" fill="#f5f0e8" opacity="0.3"/>
+  <circle cx="588" cy="83" r="4" fill="#4ade80"/>
+  <path d="M608 150 l18 18 l34 -40" fill="none" stroke="#4ade80" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M262 135 h30" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M286 129 l8 6 l-8 6" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M506 135 h30" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M530 129 l8 6 l-8 6" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M644 212 v34 q0 14 -14 14 H184 q-14 0 -14 -14 v-22" fill="none" stroke="#6366f1" stroke-width="2" stroke-dasharray="7 7" opacity="0.75"/>
+  <path d="M164 196 l6 -10 l6 10" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="248" y="300" width="304" height="62" rx="12" fill="#6366f1" opacity="0.14" stroke="#6366f1" stroke-width="1.5"/>
+  <circle cx="290" cy="331" r="13" fill="none" stroke="#4ade80" stroke-width="3"/>
+  <path d="M284 331 l5 5 l9 -11" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="320" y="320" width="196" height="7" rx="3.5" fill="#f5f0e8" opacity="0.5"/>
+  <rect x="320" y="338" width="132" height="7" rx="3.5" fill="#6366f1" opacity="0.8"/>
+</svg>
