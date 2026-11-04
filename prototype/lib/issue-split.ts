@@ -33,6 +33,11 @@ export type SplitIssue = {
   stepsToReproduce?: string[]
   suggestedSeverity?: Severity
   suggestedPriority?: Priority
+  // 0..1 — how sure the model is this is a real, distinct issue (the review card flags < 0.85).
+  confidence?: number
+  // The reporter's own words for this issue (the transcript lines inside its span). The composer hands them to
+  // "Enhance with AI" with a frame from the clip, so a split ticket is written exactly like an enhanced snap.
+  narration?: string
 }
 
 export const SPLIT_SYSTEM_PROMPT =
@@ -64,16 +69,40 @@ export const SPLIT_SYSTEM_PROMPT =
   "unsure, bias LOWER. Feature requests are C3.\n" +
   "  - suggestedPriority: derived C1->P1, C2->P2, C3->P3 unless the reporter explicitly states a priority.\n" +
   "  - Never invent API, backend, database or root-cause claims; never assert a cause as fact.\n" +
+  "- confidence: 0..1 — how sure you are this is a real, distinct issue the reporter raised (low when the " +
+  "narration is vague, garbled, or may be repeating another issue).\n" +
   "- kind: 'bug' for broken/incorrect behavior, 'feature' for a request for new/changed behavior.\n" +
   "- startSec/endSec: when the transcript lines carry [start-end] timings, the span (seconds) where the reporter " +
   "talks about this issue; otherwise null.\n" +
   "- Order issues as they appear in the video. At most " + MAX_SPLIT_ISSUES + " issues.\n\n" +
   "OUTPUT. Reply with STRICT JSON only, no prose, no code fences:\n" +
   '{"issues":[{"title":"...","description":"...","kind":"bug","startSec":12.5,"endSec":40,' +
-  '"actualResult":"...","expectedResult":"...","stepsToReproduce":["..."],"suggestedSeverity":"C2","suggestedPriority":"P2"}]}\n' +
+  '"actualResult":"...","expectedResult":"...","stepsToReproduce":["..."],"suggestedSeverity":"C2","suggestedPriority":"P2","confidence":0.9}]}\n' +
   'If the narration describes no concrete issue, reply {"issues":[]}.'
 
 type Seg = { start: number; end: number; text: string }
+
+export const NARRATION_MAX_CHARS = 2000
+
+// The transcript lines inside [startSec, endSec] — a line belongs to the span when its midpoint does (0.5s
+// slack), so a neighbour that merely touches the edge stays out. No end → the line(s) covering startSec.
+// '' without timings/segments.
+export function narrationForSpan(segments: Seg[] | null | undefined, startSec: number | null, endSec: number | null): string {
+  if (!Array.isArray(segments) || !segments.length || startSec == null) return ""
+  const inSpan = (s: Seg) => {
+    const st = Number(s?.start) || 0
+    const en = Math.max(st, Number(s?.end) || st)
+    if (endSec == null) return st <= startSec + 0.5 && en >= startSec - 0.5
+    const mid = (st + en) / 2
+    return mid >= startSec - 0.5 && mid <= endSec + 0.5
+  }
+  const out = segments
+    .filter(inSpan)
+    .map((s) => String(s?.text ?? "").trim())
+    .filter(Boolean)
+    .join(" ")
+  return out.length > NARRATION_MAX_CHARS ? out.slice(0, NARRATION_MAX_CHARS) : out
+}
 
 // Build the transcript text the model sees: timestamped lines when segments exist (so it can return spans),
 // else the flat text. Clipped to SPLIT_TRANSCRIPT_MAX_CHARS.
@@ -139,6 +168,8 @@ export function parseSplitReply(raw: unknown): SplitIssue[] {
       issue.suggestedSeverity = draft.suggestedSeverity
       issue.suggestedPriority = draft.suggestedPriority
     }
+    const conf = typeof it.confidence === "number" ? it.confidence : Number(it.confidence)
+    if (Number.isFinite(conf)) issue.confidence = Math.max(0, Math.min(1, conf))
     out.push(issue)
     if (out.length >= MAX_SPLIT_ISSUES) break
   }
@@ -158,7 +189,12 @@ export async function splitTranscriptIntoIssues(
   const input = buildSplitTranscriptInput(transcript?.text, transcript?.segments)
   if (!input || !opts?.llm) return []
   try {
-    return parseSplitReply(await opts.llm(input, SPLIT_SYSTEM_PROMPT))
+    const issues = parseSplitReply(await opts.llm(input, SPLIT_SYSTEM_PROMPT))
+    for (const it of issues) {
+      const n = narrationForSpan(transcript?.segments, it.startSec, it.endSec)
+      if (n) it.narration = n
+    }
+    return issues
   } catch {
     return []
   }

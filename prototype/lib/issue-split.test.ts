@@ -9,6 +9,7 @@ import {
   buildSplitTranscriptInput,
   parseSplitReply,
   splitTranscriptIntoIssues,
+  narrationForSpan,
 } from "./issue-split"
 
 const TWO = {
@@ -102,5 +103,45 @@ describe("Enhance-identical draft per issue", () => {
   })
   test("prompt asks for the Enhance fields", () => {
     for (const k of ["actualResult", "expectedResult", "stepsToReproduce", "suggestedSeverity", "suggestedPriority"]) expect(SPLIT_SYSTEM_PROMPT).toContain(k)
+  })
+})
+
+describe("confidence", () => {
+  test("is clamped to 0..1 and omitted when absent", () => {
+    const [a, b, c] = parseSplitReply(JSON.stringify({ issues: [
+      { title: "A", description: "a", confidence: 0.72 },
+      { title: "B", description: "b", confidence: 7 },
+      { title: "C", description: "c" },
+    ] }))
+    expect(a.confidence).toBe(0.72)
+    expect(b.confidence).toBe(1)
+    expect(c.confidence).toBeUndefined()
+    expect(SPLIT_SYSTEM_PROMPT).toContain("confidence")
+  })
+})
+
+describe("narration (the reporter's words handed to Enhance)", () => {
+  const segs = [
+    { start: 0, end: 4, text: "Hi, a few things." },
+    { start: 4, end: 9, text: "The save button does nothing." },
+    { start: 9, end: 12, text: "Nothing in the console either." },
+    { start: 20, end: 26, text: "Also the date filter shows last month." },
+  ]
+  test("narrationForSpan joins the transcript lines inside the span", () => {
+    expect(narrationForSpan(segs, 4.2, 11.5)).toBe("The save button does nothing. Nothing in the console either.")
+    expect(narrationForSpan(segs, 21, null)).toBe("Also the date filter shows last month.")
+    expect(narrationForSpan(segs, null, null)).toBe("")
+    expect(narrationForSpan(null, 1, 2)).toBe("")
+  })
+  test("splitTranscriptIntoIssues attaches each issue's narration", async () => {
+    const reply = JSON.stringify({ issues: [
+      { title: "Save does nothing", description: "x", startSec: 4, endSec: 12 },
+      { title: "Date filter wrong", description: "y", startSec: 20, endSec: 26 },
+      { title: "No timing", description: "z", startSec: null, endSec: null },
+    ] })
+    const out = await splitTranscriptIntoIssues({ text: "t", segments: segs }, { llm: async () => reply })
+    expect(out[0].narration).toBe("The save button does nothing. Nothing in the console either.")
+    expect(out[1].narration).toBe("Also the date filter shows last month.")
+    expect(out[2].narration).toBeUndefined()
   })
 })

@@ -1,6 +1,6 @@
 // sim-preview — screenshotUrl plumbing (browser factory injected, no real Chromium) + default persona.
 import { test, expect } from "bun:test"
-import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona } from "./sim-preview"
+import { screenshotUrl, authedScreenshotUrl, projectHasHeadlessAuth, defaultPreviewPersona, selectPreviewSims } from "./sim-preview"
 
 // A minimal fake BrowserHandle/BrowserPage that records the calls screenshotUrl makes.
 // `redirectTo` simulates the browser following a 3xx to another URL: goto re-runs the installed
@@ -199,4 +199,11 @@ test("projectHasHeadlessAuth is true only for mint_link configs", async () => {
   expect(await projectHasHeadlessAuth("p1", { loadAuthConfig: async () => mintCfg })).toBe(true)
   expect(await projectHasHeadlessAuth("p1", { loadAuthConfig: async () => otpCfg })).toBe(false)
   expect(await projectHasHeadlessAuth("p1", { loadAuthConfig: async () => null })).toBe(false)
+})
+
+test("WP-S2: an inactive Sim named in simIds gets an 'inactive' error, not 'not in this project'", () => {
+  const r = selectPreviewSims([{ id: "a" }], ["b"], new Set(["b"]))
+  expect(r.ok).toBe(false)
+  expect((r as any).error).toContain("inactive")
+  expect((selectPreviewSims([{ id: "a" }], ["zzz"], new Set(["b"])) as any).error).toContain("aren't in this project")
 })
