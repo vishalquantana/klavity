@@ -97,6 +97,16 @@ export interface StartRecordingOptions {
   caps?: Partial<RecordingCaps>
   onState?: (state: RecorderState) => void
   onStats?: (stats: { elapsedMs: number; bytes: number }) => void
+  // Optional: receives each ~1s encoded piece as it is produced, in order. Used by the PX4 recorder window to
+  // back the recording up outside its own window so closing that window can't lose it. Absent → unchanged.
+  onChunk?: (data: Blob) => void
+  // Optional: which surface the share picker pre-selects. Default 'monitor' (Entire Screen), unchanged.
+  // The PX4 recorder window passes 'browser' so the reporter's own tab is the natural pick.
+  preferSurface?: 'monitor' | 'browser' | 'window'
+  // Optional: after sharing starts, ask the browser to bring the SHARED tab/window to the front (Conditional
+  // Focus, Chrome/Edge). The PX4 recorder window uses it so the app covers the recorder window. No effect when
+  // the reporter shares the entire screen or the browser lacks CaptureController. Absent → unchanged.
+  focusCapturedSurface?: boolean
   // Called once if getUserMedia (camera/mic) rejects — e.g. the customer site's Permissions-Policy blocks
   // camera/microphone for embedded tools. The recording continues SCREEN-ONLY; the UI surfaces the hint.
   onFallback?: (reason: string) => void
@@ -240,13 +250,25 @@ export async function startRecording(
   // capture to the active app. The fix is user-side (grant OS permission + relaunch); the constraints here can't
   // override it, so the consent-panel tip + this note document it. These extra keys are non-standard/advisory and
   // browsers safely ignore unknown ones, so older engines keep the previous behaviour.
+  // Conditional Focus: the focus behaviour must be set BEFORE getDisplayMedia resolves, via a CaptureController.
+  let captureController: any = null
+  if (opts.focusCapturedSurface) {
+    try {
+      const CC = (globalThis as any).CaptureController
+      if (typeof CC === 'function') {
+        captureController = new CC()
+        captureController.setFocusBehavior?.('focus-captured-surface')
+      }
+    } catch { captureController = null }
+  }
   const screenStream = await deps.mediaDevices.getDisplayMedia({
-    video: { frameRate: fps, displaySurface: 'monitor' },
+    video: { frameRate: fps, displaySurface: opts.preferSurface ?? 'monitor' },
     audio: false,
     preferCurrentTab: false,
     selfBrowserSurface: 'exclude',
     surfaceSwitching: 'include',
     monitorTypeSurfaces: 'include',
+    ...(captureController ? { controller: captureController } : {}),
   } as any)
 
   // #474 (privacy): once ANY track is acquired, a throw during the REST of init (canvas.captureStream,
@@ -433,7 +455,10 @@ export async function startRecording(
   }
 
   recorder.ondataavailable = (ev: any) => {
-    if (ev?.data && ev.data.size) { chunks.push(ev.data); totalBytes += ev.data.size }
+    if (ev?.data && ev.data.size) {
+      chunks.push(ev.data); totalBytes += ev.data.size
+      try { opts.onChunk?.(ev.data) } catch { /* backup is best-effort — never break the recording */ }
+    }
     try { opts.onStats?.({ elapsedMs: elapsedMs(), bytes: totalBytes }) } catch { /* no-op */ }
     // Size cap: stop the moment the accumulated blob would exceed the byte ceiling.
     if (totalBytes >= caps.maxBytes) stop()

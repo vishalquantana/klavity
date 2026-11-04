@@ -3,7 +3,7 @@ import { buildFeedbackFormData } from '../../core/src/integrations/backend'
 import { coerceReporter } from './identity'
 import { icon } from '@klavity/core/icons'
 
-export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | undefined>, src?: string } | null | undefined): { projectId: string, backendUrl: string, reporter?: Reporter, identity?: Reporter, metadata?: Record<string, string> } {
+export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | undefined>, src?: string } | null | undefined): { projectId: string, backendUrl: string, reporter?: Reporter, identity?: Reporter, metadata?: Record<string, string>, recordMode?: "window" } {
   if (!scriptEl) return { projectId: "", backendUrl: "" }
   const d = scriptEl.dataset || {}
   const projectId = d.project || ""
@@ -43,7 +43,10 @@ export function parseScriptConfig(scriptEl: { dataset?: Record<string, string | 
       }
     } catch { /* ignore malformed data-meta */ }
   }
-  return { projectId, backendUrl, reporter, identity: reporter, metadata }
+  // "Record me" in a separate Klavity recorder window, which survives full page loads — opt-in per embed
+  // (data-record-mode="window") for multi-page host apps such as PX4. Absent → the in-page recorder, unchanged.
+  const recordMode = String(d.recordMode || "").trim().toLowerCase() === "window" ? "window" as const : undefined
+  return { projectId, backendUrl, reporter, identity: reporter, metadata, ...(recordMode ? { recordMode } : {}) }
 }
 
 export interface SuccessCopy {
