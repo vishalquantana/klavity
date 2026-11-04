@@ -248,7 +248,12 @@ function extractJsonObject(raw: string): any | null {
 // parse, clamps every field length, whitelists severity/priority, caps steps to MAX_STEPS. Returns null
 // when the reply doesn't parse OR is genuinely empty (no summary and no steps — nothing to enhance).
 export function parseEnhanceReply(raw: string): EnhancedDraft | null {
-  const obj = extractJsonObject(raw)
+  return draftFromObject(extractJsonObject(raw))
+}
+
+// draftFromObject: validate + clamp an already-parsed draft object (same rules as parseEnhanceReply). Shared
+// with KD-995's issue-split so every split ticket carries an Enhance-identical draft. null when empty.
+export function draftFromObject(obj: any): EnhancedDraft | null {
   if (!obj || typeof obj !== "object") return null
 
   const summary = clampStr(obj.summary, SUMMARY_MAX_LEN)
@@ -306,7 +311,8 @@ export async function generateEnhancedDraft(input: string, opts: GenerateEnhance
   try {
     const reply = await opts.llm(oneLiner, ENHANCE_SYSTEM_PROMPT)
     return parseEnhanceReply(reply)
-  } catch {
+  } catch (e: any) {
+    console.error("[report-enhance] LLM call failed:", e?.message || e)
     return null
   }
 }

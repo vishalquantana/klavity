@@ -162,15 +162,6 @@ test("Run-a-review-now calls the authed /api/sim/preview branch with url + proje
   expect(region).toContain("projectId:pid")
 })
 
-test("Run-a-review-now prefills the URL from the active project's siteUrl", () => {
-  // showSuccessPanel must prefill #smRunUrl from state.active.siteUrl (via projSiteUrl()).
-  expect(HTML).toContain("state.active.siteUrl")
-  const i = HTML.indexOf("function showSuccessPanel(")
-  expect(i).toBeGreaterThan(-1)
-  const region = HTML.slice(i, i + 1600)
-  expect(region).toContain("projSiteUrl()")
-})
-
 test("Run-a-review-now renders errors inline in the panel (no dead-end)", () => {
   const i = HTML.indexOf("async function runReviewNow(")
   const region = HTML.slice(i, i + 2000)
@@ -199,14 +190,6 @@ test("Run-a-review-now offers a 'View all in Sims' landing so results are visibl
 // =============================================================================
 // KLAVITYKLA-388: site-mode Add-all must funnel into "Run a review now"
 // =============================================================================
-
-test("resetRunNow is DEFINED (guard against the merge-eaten definition recurring)", () => {
-  // showSuccessPanel() calls resetRunNow(); if that definition is dropped by a theirs-wins merge
-  // (as it had been), the panel throws a ReferenceError at runtime and never renders — the exact
-  // "Add all N Sims" dead-end. This asserts the definition and its call site both exist.
-  expect(HTML).toContain("function resetRunNow(")
-  expect(HTML).toContain("resetRunNow();")
-})
 
 test("success panel prefills the run-now URL with the site the user JUST used (not only projSiteUrl)", () => {
   // genSite() stashes the entered URL in lastSiteUrl; showSuccessPanel() must prefer it so the

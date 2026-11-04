@@ -6,6 +6,7 @@ import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
 import { sanitizeLabelRules, type LabelRule } from "./label-rules"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
+import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
 
 const url = process.env.TURSO_DATABASE_URL
 const authToken = process.env.TURSO_AUTH_TOKEN
@@ -1164,6 +1165,12 @@ export async function applySchema(c: Client) {
   if (needCol("personas", "is_global")) {
     await c.execute("ALTER TABLE personas ADD COLUMN is_global INTEGER NOT NULL DEFAULT 0")
       .catch((e: any) => console.warn("personas.is_global ALTER skipped:", e?.message || e))
+  }
+  // WP-S2 (Sim Active/Deactivate): active=0 keeps the Sim, its history and its row, but every path that RUNS or OFFERS Sims skips it
+  // (callers opt in with { activeOnly: true }). DEFAULT 1 so every existing Sim stays active with no data migration.
+  if (needCol("personas", "active")) {
+    await c.execute("ALTER TABLE personas ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+      .catch((e: any) => console.warn("personas.active ALTER skipped:", e?.message || e))
   }
   // Additive idempotent ALTERs for new feedback management columns.
   const feedbackAlters: [string, string][] = [
@@ -2494,6 +2501,8 @@ export async function ensureAccount(email: string, attr?: SanitizedAttr | null):
   // leaves the row un-slugged. Best-effort — never blocks signup (opaque fb_ permalink always works).
   await claimAccountSlug(aid, `${local}'s Workspace`).catch((e: any) => { console.warn("ensureAccount slug mint skipped:", e?.message || e); return null })
   await claimProjectKey(aid, "proj_" + aid, "Default Project").catch((e: any) => { console.warn("ensureAccount key mint skipped:", e?.message || e); return null })
+  // Baseline QA Sim: every new project starts with the system-provided QA persona. Best-effort + idempotent — never blocks signup.
+  await ensureBaselineQaSim("proj_" + aid).catch((e: any) => { console.warn("ensureAccount baseline-qa provision skipped:", e?.message || e); return false })
   if (attr) await setAccountAttribution(aid, attr)
   return membershipsFor(email)
 }
@@ -2592,6 +2601,7 @@ export async function createProject(accountId: string, name: string, siteUrl?: s
   })
   // #728: derive a ticket key unique within this account (KLAV, KLAV2, …), race-safe (finding 9).
   await claimProjectKey(accountId, id, name).catch((e: any) => { console.warn("createProject ticket_key mint skipped:", e?.message || e); return null })
+  await ensureBaselineQaSim(id).catch((e: any) => { console.warn("createProject baseline-qa provision skipped:", e?.message || e); return false })
   const p = await projectById(id)
   return p!
 }
@@ -3528,6 +3538,8 @@ export type PersonaRow = {
   isGlobal?: boolean
   // KLAVITYKLA-301: which Add-a-Sim path created this Sim. NULL = legacy/unknown.
   simSource?: string | null
+  // WP-S2: false = deactivated (kept, but skipped by every review/run/offer path). Absent/undefined is treated as active.
+  active?: boolean
 }
 // Parse a JSON string-array column defensively (bad/absent JSON → []).
 function parseStrArray(raw: any): string[] {
@@ -3556,9 +3568,14 @@ function rowToPersona(x: any): PersonaRow {
     core: hasCore ? { goals, expertise, temperament, voice, watchFor } : null,
     isGlobal: !!x.is_global,
     simSource: x.sim_source != null ? String(x.sim_source) : null,
+    active: x.active == null ? true : Number(x.active) !== 0,
   }
 }
-export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
+export type ListPersonasOpts = {
+  /** Run/offer paths pass true to skip deactivated Sims. Default false: management views, id lookups and history keep every Sim. */
+  activeOnly?: boolean
+}
+export async function listPersonas(projectId: string, opts: ListPersonasOpts = {}): Promise<PersonaRow[]> {
   const r = await db!.execute({
     sql: `SELECT p.*, (SELECT COUNT(*) FROM sim_traits t WHERE t.sim_id=p.id AND t.status='active') AS trait_count
           FROM personas p WHERE p.project_id=? ORDER BY p.created_at ASC`,
@@ -3570,7 +3587,7 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
   // a data migration. Prevention happens at write time in POST /api/personas, but this is a
   // belt-and-suspenders guard that makes the list always clean regardless of DB state.
   const seen = new Map<string, boolean>()
-  return all.filter(p => {
+  const deduped = all.filter(p => {
     const key = String(p.name || "").trim().toLowerCase().replace(/\s+/g, " ") +
                 "\x00" +
                 String(p.role || "").trim().toLowerCase().replace(/\s+/g, " ")
@@ -3578,6 +3595,35 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
     seen.set(key, true)
     return true
   })
+  // Filter AFTER the dedup so the active and full lists agree on which duplicate row represents a Sim.
+  return opts.activeOnly ? deduped.filter(p => p.active !== false) : deduped
+}
+
+// Baseline QA Sim provisioning. ONE atomic INSERT OR IGNORE with a deterministic id (sim_baseline_<projectId>): a retried
+// workspace/project creation, a concurrent request or a re-run of the backfill can never create a second one, and an existing
+// row — including one the customer has since edited — is never overwritten. Returns true only when a row was actually created.
+// A failure leaves nothing behind (single statement); callers treat it as best-effort so it never blocks workspace/project creation.
+export async function ensureBaselineQaSim(projectId: string): Promise<boolean> {
+  const q = BASELINE_QA_SIM
+  const now = Date.now()
+  const r = await db!.execute({
+    sql: `INSERT OR IGNORE INTO personas (id,project_id,name,role,type,initials,accent,summary,insights_json,avatar,sim_class,side,goals_json,expertise,temperament,voice,watchfor_json,sim_source,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    args: [baselineQaId(projectId), projectId, q.name, q.role, q.type, q.initials, q.accent, q.summary,
+           JSON.stringify(q.insights), null, q.simClass, q.side,
+           JSON.stringify(q.core.goals), q.core.expertise, q.core.temperament, q.core.voice, JSON.stringify(q.core.watchFor),
+           BASELINE_QA_SOURCE, now, now],
+  })
+  return (r.rowsAffected ?? 0) > 0
+}
+
+// One-off, idempotent backfill for projects that existed before Baseline QA shipped. NOT run automatically (no startup hook,
+// no migration) — it is invoked explicitly (see scripts/backfill-baseline-qa.ts), so deploying never mutates existing data.
+export async function backfillBaselineQaSims(): Promise<{ projects: number; created: number }> {
+  const r = await db!.execute({ sql: "SELECT id FROM projects", args: [] })
+  let created = 0
+  for (const row of r.rows) { if (await ensureBaselineQaSim(String((row as any).id))) created++ }
+  return { projects: r.rows.length, created }
 }
 
 // KLA-838 (perf): count personas across an ACCOUNT in ONE aggregate query, for the Sim-creation quota
@@ -3589,7 +3635,8 @@ export async function listPersonas(projectId: string): Promise<PersonaRow[]> {
 // can count 1 higher — which is the stricter (more correct) number for a creation quota.
 export async function countPersonasForAccount(accountId: string): Promise<number> {
   const r = await db!.execute({
-    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?)`,
+    // The system-provided Baseline QA Sim is not the customer's Sim: it must never consume their plan quota.
+    sql: `SELECT COUNT(*) AS c FROM personas WHERE project_id IN (SELECT id FROM projects WHERE account_id=?) AND COALESCE(sim_source,'') <> '${BASELINE_QA_SOURCE}'`,
     args: [accountId],
   })
   return Number((r.rows[0] as any)?.c || 0)
@@ -3611,12 +3658,12 @@ export async function countPersonasForAccount(accountId: string): Promise<number
 //
 // The function resolves the account_id for `projectId` in one round-trip (projectById is cached-ish
 // by the in-memory SQLite file), then does a UNION ALL query: own rows + sibling global rows.
-export async function listPersonasForProject(projectId: string): Promise<PersonaRow[]> {
+export async function listPersonasForProject(projectId: string, opts: ListPersonasOpts = {}): Promise<PersonaRow[]> {
   // Step 1: resolve the account this project belongs to (needed for tenant-safe global lookup).
   const projRow = await db!.execute({ sql: "SELECT account_id FROM projects WHERE id=?", args: [projectId] })
   if (!projRow.rows.length) {
     // Unknown project → fall back to project-scoped list (safe: returns nothing if project is unknown).
-    return listPersonas(projectId)
+    return listPersonas(projectId, opts)
   }
   const accountId = String((projRow.rows[0] as any).account_id)
 
@@ -3665,7 +3712,19 @@ export async function listPersonasForProject(projectId: string): Promise<Persona
     seen.set(key, true)
     result.push(row)
   }
-  return result
+  // Filter AFTER the dedup (same reason as listPersonas). A global Sim's flag is its home row's, so deactivating it at home
+  // removes it from every sibling project's run lists too.
+  return opts.activeOnly ? result.filter(p => p.active !== false) : result
+}
+
+// WP-S2: activate/deactivate a Sim. Scoped to its home project (a sibling project cannot toggle someone else's global Sim).
+// Returns whether a row matched. Deliberately does not touch updated_at: it is not a content edit, so no OG card should bust.
+export async function setPersonaActive(id: string, projectId: string, active: boolean): Promise<boolean> {
+  const r = await db!.execute({
+    sql: "UPDATE personas SET active=? WHERE id=? AND project_id=?",
+    args: [active ? 1 : 0, id, projectId],
+  })
+  return Number(r.rowsAffected || 0) > 0
 }
 
 // Set or clear the is_global flag on a persona. Caller must verify ownership before calling.

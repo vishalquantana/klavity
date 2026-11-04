@@ -94,6 +94,139 @@ export interface EnhanceDraftLike {
   confidence?: number
 }
 
+// KD-995: one issue the split endpoint found in a "Record me" walkthrough (mirrors prototype/lib/issue-split.ts
+// SplitIssue without importing across the package boundary). startSec/endSec locate it in the clip.
+export interface SplitIssueLike {
+  title: string
+  description: string
+  kind?: 'bug' | 'feature'
+  startSec?: number | null
+  endSec?: number | null
+  // The same structured draft "Enhance with AI" returns — when present the card's description is rendered
+  // with renderDraftToWhatsApp so a split ticket reads exactly like an enhanced one.
+  actualResult?: string
+  expectedResult?: string
+  stepsToReproduce?: string[]
+  suggestedSeverity?: string
+  suggestedPriority?: string
+  // 0..1 model confidence — the review card flags < 0.85 as "NN% · review".
+  confidence?: number
+  // Set when the server matched this issue to an existing ticket — the card shows "Possible duplicate".
+  possibleDuplicate?: boolean
+  // The reporter's own words for this issue (transcript lines in its span) — the text handed to Enhance.
+  narration?: string
+}
+
+// KD-995 "Report Multiple Issues": the review screen speaks High/Medium/Low; tickets carry P1/P2/P3 + C1/C2/C3.
+const MULTI_PRIORITIES = [
+  { label: 'High', priority: 'P1', severity: 'C1' },
+  { label: 'Medium', priority: 'P2', severity: 'C2' },
+  { label: 'Low', priority: 'P3', severity: 'C3' },
+] as const
+export function multiPriorityLabel(priority?: string | null): string {
+  return MULTI_PRIORITIES.find((p) => p.priority === String(priority || '').toUpperCase())?.label || ''
+}
+
+// KD-995: parse an edited "m:ss–m:ss" / "m:ss" recording timestamp back to seconds (null parts when blank/invalid).
+export function parseSplitSpan(text: string): { startSec: number | null; endSec: number | null } {
+  const toSec = (t: string): number | null => {
+    const m = /^\s*(?:(\d+):)?(\d{1,2}):(\d{2})\s*$/.exec(t) || /^\s*()(\d+)\s*$/.exec(t)
+    if (!m) return null
+    if (m[3] === undefined) return Number(m[2])
+    return (Number(m[1] || 0) * 3600) + Number(m[2]) * 60 + Number(m[3])
+  }
+  const [a, b] = String(text || '').split(/\s*[–—-]\s*/)
+  const startSec = a ? toSec(a) : null
+  const endSec = b ? toSec(b) : null
+  return { startSec, endSec: startSec != null && endSec != null && endSec <= startSec ? null : endSec }
+}
+
+// KD-995: a one/two-line plain preview of a ticket body for the review card (drops the bold summary line that
+// repeats the title and the WhatsApp-Markdown asterisks).
+export function multiPreviewText(body: string, title: string): string {
+  const lines = String(body || '').split('\n').map((l) => l.replace(/\*/g, '').trim()).filter(Boolean)
+  if (lines.length && lines[0] === String(title || '').trim()) lines.shift()
+  return lines.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+// KD-995: grab one JPEG frame from a recording (object/data URL) at `atSec` — the review-card thumbnail and the
+// screenshot each extra ticket is filed with. Best-effort: resolves null on any decode/seek failure or timeout.
+export function grabVideoFrame(src: string, atSec: number, maxW = 960, timeoutMs = 6000): Promise<string | null> {
+  return new Promise((resolve) => {
+    let done = false
+    const v = document.createElement('video')
+    const finish = (r: string | null) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      try { v.removeAttribute('src'); v.load() } catch { /* already gone */ }
+      resolve(r)
+    }
+    const timer = setTimeout(() => finish(null), timeoutMs)
+    v.muted = true
+    v.preload = 'auto'
+    v.setAttribute('playsinline', '')
+    v.onerror = () => finish(null)
+    v.onloadedmetadata = () => {
+      const d = isFinite(v.duration) && v.duration > 0 ? v.duration : atSec + 1
+      try { v.currentTime = Math.max(0, Math.min(atSec, d - 0.1)) } catch { finish(null) }
+    }
+    v.onseeked = () => {
+      try {
+        const w = v.videoWidth, h = v.videoHeight
+        if (!w || !h) return finish(null)
+        const s = Math.min(1, maxW / w)
+        const c = document.createElement('canvas')
+        c.width = Math.round(w * s); c.height = Math.round(h * s)
+        const ctx = c.getContext('2d')
+        if (!ctx) return finish(null)
+        ctx.drawImage(v, 0, 0, c.width, c.height)
+        finish(c.toDataURL('image/jpeg', 0.82))
+      } catch { finish(null) }
+    }
+    try { v.src = src } catch { finish(null) }
+  })
+}
+
+// KD-995: a split issue's card description — the Enhance layout when the issue carries a draft, else its
+// plain description.
+export function splitIssueBody(issue: SplitIssueLike): string {
+  const steps = Array.isArray(issue.stepsToReproduce) ? issue.stepsToReproduce : []
+  if (!issue.actualResult && !issue.expectedResult && !steps.length) return String(issue.description || '').trim()
+  return renderDraftToWhatsApp({
+    summary: String(issue.title || '').trim(),
+    actualResult: issue.actualResult || '',
+    expectedResult: issue.expectedResult || '',
+    stepsToReproduce: steps,
+    suggestedSeverity: issue.suggestedSeverity || '',
+    suggestedPriority: issue.suggestedPriority || '',
+  })
+}
+
+// KD-995: "0:42–1:10" for an issue's span in the clip ("0:42" when only the start is known, "" when neither).
+export function formatSplitSpan(startSec?: number | null, endSec?: number | null): string {
+  const f = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+  const a = typeof startSec === 'number' && isFinite(startSec) && startSec >= 0 ? startSec : null
+  const b = typeof endSec === 'number' && isFinite(endSec) && endSec >= 0 ? endSec : null
+  if (a == null) return b == null ? '' : f(b)
+  return b == null || b <= a ? f(a) : `${f(a)}–${f(b)}`
+}
+
+// KD-995: the description each split ticket is filed with. Issue #1 (the ticket that carries the video) keeps
+// the reporter's own typed note underneath; issues 2..N point back to the video on issue #1 (by its key when
+// the host already knows it, else by its title) and say where in the clip the issue is discussed.
+export function buildSplitDescription(
+  issue: SplitIssueLike,
+  opts: { primary: boolean; reporterNote?: string; videoTitle?: string; videoKey?: string },
+): string {
+  const body = String(issue.description || '').trim()
+  const note = String(opts.reporterNote || '').trim()
+  if (opts.primary) return note && note !== body ? `${body}\n\nReporter note:\n${note}` : body
+  const span = formatSplitSpan(issue.startSec, issue.endSec)
+  const ref = opts.videoKey ? `${opts.videoKey}${opts.videoTitle ? ` (“${opts.videoTitle}”)` : ''}` : (opts.videoTitle ? `“${opts.videoTitle}”` : '')
+  return `${body}\n\n—\nSplit from a Record me walkthrough${span ? ` — this issue is at ${span} of the attached recording` : ''}.${ref ? ` Related: ${ref}.` : ''}`
+}
+
 // renderDraftToWhatsApp: compose the field body from an accepted Enhance draft as WhatsApp-style Markdown so
 // it renders formatted LIVE in the field (bold summary + *Actual:* / *Expected:* labels, a numbered Steps
 // block, and a final Severity·Priority line). Pure + exported for tests. Skips empty sections.
@@ -383,6 +516,12 @@ export interface ModalCallbacks {
       picked?: { selector: string; text: string } | null
     },
   ) => Promise<EnhanceDraftLike | null>
+  // KD-995: split ONE "Record me" walkthrough into SEPARATE tickets. When provided, every recording the reporter
+  // attaches is handed here (the clip Blob + the typed note); the host POSTs it to /api/report/split, which
+  // transcribes it and returns each distinct issue the reporter narrated. With 2+ issues the composer shows an
+  // editable review panel; on Submit the main ticket becomes issue #1 (it keeps the video + screenshots) and each
+  // other ticked issue is filed through onSubmit as its own ticket. null / 0-1 issues → nothing changes.
+  onSplitRecording?: (audio: Blob, ctx?: { text?: string }) => Promise<SplitIssueLike[] | null>
   onSubmit: (payload: {
     // Coarse report type kept for back-compat consumers (extension/message protocol) — always a valid
     // ReportType. For Task/Query this is 'bug' (they are bug-like, non-feature); the precise value is `kind`.
@@ -800,6 +939,8 @@ export function buildModal(
   let uploadProgressPct: number | null = null
   // KLAVITYKLA-438: "Record me" recordings. Enabled only when the host opted in AND provided onRecord.
   const recordingEnabled = !!(callbacks.allowRecording && callbacks.onRecord)
+  // KD-995: the "Report Multiple Issues" card needs recording AND the host's split analysis (AI assist on).
+  const multiEnabled = recordingEnabled && !!callbacks.onSplitRecording
   // KLA-505: pick the dictation engine for the Voice button — prefer the server STT endpoint (onDictate +
   // MediaRecorder) over the flaky Web Speech backend; fall back to Web Speech; else hide the button.
   const voiceMode = pickDictationMode({
@@ -861,6 +1002,25 @@ export function buildModal(
   // payload as structured fields alongside the human-readable Severity line in the description.
   let enhanceSeverity: string | null = null
   let enhancePriority: string | null = null
+  // KD-995 "Report Multiple Issues": one narrated walkthrough → AI review screen → N tickets. multiRec is the
+  // walkthrough clip (filed on the first selected ticket); multiItems the reporter-editable tickets and
+  // multiOriginal the AI's untouched list (Back discards edits). multiSeq drops a superseded/closed run.
+  // enhancing: the per-issue Enhance call is in flight; edited: the reporter saved their own changes (an Enhance
+  // reply arriving later must not overwrite them).
+  type MultiItem = SplitIssueLike & { id: string; selected: boolean; thumb: string | null; enhancing?: boolean; edited?: boolean }
+  let multiState: 'idle' | 'recording' | 'processing' | 'done' = 'idle'
+  let multiRec: ReportRecording | null = null
+  let multiItems: MultiItem[] | null = null
+  let multiOriginal: MultiItem[] | null = null
+  let multiDirty = false
+  let multiNotice = ''
+  let multiSeq = 0
+  let mrEl: HTMLDivElement | null = null           // the review panel (over the composer) while open
+  let mrSubmitting = false
+  let mrError = ''
+  let mrEditId: string | null = null
+  let mrDraft: { title: string; kind: 'bug' | 'feature'; priority: string; description: string; ts: string } | null = null
+  let mrDone: { refs: Array<{ key: string; url: string }>; failed: number } | null = null
   let autodismissTimeout: any = null
   // #468: single source of truth for "this modal instance has been torn down". Guards close() against a
   // double-fire (Esc/X/backdrop during a submit + the submit's later resolution both calling close()) and
@@ -1235,6 +1395,100 @@ export function buildModal(
     .kl-enh-loader{width:15px;height:15px;border:2.5px solid color-mix(in srgb,var(--kl-accent) 30%,transparent);border-top-color:var(--kl-accent);border-radius:50%;animation:kl-enh-spin .7s linear infinite;}
     @keyframes kl-enh-spin{to{transform:rotate(360deg)}}
     @media (prefers-reduced-motion: reduce){.kl-enh-loader{animation-duration:1.4s;}.klavity-enhance-btn{transition:none;}.klavity-enhance-btn:hover{transform:none;}}
+    /* KD-995: "Report Multiple Issues" — entry card in the composer + the AI review screen over the composer. */
+    .kl-multi{margin:0 0 14px;border:1.5px solid color-mix(in srgb,var(--kl-accent) 45%,var(--kl-border));border-radius:14px;background:color-mix(in srgb,var(--kl-accent) 5%,var(--kl-input-bg));padding:13px 14px;}
+    .kl-multi-head{display:flex;align-items:center;gap:10px;}
+    .kl-multi-ic{width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,var(--kl-accent) 12%,transparent);color:var(--kl-accent);display:grid;place-items:center;flex:none;}
+    .kl-multi-name{flex:1;min-width:0;font-size:13.5px;font-weight:750;color:var(--kl-fg);}
+    .kl-multi-badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;background:color-mix(in srgb,var(--kl-accent) 12%,transparent);color:var(--kl-accent);padding:4px 8px;font-size:9.5px;font-weight:700;white-space:nowrap;}
+    .kl-multi-copy{margin:9px 0 12px 44px;font-size:11.5px;line-height:1.45;color:var(--kl-muted);}
+    .kl-multi-start{width:100%;height:42px;border:0;border-radius:10px;background:var(--kl-accent);color:#fff;font:inherit;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;}
+    .kl-multi-start:hover:not(:disabled){filter:brightness(1.06);}
+    .kl-multi-start:disabled{opacity:.7;cursor:default;}
+    .kl-multi-start .kl-enh-loader{border-color:rgba(255,255,255,.35);border-top-color:#fff;}
+    .kl-multi-status{margin:8px 0 0;text-align:center;font-size:10.5px;font-weight:650;color:var(--kl-muted);line-height:1.4;}
+    .kl-multi-status[hidden]{display:none;}
+    .kl-multi-status.kl-rec{color:#F04448;}
+    .kl-multi-status.kl-ok{color:#20b56a;}
+    .kl-multi-reopen{border:0;background:none;color:var(--kl-accent);font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0 0 0 4px;}
+    .kl-side.kl-mr-open{position:relative;overflow:hidden;}
+    @media (max-width:760px){.kl-side.kl-mr-open{min-height:82vh;}}
+    .kl-mr{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;background:var(--kl-bg);color:var(--kl-fg);}
+    .kl-mr-head{display:flex;align-items:center;height:52px;flex:none;border-bottom:1px solid var(--kl-border);padding:0 8px 0 6px;gap:4px;}
+    .kl-mr-title{margin:0;font-size:15px;font-weight:700;}
+    .kl-mr-icon{width:38px;height:38px;border:0;border-radius:9px;background:transparent;color:var(--kl-fg);display:grid;place-items:center;cursor:pointer;}
+    .kl-mr-icon:hover{background:color-mix(in srgb,var(--kl-fg) 7%,transparent);}
+    .kl-mr-x{margin-left:auto;}
+    .kl-mr-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:12px 14px;}
+    .kl-mr-inner{max-width:760px;margin:0 auto;}
+    .kl-mr-banner{display:flex;align-items:center;gap:10px;border-radius:12px;background:#E6F7EF;color:#242938;padding:10px 12px;}
+    .kl-mr-ok{width:24px;height:24px;border-radius:50%;background:#168B54;color:#fff;display:grid;place-items:center;flex:none;}
+    .kl-mr-b1{margin:0;font-size:13px;font-weight:700;}
+    .kl-mr-b2{margin:2px 0 0;font-size:11px;color:#5F6675;}
+    .kl-mr-counts{display:flex;align-items:center;margin:12px 0 0;border-bottom:1px solid var(--kl-border);padding:0 0 10px;font-size:13.5px;font-weight:700;}
+    .kl-mr-counts p{margin:0;}
+    .kl-mr-sel{margin-left:auto !important;font-size:12.5px;color:#168B54;}
+    .kl-mr-all{display:flex;align-items:center;gap:10px;padding:10px 0;font-size:12.5px;font-weight:500;color:var(--kl-muted);cursor:pointer;}
+    .kl-mr-kept{margin-left:auto;font-size:10px;opacity:.8;}
+    .kl-mr input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--kl-accent);cursor:pointer;flex:none;}
+    .kl-mr-list{display:flex;flex-direction:column;gap:12px;}
+    .kl-mr-card{display:flex;gap:8px;border:1px solid var(--kl-border);border-radius:12px;background:var(--kl-input-bg);padding:9px;}
+    .kl-mr-card.kl-off{opacity:.6;}
+    .kl-mr-card>input{margin-top:2px !important;}
+    .kl-mr-thumb{width:64px;height:56px;flex:none;border-radius:9px;overflow:hidden;background:color-mix(in srgb,var(--kl-fg) 6%,transparent);color:var(--kl-muted);display:grid;place-items:center;}
+    .kl-mr-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+    .kl-mr-main{flex:1;min-width:0;}
+    .kl-mr-row{display:flex;align-items:flex-start;gap:8px;}
+    .kl-mr-t{flex:1;min-width:0;margin:0;font-size:13px;font-weight:700;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+    .kl-mr-edit{width:28px;height:28px;flex:none;border:0;border-radius:8px;background:color-mix(in srgb,var(--kl-fg) 6%,transparent);color:var(--kl-fg);display:grid;place-items:center;cursor:pointer;}
+    .kl-mr-edit:hover{background:color-mix(in srgb,var(--kl-fg) 11%,transparent);}
+    .kl-mr-badges{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 0;}
+    .kl-mr-badges span{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:9.5px;font-weight:650;}
+    .kl-mr-bug{background:#FEECEC;color:#EF4444;}
+    .kl-mr-feat{background:#EAF4FF;color:#2184E8;}
+    .kl-mr-p1{background:#FEECEC;color:#C93636;}
+    .kl-mr-p2{background:#FFF4D9;color:#9A6815;}
+    .kl-mr-p3{background:#E6F7EF;color:#168B54;}
+    .kl-mr-conf{background:color-mix(in srgb,var(--kl-accent) 12%,transparent);color:var(--kl-accent);}
+    .kl-mr-dup{background:#FFF4D9;color:#9A6815;}
+    .kl-mr-enh{background:color-mix(in srgb,var(--kl-accent) 12%,transparent);color:var(--kl-accent);}
+    .kl-mr-enh .kl-enh-loader{width:8px;height:8px;border-width:1.5px;}
+    .kl-mr-d{margin:6px 0 0;font-size:11.5px;line-height:1.35;color:var(--kl-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+    .kl-mr-ts{display:inline-flex;align-items:center;gap:4px;margin:5px 0 0;border:0;background:none;padding:0;font:inherit;font-size:10px;font-weight:600;color:var(--kl-muted);cursor:pointer;font-variant-numeric:tabular-nums;}
+    .kl-mr-ts:hover{color:var(--kl-accent);}
+    .kl-mr-foot{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-height:68px;flex:none;border-top:1px solid var(--kl-border);padding:10px 14px;}
+    .kl-mr-foot p{margin:0;font-size:12.5px;font-weight:600;color:var(--kl-muted);}
+    .kl-mr-err{margin:0 0 0 auto;color:#C93636 !important;font-weight:600;}
+    .kl-mr-submit{margin-left:auto;height:44px;min-width:150px;border:0;border-radius:12px;background:var(--kl-accent);color:#fff;font:inherit;font-size:13.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;padding:0 18px;}
+    .kl-mr-err+.kl-mr-submit{margin-left:0;}
+    .kl-mr-submit:disabled{opacity:.55;cursor:default;}
+    .kl-mr-submit .kl-enh-loader{border-color:rgba(255,255,255,.35);border-top-color:#fff;}
+    .kl-mr-layer{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(13,18,34,.4);padding:12px;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);}
+    .kl-mr-dlg{width:100%;max-width:520px;max-height:100%;overflow-y:auto;border-radius:16px;background:var(--kl-bg);color:var(--kl-fg);padding:16px;box-shadow:0 24px 60px rgba(0,0,0,.25);}
+    .kl-mr-dlg-h{display:flex;align-items:flex-start;}
+    .kl-mr-dlg-h h3{margin:0;font-size:20px;font-weight:650;}
+    .kl-mr-dlg-h p{margin:4px 0 0;font-size:11.5px;color:var(--kl-muted);}
+    .kl-mr-f{margin:16px 0 0;}
+    .kl-mr-f>span{display:block;margin:0 0 6px;font-size:11px;font-weight:650;color:var(--kl-muted);}
+    .kl-mr-in,.kl-mr-ta{width:100%;box-sizing:border-box;border:1px solid var(--kl-border);border-radius:11px;background:var(--kl-input-bg);color:var(--kl-fg);font:inherit;font-size:12.5px;padding:9px 11px;}
+    .kl-mr-ta{min-height:150px;resize:vertical;line-height:1.45;}
+    .kl-mr-in:focus,.kl-mr-ta:focus{outline:none;border-color:var(--kl-accent);}
+    .kl-mr-seg{display:grid;gap:8px;}
+    .kl-mr-seg button{height:36px;border:1px solid var(--kl-border);border-radius:10px;background:var(--kl-input-bg);color:var(--kl-fg);font:inherit;font-size:12.5px;font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;}
+    .kl-mr-seg button.kl-on{background:var(--kl-accent);border-color:var(--kl-accent);color:#fff;}
+    .kl-mr-dlg-f{display:flex;align-items:center;gap:8px;margin:20px 0 0;}
+    .kl-mr-btn{height:38px;border:1px solid var(--kl-border);border-radius:10px;background:var(--kl-input-bg);color:var(--kl-fg);font:inherit;font-size:12.5px;font-weight:650;padding:0 14px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
+    .kl-mr-btn.kl-danger{color:#C93636;border-color:color-mix(in srgb,#C93636 35%,var(--kl-border));}
+    .kl-mr-btn.kl-primary{background:var(--kl-accent);border-color:var(--kl-accent);color:#fff;}
+    .kl-mr-btn:disabled{opacity:.5;cursor:default;}
+    .kl-mr-btn.kl-ghost{margin-left:auto;border-color:transparent;background:transparent;}
+    .kl-mr-done{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 20px;overflow-y:auto;}
+    .kl-mr-done-ic{width:56px;height:56px;border-radius:50%;background:#E6F7EF;color:#168B54;display:grid;place-items:center;}
+    .kl-mr-done h3{margin:20px 0 0;font-size:25px;font-weight:650;}
+    .kl-mr-done p{margin:8px 0 0;max-width:380px;font-size:13px;line-height:1.5;color:var(--kl-muted);}
+    .kl-mr-keys{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin:20px 0 0;}
+    .kl-mr-keys a,.kl-mr-keys span{border-radius:999px;background:color-mix(in srgb,var(--kl-accent) 12%,transparent);color:var(--kl-accent);padding:6px 12px;font-family:ui-monospace,monospace;font-size:10.5px;font-weight:650;text-decoration:none;}
+    .kl-mr-done .kl-mr-btn{margin:28px 0 0;min-width:160px;justify-content:center;}
     /* JTBD 1.10: hint shown when the reporter has attached a screenshot but typed nothing — Submit is
        enabled and the AI will title the report. Sits just under the textarea; hidden by default. */
     .klavity-desc-hint{display:flex;align-items:center;gap:6px;margin:-8px 0 14px;font-size:12.5px;color:var(--kl-muted);line-height:1.4;}
@@ -1569,6 +1823,12 @@ export function buildModal(
           filed ticket (the host keeps feeding replayEvents into the submit payload); only the visible chip
           is gone. replayState is still passed through so replayAttached (evidence gating for a
           replay-only report) and setReplayState() keep working — see line ~390 and setReplayState below. */''}
+      ${multiEnabled ? `<div class="kl-multi" id="klavity-multi">
+        <div class="kl-multi-head"><span class="kl-multi-ic">${icon('monitor', { size: 18 })}</span><span class="kl-multi-name">Report Multiple Issues</span><span class="kl-multi-badge">${icon('sparkles', { size: 10 })} AI Powered</span></div>
+        <p class="kl-multi-copy">Record your screen with voice narration. AI will analyse it, identify multiple issues and create separate tickets for you.</p>
+        <button type="button" class="kl-multi-start" id="klavity-multi-start"></button>
+        <p class="kl-multi-status" id="klavity-multi-status" role="status" aria-live="polite" hidden></p>
+      </div>` : ''}
       <div class="klavity-actions">
         ${callbacks.onCaptureSharp ? `<button id="klavity-sharp" class="kl-cap-primary" aria-label="Snap capture" title="Snap capture" aria-describedby="klavity-sharp-tip"><span class="kl-cap-main"><span class="kl-cap-ic">${icon('app-window')}</span><span class="kl-sharp-label">Snap</span></span><span class="kl-info-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span><span id="klavity-sharp-tip" class="klavity-info-pop" role="tooltip"><b>Snap</b> grabs the <b>whole page — every image, embedded frame, and web font, pixel-perfect</b>${callbacks.snapWithoutSharePrompt ? '.' : ` using your browser's screen-share. Your browser will ask you to <b>share this tab</b>.`}</span></button>` : ''}
         <button id="klavity-full" title="Full Page — pixel-perfect capture of the whole page via tab share (captures embedded frames &amp; cross-origin images). Falls back to a fast render if you decline the share."><span class="kl-cap-ic">${icon('camera')}</span><span class="kl-full-label">Full Page</span></button>
@@ -1858,36 +2118,7 @@ export function buildModal(
       rm.title = 'Remove'
       rm.addEventListener('click', (e) => {
         e.stopPropagation()
-        screenshots.splice(i, 1)
-        screenshotCompressed.splice(i, 1)
-        screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
-        screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
-        screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
-        screenshotCapture.splice(i, 1) // KLA-621: keep the capture-provenance aligned too
-        // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
-        // drop the removed image's markup and slide every higher index down by one. Without this, submitting
-        // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
-        delete annotationsByIndex[i]
-        for (const key of Object.keys(annotationsByIndex).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
-          annotationsByIndex[key - 1] = annotationsByIndex[key]
-          delete annotationsByIndex[key]
-        }
-        // KLA-412 + KLA-772: tell the host to drop the matching shot from the evidence session (index-aligned).
-        // MUST run AFTER the annotationsByIndex shift above: the host reads getAnnotations() synchronously to
-        // re-align the session's stored overlays, so it needs the ALREADY-SHIFTED map — otherwise the shot
-        // after the deleted one inherits the deleted shot's overlay (and the last shot's overlay is dropped).
-        try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
-        // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
-        delete undoStacks[i]; delete cropStacks[i]
-        for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
-          undoStacks[key - 1] = undoStacks[key]; delete undoStacks[key]
-        }
-        for (const key of Object.keys(cropStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
-          cropStacks[key - 1] = cropStacks[key]; delete cropStacks[key]
-        }
-        if (screenshots.length === 0) {
-          setActiveCapture(null)
-        }
+        removeScreenshotAt(i)
         updateStrip()
       })
       const mk = document.createElement('button')
@@ -2171,6 +2402,43 @@ export function buildModal(
   // those fire onShotAdded so the host can persist them to the evidence session, and in session mode they
   // default to the CURRENT page's tag. The host's controller.addScreenshot passes fireAdded=false to SEED
   // shots it already tracks (no re-persist, explicit page tag carried through).
+  // Remove screenshot `i` and keep every index-aligned array, the markup/undo/crop maps and the host's
+  // evidence session in step. Shared by the thumbnail × and KD-995 (dropping the default snap). The caller
+  // repaints (updateStrip).
+  function removeScreenshotAt(i: number) {
+    if (i < 0 || i >= screenshots.length) return
+    screenshots.splice(i, 1)
+    screenshotCompressed.splice(i, 1)
+    screenshotQuality.splice(i, 1) // JTBD 1.9: keep the quality tags aligned with the shifted indices
+    screenshotPageMeta.splice(i, 1) // KLA-412: keep the page tags aligned with the shifted indices
+    screenshotSuggestSharp.splice(i, 1) // KLAVITYKLA-473: keep the sharp-suggest flags aligned too
+    screenshotCapture.splice(i, 1) // KLA-621: keep the capture-provenance aligned too
+    // KLAVITYKLA-217: keep annotationsByIndex aligned with the (now shifted) screenshot indices —
+    // drop the removed image's markup and slide every higher index down by one. Without this, submitting
+    // the full per-image map would attach an annotation to the wrong screenshot after a mid-strip delete.
+    delete annotationsByIndex[i]
+    for (const key of Object.keys(annotationsByIndex).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+      annotationsByIndex[key - 1] = annotationsByIndex[key]
+      delete annotationsByIndex[key]
+    }
+    // KLA-412 + KLA-772: tell the host to drop the matching shot from the evidence session (index-aligned).
+    // MUST run AFTER the annotationsByIndex shift above: the host reads getAnnotations() synchronously to
+    // re-align the session's stored overlays, so it needs the ALREADY-SHIFTED map — otherwise the shot
+    // after the deleted one inherits the deleted shot's overlay (and the last shot's overlay is dropped).
+    try { callbacks.onShotRemoved?.(i) } catch { /* host sync best-effort */ }
+    // #449: keep the per-image undo + crop history index-aligned with the shifted screenshots.
+    delete undoStacks[i]; delete cropStacks[i]
+    for (const key of Object.keys(undoStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+      undoStacks[key - 1] = undoStacks[key]; delete undoStacks[key]
+    }
+    for (const key of Object.keys(cropStacks).map(Number).filter(n => n > i).sort((a, b) => a - b)) {
+      cropStacks[key - 1] = cropStacks[key]; delete cropStacks[key]
+    }
+    if (screenshots.length === 0) {
+      setActiveCapture(null)
+    }
+  }
+
   function addScreenshot(dataUrl: string, quality?: CaptureQuality, pageMeta?: ShotPageMeta, fireAdded = true, suggestSharp = false, capture?: ShotCapture, annotations?: any) {
     // Hard cap — every capture/upload/paste path funnels through here, so the limit holds everywhere.
     if (screenshots.length >= MAX_IMAGES) { showError(`You can attach up to ${MAX_IMAGES} images.`); return }
@@ -2442,6 +2710,444 @@ export function buildModal(
     if (_closed) return
     updateStrip()
     refreshSubmit()
+    syncMultiClip()
+  }
+
+  // ── KD-995: "Report Multiple Issues" ─────────────────────────────────────────────────────────────────
+  // The entry card records ONE narrated walkthrough (same recorder as "Record me"), sends it to the host's
+  // onSplitRecording (STT + AI → issues with Enhance-style drafts), then opens the "AI Analysis Complete" review
+  // in the right-hand panel: select / edit / remove tickets, jump to each issue in the recording, Submit N Tickets.
+  // The clip itself sits in the gallery + plays in the hero (left) exactly like a "Record me" recording.
+  // The first selected ticket carries the video + the composer's evidence; every other ticket gets a frame
+  // from its moment in the clip and points back to the video. No issues found → the clip is attached to the
+  // composer as a normal recording so nothing is lost.
+  function paintMultiCard() {
+    const btn = shadowRoot.getElementById('klavity-multi-start') as HTMLButtonElement | null
+    const st = shadowRoot.getElementById('klavity-multi-status') as HTMLElement | null
+    if (!btn || !st) return
+    const label = multiState === 'recording' ? 'Stop &amp; analyse recording'
+      : multiState === 'processing' ? 'AI is analysing…'
+      : multiState === 'done' ? 'Record another walkthrough' : 'Start Recording'
+    btn.innerHTML = `${multiState === 'processing' ? '<span class="kl-enh-loader"></span>' : icon('monitor', { size: 15 })}<span>${label}</span>`
+    btn.disabled = multiState === 'processing' || multiState === 'recording'
+    st.classList.toggle('kl-rec', multiState === 'recording')
+    st.classList.toggle('kl-ok', multiState === 'done')
+    if (multiState === 'recording') { st.hidden = false; st.textContent = 'Recording screen and microphone…' }
+    else if (multiState === 'done' && multiItems) {
+      const n = multiItems.length
+      st.hidden = false
+      st.innerHTML = `${n} issue${n === 1 ? '' : 's'} identified and ready for review.<button type="button" class="kl-multi-reopen" id="klavity-multi-reopen">Review</button>`
+      st.querySelector('#klavity-multi-reopen')?.addEventListener('click', () => openMultiReview())
+    } else if (multiNotice) { st.hidden = false; st.textContent = multiNotice }
+    else { st.hidden = true; st.textContent = '' }
+  }
+
+  async function startMulti() {
+    if (busy || multiState === 'processing' || multiState === 'recording' || !callbacks.onRecord || !callbacks.onSplitRecording) return
+    const replacing = !!(multiRec && recordings.includes(multiRec))
+    if (!replacing && recordings.length >= MAX_RECORDINGS) { showError(`You can attach up to ${MAX_RECORDINGS} recordings.`); return }
+    const seq = ++multiSeq
+    multiNotice = ''
+    lockComposer(true)
+    // Same walkthrough seam as Record me: hide the composer while the recorder's Stop bar is live.
+    const onPhase = (phase: 'consent' | 'recording' | 'preview') => {
+      host.style.display = phase === 'recording' ? 'none' : ''
+      if (phase === 'recording' && seq === multiSeq) { multiState = 'recording'; paintMultiCard() }
+    }
+    let rec: ReportRecording | null = null
+    try { rec = await callbacks.onRecord!(onPhase) } catch { rec = null }
+    finally { host.style.display = ''; lockComposer(false) }
+    if (seq !== multiSeq || _closed) return
+    if (!rec) { multiState = multiItems ? 'done' : 'idle'; paintMultiCard(); return }
+    // Show the walkthrough like a Record me clip: a gallery tile + the playable hero preview. A new walkthrough
+    // replaces the previous one in place.
+    // A walkthrough report is video-first: drop the default snap (and any other un-annotated screenshot) so
+    // ticket #1 isn't filed with an unrelated page grab. Shots the reporter marked up are deliberate — kept.
+    for (let i = screenshots.length - 1; i >= 0; i--) {
+      if (!(annotationsByIndex[i]?.shapes?.length)) removeScreenshotAt(i)
+    }
+    const prevIdx = multiRec ? recordings.indexOf(multiRec) : -1
+    if (prevIdx >= 0) recordings[prevIdx] = rec
+    else recordings.push(rec)
+    activeRecordingIndex = prevIdx >= 0 ? prevIdx : recordings.length - 1
+    activeVideoIndex = null
+    multiRec = rec
+    multiItems = null; multiOriginal = null
+    closeMultiReview()
+    multiState = 'processing'
+    renderRecordings()
+    paintMultiCard()
+    let issues: SplitIssueLike[] | null = null
+    try {
+      const blob = rec.blob || await (await fetch(rec.dataUrl)).blob()
+      issues = await callbacks.onSplitRecording!(blob, { text: desc.value.trim() })
+    } catch { issues = null }
+    if (seq !== multiSeq || _closed) return
+    const usable = (issues || []).filter((i) => i && (String(i.title || '').trim() || String(i.description || '').trim()))
+    if (!usable.length) {
+      // Keep the clip as a normal recording (it is already in the gallery) — nothing is lost.
+      multiRec = null; multiItems = null; multiOriginal = null; multiState = 'idle'
+      multiNotice = "We couldn't pick out separate issues in this recording — it's attached, so you can describe it and submit it as one report."
+      paintMultiCard()
+      return
+    }
+    multiItems = usable.map((i, idx) => ({
+      ...i, id: `mi${seq}_${idx}`, title: String(i.title || '').trim() || `Issue ${idx + 1}`,
+      kind: i.kind === 'feature' ? 'feature' as const : 'bug' as const, description: splitIssueBody(i), selected: true, thumb: null,
+    }))
+    multiOriginal = multiItems.map((i) => ({ ...i }))
+    multiDirty = false
+    mrDone = null; mrError = ''
+    multiState = 'done'
+    paintMultiCard()
+    openMultiReview()
+    void loadMultiThumbs(seq)
+  }
+
+  // Thumbnails: one frame per issue, ~1s into its span. Sequential (one decoder at a time), best-effort. Each
+  // frame then feeds that issue's Enhance call (in parallel with the next frame grab).
+  async function loadMultiThumbs(seq: number) {
+    const rec = multiRec
+    if (!rec || !multiItems) return
+    let src = rec.dataUrl
+    let url: string | null = null
+    if (rec.blob) { try { url = URL.createObjectURL(rec.blob); src = url } catch { /* fall back to the data URL */ } }
+    try {
+      for (const it of [...multiItems]) {
+        if (seq !== multiSeq || _closed) return
+        const s = typeof it.startSec === 'number' ? it.startSec : 0
+        const e = typeof it.endSec === 'number' && it.endSec > s ? it.endSec : s + 2
+        const thumb = src ? await grabVideoFrame(src, s + Math.min(1, (e - s) / 2)) : null
+        if (seq !== multiSeq) return
+        if (thumb) {
+          for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === it.id); if (m) m.thumb = thumb }
+          renderMultiReview()
+        }
+        void enhanceMultiItem(it.id, thumb, seq)
+      }
+    } finally { if (url) { try { URL.revokeObjectURL(url) } catch { /* ignore */ } } }
+  }
+
+  // Write each split ticket with the SAME "Enhance with AI" call a snap uses: the reporter's words for this
+  // issue + the frame from its moment → /api/report/enhance (vision + the QA prompt). The split call's own
+  // draft stays as the fallback when Enhance isn't wired, fails, or the reporter has already edited the card.
+  async function enhanceMultiItem(id: string, shot: string | null, seq: number) {
+    const onEnhance = callbacks.onEnhance
+    const it = multiItems?.find((x) => x.id === id)
+    if (!onEnhance || !it) return
+    const text = String(it.narration || '').trim() || it.title
+    const mark = (on: boolean) => { for (const list of [multiItems, multiOriginal]) { const m = list?.find((x) => x.id === id); if (m) m.enhancing = on } }
+    mark(true)
+    renderMultiReview()
+    let draft: EnhanceDraftLike | null = null
+    try { draft = await onEnhance(text, { images: shot ? 1 : 0, ...(shot ? { shot } : {}) }) } catch { draft = null }
+    if (seq !== multiSeq || _closed) return
+    mark(false)
+    if (draft) {
+      for (const list of [multiItems, multiOriginal]) {
+        const m = list?.find((x) => x.id === id)
+        if (!m || (list === multiItems && m.edited)) continue
+        m.title = String(draft.summary || '').trim() || m.title
+        m.actualResult = draft.actualResult || ''
+        m.expectedResult = draft.expectedResult || ''
+        m.stepsToReproduce = Array.isArray(draft.stepsToReproduce) ? draft.stepsToReproduce : []
+        if (draft.suggestedSeverity) m.suggestedSeverity = draft.suggestedSeverity
+        if (draft.suggestedPriority) m.suggestedPriority = draft.suggestedPriority
+        m.description = splitIssueBody(m)
+      }
+    }
+    renderMultiReview()
+  }
+
+  function openMultiReview() {
+    if (!multiItems || _closed) return
+    const sideEl = shadowRoot.getElementById('klavity-side')
+    if (!mrEl) {
+      mrEl = document.createElement('div')
+      mrEl.className = 'kl-mr'
+      mrEl.id = 'klavity-mr'
+      mrEl.setAttribute('role', 'dialog')
+      mrEl.setAttribute('aria-label', 'AI Analysis Complete')
+      ;(sideEl || modal).appendChild(mrEl)
+    }
+    if (sideEl) { sideEl.scrollTop = 0; sideEl.classList.add('kl-mr-open') }
+    renderMultiReview()
+  }
+
+  function closeMultiReview() {
+    mrEditId = null; mrDraft = null
+    mrEl?.remove()
+    mrEl = null
+    shadowRoot.getElementById('klavity-side')?.classList.remove('kl-mr-open')
+  }
+
+  // The walkthrough clip lives in the gallery like a Record me clip; removing its tile drops the analysis.
+  function syncMultiClip() {
+    if (!multiRec || recordings.includes(multiRec)) return
+    multiSeq++
+    multiRec = null; multiItems = null; multiOriginal = null; multiDirty = false; multiState = 'idle'; multiNotice = ''
+    closeMultiReview()
+    paintMultiCard()
+  }
+
+  // A card's timestamp: show the walkthrough in the hero (left) and jump to that moment.
+  function seekMultiClip(atSec: number) {
+    if (!multiRec) return
+    const idx = recordings.indexOf(multiRec)
+    if (idx < 0) return
+    if (activeRecordingIndex !== idx || !shadowRoot.querySelector('.kl-hero-video')) { activeRecordingIndex = idx; activeVideoIndex = null; updateStrip() }
+    const v = shadowRoot.querySelector('.kl-hero-video') as HTMLVideoElement | null
+    if (!v) return
+    const go = () => { try { v.currentTime = Math.max(0, atSec); const pr = v.play(); if (pr && typeof pr.catch === 'function') pr.catch(() => {}) } catch { /* autoplay blocked / no media */ } }
+    if (v.readyState >= 1) go(); else v.addEventListener('loadedmetadata', go, { once: true })
+  }
+
+  // Back / X: unsaved selections + edits need a confirm; Back then restores the AI's original tickets.
+  function leaveMultiReview(): boolean {
+    if (multiDirty && !mrDone && typeof window.confirm === 'function') {
+      let ok = true
+      try { ok = window.confirm('Leave this review? Your ticket selections and edits will be discarded.') } catch { ok = true }
+      if (!ok) return false
+    }
+    if (multiOriginal) multiItems = multiOriginal.map((i) => ({ ...i }))
+    multiDirty = false
+    return true
+  }
+
+  function multiPreviewOf(it: MultiItem): string {
+    return multiPreviewText(it.description, it.title)
+  }
+
+  function renderMultiReview() {
+    if (!mrEl || !multiItems) return
+    if (mrDone) { renderMultiDone(); return }
+    const items = multiItems
+    const sel = items.filter((i) => i.selected)
+    const all = items.length > 0 && sel.length === items.length
+    const n = items.length, m = sel.length
+    const cards = items.map((it) => {
+      const span = formatSplitSpan(it.startSec, it.endSec)
+      const pri = multiPriorityLabel(it.suggestedPriority)
+      const conf = typeof it.confidence === 'number' && isFinite(it.confidence) ? Math.round(it.confidence * 100) : null
+      const feat = it.kind === 'feature'
+      return `<div class="kl-mr-card${it.selected ? '' : ' kl-off'}" data-id="${escHtml(it.id)}">` +
+        `<input type="checkbox" class="kl-mr-cb" ${it.selected ? 'checked' : ''} aria-label="${it.selected ? 'Deselect' : 'Select'} ${escHtml(it.title)}">` +
+        `<div class="kl-mr-thumb">${it.thumb ? `<img src="${escHtml(it.thumb)}" alt="">` : icon('play', { size: 18 })}</div>` +
+        `<div class="kl-mr-main"><div class="kl-mr-row"><p class="kl-mr-t">${escHtml(it.title)}</p>` +
+        `<button type="button" class="kl-mr-edit" aria-label="Edit ${escHtml(it.title)}">${icon('pencil', { size: 15 })}</button></div>` +
+        `<div class="kl-mr-badges"><span class="${feat ? 'kl-mr-feat' : 'kl-mr-bug'}">${icon(feat ? 'lightbulb' : 'bug', { size: 10 })}${feat ? 'Feature' : 'Bug'}</span>` +
+        `${pri ? `<span class="kl-mr-p${pri === 'High' ? 1 : pri === 'Medium' ? 2 : 3}">${pri}</span>` : ''}` +
+        `${conf != null && conf < 85 ? `<span class="kl-mr-conf">${conf}% · review</span>` : ''}` +
+        `${it.possibleDuplicate ? '<span class="kl-mr-dup">Possible duplicate</span>' : ''}` +
+        `${it.enhancing ? '<span class="kl-mr-enh"><span class="kl-enh-loader"></span>Enhancing…</span>' : ''}</div>` +
+        `<p class="kl-mr-d">${escHtml(multiPreviewOf(it))}</p>` +
+        `${span ? `<button type="button" class="kl-mr-ts" title="Open recording at this timestamp">${icon('clock', { size: 11 })} ${escHtml(span)}</button>` : ''}` +
+        `</div></div>`
+    }).join('')
+    mrEl.innerHTML =
+      `<div class="kl-mr-head"><button type="button" class="kl-mr-icon" id="kl-mr-back" aria-label="Back to new report">${icon('chevron-left', { size: 20 })}</button>` +
+      `<p class="kl-mr-title">AI Analysis Complete</p>` +
+      `<button type="button" class="kl-mr-icon kl-mr-x" id="kl-mr-close" aria-label="Close">${icon('x', { size: 18 })}</button></div>` +
+      `<div class="kl-mr-body"><div class="kl-mr-inner">` +
+      `<div class="kl-mr-banner"><span class="kl-mr-ok">${icon('check', { size: 14 })}</span><div>` +
+      `<p class="kl-mr-b1">We've identified ${n} report${n === 1 ? '' : 's'} from your recording</p>` +
+      `<p class="kl-mr-b2">Review, select and submit the tickets you want to create.</p></div></div>` +
+      `<div class="kl-mr-counts"><p>${n} report${n === 1 ? '' : 's'} detected</p><p class="kl-mr-sel">${m} selected</p></div>` +
+      `<label class="kl-mr-all"><input type="checkbox" id="kl-mr-all" ${all ? 'checked' : ''} aria-label="${all ? 'Deselect all tickets' : 'Select all tickets'}"><span>Select all</span>` +
+      `<span class="kl-mr-kept">Recording and transcript preserved</span></label>` +
+      `<div class="kl-mr-list">${cards}</div></div></div>` +
+      `<div class="kl-mr-foot"><p>${m} of ${n} tickets selected</p>` +
+      `${mrError ? `<p class="kl-mr-err" role="alert">${escHtml(mrError)}</p>` : ''}` +
+      `<button type="button" class="kl-mr-submit" id="kl-mr-submit" ${m === 0 || mrSubmitting ? 'disabled' : ''}>` +
+      `${mrSubmitting ? '<span class="kl-enh-loader"></span> Creating tickets…' : `Submit ${m} ${m === 1 ? 'Ticket' : 'Tickets'}`}</button></div>` +
+      (mrEditId && mrDraft ? multiEditorHtml() : '')
+    bindMultiReview()
+  }
+
+  function multiEditorHtml(): string {
+    const d = mrDraft!
+    const seg = (cls: string, opts: Array<[string, string, string]>) =>
+      `<div class="kl-mr-seg" style="grid-template-columns:repeat(${opts.length},1fr)">${opts.map(([v, label, ic]) =>
+        `<button type="button" class="${cls}${(cls === 'kl-mr-kind' ? d.kind : d.priority) === v ? ' kl-on' : ''}" data-v="${v}">${ic}${label}</button>`).join('')}</div>`
+    return `<div class="kl-mr-layer" id="kl-mr-editor"><div class="kl-mr-dlg" role="dialog" aria-label="Edit generated ticket">` +
+      `<div class="kl-mr-dlg-h"><div><h3>Edit generated ticket</h3><p>Update the AI-generated details before submission.</p></div>` +
+      `<button type="button" class="kl-mr-icon kl-mr-x" id="kl-mr-ed-x" aria-label="Close editor">${icon('x', { size: 15 })}</button></div>` +
+      `<label class="kl-mr-f"><span>Ticket title</span><input type="text" class="kl-mr-in" id="kl-mr-ed-title" maxlength="160" value="${escHtml(d.title)}"></label>` +
+      `<div class="kl-mr-f"><span>Type</span>${seg('kl-mr-kind', [['bug', 'Bug', icon('bug', { size: 13 })], ['feature', 'Feature', icon('lightbulb', { size: 13 })]])}</div>` +
+      `<div class="kl-mr-f"><span>Priority</span>${seg('kl-mr-pri', MULTI_PRIORITIES.map((p) => [p.priority, p.label, ''] as [string, string, string]))}</div>` +
+      `<label class="kl-mr-f"><span>Description</span><textarea class="kl-mr-ta" id="kl-mr-ed-desc">${escHtml(d.description)}</textarea></label>` +
+      `<label class="kl-mr-f"><span>Recording timestamp</span><input type="text" class="kl-mr-in" id="kl-mr-ed-ts" placeholder="0:42–1:10" value="${escHtml(d.ts)}"></label>` +
+      `<div class="kl-mr-dlg-f"><button type="button" class="kl-mr-btn kl-danger" id="kl-mr-ed-rm">${icon('trash-2', { size: 13 })} Remove</button>` +
+      `<button type="button" class="kl-mr-btn kl-ghost" id="kl-mr-ed-cancel">Cancel</button>` +
+      `<button type="button" class="kl-mr-btn kl-primary" id="kl-mr-ed-save" ${d.title.trim() && d.description.trim() ? '' : 'disabled'}>Save changes</button></div>` +
+      `</div></div>`
+  }
+
+  function bindMultiReview() {
+    if (!mrEl || !multiItems) return
+    const q = <T extends Element>(sel: string) => mrEl!.querySelector(sel) as T | null
+    q('#kl-mr-back')?.addEventListener('click', () => { if (mrSubmitting || !leaveMultiReview()) return; closeMultiReview(); paintMultiCard() })
+    q('#kl-mr-close')?.addEventListener('click', () => { if (mrSubmitting || !leaveMultiReview()) return; closeMultiReview(); close() })
+    q<HTMLInputElement>('#kl-mr-all')?.addEventListener('change', (e) => {
+      const on = (e.target as HTMLInputElement).checked
+      multiItems!.forEach((i) => { i.selected = on })
+      multiDirty = true
+      renderMultiReview()
+    })
+    q('#kl-mr-submit')?.addEventListener('click', () => { void submitMulti() })
+    mrEl.querySelectorAll<HTMLElement>('.kl-mr-card').forEach((card) => {
+      const it = multiItems!.find((i) => i.id === card.dataset.id)
+      if (!it) return
+      card.querySelector('.kl-mr-cb')?.addEventListener('change', (e) => { it.selected = (e.target as HTMLInputElement).checked; multiDirty = true; renderMultiReview() })
+      card.querySelector('.kl-mr-edit')?.addEventListener('click', () => {
+        mrEditId = it.id
+        mrDraft = { title: it.title, kind: it.kind === 'feature' ? 'feature' : 'bug', priority: String(it.suggestedPriority || '').toUpperCase(), description: it.description, ts: formatSplitSpan(it.startSec, it.endSec) }
+        renderMultiReview()
+        ;(mrEl?.querySelector('#kl-mr-ed-title') as HTMLInputElement | null)?.focus()
+      })
+      card.querySelector('.kl-mr-ts')?.addEventListener('click', () => seekMultiClip(typeof it.startSec === 'number' ? it.startSec : 0))
+    })
+    if (mrEditId && mrDraft) bindMultiEditor()
+  }
+
+  function bindMultiEditor() {
+    const d = mrDraft!
+    const q = <T extends Element>(sel: string) => mrEl!.querySelector(sel) as T | null
+    const saveBtn = q<HTMLButtonElement>('#kl-mr-ed-save')
+    const paintSave = () => { if (saveBtn) saveBtn.disabled = !(d.title.trim() && d.description.trim()) }
+    const cancel = () => { mrEditId = null; mrDraft = null; renderMultiReview() }
+    q<HTMLInputElement>('#kl-mr-ed-title')?.addEventListener('input', (e) => { d.title = (e.target as HTMLInputElement).value; paintSave() })
+    q<HTMLTextAreaElement>('#kl-mr-ed-desc')?.addEventListener('input', (e) => { d.description = (e.target as HTMLTextAreaElement).value; paintSave() })
+    q<HTMLInputElement>('#kl-mr-ed-ts')?.addEventListener('input', (e) => { d.ts = (e.target as HTMLInputElement).value })
+    mrEl!.querySelectorAll<HTMLButtonElement>('.kl-mr-kind,.kl-mr-pri').forEach((b) => b.addEventListener('click', () => {
+      if (b.classList.contains('kl-mr-kind')) d.kind = b.dataset.v === 'feature' ? 'feature' : 'bug'
+      else d.priority = b.dataset.v || ''
+      const cls = b.classList.contains('kl-mr-kind') ? '.kl-mr-kind' : '.kl-mr-pri'
+      mrEl!.querySelectorAll(cls).forEach((x) => x.classList.toggle('kl-on', x === b))
+    }))
+    q('#kl-mr-ed-x')?.addEventListener('click', cancel)
+    q('#kl-mr-ed-cancel')?.addEventListener('click', cancel)
+    q('#kl-mr-ed-rm')?.addEventListener('click', () => {
+      multiItems = multiItems!.filter((i) => i.id !== mrEditId)
+      multiDirty = true
+      mrEditId = null; mrDraft = null
+      if (!multiItems.length) { multiItems = null; multiState = 'idle'; closeMultiReview(); paintMultiCard(); return }
+      renderMultiReview(); paintMultiCard()
+    })
+    saveBtn?.addEventListener('click', () => {
+      const it = multiItems!.find((i) => i.id === mrEditId)
+      if (!it || !d.title.trim() || !d.description.trim()) return
+      it.title = d.title.trim()
+      it.edited = true
+      it.kind = d.kind
+      it.description = d.description.trim()
+      const p = MULTI_PRIORITIES.find((x) => x.priority === d.priority)
+      if (p) { it.suggestedPriority = p.priority; it.suggestedSeverity = p.severity }
+      const span = parseSplitSpan(d.ts)
+      it.startSec = span.startSec; it.endSec = span.endSec
+      multiDirty = true
+      mrEditId = null; mrDraft = null
+      renderMultiReview()
+    })
+  }
+
+  function renderMultiDone() {
+    if (!mrEl || !mrDone) return
+    const n = mrDone.refs.length
+    const chips = mrDone.refs.filter((r) => r.key).map((r) => {
+      const href = safeHttpUrl(r.url)
+      const label = escHtml(friendlyRef(r.key, r.url))
+      return href ? `<a href="${escHtml(href)}" target="_blank" rel="noopener">${label}</a>` : `<span>${label}</span>`
+    }).join('')
+    mrEl.innerHTML =
+      `<div class="kl-mr-head"><p class="kl-mr-title" style="padding-left:6px">Tickets created</p>` +
+      `<button type="button" class="kl-mr-icon kl-mr-x" id="kl-mr-close" aria-label="Close">${icon('x', { size: 18 })}</button></div>` +
+      `<div class="kl-mr-done"><span class="kl-mr-done-ic">${icon('check', { size: 25 })}</span>` +
+      `<h3>${n} ticket${n === 1 ? '' : 's'} created</h3>` +
+      `<p>${escHtml(cfg.thankYou || 'Your AI-generated reports have been filed.')}</p>` +
+      `${mrDone.failed ? `<p role="alert">${mrDone.failed} ticket${mrDone.failed === 1 ? '' : 's'} couldn't be created — please report ${mrDone.failed === 1 ? 'it' : 'them'} again.</p>` : ''}` +
+      `${chips ? `<div class="kl-mr-keys">${chips}</div>` : ''}` +
+      `<button type="button" class="kl-mr-btn kl-primary" id="kl-mr-done">Done</button></div>`
+    const finish = () => close({ reason: 'submitted' })
+    mrEl.querySelector('#kl-mr-close')?.addEventListener('click', finish)
+    mrEl.querySelector('#kl-mr-done')?.addEventListener('click', finish)
+  }
+
+  async function submitMulti() {
+    if (!multiItems || !multiRec || mrSubmitting) return
+    const chosen = multiItems.filter((i) => i.selected).map((i) => ({ ...i, title: i.title.trim(), description: i.description.trim() }))
+    if (!chosen.length) return
+    const email = reporterEmailSnapshot()
+    const target = cfg.submitTargetToggle !== false ? { feedbackTarget: submitTarget } : {}
+    const kindOf = (i: MultiItem): IssueKind => (i.kind === 'feature' ? 'feature' : 'bug')
+    const pri = (i: MultiItem) => ({
+      ...(i.suggestedSeverity ? { suggestedSeverity: i.suggestedSeverity } : {}),
+      ...(i.suggestedPriority ? { suggestedPriority: i.suggestedPriority } : {}),
+    })
+    const primary = chosen[0]
+    const extras = chosen.slice(1)
+    mrSubmitting = true; mrError = ''
+    renderMultiReview()
+    try {
+      const shots = await Promise.all(screenshotCompressed.slice())
+      // Every ticket carries the full walkthrough (its description names the issue's span). Ticket #1 also
+      // carries everything already in the composer.
+      const rec = multiRec
+      const primaryPayload = {
+        type: kindOf(primary) as ReportType,
+        ...(issueTypeOpts ? { kind: kindOf(primary) } : {}),
+        title: primary.title,
+        description: buildSplitDescription(primary, { primary: true, reporterNote: desc.value.trim() }),
+        screenshots: shots.length ? shots : (primary.thumb ? [primary.thumb] : []),
+        ...(attachedFiles.length ? { files: attachedFiles.slice() } : {}),
+        recordings: [rec, ...recordings.filter((r) => r !== rec)],
+        ...(shots.length ? { annotations: buildAnnotationsPayload() } : {}),
+        reporterEmail: email.email,
+        createContact: email.createContact,
+        ...target,
+        ...pri(primary),
+        ...(callbacks.consoleAttachToggle ? { attachConsole: !!(shadowRoot.getElementById('klavity-conlog-cb') as HTMLInputElement | null)?.checked } : {}),
+      }
+      // Tickets 2..N: the same walkthrough + a frame from the issue's moment, and a pointer to ticket #1.
+      const extraPayload = (it: MultiItem, videoKey?: string) => ({
+        type: kindOf(it) as ReportType,
+        ...(issueTypeOpts ? { kind: kindOf(it) } : {}),
+        title: it.title,
+        description: buildSplitDescription(it, { primary: false, videoTitle: primary.title, videoKey }),
+        screenshots: it.thumb ? [it.thumb] : [],
+        recordings: [rec],
+        reporterEmail: email.email,
+        createContact: false,
+        ...target,
+        ...pri(it),
+      })
+      if (callbacks.backgroundUpload) {
+        // Pill mode: the host uploads each ticket in its own bottom-right pill; close at once.
+        const submit = callbacks.onSubmit
+        void submit(primaryPayload)
+        void (async () => { for (const it of extras) { try { await submit(extraPayload(it)) } catch (e) { try { console.error('[Klavity] multi-issue ticket failed:', e) } catch {} } } })()
+        close({ immediate: true, reason: 'submitted' })
+        return
+      }
+      const first = await callbacks.onSubmit(primaryPayload)
+      const refs = [{ key: first.issueKey, url: first.issueUrl }]
+      let failed = 0
+      for (const it of extras) {
+        try { const r = await callbacks.onSubmit(extraPayload(it, first.issueKey || undefined)); refs.push({ key: r.issueKey, url: r.issueUrl }) }
+        catch (e) { failed++; try { console.error('[Klavity] multi-issue ticket failed:', e) } catch {} }
+      }
+      if (_closed) return
+      mrSubmitting = false
+      mrDone = { refs, failed }
+      multiDirty = false
+      renderMultiReview()
+    } catch (err) {
+      try { console.error('[Klavity] multi-issue submit failed:', err) } catch {}
+      if (_closed) return
+      mrSubmitting = false
+      mrError = cfg.debug ? `Couldn't create the tickets — ${(err as Error)?.message || 'Unknown error'}` : "Couldn't create the tickets. Please check your connection and try again."
+      renderMultiReview()
+    }
   }
 
   let _stopVoice: (() => void) | null = null
@@ -2456,6 +3162,7 @@ export function buildModal(
     // call could kill a reopened composer.
     if (_closed) return
     _closed = true
+    multiSeq++            // KD-995: drop any in-flight multi-issue analysis / thumbnail run
     for (const f of attachedFiles) revokeAttachmentPreview(f)
     for (const r of recordings) {
       if ((r as any)._previewUrl) {
@@ -3458,6 +4165,16 @@ export function buildModal(
     _stopVoice = () => { if (voiceRecording) voice.stop() }
   }
 
+  // QPQ-31: the field is always shown, and optional unless requireEmail gated it. A half-typed address must
+  // never travel as reporter_email (an email-gated project 400s on it), so an optional value is forwarded only
+  // once it parses; contact intent is only claimed while the choice still matches the address being submitted.
+  // Shared by the single-ticket Submit and the KD-995 multi-issue submit.
+  function reporterEmailSnapshot(): { email: string | undefined; createContact: boolean } {
+    const typed = remail?.value.trim() || ''
+    const email = typed && (callbacks.requireEmail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typed)) ? typed : undefined
+    return { email, createContact: !!(email && createContact && email.toLowerCase() === contactFor) }
+  }
+
   submitBtn.addEventListener('click', async () => {
     if (busy || submitBtn.disabled) return // re-entrancy: ignore double-clicks / clicks while a capture runs
     // KLAVITYKLA-497: Submit is NEVER blocked by report clarity. The old gate here surfaced the pre-submit
@@ -3487,16 +4204,9 @@ export function buildModal(
     const filesSnapshot = attachedFiles.slice()
     const recordingsSnapshot = recordings.slice()
     const kindSnapshot: IssueKind = currentType
-    // QPQ-31: the field is now always shown, and optional unless requireEmail gated it. A half-typed
-    // address must never travel as reporter_email (an email-gated project 400s on it), so an optional
-    // value is forwarded only once it parses. The required path is unchanged — emailValid() already
-    // keeps Submit disabled until the address is valid.
-    const emailTyped = remail?.value.trim() || ''
-    const emailSnapshot = emailTyped && (callbacks.requireEmail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailTyped))
-      ? emailTyped
-      : undefined
-    // QPQ-31: only claim contact intent when the choice still matches the address being submitted.
-    const createContactSnapshot = !!(emailSnapshot && createContact && emailSnapshot.toLowerCase() === contactFor)
+    // QPQ-31: see reporterEmailSnapshot — the required path is unchanged (emailValid() keeps Submit disabled
+    // until the address is valid).
+    const { email: emailSnapshot, createContact: createContactSnapshot } = reporterEmailSnapshot()
     lockComposer(true) // disable Submit + every capture button + the payload mutators for the upload duration
     submitBtn.textContent = 'Uploading…'
     const errEl = shadowRoot.getElementById('klavity-err')!
@@ -3686,8 +4396,8 @@ export function buildModal(
     // onCaptureSharp) or the user declines / loses the share gesture — in which case we drop to the fast DOM
     // render below so the user still gets a shot (with the usual suggestSharp nudge).
     if (callbacks.onCaptureSharp) {
-      const added = await runScreenCapture()
-      if (added) return
+      const res = await runScreenCapture()
+      if (res.ok) return
     }
     lockComposer(true)
     fullBtn.classList.add('kl-loading')
@@ -3713,13 +4423,13 @@ export function buildModal(
   // gesture is preserved), and adds the resulting real-pixel shot. Returns true when a shot was added; false
   // on a user DECLINE / lost-gesture / unsupported / empty result so the caller can fall back to a rendered
   // capture. NEVER surfaces an error for a decline — the fallback is silent (per the founder decision).
-  async function runScreenCapture(opts?: { viewport?: boolean }): Promise<boolean> {
+  async function runScreenCapture(opts?: { viewport?: boolean; onOpen?: boolean }): Promise<{ ok: boolean; declined: boolean }> {
     // KLA composer-polish: the on-open DEFAULT capture asks for the VIEWPORT-scoped Screen frame (single
     // visible frame, no scroll-stitch) when the host wired onCaptureSharpViewport; the manual Screen button
     // asks for the full-page onCaptureSharp. Falls back to onCaptureSharp when the viewport variant isn't
     // wired (e.g. the extension), so no host regresses.
     const capFn = (opts?.viewport && callbacks.onCaptureSharpViewport) ? callbacks.onCaptureSharpViewport : callbacks.onCaptureSharp
-    if (busy || !capFn || !sharpBtn) return false // re-entrancy / not wired
+    if (busy || !capFn || !sharpBtn) return { ok: false, declined: false } // re-entrancy / not wired
     // The "Screen" word lives in its own span so the "Capturing…" state never clobbers the icon or the (i).
     const sharpLabel = sharpBtn.querySelector('.kl-sharp-label') as HTMLElement | null
     lockComposer(true)
@@ -3729,6 +4439,7 @@ export function buildModal(
     const orig = target.textContent
     target.textContent = 'Capturing…'
     let added = false
+    let declined = false
     try {
       const restore = maskOn ? maskNumbers(document.body) : null
       let shot: CaptureResult | undefined
@@ -3745,18 +4456,22 @@ export function buildModal(
       // leave a dev-console breadcrumb so it's diagnosable.
       if (!isScreenDeclineError(err)) { try { console.warn('[Klavity] Screen capture failed; using rendered fallback:', err) } catch {} }
       else {
-        // KLA-601: the reporter cancelled the share picker. We keep the rendered fallback, but instead of
-        // failing silently, surface a one-time helper nudge on the Screen button so they know the sharper
-        // option is one tap away. Once-per-session + dismissible (see showScreenNudge).
-        try { showScreenNudge() } catch { /* the nudge is a nicety — never let it break the fallback */ }
+        declined = true
+        // Only surface the helper nudge when manual re-snap inside an already open composer is declined,
+        // never on the initial on-open prompt where Cancel dismisses the dialog.
+        if (!opts?.onOpen) {
+          try { showScreenNudge() } catch { /* the nudge is a nicety — never let it break the fallback */ }
+        }
       }
     } finally {
-      host.style.display = ''
-      target.textContent = orig
-      sharpBtn.classList.remove('kl-loading')
-      lockComposer(false)
+      if (!(opts?.onOpen && declined)) {
+        host.style.display = ''
+        target.textContent = orig
+        sharpBtn.classList.remove('kl-loading')
+        lockComposer(false)
+      }
     }
-    return added
+    return { ok: added, declined }
   }
   if (sharpBtn && callbacks.onCaptureSharp) {
     // ONE click → straight to the screen-share permission. getDisplayMedia runs synchronously inside the
@@ -3825,6 +4540,12 @@ export function buildModal(
       } catch { /* user cancelled or recorder failed — leave the composer untouched */ }
       finally { host.style.display = ''; recordBtn.classList.remove('kl-loading'); lockComposer(false) }
     })
+  }
+
+  // KD-995: "Report Multiple Issues" entry card (rendered only when multiEnabled).
+  if (multiEnabled) {
+    paintMultiCard()
+    shadowRoot.getElementById('klavity-multi-start')?.addEventListener('click', () => { void startMulti() })
   }
 
   // Region capture button — only rendered when the host provides onRegionCapture
@@ -5104,8 +5825,14 @@ export function buildModal(
         void (async () => {
           // KLA composer-polish (founder PX4 repro): the DEFAULT on-open Screen capture is VIEWPORT-scoped —
           // a single visible frame, NOT the full-page scroll-stitch. The manual Screen button stays full-page.
-          const ok = await runScreenCapture({ viewport: true })
-          if (ok) { capturing = false; updateStrip(); return }
+          const res = await runScreenCapture({ viewport: true, onOpen: true })
+          if (res.ok) { capturing = false; updateStrip(); return }
+          if (res.declined) {
+            // Cancel button clicked in permission popup: dismiss dialog and cancel bug reporting process.
+            capturing = false
+            close({ immediate: true, reason: 'discard' })
+            return
+          }
           if (screenshots.length) { capturing = false; updateStrip(); return } // a shot arrived some other way
           // KD-184: too large for the rendered fallback → leave the stage empty with the large-page steer.
           if (!renderOk) { largePageHint = true; capturing = false; updateStrip(); return }

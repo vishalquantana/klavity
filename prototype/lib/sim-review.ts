@@ -16,6 +16,7 @@ import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { issueKeyFor, chooseDedup } from "./dedup"
 import { classifySimObservation } from "./sim-bug-classify"
+import { isBaselineQa, isAllClearObservation } from "./baseline-qa"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
 import { ingestSnapOrSim } from "./expectations-ingest"
 import { buildRecurrenceMemory } from "./recurrence-memory"
@@ -82,6 +83,7 @@ export interface SimRunOptions {
   autoCopy?: (feedbackId: string, projectId: string, actor: string) => void
   markSeen?: (key: string) => void
   db: Client | null
+  reportEnv?: string | null
 }
 
 // ── Internal dedup helpers ────────────────────────────────────────────────────
@@ -89,14 +91,18 @@ export interface SimRunOptions {
 async function findDuplicateFeedback(args: {
   projectId: string; urlPath: string | null; issueType: string | null
   citedTraitIds: string[]; title: string; observation: string
+  /** Minimum lexical similarity for an issue-key (same page) match to merge. Default 0 = merge on key alone (legacy behaviour). */
+  exactMinSim?: number
 }): Promise<string | null> {
   const issueKey = issueKeyFor({
     projectId: args.projectId, urlPath: args.urlPath ?? "/",
     issueType: args.issueType, citedTraitIds: args.citedTraitIds,
   })
   const exact = await findFeedbackByIssueKey(args.projectId, issueKey)
-  const recent = exact ? [] : await listRecentFeedbackForDedup(args.projectId, 50)
-  return chooseDedup({ title: args.title, observation: args.observation }, exact, recent)
+  // With a similarity floor the page-key match may be rejected as too dissimilar, so the semantic search over recent reports must still
+  // run (otherwise a repeat of an earlier finding on the same page would never find its own report).
+  const recent = (exact && !args.exactMinSim) ? [] : await listRecentFeedbackForDedup(args.projectId, 50)
+  return chooseDedup({ title: args.title, observation: args.observation }, exact, recent, 0.82, new Set(), args.exactMinSim ?? 0)
 }
 
 function issueKeyForFeedback(projectId: string, urlPath: string | null, issueType: string | null, citedTraitIds: string[]): string {
@@ -151,7 +157,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
     projectId, urlPath, urlHost, pageUrl, imageB64, mediaType,
     targetSims, actorEmail, screenshotId, seenHashes = new Set(),
     sessionId, mode = "all", adhoc = false,
-    reactFn, resolveCitationsFn, autoCopy, markSeen, db,
+    reactFn, resolveCitationsFn, autoCopy, markSeen, db, reportEnv,
   } = opts
 
   const out: SimReview[] = []
@@ -273,8 +279,14 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       const citation = await resolveCitationsFn(sim.id, r?.citedTraitIds, projectId, citePre)
       let bug = r?.suggestedBug
 
+      // Baseline QA's "No visible defects found…" is an all-clear, not a finding. It lists what it checked ("no broken images or visible
+      // errors"), which the keyword classifier below would read as a hard failure and auto-open as a high-priority ticket — so for the
+      // Baseline QA Sim only, an all-clear stays a plain observation. Customer Sims are unaffected.
+      const baselineAllClear = isBaselineQa((sim as any).simSource) && isAllClearObservation(obsText)
+      if (baselineAllClear) bug = undefined
+
       // Heuristic classifier: elevate broken/stuck/blocked observations to bug candidates.
-      if (!bug) {
+      if (!bug && !baselineAllClear) {
         const verdict = classifySimObservation(obsText, r?.sentiment)
         if (verdict.flagged) {
           bug = { title: obsText.slice(0, 90) || "Sim-flagged issue", body: obsText, priority: verdict.priority, simFlagged: true, signals: verdict.signals }
@@ -291,6 +303,10 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
           projectId, urlPath, issueType: citation.issueType,
           citedTraitIds: citation.citedTraitIds,
           title: String(bug?.title || ""), observation: obsText,
+          // Baseline QA has no traits, so every finding on a page shares one issue key. Without a similarity floor, distinct defects on the
+          // same page (clipped logo / low contrast / typo) all collapsed into the first report — and into another Sim's. Same 0.3 floor the
+          // server.ts copy of this function uses for trait-less Sims. Customer Sims keep the existing behaviour (0).
+          exactMinSim: isBaselineQa((sim as any).simSource) ? 0.3 : 0,
         })
         if (dedupedInto) {
           await bumpFeedbackRecurrence(dedupedInto, Date.now())
@@ -315,6 +331,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
+            reportEnv: reportEnv ?? null,
           })
           if (feedbackId) autoCopy?.(feedbackId, projectId, actorEmail)
           // Feed into expectations spine.
@@ -353,6 +370,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             citedTraitIds: citation.citedTraitIds.length ? citation.citedTraitIds : null,
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: hash,
+            reportEnv: reportEnv ?? null,
           })
         }
       }
