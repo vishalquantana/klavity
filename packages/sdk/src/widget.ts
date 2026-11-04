@@ -31,6 +31,7 @@ import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
+  setRecordings as setEvidenceRecordings,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -1068,11 +1069,14 @@ async function mount() {
   }
   function hasEvSessionContent(session: EvidenceSession | null): boolean {
     if (!session) return false
-    return session.shots.length > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
   }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
     const m = evSession ? pageCount(evSession) : 0
+    // KD-1074: a recording-only report (e.g. a walkthrough, whose default snap is dropped) still says what's saved.
+    const r = evSession?.recordings?.length ?? 0
+    if (n === 0 && r > 0) return `${r} recording${r === 1 ? "" : "s"} - not lost`
     if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
@@ -1458,7 +1462,7 @@ async function mount() {
       // so we skip the full-page auto-capture and let the zoomed-in region lead. KLA-412: also skip it when
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
-      autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0),
+      autoCaptureOnOpen: !opts?.initialShot && !(ev && (ev.shots.length > 0 || (ev.recordings?.length ?? 0) > 0)),
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1655,6 +1659,12 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
+      // KD-1074: restore the session's recordings on resume, and persist every add/remove so a minimize (or a
+      // navigation) never loses the recorded video.
+      initialRecordings: ev?.recordings?.length ? ev.recordings.map((r) => ({ ...r })) : undefined,
+      onRecordingsChange: ev ? (recs) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, recs) ?? evSession; updateEvDock() })
+      } : undefined,
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
       onRecord: composerRecord ? ((onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => recordMe({ onPhase })) : undefined,

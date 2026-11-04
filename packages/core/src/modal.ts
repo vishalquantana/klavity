@@ -603,6 +603,9 @@ export interface ModalCallbacks {
   allowRecording?: boolean
   // Seed recordings when the composer opens (e.g. from an in-progress session restore).
   initialRecordings?: ReportRecording[]
+  // KD-1074: fired with the current list whenever a recording is added, replaced or removed, so the host can
+  // persist it (the widget keeps it in the evidence session so minimize → resume doesn't lose the video).
+  onRecordingsChange?: (recordings: ReportRecording[]) => void
   onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
@@ -951,6 +954,7 @@ export function buildModal(
   const voiceSupported = voiceMode !== 'none'
   const MAX_RECORDINGS = 2
   let recordings: ReportRecording[] = (callbacks.initialRecordings && Array.isArray(callbacks.initialRecordings)) ? [...callbacks.initialRecordings] : []
+  let recordingsSig = recordings.map((r) => r.id || r.dataUrl).join('|')
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
   const issueTypeOpts = (callbacks.issueTypes && callbacks.issueTypes.length) ? callbacks.issueTypes : null
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
@@ -2721,6 +2725,15 @@ export function buildModal(
     updateStrip()
     refreshSubmit()
     syncMultiClip()
+    notifyRecordingsChange()
+  }
+  // KD-1074: tell the host only when the set of recordings actually changed (renderRecordings also runs for
+  // repaints). recordingsSig is seeded from initialRecordings so a restore doesn't echo back as a write.
+  function notifyRecordingsChange() {
+    const sig = recordings.map((r) => r.id || r.dataUrl).join('|')
+    if (sig === recordingsSig) return
+    recordingsSig = sig
+    try { callbacks.onRecordingsChange?.(recordings.slice()) } catch { /* host persistence is best-effort */ }
   }
 
   // ── KD-995: "Report Multiple Issues" ─────────────────────────────────────────────────────────────────
@@ -5805,6 +5818,10 @@ export function buildModal(
       startAutodismiss()
     }
   }
+
+  // KD-1074: recordings seeded on open (a resumed evidence session) must show in the strip straight away —
+  // select the newest as the hero, like a fresh "Record me" capture.
+  if (recordings.length) { activeRecordingIndex = recordings.length - 1; renderRecordings() }
 
   if (callbacks.autoCaptureOnOpen) {
     // KLAVITYKLA-506: very large DOMs make the html-to-image render slow enough to jank the composer's first
