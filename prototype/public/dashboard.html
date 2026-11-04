@@ -4595,17 +4595,30 @@
       transition: background .12s, border-color .12s, color .12s, transform var(--mi-dur) var(--mi-ease), box-shadow var(--mi-dur) var(--mi-ease)
     }
 
-    .tkt-vbtn:hover {
-      border-color: var(--indigo);
-      color: var(--paper);
-      transform: var(--mi-lift);
-      box-shadow: var(--mi-shadow)
+    /* Hover must never look like the selected state: it used the SAME indigo border as .active, so with the pointer
+       resting on "List" while "Board" was active (or a sticky :hover after a tap on touch / device mode) BOTH buttons
+       read as selected. Hover is now a neutral lift on the UNSELECTED button only, on real-pointer devices only. */
+    @media (hover: hover) {
+      .tkt-vbtn:not(.active):hover {
+        background: var(--ink-2);
+        border-color: var(--paper-dim);
+        color: var(--paper);
+        transform: var(--mi-lift);
+        box-shadow: var(--mi-shadow)
+      }
     }
 
     .tkt-vbtn.active {
       background: rgba(99, 102, 241, .12);
       border-color: var(--indigo);
-      color: var(--indigo)
+      color: var(--indigo);
+      font-weight: 600
+    }
+
+    /* Keyboard focus gets its own ring (not the selected look), so a focused-but-unselected button stays distinguishable. */
+    .tkt-vbtn:focus-visible {
+      outline: 2px solid var(--indigo);
+      outline-offset: 2px
     }
 
     .tkt-vbtn:active {
@@ -28479,7 +28492,10 @@
               single.setAttribute("aria-label", "Ticket " + key + (t.title ? " — " + t.title : ""))
               ensurePanelScrim()
               document.body.classList.add("tkt-panel-open")
-              if (board && _tktOriginContext !== "triage") board.classList.remove("hide")
+              // Keep exactly the ACTIVE view behind the panel. This used to un-hide the board unconditionally, so opening
+              // a ticket from List view mounted the kanban under the list (scroll down → both views) and, since a panel
+              // close does not re-render, it stayed there after closing too.
+              if (board && _tktOriginContext !== "triage") board.classList.toggle("hide", _tktView === "list")
               if (listView && _tktView === "list" && _tktOriginContext !== "triage") listView.classList.remove("hide")
               if (toolbar && _tktOriginContext !== "triage") toolbar.classList.remove("hide")
               const ph = document.createElement("div"); ph.className = "tkt-panel-head"
