@@ -68,3 +68,31 @@ describe('onDescriptionChange (KD-166)', () => {
     ctrl.close()
   })
 })
+
+// KD-1004: the page-unload flush belongs to an OPEN composer only. After a report is submitted (composer
+// closed) a refresh used to fire it anyway, writing the submitted text back into the saved draft — the
+// reloaded page then showed a "Bug report in progress - not lost" dock for a ticket that already existed.
+describe('page-unload flush (KD-1004)', () => {
+  it('flushes the description and title on unload while the composer is open', () => {
+    const onDescriptionChange = vi.fn()
+    const ctrl = buildModal('bug', { ...base, onDescriptionChange })
+    type(ctrl, 'still typing when the tab reloads')
+    window.dispatchEvent(new Event('beforeunload'))
+    expect(onDescriptionChange).toHaveBeenLastCalledWith('still typing when the tab reloads')
+    ctrl.close()
+  })
+
+  it('never writes the old text back after the composer closed (submitted / X)', () => {
+    const onDescriptionChange = vi.fn()
+    const onTitleChange = vi.fn()
+    const ctrl = buildModal('bug', { ...base, onDescriptionChange, onTitleChange })
+    type(ctrl, 'Checkout button does nothing')
+    vi.advanceTimersByTime(600)
+    onDescriptionChange.mockClear(); onTitleChange.mockClear()
+    ctrl.close({ immediate: true, reason: 'submitted' } as any)
+    window.dispatchEvent(new Event('beforeunload'))
+    window.dispatchEvent(new Event('pagehide'))
+    expect(onDescriptionChange).not.toHaveBeenCalled()
+    expect(onTitleChange).not.toHaveBeenCalled()
+  })
+})
