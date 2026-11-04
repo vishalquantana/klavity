@@ -1209,6 +1209,11 @@ export async function applySchema(c: Client) {
     // PX4 #428: captured client/browser/app info as a JSON object { browser,browserVersion,os,viewport,
     // locale,timezone,... }. Null on older rows / when the client sent none.
     ["client_info_json",       "TEXT"],
+    // KD (multi-capture tickets): the 2nd+ report screenshots (picked element, selected region, extra full-page
+    // shots) as a JSON array of screenshot ids. screenshot_id keeps the FIRST shot exactly as before; the rest
+    // used to be uploaded + ledgered but linked to nothing, so they never showed on the ticket. Null on older
+    // rows / single-shot reports — additive, back-compat.
+    ["extra_screenshots_json", "TEXT"],
     // KLAVITYKLA-453: count of report evidence items (screenshots + attachments + recordings) whose BYTES
     // failed to upload to object storage at ingest (S3 misconfigured / write error). The report is still
     // persisted, but this stamp makes the silent evidence loss visible (dashboard render is a follow-up).
@@ -7373,6 +7378,8 @@ export async function feedbackById(projectId: string, id: string): Promise<any |
     suggestedBug: safeJsonParse(x.suggested_bug_json),
     // PX4 #425: non-image file attachments — parsed JSON array of { key, filename, contentType, size }.
     attachments: safeJsonParse(x.attachments_json),
+    // 2nd+ report screenshots (ids into the screenshots ledger); [] on single-shot / older rows.
+    extraScreenshotIds: (() => { const v = safeJsonParse(x.extra_screenshots_json); return Array.isArray(v) ? v.map(String) : [] })(),
     // KLAVITYKLA-438 "Record me": video recordings — parsed JSON array of
     // { id, key, contentType, bytes, durationMs, w, h, screenOnly }. `id` is the Phase 2 transcript ref.
     recordings: safeJsonParse(x.recordings_json),
@@ -7518,6 +7525,15 @@ export async function detachFeedbackScreenshot(feedbackId: string, projectId: st
     args: [feedbackId, projectId, screenshotId],
   })
   return Number(u.rowsAffected || 0) > 0
+}
+// Link the 2nd+ report screenshots to their ticket (see extra_screenshots_json). Ids are already ledgered.
+export async function setFeedbackExtraScreenshots(feedbackId: string, projectId: string, screenshotIds: string[]): Promise<void> {
+  const ids = [...new Set(screenshotIds.map(String).filter(Boolean))]
+  if (!ids.length) return
+  await db!.execute({
+    sql: "UPDATE feedback SET extra_screenshots_json=? WHERE id=? AND project_id=?",
+    args: [JSON.stringify(ids), feedbackId, projectId],
+  })
 }
 // KD-214: does anything OTHER than this ticket still use the screenshot? Merging copies the screenshot id onto the surviving
 // ticket / occurrence rows and attachment entries, so two tickets can point at one stored image. Any hit means "keep the file".
