@@ -16,6 +16,7 @@ import { initDb, db, createOtp, verifyOtp, upsertUser, createSession, getSession
 import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk } from "./lib/db"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 import { setFeedbackExtraScreenshots } from "./lib/db"
+import { listSimDeploymentStates, applySimAction, SIM_ACTIONS, type SimAction, type SimDeploymentState } from "./lib/sim-deployments"
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
@@ -1379,6 +1380,8 @@ function isWidgetCorsPath(path: string): boolean {
     case "/api/widget/lead":
     case "/api/widget/sims":
     case "/api/widget/known-check":
+    // Select Sims management (member/bearer-gated, project-scoped) — called from the widget modal.
+    case "/api/widget/sim-deployments":
     case "/api/report/clarity":
     case "/api/report/enhance":
     case "/api/report/split":
@@ -4517,6 +4520,49 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       accent: p.accent ?? null,
     }))
     return wjson({ sims })
+  }
+
+  // ── /api/widget/sim-deployments — Select Sims management (isolated, additive). ─────────────
+  // GET  ?project=…               → every Sim with its deployment + execution status.
+  // POST { project, action, simIds } where action ∈ deploy|deactivate|pause|resume.
+  // Member-gated (session cookie or widget bearer) and project-scoped. State lives ONLY in the new
+  // sim_deployments table (lib/sim-deployments.ts) — no existing Sims/AutoSims table or endpoint is
+  // read-modified-written here. Incompatible ids are reported in `skipped`, never force-applied.
+  if (path === "/api/widget/sim-deployments" && (req.method === "GET" || req.method === "POST")) {
+    const me = (await sessionEmail(req)) || (await bearerEmail(req))
+    if (!me) return wjson({ ok: false, reason: "unauthorized", error: "Sign in to manage Sims." }, 401)
+    if (!rlAllow(`wsimdep:${me}`, 60, 60_000)) return wjson({ ok: false, error: "rate limited" }, 429)
+    const body: any = req.method === "POST" ? await req.json().catch(() => ({})) : {}
+    const requested = String((req.method === "POST" ? body.project : url.searchParams.get("project")) || "")
+    if (!requested) return wjson({ ok: false, error: "project required" }, 400)
+    const access = await resolveProject(me, requested)
+    if (!access) return wjson({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
+    const personas = await listPersonas(access.id)
+    const byId = new Map(personas.map((p) => [p.id, p]))
+    const describe = (states: Map<string, SimDeploymentState>) => personas.map((p) => {
+      const s = states.get(p.id)
+      return {
+        id: p.id, name: p.name, role: p.role || "",
+        initials: p.initials || null, accent: p.accent || null, avatar: p.avatar || null,
+        deployment: s?.deployment ?? "not_deployed", execution: s?.execution ?? "not_running",
+      }
+    })
+    if (req.method === "GET") {
+      const states = await listSimDeploymentStates(db!, access.id, personas.map((p) => p.id))
+      return wjson({ ok: true, projectId: access.id, sims: describe(states) })
+    }
+    const action = String(body.action || "") as SimAction
+    if (!SIM_ACTIONS.includes(action)) return wjson({ ok: false, error: "unknown action" }, 400)
+    const simIds: string[] = Array.isArray(body.simIds) ? [...new Set<string>(body.simIds.map(String))] : []
+    if (!simIds.length) return wjson({ ok: false, error: "simIds required" }, 400)
+    if (simIds.length > 200) return wjson({ ok: false, error: "too many Sims" }, 400)
+    // Pause/Resume are per-Sim controls in the UI — refuse a bulk call rather than guess.
+    if ((action === "pause" || action === "resume") && simIds.length !== 1) return wjson({ ok: false, error: `${action} takes exactly one Sim` }, 400)
+    const unknown = simIds.filter((id) => !byId.has(id))
+    if (unknown.length) return wjson({ ok: false, error: "Some Sims are not in this project.", unknown }, 400)
+    const result = await applySimAction(db!, access.id, simIds, action, me)
+    const states = await listSimDeploymentStates(db!, access.id, personas.map((p) => p.id))
+    return wjson({ ok: true, action, applied: result.applied, skipped: result.skipped, sims: describe(states) })
   }
 
   // ── /api/widget/known-check — anonymous, project-scoped, CORS-gated pre-submit "known issue"
