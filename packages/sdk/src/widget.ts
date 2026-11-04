@@ -956,6 +956,11 @@ async function mount() {
   let evMinimizing = false // set while we deliberately close the composer to minimize (vs a plain X-close)
   // Serialize session writes so concurrent adds/removes can't lose an update (read-modify-write races).
   let evWriteChain: Promise<unknown> = Promise.resolve()
+  // KD-1004: sessions whose report was already filed, and whether the current composer's report was. A late
+  // write (debounced typing, a page-unload flush) for a filed report must not re-create the saved draft —
+  // that resurrected a "Bug report in progress" dock after a refresh even though the ticket was created.
+  const filedSessionIds = new Set<string>()
+  let composerFiled = false
   function queueEvWrite<T>(fn: () => Promise<T>): Promise<T> {
     const run = evWriteChain.then(fn, fn)
     evWriteChain = run.catch(() => undefined)
@@ -986,6 +991,7 @@ async function mount() {
   // the screenshot via this same session; without this, the typed text was silently lost even though the
   // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
   async function persistEvDesc(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { desc: text })
       const updated = await updateEvidenceFields(sessionId, { desc: text })
@@ -993,6 +999,7 @@ async function mount() {
     } catch { /* best-effort: a failed persist must never break typing */ }
   }
   async function persistEvTitle(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { title: text })
       const updated = await updateEvidenceFields(sessionId, { title: text })
@@ -1405,6 +1412,7 @@ async function mount() {
 
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession } }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+    composerFiled = false
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
     if (ev) {
@@ -1749,6 +1757,8 @@ async function mount() {
         // multi-page evidence session (KLA-412) now that the report is stored.
         const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
           try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          composerFiled = true
+          if (ev) filedSessionIds.add(ev.id)
           clearDraft(cfg.projectId, evOrigin)
           if (ev) {
             evMinimizing = false
@@ -2427,6 +2437,7 @@ async function mount() {
   if (typeof window !== "undefined") {
     const flushCurrentComposerDraft = () => {
       if (!composer || !(composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+      if (composerFiled) return // KD-1004: the open composer is only showing its "sent" screen — nothing to keep
       const descEl = composer.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
       const titleEl = composer.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
       saveDraft(cfg.projectId, evOrigin, {
