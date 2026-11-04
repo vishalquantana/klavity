@@ -91,3 +91,28 @@ describe('buildModal "Record me" attach + submit', () => {
     ctrl.close()
   })
 })
+
+// KD-1074: minimizing the composer and resuming lost the recorded video. The composer now reports every
+// recordings change to the host (which persists it) and re-shows recordings seeded on open.
+describe('buildModal "Record me" persistence (KD-1074)', () => {
+  it('fires onRecordingsChange when a recording is attached and again when it is removed', async () => {
+    const onRecordingsChange = vi.fn()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => sampleRecording, onRecordingsChange, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    ;(q(ctrl, '#klavity-record') as HTMLButtonElement).click()
+    await new Promise(r => setTimeout(r, 0))
+    expect(onRecordingsChange).toHaveBeenCalledTimes(1)
+    expect(onRecordingsChange.mock.calls[0][0].map((r: ReportRecording) => r.id)).toEqual(['rec_test123'])
+    ;(q(ctrl, '.klavity-strip .kl-rec-tile .klavity-rm') as HTMLButtonElement).click()
+    expect(onRecordingsChange).toHaveBeenCalledTimes(2)
+    expect(onRecordingsChange.mock.calls[1][0]).toEqual([])
+    ctrl.close()
+  })
+
+  it('shows initialRecordings on open without echoing them back as a change', () => {
+    const onRecordingsChange = vi.fn()
+    const ctrl = buildModal('bug', { onCaptureFull: async () => 'x', allowRecording: true, onRecord: async () => null, initialRecordings: [sampleRecording], onRecordingsChange, onSubmit: async () => ({ issueKey: '1', issueUrl: '' }) })
+    expect(q(ctrl, '.klavity-strip .kl-rec-tile')).not.toBeNull()
+    expect(onRecordingsChange).not.toHaveBeenCalled()
+    ctrl.close()
+  })
+})
