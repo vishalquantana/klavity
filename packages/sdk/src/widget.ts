@@ -32,6 +32,7 @@ import { on, emit } from "./events"
 import {
   getActiveSession, startOrContinue, addShot, removeShot, clear as clearEvidenceSession,
   makeShotId, pageCount, MAX_SHOTS, updateShotAnnotations, updateFields as updateEvidenceFields,
+  setRecordings as setEvidenceRecordings,
   type EvidenceSession, type EvidenceShot,
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
@@ -961,6 +962,11 @@ async function mount() {
   let evMinimizing = false // set while we deliberately close the composer to minimize (vs a plain X-close)
   // Serialize session writes so concurrent adds/removes can't lose an update (read-modify-write races).
   let evWriteChain: Promise<unknown> = Promise.resolve()
+  // KD-1004: sessions whose report was already filed, and whether the current composer's report was. A late
+  // write (debounced typing, a page-unload flush) for a filed report must not re-create the saved draft —
+  // that resurrected a "Bug report in progress" dock after a refresh even though the ticket was created.
+  const filedSessionIds = new Set<string>()
+  let composerFiled = false
   function queueEvWrite<T>(fn: () => Promise<T>): Promise<T> {
     const run = evWriteChain.then(fn, fn)
     evWriteChain = run.catch(() => undefined)
@@ -991,6 +997,7 @@ async function mount() {
   // the screenshot via this same session; without this, the typed text was silently lost even though the
   // shot survived. queueEvWrite serializes it against shot writes so a fast typist + a fast shot can't race.
   async function persistEvDesc(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { desc: text })
       const updated = await updateEvidenceFields(sessionId, { desc: text })
@@ -998,6 +1005,7 @@ async function mount() {
     } catch { /* best-effort: a failed persist must never break typing */ }
   }
   async function persistEvTitle(sessionId: string, text: string): Promise<void> {
+    if (filedSessionIds.has(sessionId)) return
     try {
       saveDraft(cfg.projectId, evOrigin, { title: text })
       const updated = await updateEvidenceFields(sessionId, { title: text })
@@ -1066,11 +1074,14 @@ async function mount() {
   }
   function hasEvSessionContent(session: EvidenceSession | null): boolean {
     if (!session) return false
-    return session.shots.length > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
+    return session.shots.length > 0 || (session.recordings?.length ?? 0) > 0 || session.desc.trim().length > 0 || session.title.trim().length > 0
   }
   function evCountText(): string {
     const n = evSession ? evSession.shots.length : 0
     const m = evSession ? pageCount(evSession) : 0
+    // KD-1074: a recording-only report (e.g. a walkthrough, whose default snap is dropped) still says what's saved.
+    const r = evSession?.recordings?.length ?? 0
+    if (n === 0 && r > 0) return `${r} recording${r === 1 ? "" : "s"} - not lost`
     if (n === 0) return "Bug report in progress - not lost"
     return `${n} shot${n === 1 ? "" : "s"} - ${m} page${m === 1 ? "" : "s"} - not lost`
   }
@@ -1410,6 +1421,7 @@ async function mount() {
 
   function openReport(type: "bug" | "feature" = "bug", opts?: { initialShot?: string; initialShotQuality?: "rendered" | "wireframe" | "real-pixel"; initialShotSuggestSharp?: boolean; initialDescription?: string; initialTitle?: string; initialShotCapture?: ShotCapture; evidence?: { session: EvidenceSession }; initialRecordings?: ReportRecording[] }) {
     if (composer && (composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+    composerFiled = false
     // KLA-412: the multi-page evidence session backing this composer (null for a normal single-page report).
     const ev = opts?.evidence?.session ?? null
     if (ev) {
@@ -1658,6 +1670,12 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
+      // KD-1074: restore the session's recordings on resume, and persist every add/remove so a minimize (or a
+      // navigation) never loses the recorded video.
+      initialRecordings: ev?.recordings?.length ? ev.recordings.map((r) => ({ ...r })) : undefined,
+      onRecordingsChange: ev ? (recs) => {
+        void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, recs) ?? evSession; updateEvDock() })
+      } : undefined,
       // KLA-555 (walkthrough mode): thread the composer's onPhase signal into the recorder so it can
       // minimize the composer while recording is ACTIVE and restore it on consent/preview.
       // Opted-in embeds (data-record-mode="window") record in the Klavity recorder WINDOW (record-bridge.ts) so it
@@ -1770,6 +1788,8 @@ async function mount() {
         // multi-page evidence session (KLA-412) now that the report is stored.
         const afterFiled = async (result: { issueKey: string; issueUrl: string }) => {
           try { emit("submit", { issueKey: result.issueKey, issueUrl: result.issueUrl ?? null, type: p.type as "bug" | "feature" }) } catch {}
+          composerFiled = true
+          if (ev) filedSessionIds.add(ev.id)
           clearDraft(cfg.projectId, evOrigin)
           if (ev) {
             evMinimizing = false
@@ -2448,6 +2468,7 @@ async function mount() {
   if (typeof window !== "undefined") {
     const flushCurrentComposerDraft = () => {
       if (!composer || !(composer.shadowRoot.host as HTMLElement | null)?.isConnected) return
+      if (composerFiled) return // KD-1004: the open composer is only showing its "sent" screen — nothing to keep
       const descEl = composer.shadowRoot.getElementById("klavity-desc") as HTMLTextAreaElement | null
       const titleEl = composer.shadowRoot.getElementById("klavity-title") as HTMLInputElement | null
       saveDraft(cfg.projectId, evOrigin, {

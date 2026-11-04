@@ -603,6 +603,9 @@ export interface ModalCallbacks {
   allowRecording?: boolean
   // Seed recordings when the composer opens (e.g. from an in-progress session restore).
   initialRecordings?: ReportRecording[]
+  // KD-1074: fired with the current list whenever a recording is added, replaced or removed, so the host can
+  // persist it (the widget keeps it in the evidence session so minimize → resume doesn't lose the video).
+  onRecordingsChange?: (recordings: ReportRecording[]) => void
   onRecord?: (onPhase?: (phase: 'consent' | 'recording' | 'preview') => void) => Promise<ReportRecording | null>
   // KLA-505: server-side LIVE DICTATION for the Voice button. When provided AND MediaRecorder is available,
   // the composer PREFERS this over the flaky Web Speech backend: it records short mic segments and hands each
@@ -951,6 +954,7 @@ export function buildModal(
   const voiceSupported = voiceMode !== 'none'
   const MAX_RECORDINGS = 2
   let recordings: ReportRecording[] = (callbacks.initialRecordings && Array.isArray(callbacks.initialRecordings)) ? [...callbacks.initialRecordings] : []
+  let recordingsSig = recordings.map((r) => r.id || r.dataUrl).join('|')
   // PX4 #411: the extended issue-type chips, when the host provided them (else null → classic Bug/Feature toggle).
   const issueTypeOpts = (callbacks.issueTypes && callbacks.issueTypes.length) ? callbacks.issueTypes : null
   // Structured markup per screenshot index { w, h, shapes } so the ticket can re-render a
@@ -1027,6 +1031,16 @@ export function buildModal(
   // stops a late submit resolution from rendering a confirmation / arming a timer on the detached modal —
   // which would call close()+onClose again and could tear down a DIFFERENT, freshly-reopened session.
   let _closed = false
+  // KD-1004: window unload listeners this composer registered — removed on close() so a closed (e.g. already
+  // submitted) composer can never write its old text back into the saved draft when the page reloads.
+  const unloadCleanups: Array<() => void> = []
+  function onPageUnload(fn: () => void) {
+    if (typeof window === 'undefined') return
+    const h = () => { if (!_closed) fn() }
+    window.addEventListener('beforeunload', h)
+    window.addEventListener('pagehide', h)
+    unloadCleanups.push(() => { window.removeEventListener('beforeunload', h); window.removeEventListener('pagehide', h) })
+  }
   // #448: countdown duration for the post-submit terminal-confirmation card before it auto-closes the
   // modal. Hovering pauses the countdown (armAutodismiss). Named so both the timer + the on-screen
   // progress-bar animation share one source of truth.
@@ -2711,6 +2725,15 @@ export function buildModal(
     updateStrip()
     refreshSubmit()
     syncMultiClip()
+    notifyRecordingsChange()
+  }
+  // KD-1074: tell the host only when the set of recordings actually changed (renderRecordings also runs for
+  // repaints). recordingsSig is seeded from initialRecordings so a restore doesn't echo back as a write.
+  function notifyRecordingsChange() {
+    const sig = recordings.map((r) => r.id || r.dataUrl).join('|')
+    if (sig === recordingsSig) return
+    recordingsSig = sig
+    try { callbacks.onRecordingsChange?.(recordings.slice()) } catch { /* host persistence is best-effort */ }
   }
 
   // ── KD-995: "Report Multiple Issues" ─────────────────────────────────────────────────────────────────
@@ -3162,6 +3185,7 @@ export function buildModal(
     // call could kill a reopened composer.
     if (_closed) return
     _closed = true
+    for (const off of unloadCleanups.splice(0)) { try { off() } catch { /* ignore */ } }
     multiSeq++            // KD-995: drop any in-flight multi-issue analysis / thumbnail run
     for (const f of attachedFiles) revokeAttachmentPreview(f)
     for (const r of recordings) {
@@ -3482,10 +3506,7 @@ export function buildModal(
     })
     desc.addEventListener('blur', flushDesc)
     desc.addEventListener('change', flushDesc)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', flushDesc)
-      window.addEventListener('pagehide', flushDesc)
-    }
+    onPageUnload(flushDesc)
   }
 
   const titleInp = modal.querySelector('#klavity-title') as HTMLInputElement | null
@@ -3502,10 +3523,7 @@ export function buildModal(
     })
     titleInp.addEventListener('blur', flushTitle)
     titleInp.addEventListener('change', flushTitle)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', flushTitle)
-      window.addEventListener('pagehide', flushTitle)
-    }
+    onPageUnload(flushTitle)
   }
   // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
   // Shown for any well-formed address (see the markup note on why we never ask the server whether it
@@ -5800,6 +5818,10 @@ export function buildModal(
       startAutodismiss()
     }
   }
+
+  // KD-1074: recordings seeded on open (a resumed evidence session) must show in the strip straight away —
+  // select the newest as the hero, like a fresh "Record me" capture.
+  if (recordings.length) { activeRecordingIndex = recordings.length - 1; renderRecordings() }
 
   if (callbacks.autoCaptureOnOpen) {
     // KLAVITYKLA-506: very large DOMs make the html-to-image render slow enough to jank the composer's first
