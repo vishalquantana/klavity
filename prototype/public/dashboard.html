@@ -28877,6 +28877,7 @@
             window.__klavTktInvoker = null
             _tktOriginContext = "tickets"
           }
+          window.klavCloseSingleTicket = closeSingleTicket   // the sidebar nav (separate <script>) uses it
 
           // ── KD-100: attachments on the New ticket dialog ─────────────────────────────────────────────────
           // Files are held client-side (previewed + removable) and uploaded AFTER the ticket is created, through the existing
@@ -34765,6 +34766,17 @@
                   var b = e.target && e.target.closest ? e.target.closest('.nv[data-go]') : null;
                   if (!b || !side.contains(b)) return;
                   var _go = b.getAttribute('data-go');
+                  // A full ticket page already counts as the Tickets view, so setView('tickets') alone left the user
+                  // on the ticket (it only tears the page down when LEAVING Tickets, and renderTicketsView() bails
+                  // while the page is open). Clicking "Tickets" there means "back to the tickets overview": close the
+                  // page the same way "← All Tickets" does (restores the board URL + re-mounts the board).
+                  if (_go === 'tickets' && window.__klavTktPageOpen && typeof window.klavCloseSingleTicket === 'function') {
+                    window.klavCloseSingleTicket();
+                    // Opened from Sim Reports, closing returns there — but the user asked for Tickets.
+                    if (document.body.getAttribute('data-view') !== 'tickets') setView('tickets');
+                    window.scrollTo(0, 0);
+                    return;
+                  }
                   // KLA-560: the deep-link "left" flag is now set inside setView() for every caller (including this
                   // one), so no per-call-site flag toggle is needed here anymore.
                   setView(_go);
