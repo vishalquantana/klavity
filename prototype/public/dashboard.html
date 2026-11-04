@@ -35750,25 +35750,11 @@
         return e.target === ov || !e.target.closest(".sm-modal");
       }
             $("simClose").onclick = function () { requestClose(); };
-      ov.addEventListener("mousedown", (e) => {
-        if (isOutsideModal(e)) {
-          // Keep the "Sim is ready" popup open when clicking outside its boundaries;
-          // it should only close via explicit close/action buttons inside the popup or the 'X' icon.
-          if (simSuccessShown()) return;
-          requestClose();
-        }
-      });
-      ov.addEventListener("pointerdown", (e) => {
-        if (isOutsideModal(e) && simSuccessShown()) {
-          e.stopPropagation();
-        }
-      });
-      ov.addEventListener("click", (e) => {
-        if (isOutsideModal(e) && simSuccessShown()) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      });
+      // KD-1012: a click outside the Add a Sim modal never closes it (any step, including "Sim is ready") —
+      // it only closes via the 'X' icon or an explicit Cancel/close action inside the modal.
+      ["mousedown", "pointerdown", "click"].forEach((type) => ov.addEventListener(type, (e) => {
+        if (isOutsideModal(e)) { e.preventDefault(); e.stopPropagation(); }
+      }));
             document.addEventListener("keydown", (e) => {
               if (e.key !== "Escape" || !ov.classList.contains("show")) return;
               if (discardOpen()) { hideDiscard(); return; }   // Esc on the prompt = keep editing

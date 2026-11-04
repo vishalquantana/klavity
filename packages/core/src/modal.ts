@@ -1031,6 +1031,16 @@ export function buildModal(
   // stops a late submit resolution from rendering a confirmation / arming a timer on the detached modal —
   // which would call close()+onClose again and could tear down a DIFFERENT, freshly-reopened session.
   let _closed = false
+  // KD-1004: window unload listeners this composer registered — removed on close() so a closed (e.g. already
+  // submitted) composer can never write its old text back into the saved draft when the page reloads.
+  const unloadCleanups: Array<() => void> = []
+  function onPageUnload(fn: () => void) {
+    if (typeof window === 'undefined') return
+    const h = () => { if (!_closed) fn() }
+    window.addEventListener('beforeunload', h)
+    window.addEventListener('pagehide', h)
+    unloadCleanups.push(() => { window.removeEventListener('beforeunload', h); window.removeEventListener('pagehide', h) })
+  }
   // #448: countdown duration for the post-submit terminal-confirmation card before it auto-closes the
   // modal. Hovering pauses the countdown (armAutodismiss). Named so both the timer + the on-screen
   // progress-bar animation share one source of truth.
@@ -3175,6 +3185,7 @@ export function buildModal(
     // call could kill a reopened composer.
     if (_closed) return
     _closed = true
+    for (const off of unloadCleanups.splice(0)) { try { off() } catch { /* ignore */ } }
     multiSeq++            // KD-995: drop any in-flight multi-issue analysis / thumbnail run
     for (const f of attachedFiles) revokeAttachmentPreview(f)
     for (const r of recordings) {
@@ -3495,10 +3506,7 @@ export function buildModal(
     })
     desc.addEventListener('blur', flushDesc)
     desc.addEventListener('change', flushDesc)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', flushDesc)
-      window.addEventListener('pagehide', flushDesc)
-    }
+    onPageUnload(flushDesc)
   }
 
   const titleInp = modal.querySelector('#klavity-title') as HTMLInputElement | null
@@ -3515,10 +3523,7 @@ export function buildModal(
     })
     titleInp.addEventListener('blur', flushTitle)
     titleInp.addEventListener('change', flushTitle)
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', flushTitle)
-      window.addEventListener('pagehide', flushTitle)
-    }
+    onPageUnload(flushTitle)
   }
   // ── QPQ-31: "Add <email> as a contact" suggestion under the Email field ─────────────────────────────
   // Shown for any well-formed address (see the markup note on why we never ask the server whether it
