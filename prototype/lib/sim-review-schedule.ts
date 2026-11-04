@@ -89,7 +89,8 @@ async function runOneSchedule(
     }
 
     // Load the project's Sims (or subset).
-    let allSims = await listPersonas(schedule.projectId)
+    // WP-S2: deactivated Sims are skipped by scheduled reviews too.
+    let allSims = await listPersonas(schedule.projectId, { activeOnly: true })
     if (schedule.simIds && schedule.simIds.length > 0) {
       const simIdSet = new Set(schedule.simIds)
       allSims = allSims.filter((s) => simIdSet.has(s.id))
