@@ -14591,6 +14591,55 @@
       opacity: .6
     }
 
+    /* KD-1000: per-Sim select checkbox + the bulk "Add selected" bar under the cards */
+    .sm-pick-cb {
+      width: 16px;
+      height: 16px;
+      flex: none;
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--indigo, #4f46e5)
+    }
+
+    .sm-pick-cb:disabled {
+      cursor: default
+    }
+
+    .sm-bulk {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px
+    }
+
+    .sm-bulk-all {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer
+    }
+
+    .sm-bulk-all input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--indigo, #4f46e5)
+    }
+
+    .sm-bulk-count {
+      font-size: 13px;
+      color: var(--paper-dim)
+    }
+
+    .sm-bulk .grow {
+      flex: 1
+    }
+
     .sm-sim-top {
       display: flex;
       align-items: center;
@@ -35356,7 +35405,7 @@
             // client = judges outcomes, user = operates the product; fall back to legacy `type` when v3 fields are absent
             function simClassOf(s) { return (s.simClass === "client" || s.simClass === "user") ? s.simClass : (s.type === "internal" ? "user" : "client"); }
             function sideOf(s) { return (s.side === "external" || s.side === "internal") ? s.side : (s.type === "internal" ? "internal" : "external"); }
-            function simCardHtml(s, idx) {
+            function simCardHtml(s, idx, multi) {
               const ins = (s.insights || []).slice(0, 3).map(i => {
                 const k = (i.kind === "pain" || i.kind === "want" || i.kind === "love") ? i.kind : "want";
                 const g = k === "pain" ? kicon('frown', { label: 'pain' }) : k === "want" ? kicon('lightbulb', { label: 'want' }) : kicon('heart', { label: 'love' });
@@ -35378,7 +35427,7 @@
               const userTip = "Operates the product hands-on — reacts to UI &amp; interaction";
               return `<div class="sm-sim" data-idx="${idx}" data-simclass="${cls}">
       <div class="sm-sim-view">
-      <div class="sm-sim-top"><div class="sm-av" style="background:${acc}">${esc(s.initials || inits(s.name))}</div>
+      <div class="sm-sim-top">${multi ? `<input type="checkbox" class="sm-pick-cb" data-pick="${idx}" checked aria-label="Select ${esc(s.name || "Sim")}" />` : ""}<div class="sm-av" style="background:${acc}">${esc(s.initials || inits(s.name))}</div>
         <div><div class="sm-nm">${esc(s.name || "Sim")}</div><div class="sm-rl">${esc(s.role || "")}</div></div>
         <span class="sm-badges"><span class="sm-kind ${cls}" data-tip="${cls === "client" ? clientTip : userTip}">${cls === "client" ? "Client" : "User"}</span><span class="sm-side">${esc(side)}</span></span></div>
       ${s.summary ? `<div class="sm-sum">${esc(s.summary)}</div>` : ""}
@@ -35404,7 +35453,7 @@
       <div class="sm-class-pick"><span class="sm-class-pick-lbl">Type:</span><button class="sm-class-btn user${cls === "user" ? " on" : ""}" data-class-pick="${idx}" data-class="user" title="User — operates the product hands-on; reacts to UI &amp; interaction">User</button><button class="sm-class-btn client${cls === "client" ? " on" : ""}" data-class-pick="${idx}" data-class="client" title="Client — judges outcomes &amp; strategy, not individual buttons">Client</button></div>
       <div class="sm-foot"><button class="btn btn-indigo btn-sm" data-add="${idx}">＋ Add ${first}</button>
         <button class="btn btn-ghost btn-sm sm-edit-toggle" data-edit-sim="${idx}" type="button">${kicon('pencil', { size: 12 })} <span class="sm-edit-btn-text">Edit</span></button>
-        <button class="btn btn-ghost btn-sm" data-skip="${idx}">Skip</button><span class="grow"></span></div></div>`;
+        <span class="grow"></span></div></div>`;
             }
             let lastSims = [];
             // KLAVITYKLA-301: track which Add-a-Sim tab produced the current Sims so saveSim can stamp source.
@@ -35419,8 +35468,27 @@
             function showSims(arr) {
               lastSims = arr || [];
               if (!lastSims.length) { out.innerHTML = `<div class="sm-err">No Sims came back — try rephrasing.</div>`; return; }
-              out.innerHTML = lastSims.map((s, i) => simCardHtml(s, i)).join("")
-                + (lastSims.length > 1 ? `<div style="text-align:center;margin-top:2px"><button class="btn btn-ghost btn-sm" id="smAddAll">Add all ${lastSims.length} Sims</button></div>` : "");
+              // KD-1000: with 2+ Sims each card gets a checkbox (all selected by default) and a bulk bar adds the
+              // selection in one go. Replaces the old per-card Skip (which only greyed the card) and "Add all".
+              const multi = lastSims.length > 1;
+              out.innerHTML = lastSims.map((s, i) => simCardHtml(s, i, multi)).join("")
+                + (multi ? `<div class="sm-bulk"><label class="sm-bulk-all"><input type="checkbox" id="smSelAll" checked /> Select all</label>
+                    <span class="sm-bulk-count" id="smSelCount"></span><span class="grow"></span>
+                    <button class="btn btn-indigo btn-sm" id="smAddSel" type="button"></button></div>` : "");
+              updateSimSelection();
+            }
+            // KD-1000: a Sim is "pending" until it's added; only pending + checked Sims count toward the selection.
+            function pendingPicks() {
+              return Array.from(out.querySelectorAll(".sm-pick-cb")).filter(cb => !cb.closest(".sm-sim").classList.contains("added"));
+            }
+            function updateSimSelection() {
+              const countEl = out.querySelector("#smSelCount"), addBtn = out.querySelector("#smAddSel"), allCb = out.querySelector("#smSelAll");
+              if (!countEl || !addBtn) return;
+              const pend = pendingPicks(), sel = pend.filter(cb => cb.checked).length;
+              countEl.textContent = `${sel} of ${pend.length} selected`;
+              addBtn.textContent = `Add selected (${sel})`;
+              addBtn.disabled = sel === 0;
+              if (allCb) { allCb.checked = pend.length > 0 && sel === pend.length; allCb.indeterminate = sel > 0 && sel < pend.length; allCb.disabled = pend.length === 0; }
             }
             function think(msg) { out.innerHTML = `<div class="sm-think"><span class="sm-spin"></span>${esc(msg)}</div>`; }
             function fail(msg) { out.innerHTML = `<div class="sm-err">${esc(msg || "Something went wrong. Try again.")}</div>`; }
@@ -35727,7 +35795,7 @@
                 // explicitly rather than silently showing "Added" for a Sim they already have.
                 const merged = !!(res && res.existing);
           const savedSimId = (res && res.persona && res.persona.id) || (res && res.id) || null;
-                if (cardEl) { cardEl.classList.add("added"); cardEl.querySelectorAll("button").forEach(b => b.disabled = true); if (btn) btn.textContent = merged ? "Already exists — merged" : "Added"; } // emoji-ok
+                if (cardEl) { cardEl.classList.add("added"); cardEl.querySelectorAll("button, .sm-pick-cb").forEach(b => b.disabled = true); if (btn) btn.textContent = merged ? "Already exists — merged" : "Added"; updateSimSelection(); } // emoji-ok
                 // Show the success panel unless caller will do it (e.g. "Add all" batches and shows once at end)
           if (!opts || !opts.defer) showSuccessPanel(s.name, 1, merged, savedSimId);
           return { merged, id: savedSimId };
@@ -35747,7 +35815,12 @@
               }
             }
 
-      // delegate clicks inside the result list (Add / Skip / Add all / simClass picker / Edit toggle)
+      // KD-1000: per-Sim checkboxes + "Select all" keep the selected count and the bulk button in sync.
+            out.addEventListener("change", (e) => {
+              if (e.target.closest(".sm-pick-cb")) { updateSimSelection(); return; }
+              if (e.target.id === "smSelAll") { const on = e.target.checked; pendingPicks().forEach(cb => { cb.checked = on; }); updateSimSelection(); }
+            });
+      // delegate clicks inside the result list (Add / Add selected / simClass picker / Edit toggle)
             out.addEventListener("click", (e) => {
         // Edit toggle: expand/collapse inline edit inputs for Sim name & description
         const edit = e.target.closest("[data-edit-sim]");
@@ -35787,13 +35860,14 @@
                 }
                 return;
               }
-              const add = e.target.closest("[data-add]"), skip = e.target.closest("[data-skip]"), all = e.target.closest("#smAddAll");
+              const add = e.target.closest("[data-add]"), addSel = e.target.closest("#smAddSel");
               if (add) { const i = +add.dataset.add; const card = add.closest(".sm-sim"); saveSim(lastSims[i], card, add); }
-              else if (skip) { const card = skip.closest(".sm-sim"); card.classList.add("added"); card.querySelectorAll("button").forEach(b => b.disabled = true); }
-              else if (all) {
-                // Collect all pending add buttons, fire them all (deferred mode), then show success panel once
-                const btns = Array.from(out.querySelectorAll("[data-add]")).filter(b => !b.disabled);
+              else if (addSel) {
+                // KD-1000: add only the CHECKED pending Sims (deferred mode), then show the success panel once
+                const btns = pendingPicks().filter(cb => cb.checked)
+                  .map(cb => cb.closest(".sm-sim").querySelector("[data-add]")).filter(b => b && !b.disabled);
                 if (!btns.length) return;
+                addSel.disabled = true;
                 const count = btns.length;
                 Promise.all(btns.map(b => { const i = +b.dataset.add; const card = b.closest(".sm-sim"); return saveSim(lastSims[i], card, b, { defer: true }); }))
                   // JTBD 3.10: when the batch is a single Sim that already existed, surface the merged heading.
@@ -35802,7 +35876,8 @@
               const isMerged = count === 1 && results && results[0] && results[0].merged === true;
               showSuccessPanel(null, count, isMerged, firstId);
             })
-                  .catch(() => { }); // individual errors already surface via fail()
+                  .catch(() => { }) // individual errors already surface via fail()
+                  .finally(() => updateSimSelection()); // re-enable "Add selected" for any Sims that failed
               }
             });
 
