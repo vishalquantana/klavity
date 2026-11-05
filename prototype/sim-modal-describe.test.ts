@@ -101,7 +101,7 @@ test("Adding a Sim shows the design's 'Sim created!' popup view, then closes its
   expect(f).not.toContain("put them to work")
   expect(DASH).toContain(".sm-modal-created .sm-seg")                // everything but the close button is hidden meanwhile
   expect(block(DASH, "function close(fromPop)", 300)).toContain("clearCreatedView()")
-  expect(block(DASH, "function close(fromPop)", 1300)).toContain("if (simAdded) { simAdded = false; load(); }")
+  expect(block(DASH, "function close(fromPop)", 2200)).toContain("if (simAdded) { simAdded = false; load();")
   expect(DASH).toContain('ov.classList.contains("sm-modal-created"); }')   // an open created view never counts as unsaved work
 })
 
@@ -139,4 +139,35 @@ test("From your site / From a call with suggestions still waiting keep the toast
 })
 test("Describe (no other cards) still shows the popup", () => {
   expect(runShowSuccess("describe", false, ["Alex", 1, false, "sim_3"]).created).toBe(true)
+})
+
+// ── After a Sim is added the user ends on the Sims page, wherever the dialog was opened from ──
+function runClose(o: { added: boolean; returnUrl: string | null; atSimNew?: boolean; fromPop?: boolean }) {
+  const start = DASH.indexOf("function close(fromPop) {")
+  const end = DASH.indexOf("// Closing (✕, backdrop, Escape", start)
+  const body = DASH.slice(start, end)
+  const calls: string[] = []
+  const cls = new Set<string>()
+  const ov = { classList: { remove: (c: string) => cls.delete(c), add: (c: string) => cls.add(c), contains: (c: string) => cls.has(c) } }
+  const doc = { body: { style: {} as any } }
+  const hist = { back: () => calls.push("back"), replaceState: (_s: any, _t: string, u: string) => calls.push("replace:" + u) }
+  const win = { setView: (v: string) => calls.push("setView:" + v) }
+  new Function("o", "ov", "document", "history", "window", "clearCreatedView", "hideSuccessPanel", "hideDiscard", "atSimNew", "simNewFallbackUrl", "load",
+    "var simNewReturnUrl = o.returnUrl, simAdded = o.added;" + body + "; close(o.fromPop)")(
+    o, ov, doc, hist, win, () => { }, () => { }, () => { }, () => o.atSimNew !== false, () => "/dashboard?project=P", () => calls.push("load"))
+  return calls
+}
+test("after adding a Sim opened from the Sims page: go back to it, reload, and show Sims", () => {
+  expect(runClose({ added: true, returnUrl: "/dashboard?project=P#sims" })).toEqual(["back", "load", "setView:sims"])
+})
+test("after adding a Sim opened from another page (or a deep link): go straight to the Sims page, not back", () => {
+  expect(runClose({ added: true, returnUrl: "/dashboard?project=P#triage" })).toEqual(["replace:/dashboard?project=P", "load", "setView:sims"])
+  expect(runClose({ added: true, returnUrl: null })).toEqual(["replace:/dashboard?project=P", "load", "setView:sims"])
+})
+test("closing without adding a Sim still goes back to where it was opened from and does not switch views", () => {
+  expect(runClose({ added: false, returnUrl: "/dashboard?project=P#triage" })).toEqual(["back"])
+  expect(runClose({ added: false, returnUrl: null })).toEqual(["replace:/dashboard?project=P"])
+})
+test("browser Back (fromPop) never touches history, even after an add", () => {
+  expect(runClose({ added: true, returnUrl: "/dashboard?project=P#triage", fromPop: true })).toEqual(["load", "setView:sims"])
 })
