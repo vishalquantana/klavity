@@ -2032,6 +2032,11 @@ async function mount() {
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
     const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
+    // No Klavity connection yet on a customer's site ('full' mode, not our own page, no stored token): the Sims
+    // actions stay hidden, but we offer a "Sims — Connect" card that opens the connect popup (same handshake as
+    // "Deploy all Sims"). Once the token arrives the menu is re-drawn with the Sims and the card is gone. In
+    // production this is exactly !showSims; in tests showSims is force-enabled, so both can appear there.
+    const needsConnect = rightClickMode === 'full' && !firstParty && !getToken()
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2164,6 +2169,14 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => void startBugReport() }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
+    if (needsConnect) {
+      menu.appendChild(card("users", "Sims", "Connect to Klavity to use your Sims on this page.", {
+        hint: "Connect",
+        // The card handler has already closed the menu; once the popup hands back a token, re-open it in the same
+        // spot — getToken() is now set, so the Sims actions show and this card does not come back.
+        onClick: () => { void openConnect().then((tok) => { if (tok) showMenu(x, y) }) },
+      }))
+    }
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
       menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
