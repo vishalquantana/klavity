@@ -5654,6 +5654,21 @@
       border-radius: 20px
     }
 
+    /* "Your Sims" header: keep the count right next to its title. The shared rule above pushes .count right with
+       margin-left:auto, and this header's "Run history" link also has margin-left:auto, so the two split the free
+       space and the count floated alone in the middle of the row. */
+    .sims-hero h2 .count {
+      margin-left: 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper-dim);
+      padding: 2px 9px
+    }
+
+    .sims-hero h2 .count:empty {
+      display: none
+    }
+
     /* "View all →" link in card headers — lives at far right of the h2 flex row */
     .card-go {
       font-size: 12px;
@@ -24145,7 +24160,11 @@
             if (!el) return
             // Update the count badge in the simsFeed card header (this card owns the Sims tab header)
             const countEl = $("simsCount")
-            if (countEl) countEl.textContent = sims.length ? String(sims.length) : ""
+            if (countEl) {
+              countEl.textContent = sims.length ? String(sims.length) : ""
+              const lbl = sims.length + " Sim" + (sims.length === 1 ? "" : "s")
+              if (sims.length) { countEl.setAttribute("aria-label", lbl); countEl.title = lbl } else { countEl.removeAttribute("aria-label"); countEl.removeAttribute("title") }
+            }
             const canToggle = !!(state && state.active && state.active.role === "admin")
             if (!sims.length) {
               el.innerHTML = '<div class="sim-ob">'
