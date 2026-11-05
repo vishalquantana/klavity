@@ -35312,7 +35312,10 @@
             }
             function showSuccessPanel(addedName, addedCount, merged, simId) {
               const many = addedCount && addedCount > 1, dup = merged && !many;
-              if (out.querySelector(".sm-sim:not(.added)")) {
+              // Presets list five ready-made Sims side by side; adding one is a complete action (like Describe), so it
+              // gets the "Sim created!" view and closes too, instead of only a toast while the others are still unadded.
+              const fromPreset = lastSimSource === (PANE_TO_SOURCE["preset"] || "preset");
+              if (!fromPreset && out.querySelector(".sm-sim:not(.added)")) {
                 klavToast(esc(dup ? (addedName || "That Sim") + " already exists — merged into your existing one." : (addedName || "Sim") + " added."));
                 return;
               }

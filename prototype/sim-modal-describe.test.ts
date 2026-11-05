@@ -104,3 +104,39 @@ test("Adding a Sim shows the design's 'Sim created!' popup view, then closes its
   expect(block(DASH, "function close(fromPop)", 1300)).toContain("if (simAdded) { simAdded = false; load(); }")
   expect(DASH).toContain('ov.classList.contains("sm-modal-created"); }')   // an open created view never counts as unsaved work
 })
+
+// ── Presets: adding a preset Sim gets the same "Sim created!" popup as Describe, even with other presets unadded ──
+function runShowSuccess(source: string, unaddedCards: boolean, args: [string | null, number, boolean, string | null]) {
+  const start = DASH.indexOf("function showSuccessPanel(addedName, addedCount, merged, simId)")
+  const end = DASH.indexOf("function hideSuccessPanel()", start)
+  const body = DASH.slice(start, end)
+  const els: Record<string, any> = { smCreated: { hidden: true }, smCreatedT: {}, smCreatedN: {}, smCreatedS: {} }
+  const cls = new Set<string>(); const toasts: string[] = []; let closed = 0
+  const ov = { classList: { add: (c: string) => cls.add(c), remove: (c: string) => cls.delete(c), contains: (c: string) => cls.has(c) } }
+  const out = { querySelector: (sel: string) => (sel === ".sm-sim:not(.added)" && unaddedCards ? {} : null) }
+  const timers: Array<() => void> = []
+  new Function("$", "ov", "out", "klavToast", "esc", "lastSimSource", "PANE_TO_SOURCE", "close", "clearCreatedView", "setTimeout", "createdTimerBox",
+    "var createdTimer = null;" + body.replace(/createdTimer = setTimeout/, "createdTimer = setTimeout") + "; showSuccessPanel.apply(null, " + JSON.stringify(args) + ")")(
+    (id: string) => els[id], ov, out, (m: string) => toasts.push(m), (s: string) => s, source,
+    { describe: "describe", site: "from-site", call: "transcript", preset: "preset" }, () => { closed++ }, () => cls.delete("sm-modal-created"),
+    (fn: () => void) => { timers.push(fn); return 1 }, {})
+  return { created: cls.has("sm-modal-created"), toasts, title: els.smCreatedT.textContent, name: els.smCreatedN.textContent, runTimer: () => timers.forEach((f) => f()), closed: () => closed }
+}
+test("a preset Sim add shows the 'Sim created!' popup and closes, even while other presets are still unadded", () => {
+  const r = runShowSuccess("preset", true, ["QA Reviewer", 1, false, "sim_1"])
+  expect(r.created).toBe(true)
+  expect(r.title).toBe("Sim created!")
+  expect(r.name).toBe("QA Reviewer")
+  expect(r.toasts.length).toBe(0)
+  r.runTimer(); expect(r.closed()).toBe(1)
+})
+test("From your site / From a call with suggestions still waiting keep the toast-only behaviour", () => {
+  for (const src of ["from-site", "transcript"]) {
+    const r = runShowSuccess(src, true, ["Priya", 1, false, "sim_2"])
+    expect(r.created).toBe(false)
+    expect(r.toasts.length).toBe(1)
+  }
+})
+test("Describe (no other cards) still shows the popup", () => {
+  expect(runShowSuccess("describe", false, ["Alex", 1, false, "sim_3"]).created).toBe(true)
+})
