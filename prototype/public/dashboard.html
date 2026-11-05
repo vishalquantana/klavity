@@ -21033,8 +21033,13 @@
     }
     // Lazily ensure the per-project Snap routing mode + connectors are known so New reports can render the
     // right per-row affordance (Send to Jira vs tracker key) even when the Settings tab hasn't loaded yet.
-    async function ensureSnapRoutingLoaded() {
-      if (state._snapRouting !== undefined && state._connectors !== undefined) return
+    let _snapRoutingInflight = null   // one /connectors request at a time (renderTriage now calls this without awaiting)
+    function ensureSnapRoutingLoaded() {
+      if (state._snapRouting !== undefined && state._connectors !== undefined) return Promise.resolve()
+      if (!_snapRoutingInflight) _snapRoutingInflight = _loadSnapRouting().finally(() => { _snapRoutingInflight = null })
+      return _snapRoutingInflight
+    }
+    async function _loadSnapRouting() {
       const pid = curProjId(); if (!pid) return
       try {
         const r = await fetch(projPath("/connectors"))
@@ -21045,9 +21050,27 @@
       } catch { /* non-fatal — falls back to autofile / no button */ }
     }
 
+    // Project whose reports are currently painted (set by renderTriage's apply) — guards the late routing repaint below
+    // from drawing the initial empty [] as "No new reports" before the real list has arrived.
+    let _triagePaintedPid = null
     async function renderTriage() {
       const pid = curProjId(); if (!pid) return
-      await ensureSnapRoutingLoaded()
+      // Perf (Sim Reports loading slowly): this used to AWAIT /connectors first, then fetch the reports, then the
+      // sim matches — three server round-trips in a row, and nothing (not even the cached list) painted until the
+      // first one finished. Now all three start together. Until the connector info lands, rows use the same
+      // "autofile" fallback as before; once it does, the routing-dependent affordances (Send to Jira, bulk send)
+      // repaint from the already-loaded items, without another fetch.
+      if (state._snapRouting === undefined || state._connectors === undefined) {
+        const before = state._snapRouting || "autofile", beforeN = (state._connectors || []).length
+        ensureSnapRoutingLoaded().then(() => {
+          const changed = (state._snapRouting || "autofile") !== before || (state._connectors || []).length !== beforeN
+          if (changed && _triagePaintedPid === pid && curProjId() === pid && document.body.getAttribute("data-view") === "triage") {
+            try { renderTriageView() } catch (e) { }
+          }
+        })
+      }
+      // KLA-255: pending sim-match confirmations render in the same card — independent of the list, so in parallel.
+      const matchesDone = renderSimMatches()
       // The 4th arg (host) hands swrSection the skeleton it owns — swrSection now guarantees that
       // skeleton is always cleared (success → apply; throw/empty/cold-miss → couldn't-load state), so
       // this caller no longer needs its own post-call `.sk` fallback. renderTriageItems is the real
@@ -21064,13 +21087,12 @@
           delete window.__klavErr[ek]
           return await r.json()
         },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
-        (d) => { _triageItems = (d && d.triage) || []; renderTriageView() },
+        (d) => { _triageItems = (d && d.triage) || []; _triagePaintedPid = pid; renderTriageView() },
         "triageList",
       )
       // A deep link (#triage/<id>) the inbox could not satisfy — the list failed to load — still opens the report itself.
       if (window._pendingTriageFocus) { const fid = window._pendingTriageFocus; window._pendingTriageFocus = null; openReportOutsideInbox(fid) }
-      // KLA-255: also render pending sim-match confirmations in the same triage card.
-      renderSimMatches()
+      try { await matchesDone } catch (e) { }
     }
     // JTBD 2.8: bulk + evidence-rich triage. Rows now carry a checkbox for multi-select (backed by
     // the existing PATCH /tickets/bulk endpoint), keyboard nav (j/k move · a accept · d dismiss),
