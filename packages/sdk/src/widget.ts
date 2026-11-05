@@ -216,6 +216,19 @@ function currentScript(): HTMLScriptElement {
     || (document.querySelector('script[src*="widget.js"]') as HTMLScriptElement)
 }
 
+// KD-993: remember the reporter's email (per project, on the customer's origin) so the composer doesn't make them
+// retype it every time. A host-supplied identity (identify() / data-user-email) always wins over this.
+const REPORTER_EMAIL_KEY = "klavity_reporter_email"
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function getSavedEmail(projectId: string): string {
+  try { const v = localStorage.getItem(REPORTER_EMAIL_KEY + ":" + projectId) || ""; return EMAIL_OK.test(v) ? v : "" } catch { return "" }
+}
+function setSavedEmail(projectId: string, email: string) {
+  try {
+    if (email && EMAIL_OK.test(email)) localStorage.setItem(REPORTER_EMAIL_KEY + ":" + projectId, email)
+    else localStorage.removeItem(REPORTER_EMAIL_KEY + ":" + projectId)
+  } catch { /* storage unavailable (private mode / blocked) — just don't remember */ }
+}
 function getToken(): string { try { return localStorage.getItem(TOKEN_KEY) || "" } catch { return "" } }
 function setToken(t: string) { try { localStorage.setItem(TOKEN_KEY, t) } catch {} }
 function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
@@ -1657,7 +1670,8 @@ async function mount() {
       }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
-      prefillEmail: _reporter?.email,
+      prefillEmail: _reporter?.email || getSavedEmail(cfg.projectId) || undefined,
+      onRememberEmail: (email: string) => setSavedEmail(cfg.projectId, email),
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
