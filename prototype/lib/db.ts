@@ -5,6 +5,7 @@ import { encryptSecret, sha256hex } from "./crypto"
 import type { SanitizedAttr } from "./attr"
 import type { ParsedLine } from "./transcript-parse"
 import { sanitizeLabelRules, type LabelRule } from "./label-rules"
+import { snapshotStatements } from "./deleted-tickets"
 import { normalizeReferer, coarsenUa } from "./shortlinks"
 import { BASELINE_QA_SIM, BASELINE_QA_SOURCE, baselineQaId } from "./baseline-qa"
 
@@ -8942,7 +8943,8 @@ export async function listTicketsPaginated(
 
 export async function deleteTicketsBulk(
   projectId: string,
-  ticketIds: string[]
+  ticketIds: string[],
+  actor: string | null = null,
 ): Promise<{ deleted: number; ticketIds: string[] }> {
   const cleanIds = Array.isArray(ticketIds)
     ? ticketIds.map(String).map(s => s.trim()).filter(Boolean).slice(0, 200)
@@ -8959,7 +8961,11 @@ export async function deleteTicketsBulk(
 
   const validPlaceholders = validIds.map(() => "?").join(",")
 
+  // "Deleted tickets" bin: a restorable copy is written in the SAME batch as the delete below.
+  const binStmts = await snapshotStatements(db!, projectId, validIds, actor) as Array<{ sql: string; args: any[] }>
+
   const stmts: Array<{ sql: string; args: any[] }> = [
+    ...binStmts,
     { sql: `DELETE FROM ticket_comments WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
     { sql: `DELETE FROM ticket_labels WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
     { sql: `DELETE FROM ticket_exports WHERE feedback_id IN (${validPlaceholders})`, args: validIds },
