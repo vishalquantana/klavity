@@ -1816,6 +1816,17 @@
       font-size: 20px
     }
 
+    /* Deleted tickets bin */
+    #delTktBg .modal { max-width: 640px }
+    .dtk-sub { color: var(--paper-faint); font-size: 13px; margin: -6px 0 14px }
+    .dtk-list { display: flex; flex-direction: column; gap: 8px }
+    .dtk-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--ink) }
+    .dtk-main { flex: 1; min-width: 0 }
+    .dtk-title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+    .dtk-key { font-family: var(--mono); font-size: 11px; color: var(--paper-faint); margin-right: 6px }
+    .dtk-meta { font-size: 12px; color: var(--paper-faint); margin-top: 2px }
+    .dtk-none { color: var(--paper-faint); font-size: 13px; padding: 18px 4px; text-align: center }
+
     .modal .mclose {
       margin-left: auto;
       background: none;
@@ -5643,6 +5654,21 @@
       border-radius: 20px
     }
 
+    /* "Your Sims" header: keep the count right next to its title. The shared rule above pushes .count right with
+       margin-left:auto, and this header's "Run history" link also has margin-left:auto, so the two split the free
+       space and the count floated alone in the middle of the row. */
+    .sims-hero h2 .count {
+      margin-left: 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--paper-dim);
+      padding: 2px 9px
+    }
+
+    .sims-hero h2 .count:empty {
+      display: none
+    }
+
     /* "View all →" link in card headers — lives at far right of the h2 flex row */
     .card-go {
       font-size: 12px;
@@ -6283,9 +6309,9 @@
       align-self: center;
       margin-right: 12px;
       flex-shrink: 0;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 500;
-      padding: 7px 12px;
+      padding: 7px 13px;
       border-radius: 8px;
       border: 1px solid var(--line);
       background: transparent;
@@ -6303,13 +6329,26 @@
       cursor: default
     }
 
+    /* KD-1071: per-Sim Pause / Resume (Select Sims execution state), left of Activate/Deactivate. */
+    .sf-act.sf-exec {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 8px
+    }
+
+    .sf-act.sf-exec.is-paused {
+      border-color: color-mix(in srgb, #f59e0b 55%, var(--line));
+      color: #b45309
+    }
+
     /* Sits on the right of the header, between the observations pill and the Activate/Deactivate button (matches the design). */
     .sf-state {
       flex-shrink: 0;
       padding: 4px 10px;
       border-radius: 999px;
       font-family: var(--mono);
-      font-size: 9.5px;
+      font-size: 11px;
       font-weight: 600;
       background: color-mix(in srgb, #20b56a 12%, transparent);
       color: #20b56a
@@ -6350,8 +6389,9 @@
       min-width: 0
     }
 
+    /* Readability: the Sims cards' text was 9.5–14px (too small to read comfortably); bumped one step each. */
     .sf-hd .name {
-      font-size: 14px;
+      font-size: 15.5px;
       font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
@@ -6359,17 +6399,18 @@
     }
 
     .sf-hd .role {
-      font-size: 12px;
+      font-size: 13.5px;
+      line-height: 1.4;
       color: var(--paper-faint)
     }
 
     .sf-badge {
       margin-left: auto;
       font-family: var(--mono);
-      font-size: 10px;
+      font-size: 11.5px;
       color: var(--paper-faint);
       background: var(--ink-3);
-      padding: 2px 7px;
+      padding: 3px 9px;
       border-radius: 20px;
       flex-shrink: 0
     }
@@ -6397,13 +6438,13 @@
     }
 
     .sf-ob-text {
-      font-size: 13.5px;
-      line-height: 1.45;
+      font-size: 15px;
+      line-height: 1.6;
       color: var(--paper)
     }
 
     .sf-ob-meta {
-      font-size: 11px;
+      font-size: 12.5px;
       color: var(--paper-faint);
       font-family: var(--mono);
       display: flex;
@@ -6415,7 +6456,7 @@
     .sf-triage {
       color: var(--indigo);
       font-family: var(--body);
-      font-size: 12px;
+      font-size: 13.5px;
       font-weight: 600
     }
 
@@ -6424,8 +6465,8 @@
     }
 
     .sf-none {
-      padding: 11px 15px;
-      font-size: 13px;
+      padding: 12px 15px;
+      font-size: 14.5px;
       color: var(--paper-faint);
       font-style: italic
     }
@@ -18474,6 +18515,15 @@
                 <path d="M13 17v2" />
                 <path d="M13 11v2" />
               </svg> Labels</button>
+            <!-- Deleted tickets bin: tickets deleted in the last 30 days, with Restore. -->
+            <button class="btn btn-ghost btn-sm" id="deletedTicketsBtn" type="button" title="View and restore deleted tickets"
+              aria-haspopup="dialog"><svg xmlns="http://www.w3.org/2000/svg" class="icon" width="14" height="14"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg> Deleted</button>
             <!-- B.10: entry point to the Guards board (things Klavity re-checks forever because they broke once). -->
             <button class="btn btn-ghost btn-sm" id="ticketsGuardsBtn" type="button" title="Open the Guards board"
               onclick="klavSetView&&klavSetView('guards')">Guards</button>
@@ -21011,8 +21061,13 @@
     }
     // Lazily ensure the per-project Snap routing mode + connectors are known so New reports can render the
     // right per-row affordance (Send to Jira vs tracker key) even when the Settings tab hasn't loaded yet.
-    async function ensureSnapRoutingLoaded() {
-      if (state._snapRouting !== undefined && state._connectors !== undefined) return
+    let _snapRoutingInflight = null   // one /connectors request at a time (renderTriage now calls this without awaiting)
+    function ensureSnapRoutingLoaded() {
+      if (state._snapRouting !== undefined && state._connectors !== undefined) return Promise.resolve()
+      if (!_snapRoutingInflight) _snapRoutingInflight = _loadSnapRouting().finally(() => { _snapRoutingInflight = null })
+      return _snapRoutingInflight
+    }
+    async function _loadSnapRouting() {
       const pid = curProjId(); if (!pid) return
       try {
         const r = await fetch(projPath("/connectors"))
@@ -21023,9 +21078,27 @@
       } catch { /* non-fatal — falls back to autofile / no button */ }
     }
 
+    // Project whose reports are currently painted (set by renderTriage's apply) — guards the late routing repaint below
+    // from drawing the initial empty [] as "No new reports" before the real list has arrived.
+    let _triagePaintedPid = null
     async function renderTriage() {
       const pid = curProjId(); if (!pid) return
-      await ensureSnapRoutingLoaded()
+      // Perf (Sim Reports loading slowly): this used to AWAIT /connectors first, then fetch the reports, then the
+      // sim matches — three server round-trips in a row, and nothing (not even the cached list) painted until the
+      // first one finished. Now all three start together. Until the connector info lands, rows use the same
+      // "autofile" fallback as before; once it does, the routing-dependent affordances (Send to Jira, bulk send)
+      // repaint from the already-loaded items, without another fetch.
+      if (state._snapRouting === undefined || state._connectors === undefined) {
+        const before = state._snapRouting || "autofile", beforeN = (state._connectors || []).length
+        ensureSnapRoutingLoaded().then(() => {
+          const changed = (state._snapRouting || "autofile") !== before || (state._connectors || []).length !== beforeN
+          if (changed && _triagePaintedPid === pid && curProjId() === pid && document.body.getAttribute("data-view") === "triage") {
+            try { renderTriageView() } catch (e) { }
+          }
+        })
+      }
+      // KLA-255: pending sim-match confirmations render in the same card — independent of the list, so in parallel.
+      const matchesDone = renderSimMatches()
       // The 4th arg (host) hands swrSection the skeleton it owns — swrSection now guarantees that
       // skeleton is always cleared (success → apply; throw/empty/cold-miss → couldn't-load state), so
       // this caller no longer needs its own post-call `.sk` fallback. renderTriageItems is the real
@@ -21042,13 +21115,12 @@
           delete window.__klavErr[ek]
           return await r.json()
         },  // #700: safeFetch → null on network/abort (swrSection also catches, belt-and-suspenders)
-        (d) => { _triageItems = (d && d.triage) || []; renderTriageView() },
+        (d) => { _triageItems = (d && d.triage) || []; _triagePaintedPid = pid; renderTriageView() },
         "triageList",
       )
       // A deep link (#triage/<id>) the inbox could not satisfy — the list failed to load — still opens the report itself.
       if (window._pendingTriageFocus) { const fid = window._pendingTriageFocus; window._pendingTriageFocus = null; openReportOutsideInbox(fid) }
-      // KLA-255: also render pending sim-match confirmations in the same triage card.
-      renderSimMatches()
+      try { await matchesDone } catch (e) { }
     }
     // JTBD 2.8: bulk + evidence-rich triage. Rows now carry a checkbox for multi-select (backed by
     // the existing PATCH /tickets/bulk endpoint), keyboard nav (j/k move · a accept · d dismiss),
@@ -21641,7 +21713,7 @@
         if (!ids.length) return
         const ok = await klavConfirm({
           title: `Delete ${ids.length} report${ids.length === 1 ? "" : "s"}?`,
-          message: `${ids.length === 1 ? "This report" : `These ${ids.length} reports`} will be permanently deleted. This action cannot be undone.`,
+          message: `${ids.length === 1 ? "This report" : `These ${ids.length} reports`} will be moved to Deleted tickets (Tickets → Deleted), where you can restore ${ids.length === 1 ? "it" : "them"} for 30 days.`,
           confirmText: `Delete ${ids.length === 1 ? "report" : `${ids.length} reports`}`,
         })
         if (!ok) return
@@ -24101,7 +24173,11 @@
             if (!el) return
             // Update the count badge in the simsFeed card header (this card owns the Sims tab header)
             const countEl = $("simsCount")
-            if (countEl) countEl.textContent = sims.length ? String(sims.length) : ""
+            if (countEl) {
+              countEl.textContent = sims.length ? String(sims.length) : ""
+              const lbl = sims.length + " Sim" + (sims.length === 1 ? "" : "s")
+              if (sims.length) { countEl.setAttribute("aria-label", lbl); countEl.title = lbl } else { countEl.removeAttribute("aria-label"); countEl.removeAttribute("title") }
+            }
             const canToggle = !!(state && state.active && state.active.role === "admin")
             if (!sims.length) {
               el.innerHTML = '<div class="sim-ob">'
@@ -24164,6 +24240,7 @@
               const toggleBtn = canToggle
                 ? `<button type="button" class="sf-act" data-sim-toggle="${esc(sim.id)}" onclick="toggleSimActive('${esc(sim.id)}', ${isActive ? "false" : "true"}, this)">${isActive ? "Deactivate" : "Activate"}</button>`
                 : ""
+              const execBtn = isActive ? simExecButtonHtml(sim) : ""
               return `<div class="sf-row${isActive ? "" : " is-inactive"}">
       <div class="sf-top">
       <a class="sf-hd" href="${esc(href)}">
@@ -24175,12 +24252,90 @@
         <span class="sf-badge">${badge}</span>
         <span class="sf-state">${isActive ? "Active" : "Inactive"}</span>
       </a>
+      ${execBtn}
       ${toggleBtn}
       </div>
       ${obHtml}
     </div>`
             }).join("")
             if (typeof supPickRefresh === "function") supPickRefresh() // the Run Sims picker only offers active Sims
+            loadSimExecStates(pid)
+          }
+
+          // ── KD-1071: per-Sim Pause / Resume on the Sims tab ─────────────────────────────────
+          // Reads/writes ONLY the additive Select Sims state (/api/widget/sim-deployments → sim_deployments
+          // table), the same one the widget's "Select Sims…" modal uses. Activate/Deactivate above is untouched.
+          var _simExec = { pid: null, states: {}, at: 0, loading: false, busy: null }
+
+          function simExecButtonHtml(sim) {
+            const st = _simExec && _simExec.pid === curProjId() ? _simExec.states[sim.id] : null
+            if (!st) return ""
+            const id = esc(sim.id)
+            if (_simExec.busy === sim.id) {
+              return `<button type="button" class="sf-act sf-exec" disabled>${st.execution === "paused" ? "Resuming…" : "Pausing…"}</button>`
+            }
+            if (st.deployment === "deployed" && st.execution === "running") {
+              return `<button type="button" class="sf-act sf-exec" data-sim-exec="${id}" aria-label="Pause ${esc(sim.name)}" onclick="simExecAction('${id}', 'pause', this)">❚❚ Pause</button>`
+            }
+            if (st.deployment === "deployed" && st.execution === "paused") {
+              return `<button type="button" class="sf-act sf-exec is-paused" data-sim-exec="${id}" aria-label="Resume ${esc(sim.name)}" onclick="simExecAction('${id}', 'resume', this)">▶ Resume</button>`
+            }
+            return `<button type="button" class="sf-act sf-exec" disabled title="Not running. Deploy this Sim from Select Sims in the Snap panel to run it.">❚❚ Pause</button>`
+          }
+
+          async function loadSimExecStates(pid) {
+            if (!pid || !_simExec || _simExec.loading || _simExec.busy) return
+            if (_simExec.pid === pid && Date.now() - _simExec.at < 15000) return // fresh enough; later renders re-read it
+            _simExec.loading = true
+            try {
+              const res = await fetch("/api/widget/sim-deployments?project=" + encodeURIComponent(pid), { credentials: "include" })
+              const data = await res.json().catch(function () { return {} })
+              if (!res.ok || !data.ok) return
+              simExecStore(pid, data.sims)
+              renderSimsFeed()
+            } catch (e) { /* best-effort: the cards just show no Pause/Resume */ }
+            finally { _simExec.loading = false }
+          }
+
+          // A change made in the widget's Select Sims modal on this page → refresh the Sims tab cards now.
+          window.addEventListener("klavity:sim-deployments-applied", function () {
+            if (!_simExec) return
+            _simExec.at = 0
+            if (typeof state !== "undefined" && state && state.sims && state.sims.length) loadSimExecStates(curProjId())
+          })
+
+          function simExecStore(pid, sims) {
+            const states = {}
+            ;(sims || []).forEach(function (s) { states[s.id] = { deployment: s.deployment, execution: s.execution } })
+            _simExec.pid = pid
+            _simExec.states = states
+            _simExec.at = Date.now()
+          }
+
+          async function simExecAction(simId, action, btn) {
+            const pid = curProjId()
+            const sim = (state.sims || []).find(function (x) { return x.id === simId })
+            if (!pid || !sim || _simExec.busy) return
+            _simExec.busy = simId
+            renderSimsFeed()
+            try {
+              const res = await fetch("/api/widget/sim-deployments", {
+                method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+                body: JSON.stringify({ project: pid, action: action, simIds: [simId] }),
+              })
+              const data = await res.json().catch(function () { return {} })
+              if (!res.ok || !data.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
+              if (Array.isArray(data.sims)) simExecStore(pid, data.sims)
+              // The widget on this page applies it right away (resumed Sims review the page again → feedback cards).
+              try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-changed")) } catch (e) { }
+              if (data.applied && data.applied.length) klavToast(esc(sim.name) + (action === "pause" ? " is paused." : " is running again."))
+              else klavToast(esc(sim.name) + (action === "pause" ? " isn't running, so there was nothing to pause." : " isn't paused, so there was nothing to resume."), true)
+            } catch (e) {
+              klavToast("Could not update the Sim. Check your connection and try again.", true)
+            } finally {
+              _simExec.busy = null
+              renderSimsFeed()
+            }
           }
 
           // WP-S2: activate / deactivate a Sim. An inactive Sim keeps its history but no review, schedule or widget uses it.
@@ -28502,7 +28657,7 @@
               ph.innerHTML = `<button class="tkt-panel-btn" data-act="close" type="button" aria-label="Close ticket detail" title="Close (Esc)">${kicon('x', { size: 13 })} Close</button>`
                 + `<span class="tph-sp"></span>`
                 + `<button class="tkt-panel-btn" data-act="expand" type="button" aria-label="Expand to full, shareable page" title="Open as a full, shareable page">${kicon('app-window', { size: 13 })} Full page</button>`
-                + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Permanently delete ticket" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
+                + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Delete ticket (restorable for 30 days)" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
               ph.querySelector('[data-act="close"]').addEventListener("click", closeSingleTicket)
               // ⤢ expand navigates to the dedicated /:project/tickets/:key (hash #tickets/<id>) route.
               ph.querySelector('[data-act="expand"]').addEventListener("click", () => openSingleTicket(id, "full", _tktOriginContext))
@@ -28537,7 +28692,7 @@
                 + statusPillHtml(t.status)
                 + `<span class="tph-sp"></span>`
                 + `<button class="tkt-panel-btn" data-act="copy" type="button" aria-label="Copy link to this ticket">${kicon('link', { size: 13 })} Copy link</button>`
-                + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Permanently delete ticket" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
+                + `<button class="tkt-panel-btn" data-act="delete" type="button" aria-label="Delete ticket" title="Delete ticket (restorable for 30 days)" style="color:var(--red,#e05252)">${kicon('trash', { size: 13 })} Delete</button>`
                 + `<button class="tkt-icon-btn" data-act="prev" type="button" aria-label="Previous ticket"${hasPrev ? "" : " disabled"}>${kicon('chevron-left', { size: 15 })}</button>`
                 + `<button class="tkt-icon-btn" data-act="next" type="button" aria-label="Next ticket"${hasNext ? "" : " disabled"}>${kicon('chevron-right', { size: 15 })}</button>`
               ph.querySelector('[data-act="back"]').addEventListener("click", closeSingleTicket)
@@ -28570,7 +28725,7 @@
               const pid = (state.active && state.active.id) || t.projectId || (typeof curProjId === "function" ? curProjId() : null)
               const ok = await klavConfirm({
                 title: `Delete ticket ${key}?`,
-                message: "This ticket will be permanently deleted. This action cannot be undone.",
+                message: "This ticket will be moved to Deleted tickets, where you can restore it for 30 days.",
                 confirmText: "Delete ticket",
               })
               if (!ok) return
@@ -28591,7 +28746,7 @@
                   _tktBoardTickets = _tktBoardTickets.filter(x => String(x.id) !== String(id))
                 }
                 closeSingleTicket()
-                if (typeof klavToast === "function") klavToast(`Ticket ${key} deleted successfully.`)
+                if (typeof klavToast === "function") klavToast(`Ticket ${key} deleted. You can restore it from Tickets → Deleted.`)
                 if (typeof renderTicketsKanban === "function") renderTicketsKanban()
                 if (typeof renderTktList === "function" && listView && !listView.classList.contains("hide")) {
                   const wrap = document.getElementById("tktListContent")
@@ -28877,6 +29032,106 @@
             window.__klavTktInvoker = null
             _tktOriginContext = "tickets"
           }
+
+          // ── Deleted tickets bin ───────────────────────────────────────────────────────────────────────
+          // Deleting a ticket keeps a restorable copy for 30 days (GET /tickets/deleted, POST …/:id/restore).
+          // This modal lists them, newest first, with Restore; a restored ticket comes back with its comments,
+          // labels and history, and the board/list/counts are reloaded.
+          let _dtk = { pid: null, items: [], ticketKey: null, loading: false, busy: null, error: "" }
+          function dtkEnsureModal() {
+            let bg = document.getElementById("delTktBg")
+            if (bg) return bg
+            bg = document.createElement("div")
+            bg.className = "modal-bg"; bg.id = "delTktBg"
+            bg.setAttribute("role", "dialog"); bg.setAttribute("aria-modal", "true"); bg.setAttribute("aria-labelledby", "delTktTitle")
+            bg.innerHTML = `<div class="modal">
+      <div class="mhead"><h3 id="delTktTitle">Deleted tickets</h3><span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm" type="button" data-dtk="close" aria-label="Close">Close</button></div>
+      <div class="dtk-sub">Tickets deleted in the last 30 days. Restore one to bring it back with its comments, labels and history.</div>
+      <div class="dtk-list" id="delTktList" aria-live="polite"></div>
+    </div>`
+            bg.addEventListener("click", (e) => {
+              if (e.target === bg) return closeDeletedTickets()
+              const b = e.target && e.target.closest ? e.target.closest("[data-dtk]") : null
+              if (!b) return
+              if (b.dataset.dtk === "close") closeDeletedTickets()
+              else if (b.dataset.dtk === "restore") restoreDeletedTicket(b.dataset.id)
+            })
+            bg.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDeletedTickets() })
+            document.body.appendChild(bg)
+            return bg
+          }
+          function dtkKey(t) {
+            if (t.seqNum == null) return String(t.feedbackId || "").slice(0, 8)
+            return _dtk.ticketKey ? _dtk.ticketKey + "-" + t.seqNum : "#" + t.seqNum
+          }
+          function renderDeletedTickets() {
+            const list = document.getElementById("delTktList"); if (!list) return
+            if (_dtk.loading) { list.innerHTML = '<div class="dtk-none">Loading deleted tickets…</div>'; return }
+            if (_dtk.error) { list.innerHTML = `<div class="dtk-none">${esc(_dtk.error)}</div>`; return }
+            if (!_dtk.items.length) { list.innerHTML = '<div class="dtk-none">No deleted tickets in the last 30 days.</div>'; return }
+            list.innerHTML = _dtk.items.map((t) => {
+              const daysLeft = Math.max(0, Math.ceil((t.expiresAt - Date.now()) / 86400000))
+              const meta = ["Deleted " + ago(t.deletedAt)]
+              if (t.deletedBy) meta.push("by " + esc(t.deletedBy))
+              meta.push(daysLeft + " day" + (daysLeft === 1 ? "" : "s") + " left")
+              const mine = _dtk.busy === t.feedbackId
+              return `<div class="dtk-row" data-id="${esc(t.feedbackId)}">
+        <div class="dtk-main"><div class="dtk-title"><span class="dtk-key">${esc(dtkKey(t))}</span>${esc(t.title)}</div>
+          <div class="dtk-meta">${meta.join(" · ")}</div></div>
+        <button class="btn btn-sm" type="button" data-dtk="restore" data-id="${esc(t.feedbackId)}"${_dtk.busy ? " disabled" : ""}
+          aria-label="Restore ${esc(dtkKey(t))}">${mine ? "Restoring…" : "Restore"}</button>
+      </div>`
+            }).join("")
+          }
+          async function openDeletedTickets() {
+            const pid = curProjId(); if (!pid) return
+            const bg = dtkEnsureModal()
+            _dtk = { pid, items: [], ticketKey: null, loading: true, busy: null, error: "" }
+            bg.classList.add("open")
+            renderDeletedTickets()
+            try { bg.querySelector('[data-dtk="close"]').focus() } catch (e) { }
+            try {
+              const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/deleted", { credentials: "include" })
+              const d = await r.json().catch(() => ({}))
+              if (_dtk.pid !== pid) return
+              if (!r.ok) _dtk.error = d.error || "Couldn't load deleted tickets. Please try again."
+              else { _dtk.items = Array.isArray(d.tickets) ? d.tickets : []; _dtk.ticketKey = d.ticketKey || null }
+            } catch (e) {
+              _dtk.error = "Couldn't load deleted tickets. Check your connection and try again."
+            }
+            _dtk.loading = false
+            renderDeletedTickets()
+          }
+          function closeDeletedTickets() {
+            const bg = document.getElementById("delTktBg"); if (bg) bg.classList.remove("open")
+            try { const b = document.getElementById("deletedTicketsBtn"); if (b) b.focus() } catch (e) { }
+          }
+          async function restoreDeletedTicket(fid) {
+            const pid = _dtk.pid; if (!pid || !fid || _dtk.busy) return
+            const item = _dtk.items.find((x) => x.feedbackId === fid)
+            _dtk.busy = fid; renderDeletedTickets()
+            window.__klavMutating++
+            try {
+              const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets/deleted/" + encodeURIComponent(fid) + "/restore", { method: "POST", credentials: "include" })
+              const d = await r.json().catch(() => ({}))
+              if (!r.ok) { klavToast(esc(d.error || "Couldn't restore the ticket. Please try again."), true); return }
+              _dtk.items = _dtk.items.filter((x) => x.feedbackId !== fid)
+              const key = item ? dtkKey(Object.assign({}, item, { seqNum: d.seqNum != null ? d.seqNum : item.seqNum })) : "Ticket"
+              klavToast(esc(key) + " restored." + (d.renumbered ? " Its old number was taken, so it has a new one." : ""))
+              // Reload so the ticket reappears on the board/list and in the counts.
+              _tktBoardLoadedPid = null
+              try { await load() } catch (e) { }
+              if (document.body.getAttribute("data-view") === "tickets") renderTicketsView()
+            } catch (e) {
+              klavToast("Couldn't restore the ticket. Check your connection and try again.", true)
+            } finally {
+              window.__klavMutating--
+              _dtk.busy = null
+              renderDeletedTickets()
+            }
+          }
+          ;(function () { const b = document.getElementById("deletedTicketsBtn"); if (b) b.addEventListener("click", openDeletedTickets) })()
 
           // ── KD-100: attachments on the New ticket dialog ─────────────────────────────────────────────────
           // Files are held client-side (previewed + removable) and uploaded AFTER the ticket is created, through the existing
@@ -30370,7 +30625,7 @@
               const n = ids.length
               const ok = await klavConfirm({
                 title: `Delete ${n} ticket${n === 1 ? "" : "s"}?`,
-                message: `${n === 1 ? "This ticket" : `These ${n} tickets`} will be permanently deleted. This action cannot be undone.`,
+                message: `${n === 1 ? "This ticket" : `These ${n} tickets`} will be moved to Deleted tickets, where you can restore ${n === 1 ? "it" : "them"} for 30 days.`,
                 confirmText: `Delete ${n === 1 ? "ticket" : `${n} tickets`}`,
               })
               if (!ok) return
@@ -30393,7 +30648,7 @@
                   _tktBoardTickets = _tktBoardTickets.filter(t => !ids.includes(String(t.id)))
                 }
                 const deletedCount = typeof res.deleted === "number" ? res.deleted : n
-                if (typeof klavToast === "function") klavToast(`${deletedCount} ticket${deletedCount === 1 ? "" : "s"} deleted successfully.`)
+                if (typeof klavToast === "function") klavToast(`${deletedCount} ticket${deletedCount === 1 ? "" : "s"} deleted. You can restore ${deletedCount === 1 ? "it" : "them"} from Tickets → Deleted.`)
                 if (onDone) onDone()
               } finally {
                 window.__klavMutating--
@@ -35312,7 +35567,10 @@
             }
             function showSuccessPanel(addedName, addedCount, merged, simId) {
               const many = addedCount && addedCount > 1, dup = merged && !many;
-              if (out.querySelector(".sm-sim:not(.added)")) {
+              // Presets list five ready-made Sims side by side; adding one is a complete action (like Describe), so it
+              // gets the "Sim created!" view and closes too, instead of only a toast while the others are still unadded.
+              const fromPreset = lastSimSource === (PANE_TO_SOURCE["preset"] || "preset");
+              if (!fromPreset && out.querySelector(".sm-sim:not(.added)")) {
                 klavToast(esc(dup ? (addedName || "That Sim") + " already exists — merged into your existing one." : (addedName || "Sim") + " added."));
                 return;
               }
@@ -35723,12 +35981,16 @@
               // If WE pushed the /sim/new entry, pop it with history.back() so the browser Back button
               // isn't left pointing at an entry that just re-opens the surface (replaceState made Back
               // look like a no-op). Deep-link hits (no pushed entry) still replace, so Back leaves the app.
+              // After a Sim was added the user must end on the Sims page — not wherever the dialog was opened from (Overview,
+              // Triage, a deep link). So when we were NOT opened from Sims, skip history.back() and go there directly.
+              const addedNow = simAdded;
               if (!fromPop && atSimNew()) {
-                if (simNewReturnUrl) { simNewReturnUrl = null; try { history.back(); } catch (e) { } }
+                const returnsToSims = !!simNewReturnUrl && /#sims$/.test(simNewReturnUrl);
+                if (simNewReturnUrl && (!addedNow || returnsToSims)) { simNewReturnUrl = null; try { history.back(); } catch (e) { } }
                 else { try { history.replaceState(null, "", simNewFallbackUrl()); } catch (e) { } }
               }
               simNewReturnUrl = null;
-              if (simAdded) { simAdded = false; load(); }
+              if (simAdded) { simAdded = false; load(); if (addedNow && typeof window.setView === "function") window.setView("sims"); }
             }
             // Closing (✕, backdrop, Escape, browser Back, tab close) used to throw away whatever was typed or generated, with no warning.
             // Now, if there is anything unsaved, ask first. Nothing to lose (or already saved) closes straight away as before.
@@ -38330,10 +38592,24 @@
               })
               // wizard
               document.getElementById("wizNext").addEventListener("click", function () { var err = wizValidate(wizStep); var errEl = document.getElementById("wizErr"); if (err) { errEl.textContent = err; return } errEl.textContent = ""; wizStep++; wizRender() })
-              document.getElementById("wizBack").addEventListener("click", function () { document.getElementById("wizErr").textContent = ""; if (wizStep > 1) { wizStep--; wizRender() } })
+              document.getElementById("wizBack").addEventListener("click", function () { document.getElementById("wizErr").textContent = ""; wizClearStaleResult(); if (wizStep > 1) { wizStep--; wizRender() } })
+              // A failed Create & Run leaves the server's message in #wizProgress. It belongs to THAT attempt: once the user
+              // goes back or edits the objective it is stale, and re-showing it on "Ready to go" read as a premature error.
+              function wizClearStaleResult() {
+                var pb = document.getElementById("wizProgress")
+                if (pb && pb.querySelector(".nt-stall")) { pb.style.display = "none"; pb.innerHTML = "" }
+                var cb = document.getElementById("wizCreate"); if (cb && !cb.disabled) cb.textContent = "Create & Run"
+              }
+              ;["wizName", "wizUrl", "wizObj"].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener("input", wizClearStaleResult) })
               document.getElementById("wizClose").addEventListener("click", closeWizard)
               document.getElementById("wizBg").addEventListener("click", function (e) { if (e.target === this) closeWizard() })
               document.getElementById("wizCreate").addEventListener("click", async function () {
+                // Re-check every step on submit (fields can change after their step was passed): show the problem on
+                // its own step, only now that Create & Run was clicked, instead of sending a request the server rejects.
+                for (var vs = 1; vs <= 3; vs++) {
+                  var verr = wizValidate(vs)
+                  if (verr) { wizClearStaleResult(); wizStep = vs; wizRender(); document.getElementById("wizErr").textContent = verr; return }
+                }
                 var btn = this; btn.disabled = true; btn.textContent = "Creating…"
                 document.getElementById("wizErr").textContent = ""
                 var box = document.getElementById("wizProgress"); box.style.display = ""; box.innerHTML = '<div class="nt-live">AutoSim is recording your path…</div>'

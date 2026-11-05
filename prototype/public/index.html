@@ -303,6 +303,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 /* studio takes over the full page when ?sim= is active — hide the legacy funnel chrome */
 .wrap.ss-active #rail,
 .wrap.ss-active > .grid{display:none !important}
+/* KD-1458: a ?sim= deep link ("Open in Studio") hides the funnel from first paint and shows this
+   placeholder until the Sim loads — otherwise the funnel page flashed before the edit view. */
+.wrap.ss-pending::after{content:"Loading Sim…";display:block;margin-top:10px;padding:48px 16px;text-align:center;font-size:13px;color:var(--paper-faint);border:1px solid var(--line);border-radius:16px;background:var(--ink)}
 #ssHost{margin-top:10px}
 .ss-grid{display:flex;min-height:0;height:calc(100vh - 120px);max-height:760px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--ink)}
 .ss-col{display:flex;flex-direction:column;min-height:0;overflow:hidden}
@@ -549,10 +552,12 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
   <button class="dbclear" id="devClear">Clear cache</button>
 </div>
 <div class="wrap">
+  <script>/* KD-1458: decide before first paint, so the funnel never flashes on a ?sim= deep link */ try { if (new URLSearchParams(location.search).get("sim")) document.currentScript.parentElement.classList.add("ss-active", "ss-pending") } catch (e) {}</script>
   <div class="head">
     <div class="logo" id="appLogo" style="cursor:default"><img src="/favicon.svg" width="34" height="34" alt="Klavity" /></div>
     <div>
-      <h1>Klavity · Sims Studio</h1>
+      <h1 id="appTitle">Klavity · Sims Studio</h1>
+      <script>/* KD-1458: the ?sim= edit view gets its own heading, set before first paint */ try { if (document.currentScript.closest(".wrap").classList.contains("ss-pending")) document.getElementById("appTitle").textContent = "Klavity · Sims Edit" } catch (e) {}</script>
       <div class="sub">Add a Sim, then watch one review this page and file what it finds.</div>
     </div>
     <div class="studio-proj" id="studioProj" style="margin-left:auto">
@@ -745,12 +750,20 @@ async function apiDeleteSim(sim) {
   if (!sim._id) return
   await fetch(pq(`/api/personas/${sim._id}`), { method: "DELETE" })
 }
+// KD-1458: the ?sim= target couldn't be shown — drop the pre-paint placeholder and fall back to the funnel.
+function ssCancelPending() {
+  const wrap = document.querySelector('.wrap')
+  if (wrap && wrap.classList.contains('ss-pending')) {
+    wrap.classList.remove('ss-pending', 'ss-active')
+    const t = document.getElementById('appTitle'); if (t) t.textContent = 'Klavity · Sims Studio'
+  }
+}
 async function loadSavedSims() {
   try {
     const r = await fetch(pq("/api/personas"))
-    if (!r.ok) return
+    if (!r.ok) { ssCancelPending(); return }
     const d = await r.json()
-    if (!Array.isArray(d.personas) || !d.personas.length) return
+    if (!Array.isArray(d.personas) || !d.personas.length) { ssCancelPending(); return }
     // Merge: keep any unsaved session sims, prepend saved ones
     const savedIds = new Set(d.personas.map(p => p.id))
     sims = [
@@ -765,10 +778,11 @@ async function loadSavedSims() {
     if (focusSim) {
       renderStudio(focusSim)
     } else {
+      ssCancelPending()
       renderDock(); updateFlow()
       if (sims.length) switchL1Tab('sims')
     }
-  } catch(e) { /* not logged in or offline, no-op */ }
+  } catch(e) { ssCancelPending() /* not logged in or offline */ }
 }
 
 $("clearBtn").onclick = () => { $("transcript").value = ""; }
@@ -1087,7 +1101,7 @@ let ssInspectorTab = "source"
 // Entry point: switch to the sims pane, lay out the 3-column shell, then populate.
 function renderStudio(sim) {
   const wrap = document.querySelector('.wrap')
-  if (wrap) wrap.classList.add('ss-active')
+  if (wrap) { wrap.classList.add('ss-active'); wrap.classList.remove('ss-pending') }
   let host = document.getElementById('ssHost')
   if (!host && wrap) { host = document.createElement('div'); host.id = 'ssHost'; wrap.appendChild(host) }
   if (!host) return
@@ -2393,7 +2407,20 @@ async function loadStudioProjects() {
   const escAttr = (s) => String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]))
   sel.innerHTML = projects.map(p => `<option value="${escAttr(p.id)}"${p.id === active ? " selected" : ""}>${escAttr(p.name || "Project")}</option>`).join("")
   wrap.style.display = "flex"
-  sel.onchange = () => { const pid = sel.value; if (pid && pid !== active) location.href = "/app?project=" + encodeURIComponent(pid) }
+  sel.onchange = async () => {
+    const pid = sel.value
+    if (!pid || pid === active) return
+    // KD-1458: switching project from the Sim edit view (?sim=) stays in the edit view — a Sim belongs to
+    // one project, so open the new project's first Sim. No Sims there (or the lookup fails) → its Studio.
+    if (studioSimId()) {
+      try {
+        const r = await fetch("/api/personas?project=" + encodeURIComponent(pid))
+        const first = r.ok ? ((await r.json()).personas || [])[0] : null
+        if (first && first.id) { location.href = "/app?sim=" + encodeURIComponent(first.id) + "&project=" + encodeURIComponent(pid); return }
+      } catch (e) {}
+    }
+    location.href = "/app?project=" + encodeURIComponent(pid)
+  }
   if (back) back.href = "/dashboard?project=" + encodeURIComponent(active) + "#sims"
 }
 loadStudioProjects()

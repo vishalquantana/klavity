@@ -254,7 +254,9 @@ async function load() {
   }
 
   const s = data.sim || {}
-  const studioUrl = pq('/app?sim=' + encodeURIComponent(SIM_ID))
+  // KD-1458: "Open in Studio" lands on the Sims Studio page itself; "Edit" deep-links to this Sim's edit view.
+  const studioUrl = pq('/app')
+  const editUrl = pq('/app?sim=' + encodeURIComponent(SIM_ID))
   // v3 vocabulary (JTBD 3.7): resolve the two-axis simClass (User/Client), preferring the explicit
   // field and falling back to the legacy type shim (internal maps to user, else client). NEVER label a
   // v3 user-class Sim as client — the old type-only pill did exactly that.
@@ -306,7 +308,7 @@ async function load() {
     <div class="cols">
       <div>
         <div class="sec">
-          <div class="sec-h">${ic('dna')} Persona &amp; trait config <span class="ct mono">${(data.traits||[]).length}</span><a class="kbtn kbtn-sm" href="${studioUrl}" style="margin-left:10px">${ic('pencil')} Edit</a></div>
+          <div class="sec-h">${ic('dna')} Persona &amp; trait config <span class="ct mono">${(data.traits||[]).length}</span><a class="kbtn kbtn-sm" href="${editUrl}" style="margin-left:10px">${ic('pencil')} Edit</a></div>
           ${insights.length ? `<div class="card" style="margin-bottom:10px">${insights.map(i=>`<div class="trait"><span class="k ${["pain","want","love"].includes(i.kind)?i.kind:"pain"}">${esc(i.kind||"note")}</span><div class="tb"><div class="tt">${esc(i.text)}</div>${i.quote?`<div class="tq">“${esc(i.quote)}”</div>`:``}</div></div>`).join("")}</div>` : ``}
           ${traitsCard(data.traits || [])}
         </div>

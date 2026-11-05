@@ -37,6 +37,7 @@ import {
 } from "./evidence-session"
 import { SimsLive, type LiveObservation } from "./sims-live"  // side-effecting: auto-installs window.KlavitySims on load
 import { startSimsWatch, type SimsWatchController } from "./sims-watch"
+import { openSelectSimsModal, createSelectSimsApi, managedSigOf, planManagedSync, type ManagedSim, type ManagedSimAction } from "./sims-select-modal"
 
 const HOST_ID = "klavity-widget-host"
 // Screenshot capture filter: exclude ALL Klavity-injected chrome so the widget never captures
@@ -216,6 +217,19 @@ function currentScript(): HTMLScriptElement {
     || (document.querySelector('script[src*="widget.js"]') as HTMLScriptElement)
 }
 
+// KD-993: remember the reporter's email (per project, on the customer's origin) so the composer doesn't make them
+// retype it every time. A host-supplied identity (identify() / data-user-email) always wins over this.
+const REPORTER_EMAIL_KEY = "klavity_reporter_email"
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function getSavedEmail(projectId: string): string {
+  try { const v = localStorage.getItem(REPORTER_EMAIL_KEY + ":" + projectId) || ""; return EMAIL_OK.test(v) ? v : "" } catch { return "" }
+}
+function setSavedEmail(projectId: string, email: string) {
+  try {
+    if (email && EMAIL_OK.test(email)) localStorage.setItem(REPORTER_EMAIL_KEY + ":" + projectId, email)
+    else localStorage.removeItem(REPORTER_EMAIL_KEY + ":" + projectId)
+  } catch { /* storage unavailable (private mode / blocked) — just don't remember */ }
+}
 function getToken(): string { try { return localStorage.getItem(TOKEN_KEY) || "" } catch { return "" } }
 function setToken(t: string) { try { localStorage.setItem(TOKEN_KEY, t) } catch {} }
 function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
@@ -1658,7 +1672,8 @@ async function mount() {
       }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
-      prefillEmail: _reporter?.email,
+      prefillEmail: _reporter?.email || getSavedEmail(cfg.projectId) || undefined,
+      onRememberEmail: (email: string) => setSavedEmail(cfg.projectId, email),
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
@@ -2033,6 +2048,11 @@ async function mount() {
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
     const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
+    // No Klavity connection yet on a customer's site ('full' mode, not our own page, no stored token): the Sims
+    // actions stay hidden, but we offer a "Sims — Connect" card that opens the connect popup (same handshake as
+    // "Deploy all Sims"). Once the token arrives the menu is re-drawn with the Sims and the card is gone. In
+    // production this is exactly !showSims; in tests showSims is force-enabled, so both can appear there.
+    const needsConnect = rightClickMode === 'full' && !firstParty && !getToken()
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2165,10 +2185,19 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => void startBugReport() }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
+    if (needsConnect) {
+      menu.appendChild(card("users", "Sims", "Connect to Klavity to use your Sims on this page.", {
+        hint: "Connect",
+        // The card handler has already closed the menu; once the popup hands back a token, re-open it in the same
+        // spot — getToken() is now set, so the Sims actions show and this card does not come back.
+        onClick: () => { void openConnect().then((tok) => { if (tok) showMenu(x, y) }) },
+      }))
+    }
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
       menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))
-      menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void showSimPicker() } }))
+      // Opens the Select Sims management modal (deploy / deactivate / pause / resume).
+      menu.appendChild(card("sparkles", "Select Sims…", "Choose which Sims jump into action.", { onClick: () => { void openSimsManager() } }))
     }
     menu.appendChild(card("monitor", "Browser menu", "", { muted: true, hint: "⇧ right-<br>click", onClick: () => { nativePending = true; showNativeHint(x, y) } }))
     // "Powered by Klavity" footer — hidden for Pro accounts with whiteLabel enabled (KLAVITYKLA-311).
@@ -2346,6 +2375,108 @@ async function mount() {
     })
     // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
     void bootReview(simIds)
+  }
+
+  // ── Select Sims management (additive) ─────────────────────────────────────────────────────
+  // "Select Sims…" opens the isolated management modal (sims-select-modal.ts) backed by the new
+  // /api/widget/sim-deployments endpoint. After each successful action the page is synced to the
+  // server state via the SAME public primitives "Deploy all Sims" uses (KlavitySims.deploy/undeploy,
+  // startSimsWatch, bootReview) — none of those are modified. Paused Sims stay on the page (deployed)
+  // but are excluded from the watch engine, so they stop reviewing without being redeployed.
+  let _managedSelection: string[] = []
+  let _managedMountedKey: string | null = null
+  async function openSimsManager() {
+    // Same auth gate as deployAndWatch: cross-origin pages need a widget token for member endpoints.
+    if (!firstParty && !getToken()) {
+      banner("Connect to Klavity to manage your Sims…")
+      const token = await openConnect()
+      if (!token) { banner("Sims need a Klavity connection. Open Select Sims again to connect."); return }
+    }
+    openSelectSimsModal({
+      api: managedSimsApi(),
+      initialSelection: _managedSelection,
+      onSelectionChange: (ids) => { _managedSelection = ids },
+      onChange: (sims, change) => {
+        applyManagedSims(sims, change)
+        // Lets a host page that shows Sim status (the dashboard Sims tab) refresh it.
+        try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+      },
+    })
+  }
+  function managedSimsApi() {
+    return createSelectSimsApi({
+      backendUrl: cfg.backendUrl,
+      projectId: cfg.projectId,
+      getToken,
+      fetch: (input, init) => fetchWithTimeout(input, init),
+    })
+  }
+  // Signature of the managed state (deployed Sims + their execution) — lets a sync skip no-op re-applies.
+  let _managedSig: string | null = null
+
+  // Pause / Resume / Deploy can also happen OUTSIDE this page's modal — the dashboard Sims tab, another
+  // tab, or before a reload. Re-read the server state on load, when the tab regains focus, on a light
+  // poll while managed Sims are on the page, and when the dashboard announces a change
+  // ("klavity:sim-deployments-changed"), then apply it with the same primitives as the modal. A resumed /
+  // newly deployed Sim gets an immediate review so its feedback cards show up again. When nothing was
+  // ever deployed through Select Sims, nothing is touched (legacy "Deploy all Sims" stays as it is).
+  let _managedSyncing = false
+  async function syncManagedSims() {
+    if (_managedSyncing || rightClickMode !== "full" || (!firstParty && !getToken())) return
+    _managedSyncing = true
+    try {
+      const sims = await managedSimsApi().load()
+      const plan = planManagedSync(_managedSig, sims, _managedMountedKey !== null)
+      if (plan.kind === "skip") { _managedSig = plan.sig; return }
+      applyManagedSims(sims, { action: plan.fresh.length ? "resume" : "pause", applied: plan.fresh })
+    } catch { /* best-effort: the page keeps its current Sims */ }
+    finally { _managedSyncing = false }
+  }
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    const syncSoon = () => { if (document.visibilityState !== "hidden") void syncManagedSims() }
+    window.addEventListener("klavity:sim-deployments-changed", syncSoon)
+    window.addEventListener("focus", syncSoon)
+    document.addEventListener("visibilitychange", syncSoon)
+    // Poll only while this page actually shows Select Sims-managed Sims.
+    setInterval(() => { if (_managedSig) syncSoon() }, 20_000)
+    setTimeout(syncSoon, 1500) // after the project config (rightClickMode) has loaded
+  }
+
+  function applyManagedSims(sims: ManagedSim[], change: { action: ManagedSimAction; applied: string[] }) {
+    _managedSig = managedSigOf(sims)
+    const deployed = sims.filter((s) => s.deployment === "deployed")
+    const running = deployed.filter((s) => s.execution === "running").map((s) => s.id)
+    const kl = (window as any).KlavitySims
+    _simsWatchCtrl?.stop()
+    _simsWatchCtrl = null
+    if (!deployed.length) {
+      try { kl?.undeploy?.() } catch { /* never break page */ }
+      _deployedSims = []
+      _managedMountedKey = null
+      return
+    }
+    const descriptors = deployed.map((s) => ({ id: s.id, name: s.name, initials: s.initials || undefined, accent: s.accent || undefined }))
+    // Only (re)mount the presence panel when the deployed SET changes — pause/resume keeps findings.
+    const key = deployed.map((s) => s.id).sort().join(",")
+    if (key !== _managedMountedKey) {
+      try { kl?.deploy?.(deployed.map((s) => s.id), descriptors) } catch { /* never break page */ }
+      _managedMountedKey = key
+    }
+    _deployedSims = descriptors
+    if (running.length) {
+      _simsWatchCtrl = startSimsWatch({
+        backendUrl: cfg.backendUrl,
+        projectId: cfg.projectId,
+        simIds: running,
+        captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
+        bearerToken: getToken() || undefined,
+      })
+    }
+    // Newly deployed / resumed Sims react to the current page right away.
+    if (change.action === "deploy" || change.action === "resume") {
+      const fresh = change.applied.filter((id) => running.includes(id))
+      if (fresh.length) void bootReview(fresh)
+    }
   }
 
   // Capture the current viewport and POST to /api/sim/review immediately.
