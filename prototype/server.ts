@@ -11438,8 +11438,8 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         }
       }
       if (!name) return json({ error: "name required" }, 400)
-      // 4000 chars (was 2000): multi-turn chatbot objectives spell out several conversational turns.
-      if (objective.length < 10 || objective.length > 4000) return json({ error: "objective must be 10-4000 chars" }, 400)
+      // No maximum (was 4000, before that 2000): long multi-turn / multi-flow objectives are allowed from the wizard.
+      if (objective.length < 10) return json({ error: "objective must be at least 10 characters" }, 400)
       if (!/^https?:\/\//.test(baseUrl) || baseUrl.length > 500) return json({ error: "base_url must be an http(s) URL" }, 400)
       if (testAccount && !(await getTestAccountByName(projectId, testAccount))) return json({ error: `unknown test account "${testAccount}"` }, 400)
       // KLAVITYKLA-365: configured-flow quota. Authoring is the ONLY path that creates a Trail

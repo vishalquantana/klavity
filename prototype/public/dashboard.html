@@ -38330,10 +38330,24 @@
               })
               // wizard
               document.getElementById("wizNext").addEventListener("click", function () { var err = wizValidate(wizStep); var errEl = document.getElementById("wizErr"); if (err) { errEl.textContent = err; return } errEl.textContent = ""; wizStep++; wizRender() })
-              document.getElementById("wizBack").addEventListener("click", function () { document.getElementById("wizErr").textContent = ""; if (wizStep > 1) { wizStep--; wizRender() } })
+              document.getElementById("wizBack").addEventListener("click", function () { document.getElementById("wizErr").textContent = ""; wizClearStaleResult(); if (wizStep > 1) { wizStep--; wizRender() } })
+              // A failed Create & Run leaves the server's message in #wizProgress. It belongs to THAT attempt: once the user
+              // goes back or edits the objective it is stale, and re-showing it on "Ready to go" read as a premature error.
+              function wizClearStaleResult() {
+                var pb = document.getElementById("wizProgress")
+                if (pb && pb.querySelector(".nt-stall")) { pb.style.display = "none"; pb.innerHTML = "" }
+                var cb = document.getElementById("wizCreate"); if (cb && !cb.disabled) cb.textContent = "Create & Run"
+              }
+              ;["wizName", "wizUrl", "wizObj"].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener("input", wizClearStaleResult) })
               document.getElementById("wizClose").addEventListener("click", closeWizard)
               document.getElementById("wizBg").addEventListener("click", function (e) { if (e.target === this) closeWizard() })
               document.getElementById("wizCreate").addEventListener("click", async function () {
+                // Re-check every step on submit (fields can change after their step was passed): show the problem on
+                // its own step, only now that Create & Run was clicked, instead of sending a request the server rejects.
+                for (var vs = 1; vs <= 3; vs++) {
+                  var verr = wizValidate(vs)
+                  if (verr) { wizClearStaleResult(); wizStep = vs; wizRender(); document.getElementById("wizErr").textContent = verr; return }
+                }
                 var btn = this; btn.disabled = true; btn.textContent = "Creating…"
                 document.getElementById("wizErr").textContent = ""
                 var box = document.getElementById("wizProgress"); box.style.display = ""; box.innerHTML = '<div class="nt-live">AutoSim is recording your path…</div>'
