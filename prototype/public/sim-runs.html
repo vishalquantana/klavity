@@ -133,6 +133,19 @@ h1 {
   color: var(--paper-dim);
   font-size: 15px;
 }
+/* Back to where the user came from (the Sims tab, a ticket, …); falls back to the Sims tab. */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--paper-dim);
+  text-decoration: none;
+}
+.back-link:hover { color: var(--indigo); }
+.back-link:focus-visible { outline: 2px solid var(--indigo); outline-offset: 3px; border-radius: 4px; }
 .switcher {
   display: flex;
   align-items: center;
@@ -564,6 +577,7 @@ h1 {
 <div class="wrap">
   <div class="head">
     <div>
+      <a class="back-link" id="pageBack" href="/dashboard#sims" aria-label="Back to the previous page">&larr; Back</a>
       <h1>Sim Runs</h1>
       <p class="lead" id="lead">Browse the history of past simulation runs for this project.</p>
     </div>
@@ -597,8 +611,25 @@ function $(id){return document.getElementById(id)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function projParam(){try{return new URLSearchParams(location.search).get("project")}catch(e){return null}}
 // Run history is opened from the Sims tab — send "Sims" back there, on the same project.
-function setSimsBack(pid){var a=$("simsBack");if(a)a.setAttribute("href",(pid?"/dashboard?project="+encodeURIComponent(pid):"/dashboard")+"#sims")}
+function setSimsBack(pid){
+  var href=(pid?"/dashboard?project="+encodeURIComponent(pid):"/dashboard")+"#sims";
+  var a=$("simsBack");if(a)a.setAttribute("href",href);
+  var b=$("pageBack");if(b)b.setAttribute("href",href);
+}
 setSimsBack(projParam());
+// "← Back": return to the Klavity page the user came from (Sims tab, a ticket, …). Opened directly or from
+// another site → the link's href (the Sims tab on this project). Switching project here reloads /sim-runs,
+// so only a referrer that ISN'T this page counts.
+(function(){
+  var b=$("pageBack"); if(!b) return;
+  function cameFromKlavity(){
+    try{ var r=new URL(document.referrer); return r.origin===location.origin && r.pathname!==location.pathname }catch(e){ return false }
+  }
+  b.addEventListener("click",function(e){
+    if(e.metaKey||e.ctrlKey||e.shiftKey||e.button!==0) return; // new-tab clicks keep the plain link
+    if(cameFromKlavity() && history.length>1){ e.preventDefault(); history.back() }
+  });
+})();
 // KLAVITYKLA-371: how long the run actually took. durationMs is null while a run is still
 // in progress (finished_at NULL) — render "running…" rather than a bogus 0.0s.
 function fmtDuration(run){
