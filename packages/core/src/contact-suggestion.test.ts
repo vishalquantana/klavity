@@ -141,6 +141,22 @@ describe("KD-174 combobox behaviour", () => {
     expect(sr.querySelectorAll(".klavity-remail-person").length).toBe(1)
   })
 
+  it("KD-983: matches on the email only, never the name", async () => {
+    // Contact names can be wrong (the reporter's own name stored against someone else's address),
+    // so a name hit must not surface a person.
+    const people = [{ email: "testing@gmail.com", name: "John Smith" }, { email: "john@acme.test" }]
+    buildModal("bug", { ...baseCallbacks(), onLookupPeople: vi.fn().mockResolvedValue(people) } as any, { theme: "light" } as any)
+    const sr = shadow()
+    const input = sr.querySelector("#klavity-remail") as HTMLInputElement
+    input.dispatchEvent(new FocusEvent("focus"))
+    await tick(); await tick()
+    input.value = "smith"; input.dispatchEvent(new Event("input"))
+    expect(sr.querySelectorAll(".klavity-remail-person").length).toBe(0)
+    input.value = "john"; input.dispatchEvent(new Event("input"))
+    const hits = [...sr.querySelectorAll(".klavity-remail-person")].map(b => b.getAttribute("data-email"))
+    expect(hits).toEqual(["john@acme.test"])
+  })
+
   it("discards an address that was never picked when focus leaves", async () => {
     buildModal("bug", { ...baseCallbacks() } as any, { theme: "light" } as any)
     const sr = shadow()
