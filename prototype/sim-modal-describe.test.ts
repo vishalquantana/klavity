@@ -101,6 +101,73 @@ test("Adding a Sim shows the design's 'Sim created!' popup view, then closes its
   expect(f).not.toContain("put them to work")
   expect(DASH).toContain(".sm-modal-created .sm-seg")                // everything but the close button is hidden meanwhile
   expect(block(DASH, "function close(fromPop)", 300)).toContain("clearCreatedView()")
-  expect(block(DASH, "function close(fromPop)", 1300)).toContain("if (simAdded) { simAdded = false; load(); }")
+  expect(block(DASH, "function close(fromPop)", 2200)).toContain("if (simAdded) { simAdded = false; load();")
   expect(DASH).toContain('ov.classList.contains("sm-modal-created"); }')   // an open created view never counts as unsaved work
+})
+
+// ── Presets: adding a preset Sim gets the same "Sim created!" popup as Describe, even with other presets unadded ──
+function runShowSuccess(source: string, unaddedCards: boolean, args: [string | null, number, boolean, string | null]) {
+  const start = DASH.indexOf("function showSuccessPanel(addedName, addedCount, merged, simId)")
+  const end = DASH.indexOf("function hideSuccessPanel()", start)
+  const body = DASH.slice(start, end)
+  const els: Record<string, any> = { smCreated: { hidden: true }, smCreatedT: {}, smCreatedN: {}, smCreatedS: {} }
+  const cls = new Set<string>(); const toasts: string[] = []; let closed = 0
+  const ov = { classList: { add: (c: string) => cls.add(c), remove: (c: string) => cls.delete(c), contains: (c: string) => cls.has(c) } }
+  const out = { querySelector: (sel: string) => (sel === ".sm-sim:not(.added)" && unaddedCards ? {} : null) }
+  const timers: Array<() => void> = []
+  new Function("$", "ov", "out", "klavToast", "esc", "lastSimSource", "PANE_TO_SOURCE", "close", "clearCreatedView", "setTimeout", "createdTimerBox",
+    "var createdTimer = null;" + body.replace(/createdTimer = setTimeout/, "createdTimer = setTimeout") + "; showSuccessPanel.apply(null, " + JSON.stringify(args) + ")")(
+    (id: string) => els[id], ov, out, (m: string) => toasts.push(m), (s: string) => s, source,
+    { describe: "describe", site: "from-site", call: "transcript", preset: "preset" }, () => { closed++ }, () => cls.delete("sm-modal-created"),
+    (fn: () => void) => { timers.push(fn); return 1 }, {})
+  return { created: cls.has("sm-modal-created"), toasts, title: els.smCreatedT.textContent, name: els.smCreatedN.textContent, runTimer: () => timers.forEach((f) => f()), closed: () => closed }
+}
+test("a preset Sim add shows the 'Sim created!' popup and closes, even while other presets are still unadded", () => {
+  const r = runShowSuccess("preset", true, ["QA Reviewer", 1, false, "sim_1"])
+  expect(r.created).toBe(true)
+  expect(r.title).toBe("Sim created!")
+  expect(r.name).toBe("QA Reviewer")
+  expect(r.toasts.length).toBe(0)
+  r.runTimer(); expect(r.closed()).toBe(1)
+})
+test("From your site / From a call with suggestions still waiting keep the toast-only behaviour", () => {
+  for (const src of ["from-site", "transcript"]) {
+    const r = runShowSuccess(src, true, ["Priya", 1, false, "sim_2"])
+    expect(r.created).toBe(false)
+    expect(r.toasts.length).toBe(1)
+  }
+})
+test("Describe (no other cards) still shows the popup", () => {
+  expect(runShowSuccess("describe", false, ["Alex", 1, false, "sim_3"]).created).toBe(true)
+})
+
+// ── After a Sim is added the user ends on the Sims page, wherever the dialog was opened from ──
+function runClose(o: { added: boolean; returnUrl: string | null; atSimNew?: boolean; fromPop?: boolean }) {
+  const start = DASH.indexOf("function close(fromPop) {")
+  const end = DASH.indexOf("// Closing (✕, backdrop, Escape", start)
+  const body = DASH.slice(start, end)
+  const calls: string[] = []
+  const cls = new Set<string>()
+  const ov = { classList: { remove: (c: string) => cls.delete(c), add: (c: string) => cls.add(c), contains: (c: string) => cls.has(c) } }
+  const doc = { body: { style: {} as any } }
+  const hist = { back: () => calls.push("back"), replaceState: (_s: any, _t: string, u: string) => calls.push("replace:" + u) }
+  const win = { setView: (v: string) => calls.push("setView:" + v) }
+  new Function("o", "ov", "document", "history", "window", "clearCreatedView", "hideSuccessPanel", "hideDiscard", "atSimNew", "simNewFallbackUrl", "load",
+    "var simNewReturnUrl = o.returnUrl, simAdded = o.added;" + body + "; close(o.fromPop)")(
+    o, ov, doc, hist, win, () => { }, () => { }, () => { }, () => o.atSimNew !== false, () => "/dashboard?project=P", () => calls.push("load"))
+  return calls
+}
+test("after adding a Sim opened from the Sims page: go back to it, reload, and show Sims", () => {
+  expect(runClose({ added: true, returnUrl: "/dashboard?project=P#sims" })).toEqual(["back", "load", "setView:sims"])
+})
+test("after adding a Sim opened from another page (or a deep link): go straight to the Sims page, not back", () => {
+  expect(runClose({ added: true, returnUrl: "/dashboard?project=P#triage" })).toEqual(["replace:/dashboard?project=P", "load", "setView:sims"])
+  expect(runClose({ added: true, returnUrl: null })).toEqual(["replace:/dashboard?project=P", "load", "setView:sims"])
+})
+test("closing without adding a Sim still goes back to where it was opened from and does not switch views", () => {
+  expect(runClose({ added: false, returnUrl: "/dashboard?project=P#triage" })).toEqual(["back"])
+  expect(runClose({ added: false, returnUrl: null })).toEqual(["replace:/dashboard?project=P"])
+})
+test("browser Back (fromPop) never touches history, even after an add", () => {
+  expect(runClose({ added: true, returnUrl: "/dashboard?project=P#triage", fromPop: true })).toEqual(["load", "setView:sims"])
 })

@@ -217,6 +217,19 @@ function currentScript(): HTMLScriptElement {
     || (document.querySelector('script[src*="widget.js"]') as HTMLScriptElement)
 }
 
+// KD-993: remember the reporter's email (per project, on the customer's origin) so the composer doesn't make them
+// retype it every time. A host-supplied identity (identify() / data-user-email) always wins over this.
+const REPORTER_EMAIL_KEY = "klavity_reporter_email"
+const EMAIL_OK = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+function getSavedEmail(projectId: string): string {
+  try { const v = localStorage.getItem(REPORTER_EMAIL_KEY + ":" + projectId) || ""; return EMAIL_OK.test(v) ? v : "" } catch { return "" }
+}
+function setSavedEmail(projectId: string, email: string) {
+  try {
+    if (email && EMAIL_OK.test(email)) localStorage.setItem(REPORTER_EMAIL_KEY + ":" + projectId, email)
+    else localStorage.removeItem(REPORTER_EMAIL_KEY + ":" + projectId)
+  } catch { /* storage unavailable (private mode / blocked) — just don't remember */ }
+}
 function getToken(): string { try { return localStorage.getItem(TOKEN_KEY) || "" } catch { return "" } }
 function setToken(t: string) { try { localStorage.setItem(TOKEN_KEY, t) } catch {} }
 function clearToken() { try { localStorage.removeItem(TOKEN_KEY) } catch {} }
@@ -1658,7 +1671,8 @@ async function mount() {
       }) : undefined,
       requireEmail,
       // PX4 #439: pre-fill the email gate with the known reporter email so the user never retypes it.
-      prefillEmail: _reporter?.email,
+      prefillEmail: _reporter?.email || getSavedEmail(cfg.projectId) || undefined,
+      onRememberEmail: (email: string) => setSavedEmail(cfg.projectId, email),
       // PX4 #411/#425: enhanced-composer opts from the project config (all default off → classic composer).
       showTitleField: composerShowTitle,
       allowFileAttachments: composerFileAttach,
@@ -2033,6 +2047,11 @@ async function mount() {
     // session). Anonymous/unidentified visitors — and every visitor in 'reportOnly' mode — get the
     // Report/Request/Browser-menu menu without any Sims jargon. (Same identity notion as openReport.)
     const showSims = rightClickMode === 'full' && (firstParty || !!getToken() || (typeof process !== "undefined" && process.env.NODE_ENV === "test"))
+    // No Klavity connection yet on a customer's site ('full' mode, not our own page, no stored token): the Sims
+    // actions stay hidden, but we offer a "Sims — Connect" card that opens the connect popup (same handshake as
+    // "Deploy all Sims"). Once the token arrives the menu is re-drawn with the Sims and the card is gone. In
+    // production this is exactly !showSims; in tests showSims is force-enabled, so both can appear there.
+    const needsConnect = rightClickMode === 'full' && !firstParty && !getToken()
     // Each action is a compact CARD: icon chip + label + optional desc + arrow/hint.
     // Pass desc="" to render a label-only card (no description line — keeps menu short).
     const card = (iconName: string, label: string, desc: string, opts: { primary?: boolean; muted?: boolean; hint?: string; onClick: () => void }) => {
@@ -2165,6 +2184,14 @@ async function mount() {
     }
     menu.appendChild(card("zap", "Report a Bug", "Snap the page and tell us what broke.", { primary: true, onClick: () => void startBugReport() }))
     menu.appendChild(card("lightbulb", "Request a Feature", "Suggest something you'd love to see.", { onClick: () => openReport("feature") }))
+    if (needsConnect) {
+      menu.appendChild(card("users", "Sims", "Connect to Klavity to use your Sims on this page.", {
+        hint: "Connect",
+        // The card handler has already closed the menu; once the popup hands back a token, re-open it in the same
+        // spot — getToken() is now set, so the Sims actions show and this card does not come back.
+        onClick: () => { void openConnect().then((tok) => { if (tok) showMenu(x, y) }) },
+      }))
+    }
     // Sims actions are member-only + 'full'-mode-only — anonymous visitors and reportOnly never see them.
     if (showSims) {
       menu.appendChild(card("users", "Deploy all Sims", "Have every Sim jump in and analyze this page.", { onClick: () => { closeMenu(); void deployAndWatch("all") } }))

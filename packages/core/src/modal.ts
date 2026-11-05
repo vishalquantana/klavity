@@ -636,6 +636,10 @@ export interface ModalCallbacks {
   // required-email field so the user doesn't retype it. Ignored unless requireEmail rendered the field.
   // The value stays user-editable; it only seeds the initial input. Absent → no pre-fill (as today).
   prefillEmail?: string
+  // KD-993: called with the address the reporter picked / created / submitted so the host can remember it for
+  // next time (the widget keeps it in localStorage per project and feeds it back as prefillEmail). An empty
+  // string means "forget it" — the reporter cleared the field.
+  onRememberEmail?: (email: string) => void
   // Mode-aware success screen. When provided, a successful submit swaps the modal body for this
   // screen (headline/body, optional email-lead capture, optional CTA) and DOES NOT auto-close —
   // the user must interact. When absent, falls back to the themed thankYou/"Filed" auto-close card.
@@ -1890,12 +1894,12 @@ export function buildModal(
         <span class="klavity-remail-caret" id="klavity-remail-caret" aria-hidden="true"></span>
       <div class="klavity-remail-sugg" id="klavity-remail-sugg" role="listbox" aria-label="People" hidden>
         <div class="klavity-remail-matches" id="klavity-remail-matches"></div>
-        <button type="button" class="klavity-remail-sugg-opt klavity-remail-create" id="klavity-remail-addcontact" role="option" aria-selected="false" hidden>
+        <button type="button" class="klavity-remail-sugg-opt klavity-remail-create" id="klavity-remail-addcontact" role="option" aria-selected="false" title="Saves this email as a contact so the team can reply and tag you. Contacts don't get access to the project." hidden>
           <span class="klavity-remail-sugg-av" aria-hidden="true">+</span>
-          <span class="klavity-remail-sugg-txt">Create "<b class="klavity-remail-sugg-em"></b>"</span>
+          <span class="klavity-remail-sugg-txt">Add "<b class="klavity-remail-sugg-em"></b>" as a contact</span>
           <span class="klavity-remail-sugg-check" aria-hidden="true" hidden>${icon('check', { size: 13 })}</span>
         </button>
-        <div class="klavity-remail-sugg-hint" id="klavity-remail-sugg-hint">So the team can reply and tag you on this report.</div>
+        <div class="klavity-remail-sugg-hint" id="klavity-remail-sugg-hint">Add it as a contact so the team can reply and tag you. Contacts don't get project access.</div>
       </div>
       ${/* QPQ-31: suggestion under the Email field — "Add <email> as a contact". Offered for ANY
            well-formed address rather than only unknown ones: answering "does this email exist?" for an
@@ -3592,6 +3596,7 @@ export function buildModal(
           remail.value = (btn as HTMLElement).getAttribute('data-email') || ''
           createContact = false; contactFor = ''   // an existing person needs no creating
           committed = remail.value.trim().toLowerCase()
+          callbacks.onRememberEmail?.(committed)   // KD-993
           paintContactSugg()
           refreshSubmit()
         })
@@ -3614,6 +3619,7 @@ export function buildModal(
     contactFor = createContact ? v.toLowerCase() : ''
     // KD-174: picking Create COMMITS the address, the same way picking an existing person does.
     committed = createContact ? v.toLowerCase() : ''
+    if (committed) callbacks.onRememberEmail?.(committed)   // KD-993
     paintContactSugg()
     refreshSubmit()
   })
@@ -3645,6 +3651,7 @@ export function buildModal(
       const stillOurs = (active === remail) || !!(remailSugg && active && remailSugg.contains(active))
       if (stillOurs) return                    // focus is still in the field or its list: not a leave
       remailOpen = false
+      if (remail && !remail.value.trim()) callbacks.onRememberEmail?.('')   // KD-993: cleared → forget the saved address
       discardUncommitted()
       paintContactSugg()
     }, 0)
@@ -4190,6 +4197,8 @@ export function buildModal(
   function reporterEmailSnapshot(): { email: string | undefined; createContact: boolean } {
     const typed = remail?.value.trim() || ''
     const email = typed && (callbacks.requireEmail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typed)) ? typed : undefined
+    // KD-993: only called at submit time (single + multi-issue), so a submitted address is remembered for next time.
+    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) callbacks.onRememberEmail?.(email.toLowerCase())
     return { email, createContact: !!(email && createContact && email.toLowerCase() === contactFor) }
   }
 

@@ -296,6 +296,63 @@ describe("widget Sims dock consolidation", () => {
     expect(headers.authorization).toBe("Bearer ext_live_token")
   })
 
+  // "Sims → Connect": without a token on a customer site the menu offers a Connect card; clicking it opens the
+  // connect popup on the script's own backend (not a fixed host), and once the popup posts back a token the
+  // menu re-opens with the Sims and no Connect card. (NODE_ENV=test force-enables the Sims actions, so the
+  // assertions here look at the Connect card itself.)
+  const connectCard = () =>
+    Array.from(host().shadowRoot.querySelectorAll(".klm-menu .klm-card")).find(
+      (el) => (el.textContent || "").includes("Connect to Klavity"),
+    ) as HTMLElement | undefined
+
+  it("shows a Sims Connect card when there is no token, and opens the popup on the script's backend", async () => {
+    const openSpy = vi.fn(() => ({ closed: false, close: vi.fn() }))
+    vi.stubGlobal("open", openSpy)
+    await mountWith({ launcherMode: "full" })
+    await openContextMenu()
+
+    const card = connectCard()
+    expect(card).toBeTruthy()
+    expect(card!.textContent).toContain("Connect")
+    card!.click()
+
+    await waitUntil(() => openSpy.mock.calls.length > 0)
+    const url = String(openSpy.mock.calls[0][0])
+    expect(url.startsWith("https://srv.test/widget-connect?project=proj_launcher_test")).toBe(true)
+    expect(url).toContain("origin=" + encodeURIComponent(location.origin))
+  })
+
+  it("re-opens the menu without the Connect card once the popup sends a token (and ignores other origins)", async () => {
+    const openSpy = vi.fn(() => ({ closed: false, close: vi.fn() }))
+    vi.stubGlobal("open", openSpy)
+    await mountWith({ launcherMode: "full" })
+    await openContextMenu()
+    connectCard()!.click()
+    await waitUntil(() => openSpy.mock.calls.length > 0)
+
+    // A message from some other origin must not store a token.
+    window.dispatchEvent(new MessageEvent("message", { origin: "https://evil.test", data: { type: "klavity-widget-token", token: "ext_bad" } }))
+    expect(localStorage.getItem("klavity_widget_token")).toBeNull()
+
+    window.dispatchEvent(new MessageEvent("message", { origin: "https://srv.test", data: { type: "klavity-widget-token", token: "ext_good" } }))
+    expect(localStorage.getItem("klavity_widget_token")).toBe("ext_good")
+    await waitUntil(() => !!host().shadowRoot.querySelector(".klm-menu") && !connectCard())
+    expect(connectCard()).toBeUndefined()
+  })
+
+  it("does not show the Connect card when a token is already stored", async () => {
+    localStorage.setItem("klavity_widget_token", "ext_live_token")
+    await mountWith({ launcherMode: "full" })
+    await openContextMenu()
+    expect(connectCard()).toBeUndefined()
+  })
+
+  it("does not show the Connect card in reportOnly mode", async () => {
+    await mountWith({ launcherMode: "full", rightClickMode: "reportOnly" })
+    await openContextMenu()
+    expect(connectCard()).toBeUndefined()
+  })
+
   it("renders context-menu Sim chips as circles when Sims are available", async () => {
     nextWidgetSims = [
       { id: "sim_one", name: "Sarah Chen", initials: "SC", accent: "#6366f1" },
