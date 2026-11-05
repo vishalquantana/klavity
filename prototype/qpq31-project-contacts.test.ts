@@ -91,6 +91,26 @@ test("the flag only ships alongside an email", () => {
   expect(WIDGET).toContain('if (payload.reporterEmail && payload.createContact) fd.set("create_contact", "1")')
 })
 
+// ── KD-983: the lookup works for a signed-in widget on a customer's site ─────
+test("the people lookup lists the roster whether or not the reporter is signed in", () => {
+  // On a third-party site the klavity.in cookie is never sent, so a cookie-only gate left the reporter
+  // with an empty dropdown and re-offered Create for an address they had already created.
+  const block = SERVER.match(/const m = path\.match\(\/\^\\\/api\\\/projects\\\/\(\[\^\/\]\+\)\\\/people\$\/\)[\s\S]*?return json\(\{ people: hits \}\)/)
+  expect(block).not.toBeNull()
+  expect(block![0]).not.toContain("Sign in to continue.")                            // no login gate
+  expect(block![0]).toContain('rlAllow(`people:ip:')                                 // but scrape-limited
+  expect(block![0]).toContain("listProjectContacts(pid)")
+  // and the old cookie-only copy is gone, so there is exactly one handler
+  expect(SERVER).not.toContain('sub === "/people"')
+})
+
+test("the widget sends its token with the people lookup", () => {
+  const fn = WIDGET.match(/onLookupPeople: async \(q: string\) => \{[\s\S]*?\n      \},/)
+  expect(fn).not.toBeNull()
+  expect(fn![0]).toContain("headers.authorization = `Bearer ${getToken()}`")
+  expect(fn![0]).toContain('{ credentials: "include", headers }')
+})
+
 // ── visible + taggable in the project ────────────────────────────────────────
 test("contacts feed the @mention and assignee pickers", () => {
   const fn = HTML.match(/function projectMemberEmails\(\)[\s\S]*?\n\}/)

@@ -8510,6 +8510,56 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
     }
   }
 
+  // QPQ-31 / KD-983: people lookup behind the composer's Email typeahead — project members plus project
+  // contacts. Handled here, ahead of the cookie-only session gate, because on a customer's own site the
+  // klavity.in cookie is never sent, so gating on it left the reporter with an empty list (Create only, even
+  // for an address they had just created). KD-983: deliberately PUBLIC — the dropdown lists every member and
+  // contact whether or not the reporter is signed in (product decision; this exposes the project's roster to
+  // anyone with the project id). Rate-limited per IP so the roster can't be scraped in bulk.
+  {
+    const m = path.match(/^\/api\/projects\/([^/]+)\/people$/)
+    if (req.method === "GET" && m) {
+      const pid = m[1]
+      if (!rlAllow(`people:ip:${clientIp(req, server)}`, 60, 60_000)) return json({ error: "rate limited" }, 429)
+      const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
+      // "The team for this project" is wider than project_members: an account owner/admin can open
+      // every project in the account, so they belong in the list even without a per-project row.
+      // Without this the picker was empty on a project whose only roster entry is the owner.
+      const projRow = await projectById(pid)
+      if (!projRow) return json({ error: "Not found." }, 404)
+      const [mem, acct, con] = await Promise.all([
+        membersOfProject(pid),
+        accountMembersRaw(projRow.accountId),
+        listProjectContacts(pid),
+      ])
+      const seen = new Set<string>()
+      const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
+      for (const m of mem) {
+        const e = String(m.email).toLowerCase()
+        if (seen.has(e)) continue
+        seen.add(e)
+        people.push({ email: e, name: null, kind: "member" })
+      }
+      for (const a of acct) {
+        const e = String(a.email).toLowerCase()
+        if (seen.has(e)) continue
+        seen.add(e)
+        people.push({ email: e, name: null, kind: "member" })
+      }
+      for (const c of con) {
+        const e = String(c.email).toLowerCase()
+        if (seen.has(e)) continue
+        seen.add(e)
+        people.push({ email: e, name: c.name, kind: "contact" })
+      }
+      // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
+      // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
+      // a normal-sized team.
+      const hits = (q ? people.filter(p => p.email.includes(q)) : people).slice(0, 200)   // KD-983: email only
+      return json({ people: hits })
+    }
+  }
+
   // ── GTM funnel ingest — KLAVITYKLA-327 ──────────────────────────────────────────────────────────
   // Anonymous; rate-limited per IP. Accepts only CLIENT_INGESTABLE events so clients can't fake
   // server-owned conversion events (check_completed, lead_captured, …).
@@ -15705,48 +15755,6 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       }
       if (req.method === "GET" && sub === "/members") {
         return json({ members: await membersOfProject(pid) })
-      }
-      // QPQ-31: people lookup behind the composer's "on behalf of" typeahead — project members plus
-      // project contacts, filtered by a typed prefix. SESSION-GATED by the surrounding projMatch access
-      // check, and that gate is the point: the composer also runs anonymously on a customer's own site,
-      // where handing back a directory of names and addresses would let any visitor enumerate the team.
-      // An anonymous caller never reaches here, so its typeahead simply offers Create and nothing else.
-      if (req.method === "GET" && sub === "/people") {
-        const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 200)
-        // "The team for this project" is wider than project_members: an account owner/admin can open
-        // every project in the account, so they belong in the list even without a per-project row.
-        // Without this the picker was empty on a project whose only roster entry is the owner.
-        const projRow = await projectById(pid)
-        const [mem, acct, con] = await Promise.all([
-          membersOfProject(pid),
-          projRow ? accountMembersRaw(projRow.accountId) : Promise.resolve([] as Array<{ email: string; role: string }>),
-          listProjectContacts(pid),
-        ])
-        const seen = new Set<string>()
-        const people: Array<{ email: string; name: string | null; kind: "member" | "contact" }> = []
-        for (const m of mem) {
-          const e = String(m.email).toLowerCase()
-          if (seen.has(e)) continue
-          seen.add(e)
-          people.push({ email: e, name: null, kind: "member" })
-        }
-        for (const a of acct) {
-          const e = String(a.email).toLowerCase()
-          if (seen.has(e)) continue
-          seen.add(e)
-          people.push({ email: e, name: null, kind: "member" })
-        }
-        for (const c of con) {
-          const e = String(c.email).toLowerCase()
-          if (seen.has(e)) continue
-          seen.add(e)
-          people.push({ email: e, name: c.name, kind: "contact" })
-        }
-        // Return the WHOLE roster (bounded only for payload sanity). Filtering is done client-side so
-        // the dropdown lists every teammate, not the first handful -- an 8-row cap silently hid most of
-        // a normal-sized team.
-        const hits = (q ? people.filter(p => p.email.includes(q) || (p.name || "").toLowerCase().includes(q)) : people).slice(0, 200)
-        return json({ people: hits })
       }
       if (req.method === "POST" && sub === "/invite") {
         // Any project member (admin or plain member) can invite — was admin-only. A non-admin
