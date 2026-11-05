@@ -3,6 +3,7 @@
 # Machine-readable content index for LLM crawlers
 
 ## Blog posts
+- [AI End-to-End Testing: What It Automates and What It Can't](https://klavity.in/blog/ai-end-to-end-testing) — AI end-to-end testing generates, runs, and repairs browser tests of full user journeys — it automates the authoring and upkeep, not the judgment.
 - [Vibe Coding Best Practices: Ship AI Code That Holds Up](https://klavity.in/blog/vibe-coding-best-practices) — Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch.
 - [AI QA for SaaS Applications: The Practical Playbook](https://klavity.in/blog/ai-qa-for-saas-applications) — AI QA for SaaS applications means testing per role and per plan, not per page — because the same URL behaves differently for every user.
 - [Claude Code Testing: How to QA What the Agent Ships](https://klavity.in/blog/claude-code-testing) — Claude Code testing means verifying behaviour, not compilation: a green terminal proves the tests the agent ran passed, not that the feature works.
