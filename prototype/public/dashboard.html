@@ -6329,6 +6329,19 @@
       cursor: default
     }
 
+    /* KD-1071: per-Sim Pause / Resume (Select Sims execution state), left of Activate/Deactivate. */
+    .sf-act.sf-exec {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 8px
+    }
+
+    .sf-act.sf-exec.is-paused {
+      border-color: color-mix(in srgb, #f59e0b 55%, var(--line));
+      color: #b45309
+    }
+
     /* Sits on the right of the header, between the observations pill and the Activate/Deactivate button (matches the design). */
     .sf-state {
       flex-shrink: 0;
@@ -24227,6 +24240,7 @@
               const toggleBtn = canToggle
                 ? `<button type="button" class="sf-act" data-sim-toggle="${esc(sim.id)}" onclick="toggleSimActive('${esc(sim.id)}', ${isActive ? "false" : "true"}, this)">${isActive ? "Deactivate" : "Activate"}</button>`
                 : ""
+              const execBtn = isActive ? simExecButtonHtml(sim) : ""
               return `<div class="sf-row${isActive ? "" : " is-inactive"}">
       <div class="sf-top">
       <a class="sf-hd" href="${esc(href)}">
@@ -24238,12 +24252,90 @@
         <span class="sf-badge">${badge}</span>
         <span class="sf-state">${isActive ? "Active" : "Inactive"}</span>
       </a>
+      ${execBtn}
       ${toggleBtn}
       </div>
       ${obHtml}
     </div>`
             }).join("")
             if (typeof supPickRefresh === "function") supPickRefresh() // the Run Sims picker only offers active Sims
+            loadSimExecStates(pid)
+          }
+
+          // ── KD-1071: per-Sim Pause / Resume on the Sims tab ─────────────────────────────────
+          // Reads/writes ONLY the additive Select Sims state (/api/widget/sim-deployments → sim_deployments
+          // table), the same one the widget's "Select Sims…" modal uses. Activate/Deactivate above is untouched.
+          var _simExec = { pid: null, states: {}, at: 0, loading: false, busy: null }
+
+          function simExecButtonHtml(sim) {
+            const st = _simExec && _simExec.pid === curProjId() ? _simExec.states[sim.id] : null
+            if (!st) return ""
+            const id = esc(sim.id)
+            if (_simExec.busy === sim.id) {
+              return `<button type="button" class="sf-act sf-exec" disabled>${st.execution === "paused" ? "Resuming…" : "Pausing…"}</button>`
+            }
+            if (st.deployment === "deployed" && st.execution === "running") {
+              return `<button type="button" class="sf-act sf-exec" data-sim-exec="${id}" aria-label="Pause ${esc(sim.name)}" onclick="simExecAction('${id}', 'pause', this)">❚❚ Pause</button>`
+            }
+            if (st.deployment === "deployed" && st.execution === "paused") {
+              return `<button type="button" class="sf-act sf-exec is-paused" data-sim-exec="${id}" aria-label="Resume ${esc(sim.name)}" onclick="simExecAction('${id}', 'resume', this)">▶ Resume</button>`
+            }
+            return `<button type="button" class="sf-act sf-exec" disabled title="Not running. Deploy this Sim from Select Sims in the Snap panel to run it.">❚❚ Pause</button>`
+          }
+
+          async function loadSimExecStates(pid) {
+            if (!pid || !_simExec || _simExec.loading || _simExec.busy) return
+            if (_simExec.pid === pid && Date.now() - _simExec.at < 15000) return // fresh enough; later renders re-read it
+            _simExec.loading = true
+            try {
+              const res = await fetch("/api/widget/sim-deployments?project=" + encodeURIComponent(pid), { credentials: "include" })
+              const data = await res.json().catch(function () { return {} })
+              if (!res.ok || !data.ok) return
+              simExecStore(pid, data.sims)
+              renderSimsFeed()
+            } catch (e) { /* best-effort: the cards just show no Pause/Resume */ }
+            finally { _simExec.loading = false }
+          }
+
+          // A change made in the widget's Select Sims modal on this page → refresh the Sims tab cards now.
+          window.addEventListener("klavity:sim-deployments-applied", function () {
+            if (!_simExec) return
+            _simExec.at = 0
+            if (typeof state !== "undefined" && state && state.sims && state.sims.length) loadSimExecStates(curProjId())
+          })
+
+          function simExecStore(pid, sims) {
+            const states = {}
+            ;(sims || []).forEach(function (s) { states[s.id] = { deployment: s.deployment, execution: s.execution } })
+            _simExec.pid = pid
+            _simExec.states = states
+            _simExec.at = Date.now()
+          }
+
+          async function simExecAction(simId, action, btn) {
+            const pid = curProjId()
+            const sim = (state.sims || []).find(function (x) { return x.id === simId })
+            if (!pid || !sim || _simExec.busy) return
+            _simExec.busy = simId
+            renderSimsFeed()
+            try {
+              const res = await fetch("/api/widget/sim-deployments", {
+                method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+                body: JSON.stringify({ project: pid, action: action, simIds: [simId] }),
+              })
+              const data = await res.json().catch(function () { return {} })
+              if (!res.ok || !data.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
+              if (Array.isArray(data.sims)) simExecStore(pid, data.sims)
+              // The widget on this page applies it right away (resumed Sims review the page again → feedback cards).
+              try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-changed")) } catch (e) { }
+              if (data.applied && data.applied.length) klavToast(esc(sim.name) + (action === "pause" ? " is paused." : " is running again."))
+              else klavToast(esc(sim.name) + (action === "pause" ? " isn't running, so there was nothing to pause." : " isn't paused, so there was nothing to resume."), true)
+            } catch (e) {
+              klavToast("Could not update the Sim. Check your connection and try again.", true)
+            } finally {
+              _simExec.busy = null
+              renderSimsFeed()
+            }
           }
 
           // WP-S2: activate / deactivate a Sim. An inactive Sim keeps its history but no review, schedule or widget uses it.

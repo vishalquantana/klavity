@@ -438,3 +438,56 @@ test("a self-ping (Origin = app's own host) does not satisfy install verificatio
   expect(j.seen).toBe(true)
   expect(j.host).toBe("real-install.example.com")
 })
+
+// ── Select Sims management: /api/widget/sim-deployments (isolated, additive) ─────────────
+const SIM1 = `sim_w1_${ts}`
+const SIM2 = `sim_w2_${ts}`
+const simDep = (body?: unknown, headers: Record<string, string> = {}) => body === undefined
+  ? fetch(base + "/api/widget/sim-deployments?project=" + projectId, { headers: { cookie: sessionCookie, ...headers } })
+  : fetch(base + "/api/widget/sim-deployments", {
+      method: "POST",
+      headers: { cookie: sessionCookie, "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    })
+
+test("GET /api/widget/sim-deployments requires a signed-in caller", async () => {
+  const r = await fetch(base + "/api/widget/sim-deployments?project=" + projectId)
+  expect(r.status).toBe(401)
+})
+
+test("GET /api/widget/sim-deployments lists Sims as not_deployed / not_running by default, with CORS", async () => {
+  const r = await simDep(undefined, { origin: X_ORIGIN })
+  expect(r.status).toBe(200)
+  expect(r.headers.get("access-control-allow-origin")).toBe(X_ORIGIN)
+  const d = await r.json()
+  const s1 = d.sims.find((s: any) => s.id === SIM1)
+  expect(s1).toMatchObject({ name: "Alex", role: "End User", deployment: "not_deployed", execution: "not_running" })
+  expect(s1.summary).toBeUndefined()
+})
+
+test("sim-deployments: deploy → pause → resume → deactivate round-trip", async () => {
+  let d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1, SIM2] })).json()
+  expect(d.applied.sort()).toEqual([SIM1, SIM2].sort())
+  expect(d.sims.every((s: any) => s.deployment === "deployed" && s.execution === "running")).toBe(true)
+  // Already-deployed Sims are skipped, never re-applied.
+  d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1] })).json()
+  expect(d.applied).toEqual([])
+  expect(d.skipped[0].simId).toBe(SIM1)
+  d = await (await simDep({ project: projectId, action: "pause", simIds: [SIM1] })).json()
+  expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ deployment: "deployed", execution: "paused" })
+  d = await (await simDep({ project: projectId, action: "resume", simIds: [SIM1] })).json()
+  expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ deployment: "deployed", execution: "running" })
+  d = await (await simDep({ project: projectId, action: "deactivate", simIds: [SIM1, SIM2] })).json()
+  expect(d.sims.every((s: any) => s.deployment === "deactivated" && s.execution === "not_running")).toBe(true)
+})
+
+test("sim-deployments rejects unknown actions, foreign Sims and bulk pause", async () => {
+  expect((await simDep({ project: projectId, action: "nuke", simIds: [SIM1] })).status).toBe(400)
+  expect((await simDep({ project: projectId, action: "deploy", simIds: ["sim_not_here"] })).status).toBe(400)
+  expect((await simDep({ project: projectId, action: "pause", simIds: [SIM1, SIM2] })).status).toBe(400)
+})
+
+test("sim-deployments leaves the legacy /api/widget/sims contract unchanged", async () => {
+  const d = await (await fetch(base + "/api/widget/sims?project=" + projectId)).json()
+  for (const s of d.sims) expect(Object.keys(s).sort()).toEqual(["accent", "id", "initials", "name"])
+})
