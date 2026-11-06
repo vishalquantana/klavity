@@ -1006,5 +1006,12 @@
     "excerpt": "AI end-to-end testing generates, runs, and repairs browser tests of full user journeys — it automates the authoring and upkeep, not the judgment.",
     "category": "Guides",
     "date": "2026-11-05"
+  },
+  {
+    "slug": "qa-wolf-alternative",
+    "title": "QA Wolf Alternative: 6 Picks by Budget and Team Size",
+    "excerpt": "A QA Wolf alternative suits you if you want E2E coverage without an annual managed-service contract. Six options compared by model, cost and fit.",
+    "category": "Compare",
+    "date": "2026-11-06"
   }
 ]
