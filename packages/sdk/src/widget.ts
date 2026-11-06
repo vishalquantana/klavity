@@ -1565,15 +1565,16 @@ async function mount() {
       // whether this project already tracks a matching known/recurring issue; on a hit the composer shows
       // an inline "Already reported — status: X" note (the user can still submit or dismiss). Best-effort:
       // any failure resolves null so the composer is never blocked by the lookup.
-      // QPQ-31: resolve people for the Email field's typeahead. Credentials are sent so a signed-in
-      // reporter (our own dashboard, or a logged-in embedder) gets the project's members + contacts;
-      // the endpoint is session-gated, so an anonymous visitor on a customer's site simply gets nothing
-      // back and their dropdown offers Create only — the team's addresses never leave the server.
+      // QPQ-31 / KD-983: resolve people for the Email field's typeahead — the project's members + contacts.
+      // The endpoint is public (the list shows whether or not the reporter is signed in); credentials and
+      // the widget token are still sent so the server can attribute the request when it can.
       onLookupPeople: async (q: string) => {
         try {
+          const headers: Record<string, string> = {}
+          if (getToken()) headers.authorization = `Bearer ${getToken()}`
           const res = await fetchWithTimeout(
             cfg.backendUrl + "/api/projects/" + encodeURIComponent(cfg.projectId) + "/people?q=" + encodeURIComponent(q),
-            { credentials: "include" },
+            { credentials: "include", headers },
           )
           if (!res.ok) return []
           const j = await res.json().catch(() => null) as any

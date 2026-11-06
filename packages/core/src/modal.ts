@@ -628,9 +628,8 @@ export interface ModalCallbacks {
   // so an end-user can file a ticket without a Klavity account. Default false → extension/authed
   // paths are unaffected (they already carry an identity).
   requireEmail?: boolean
-  // QPQ-31: resolve people for the Email field's typeahead (project members + contacts). The host wires
-  // this to a SESSION-GATED endpoint, so an anonymous cross-origin reporter resolves nothing and their
-  // dropdown offers Create only — a site visitor must never be able to enumerate the team.
+  // QPQ-31: resolve people for the Email field's typeahead (project members + contacts). KD-983: the
+  // host's endpoint is public, so the list shows for signed-in and anonymous reporters alike.
   onLookupPeople?: (q: string) => Promise<Array<{ email: string; name?: string | null; kind?: string }>>
   // PX4 #439: when the reporter identity is already known (Identify API / config / fallback), pre-fill the
   // required-email field so the user doesn't retype it. Ignored unless requireEmail rendered the field.
@@ -3557,8 +3556,7 @@ export function buildModal(
     for (let i = 0; i < e.length; i++) h = (h * 31 + e.charCodeAt(i)) >>> 0
     return `hsl(${h % 360} 58% 42%)`
   }
-  // Directory lookup. Session-gated server-side: an anonymous cross-origin reporter gets nothing back,
-  // so their dropdown offers Create only and the team's addresses are never exposed to a site visitor.
+  // Directory lookup (KD-983: public — every reporter sees the project's members + contacts).
   async function loadPeople(q: string) {
     if (!callbacks.onLookupPeople) { people = []; peopleFor = q; peopleLoaded = true; return }
     const seq = ++peopleSeq
@@ -3581,7 +3579,7 @@ export function buildModal(
     // team; typing filters that list from the first character. Matching is client-side over what the
     // last lookup returned, so filtering stays instant and never waits on the network.
     const matches = remailOpen
-      ? people.filter(p => !vl || p.email.toLowerCase().includes(vl) || (p.name || '').toLowerCase().includes(vl))
+      ? people.filter(p => !vl || p.email.toLowerCase().includes(vl))   // KD-983: match on email only, never the name
       : []
     const exact = matches.some(p => p.email.toLowerCase() === vl)
     const canCreate = remailOpen && emailLooksValid(v) && !exact
