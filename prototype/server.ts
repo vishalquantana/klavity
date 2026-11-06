@@ -17,7 +17,7 @@ import { countFoundingAccounts, liveFeedbackId, deleteTicketsBulk, invalidateDas
 import { listDeletedTickets, restoreDeletedTicket, RETENTION_DAYS as DELETED_TICKETS_RETENTION_DAYS } from "./lib/deleted-tickets"
 import { projectAccessAndRow } from "./lib/db" // KLA-833: access + project row in one DB round-trip (hot /api/projects/:id/* block)
 import { setFeedbackExtraScreenshots } from "./lib/db"
-import { listSimDeploymentStates, applySimAction, SIM_ACTIONS, type SimAction, type SimDeploymentState } from "./lib/sim-deployments"
+import { readSimDeploymentRows, statesFor, applySimAction, SIM_ACTIONS, type SimAction, type SimDeploymentState } from "./lib/sim-deployments"
 // KLA-838 (perf): batched helpers that collapse O(N-projects) per-request DB fan-out to a single query.
 import { listEnabledMonitoredUrlPatternsForProjects, countPersonasForAccount, insertTraitEvents, patternMatchesUrl } from "./lib/db"
 // #543 completeness (Codex review): ONE shared title resolver (title column → suggested-bug title →
@@ -4530,15 +4530,27 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
   // sim_deployments table (lib/sim-deployments.ts) — no existing Sims/AutoSims table or endpoint is
   // read-modified-written here. Incompatible ids are reported in `skipped`, never force-applied.
   if (path === "/api/widget/sim-deployments" && (req.method === "GET" || req.method === "POST")) {
+    // Perf: on a remote DB every sequential query is a full round trip, so this handler keeps them to a
+    // minimum — access is ONE query (projectAccessWithRow, same decision as projectAccess) and the Sim list +
+    // deployment rows are read in parallel. Server-Timing exposes the split in DevTools → Network → Timing.
+    const pt = phaseTimer()
+    const sj = (b: unknown, status = 200) => json(b, status, { ...WIDGET_CORS, "Server-Timing": pt.header(), "Access-Control-Expose-Headers": "Server-Timing" })
     const me = (await sessionEmail(req)) || (await bearerEmail(req))
-    if (!me) return wjson({ ok: false, reason: "unauthorized", error: "Sign in to manage Sims." }, 401)
-    if (!rlAllow(`wsimdep:${me}`, 60, 60_000)) return wjson({ ok: false, error: "rate limited" }, 429)
+    pt.mark("auth")
+    if (!me) return sj({ ok: false, reason: "unauthorized", error: "Sign in to manage Sims." }, 401)
+    if (!rlAllow(`wsimdep:${me}`, 60, 60_000)) return sj({ ok: false, error: "rate limited" }, 429)
     const body: any = req.method === "POST" ? await req.json().catch(() => ({})) : {}
     const requested = String((req.method === "POST" ? body.project : url.searchParams.get("project")) || "")
-    if (!requested) return wjson({ ok: false, error: "project required" }, 400)
-    const access = await resolveProject(me, requested)
-    if (!access) return wjson({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
-    const personas = await listPersonas(access.id)
+    if (!requested) return sj({ ok: false, error: "project required" }, 400)
+    // F5 (same rule as resolveProject): a project-bound widget token may only act on its bound project.
+    const bound = reqCtx.getStore()?.boundProject
+    const access = bound && requested !== bound ? null : (await projectAccessWithRow(me, requested)).access
+    pt.mark("access")
+    if (!access) return sj({ ok: false, reason: "unauthorized", error: "No access to this project." }, 403)
+    const projectId = requested
+    const [personas, rows] = await Promise.all([listPersonas(projectId), readSimDeploymentRows(db!, projectId)])
+    pt.mark("db")
+    const personaIds = personas.map((p) => p.id)
     const byId = new Map(personas.map((p) => [p.id, p]))
     const describe = (states: Map<string, SimDeploymentState>) => personas.map((p) => {
       const s = states.get(p.id)
@@ -4546,24 +4558,49 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         id: p.id, name: p.name, role: p.role || "",
         initials: p.initials || null, accent: p.accent || null, avatar: p.avatar || null,
         deployment: s?.deployment ?? "not_deployed", execution: s?.execution ?? "not_running",
+        // Deactivated on the Sims tab (personas.active = 0): the modal shows it greyed out with no actions.
+        active: p.active !== false,
       }
     })
     if (req.method === "GET") {
-      const states = await listSimDeploymentStates(db!, access.id, personas.map((p) => p.id))
-      return wjson({ ok: true, projectId: access.id, sims: describe(states) })
+      return sj({ ok: true, projectId, sims: describe(statesFor(rows, personaIds)) })
     }
     const action = String(body.action || "") as SimAction
-    if (!SIM_ACTIONS.includes(action)) return wjson({ ok: false, error: "unknown action" }, 400)
+    if (!SIM_ACTIONS.includes(action)) return sj({ ok: false, error: "unknown action" }, 400)
     const simIds: string[] = Array.isArray(body.simIds) ? [...new Set<string>(body.simIds.map(String))] : []
-    if (!simIds.length) return wjson({ ok: false, error: "simIds required" }, 400)
-    if (simIds.length > 200) return wjson({ ok: false, error: "too many Sims" }, 400)
+    if (!simIds.length) return sj({ ok: false, error: "simIds required" }, 400)
+    if (simIds.length > 200) return sj({ ok: false, error: "too many Sims" }, 400)
     // Pause/Resume are per-Sim controls in the UI — refuse a bulk call rather than guess.
-    if ((action === "pause" || action === "resume") && simIds.length !== 1) return wjson({ ok: false, error: `${action} takes exactly one Sim` }, 400)
+    if ((action === "pause" || action === "resume") && simIds.length !== 1) return sj({ ok: false, error: `${action} takes exactly one Sim` }, 400)
     const unknown = simIds.filter((id) => !byId.has(id))
-    if (unknown.length) return wjson({ ok: false, error: "Some Sims are not in this project.", unknown }, 400)
-    const result = await applySimAction(db!, access.id, simIds, action, me)
-    const states = await listSimDeploymentStates(db!, access.id, personas.map((p) => p.id))
-    return wjson({ ok: true, action, applied: result.applied, skipped: result.skipped, sims: describe(states) })
+    if (unknown.length) return sj({ ok: false, error: "Some Sims are not in this project.", unknown }, 400)
+    // A Sim deactivated on the Sims tab can't be deployed / paused / resumed from here — it must be
+    // re-activated on the Sims tab first. Reported in `skipped`, never applied.
+    const inactive = simIds.filter((id) => byId.get(id)!.active === false)
+    const eligible = simIds.filter((id) => byId.get(id)!.active !== false)
+    const inactiveSkips = inactive.map((simId) => ({ simId, reason: "deactivated on the Sims tab — activate it there first" }))
+    if (!eligible.length) {
+      return sj({ ok: true, action, applied: [], skipped: inactiveSkips, sims: describe(statesFor(rows, personaIds)) })
+    }
+    // applySimAction reads the rows itself (fresh, right before the write) and returns the post-write rows,
+    // so the response needs no second read.
+    // Deactivate here = Deactivate on the Sims tab (one notion of "deactivated"): it also turns the Sim itself off
+    // (personas.active = 0), so the Sims tab shows it Inactive and it can only be re-activated there. Same rule as
+    // PATCH /api/personas/:id/active — project admins only.
+    if (action === "deactivate" && access !== "admin") {
+      return sj({ ok: false, error: "Only project admins can activate or deactivate a Sim." }, 403)
+    }
+    const result = await applySimAction(db!, projectId, eligible, action, me)
+    if (action === "deactivate" && result.applied.length) {
+      const now = Date.now()
+      for (const id of result.applied) {
+        await setPersonaActive(id, projectId, false)
+        await insertPersonaEdit({ personaId: id, projectId, field: "active", beforeVal: "true", afterVal: "false", actor: me, createdAt: now })
+        byId.get(id)!.active = false
+      }
+    }
+    pt.mark("write")
+    return sj({ ok: true, action, applied: result.applied, skipped: [...result.skipped, ...inactiveSkips], sims: describe(statesFor(result.rows, personaIds)) })
   }
 
   // ── /api/widget/known-check — anonymous, project-scoped, CORS-gated pre-submit "known issue"
@@ -7305,6 +7342,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         await setPersonaActive(pid, wid, body.active)
         await insertPersonaEdit({ personaId: pid, projectId: wid, field: "active", beforeVal: String(wasActive), afterVal: String(body.active), actor: me2, createdAt: Date.now() })
       }
+      // Deactivating here also takes the Sim out of Select Sims (deployed → deactivated), so the widget's Select Sims
+      // modal shows the same thing. A no-op when it was never deployed. Re-activating leaves it "Not active" there,
+      // ready to be deployed again — it never silently starts running.
+      if (!body.active && db) await applySimAction(db, wid, [pid], "deactivate", me2).catch((e) => console.warn("sim deactivate sync:", e?.message || e))
       return wjson({ ok: true, id: pid, active: body.active })
     }
     const editsMatch = path.match(/^\/api\/personas\/([^/]+)\/edits$/)

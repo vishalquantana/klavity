@@ -74,7 +74,8 @@ describe("Select Sims modal", () => {
     expect(badge("s2", "execution")).toBe("Active")
     expect(badge("s3", "execution")).toBe("Paused")
     // Execution controls only on deployed Sims
-    expect(row("s1").querySelector<HTMLButtonElement>(".kss-exec")!.disabled).toBe(true) // not running → inert Pause
+    expect(row("s1").querySelector(".kss-exec")).toBeNull() // not deployed yet → no Pause/Resume at all
+    expect(row("s4").querySelector(".kss-exec")).toBeNull() // deactivated deployment → none either
     expect(row("s2").querySelector<HTMLElement>(".kss-exec")!.dataset.action).toBe("pause")
     expect(row("s3").querySelector<HTMLElement>(".kss-exec")!.dataset.action).toBe("resume")
   })
@@ -197,6 +198,47 @@ describe("Select Sims modal", () => {
     openSelectSimsModal({ api })
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
     expect(document.getElementById(SELECT_SIMS_HOST_ID)).toBeNull()
+  })
+})
+
+describe("Select Sims modal — Sims deactivated on the Sims tab", () => {
+  const withInactive = (): ManagedSim[] => [
+    sim("s1", "Eleanor Vance", "Technology executive", "not_deployed", "not_running"),
+    { ...sim("s2", "Sarah Davis", "Product manager", "deployed", "paused"), active: false },
+    sim("s3", "Marcus Chen", "Digital transformation leader", "deployed", "running"),
+  ]
+
+  it("shows the Sim greyed out as Deactivated, with no Pause/Resume and no checkbox toggle", async () => {
+    const { api } = fakeApi(withInactive())
+    openSelectSimsModal({ api })
+    await flush()
+    const r = row("s2")
+    expect(r.classList.contains("off")).toBe(true)
+    expect(r.getAttribute("aria-disabled")).toBe("true")
+    expect(r.textContent).toContain("Deactivated")
+    expect(r.textContent).toContain("Sims tab")
+    expect(r.querySelector(".kss-exec")).toBeNull()
+    r.click()
+    expect(r.classList.contains("on")).toBe(false)
+    expect(root().querySelector(".kss-count")!.textContent).toContain("0")
+    // Active Sims keep their Pause / Resume control.
+    expect(row("s3").querySelector('.kss-exec[data-action="pause"]')).not.toBeNull()
+  })
+
+  it("select all skips deactivated Sims, and a remembered selection of one is dropped", async () => {
+    const { api } = fakeApi(withInactive())
+    let remembered: string[] = []
+    openSelectSimsModal({ api, initialSelection: ["s2"], onSelectionChange: (ids) => { remembered = ids } })
+    await flush()
+    expect(remembered).toEqual([])
+    root().querySelector<HTMLElement>(".kss-all")!.click()
+    expect(remembered.sort()).toEqual(["s1", "s3"])
+    expect(bulkActionsFor(withInactive(), new Set(["s1", "s2", "s3"]))).toEqual({ deploy: ["s1"], deactivate: ["s3"] })
+  })
+
+  it("a deactivated Sim never counts as running on the page", () => {
+    const sims = withInactive().map((s) => s.id === "s2" ? { ...s, execution: "running" as const } : s)
+    expect(managedSigOf(sims)).toBe("s3:running")
   })
 })
 
