@@ -20399,12 +20399,10 @@
       if (target === "tickets") {
         if (_tktBoardProjId === pid && Array.isArray(_tktBoardTickets) && _tktBoardTickets.length) return false  // board already warm
         if (swrRead("tickets:" + pid) != null) return false                   // prefetched recently & still fresh
-        const sp = new URLSearchParams()
-        sp.set("status", ALL_STATUSES)
-        sp.set("page", "1"); sp.set("limit", "200")
-        const r = await fetch("/api/projects/" + encodeURIComponent(pid) + "/tickets?" + sp.toString(), { signal })
-        if (!r || !r.ok) return true
-        const d = await r.json()
+        // Same complete set the board itself loads (every page, not just the first 200) — a partial prefetch would
+        // otherwise be painted as if it were the whole board.
+        let d
+        try { d = await fetchAllBoardTickets(pid, signal) } catch (e) { return true }
         if (curProjId() !== pid) return true                                  // project switched mid-flight → drop
         _tktBoardTickets = (d && d.tickets) || []                             // warm the in-memory board cache
         _tktBoardProjId = pid
@@ -30236,8 +30234,12 @@
           }
 
           function ticketStatusParamFor(view) {
-            if (_tktFilters.status) return _tktFilters.status
-            return ALL_STATUSES
+            // "All statuses" must mean EVERY status, TO DO ("new") included — the same set the board shows. The filter is
+            // an array, and an EMPTY array is truthy: it used to be sent as `status=` (blank), which the server reads as
+            // "default" = everything EXCEPT new, so the List silently hid every TO DO ticket and never matched the Board.
+            const s = _tktFilters.status
+            const picked = Array.isArray(s) ? s.filter(Boolean) : String(s || "").split(",").filter(Boolean)
+            return picked.length ? picked.join(",") : ALL_STATUSES
           }
 
           function ticketQueryParams(view, page, limit) {
@@ -30310,6 +30312,40 @@
             }
           }
 
+          // The board needs the WHOLE project (it filters client-side), but the tickets API returns at most 200 rows per
+          // request. One 200-row request used to be all the board ever got, so on a project with more than 200 tickets
+          // the rest never appeared on the board — and every board filter ran over that truncated set, showing fewer
+          // matches than the List for the same filter. Page 1 tells us the total; the remaining pages load in parallel.
+          // Capped (BOARD_MAX_PAGES × 200) so a huge project can't stall the board; duplicates (a ticket that moved
+          // between pages while we were reading) are dropped by id.
+          const BOARD_PAGE_SIZE = 200
+          const BOARD_MAX_PAGES = 15
+          async function fetchAllBoardTickets(projId, signal) {
+            const pageUrl = (n) => {
+              const sp = new URLSearchParams()
+              sp.set("status", ALL_STATUSES)
+              sp.set("page", String(n))
+              sp.set("limit", String(BOARD_PAGE_SIZE))
+              return `/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`
+            }
+            const getPage = async (n) => {
+              const res = await fetch(pageUrl(n), signal ? { signal } : undefined)
+              if (!res.ok) throw new Error("HTTP " + res.status)
+              return res.json()
+            }
+            const first = await getPage(1)
+            const pages = Math.min(BOARD_MAX_PAGES, Math.max(1, Number(first.totalPages) || 1))
+            const rest = pages > 1 ? await Promise.all(Array.from({ length: pages - 1 }, (_, i) => getPage(i + 2))) : []
+            const seen = new Set()
+            const tickets = []
+            ;[first, ...rest].forEach(d => (d.tickets || []).forEach(t => {
+              const k = String(t.id)
+              if (seen.has(k)) return
+              seen.add(k); tickets.push(t)
+            }))
+            return { ...first, tickets, page: 1, totalPages: 1 }
+          }
+
           async function fetchAndRenderTktBoard() {
             const board = document.getElementById("ticketsKanban")
             if (!board || _tktBoardState.loading) return
@@ -30335,16 +30371,9 @@
 
             // #536: fetch the FULL board (all statuses, no select filters) so the cache is a complete set the
             // client can filter locally. Filters are applied in renderTicketsKanban via tktMatchesSelectFilters.
-            const sp = new URLSearchParams()
-            sp.set("status", ALL_STATUSES)
-            sp.set("page", "1")
-            sp.set("limit", "200")
-
             const _fetchStart = Date.now()
             try {
-              const res = await fetch(`/api/projects/${encodeURIComponent(projId)}/tickets?${sp.toString()}`)
-              if (!res.ok) throw new Error("HTTP " + res.status)
-              const data = await res.json()
+              const data = await fetchAllBoardTickets(projId)
               // A board GET already in flight when the user saves (status dropdown / drag) returns a
               // pre-save snapshot; overlay any local edit newer than _fetchStart so this refetch can't
               // clobber the just-moved card back into its old column (mirrors refreshAll's guard).
