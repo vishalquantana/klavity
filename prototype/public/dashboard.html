@@ -25789,17 +25789,32 @@
           // KLAVITYKLA-480) were captured + presigned by the server but never rendered anywhere in the
           // dashboard. This renders the existing list; wireAttachments() (below) wires "+ Add attachment" so
           // a member can add more to an already-created ticket, not just at intake.
-          function buildAttachmentsHtml(t) {
+          // The ticket's Attachments list, in display order: the report screenshot, the report's other screenshots (picked
+          // element / selected region / extra full-page shots — extraScreenshotIds), then uploaded file attachments. ONE
+          // builder for the render and every click handler, because tiles address their item by index (data-idx).
+          function ticketAttachList(t) {
             var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
+            var has = function (sid) { return atts.some(function (a) { return a && String(a.screenshotId) === String(sid) }) }
+            var shots = []
             if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
-              atts.unshift({
+              shots.push({
                 filename: "Screenshot",
                 contentType: "image/png",
                 url: shotProxyUrl(String(t.screenshotId)),
                 screenshotId: t.screenshotId,
-                isPrimaryScreenshot: true
+                isPrimaryScreenshot: true,
+                annotations: t.annotations
               })
             }
+            var extra = Array.isArray(t.extraScreenshotIds) ? t.extraScreenshotIds : []
+            extra.forEach(function (sid, i) {
+              if (!sid || String(sid) === String(t.screenshotId) || has(sid)) return
+              shots.push({ filename: "Screenshot " + (i + 2), contentType: "image/png", url: shotProxyUrl(String(sid)), screenshotId: sid })
+            })
+            return shots.concat(atts)
+          }
+          function buildAttachmentsHtml(t) {
+            var atts = ticketAttachList(t)
             // var atts = Array.isArray(t.attachments) ? t.attachments : []
             var pending = attachUploadsFor(t.id)                       // KD-193: in-flight / failed uploads, kept outside the DOM
             var uploading = pending.some(function (u) { return u.status === "uploading" })
@@ -25853,17 +25868,7 @@
             wrap.querySelectorAll(".tkt-attach-thumb").forEach(function (b) {   // KD-100: enlarge an image / play a video
               b.addEventListener("click", function (ev) {
                 ev.stopPropagation()
-                var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
-                if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
-                  atts.unshift({
-                    filename: "Screenshot",
-                    contentType: "image/png",
-                    url: shotProxyUrl(String(t.screenshotId)),
-                    screenshotId: t.screenshotId,
-                    isPrimaryScreenshot: true,
-                    annotations: t.annotations
-                  })
-                }
+                var atts = ticketAttachList(t)
                 var prevItems = []
                 atts.forEach(function (a, ai) {
                   var attUrl = a.url || ((a.key && ticketId) ? "/api/feedback/" + encodeURIComponent(ticketId) + "/attachments?key=" + encodeURIComponent(a.key) : "")
@@ -25907,10 +25912,7 @@
             wrap.querySelectorAll("[data-tile-dl]").forEach(function (btn) {
               btn.addEventListener("click", function (ev) {
                 ev.preventDefault(); ev.stopPropagation()
-                var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
-                if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
-                  atts.unshift({ filename: "Screenshot", contentType: "image/png", url: shotProxyUrl(String(t.screenshotId)), screenshotId: t.screenshotId, isPrimaryScreenshot: true })
-                }
+                var atts = ticketAttachList(t)
                 var idx = Number(btn.getAttribute("data-tile-dl"))
                 var a = atts[idx]
                 if (a && a.url) triggerAttachmentDownload(a.url, a.filename || ("attachment-" + (idx + 1)), a.key, ticketId, a.screenshotId)
@@ -25919,10 +25921,7 @@
             wrap.querySelectorAll(".tkt-attach-item[data-idx]").forEach(function (el) {
               el.addEventListener("click", function (ev) {
                 ev.preventDefault(); ev.stopPropagation()
-                var atts = Array.isArray(t.attachments) ? t.attachments.slice() : []
-                if (t.screenshotId && !atts.some(function (a) { return a.screenshotId === t.screenshotId || a.isPrimaryScreenshot })) {
-                  atts.unshift({ filename: "Screenshot", contentType: "image/png", url: shotProxyUrl(String(t.screenshotId)), screenshotId: t.screenshotId, isPrimaryScreenshot: true })
-                }
+                var atts = ticketAttachList(t)
                 var idx = Number(el.getAttribute("data-idx"))
                 var a = atts[idx]
                 if (a && a.url) triggerAttachmentDownload(a.url, a.filename || ("attachment-" + (idx + 1)), a.key, ticketId, a.screenshotId)
