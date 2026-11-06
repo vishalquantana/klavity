@@ -29081,8 +29081,13 @@
                 renderTicketsView()
               }
               if (typeof _tktBoardScrollY === "number" && _tktBoardScrollY > 0) {
-                try { window.scrollTo({ top: _tktBoardScrollY, behavior: "instant" }) }
-                catch (e) { window.scrollTo(0, _tktBoardScrollY) }
+                const _y = _tktBoardScrollY
+                const _restore = () => { try { window.scrollTo({ top: _y, behavior: "instant" }) } catch (e) { window.scrollTo(0, _y) } }
+                _restore()
+                // Browser Back (popstate) off the full ticket page: AFTER this handler the browser applies its own saved
+                // scroll for the board entry — recorded while the board was hidden, i.e. 0 — which threw the list back to the
+                // top. Re-apply once that has happened (next frames); a no-op when nothing moved it.
+                requestAnimationFrame(() => requestAnimationFrame(() => { if (Math.abs((window.scrollY || 0) - _y) > 2) _restore() }))
               }
             }
             _tktBoardScrollY = 0
