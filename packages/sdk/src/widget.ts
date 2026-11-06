@@ -2489,6 +2489,11 @@ async function mount() {
   // Capture the current viewport and POST to /api/sim/review immediately.
   // This is the "boot" review triggered right after Deploy — no waiting for scroll or mutation.
   async function bootReview(simIds: string[] | 'all') {
+    // KD-1465: report the run's phase to the Sims feedback panel (analysing → running → completed/failed).
+    const runStatus = (s: "analysing" | "running" | "completed" | "failed") => {
+      try { (window as any).KlavitySims?.setRunStatus?.(s) } catch { /* never break page */ }
+    }
+    runStatus("analysing")
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
@@ -2515,6 +2520,7 @@ async function mount() {
       if (simIds !== 'all') body.simIds = simIds
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (getToken()) headers.authorization = `Bearer ${getToken()}`
+      runStatus("running")
       const networkStart = benchNow()
       const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
         method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
@@ -2524,12 +2530,13 @@ async function mount() {
       if (res.status === 401 && !firstParty) {
         clearToken()
         banner("Your Klavity connection expired — deploy Sims again to reconnect.")
+        runStatus("failed")
         return
       }
-      if (!res.ok) return
+      if (!res.ok) { runStatus("failed"); return }
       const data = await res.json().catch(() => ({}))
       const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) return
+      if (!data?.ok || !Array.isArray(data.reviews)) { runStatus("failed"); return }
       const kl = (window as any).KlavitySims
       const renderStart = benchNow()
       let observations = 0
@@ -2551,6 +2558,7 @@ async function mount() {
       const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
       updateIssueCounter()
+      runStatus("completed")
       const server = data.timing?.simReview
       const domNodes = reactionNodeCount()
       console.log(
@@ -2559,7 +2567,7 @@ async function mount() {
         `serverReviewMs=${server?.reviewMs ?? '?'} renderMs=${benchMs(renderMs)} totalMs=${benchMs(totalMs)} ` +
         `sims=${data.reviews.length} observations=${observations} domNodes=${domNodes}`,
       )
-    } catch { /* non-fatal: boot review is best-effort */ }
+    } catch { runStatus("failed") /* non-fatal: boot review is best-effort */ }
   }
 
   // Opens the Klavity connect popup and resolves with the minted widget token, or "" if the user

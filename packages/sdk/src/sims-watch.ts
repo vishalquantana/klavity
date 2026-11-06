@@ -346,6 +346,11 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
     busy = true
     lastReviewAt = Date.now()
     let fetchTimedOut = false
+    // KD-1465: report the run's phase to the Sims feedback panel (analysing → running → completed/failed).
+    const runStatus = (s: 'analysing' | 'running' | 'completed' | 'failed'): void => {
+      try { (typeof window !== 'undefined' ? (window as any).KlavitySims : null)?.setRunStatus?.(s) } catch { /* never break the loop */ }
+    }
+    runStatus('analysing')
     // Optimistically mark seen — un-marked on capture / network error so the next change retries.
     seenHashes.add(hash)
     if (seenHashes.size > MAX_SEEN_HASHES) {
@@ -385,6 +390,7 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (opts.bearerToken) headers['authorization'] = `Bearer ${opts.bearerToken}`
 
+      runStatus('running')
       const networkStart = benchNow()
       let res: Response
       try {
@@ -406,7 +412,7 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
         timing?: { simReview?: { totalMs?: number; receiveToReviewDoneMs?: number; reviewMs?: number } }
       } = await res.json()
       const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) { busy = false; return }
+      if (!data?.ok || !Array.isArray(data.reviews)) { busy = false; runStatus('failed'); return }
 
       // Deliver each Sim review to the presence UI layer (sims-live.ts / window.KlavitySims).
       const kl = typeof window !== 'undefined' ? (window as any).KlavitySims : null
@@ -438,6 +444,7 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       }
       // Update the mutation cap counter for this pathname (only mutation triggers count).
       if (trigger === 'mutation') recordMutationOutcome(reviewPath, newFindings)
+      runStatus('completed')
       const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
       const server = data.timing?.simReview
@@ -453,6 +460,7 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       if (e instanceof Error && e.name === 'AbortError' && !fetchTimedOut) { busy = false; return }
       // Capture timeout, review timeout, or network error — un-mark the hash so the next signal can retry.
       seenHashes.delete(hash)
+      if (!stopped) runStatus('failed')
     } finally {
       busy = false
     }
