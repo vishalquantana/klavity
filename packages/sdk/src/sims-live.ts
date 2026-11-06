@@ -179,6 +179,44 @@ function observationKey(simId: string, obs: LiveObservation): string {
   return `${simId}::${normalizeObservationText(obs.text)}`
 }
 
+// KD-1459: the widget's reviews are adhoc, so the server skips its near-dup filter, and the watch engine
+// re-reviews the same page — the AI rewords the same finding slightly each time and exact-text dedup let
+// both copies through. Same character-trigram cosine as obsIsNearDup (prototype/lib/sim-review-pure.ts).
+// Within a Sim, 0.55 (the server's tuned threshold) catches rephrases; across Sims, only near-identical
+// text (0.8) counts, so two Sims' distinct takes on one element both stay.
+const NEAR_DUP_SAME_SIM = 0.55
+const NEAR_DUP_OTHER_SIM = 0.8
+/** Every observation already shown or handled this deploy, for near-dup checks. */
+const seenObservationTexts: Array<{ simId: string; grams: Set<string> }> = []
+
+function trigramSet(text: string): Set<string> {
+  const norm = String(text || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  const out = new Set<string>()
+  if (!norm) return out
+  const padded = `  ${norm} `
+  for (let i = 0; i < padded.length - 2; i++) out.add(padded.slice(i, i + 3))
+  return out
+}
+
+function trigramSim(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  let inter = 0
+  for (const t of a) if (b.has(t)) inter++
+  return inter / Math.sqrt(a.size * b.size)
+}
+
+/** True when this observation rewords one already shown or handled (see thresholds above). */
+function isNearDuplicate(simId: string, obs: LiveObservation): boolean {
+  const grams = trigramSet(obs.text)
+  return seenObservationTexts.some(s =>
+    trigramSim(grams, s.grams) >= (s.simId === simId ? NEAR_DUP_SAME_SIM : NEAR_DUP_OTHER_SIM))
+}
+
+function rememberObservation(simId: string, obs: LiveObservation): void {
+  seenObservationKeys.add(observationKey(simId, obs))
+  seenObservationTexts.push({ simId, grams: trigramSet(obs.text) })
+}
+
 function emitLiveDock(active: boolean): void {
   try {
     document.dispatchEvent(new CustomEvent('klavity:sims-live', { detail: { active } }))
@@ -1261,8 +1299,8 @@ function renderFeedback(simId: string, simName: string, observations: LiveObserv
   for (const obs of observations) {
     if (!isConcernObservation(obs)) continue
     const key = observationKey(simId, obs)
-    if (seenObservationKeys.has(key)) continue
-    seenObservationKeys.add(key)
+    if (seenObservationKeys.has(key) || isNearDuplicate(simId, obs)) continue
+    rememberObservation(simId, obs)
     addFinding(entry, obs)
   }
 }
@@ -1276,6 +1314,7 @@ function undeploy(): void {
   findingSeq = 0
   simEntries.clear()
   seenObservationKeys.clear()
+  seenObservationTexts.length = 0
   panelOpen = false
   personaFilter = null
   sevFilter = null
