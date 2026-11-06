@@ -3907,7 +3907,7 @@ export async function insertFeedback(f: FeedbackInsert): Promise<string> {
   const now = Date.now()
   // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
   try {
     const rs = await db!.batch([
@@ -3942,7 +3942,7 @@ export async function insertFeedbackForSubmission(
   const now = Date.now()
   // #544 follow-up: untrusted/quarantined intake is pinned to 'new' regardless of the claimed priority
   // (priority-self-elevation guard). The priority column below still stores f.priority verbatim.
-  const status = f.forceNewStatus ? "new" : initialFeedbackStatus(f.priority)
+  const status = f.forceNewStatus || f.simId ? "new" : initialFeedbackStatus(f.priority)
   const args = feedbackInsertArgs(f, id, now, status)
   const guard = "EXISTS (SELECT 1 FROM submission_keys WHERE project_id=? AND submission_key=? AND feedback_id=? AND state='done')"
   const rs = await db!.batch([
