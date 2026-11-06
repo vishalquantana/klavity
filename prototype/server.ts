@@ -100,6 +100,7 @@ import { assembleWalk } from "./lib/sim-walk"
 import { publishRegressionEvent, listRegressionEvents, acknowledgeRegressionEvent } from "./lib/regression-events"
 import { buildAssertUserPrompt } from "./lib/assertion-spec"
 import { judgeWalk } from "./lib/trails-judge"
+import { normalizeGeneratedCore } from "./lib/persona-core"
 import { WEEK_MS as TRUST_REPORT_WEEK_MS, sendTrustReport, type TrustReportDeps } from "./lib/trust-report"
 import type { TrailStatus } from "./lib/trails-types"
 import type { RecurrenceMemory } from "./lib/recurrence-memory"
@@ -15857,15 +15858,16 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           "Classify on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
           "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the brief clearly describes an executive, buyer, or outcome-judging stakeholder) " +
           "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
+          "Respond with ONLY a JSON object, no prose: {\"persona\":{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"summary\":string,\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}} with exactly 3 insights; each quote is a short first-person line this persona might actually say."
         const meB = (await sessionEmail(req)) || (await bearerEmail(req))
         if (aiDemoLimited(meB, req, server)) return json({ error: "Too many requests. Please wait and try again." }, 429, { "Retry-After": "3600" })
-        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 1200, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
+        const { content, usage } = await chat([{ role: "system", content: sys }, { role: "user", content: "Brief: " + brief + (chosenName ? "\nName the Sim exactly: " + chosenName : "") }], 2000, true, { type: "persona", email: meB, projectId: meB ? null : MARKETING_PRESIGNUP_PROJECT_ID })
         const data = parseJSON(content)
         // Ensure simClass is always set: default to "user" for described Sims when the model omits it.
         if (data.persona) {
           if (!SIM_CLASS_ENUM.has(String(data.persona.simClass))) data.persona.simClass = "user"
           if (!SIDE_ENUM.has(String(data.persona.side))) data.persona.side = "external"
+          data.persona.core = normalizeGeneratedCore(data.persona.core, { role: data.persona.role, summary: data.persona.summary })
           if (chosenName) {
             data.persona.name = chosenName
             const w = chosenName.split(" ").filter(Boolean)
