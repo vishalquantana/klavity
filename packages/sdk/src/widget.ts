@@ -17,7 +17,7 @@ import { type CaptureBuffers } from "@klavity/core/capture"
 import { installCaptureContext, buildCaptureContext } from "./capture-context"
 import { installErrorReporter } from "./error-reporter"
 import type { ReportContext, ReportIdentity, Reporter, ClientInfo, ReportRecording } from "@klavity/core"
-import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord } from "./widget-lib"
+import { parseScriptConfig, isFirstParty, buildFeedbackForm, successCopy, shouldUseInteractiveSuccess, compressScreenshot, buildThumbnail, resolveComposerRecord, mergeRecordings } from "./widget-lib"
 import { SubmitError, newSubmissionKey, sendForm, withRetries, buildRepairForm, refreshTurnstileField, outcomeFromResult, serverSupportsIdempotency, retryFailureCopy, RETRY, type SubmitOutcome, type RetryInfo } from "./submit-flow"
 import { coerceReporter, reporterToIdentity, resolveFallbackReporter, captureClientInfo } from "./identity"
 import { pickElementOnPage as pickElementOnPageShared } from "@klavity/core/element-picker"
@@ -1443,6 +1443,17 @@ async function mount() {
       saveDraft(cfg.projectId, evOrigin, { isOpen: true, desc: ev.desc, title: ev.title })
       void queueEvWrite(() => updateEvidenceFields(ev.id, { isOpen: true }))
     }
+    // KD-1470: ONE seed list for the composer's recordings — the session's saved ones (KD-1074) plus a
+    // "Record me" video that finished after a page reload (record-bridge). They used to be two separate
+    // `initialRecordings` keys in the buildModal options, so the later one silently dropped the arrived video.
+    const arrivedNow = [...(opts?.initialRecordings || []), ...arrivedRecordings]
+    arrivedRecordings = []
+    const seedRecordings = mergeRecordings(ev?.recordings?.map((r) => ({ ...r })), arrivedNow)
+    // The composer never echoes its seed back via onRecordingsChange, so persist an arrived video into the
+    // session here — otherwise a later minimize/reload would lose it again.
+    if (ev && arrivedNow.length) {
+      void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, seedRecordings) ?? evSession; updateEvDock() })
+    }
     const identified = firstParty || !!getToken()  // already known to Klavity (own page session, or signed-in widget)
     // Only the "login" gate forces the connect flow on third-party sites. "email"/"anonymous" let an
     // end-user file WITHOUT a Klavity account; "email" requires a typed email when not already identified.
@@ -1482,12 +1493,8 @@ async function mount() {
       // resuming an evidence session that already holds shots (we seed those below); a BRAND-NEW session
       // (empty, no region shot) still auto-captures so the first shot lands + persists via onShotAdded.
       autoCaptureOnOpen: !opts?.initialShot && !(ev && ev.shots.length > 0) && !opts?.initialRecordings?.length,
-      // A "Record me" video that finished after the reporter navigated (record-bridge) reopens the composer with it.
-      initialRecordings: (() => {
-        const all = [...(opts?.initialRecordings || []), ...arrivedRecordings]
-        arrivedRecordings = []
-        return all.length ? all : undefined
-      })(),
+      // Saved session recordings + a "Record me" video that finished after the reporter navigated (see above).
+      initialRecordings: seedRecordings.length ? seedRecordings : undefined,
       // #638: render the "Attach console logs" toggle (default OFF) in the composer. When the reporter enables
       // it, the submit payload carries attachConsole:true and onSubmit includes the captured console logs.
       consoleAttachToggle: true,
@@ -1686,9 +1693,8 @@ async function mount() {
       // KLAVITYKLA-438 "Record me": expose the button + drive the consent → record → preview overlay from
       // the sdk recorder, returning the captured recording (or null on cancel) to the composer.
       allowRecording: composerRecord,
-      // KD-1074: restore the session's recordings on resume, and persist every add/remove so a minimize (or a
-      // navigation) never loses the recorded video.
-      initialRecordings: ev?.recordings?.length ? ev.recordings.map((r) => ({ ...r })) : undefined,
+      // KD-1074: persist every add/remove so a minimize (or a navigation) never loses the recorded video.
+      // (The session's recordings are restored via the single `initialRecordings` seed above — KD-1470.)
       onRecordingsChange: ev ? (recs) => {
         void queueEvWrite(async () => { evSession = await setEvidenceRecordings(ev.id, recs) ?? evSession; updateEvDock() })
       } : undefined,
