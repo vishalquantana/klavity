@@ -61,7 +61,8 @@ import { notifyStatusChange } from "./lib/status-notification"
 import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
-import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, type UploadedScreenshot } from "./lib/s3"
+import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
+import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
@@ -1089,6 +1090,18 @@ async function extractPersonas(transcript: string, ctx?: { email?: string | null
   normalizeExtractedPersonas(data)
   return { data, usage }
 }
+/**
+ * Store a Sim review screenshot for use as finding evidence: upload → verify the object exists → write the ledger row. Returns a
+ * screenshot id only when ALL of that succeeded; otherwise null + an explicit failure record (Phase-1 QA evidence integrity).
+ */
+function storeSimScreenshot(bytes: Uint8Array, contentType: string, projectId: string, ownerEmail: string | null, expiresAt: number): Promise<StoredScreenshot> {
+  return storeVerifiedScreenshot({
+    upload: (b, ct) => uploadScreenshotMeta(b, ct, "private"),
+    exists: (key) => objectExists(key),
+    insert: (row) => insertScreenshot({ projectId, s3Key: row.s3Key, bucket: row.bucket, contentType: row.contentType, acl: "private", bytes: row.bytes, ownerEmail, expiresAt }),
+  }, bytes, contentType)
+}
+
 async function reactToPage(persona: any, imageB64: string, mediaType: string, pageUrl: string, ctx?: { email?: string | null; projectId?: string | null }) {
   // H4/LLM01: the persona is our own trusted data, but the page URL and the screenshot itself are
   // attacker-influenceable — delimit the URL and instruct the model to ignore instructions in page data.
@@ -7755,18 +7768,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       // Non-fatal: if S3 is not configured (e.g. test/dev env), review proceeds with a
       // placeholder screenshotId so the observation pipeline still runs end-to-end.
       const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000 // private Sim screenshots: 30-day (§6)
-      let screenshotId: string
-      try {
-        const upload = await uploadScreenshotMeta(decoded.bytes, decoded.contentType, "private")
-        screenshotId = await insertScreenshot({
-          projectId, s3Key: upload.key, bucket: upload.bucket, contentType: upload.contentType,
-          acl: "private", bytes: decoded.bytes.byteLength, ownerEmail: meR, expiresAt,
-        })
-      } catch (e: any) {
-        // S3 not configured — use a placeholder so the review pipeline still executes.
-        console.warn("[review] screenshot storage skipped (no S3):", e?.message || e)
-        screenshotId = "no-s3-" + Date.now().toString(36)
-      }
+      // Evidence integrity: the id is set ONLY when the upload was verified and the ledger row written; on failure it is null and the
+      // failure is recorded on every finding (no placeholder id). The review itself still runs.
+      const storedShot = await storeSimScreenshot(decoded.bytes, decoded.contentType, projectId, meR, expiresAt)
+      if (storedShot.evidence.screenshot === "failed") console.warn("[review] screenshot evidence NOT stored:", storedShot.evidence.error)
+      const screenshotId = storedShot.screenshotId
       const benchScreenshotAt = Date.now()
 
       // Run all Sim reviews via the extracted lib function. Each Sim reacts to the page,
@@ -7777,7 +7783,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
       const reviews = await runSimReviews({
         projectId, urlPath, urlHost, pageUrl, imageB64: decoded.base64, mediaType: decoded.contentType,
         targetSims: activeIndexes.map((i) => targetSims[i]),
-        actorEmail: meR, screenshotId,
+        actorEmail: meR, screenshotId, evidence: storedShot.evidence,
         seenKeys: activeIndexes.map((i) => seenKeys[i]),
         seenHashes, sessionId: sessionId ?? undefined, mode,
         adhoc,  // bypass seenHashes + near-dup dedup for manual/boot deploys
@@ -16035,21 +16041,10 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           const { urlHost, urlPath } = splitUrl(pvUrl)
 
           // Store the screenshot (non-fatal if S3 not configured).
-          let screenshotId: string
-          try {
-            const shotBytes = Buffer.from(shot.imageB64, "base64")
-            const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
-            const upload = await uploadScreenshotMeta(shotBytes, shot.mediaType, "private")
-            screenshotId = await insertScreenshot({
-              projectId: authenticatedProjectId, s3Key: upload.key, bucket: upload.bucket,
-              contentType: upload.contentType, acl: "private",
-              bytes: shotBytes.byteLength,
-              ownerEmail: mePv, expiresAt,
-            })
-          } catch (e: any) {
-            console.warn("[sim-preview] screenshot storage skipped (no S3):", e?.message || e)
-            screenshotId = "no-s3-" + Date.now().toString(36)
-          }
+          // Evidence integrity: verified id or null + a recorded failure (never a placeholder id).
+          const storedShot = await storeSimScreenshot(Buffer.from(shot.imageB64, "base64"), shot.mediaType, authenticatedProjectId, mePv, Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (storedShot.evidence.screenshot === "failed") console.warn("[sim-preview] screenshot evidence NOT stored:", storedShot.evidence.error)
+          const screenshotId = storedShot.screenshotId
 
           // Run the chosen Sims (all of them unless the picker selected a subset) through the SAME pipeline as /api/sim/review.
           // adhoc=true: bypass seenHashes + near-dup dedup so all current Sim reactions surface.
@@ -16058,7 +16053,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
             projectId: authenticatedProjectId, urlPath, urlHost, pageUrl: pvUrl,
             imageB64: shot.imageB64, mediaType: shot.mediaType,
             targetSims: pvSelectedSims,
-            actorEmail: mePv, screenshotId,
+            actorEmail: mePv, screenshotId, evidence: storedShot.evidence,
             seenKeys, seenHashes: new Set(), sessionId: undefined,
             mode: "all", adhoc: true,
             reactFn: (sim, b64, mt, pu) => reactToPage(sim, b64, mt, pu, { email: mePv, projectId: authenticatedProjectId }),
@@ -16205,13 +16200,9 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         if (!tickProjects.length) return json({ error: "No projects found for this account." }, 403)
 
         const storeScreenshot = async (bytes: Buffer, mediaType: string, projectId: string) => {
-          const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
-          const upload = await uploadScreenshotMeta(bytes, mediaType, "private")
-          return insertScreenshot({
-            projectId, s3Key: upload.key, bucket: upload.bucket,
-            contentType: upload.contentType, acl: "private",
-            bytes: bytes.byteLength, ownerEmail: meTick, expiresAt,
-          })
+          const st = await storeSimScreenshot(bytes, mediaType, projectId, meTick, Date.now() + 30 * 24 * 60 * 60 * 1000)
+          if (!st.screenshotId) throw new Error(st.evidence.error || "screenshot not stored")  // the scheduler records this as the evidence failure
+          return st.screenshotId
         }
 
         const deps = buildProductionDeps(

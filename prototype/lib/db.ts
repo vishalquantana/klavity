@@ -287,7 +287,8 @@ export async function applySchema(c: Client) {
        screenshot_id TEXT,
        source_quote TEXT,
        reporter_email TEXT,
-       created_at INTEGER NOT NULL
+       created_at INTEGER NOT NULL,
+       evidence_json TEXT
      )`,
     `CREATE INDEX IF NOT EXISTS feedback_occ_idx ON feedback_occurrences (feedback_id, seen_at)`,
     // ── A.10 dedup override memory (additive): records human merge/split decisions so intake
@@ -1117,6 +1118,9 @@ export async function applySchema(c: Client) {
     // reads never drag a 100s-of-KB BLOB out of remote Turso. Preload so an established DB issues zero
     // ALTERs on reboot.
     "feedback_replays",
+    // Phase-1 QA evidence integrity: feedback_occurrences.evidence_json records whether each repeat sighting's screenshot was
+    // actually captured. Preloaded so an established DB issues zero ALTERs on reboot.
+    "feedback_occurrences",
   ]
   const _cols = await loadTableColumns(c, ALTERED_TABLES)
   const needCol = (table: string, col: string) => !(_cols.get(table)?.has(col) ?? false)
@@ -1246,6 +1250,7 @@ export async function applySchema(c: Client) {
         console.warn(`feedback.${col} ALTER skipped:`, e?.message || e))
     }
   }
+  if (needCol("feedback_occurrences", "evidence_json")) await c.execute("ALTER TABLE feedback_occurrences ADD COLUMN evidence_json TEXT").catch((e: any) => console.warn("feedback_occurrences.evidence_json ALTER skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_issue_idx ON feedback (project_id, issue_key)`)
     .catch((e: any) => console.warn("feedback_issue_idx skipped:", e?.message || e))
   await c.execute(`CREATE INDEX IF NOT EXISTS feedback_sig_idx ON feedback (project_id, signature)`)
@@ -4552,6 +4557,30 @@ export async function listRecentFeedbackForDedup(projectId: string, limit = 50):
   })
 }
 
+/**
+ * Phase-1 QA dedup: the live Sim findings already filed against one page, with the UI component each one was about (read from the
+ * `simReview` block stored in client_context_json). Lets the Sim pipeline recognise "same defect on the same component, worded
+ * differently" which a whole-text similarity alone can miss. Empty on error.
+ */
+export async function listSimFindingsOnPage(projectId: string, urlPath: string | null, limit = 60): Promise<Array<{ id: string; title: string; observation: string; clientContext: any | null }>> {
+  try {
+    const r = await db!.execute({
+      sql: `SELECT id, title, observation, suggested_bug_json, client_context_json FROM feedback
+            WHERE project_id=? AND merged_into IS NULL AND sim_id IS NOT NULL AND COALESCE(url_path,'/')=?
+            ORDER BY created_at DESC LIMIT ?`,
+      args: [projectId, urlPath ?? "/", limit],
+    })
+    return r.rows.map((x: any) => {
+      const observation = x.observation != null ? String(x.observation) : ""
+      return {
+        id: String(x.id), observation,
+        title: effectiveTicketTitle({ title: x.title, suggested_bug_json: x.suggested_bug_json, observation }),
+        clientContext: x.client_context_json != null ? safeJsonParse(x.client_context_json) : null,
+      }
+    })
+  } catch { return [] }
+}
+
 // BugHerd sub-project A: look up an existing feedback row by its client-error signature, scoped
 // to the project, so the (later) error-ingest endpoint can dedupe a repeat client error into the
 // same ticket (via bumpFeedbackRecurrence) instead of filing a new one each time it fires.
@@ -4713,16 +4742,18 @@ export type FeedbackOccurrenceInsert = {
   feedbackId: string; projectId: string; seenAt: number
   observation?: string | null; screenshotId?: string | null
   sourceQuote?: string | null; reporterEmail?: string | null
+  /** Phase-1 QA evidence integrity: JSON describing how this sighting's evidence was collected (captured / failed + reason). */
+  evidence?: any
 }
 export async function insertFeedbackOccurrence(o: FeedbackOccurrenceInsert): Promise<string> {
   const id = "occ_" + crypto.randomUUID()
   await db!.execute({
-    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at)
-          VALUES (?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO feedback_occurrences (id, feedback_id, project_id, seen_at, observation, screenshot_id, source_quote, reporter_email, created_at, evidence_json)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`,
     args: [
       id, o.feedbackId, o.projectId, o.seenAt,
       o.observation ?? null, o.screenshotId ?? null, o.sourceQuote ?? null, o.reporterEmail ?? null,
-      Date.now(),
+      Date.now(), o.evidence != null ? JSON.stringify(o.evidence) : null,
     ],
   })
   return id
@@ -4732,6 +4763,7 @@ export type FeedbackOccurrenceRow = {
   id: string; feedbackId: string; projectId: string; seenAt: number
   observation: string | null; screenshotId: string | null
   sourceQuote: string | null; reporterEmail: string | null; createdAt: number
+  evidence: any | null
 }
 // All stored occurrences for a cluster head, chronological. Empty array when none / on error.
 export async function listFeedbackOccurrences(feedbackId: string): Promise<FeedbackOccurrenceRow[]> {
@@ -4748,6 +4780,7 @@ export async function listFeedbackOccurrences(feedbackId: string): Promise<Feedb
       sourceQuote: x.source_quote != null ? String(x.source_quote) : null,
       reporterEmail: x.reporter_email != null ? String(x.reporter_email) : null,
       createdAt: Number(x.created_at),
+      evidence: x.evidence_json != null ? safeJsonParse(x.evidence_json) : null,
     }))
   } catch { return [] }
 }

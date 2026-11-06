@@ -11,7 +11,7 @@
 //   3. RECURRING-ISSUE MEMORY (KLA-2): deduped reactions carry a RecurrenceMemory so the
 //      client knows "this was already filed by Alice 3 days ago."
 import type { Client } from "@libsql/client"
-import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertActivity, listTraits, listTraitEvents, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
+import { insertFeedback, bumpFeedbackRecurrence, findFeedbackByIssueKey, listRecentFeedbackForDedup, insertFeedbackOccurrence, listSimFindingsOnPage, insertActivity, listTraits, listTraitEvents, incrementUsageMeter, accountIdForAiCall, accountPlan } from "./db"
 import { reserveCredits } from "./credits"
 import { checkQuotaForProject } from "./quota"
 import { issueKeyFor, chooseDedup } from "./dedup"
@@ -20,6 +20,7 @@ import { isBaselineQa, isAllClearObservation } from "./baseline-qa"
 import { recurrenceFromEvents, type Trait, type TraitEventRow } from "./provenance"
 import { ingestSnapOrSim } from "./expectations-ingest"
 import { buildRecurrenceMemory } from "./recurrence-memory"
+import { buildSimReviewContext, evidenceForId, findSameDefect, categoriesConflict, type EvidenceRecord } from "./sim-evidence"
 
 // Re-export everything from the pure module so callers only need one import path.
 export {
@@ -62,7 +63,10 @@ export interface SimRunOptions {
   mediaType: string
   targetSims: any[]
   actorEmail: string
-  screenshotId: string
+  /** Id of a screenshot that was really stored and verified, or null when evidence collection failed (never a placeholder id). */
+  screenshotId: string | null
+  /** How the screenshot was collected (captured / failed + reason). Derived from screenshotId when omitted. */
+  evidence?: EvidenceRecord
   seenKeys: string[]
   // CLIENT-SIDE dedup: exact hashes the client has already displayed this session.
   seenHashes?: Set<string>
@@ -161,6 +165,8 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
   } = opts
 
   const out: SimReview[] = []
+  // Phase-1 QA standards: every finding records how its evidence was collected. A null screenshotId is an explicit, recorded failure.
+  const evidence: EvidenceRecord = opts.evidence ?? evidenceForId(screenshotId)
 
   // ── Phase 1: trait loading + vision LLM call — run concurrently ───────────
   // Each Sim's DB reads and the ~7 s reactFn call are independent; running them in
@@ -278,6 +284,21 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
 
       const citation = await resolveCitationsFn(sim.id, r?.citedTraitIds, projectId, citePre)
       let bug = r?.suggestedBug
+      // UI identification: which element, where on the page. Recorded on the finding as a screenshot observation (never as a
+      // browser-verified defect).
+      const obsTarget = parseTarget(r?.target, r?.targetDescription)
+      const obsRegion = parseRegion(r?.region ?? r?.box)
+      const simContext = buildSimReviewContext({ pageUrl, urlHost, urlPath, target: obsTarget, region: obsRegion, observation: obsText, evidence })
+      // A repeat sighting of an existing finding: keep the original (reference, history) and ADD this sighting's evidence to it.
+      const recordSighting = async (existingId: string) => {
+        try {
+          await insertFeedbackOccurrence({
+            feedbackId: existingId, projectId, seenAt: Date.now(),
+            observation: obsText, screenshotId, reporterEmail: actorEmail ?? null,
+            evidence: { ...evidence, sim: sim.id, pageUrl, component: simContext.simReview.component, basis: "screenshot" },
+          })
+        } catch (e: any) { console.warn("[sim-review] occurrence evidence skipped:", e?.message || e) }
+      }
 
       // Baseline QA's "No visible defects found…" is an all-clear, not a finding. It lists what it checked ("no broken images or visible
       // errors"), which the keyword classifier below would read as a hard failure and auto-open as a high-priority ticket — so for the
@@ -299,7 +320,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
       let recurrenceMem: any = null
 
       if (bug) {
-        const dedupedInto = await findDuplicateFeedback({
+        let dedupedInto = await findDuplicateFeedback({
           projectId, urlPath, issueType: citation.issueType,
           citedTraitIds: citation.citedTraitIds,
           title: String(bug?.title || ""), observation: obsText,
@@ -308,8 +329,22 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
           // server.ts copy of this function uses for trait-less Sims. Customer Sims keep the existing behaviour (0).
           exactMinSim: isBaselineQa((sim as any).simSource) ? 0.3 : 0,
         })
+        // Page + component + category + wording checks on the Sim findings already filed on this page:
+        //   * a broad page-key / loose-text match onto a finding of a DIFFERENT kind (e.g. a typo folded into a contrast report) is
+        //     rejected — those are separate defects;
+        //   * a rephrased description of the same defect on the same component is matched even when the first pass missed it.
+        try {
+          const onPage = await listSimFindingsOnPage(projectId, urlPath)
+          const candText = `${String(bug?.title || "")} ${obsText}`
+          if (dedupedInto) {
+            const hit = onPage.find((f) => f.id === dedupedInto)
+            if (hit && categoriesConflict(candText, hit)) dedupedInto = null
+          }
+          if (!dedupedInto) dedupedInto = findSameDefect({ observation: obsText, title: String(bug?.title || ""), target: obsTarget }, onPage)
+        } catch (e: any) { console.warn("[sim-review] same-defect lookup skipped:", e?.message || e) }
         if (dedupedInto) {
           await bumpFeedbackRecurrence(dedupedInto, Date.now())
+          await recordSighting(dedupedInto)
           feedbackId = dedupedInto
           deduped = true
           if (db) {
@@ -332,6 +367,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: issueKeyForFeedback(projectId, urlPath, citation.issueType, citation.citedTraitIds),
             reportEnv: reportEnv ?? null,
+            clientContext: simContext,
           })
           if (feedbackId) autoCopy?.(feedbackId, projectId, actorEmail)
           // Feed into expectations spine.
@@ -356,6 +392,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         const existing = await findFeedbackByIssueKey(projectId, hash)
         if (existing) {
           await bumpFeedbackRecurrence(existing.id, Date.now())
+          await recordSighting(existing.id)
           feedbackId = existing.id
           deduped = true
           if (db) {
@@ -371,6 +408,7 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
             sourceQuote: citation.sourceQuote, sourceTranscriptId: citation.sourceTranscriptId, sourceDate: citation.sourceDate,
             issueKey: hash,
             reportEnv: reportEnv ?? null,
+            clientContext: simContext,
           })
         }
       }
@@ -384,14 +422,14 @@ export async function runSimReviews(opts: SimRunOptions): Promise<SimReview[]> {
         sourceTimeKind: citation.sourceTimeKind,
         hash,
         // region: parse model output; accept both "region" (new) and "box" (legacy field name).
-        region: parseRegion(r?.region ?? r?.box),
+        region: obsRegion,
         // KLA-721 (roam grounding): normalized banana severity derived from the (possibly
         // heuristic-elevated) bug priority. null when there's no bug → no banana.
         severity: severityFromPriority(bug?.priority),
         // KLA-721 (roam grounding): deterministic element locator forwarded to the client so the
         // roaming Sim lands on the EXACT element. Falls back to the model's free-text
         // targetDescription (previously DROPPED) when no structured target was emitted.
-        target: parseTarget(r?.target, r?.targetDescription),
+        target: obsTarget,
         suggestedBug: bug ?? null,
         feedbackId,
         deduped,
