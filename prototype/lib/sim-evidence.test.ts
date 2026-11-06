@@ -1,5 +1,5 @@
 // Phase-1 QA Sim standards: evidence integrity, UI traceability, same-defect matching. Pure — no DB, no S3.
-import { test, expect } from "bun:test"
+import { test, expect, describe } from "bun:test"
 import { storeVerifiedScreenshot, evidenceForId, componentKind, componentKey, inferQaCategory, buildSimReviewContext, defectOverlap, findSameDefect } from "./sim-evidence"
 
 const bytes = new Uint8Array([1, 2, 3])
@@ -112,4 +112,30 @@ test("findSameDefect: unrelated defects on one page stay separate (Baseline QA h
 test("findSameDefect: no component, same category + strong overlap → duplicate", () => {
   const existing = [filed("fb_2", "Typo in the pricing heading: 'Pricng' should be 'Pricing'", null, "content")]
   expect(findSameDefect({ observation: "Pricing heading has a typo: 'Pricng' instead of 'Pricing'" }, existing)).toBe("fb_2")
+})
+
+import { withMandatoryValidations, MANDATORY_VALIDATIONS, traceabilityGaps, buildSimReviewContext as _bsrc, evidenceForId as _efi } from "./sim-evidence"
+
+describe("mandatory run-time validations", () => {
+  test("added to a Sim with no core, without mutating it", () => {
+    const sim = { name: "A" }
+    const out = withMandatoryValidations(sim)
+    expect(out.core.watchFor).toEqual(MANDATORY_VALIDATIONS)
+    expect((sim as any).core).toBeUndefined()
+  })
+  test("leads existing watchFor and never duplicates", () => {
+    const once = withMandatoryValidations({ core: { watchFor: ["typos"] } })
+    expect(once.core.watchFor).toEqual([...MANDATORY_VALIDATIONS, "typos"])
+    expect(withMandatoryValidations(once).core.watchFor).toEqual(once.core.watchFor)
+  })
+  test("traceability: element-level needs component, region, text; page-level only URL", () => {
+    expect(traceabilityGaps({ pageUrl: "https://x/y", target: { text: "Save" } as any, region: { x: 0, y: 0, w: 1, h: 1 } })).toEqual([])
+    expect(traceabilityGaps({ pageUrl: "https://x/y", target: { text: "Save" } as any })).toEqual(["region"])
+    expect(traceabilityGaps({ pageUrl: "https://x/y" })).toEqual([])
+    expect(traceabilityGaps({ pageUrl: null })).toEqual(["page URL"])
+  })
+  test("flag lands on simReview", () => {
+    const c = _bsrc({ pageUrl: null, observation: "x", evidence: _efi(null) })
+    expect(c.simReview.traceability).toEqual({ ok: false, missing: ["page URL"] })
+  })
 })

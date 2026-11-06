@@ -62,7 +62,7 @@ import { notifyTicketComment } from "./lib/notify"
 import { guardCaughtForFeedback, latestReceiptForFeedback, sendRegressionCaughtReceipt } from "./lib/regression-receipt"
 import { token, otp, emailAllowed, isInternalEmail, cookie, clearCookie, parseCookies, isOpsAdmin, projectCookie, uidCookie, clearUidCookie, clearProjectCookie } from "./lib/auth"
 import { uploadScreenshotMeta, uploadAttachment, presignGet, deleteObject, getObjectBytes, getObjectStream, purgeLegacyOgObjects, objectExists, type UploadedScreenshot } from "./lib/s3"
-import { storeVerifiedScreenshot, type StoredScreenshot } from "./lib/sim-evidence"
+import { storeVerifiedScreenshot, withMandatoryValidations, type StoredScreenshot } from "./lib/sim-evidence"
 import { phaseTimer } from "./lib/phase-timer"
 import { readReplayEvents, replayEvidencePresent } from "./lib/replay-intake"
 import { createLimiter, mapBounded, uploadConcurrency } from "./lib/bounded-concurrency"
@@ -656,6 +656,9 @@ const REACT_SYS =
   "suggestedBug is filled only when it's a real problem worth filing to an issue tracker, else null; set its \"priority\" " +
   "honestly (urgent/high = blocker or serious, medium = has a workaround, low = cosmetic) — it drives the finding's severity. " +
   "Stay in character and be specific to what you actually see.\n\n" +
+  "MANDATORY VALIDATIONS (the first two watchFor items, applied on every run): (1) Duplicate Issue Prevention — list each " +
+  "distinct defect ONCE; if two reactions describe the same defect on the same component, merge them into one. (2) Accurate UI " +
+  "Identification & Traceability — every element-level reaction must name the exact component and carry BOTH region and target.text.\n\n" +
   "The persona's insights each carry a stable \"traitId\". For every reaction, set citedTraitIds to the list of traitIds " +
   "of the persona's documented traits that actually drove that reaction (the pains/wants/loves it stems from). " +
   "Use [] if no documented trait applies. Only ever cite traitIds present in the persona you are given.\n\n" +
@@ -1114,7 +1117,7 @@ async function reactToPage(persona: any, imageB64: string, mediaType: string, pa
     { role: "system", content: REACT_SYS + UNTRUSTED_GUARD },
     {
       role: "user", content: [
-        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(persona, null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
+        { type: "text", text: `Today's date is ${today}. Treat this as the current date and year when judging whether any dates shown on the page are valid, impossible, or out of range — do NOT assume an earlier year.\n\n` + "You are this persona:\n" + JSON.stringify(withMandatoryValidations(persona), null, 2) + `\n\nReact to this screenshot. The page URL (untrusted) is:\n` + wrapUntrusted(pageUrl || "(unknown URL)") },
         { type: "image_url", image_url: { url: `data:${mediaType};base64,${imageB64}` } },
       ]
     },

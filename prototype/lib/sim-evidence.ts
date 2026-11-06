@@ -125,7 +125,34 @@ export type SimReviewContext = {
     category: QaCategory
     uiState: string
     evidence: EvidenceRecord
+    /** Run-time check of the "Accurate UI Identification & Issue Traceability" validation. Flagged, never dropped. */
+    traceability: { ok: boolean; missing: string[] }
   }
+}
+
+/** The two validations every Sim applies on every run, whatever its stored core says. Applied at run time only. */
+export const MANDATORY_VALIDATIONS = [
+  "Duplicate Issue Prevention & Evidence Consolidation: report each defect once per page and component; a further sighting of the same defect is extra evidence, not a new issue",
+  "Accurate UI Identification & Issue Traceability: name the exact component, give its region and verbatim visible text, and tie the issue to the page URL",
+]
+
+/** Copy of the persona whose core.watchFor always leads with the mandatory validations (no duplicates; the stored Sim is untouched). */
+export function withMandatoryValidations<T extends Record<string, any>>(persona: T): T {
+  const core = persona?.core && typeof persona.core === "object" ? persona.core : {}
+  const rest = (Array.isArray(core.watchFor) ? core.watchFor : []).map((x: any) => String(x)).filter((x: string) => !MANDATORY_VALIDATIONS.includes(x))
+  return { ...persona, core: { ...core, watchFor: [...MANDATORY_VALIDATIONS, ...rest] } }
+}
+
+/** What an issue is missing to be traceable. A page-level observation (no target and no region) only needs the page URL. */
+export function traceabilityGaps(a: { pageUrl?: string | null; target?: ObsTarget | null; region?: unknown }): string[] {
+  const missing: string[] = []
+  if (!a.pageUrl) missing.push("page URL")
+  if (a.target || a.region) {
+    if (!componentKind(a.target)) missing.push("component")
+    if (!a.region) missing.push("region")
+    if (!a.target?.text) missing.push("visible text")
+  }
+  return missing
 }
 
 export function buildSimReviewContext(a: {
@@ -148,6 +175,7 @@ export function buildSimReviewContext(a: {
       category: inferQaCategory(a.observation),
       uiState: "Page as rendered in one captured screenshot; no clicks, typing, resizing or navigation were performed.",
       evidence: a.evidence,
+      traceability: (() => { const missing = traceabilityGaps({ pageUrl: a.pageUrl, target: a.target, region: a.region }); return { ok: missing.length === 0, missing } })(),
     },
   }
 }
