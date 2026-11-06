@@ -24280,7 +24280,7 @@
             if (st.deployment === "deployed" && st.execution === "paused") {
               return `<button type="button" class="sf-act sf-exec is-paused" data-sim-exec="${id}" aria-label="Resume ${esc(sim.name)}" onclick="simExecAction('${id}', 'resume', this)">▶ Resume</button>`
             }
-            return `<button type="button" class="sf-act sf-exec" disabled title="Not running. Deploy this Sim from Select Sims in the Snap panel to run it.">❚❚ Pause</button>`
+            return "" // not deployed yet → no Pause/Resume; it appears once the Sim is deployed from Select Sims
           }
 
           async function loadSimExecStates(pid) {
@@ -24307,6 +24307,14 @@
           function simExecStore(pid, sims) {
             const states = {}
             ;(sims || []).forEach(function (s) { states[s.id] = { deployment: s.deployment, execution: s.execution } })
+            // Deactivate in the widget's Select Sims modal also turns the Sim off → mirror it on the cards right away.
+            if (typeof state !== "undefined" && state && state.sims) {
+              ;(sims || []).forEach(function (s) {
+                if (typeof s.active !== "boolean") return
+                const local = state.sims.find(function (x) { return x.id === s.id })
+                if (local) local.active = s.active
+              })
+            }
             _simExec.pid = pid
             _simExec.states = states
             _simExec.at = Date.now()
@@ -24362,6 +24370,8 @@
               if (!res.ok) { klavToast(esc(data.error || "Could not update the Sim. Please try again."), true); return }
               sim.active = !!makeActive
               renderSimsFeed()
+              // Tell the widget on this page so a deactivated Sim stops (and a re-activated one returns) right away.
+              try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-changed")) } catch (e) { }
               klavToast(esc(sim.name) + (makeActive ? " is active again." : " is deactivated."))
             } catch (e) {
               klavToast("Could not update the Sim. Check your connection and try again.", true)

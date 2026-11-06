@@ -72,17 +72,29 @@ function rowToState(x: any): SimDeploymentState {
   }
 }
 
-/** State for every requested Sim id (missing rows → not_deployed / not_running). */
-export async function listSimDeploymentStates(c: Client, projectId: string, simIds: string[]): Promise<Map<string, SimDeploymentState>> {
+/** Every stored row for the project, keyed by Sim id (one round trip; no Sim list needed, so it can run in
+ *  parallel with listPersonas). Combine with statesFor() to fill defaults for Sims that have no row. */
+export async function readSimDeploymentRows(c: Client, projectId: string): Promise<Map<string, SimDeploymentState>> {
   await ensureSimDeploymentsTable(c)
-  const out = new Map<string, SimDeploymentState>()
-  for (const id of simIds) out.set(id, defaultState(id))
   const r = await c.execute({ sql: "SELECT * FROM sim_deployments WHERE project_id=?", args: [projectId] })
+  const out = new Map<string, SimDeploymentState>()
   for (const row of r.rows) {
     const s = rowToState(row)
-    if (out.has(s.simId)) out.set(s.simId, s)
+    out.set(s.simId, s)
   }
   return out
+}
+
+/** Pure: state for each requested Sim id from already-read rows (missing rows → not_deployed / not_running). */
+export function statesFor(rows: Map<string, SimDeploymentState>, simIds: string[]): Map<string, SimDeploymentState> {
+  const out = new Map<string, SimDeploymentState>()
+  for (const id of simIds) out.set(id, rows.get(id) ?? defaultState(id))
+  return out
+}
+
+/** State for every requested Sim id (missing rows → not_deployed / not_running). */
+export async function listSimDeploymentStates(c: Client, projectId: string, simIds: string[]): Promise<Map<string, SimDeploymentState>> {
+  return statesFor(await readSimDeploymentRows(c, projectId), simIds)
 }
 
 /** Pure transition rule — returns the next state, or null when the action doesn't apply. */
@@ -105,6 +117,8 @@ export interface ApplySimActionResult {
   /** Ids the action did not apply to (wrong current state) — reported, never force-applied. */
   skipped: Array<{ simId: string; reason: string }>
   states: SimDeploymentState[]
+  /** Every stored row for the project AFTER the write — lets the caller answer without re-reading. */
+  rows: Map<string, SimDeploymentState>
 }
 
 /**
@@ -114,9 +128,9 @@ export interface ApplySimActionResult {
 export async function applySimAction(
   c: Client, projectId: string, simIds: string[], action: SimAction, actor: string | null, now = Date.now(),
 ): Promise<ApplySimActionResult> {
-  await ensureSimDeploymentsTable(c)
   const unique = [...new Set(simIds)]
-  const current = await listSimDeploymentStates(c, projectId, unique)
+  const rows = await readSimDeploymentRows(c, projectId)
+  const current = statesFor(rows, unique)
   const applied: string[] = []
   const skipped: Array<{ simId: string; reason: string }> = []
   const stmts: Array<{ sql: string; args: any[] }> = []
@@ -136,5 +150,6 @@ export async function applySimAction(
     current.set(id, { simId: id, ...nxt, updatedAt: now, updatedBy: actor })
   }
   if (stmts.length) await c.batch(stmts, "write")
-  return { applied, skipped, states: unique.map((id) => current.get(id)!) }
+  for (const id of applied) rows.set(id, current.get(id)!)
+  return { applied, skipped, states: unique.map((id) => current.get(id)!), rows }
 }

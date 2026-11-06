@@ -442,6 +442,9 @@ test("a self-ping (Origin = app's own host) does not satisfy install verificatio
 // ── Select Sims management: /api/widget/sim-deployments (isolated, additive) ─────────────
 const SIM1 = `sim_w1_${ts}`
 const SIM2 = `sim_w2_${ts}`
+const setSimActive = (id: string, active: boolean) => fetch(base + `/api/personas/${id}/active?project=` + projectId, {
+  method: "PATCH", headers: { cookie: sessionCookie, "content-type": "application/json" }, body: JSON.stringify({ active }),
+})
 const simDep = (body?: unknown, headers: Record<string, string> = {}) => body === undefined
   ? fetch(base + "/api/widget/sim-deployments?project=" + projectId, { headers: { cookie: sessionCookie, ...headers } })
   : fetch(base + "/api/widget/sim-deployments", {
@@ -479,12 +482,48 @@ test("sim-deployments: deploy → pause → resume → deactivate round-trip", a
   expect(d.sims.find((s: any) => s.id === SIM1)).toMatchObject({ deployment: "deployed", execution: "running" })
   d = await (await simDep({ project: projectId, action: "deactivate", simIds: [SIM1, SIM2] })).json()
   expect(d.sims.every((s: any) => s.deployment === "deactivated" && s.execution === "not_running")).toBe(true)
+  // Deactivate in Select Sims = Deactivate on the Sims tab: the Sims themselves are now inactive.
+  expect(d.sims.every((s: any) => s.active === false)).toBe(true)
+  for (const id of [SIM1, SIM2]) expect((await setSimActive(id, true)).status).toBe(200)
+})
+
+test("Deactivate on the Sims tab also takes a deployed Sim out of Select Sims; re-activating leaves it undeployed", async () => {
+  await simDep({ project: projectId, action: "deploy", simIds: [SIM2] })
+  expect((await setSimActive(SIM2, false)).status).toBe(200)
+  let s2 = (await (await simDep()).json()).sims.find((s: any) => s.id === SIM2)
+  expect(s2).toMatchObject({ active: false, deployment: "deactivated", execution: "not_running" })
+  expect((await setSimActive(SIM2, true)).status).toBe(200)
+  s2 = (await (await simDep()).json()).sims.find((s: any) => s.id === SIM2)
+  expect(s2).toMatchObject({ active: true, deployment: "deactivated", execution: "not_running" }) // never auto-runs again
 })
 
 test("sim-deployments rejects unknown actions, foreign Sims and bulk pause", async () => {
   expect((await simDep({ project: projectId, action: "nuke", simIds: [SIM1] })).status).toBe(400)
   expect((await simDep({ project: projectId, action: "deploy", simIds: ["sim_not_here"] })).status).toBe(400)
   expect((await simDep({ project: projectId, action: "pause", simIds: [SIM1, SIM2] })).status).toBe(400)
+})
+
+test("sim-deployments: a Sim deactivated on the Sims tab is reported inactive and can't be deployed / paused / resumed", async () => {
+  const setActive = (active: boolean) => setSimActive(SIM1, active)
+  expect((await setActive(false)).status).toBe(200)
+  try {
+    let d = await (await simDep()).json()
+    expect(d.sims.find((s: any) => s.id === SIM1).active).toBe(false)
+    expect(d.sims.find((s: any) => s.id === SIM2).active).toBe(true)
+    // Only the inactive Sim → nothing applied, reported as skipped.
+    d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1] })).json()
+    expect(d.applied).toEqual([])
+    expect(d.skipped).toEqual([expect.objectContaining({ simId: SIM1 })])
+    expect(d.sims.find((s: any) => s.id === SIM1).deployment).not.toBe("deployed")
+    // Mixed → the active Sim is deployed, the inactive one skipped.
+    d = await (await simDep({ project: projectId, action: "deploy", simIds: [SIM1, SIM2] })).json()
+    expect(d.applied).toEqual([SIM2])
+    expect(d.skipped.map((x: any) => x.simId)).toContain(SIM1)
+  } finally {
+    await setActive(true)
+  }
+  const d = await (await simDep()).json()
+  expect(d.sims.find((s: any) => s.id === SIM1).active).toBe(true)
 })
 
 test("sim-deployments leaves the legacy /api/widget/sims contract unchanged", async () => {

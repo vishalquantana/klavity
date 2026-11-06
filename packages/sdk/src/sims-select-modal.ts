@@ -30,6 +30,8 @@ export interface ManagedSim {
   avatar?: string | null
   deployment: ManagedSimDeployment
   execution: ManagedSimExecution
+  /** false = deactivated on the dashboard Sims tab: shown greyed out, no actions. Absent (older server) = active. */
+  active?: boolean
 }
 
 export interface ManagedSimActionResult {
@@ -65,11 +67,13 @@ export const SELECT_SIMS_HOST_ID = 'klav-select-sims'
 
 export const isUndeployed = (s: ManagedSim) => s.deployment !== 'deployed'
 export const isDeployed = (s: ManagedSim) => s.deployment === 'deployed'
+/** Deactivated on the Sims tab — it can only be re-activated there, never from this modal. */
+export const isSimInactive = (s: ManagedSim) => s.active === false
 
 /** Which bulk actions a selection allows (pure — exported for tests). */
 /** Signature of the managed state: deployed Sims + their execution ("" when nothing is deployed). */
 export function managedSigOf(sims: ManagedSim[]): string {
-  return sims.filter((s) => s.deployment === 'deployed').map((s) => s.id + ':' + s.execution).sort().join(',')
+  return sims.filter((s) => s.deployment === 'deployed' && !isSimInactive(s)).map((s) => s.id + ':' + s.execution).sort().join(',')
 }
 
 /**
@@ -84,7 +88,7 @@ export function planManagedSync(prevSig: string | null, sims: ManagedSim[], moun
   // Nothing deployed via Select Sims and nothing of ours on the page → leave the page (and legacy Sims) alone.
   if (!sig && !mounted) return { kind: 'skip', sig }
   const wasRunning = new Set((prevSig || '').split(',').filter((x) => x.endsWith(':running')).map((x) => x.slice(0, -':running'.length)))
-  const nowRunning = sims.filter((s) => s.deployment === 'deployed' && s.execution === 'running').map((s) => s.id)
+  const nowRunning = sims.filter((s) => s.deployment === 'deployed' && !isSimInactive(s) && s.execution === 'running').map((s) => s.id)
   const fresh = prevSig === null ? [] : nowRunning.filter((id) => !wasRunning.has(id))
   return { kind: 'apply', sig, fresh }
 }
@@ -93,7 +97,7 @@ export function bulkActionsFor(sims: ManagedSim[], selected: Set<string>): { dep
   const deploy: string[] = []
   const deactivate: string[] = []
   for (const s of sims) {
-    if (!selected.has(s.id)) continue
+    if (!selected.has(s.id) || isSimInactive(s)) continue
     if (isDeployed(s)) deactivate.push(s.id)
     else deploy.push(s.id)
   }
@@ -141,6 +145,12 @@ const CSS = `
 .kss-badge.deactivated{background:rgba(239,68,68,.1);color:#b91c1c}
 .kss-badge.running{background:rgba(16,185,129,.12);color:#047857}
 .kss-badge.paused{background:rgba(245,158,11,.14);color:#b45309}
+.kss-row.off{cursor:default;background:#f7f5f1;border-color:rgba(25,20,15,.1)}
+.kss-row.off:hover{background:#f7f5f1}
+.kss-row.off .kss-av{filter:grayscale(1);opacity:.55}
+.kss-row.off .kss-name,.kss-row.off .kss-role{color:#8a8178}
+.kss-row.off .kss-chk{background:#efeae0;border-color:rgba(25,20,15,.14)}
+.kss-hint{font-size:12px;color:#8a8178;margin-top:6px}
 .kss-exec{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:10px;border:1px solid rgba(25,20,15,.14);background:#fff;font:inherit;font-size:13px;font-weight:600;color:#19140f;cursor:pointer}
 .kss-exec:hover:not(:disabled){background:#f5f3ee}
 .kss-exec:disabled{opacity:.5;cursor:default}
@@ -286,12 +296,14 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
     }
     if (!sims.length) { body.appendChild(el('div', 'kss-empty', 'No Sims in this workspace yet.')); return }
     const shown = visible()
-    // Select all — applies to the Sims currently matching the search.
+    // Deactivated Sims are listed (greyed out) but can never be selected.
+    const pickable = shown.filter((s) => !isSimInactive(s))
+    // Select all — applies to the selectable Sims currently matching the search.
     const all = el('div', 'kss-all')
     all.setAttribute('role', 'checkbox')
     all.tabIndex = 0
-    const nOn = shown.filter((s) => selected.has(s.id)).length
-    const allOn = shown.length > 0 && nOn === shown.length
+    const nOn = pickable.filter((s) => selected.has(s.id)).length
+    const allOn = pickable.length > 0 && nOn === pickable.length
     all.setAttribute('aria-checked', allOn ? 'true' : nOn ? 'mixed' : 'false')
     const allChk = el('span', 'kss-chk' + (allOn ? ' on' : nOn ? ' mixed' : ''))
     allChk.innerHTML = allOn ? icon('check', { size: 13 }) : nOn ? '<span style="width:9px;height:2px;background:#fff;border-radius:2px"></span>' : ''
@@ -300,9 +312,9 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
       el('div', 'kss-all-d', query ? `${plural(shown.length)} match your search.` : 'Select everyone available on this workspace.'))
     all.append(allChk, allTxt)
     const toggleAll = () => {
-      if (busy || !shown.length) return
-      if (allOn) shown.forEach((s) => selected.delete(s.id))
-      else shown.forEach((s) => selected.add(s.id))
+      if (busy || !pickable.length) return
+      if (allOn) pickable.forEach((s) => selected.delete(s.id))
+      else pickable.forEach((s) => selected.add(s.id))
       emitSelection(); render()
     }
     all.addEventListener('click', toggleAll)
@@ -316,6 +328,7 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
   }
 
   function renderRow(s: ManagedSim): HTMLElement {
+    if (isSimInactive(s)) return renderInactiveRow(s)
     const on = selected.has(s.id)
     const row = el('div', 'kss-row' + (on ? ' on' : ''))
     row.dataset.simId = s.id
@@ -344,7 +357,7 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
     meta.appendChild(badges)
     row.append(chk, av, meta)
 
-    // Individual execution control — only meaningful while deployed.
+    // Individual execution control — shown ONLY while deployed and running / paused.
     if (isDeployed(s) && (s.execution === 'running' || s.execution === 'paused')) {
       const action: ManagedSimAction = s.execution === 'running' ? 'pause' : 'resume'
       const b = el('button', 'kss-exec')
@@ -358,18 +371,8 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
       b.addEventListener('click', (e) => { e.stopPropagation(); void run(action, [s.id], s.id) })
       b.addEventListener('keydown', (e) => e.stopPropagation())
       row.appendChild(b)
-    } else {
-      // Not running yet: keep the control visible but inert, so every row shows where Pause/Resume lives.
-      const b = el('button', 'kss-exec')
-      b.type = 'button'
-      b.disabled = true
-      b.dataset.action = 'pause'
-      b.title = 'Not active. Deploy this Sim to make it active, then you can pause it.'
-      b.setAttribute('aria-label', `Pause ${s.name} (not active)`)
-      b.innerHTML = icon('pause', { size: 13 }) + '<span>Pause</span>'
-      b.addEventListener('click', (e) => e.stopPropagation())
-      row.appendChild(b)
     }
+    // Not deployed / not running yet: no Pause button at all — Pause/Resume only appear once the Sim is deployed.
 
     const toggle = () => {
       if (busy) return
@@ -378,6 +381,30 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
     }
     row.addEventListener('click', toggle)
     row.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle() } })
+    return row
+  }
+
+  // Deactivated on the Sims tab: visible so the user knows it exists, but disabled — no checkbox, no
+  // Pause/Resume. It has to be activated again on the Sims tab before it can be used here.
+  function renderInactiveRow(s: ManagedSim): HTMLElement {
+    const row = el('div', 'kss-row off')
+    row.dataset.simId = s.id
+    row.dataset.inactive = 'true'
+    row.setAttribute('aria-disabled', 'true')
+    const chk = el('span', 'kss-chk')
+    chk.setAttribute('aria-hidden', 'true')
+    const av = el('span', 'kss-av', initialsOf(s))
+    av.style.background = s.accent || '#6366f1'
+    const meta = el('div', 'kss-meta')
+    meta.appendChild(el('div', 'kss-name', s.name))
+    if (s.role) meta.appendChild(el('div', 'kss-role', s.role))
+    const badges = el('div', 'kss-badges')
+    const b = el('span', 'kss-badge deactivated', 'Deactivated')
+    b.dataset.kind = 'active'
+    badges.appendChild(b)
+    meta.appendChild(badges)
+    meta.appendChild(el('div', 'kss-hint', 'Activate this Sim on the Sims tab to use it here.'))
+    row.append(chk, av, meta)
     return row
   }
 
@@ -423,7 +450,7 @@ export function openSelectSimsModal(opts: SelectSimsModalOptions): SelectSimsMod
     try {
       sims = await opts.api.load()
       // Drop remembered ids for Sims that no longer exist so the count is accurate on reopen.
-      const ids = new Set(sims.map((s) => s.id))
+      const ids = new Set(sims.filter((s) => !isSimInactive(s)).map((s) => s.id))
       let pruned = false
       for (const id of [...selected]) if (!ids.has(id)) { selected.delete(id); pruned = true }
       if (pruned) emitSelection()

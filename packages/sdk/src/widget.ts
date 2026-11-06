@@ -2443,7 +2443,8 @@ async function mount() {
 
   function applyManagedSims(sims: ManagedSim[], change: { action: ManagedSimAction; applied: string[] }) {
     _managedSig = managedSigOf(sims)
-    const deployed = sims.filter((s) => s.deployment === "deployed")
+    // A Sim deactivated on the dashboard Sims tab never runs on the page, whatever its deployment state.
+    const deployed = sims.filter((s) => s.deployment === "deployed" && s.active !== false)
     const running = deployed.filter((s) => s.execution === "running").map((s) => s.id)
     const kl = (window as any).KlavitySims
     _simsWatchCtrl?.stop()
