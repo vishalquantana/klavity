@@ -1,3 +1,4 @@
+import { normalizeGeneratedCore } from "./persona-core"
 /**
  * Canonical transcript → Sim pipeline: shared prompt + normalisation.
  *
@@ -85,6 +86,8 @@ export function normalizeExtractedPersonas(data: any): any {
     if (p.type == null && p.simClass != null) {
       p.type = p.simClass === "client" ? "client" : "internal"
     }
+    // Every extracted Sim must carry a usable core (esp. watchFor) — fill gaps from role/summary.
+    p.core = normalizeGeneratedCore(p?.core, { role: p?.role, summary: p?.summary })
     if (Array.isArray(p?.insights)) {
       p.insights = p.insights.map((ins: any) => ({ ...ins, ...sanitizeInsight(ins) }))
     }

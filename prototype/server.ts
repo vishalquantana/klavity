@@ -626,7 +626,7 @@ function personaSiteSys(countPhrase: string): string {
     "Classify each on two axes: simClass (\"user\" = actually OPERATES the product hands-on, feedback skews UI/interaction; " +
     "\"client\" = evaluates OVERALL outcomes and business results, feedback skews feature/workflow/strategy — only assign \"client\" when the persona clearly describes an executive, buyer, or outcome-judging stakeholder) " +
     "and side (\"external\" = customer/partner outside the team; \"internal\" = on the product/company team). " +
-    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
+    "Respond with ONLY a JSON object, no prose: {\"personas\":[{\"name\":string,\"role\":string,\"simClass\":\"user\"|\"client\",\"side\":\"external\"|\"internal\",\"initials\":string(2 uppercase letters),\"accent\":string(hex colour like #6366f1),\"desc\":string(<=90 chars, ONE plain sentence: who this persona is and what they care about),\"summary\":string,\"core\":{\"goals\":string[1-4 jobs-to-be-done],\"expertise\":string,\"temperament\":string,\"voice\":string(short first-person sample),\"watchFor\":string[2-5 concrete things this persona checks or validates on ANY page, e.g. form validation, labels, spelling]},\"insights\":[{\"kind\":\"pain\"|\"want\"|\"love\",\"text\":string,\"quote\":string}]}]} with " + countPhrase + " personas, each with exactly 3 insights; each quote is a short first-person line that persona might say."
 }
 
 const REACT_SYS =
@@ -8954,10 +8954,11 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         const { content } = await chat(
           [{ role: "system", content: personaSiteSys(String(walkSims)) },
           { role: "user", content: "Page URL: " + walkUrl + "\n\nPage text:\n" + walkText }],
-          1600, true, { type: "persona", feature: "simwalk", ...walkAttr },
+          2600, true, { type: "persona", feature: "simwalk", ...walkAttr },
         )
         walkSpent += DEFAULT_AI_CALL_EST_USD
         castPersonas = (parseJSON(content).personas || []).slice(0, walkSims)
+        for (const cp of castPersonas) cp.core = normalizeGeneratedCore(cp?.core, { role: cp?.role, summary: cp?.summary })
       } catch (e: any) {
         console.error("[simwalk] cast generation failed:", e?.message || e)
         return json({ error: "Couldn't work out who your customers are from that page — the scan below still ran." }, 503)
@@ -15927,7 +15928,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
         // if the retry also fails, return a friendly 422 instead of paging P1 with a 500.
         let data: any
         let usage: { input_tokens?: number; output_tokens?: number }
-        const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 1600, true, { type: "persona", ...personaAttr })
+        const first = await chat([{ role: "system", content: sys }, { role: "user", content: userMsg }], 2600, true, { type: "persona", ...personaAttr })
         usage = first.usage
         try {
           data = parseJSON(first.content)
@@ -15949,6 +15950,7 @@ async function handle(req: Request, server: { requestIP?: (r: Request) => { addr
           if (!SIDE_ENUM.has(String(p?.side))) p.side = "external"
           // desc: a short one-line bio surfaced on the onboarding persona cards. Bounded + ASCII-safe.
           p.desc = String(p?.desc || "").replace(/\s+/g, " ").trim().slice(0, 90)
+          p.core = normalizeGeneratedCore(p?.core, { role: p?.role, summary: p?.summary })
           return p
         })
         return json({ personas, usage })
