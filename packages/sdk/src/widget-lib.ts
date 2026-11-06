@@ -109,6 +109,21 @@ export function resolveComposerRecord(
   return composer.record !== false && composer.allowRecording !== false
 }
 
+// KD-1470: the recordings a composer opens with = the evidence session's saved ones (KD-1074) PLUS any
+// "Record me" video that finished after a page navigation (record-bridge). Merged in that order, deduped by
+// id (or dataUrl), so neither source can silently replace the other.
+export function mergeRecordings<T extends { id?: string; dataUrl?: string }>(saved: T[] | null | undefined, arrived: T[] | null | undefined): T[] {
+  const out: T[] = []
+  const seen = new Set<string>()
+  for (const r of [...(saved || []), ...(arrived || [])]) {
+    const key = String(r?.id || r?.dataUrl || '')
+    if (key && seen.has(key)) continue
+    if (key) seen.add(key)
+    out.push(r)
+  }
+  return out
+}
+
 export function gateMessage(reason: string): string {
   switch (reason) {
     case "paused": return "Sims are paused for this project."
