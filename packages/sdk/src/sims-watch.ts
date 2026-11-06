@@ -224,7 +224,10 @@ export interface SimsWatchOptions {
   backendUrl: string
   /** Project to attribute Sim reviews to. Required for adhoc mode. */
   projectId: string
-  /** Restrict to specific Sim IDs. Omit to target all project Sims. */
+  /**
+   * Restrict to specific Sim IDs — each is reviewed in its own request so its status moves on its
+   * own (KD-1456). Omit to target all project Sims in one request (no per-Sim status).
+   */
   simIds?: string[]
   /**
    * Viewport capture function — injected for widget/extension parity.
@@ -272,6 +275,12 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
   let mutationEpoch = 0
   // AbortController for the current in-flight fetch; aborted by stop().
   let fetchAbort: AbortController | null = null
+  // KD-1456: Sims whose review is in flight — stop() clears their status so a cancelled review
+  // (e.g. a Sim paused mid-run) doesn't leave chips spinning.
+  let inflightIds: string[] = []
+  const simStatus = (id: string, s: 'analysing' | 'running' | 'completed' | 'failed' | null): void => {
+    try { (typeof window !== 'undefined' ? (window as any).KlavitySims : null)?.setSimStatus?.(id, s) } catch { /* never break the loop */ }
+  }
 
   // ── Mutation-review cap state (fixes the live-page re-analyze loop) ─────────────────────────
   // Normalized text of every finding we've already surfaced this session — lets the watch
@@ -351,6 +360,11 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       try { (typeof window !== 'undefined' ? (window as any).KlavitySims : null)?.setRunStatus?.(s) } catch { /* never break the loop */ }
     }
     runStatus('analysing')
+    // KD-1456: one review request per Sim so each Sim's status (chip spinner, "1/3") moves on its own.
+    // No simIds = the legacy single request for all project Sims (no per-Sim status).
+    const runIds = opts.simIds?.length ? [...opts.simIds] : []
+    inflightIds = runIds
+    runIds.forEach((id) => simStatus(id, 'analysing'))
     // Optimistically mark seen — un-marked on capture / network error so the next change retries.
     seenHashes.add(hash)
     if (seenHashes.size > MAX_SEEN_HASHES) {
@@ -378,89 +392,120 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
       fetchAbort = ac
       const fetchTimer = setTimeout(() => { fetchTimedOut = true; ac.abort() }, REVIEW_FETCH_TIMEOUT_MS)
 
-      const body: Record<string, unknown> = {
-        url: typeof location !== 'undefined' ? location.href : '',
-        screenshotDataUrl,
-        domSig: hash,
-        adhoc: true,
-        projectId: opts.projectId,
-      }
-      if (opts.simIds?.length) body.simIds = opts.simIds
-
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (opts.bearerToken) headers['authorization'] = `Bearer ${opts.bearerToken}`
 
-      runStatus('running')
-      const networkStart = benchNow()
-      let res: Response
-      try {
-        res = await fetch(`${opts.backendUrl}/api/sim/review`, {
+      type ReviewData = {
+        ok: boolean
+        reviews?: Array<{ simId: string; simName: string; initials?: string; accent?: string; observations: unknown[] }>
+        timing?: { simReview?: { totalMs?: number; receiveToReviewDoneMs?: number; reviewMs?: number } }
+      }
+      const reviewOne = async (simId?: string): Promise<ReviewData> => {
+        const body: Record<string, unknown> = {
+          url: typeof location !== 'undefined' ? location.href : '',
+          screenshotDataUrl,
+          domSig: hash,
+          adhoc: true,
+          projectId: opts.projectId,
+        }
+        if (simId) body.simIds = [simId]
+        const res = await fetch(`${opts.backendUrl}/api/sim/review`, {
           method: 'POST',
           headers,
           credentials: 'include',
           signal: ac.signal,
           body: JSON.stringify(body),
         })
-      } finally {
-        clearTimeout(fetchTimer)
-        fetchAbort = null
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data: ReviewData = await res.json()
+        if (!data?.ok || !Array.isArray(data.reviews)) throw new Error('sims-watch: review not ok')
+        return data
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data: {
-        ok: boolean
-        reviews?: Array<{ simId: string; simName: string; initials?: string; accent?: string; observations: unknown[] }>
-        timing?: { simReview?: { totalMs?: number; receiveToReviewDoneMs?: number; reviewMs?: number } }
-      } = await res.json()
-      const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) { busy = false; runStatus('failed'); return }
 
-      // Deliver each Sim review to the presence UI layer (sims-live.ts / window.KlavitySims).
+      runStatus('running')
+      runIds.forEach((id) => simStatus(id, 'running'))
+      const networkStart = benchNow()
+      // Deliver each Sim review to the presence UI layer (sims-live.ts / window.KlavitySims) AS IT
+      // ARRIVES, so a fast Sim's findings and status don't wait for the slowest Sim.
       const kl = typeof window !== 'undefined' ? (window as any).KlavitySims : null
-      const renderStart = benchNow()
       let observations = 0
       // Count findings whose normalized text we've never returned before — the cap
       // uses this to decide whether a mutation review is producing anything NEW.
       let newFindings = 0
-      for (const review of data.reviews) {
-        if (!review?.simId) continue
-        const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : []
-        // Server SimObservation uses .observation for text; sims-live.ts LiveObservation expects .text.
-        const liveObs = rawObs.map((r: any) => ({
-          text: r.observation ?? r.text ?? '',
-          sentiment: r.sentiment,
-          priority: r.priority,
-          region: r.region,
-          suggestedBug: r.suggestedBug,
-          targetViewport,
-        }))
-        observations += liveObs.length
-        for (const o of liveObs) {
-          const key = `${review.simId}::${normalizeFindingText(o.text)}`
-          if (o.text && !seenFindingText.has(key)) { seenFindingText.add(key); newFindings++ }
+      let reviewCount = 0
+      let renderMs = 0
+      let server: NonNullable<ReviewData['timing']>['simReview'] | undefined
+      const deliver = (data: ReviewData): void => {
+        const renderStart = benchNow()
+        server = server ?? data.timing?.simReview
+        for (const review of data.reviews ?? []) {
+          reviewCount++
+          if (!review?.simId) continue
+          const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : []
+          // Server SimObservation uses .observation for text; sims-live.ts LiveObservation expects .text.
+          const liveObs = rawObs.map((r: any) => ({
+            text: r.observation ?? r.text ?? '',
+            sentiment: r.sentiment,
+            priority: r.priority,
+            region: r.region,
+            suggestedBug: r.suggestedBug,
+            targetViewport,
+          }))
+          observations += liveObs.length
+          for (const o of liveObs) {
+            const key = `${review.simId}::${normalizeFindingText(o.text)}`
+            if (o.text && !seenFindingText.has(key)) { seenFindingText.add(key); newFindings++ }
+          }
+          try {
+            kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs)
+          } catch { /* UI errors must never break the watch loop */ }
         }
-        try {
-          kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs)
-        } catch { /* UI errors must never break the watch loop */ }
+        renderMs += benchNow() - renderStart
       }
+      const groups: Array<string | undefined> = runIds.length ? runIds : [undefined]
+      let settled: PromiseSettledResult<ReviewData>[]
+      try {
+        settled = await Promise.allSettled(groups.map((id) => reviewOne(id).then((data) => {
+          if (stopped) return data
+          deliver(data)
+          if (id) simStatus(id, 'completed')
+          return data
+        }, (err) => {
+          if (id && !stopped) simStatus(id, 'failed')
+          throw err
+        })))
+      } finally {
+        clearTimeout(fetchTimer)
+        fetchAbort = null
+      }
+      const networkMs = benchNow() - networkStart
+      if (stopped) { busy = false; return }
+      // Every Sim failed → treat as one failed review (un-mark the hash, overall status "failed").
+      const firstFail = settled.find((s): s is PromiseRejectedResult => s.status === 'rejected')
+      if (!settled.some((s) => s.status === 'fulfilled')) throw firstFail?.reason ?? new Error('sims-watch: review failed')
+      inflightIds = []
       // Update the mutation cap counter for this pathname (only mutation triggers count).
       if (trigger === 'mutation') recordMutationOutcome(reviewPath, newFindings)
       runStatus('completed')
-      const renderMs = benchNow() - renderStart
       const totalMs = benchNow() - benchStart
-      const server = data.timing?.simReview
       const domNodes = reactionNodeCount()
       console.log(
         `[bench-sim-review] client trigger=${trigger} captureMs=${benchMs(captureMs)} networkMs=${benchMs(networkMs)} ` +
         `serverTotalMs=${server?.totalMs ?? '?'} serverReceiveToReviewDoneMs=${server?.receiveToReviewDoneMs ?? '?'} ` +
         `serverReviewMs=${server?.reviewMs ?? '?'} renderMs=${benchMs(renderMs)} totalMs=${benchMs(totalMs)} ` +
-        `sims=${data.reviews.length} observations=${observations} domNodes=${domNodes}`,
+        `sims=${reviewCount} requests=${groups.length} observations=${observations} domNodes=${domNodes}`,
       )
     } catch (e) {
       // AbortError without our timeout flag = intentional teardown via stop(); don't retry or log.
       if (e instanceof Error && e.name === 'AbortError' && !fetchTimedOut) { busy = false; return }
       // Capture timeout, review timeout, or network error — un-mark the hash so the next signal can retry.
       seenHashes.delete(hash)
-      if (!stopped) runStatus('failed')
+      if (!stopped) {
+        runStatus('failed')
+        // A capture failure never reached the per-Sim requests — end their spinners too.
+        inflightIds.forEach((id) => simStatus(id, 'failed'))
+      }
+      inflightIds = []
     } finally {
       busy = false
     }
@@ -537,6 +582,13 @@ export function startSimsWatch(opts: SimsWatchOptions): SimsWatchController {
     // Abort any in-flight fetch request immediately.
     fetchAbort?.abort()
     fetchAbort = null
+    // KD-1456: a cancelled review never ends on its own — clear its Sims' spinners and the run
+    // counter now (synchronously, before a replacement watch / boot review can set new status).
+    if (busy) {
+      inflightIds.forEach((id) => simStatus(id, null))
+      try { (typeof window !== 'undefined' ? (window as any).KlavitySims : null)?.setRunStatus?.(null) } catch { /* noop */ }
+    }
+    inflightIds = []
     // Disconnect the mutation observer.
     observer?.disconnect()
     observer = null

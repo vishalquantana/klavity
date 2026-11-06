@@ -95,10 +95,19 @@ export interface KlavitySimsAPI {
   setReviewing(reviewing: boolean): void
   /** KD-1465: show where the current Sim run is (null clears the status line). */
   setRunStatus(status: SimRunStatus | null): void
+  /** KD-1456: where ONE Sim's review is — drives its chip spinner and its "1/3" status line. */
+  setSimStatus(simId: string, status: SimRunStatus | null): void
+  /** KD-1456: mark a Sim paused / resumed (it stays on the page but stops reviewing). */
+  setSimPaused(simId: string, paused: boolean): void
   renderFeedback(simId: string, simName: string, observations: LiveObservation[]): void
   undeploy(): void
   /** Set this to receive "Track as Bug" clicks from finding rows. */
   onTriage: ((observation: LiveObservation, simName: string) => void) | null
+  /**
+   * KD-1456: set this to show a Pause / Resume button for the selected Sim. Called with the Sim and
+   * `pause` (true = pause it); resolve true when it worked — the panel then flips the Sim's paused state.
+   */
+  onPauseToggle: ((simId: string, pause: boolean) => Promise<boolean> | boolean) | null
 }
 
 // ── Internal state ────────────────────────────────────────────────────────────
@@ -141,6 +150,10 @@ let reviewing = false
 let runStatus: SimRunStatus | null = null
 let runStartSeq = 0
 let activeRuns = 0
+/** KD-1456: per-Sim review phase + paused Sims (reviews are now one request per Sim). */
+const simPhase = new Map<string, SimRunStatus>()
+const pausedSims = new Set<string>()
+let pauseBusy = false
 
 // Cached panel DOM refs (inside the shadow root).
 let launcherEl: HTMLButtonElement | null = null
@@ -150,6 +163,7 @@ let launcherBadgeEl: HTMLElement | null = null
 let panelEl: HTMLElement | null = null
 let panelCountEl: HTMLElement | null = null
 let panelStatusEl: HTMLElement | null = null
+let panelSimHeadEl: HTMLElement | null = null
 let panelFiltersEl: HTMLElement | null = null
 let panelListEl: HTMLElement | null = null
 let announcerEl: HTMLElement | null = null
@@ -318,6 +332,27 @@ const PANEL_CSS = `
   .ksl-chip:active { transform: scale(.96); }
   .ksl-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .ksl-chip .ksl-dot { width: 8px; height: 8px; border-radius: 50%; }
+  /* KD-1456: per-Sim chip spinner while that Sim's review is in progress; paused Sims are dimmed */
+  .ksl-spin {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--line); border-top-color: var(--accent-2);
+    animation: ksl-spin .8s linear infinite;
+  }
+  @keyframes ksl-spin { to { transform: rotate(360deg); } }
+  .ksl-chip.is-paused { opacity: .55; }
+  /* KD-1456: selected Sim's header — avatar, name, status (1/3), Pause / Resume */
+  .ksl-simhead { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); flex-shrink: 0; }
+  .ksl-simhead[hidden] { display: none; }
+  .ksl-simhead-txt { flex: 1; min-width: 0; }
+  .ksl-simhead-name { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ksl-simhead-status { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 12px; color: var(--fg-3); }
+  .ksl-pause {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9px;
+    background: transparent; border: 1px solid var(--line); color: var(--fg); font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+  .ksl-pause:hover { border-color: var(--accent-2); }
+  .ksl-pause:disabled { opacity: .5; cursor: default; }
+  .ksl-pause:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .ksl-chip.is-on { background: rgba(139,92,246,.16); border-color: rgba(139,92,246,.5); color: var(--accent-3); }
   .ksl-chip.sev-on-h { background: var(--sev-h-bg); border-color: var(--sev-h-fg); color: var(--sev-h-fg); }
   .ksl-chip.sev-on-m { background: var(--sev-m-bg); border-color: var(--sev-m-fg); color: var(--sev-m-fg); }
@@ -393,7 +428,7 @@ const PANEL_CSS = `
     .ksl-launcher { right: 12px; bottom: 12px; }
   }
   @media (prefers-reduced-motion:reduce) {
-    .ksl-panel.is-open,.ksl-row,.ksl-shimmer,.ksl-launcher.is-reviewing .ksl-pill-txt::after,.ksl-status-dot { animation: none !important; }
+    .ksl-panel.is-open,.ksl-row,.ksl-shimmer,.ksl-launcher.is-reviewing .ksl-pill-txt::after,.ksl-status-dot,.ksl-spin { animation: none !important; }
     .ksl-panel, .ksl-row, .ksl-pill, .ksl-chip, .ksl-r-act, .ksl-icon-btn { transition: none !important; }
   }
 `
@@ -803,10 +838,12 @@ function deploy(
   panelFiltersEl = document.createElement('div'); panelFiltersEl.className = 'ksl-chips'
   head.append(titleRow, panelCountEl, panelStatusEl, panelFiltersEl)
 
+  panelSimHeadEl = document.createElement('div'); panelSimHeadEl.className = 'ksl-simhead'; panelSimHeadEl.hidden = true
+
   panelListEl = document.createElement('div'); panelListEl.className = 'ksl-list'
   panelListEl.setAttribute('role', 'list')
 
-  panelEl.append(head, panelListEl)
+  panelEl.append(head, panelSimHeadEl, panelListEl)
   root.appendChild(panelEl)
 
   // Escape closes the panel (when open).
@@ -863,6 +900,90 @@ function setRunStatus(status: SimRunStatus | null): void {
   // Drive the existing reviewing shimmer too, so the empty-state copy matches the run.
   setReviewing(inProgress)
   if (announcerEl && status) announcerEl.textContent = runStatusText()
+}
+
+// ── Per-Sim status (KD-1456) ──────────────────────────────────────────────────
+// Each Sim now reviews in its own request, so each finishes on its own. Its chip spins until it's done,
+// and selecting it shows "Sim is analysing… 1/3" (→ running 2/3 → completed 3/3) with Pause / Resume.
+
+const SIM_STEP: Record<SimRunStatus, string> = {
+  analysing: 'Sim is analysing… 1/3',
+  running: 'Sim is running… 2/3',
+  completed: 'Sim run completed 3/3',
+  failed: "Sim run didn't finish — it will retry on the next change",
+}
+
+function simInProgress(simId: string): boolean {
+  const p = simPhase.get(simId)
+  return !pausedSims.has(simId) && (p === 'analysing' || p === 'running')
+}
+
+function simStatusText(simId: string): string {
+  if (pausedSims.has(simId)) return 'Paused — not reviewing this page'
+  const p = simPhase.get(simId)
+  return p ? SIM_STEP[p] : 'Watching this page'
+}
+
+function setSimStatus(simId: string, status: SimRunStatus | null): void {
+  if (!simEntries.has(simId)) return
+  if (status) simPhase.set(simId, status); else simPhase.delete(simId)
+  refreshSimSurfaces()
+}
+
+function setSimPaused(simId: string, paused: boolean): void {
+  if (!simEntries.has(simId)) return
+  if (paused) { pausedSims.add(simId); simPhase.delete(simId) } else pausedSims.delete(simId)
+  refreshSimSurfaces()
+}
+
+/** Re-draw only the chips + selected-Sim header (never the rows, so "Show more" state survives). */
+function refreshSimSurfaces(): void {
+  if (!panelOpen) return
+  renderFilters()
+  renderSimHead()
+}
+
+function renderSimHead(): void {
+  if (!panelSimHeadEl) return
+  const entry = personaFilter ? simEntries.get(personaFilter) : null
+  panelSimHeadEl.hidden = !entry
+  panelSimHeadEl.textContent = ''
+  if (!entry) return
+  const paused = pausedSims.has(entry.simId)
+
+  const txt = document.createElement('div'); txt.className = 'ksl-simhead-txt'
+  const name = document.createElement('div'); name.className = 'ksl-simhead-name'
+  name.style.color = entry.accent; name.textContent = entry.name
+  const status = document.createElement('div'); status.className = 'ksl-simhead-status'
+  status.setAttribute('role', 'status')
+  if (simInProgress(entry.simId)) { const s = document.createElement('span'); s.className = 'ksl-spin'; status.appendChild(s) }
+  status.appendChild(document.createTextNode(simStatusText(entry.simId)))
+  txt.append(name, status)
+  panelSimHeadEl.append(avatarFor(entry, 34), txt)
+
+  if (SimsLive.onPauseToggle) {
+    const btn = document.createElement('button')
+    btn.type = 'button'; btn.className = 'ksl-pause'; btn.disabled = pauseBusy
+    // Inline glyphs (the shared icon set has no pause / play).
+    btn.innerHTML = paused
+      ? '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor"/></svg> Resume'
+      : '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5h2v9H3zM7 1.5h2v9H7z" fill="currentColor"/></svg> Pause'
+    btn.setAttribute('aria-label', `${paused ? 'Resume' : 'Pause'} ${entry.name}`)
+    btn.addEventListener('click', () => { void togglePause(entry.simId, !paused) })
+    panelSimHeadEl.appendChild(btn)
+  }
+}
+
+async function togglePause(simId: string, pause: boolean): Promise<void> {
+  const hook = SimsLive.onPauseToggle
+  if (!hook || pauseBusy) return
+  pauseBusy = true
+  renderSimHead()
+  let ok = false
+  try { ok = !!(await hook(simId, pause)) } catch { ok = false }
+  pauseBusy = false
+  if (ok && simEntries.has(simId)) setSimPaused(simId, pause)
+  else renderSimHead()
 }
 
 function renderRunStatus(): void {
@@ -947,31 +1068,41 @@ function renderHeader(c: Counts): void {
 function renderFilters(): void {
   if (!panelFiltersEl) return
   const live = Array.from(findings.values())
-  panelFiltersEl.hidden = live.length === 0
+  // KD-1456: every deployed Sim gets a chip (not only Sims with findings), so its status is visible.
+  panelFiltersEl.hidden = simEntries.size === 0
   panelFiltersEl.textContent = ''
-  if (!live.length) return
+  if (!simEntries.size) return
 
-  // persona chips
+  // persona chips: "All", then one per deployed Sim — a spinner while its review is in progress.
   const simLabel = document.createElement('span'); simLabel.className = 'ksl-chips-label'; simLabel.textContent = 'Sim'
   panelFiltersEl.appendChild(simLabel)
-  const bySim = new Map<string, { entry: SimEntry; n: number }>()
-  live.forEach(f => {
-    const cur = bySim.get(f.entry.simId) ?? { entry: f.entry, n: 0 }
-    cur.n += 1; bySim.set(f.entry.simId, cur)
-  })
-  bySim.forEach(({ entry, n }) => {
+  const allChip = document.createElement('button')
+  allChip.type = 'button'
+  allChip.className = 'ksl-chip' + (personaFilter === null ? ' is-on' : '')
+  allChip.setAttribute('aria-pressed', String(personaFilter === null))
+  allChip.textContent = 'All'
+  allChip.addEventListener('click', () => { personaFilter = null; renderList() })
+  panelFiltersEl.appendChild(allChip)
+  simEntries.forEach((entry) => {
+    const n = live.filter(f => f.entry.simId === entry.simId).length
+    const busy = simInProgress(entry.simId)
     const chip = document.createElement('button')
     chip.type = 'button'
-    chip.className = 'ksl-chip' + (personaFilter === entry.simId ? ' is-on' : '')
+    chip.className = 'ksl-chip' + (personaFilter === entry.simId ? ' is-on' : '') + (pausedSims.has(entry.simId) ? ' is-paused' : '')
     chip.setAttribute('aria-pressed', String(personaFilter === entry.simId))
-    const dot = document.createElement('span'); dot.className = 'ksl-dot'; dot.style.background = entry.accent
-    chip.append(dot, document.createTextNode(`${entry.initials} · ${n}`))
+    chip.title = `${entry.name} — ${simStatusText(entry.simId)}`
+    const mark = document.createElement('span')
+    if (busy) mark.className = 'ksl-spin'
+    else { mark.className = 'ksl-dot'; mark.style.background = entry.accent }
+    // "MC · -" while that Sim is still reviewing and has nothing yet; its count otherwise.
+    chip.append(mark, document.createTextNode(`${entry.initials} · ${busy && !n ? '-' : n}`))
     chip.addEventListener('click', () => {
       personaFilter = personaFilter === entry.simId ? null : entry.simId
       renderList()
     })
     panelFiltersEl!.appendChild(chip)
   })
+  if (!live.length) return
 
   // priority chips
   const prioLabel = document.createElement('span')
@@ -1090,6 +1221,7 @@ function renderList(): void {
   if (!panelListEl || !panelOpen) { syncSurfaces(); return }
   const c = activeCounts()
   renderHeader(c)
+  renderSimHead()
 
   const items = visibleFindings()
   panelListEl.textContent = ''
@@ -1098,7 +1230,15 @@ function renderList(): void {
     const empty = document.createElement('div')
     empty.className = 'ksl-empty'
     const hasAny = findings.size > 0
-    if (reviewing && !hasAny) {
+    const picked = personaFilter ? simEntries.get(personaFilter) : null
+    if (picked && !sevFilter) {
+      // KD-1456: the selected Sim has no findings (yet) — say where it is instead of "no match".
+      const t = document.createElement('div'); t.className = 'ksl-empty-title'
+      t.textContent = simInProgress(picked.simId) ? `${picked.name} is still reviewing this page…`
+        : pausedSims.has(picked.simId) ? `${picked.name} is paused` : `No findings from ${picked.name}`
+      empty.appendChild(t)
+      if (simInProgress(picked.simId)) { const sh = document.createElement('div'); sh.className = 'ksl-shimmer'; empty.appendChild(sh) }
+    } else if (reviewing && !hasAny) {
       const t = document.createElement('div'); t.className = 'ksl-empty-title'
       t.textContent = 'Your Sims are reviewing this page…'
       const s = document.createElement('div'); s.textContent = 'Findings will appear here as they spot things.'
@@ -1283,6 +1423,9 @@ function undeploy(): void {
   runStatus = null
   runStartSeq = 0
   activeRuns = 0
+  simPhase.clear()
+  pausedSims.clear()
+  pauseBusy = false
 
   // 2. Abort global listeners
   deployAbort?.abort(); deployAbort = null
@@ -1295,6 +1438,7 @@ function undeploy(): void {
   panelEl = null
   panelCountEl = null
   panelStatusEl = null
+  panelSimHeadEl = null
   panelFiltersEl = null
   panelListEl = null
   announcerEl = null
@@ -1316,9 +1460,12 @@ export const SimsLive: KlavitySimsAPI = {
   deploy,
   setReviewing,
   setRunStatus,
+  setSimStatus,
+  setSimPaused,
   renderFeedback,
   undeploy,
   onTriage: null,
+  onPauseToggle: null,
 }
 
 export function installKlavitySims(): void {

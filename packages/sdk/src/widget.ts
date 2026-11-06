@@ -1269,6 +1269,11 @@ async function mount() {
 
   // Track deployed Sims so the context menu can show their icons without a fetch.
   let _deployedSims: Array<{ id: string; name: string; initials?: string; accent?: string }> = []
+  // KD-1456: Sims paused from the Sims feedback panel after "Deploy all Sims" (page-local — those Sims
+  // aren't in sim_deployments). Select Sims-managed Sims pause through the server instead.
+  const _pausedSims = new Set<string>()
+  // KD-1456: which flow last put Sims on the page — decides how the panel's Pause / Resume works.
+  let _simsSource: "all" | "managed" = "all"
   // Cumulative count of observations returned by boot + watch-engine reviews.
   let _issueCount = 0
   let _issueBadge: HTMLElement | null = null
@@ -1984,6 +1989,23 @@ async function mount() {
   SimsLive.onTriage = (observation, simName) => {
     openReport("bug", { initialDescription: simObservationBugDescription(observation, simName) })
   }
+  // KD-1456: Pause / Resume on the selected Sim in the Sims feedback panel. Select Sims-managed Sims use
+  // the same server pause/resume as the Select Sims modal; "Deploy all Sims" Sims pause on this page only.
+  SimsLive.onPauseToggle = async (simId, pause) => {
+    if (_simsSource === "managed") {
+      try {
+        const res = await managedSimsApi().act(pause ? "pause" : "resume", [simId])
+        if (!res.applied.includes(simId)) return false
+        applyManagedSims(res.sims, { action: pause ? "pause" : "resume", applied: res.applied })
+        try { window.dispatchEvent(new CustomEvent("klavity:sim-deployments-applied")) } catch { /* noop */ }
+        return true
+      } catch { return false }
+    }
+    if (pause) _pausedSims.add(simId); else _pausedSims.delete(simId)
+    startDeployAllWatch()
+    if (!pause) void bootReview([simId])
+    return true
+  }
   // G5: expose openReport through the module-level ref so window.Klavity.open() works. KLA-412: a bug
   // report starts (or continues) a multi-page evidence session; feature requests stay single-page.
   _openReport = (type = "bug") => { if (type === "feature") openReport("feature"); else void startBugReport() }
@@ -2368,19 +2390,34 @@ async function mount() {
       }
     } catch { /* non-fatal: empty dock is guarded in sims-live.ts */ }
     _deployedSims = sims
+    _deployAllIds = simIds === 'all' ? sims.map((s) => s.id) : simIds
+    _pausedSims.clear()   // a fresh deploy starts with every Sim running
+    _simsSource = "all"
     ;(window as any).KlavitySims?.deploy?.(simIds, sims)
     // Boot the watch engine for continuous monitoring (scroll / navigation / mutations).
+    startDeployAllWatch()
+    // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
+    void bootReview(simIds)
+  }
+
+  // KD-1456: (re)start the watch engine for the "Deploy all Sims" set minus paused Sims. Sim ids are passed
+  // explicitly (also for "all") so each Sim is reviewed in its own request and its status moves on its own.
+  let _deployAllIds: string[] = []
+  function startDeployAllWatch() {
+    _simsWatchCtrl?.stop()
+    _simsWatchCtrl = null
+    const active = _deployAllIds.filter((id) => !_pausedSims.has(id))
+    if (_deployAllIds.length && !active.length) return   // every Sim paused → nothing to watch
     _simsWatchCtrl = startSimsWatch({
       backendUrl: cfg.backendUrl,
       projectId: cfg.projectId,
-      simIds: simIds === 'all' ? undefined : simIds,
+      // Empty list (the Sim list didn't load) → legacy single request for all project Sims.
+      simIds: active.length ? active : undefined,
       // Live-review captures the FULL page (whole scrollHeight), not just the above-the-fold viewport,
       // so the Sim reviews the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
       captureViewport: () => safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
       bearerToken: getToken() || undefined,
     })
-    // BOOT: fire an immediate review so Sims react to the current page right away (not only on next scroll).
-    void bootReview(simIds)
   }
 
   // ── Select Sims management (additive) ─────────────────────────────────────────────────────
@@ -2470,6 +2507,12 @@ async function mount() {
       _managedMountedKey = key
     }
     _deployedSims = descriptors
+    _simsSource = "managed"
+    _pausedSims.clear()   // managed pause lives on the server (execution), not in this page-local set
+    // KD-1456: show each Sim's paused state in the Sims feedback panel (also for pauses made elsewhere).
+    for (const s of deployed) {
+      try { kl?.setSimPaused?.(s.id, s.execution !== "running") } catch { /* never break page */ }
+    }
     if (running.length) {
       _simsWatchCtrl = startSimsWatch({
         backendUrl: cfg.backendUrl,
@@ -2493,7 +2536,17 @@ async function mount() {
     const runStatus = (s: "analysing" | "running" | "completed" | "failed") => {
       try { (window as any).KlavitySims?.setRunStatus?.(s) } catch { /* never break page */ }
     }
+    // KD-1456: one review request per Sim (shared screenshot) so each Sim's chip spinner and "1/3" status
+    // move on their own. Paused Sims are skipped. Unknown Sim list ("all" before /api/widget/sims
+    // answered) falls back to one request for all Sims.
+    const kl = (window as any).KlavitySims
+    const simStatus = (id: string, s: "analysing" | "running" | "completed" | "failed") => {
+      try { kl?.setSimStatus?.(id, s) } catch { /* never break page */ }
+    }
+    const ids = (simIds === 'all' ? _deployedSims.map((s) => s.id) : simIds).filter((id) => !_pausedSims.has(id))
+    if (simIds !== 'all' && !ids.length) return
     runStatus("analysing")
+    ids.forEach((id) => simStatus(id, "analysing"))
     try {
       const benchStart = benchNow()
       const captureStart = benchNow()
@@ -2503,69 +2556,82 @@ async function mount() {
         width: window.innerWidth || 1,
         height: window.innerHeight || 1,
       }
-      const shot = await Promise.race([
-        // Boot review captures the FULL page (whole scrollHeight), not just the viewport, so the Sim's
-        // first reaction covers the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
-        safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("capture timeout")), 10_000)),
-      ])
+      let shot: string
+      try {
+        shot = await Promise.race([
+          // Boot review captures the FULL page (whole scrollHeight), not just the viewport, so the Sim's
+          // first reaction covers the entire page — bounded by MAX_FULLPAGE_CAPTURE_HEIGHT. (KLAVITYKLA-404)
+          safeToPngFullPage({ skipFonts: true, filter: notKlavityChrome }),
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error("capture timeout")), 10_000)),
+        ])
+      } catch (e) { ids.forEach((id) => simStatus(id, "failed")); throw e }
       const captureMs = benchNow() - captureStart
-      const body: Record<string, unknown> = {
-        url: location.href,
-        screenshotDataUrl: shot,
-        domSig: null,
-        adhoc: true,
-        projectId: cfg.projectId,
-      }
-      if (simIds !== 'all') body.simIds = simIds
       const headers: Record<string, string> = { 'content-type': 'application/json' }
       if (getToken()) headers.authorization = `Bearer ${getToken()}`
       runStatus("running")
+      ids.forEach((id) => simStatus(id, "running"))
       const networkStart = benchNow()
-      const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
-        method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
-      }, SIM_REVIEW_FETCH_TIMEOUT_MS)
+      let observations = 0
+      let reviewCount = 0
+      let expired = false
+      let server: { totalMs?: number; receiveToReviewDoneMs?: number; reviewMs?: number } | undefined
+      // Reviews one Sim (or all, when `id` is undefined) and renders its findings as soon as they arrive.
+      const reviewOne = async (id?: string): Promise<boolean> => {
+        try {
+          const body: Record<string, unknown> = {
+            url: location.href,
+            screenshotDataUrl: shot,
+            domSig: null,
+            adhoc: true,
+            projectId: cfg.projectId,
+          }
+          if (id) body.simIds = [id]
+          const res = await fetchWithTimeout(cfg.backendUrl + '/api/sim/review', {
+            method: 'POST', headers, credentials: 'include', body: JSON.stringify(body),
+          }, SIM_REVIEW_FETCH_TIMEOUT_MS)
+          if (res.status === 401 && !firstParty) expired = true
+          if (!res.ok) { if (id) simStatus(id, "failed"); return false }
+          const data = await res.json().catch(() => ({}))
+          if (!data?.ok || !Array.isArray(data.reviews)) { if (id) simStatus(id, "failed"); return false }
+          server = server ?? data.timing?.simReview
+          for (const review of data.reviews) {
+            reviewCount++
+            const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : (Array.isArray(review.reactions) ? review.reactions : [])
+            // Server returns SimObservation with .observation (text) field; sims-live.ts LiveObservation expects .text.
+            const liveObs = rawObs.map((r: any) => ({
+              text: r.observation ?? r.text ?? '',
+              sentiment: r.sentiment,
+              priority: r.priority,
+              region: r.region,
+              suggestedBug: r.suggestedBug,
+              targetViewport,
+            }))
+            observations += liveObs.length
+            _issueCount += liveObs.length
+            try { kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs) } catch { /* never break page */ }
+          }
+          updateIssueCounter()
+          if (id) simStatus(id, "completed")
+          return true
+        } catch { if (id) simStatus(id, "failed"); return false }
+      }
+      const results = await Promise.all(ids.length ? ids.map((id) => reviewOne(id)) : [reviewOne()])
+      const networkMs = benchNow() - networkStart
       // 401 on a cross-origin site means our widget token is missing/expired. Drop it and prompt a
       // reconnect instead of leaving the Sims floating but silent (the original "sims do nothing" bug).
-      if (res.status === 401 && !firstParty) {
+      if (expired) {
         clearToken()
         banner("Your Klavity connection expired — deploy Sims again to reconnect.")
-        runStatus("failed")
-        return
       }
-      if (!res.ok) { runStatus("failed"); return }
-      const data = await res.json().catch(() => ({}))
-      const networkMs = benchNow() - networkStart
-      if (!data?.ok || !Array.isArray(data.reviews)) { runStatus("failed"); return }
-      const kl = (window as any).KlavitySims
-      const renderStart = benchNow()
-      let observations = 0
-      for (const review of data.reviews) {
-        const rawObs: unknown[] = Array.isArray(review.observations) ? review.observations : (Array.isArray(review.reactions) ? review.reactions : [])
-        // Server returns SimObservation with .observation (text) field; sims-live.ts LiveObservation expects .text.
-        const liveObs = rawObs.map((r: any) => ({
-          text: r.observation ?? r.text ?? '',
-          sentiment: r.sentiment,
-          priority: r.priority,
-          region: r.region,
-          suggestedBug: r.suggestedBug,
-          targetViewport,
-        }))
-        observations += liveObs.length
-        _issueCount += liveObs.length
-        try { kl?.renderFeedback?.(review.simId, review.simName ?? '', liveObs) } catch { /* never break page */ }
-      }
-      const renderMs = benchNow() - renderStart
-      const totalMs = benchNow() - benchStart
-      updateIssueCounter()
+      if (!results.some(Boolean)) { runStatus("failed"); return }
       runStatus("completed")
-      const server = data.timing?.simReview
+      const totalMs = benchNow() - benchStart
       const domNodes = reactionNodeCount()
       console.log(
         `[bench-sim-review] client trigger=boot captureMs=${benchMs(captureMs)} networkMs=${benchMs(networkMs)} ` +
         `serverTotalMs=${server?.totalMs ?? '?'} serverReceiveToReviewDoneMs=${server?.receiveToReviewDoneMs ?? '?'} ` +
-        `serverReviewMs=${server?.reviewMs ?? '?'} renderMs=${benchMs(renderMs)} totalMs=${benchMs(totalMs)} ` +
-        `sims=${data.reviews.length} observations=${observations} domNodes=${domNodes}`,
+        `serverReviewMs=${server?.reviewMs ?? '?'} totalMs=${benchMs(totalMs)} ` +
+        `sims=${reviewCount} requests=${results.length} observations=${observations} domNodes=${domNodes}`,
       )
     } catch { runStatus("failed") /* non-fatal: boot review is best-effort */ }
   }
