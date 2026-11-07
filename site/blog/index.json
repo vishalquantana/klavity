@@ -1013,5 +1013,12 @@
     "excerpt": "A QA Wolf alternative suits you if you want E2E coverage without an annual managed-service contract. Six options compared by model, cost and fit.",
     "category": "Compare",
     "date": "2026-11-06"
+  },
+  {
+    "slug": "what-is-spec-driven-development",
+    "title": "What Is Spec-Driven Development? Definition and QA Guide",
+    "excerpt": "Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan.",
+    "category": "Learn",
+    "date": "2026-11-07"
   }
 ]

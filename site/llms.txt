@@ -4,6 +4,7 @@
 
 ## Blog posts
 
+- [What Is Spec-Driven Development? Definition and QA Guide](https://klavity.in/blog/what-is-spec-driven-development) — Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan.
 - [QA Wolf Alternative: 6 Picks by Budget and Team Size](https://klavity.in/blog/qa-wolf-alternative) — A QA Wolf alternative suits you if you want E2E coverage without an annual managed-service contract. Six options compared by model, cost and fit.
 - [AI End-to-End Testing: What It Automates and What It Can't](https://klavity.in/blog/ai-end-to-end-testing) — AI end-to-end testing generates, runs, and repairs browser tests of full user journeys — it automates the authoring and upkeep, not the judgment.
 - [Vibe Coding Best Practices: Ship AI Code That Holds Up](https://klavity.in/blog/vibe-coding-best-practices) — Keep prompts small enough to read the diff, verify in the browser instead of trusting the model's summary, and automate a check on every path users touch.

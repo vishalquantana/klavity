@@ -48,7 +48,8 @@
     "chatgpt app testing": "chatgpt-app-testing",
     "what is agentic coding": "what-is-agentic-coding",
     "claude code testing": "claude-code-testing",
-    "vibe coding best practices": "vibe-coding-best-practices"
+    "vibe coding best practices": "vibe-coding-best-practices",
+    "what is spec-driven development": "what-is-spec-driven-development"
   },
   "tier-c": {
     "marker.io alternative": "marker-io-alternative",

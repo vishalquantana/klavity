@@ -1,0 +1,196 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Is Spec-Driven Development? Definition and QA Guide · Klavity</title>
+<meta name="description" content="Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan.">
+<link rel="canonical" href="https://klavity.in/blog/what-is-spec-driven-development">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<meta property="og:type" content="article"><meta property="og:site_name" content="Klavity">
+<meta property="og:title" content="What Is Spec-Driven Development? Definition and QA Guide"><meta property="og:description" content="Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan.">
+<meta property="og:url" content="https://klavity.in/blog/what-is-spec-driven-development"><meta property="og:image" content="https://klavity.in/blog/what-is-spec-driven-development.svg">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="What Is Spec-Driven Development? Definition and QA Guide"><meta name="twitter:description" content="Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan."><meta name="twitter:image" content="https://klavity.in/blog/what-is-spec-driven-development.svg">
+<link rel="stylesheet" href="/fonts/fonts.css">
+<link rel="stylesheet" href="/kit.css"><script src="/kit.js" defer></script>
+<style>
+.post{max-width:680px;margin:0 auto;padding:40px 22px 80px}
+.post .crumb{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);letter-spacing:.04em;margin-bottom:18px}
+.post h1{font-family:var(--display);font-weight:600;font-size:clamp(30px,5.5vw,48px);line-height:1.07;letter-spacing:-.02em;margin:0 0 12px}
+.post-meta{display:flex;align-items:center;gap:0;margin-bottom:28px;flex-wrap:wrap}
+.post-meta .by,.post-meta .rt{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint)}
+.post-meta .rt::before{content:'·';margin:0 10px}
+.post .by{font-family:var(--mono);font-size:12.5px;color:var(--paper-faint);margin-bottom:26px}
+.tldr-box{background:var(--ink-2,#efe9df);border:1px solid var(--line);border-left:4px solid var(--accent-text,var(--indigo));border-radius:14px;padding:18px 20px;margin:0 0 32px;font-size:16.5px;line-height:1.58}
+.tldr-box b{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-faint);display:block;margin-bottom:7px}
+.prose{font-size:17.5px;line-height:1.75;color:var(--paper-dim)}
+.prose h2{font-family:var(--display);font-weight:600;font-size:26px;color:var(--paper);margin:44px 0 10px;line-height:1.18}
+.prose h3{font-weight:700;font-size:19px;color:var(--paper);margin:28px 0 8px}
+.prose p{margin:0 0 16px}.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}.prose li{margin:5px 0}
+.prose a{color:var(--accent-text,var(--indigo));text-decoration:underline}
+.prose strong{color:var(--paper)}
+.bug-card{border:1px solid var(--line);border-radius:16px;padding:26px 26px 18px;margin:32px 0}
+.bug-card h2{margin-top:6px !important;font-size:23px !important}
+.bug-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.bug-badge::before{content:'';display:inline-block;width:16px;height:1px;background:currentColor;flex-shrink:0}
+.sev-high{border-left:3px solid #ef4444}.sev-high .bug-badge{color:#ef4444}
+.sev-med{border-left:3px solid #f59e0b}.sev-med .bug-badge{color:#b45309}
+.sev-low{border-left:3px solid var(--paper-faint)}.sev-low .bug-badge{color:var(--paper-faint)}
+.illus{margin:18px 0 20px;border-radius:10px;background:var(--ink-2,#efe9df);overflow:hidden;display:flex;align-items:center;justify-content:center;padding:22px 16px}
+.illus svg{display:block;max-width:100%;height:auto}
+.callout{border-radius:0 8px 8px 0;padding:11px 16px;margin:10px 0;font-size:15px;line-height:1.62}
+.callout-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:5px;font-weight:700}
+.callout-check{background:rgba(99,102,241,.06);border-left:3px solid #6366f1}
+.callout-check .callout-label{color:#6366f1}
+.callout-cause{background:rgba(245,158,11,.07);border-left:3px solid #f59e0b}
+.callout-cause .callout-label{color:#b45309}
+.scan-list{list-style:none;padding:0;margin:16px 0 0;counter-reset:scan}
+.scan-list li{counter-increment:scan;display:flex;gap:14px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:16px;line-height:1.6}
+.scan-list li:last-child{border-bottom:none}
+.scan-list li::before{content:counter(scan,'decimal-leading-zero');font-family:var(--mono);font-size:11px;font-weight:700;color:#6366f1;min-width:26px;margin-top:2px}
+.toc-rail{display:none}
+@media(min-width:1140px){.toc-rail{display:block;position:fixed;left:max(16px,calc(50vw - 450px));top:96px;width:156px}.toc-rail-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--paper-faint);margin-bottom:10px;display:block}.toc-rail a{display:block;color:var(--paper-faint);text-decoration:none;padding:3px 0 3px 10px;border-left:2px solid var(--line);margin-bottom:2px;font-size:12.5px;line-height:1.45;transition:color .12s,border-color .12s}.toc-rail a:hover,.toc-rail a.toc-active{color:var(--indigo,#6366f1);border-left-color:var(--indigo,#6366f1)}}
+.faq{margin:48px 0 0;border-top:1px solid var(--line);padding-top:30px}
+.faq h2{font-family:var(--display);font-size:26px;margin:0 0 16px}
+.faq details{border-bottom:1px solid var(--line);padding:14px 0}.faq summary{font-weight:600;cursor:pointer;font-size:17px}
+.faq p{margin:10px 0 0;color:var(--paper-dim);line-height:1.6}
+.takeaways{margin:40px 0 0;background:var(--ink-2,#efe9df);border-radius:16px;padding:24px 26px}
+.takeaways h2{font-family:var(--display);font-size:22px;margin:0 0 12px}.takeaways ul{margin:0;padding-left:20px}.takeaways li{margin:8px 0;line-height:1.5}
+.cta{margin:48px 0 0;text-align:center;padding:34px;border:1px solid var(--line);border-radius:18px}
+.cta h2{font-family:var(--display);font-size:24px;margin:0 0 8px}.cta p{color:var(--paper-dim);margin:0 0 18px}
+</style>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"What Is Spec-Driven Development? Definition and QA Guide","description":"Spec-driven development means writing a precise, testable spec before a coding agent implements it, so acceptance criteria become your test plan.","datePublished":"2026-11-07","dateModified":"2026-11-07","author":{"@type":"Person","name":"Klavity"},"publisher":{"@type":"Organization","name":"Klavity","logo":{"@type":"ImageObject","url":"https://klavity.in/blog/what-is-spec-driven-development.svg"}},"mainEntityOfPage":"https://klavity.in/blog/what-is-spec-driven-development","inLanguage":"en"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://klavity.in/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://klavity.in/blog"},{"@type":"ListItem","position":3,"name":"What Is Spec-Driven Development? Definition and QA Guide","item":"https://klavity.in/blog/what-is-spec-driven-development"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","speakable":{"@type":"SpeakableSpecification","cssSelector":["h1",".tldr-box",".prose > p:first-of-type"]},"url":"https://klavity.in/blog/what-is-spec-driven-development"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is spec-driven development in simple terms?","acceptedAnswer":{"@type":"Answer","text":"It is writing a short, precise document describing what a feature does, its states, its edge cases, and the criteria that define done, and then having a coding agent implement against that document instead of a one-line prompt. The spec lives in the repo, so it outlasts the chat session and gives reviewers and tests a fixed target."}},{"@type":"Question","name":"How is spec-driven development different from vibe coding?","acceptedAnswer":{"@type":"Answer","text":"Vibe coding keeps the definition of the feature in your head and in a chat history that scrolls away, so ambiguity gets resolved silently by the model. Spec-driven development resolves that ambiguity in writing before code is generated, which changes the review question from does this look right to does this match the spec."}},{"@type":"Question","name":"Does a spec replace testing?","acceptedAnswer":{"@type":"Answer","text":"No. A spec tells you what should be true; only running the app tells you what is true. Specs do not catch environment and configuration differences, third-party API drift, performance under real data, accessibility failures, or unexpected real-user paths. Use the spec to generate your test list, then verify against the deployed app."}},{"@type":"Question","name":"How long should a spec be?","acceptedAnswer":{"@type":"Answer","text":"One page for most features. The goal is removing guesswork, not volume. If the spec is longer than the feature it describes, the feature is probably too big and should be split. A good test is whether a stranger could verify every acceptance criterion without asking you a question."}},{"@type":"Question","name":"How do I start spec-driven development on an existing codebase?","acceptedAnswer":{"@type":"Answer","text":"Do not try to retro-spec what already exists. Start with the next feature you were going to build anyway, write its acceptance criteria before opening the agent, keep the file in the repo beside the code, and point your agent instructions file at the spec folder. Update the spec in the same pull request as the code so it never goes stale."}}]}</script>
+</head><body style="--accent:var(--indigo);--accent-text:var(--indigo-text)">
+<a class="skip-link" href="#main">Skip to content</a><nav class="nav" aria-label="Primary"><div class="wrap nav-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="nav-links">
+    <a href="/#how">How it works</a><a class="s-snap" href="/snap">Snap</a>
+    <a class="s-sims" href="/sims">Sims</a><a class="s-autosim" href="/autosim">AutoSim</a>
+    <a href="/blog" aria-current="page">Blog</a>
+    <a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+  <div class="nav-cta"><a class="btn btn-ghost" href="/login">Log in</a><a class="btn btn-primary" href="/onboarding">Get started</a></div>
+</div></nav><main id="main">
+  <article class="post">
+    <div class="crumb"><a href="/blog">Blog</a> · Learn · 2026-11-07</div>
+    <h1>What Is Spec-Driven Development? Definition and QA Guide</h1>
+    <div class="post-meta"><span class="by">Klavity</span><span class="rt">8 min read</span></div>
+    <div class="post-hero" style="margin:0 0 28px;border-radius:14px;overflow:hidden;line-height:0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="A written spec feeds a coding agent, and its acceptance criteria become verified checks that catch a bug">
+  <rect x="0" y="0" width="800" height="420" fill="#1e1b2e"/>
+
+  <rect x="56" y="100" width="190" height="220" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#6366f1" stroke-opacity="0.55" stroke-width="1.5"/>
+  <line x1="80" y1="136" x2="180" y2="136" stroke="#6366f1" stroke-width="5" stroke-linecap="round"/>
+  <line x1="80" y1="164" x2="222" y2="164" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round"/>
+  <line x1="80" y1="184" x2="206" y2="184" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round"/>
+  <line x1="80" y1="204" x2="214" y2="204" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round"/>
+  <rect x="80" y="232" width="11" height="11" rx="2" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <line x1="102" y1="237" x2="216" y2="237" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <rect x="80" y="262" width="11" height="11" rx="2" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <line x1="102" y1="267" x2="200" y2="267" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <rect x="80" y="292" width="11" height="11" rx="2" fill="none" stroke="#6366f1" stroke-width="2"/>
+  <line x1="102" y1="297" x2="208" y2="297" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+
+  <line x1="258" y1="210" x2="298" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="291,203 300,210 291,217" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="312" y="120" width="176" height="180" rx="10" fill="#f5f0e8" fill-opacity="0.05" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <line x1="312" y1="152" x2="488" y2="152" stroke="#f5f0e8" stroke-opacity="0.18" stroke-width="1.5"/>
+  <circle cx="330" cy="136" r="4" fill="#6366f1"/>
+  <circle cx="344" cy="136" r="4" fill="#f5f0e8" fill-opacity="0.28"/>
+  <circle cx="358" cy="136" r="4" fill="#f5f0e8" fill-opacity="0.28"/>
+  <line x1="332" y1="178" x2="440" y2="178" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+  <line x1="346" y1="200" x2="462" y2="200" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round"/>
+  <line x1="346" y1="222" x2="420" y2="222" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round"/>
+  <line x1="332" y1="244" x2="400" y2="244" stroke="#f87171" stroke-width="3" stroke-linecap="round"/>
+  <line x1="346" y1="266" x2="444" y2="266" stroke="#f5f0e8" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round"/>
+
+  <line x1="502" y1="210" x2="542" y2="210" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <polyline points="535,203 544,210 535,217" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="556" y="100" width="190" height="220" rx="12" fill="#f5f0e8" fill-opacity="0.05" stroke="#4ade80" stroke-opacity="0.4" stroke-width="1.5"/>
+  <path d="M 578 150 l 8 9 l 16 -19" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="614" y1="150" x2="720" y2="150" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <path d="M 578 196 l 8 9 l 16 -19" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="614" y1="196" x2="706" y2="196" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <path d="M 578 242 l 8 9 l 16 -19" fill="none" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="614" y1="242" x2="714" y2="242" stroke="#f5f0e8" stroke-opacity="0.3" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="586" cy="288" r="10" fill="none" stroke="#f87171" stroke-width="2.5"/>
+  <line x1="582" y1="284" x2="590" y2="292" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="590" y1="284" x2="582" y2="292" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="614" y1="288" x2="698" y2="288" stroke="#f87171" stroke-opacity="0.5" stroke-width="3" stroke-linecap="round"/>
+</svg></div>
+<div class="tldr-box"><b>TL;DR</b>Spec-driven development means writing down behaviour, states, edge cases, and acceptance criteria before a coding agent writes the code. It targets the dominant bug class in AI-generated code: the silent assumption, where the model fills an unspecified gap with a plausible default nobody reviewed. For QA, the payoff is that numbered acceptance criteria become the test plan, so testing starts from a list instead of a blank page.</div>
+    <div class="prose"><p><strong>Spec-driven development</strong> is a way of building software where you write a precise specification first — what the feature does, its inputs and outputs, its states and edge cases, and the acceptance criteria that define "done" — and then have a coding agent implement against that document instead of improvising from a one-line prompt. The spec, not the chat scrollback, becomes the source of truth: the agent builds from it, reviewers check against it, and the acceptance criteria convert almost directly into test cases. For anyone shipping AI-generated code, spec-driven development is the most practical answer to vibe coding's core weakness — code that runs but was never defined clearly enough to verify.</p>
+
+<h2>How is spec-driven development different from vibe coding?</h2>
+<p><a href="/blog/what-is-vibe-coding">Vibe coding</a> is a loop: prompt, generate, eyeball the result, prompt again. It is fast and genuinely good for exploration, but the definition of the feature only ever exists in your head and in a conversation that scrolls away. Spec-driven development moves that definition into a written artifact that outlives the session.</p>
+<table>
+  <tr><th>Dimension</th><th>Vibe coding</th><th>Spec-driven development</th></tr>
+  <tr><td>Source of truth</td><td>The last prompt that worked</td><td>A written spec in the repo</td></tr>
+  <tr><td>Where ambiguity goes</td><td>The model guesses silently</td><td>Resolved before code is written</td></tr>
+  <tr><td>Review question</td><td>"Does this look right?"</td><td>"Does this match the spec?"</td></tr>
+  <tr><td>Test plan</td><td>Invented afterwards, if at all</td><td>Falls out of the acceptance criteria</td></tr>
+  <tr><td>Regenerating the feature</td><td>Re-explain everything from memory</td><td>Hand the agent the same spec</td></tr>
+  <tr><td>Handover</td><td>Lives in one person's chat history</td><td>Lives next to the code</td></tr>
+</table>
+<p>Tooling has grown up around the practice — GitHub's open-source Spec Kit, AWS's Kiro editor, and the now-common convention of keeping agent instructions in-repo in files like <em>AGENTS.md</em> or <em>CLAUDE.md</em>. None of it is required. A one-page Markdown file in a <em>specs/</em> folder gets you most of the benefit on day one.</p>
+
+<h2>What goes into a good spec?</h2>
+<p>A useful spec is short and checkable. Length is not the goal; removing guesswork is. Cover these seven things:</p>
+<ol>
+  <li><strong>User-visible behaviour</strong>, in plain language — what someone can now do that they could not before.</li>
+  <li><strong>Inputs, outputs, and data contracts</strong> — field names, types, required vs optional, what the API returns.</li>
+  <li><strong>Every state</strong> — empty, loading, partial, success, error, offline, unauthorised, and already-done.</li>
+  <li><strong>Edge cases and limits</strong> — duplicate submits, zero results, very long strings, expired sessions, concurrent edits.</li>
+  <li><strong>Non-goals</strong> — what this feature explicitly does not do, so the agent stops inventing scope.</li>
+  <li><strong>Acceptance criteria</strong>, written as testable statements: "Given an expired token, when the user submits the form, then they see a re-login prompt and no data is written."</li>
+  <li><strong>Open questions</strong> — the things you genuinely have not decided, flagged rather than left blank.</li>
+</ol>
+<p>The test for a criterion is simple: could a stranger verify it without asking you a single question? If not, it is a wish, not a criterion. That one rule does most of the work.</p>
+
+<h2>How does spec-driven development change QA?</h2>
+<p>Three practical shifts, and they are the reason the practice matters more for agent-written code than for hand-written code:</p>
+<h3>Testing starts from a list instead of a blank page</h3>
+<p>The hardest part of QA on a vibe-coded app is not writing tests — it is knowing what to test when nobody wrote down what the thing was supposed to do. Numbered acceptance criteria give you a finite list to work through. One criterion, one check.</p>
+<h3>Review becomes behavioural, not stylistic</h3>
+<p>Without a spec, reviewing generated code collapses into reading it and deciding whether it looks plausible. Generated code almost always looks plausible — that is precisely what the model optimises for. With a spec, the review question changes to whether the described behaviour is actually implemented, which is a question you can answer by running the thing.</p>
+<h3>Regressions get a fixed target</h3>
+<p>Agents refactor broadly. When a prompt touches five files, the spec tells you what must still be true afterwards. Without one, you are comparing today's behaviour to a vague memory of last week's.</p>
+
+<h2>Does spec-driven development actually reduce bugs?</h2>
+<p>It reduces one specific and very common class of bug, and does almost nothing for the others. Being honest about that split is what makes it useful rather than a ritual.</p>
+<p>The class it attacks is the <strong>silent assumption</strong>. A coding agent handed an underspecified prompt does not leave a blank or ask a question — it fills the gap with a plausible default. What happens on an empty list, whether the submit button disables on the second click, which timezone a date renders in, what the error copy says when the network drops: nobody decided, the model decided, and nobody noticed. These are the bugs that cluster in <a href="/blog/testing-ai-generated-code">AI-generated code</a>, and writing the behaviour down beforehand is the only cheap fix.</p>
+<p>What a spec will not catch: environment and configuration differences between your machine and production, integration drift when a third-party API changes shape, performance under real data volumes, accessibility failures, and the enormous category of "a real person used it in a way nobody imagined." Those need something running against the deployed app. A spec tells you what <em>should</em> be true; only execution tells you what <em>is</em>. That is the division of labour described in our <a href="/blog/ai-qa-complete-guide">complete guide to AI QA</a>.</p>
+
+<h2>How do you turn acceptance criteria into tests?</h2>
+<ol>
+  <li><strong>Number the criteria</strong> in the spec so each one has a stable identifier you can cite in a test name or a bug report.</li>
+  <li><strong>Pick the thinnest check that proves each one.</strong> Many criteria are satisfied by a single assertion; do not build a full end-to-end journey for something a unit-level check settles.</li>
+  <li><strong>Automate the criteria that must hold on every deploy</strong> — the money path, auth, and anything a client would notice within a minute. <a href="/autosim">AutoSim</a> covers these as self-healing end-to-end tests, so a selector change from the next agent refactor does not quietly turn the suite red.</li>
+  <li><strong>Leave the rest as a written manual pass list.</strong> A ten-line checklist that someone actually runs before a client demo beats a hundred tests nobody maintains.</li>
+  <li><strong>Send the unspecified paths through personas.</strong> The criteria you wrote are the behaviour you imagined; <a href="/sims">Sims</a> walks the product as different kinds of user and surfaces the paths the spec never mentioned.</li>
+  <li><strong>Keep the criteria-to-test mapping in the spec itself</strong>, so the next agent that reads the spec also learns which behaviours are already guarded.</li>
+</ol>
+<p>When a human still finds something — and they will — <a href="/snap">Snap</a> turns a right-click into a bug report carrying the console, network, and DOM state, so the fix starts from evidence instead of "it's broken on my end."</p>
+
+<h2>Where does spec-driven development still go wrong?</h2>
+<ul>
+  <li><strong>Stale specs.</strong> A spec that no longer matches shipped behaviour is worse than none, because it makes reviewers confident about the wrong thing. Update the spec in the same pull request as the code, or delete it.</li>
+  <li><strong>Specs that describe implementation.</strong> "Use a useEffect hook to fetch on mount" is not a spec; it is a guess at an approach. Specify behaviour and let the agent choose the code.</li>
+  <li><strong>Spec theatre.</strong> Twelve pages nobody reads buys you nothing. If the spec is longer than the feature, the feature was too big.</li>
+  <li><strong>Over-specifying exploration.</strong> When you genuinely do not know what you want yet, vibe-code a throwaway prototype first, then write the spec from what you learned and regenerate properly.</li>
+</ul>
+
+<h2>How do you start on a project that has no specs?</h2>
+<p>Do not retro-spec an existing codebase — that project never finishes. Start with the next feature you were about to build anyway, and keep it to one page. Write the acceptance criteria before you open the agent, keep the file in the repo next to the code it describes, and add a line to your <em>AGENTS.md</em> telling the agent to read the spec folder first. After three or four features you will have the only documentation most small teams ever actually keep current: the spec for the parts that matter, next to tests that reference it.</p>
+<p>For a broader pre-ship pass, pair this with a <a href="/blog/vibe-coding-qa-checklist">vibe coding QA checklist</a> — the spec covers what you intended, the checklist covers what everyone forgets.</p>
+
+<h2>Scan your next build free</h2>
+<p>A spec tells you what should be true. Klavity checks what is actually true in the running app — persona-driven reviews with Sims, self-healing end-to-end tests with AutoSim, and right-click bug reports with Snap. <a href="/onboarding"><strong>Try Klavity free</strong></a> and find the bugs before your client or your users do.</p></div>
+    <section class="takeaways"><h2>Key takeaways</h2><ul><li>Write acceptance criteria before you open the coding agent, not after.</li><li>Make every criterion checkable by a stranger without asking you a question.</li><li>Turn numbered criteria into tests; automate the ones that must hold every deploy.</li><li>Update the spec in the same pull request as the code, or delete it.</li></ul></section><section class="faq"><h2>FAQ</h2><details><summary>What is spec-driven development in simple terms?</summary><p>It is writing a short, precise document describing what a feature does, its states, its edge cases, and the criteria that define done, and then having a coding agent implement against that document instead of a one-line prompt. The spec lives in the repo, so it outlasts the chat session and gives reviewers and tests a fixed target.</p></details><details><summary>How is spec-driven development different from vibe coding?</summary><p>Vibe coding keeps the definition of the feature in your head and in a chat history that scrolls away, so ambiguity gets resolved silently by the model. Spec-driven development resolves that ambiguity in writing before code is generated, which changes the review question from does this look right to does this match the spec.</p></details><details><summary>Does a spec replace testing?</summary><p>No. A spec tells you what should be true; only running the app tells you what is true. Specs do not catch environment and configuration differences, third-party API drift, performance under real data, accessibility failures, or unexpected real-user paths. Use the spec to generate your test list, then verify against the deployed app.</p></details><details><summary>How long should a spec be?</summary><p>One page for most features. The goal is removing guesswork, not volume. If the spec is longer than the feature it describes, the feature is probably too big and should be split. A good test is whether a stranger could verify every acceptance criterion without asking you a question.</p></details><details><summary>How do I start spec-driven development on an existing codebase?</summary><p>Do not try to retro-spec what already exists. Start with the next feature you were going to build anyway, write its acceptance criteria before opening the agent, keep the file in the repo beside the code, and point your agent instructions file at the spec folder. Update the spec in the same pull request as the code so it never goes stale.</p></details></section>
+    <section class="cta"><h2>Catch bugs the moment a human sees them</h2><p>Klavity: right-click bug reports, AI personas that review your product, and self-healing tests.</p><a class="btn btn-primary" href="/onboarding">Get started free</a></section>
+  </article></main><footer class="footer"><div class="wrap foot-in">
+  <a class="brand" href="/"><span class="mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 3C6 7 6 17 10 21"/><path d="M14 3C18 7 18 17 14 21"/><path d="M7.5 8h9M7.5 16h9" stroke-width="1.2" opacity=".5"/></svg></span>Klavity</a>
+  <div class="foot-links"><a href="/">Home</a><a href="/snap">Snap</a><a href="/sims">Sims</a><a href="/autosim">AutoSim</a><a href="/blog">Blog</a><a href="https://github.com/vishalquantana/klav-snap" target="_blank" rel="noopener">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+  <span class="sp"></span><span class="mono">© <span data-year>2026</span> Klavity</span>
+</div></footer></body></html>
